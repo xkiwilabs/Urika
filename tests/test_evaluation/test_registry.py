@@ -88,11 +88,25 @@ class TestMetricRegistry:
         """discover() should find all IMetric subclasses in metrics submodules."""
         registry = MetricRegistry()
         registry.discover()
-        # After implementing regression/classification metrics, discover should
-        # find them. For now, with no metric modules, the list should be empty.
-        # This test will be extended once metric modules exist.
         all_names = registry.list_all()
         assert isinstance(all_names, list)
+
+    def test_discover_finds_all_builtins(self) -> None:
+        registry = MetricRegistry()
+        registry.discover()
+        names = registry.list_all()
+        expected = [
+            "accuracy",
+            "auc",
+            "cohens_d",
+            "f1",
+            "mae",
+            "precision",
+            "r2",
+            "recall",
+            "rmse",
+        ]
+        assert names == expected
 
     def test_register_overwrites_same_name(self) -> None:
         registry = MetricRegistry()
