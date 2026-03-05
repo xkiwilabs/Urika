@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import pkgutil
+from pathlib import Path
 
 from urika.methods.base import IAnalysisMethod
 
@@ -42,6 +44,31 @@ class MethodRegistry:
             if modname in ("base", "registry"):
                 continue
             module = importlib.import_module(f"urika.methods.{modname}")
+            get_method = getattr(module, "get_method", None)
+            if callable(get_method):
+                method = get_method()
+                if isinstance(method, IAnalysisMethod):
+                    self.register(method)
+
+    def discover_project(self, methods_dir: Path) -> None:
+        """Discover agent-created methods from a project's methods/ directory."""
+        if not methods_dir.is_dir():
+            return
+
+        for py_file in sorted(methods_dir.glob("*.py")):
+            if py_file.name.startswith("_"):
+                continue
+            module_name = py_file.stem
+            spec = importlib.util.spec_from_file_location(
+                f"urika_project_methods.{module_name}", py_file
+            )
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                continue
             get_method = getattr(module, "get_method", None)
             if callable(get_method):
                 method = get_method()

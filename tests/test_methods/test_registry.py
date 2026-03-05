@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from urika.data.models import DatasetView
@@ -75,3 +76,79 @@ class TestMethodRegistry:
         registry = MethodRegistry()
         registry.discover()
         assert isinstance(registry.list_all(), list)
+
+
+class TestMethodRegistryProjectDiscovery:
+    """Test discover_project() for agent-created methods."""
+
+    def test_discover_project_finds_method(self, tmp_path: Path) -> None:
+        methods_dir = tmp_path / "methods"
+        methods_dir.mkdir()
+        (methods_dir / "__init__.py").touch()
+        (methods_dir / "my_method.py").write_text(
+            '''
+from urika.methods.base import IAnalysisMethod, MethodResult
+
+class MyMethod(IAnalysisMethod):
+    def name(self): return "my_method"
+    def description(self): return "Test method"
+    def category(self): return "test"
+    def default_params(self): return {}
+    def run(self, data, params): return MethodResult(metrics={})
+
+def get_method():
+    return MyMethod()
+'''
+        )
+
+        registry = MethodRegistry()
+        registry.discover_project(methods_dir)
+        assert "my_method" in registry.list_all()
+
+    def test_discover_project_skips_files_without_get_method(self, tmp_path: Path) -> None:
+        methods_dir = tmp_path / "methods"
+        methods_dir.mkdir()
+        (methods_dir / "__init__.py").touch()
+        (methods_dir / "helper.py").write_text("X = 42\n")
+
+        registry = MethodRegistry()
+        registry.discover_project(methods_dir)
+        assert registry.list_all() == []
+
+    def test_discover_project_nonexistent_dir(self, tmp_path: Path) -> None:
+        registry = MethodRegistry()
+        registry.discover_project(tmp_path / "nonexistent")
+        assert registry.list_all() == []
+
+    def test_discover_project_empty_dir(self, tmp_path: Path) -> None:
+        methods_dir = tmp_path / "methods"
+        methods_dir.mkdir()
+
+        registry = MethodRegistry()
+        registry.discover_project(methods_dir)
+        assert registry.list_all() == []
+
+    def test_discover_project_combined_with_builtins(self, tmp_path: Path) -> None:
+        methods_dir = tmp_path / "methods"
+        methods_dir.mkdir()
+        (methods_dir / "__init__.py").touch()
+        (methods_dir / "proj_method.py").write_text(
+            '''
+from urika.methods.base import IAnalysisMethod, MethodResult
+
+class ProjMethod(IAnalysisMethod):
+    def name(self): return "proj_method"
+    def description(self): return "Project method"
+    def category(self): return "test"
+    def default_params(self): return {}
+    def run(self, data, params): return MethodResult(metrics={})
+
+def get_method():
+    return ProjMethod()
+'''
+        )
+
+        registry = MethodRegistry()
+        registry.discover()
+        registry.discover_project(methods_dir)
+        assert "proj_method" in registry.list_all()
