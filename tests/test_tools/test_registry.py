@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from urika.data.models import DatasetView
@@ -75,3 +76,81 @@ class TestToolRegistry:
         registry = ToolRegistry()
         registry.discover()
         assert isinstance(registry.list_all(), list)
+
+
+class TestToolRegistryProjectDiscovery:
+    """Test discover_project() for agent-created tools."""
+
+    def test_discover_project_finds_tool(self, tmp_path: Path) -> None:
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        (tools_dir / "__init__.py").touch()
+        (tools_dir / "my_tool.py").write_text(
+            """
+from urika.tools.base import ITool, ToolResult
+
+class MyTool(ITool):
+    def name(self): return "my_tool"
+    def description(self): return "Test tool"
+    def category(self): return "test"
+    def default_params(self): return {}
+    def run(self, data, params): return ToolResult(outputs={})
+
+def get_tool():
+    return MyTool()
+"""
+        )
+
+        registry = ToolRegistry()
+        registry.discover_project(tools_dir)
+        assert "my_tool" in registry.list_all()
+
+    def test_discover_project_skips_files_without_get_tool(
+        self, tmp_path: Path
+    ) -> None:
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        (tools_dir / "__init__.py").touch()
+        (tools_dir / "helper.py").write_text("X = 42\n")
+
+        registry = ToolRegistry()
+        registry.discover_project(tools_dir)
+        assert registry.list_all() == []
+
+    def test_discover_project_nonexistent_dir(self, tmp_path: Path) -> None:
+        registry = ToolRegistry()
+        registry.discover_project(tmp_path / "nonexistent")
+        assert registry.list_all() == []
+
+    def test_discover_project_empty_dir(self, tmp_path: Path) -> None:
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+
+        registry = ToolRegistry()
+        registry.discover_project(tools_dir)
+        assert registry.list_all() == []
+
+    def test_discover_project_combined_with_builtins(self, tmp_path: Path) -> None:
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        (tools_dir / "__init__.py").touch()
+        (tools_dir / "proj_tool.py").write_text(
+            """
+from urika.tools.base import ITool, ToolResult
+
+class ProjTool(ITool):
+    def name(self): return "proj_tool"
+    def description(self): return "Project tool"
+    def category(self): return "test"
+    def default_params(self): return {}
+    def run(self, data, params): return ToolResult(outputs={})
+
+def get_tool():
+    return ProjTool()
+"""
+        )
+
+        registry = ToolRegistry()
+        registry.discover()
+        registry.discover_project(tools_dir)
+        assert "proj_tool" in registry.list_all()
