@@ -314,3 +314,61 @@ class TestAUC:
         from urika.evaluation.metrics.classification import AUC
 
         assert AUC().direction() == "higher_is_better"
+
+
+# ---------------------------------------------------------------------------
+# Effect size metrics tests
+# ---------------------------------------------------------------------------
+class TestCohensD:
+    """Tests for Cohen's d effect size metric."""
+
+    def test_identical_groups(self) -> None:
+        from urika.evaluation.metrics.effect_size import CohensD
+
+        metric = CohensD()
+        group = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        assert metric.compute(group, group) == pytest.approx(0.0)
+
+    def test_known_values(self) -> None:
+        from urika.evaluation.metrics.effect_size import CohensD
+
+        metric = CohensD()
+        group1 = np.array([2.0, 4.0, 6.0, 8.0])
+        group2 = np.array([3.0, 5.0, 7.0, 9.0])
+        # mean1=5.0, mean2=6.0, var1=var2=6.6667
+        # pooled_std = sqrt(((3*6.6667 + 3*6.6667) / 6)) = sqrt(6.6667) ~= 2.5820
+        # d = abs(6.0 - 5.0) / 2.5820 ~= 0.3873
+        assert metric.compute(group1, group2) == pytest.approx(0.3873, abs=1e-3)
+
+    def test_large_effect(self) -> None:
+        from urika.evaluation.metrics.effect_size import CohensD
+
+        metric = CohensD()
+        group1 = np.array([1.0, 1.0, 1.0, 1.0])
+        group2 = np.array([10.0, 10.0, 10.0, 10.0])
+        # Both groups have zero variance -> pooled_std = 0 -> return 0.0
+        assert metric.compute(group1, group2) == 0.0
+
+    def test_zero_pooled_std(self) -> None:
+        from urika.evaluation.metrics.effect_size import CohensD
+
+        metric = CohensD()
+        group1 = np.array([5.0, 5.0, 5.0])
+        group2 = np.array([5.0, 5.0, 5.0])
+        # Same constant values -> pooled_std = 0 -> return 0.0
+        assert metric.compute(group1, group2) == 0.0
+
+    def test_name(self) -> None:
+        from urika.evaluation.metrics.effect_size import CohensD
+
+        assert CohensD().name() == "cohens_d"
+
+    def test_direction(self) -> None:
+        from urika.evaluation.metrics.effect_size import CohensD
+
+        assert CohensD().direction() == "higher_is_better"
+
+    def test_is_imetric(self) -> None:
+        from urika.evaluation.metrics.effect_size import CohensD
+
+        assert isinstance(CohensD(), IMetric)
