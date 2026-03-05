@@ -34,8 +34,20 @@ class TestDataSummary:
             dtypes={"a": "int64", "b": "float64", "c": "object"},
             missing_counts={"a": 0, "b": 5, "c": 2},
             numeric_stats={
-                "a": {"mean": 50.0, "std": 10.0, "min": 1.0, "max": 100.0, "median": 50.0},
-                "b": {"mean": 3.14, "std": 1.0, "min": 0.0, "max": 6.28, "median": 3.14},
+                "a": {
+                    "mean": 50.0,
+                    "std": 10.0,
+                    "min": 1.0,
+                    "max": 100.0,
+                    "median": 50.0,
+                },
+                "b": {
+                    "mean": 3.14,
+                    "std": 1.0,
+                    "min": 0.0,
+                    "max": 6.28,
+                    "median": 3.14,
+                },
             },
         )
         assert summary.n_rows == 100
@@ -69,7 +81,9 @@ class TestDatasetView:
             columns=["a"],
             dtypes={"a": "int64"},
             missing_counts={"a": 0},
-            numeric_stats={"a": {"mean": 2.0, "std": 1.0, "min": 1.0, "max": 3.0, "median": 2.0}},
+            numeric_stats={
+                "a": {"mean": 2.0, "std": 1.0, "min": 1.0, "max": 3.0, "median": 2.0}
+            },
         )
         view = DatasetView(spec=spec, data=df, summary=summary)
         assert view.spec is spec
