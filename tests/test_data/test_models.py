@@ -6,21 +6,19 @@ from pathlib import Path
 
 import pandas as pd
 
+from urika.data.models import DatasetSpec, DataSummary, DatasetView
+
 
 class TestDatasetSpec:
     """Test DatasetSpec dataclass."""
 
     def test_create_with_required_fields(self) -> None:
-        from urika.data.models import DatasetSpec
-
         spec = DatasetSpec(path=Path("/tmp/data.csv"), format="csv")
         assert spec.path == Path("/tmp/data.csv")
         assert spec.format == "csv"
         assert spec.name is None
 
     def test_create_with_name(self) -> None:
-        from urika.data.models import DatasetSpec
-
         spec = DatasetSpec(path=Path("/tmp/data.csv"), format="csv", name="my_data")
         assert spec.name == "my_data"
 
@@ -29,8 +27,6 @@ class TestDataSummary:
     """Test DataSummary dataclass."""
 
     def test_create_with_all_fields(self) -> None:
-        from urika.data.models import DataSummary
-
         summary = DataSummary(
             n_rows=100,
             n_columns=3,
@@ -50,8 +46,6 @@ class TestDataSummary:
         assert "c" not in summary.numeric_stats  # non-numeric excluded
 
     def test_numeric_stats_empty_for_no_numeric_columns(self) -> None:
-        from urika.data.models import DataSummary
-
         summary = DataSummary(
             n_rows=10,
             n_columns=1,
@@ -67,8 +61,6 @@ class TestDatasetView:
     """Test DatasetView dataclass."""
 
     def test_create_with_all_fields(self) -> None:
-        from urika.data.models import DatasetSpec, DataSummary, DatasetView
-
         spec = DatasetSpec(path=Path("/tmp/data.csv"), format="csv")
         df = pd.DataFrame({"a": [1, 2, 3]})
         summary = DataSummary(
