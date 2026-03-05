@@ -86,7 +86,7 @@ class TestMethodRegistryProjectDiscovery:
         methods_dir.mkdir()
         (methods_dir / "__init__.py").touch()
         (methods_dir / "my_method.py").write_text(
-            '''
+            """
 from urika.methods.base import IAnalysisMethod, MethodResult
 
 class MyMethod(IAnalysisMethod):
@@ -98,14 +98,16 @@ class MyMethod(IAnalysisMethod):
 
 def get_method():
     return MyMethod()
-'''
+"""
         )
 
         registry = MethodRegistry()
         registry.discover_project(methods_dir)
         assert "my_method" in registry.list_all()
 
-    def test_discover_project_skips_files_without_get_method(self, tmp_path: Path) -> None:
+    def test_discover_project_skips_files_without_get_method(
+        self, tmp_path: Path
+    ) -> None:
         methods_dir = tmp_path / "methods"
         methods_dir.mkdir()
         (methods_dir / "__init__.py").touch()
@@ -133,7 +135,7 @@ def get_method():
         methods_dir.mkdir()
         (methods_dir / "__init__.py").touch()
         (methods_dir / "proj_method.py").write_text(
-            '''
+            """
 from urika.methods.base import IAnalysisMethod, MethodResult
 
 class ProjMethod(IAnalysisMethod):
@@ -145,7 +147,7 @@ class ProjMethod(IAnalysisMethod):
 
 def get_method():
     return ProjMethod()
-'''
+"""
         )
 
         registry = MethodRegistry()

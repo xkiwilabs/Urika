@@ -44,11 +44,15 @@ class TestCsvReader:
         df = reader.read(csv_file)
         assert list(df.columns) == ["a", "b", "c"]
 
-    def test_read_preserves_missing_values(self, reader: CsvReader, csv_file: Path) -> None:
+    def test_read_preserves_missing_values(
+        self, reader: CsvReader, csv_file: Path
+    ) -> None:
         df = reader.read(csv_file)
         assert pd.isna(df.loc[2, "b"])
 
-    def test_read_nonexistent_file_raises(self, reader: CsvReader, tmp_path: Path) -> None:
+    def test_read_nonexistent_file_raises(
+        self, reader: CsvReader, tmp_path: Path
+    ) -> None:
         with pytest.raises(FileNotFoundError):
             reader.read(tmp_path / "nonexistent.csv")
 
