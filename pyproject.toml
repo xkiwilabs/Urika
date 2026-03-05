@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "urika"
+version = "0.1.0"
+description = "Agentic scientific analysis platform"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1",
+]
+
+[project.scripts]
+urika = "urika.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/urika"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src"]
