@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 
 @dataclass
@@ -41,3 +42,26 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+@dataclass
+class AgentConfig:
+    """What an agent needs to run — runtime-agnostic."""
+
+    name: str
+    system_prompt: str
+    allowed_tools: list[str]
+    disallowed_tools: list[str]
+    security: SecurityPolicy
+    max_turns: int = 50
+    model: str | None = None
+    cwd: Path | None = None
+
+
+@dataclass
+class AgentRole:
+    """Definition of an agent role."""
+
+    name: str
+    description: str
+    build_config: Callable[..., AgentConfig]

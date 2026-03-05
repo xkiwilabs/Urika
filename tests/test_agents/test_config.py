@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from urika.agents.config import SecurityPolicy
+from urika.agents.config import AgentConfig, AgentRole, SecurityPolicy
 
 
 class TestSecurityPolicyWriteAllowed:
@@ -141,3 +141,90 @@ class TestSecurityPolicyBashAllowed:
             blocked_bash_patterns=[],
         )
         assert policy.is_bash_allowed("  python script.py  ") is True
+
+
+class TestAgentConfig:
+    def test_create_with_required_fields(self, tmp_path: Path) -> None:
+        policy = SecurityPolicy(
+            writable_dirs=[],
+            readable_dirs=[],
+            allowed_bash_prefixes=[],
+            blocked_bash_patterns=[],
+        )
+        config = AgentConfig(
+            name="test_agent",
+            system_prompt="You are a test agent.",
+            allowed_tools=["Read", "Glob"],
+            disallowed_tools=[],
+            security=policy,
+        )
+        assert config.name == "test_agent"
+        assert config.max_turns == 50
+        assert config.model is None
+        assert config.cwd is None
+
+    def test_create_with_all_fields(self, tmp_path: Path) -> None:
+        policy = SecurityPolicy(
+            writable_dirs=[tmp_path],
+            readable_dirs=[tmp_path],
+            allowed_bash_prefixes=["python "],
+            blocked_bash_patterns=[],
+        )
+        config = AgentConfig(
+            name="worker",
+            system_prompt="Work prompt",
+            allowed_tools=["Read", "Write", "Bash"],
+            disallowed_tools=["Edit"],
+            security=policy,
+            max_turns=10,
+            model="sonnet",
+            cwd=tmp_path,
+        )
+        assert config.max_turns == 10
+        assert config.model == "sonnet"
+        assert config.cwd == tmp_path
+
+
+class TestAgentRole:
+    def test_create_role(self) -> None:
+        def build(project_dir: Path, **kwargs: object) -> AgentConfig:
+            return AgentConfig(
+                name="test",
+                system_prompt="prompt",
+                allowed_tools=[],
+                disallowed_tools=[],
+                security=SecurityPolicy(
+                    writable_dirs=[],
+                    readable_dirs=[],
+                    allowed_bash_prefixes=[],
+                    blocked_bash_patterns=[],
+                ),
+            )
+
+        role = AgentRole(
+            name="test",
+            description="A test role",
+            build_config=build,
+        )
+        assert role.name == "test"
+        assert role.description == "A test role"
+
+    def test_build_config_callable(self, tmp_path: Path) -> None:
+        def build(project_dir: Path, **kwargs: object) -> AgentConfig:
+            return AgentConfig(
+                name="worker",
+                system_prompt=f"Working in {project_dir}",
+                allowed_tools=["Read"],
+                disallowed_tools=[],
+                security=SecurityPolicy(
+                    writable_dirs=[project_dir / "methods"],
+                    readable_dirs=[project_dir],
+                    allowed_bash_prefixes=[],
+                    blocked_bash_patterns=[],
+                ),
+            )
+
+        role = AgentRole(name="worker", description="Worker", build_config=build)
+        config = role.build_config(tmp_path)
+        assert config.name == "worker"
+        assert f"{tmp_path}" in config.system_prompt
