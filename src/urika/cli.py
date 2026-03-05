@@ -1,9 +1,112 @@
 """Urika CLI."""
 
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
 import click
+
+from urika.core.experiment import list_experiments
+from urika.core.models import ProjectConfig
+from urika.core.progress import load_progress
+from urika.core.registry import ProjectRegistry
+from urika.core.workspace import create_project_workspace, load_project_config
+
+
+def _projects_dir() -> Path:
+    """Default directory for new projects."""
+    env = os.environ.get("URIKA_PROJECTS_DIR")
+    if env:
+        return Path(env)
+    return Path.home() / "urika-projects"
 
 
 @click.group()
 @click.version_option(package_name="urika")
 def cli() -> None:
     """Urika: Agentic scientific analysis platform."""
+
+
+@cli.command()
+@click.argument("name")
+@click.option("-q", "--question", required=True, help="Research question.")
+@click.option(
+    "-m",
+    "--mode",
+    required=True,
+    type=click.Choice(["exploratory", "confirmatory", "pipeline"]),
+    help="Investigation mode.",
+)
+@click.option("--data", multiple=True, help="Path(s) to data files.")
+def new(name: str, question: str, mode: str, data: tuple[str, ...]) -> None:
+    """Create a new project."""
+    config = ProjectConfig(
+        name=name,
+        question=question,
+        mode=mode,
+        data_paths=list(data),
+    )
+
+    project_dir = _projects_dir() / name
+    try:
+        create_project_workspace(project_dir, config)
+    except FileExistsError:
+        raise click.ClickException(f"Project already exists at {project_dir}")
+
+    registry = ProjectRegistry()
+    registry.register(name, project_dir)
+
+    click.echo(f"Created project '{name}' at {project_dir}")
+
+
+@cli.command("list")
+def list_cmd() -> None:
+    """List all registered projects."""
+    registry = ProjectRegistry()
+    projects = registry.list_all()
+
+    if not projects:
+        click.echo("No projects registered.")
+        return
+
+    for name, path in projects.items():
+        exists = "  " if path.exists() else "? "
+        click.echo(f"{exists}{name}  {path}")
+
+
+@cli.command()
+@click.argument("name")
+def status(name: str) -> None:
+    """Show project status."""
+    registry = ProjectRegistry()
+    project_path = registry.get(name)
+
+    if project_path is None:
+        raise click.ClickException(f"Project '{name}' not found in registry.")
+
+    try:
+        config = load_project_config(project_path)
+    except FileNotFoundError:
+        raise click.ClickException(
+            f"Project directory missing at {project_path}"
+        )
+
+    experiments = list_experiments(project_path)
+
+    click.echo(f"Project: {config.name}")
+    click.echo(f"Question: {config.question}")
+    click.echo(f"Mode: {config.mode}")
+    click.echo(f"Path: {project_path}")
+    click.echo(f"Experiments: {len(experiments)}")
+
+    if experiments:
+        click.echo("")
+        for exp in experiments:
+            progress = load_progress(project_path, exp.experiment_id)
+            n_runs = len(progress.get("runs", []))
+            exp_status = progress.get("status", "unknown")
+            click.echo(
+                f"  {exp.experiment_id}: {exp.name} "
+                f"[{exp_status}, {n_runs} runs]"
+            )
