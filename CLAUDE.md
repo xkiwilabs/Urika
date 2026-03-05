@@ -19,4 +19,4 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Project Status
 
-Early stage — architecture and tooling decisions are not yet made. See `inital-description.md` for the founding vision.
+Early stage — architecture and tooling decisions are not yet made. See `docs/dev/prd-and-implementation-plan.md` for the PRD and implementation plan.
