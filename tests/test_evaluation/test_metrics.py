@@ -121,3 +121,196 @@ class TestMAE:
         from urika.evaluation.metrics.regression import MAE
 
         assert MAE().direction() == "lower_is_better"
+
+
+# ---------------------------------------------------------------------------
+# Classification metrics tests
+# ---------------------------------------------------------------------------
+class TestAccuracy:
+    """Tests for Accuracy metric."""
+
+    def test_perfect_prediction(self) -> None:
+        from urika.evaluation.metrics.classification import Accuracy
+
+        metric = Accuracy()
+        y = np.array([0, 1, 1, 0, 1])
+        assert metric.compute(y, y) == pytest.approx(1.0)
+
+    def test_known_values(self) -> None:
+        from urika.evaluation.metrics.classification import Accuracy
+
+        metric = Accuracy()
+        y_true = np.array([0, 1, 1, 0, 1])
+        y_pred = np.array([0, 1, 0, 0, 1])
+        # 4 correct out of 5
+        assert metric.compute(y_true, y_pred) == pytest.approx(0.8)
+
+    def test_name(self) -> None:
+        from urika.evaluation.metrics.classification import Accuracy
+
+        assert Accuracy().name() == "accuracy"
+
+    def test_direction(self) -> None:
+        from urika.evaluation.metrics.classification import Accuracy
+
+        assert Accuracy().direction() == "higher_is_better"
+
+
+class TestPrecision:
+    """Tests for Precision metric."""
+
+    def test_perfect_prediction(self) -> None:
+        from urika.evaluation.metrics.classification import Precision
+
+        metric = Precision()
+        y_true = np.array([1, 1, 0, 0])
+        y_pred = np.array([1, 1, 0, 0])
+        assert metric.compute(y_true, y_pred) == pytest.approx(1.0)
+
+    def test_known_values(self) -> None:
+        from urika.evaluation.metrics.classification import Precision
+
+        metric = Precision()
+        y_true = np.array([1, 1, 0, 0, 1])
+        y_pred = np.array([1, 0, 1, 0, 1])
+        # TP=2, FP=1 -> P = 2/3
+        assert metric.compute(y_true, y_pred) == pytest.approx(2.0 / 3.0)
+
+    def test_no_positive_predictions(self) -> None:
+        from urika.evaluation.metrics.classification import Precision
+
+        metric = Precision()
+        y_true = np.array([1, 1, 0])
+        y_pred = np.array([0, 0, 0])
+        # TP=0, FP=0 -> denominator 0 -> return 0.0
+        assert metric.compute(y_true, y_pred) == 0.0
+
+    def test_name(self) -> None:
+        from urika.evaluation.metrics.classification import Precision
+
+        assert Precision().name() == "precision"
+
+    def test_direction(self) -> None:
+        from urika.evaluation.metrics.classification import Precision
+
+        assert Precision().direction() == "higher_is_better"
+
+
+class TestRecall:
+    """Tests for Recall metric."""
+
+    def test_perfect_prediction(self) -> None:
+        from urika.evaluation.metrics.classification import Recall
+
+        metric = Recall()
+        y_true = np.array([1, 1, 0, 0])
+        y_pred = np.array([1, 1, 0, 0])
+        assert metric.compute(y_true, y_pred) == pytest.approx(1.0)
+
+    def test_known_values(self) -> None:
+        from urika.evaluation.metrics.classification import Recall
+
+        metric = Recall()
+        y_true = np.array([1, 1, 0, 0, 1])
+        y_pred = np.array([1, 0, 1, 0, 1])
+        # TP=2, FN=1 -> R = 2/3
+        assert metric.compute(y_true, y_pred) == pytest.approx(2.0 / 3.0)
+
+    def test_no_actual_positives(self) -> None:
+        from urika.evaluation.metrics.classification import Recall
+
+        metric = Recall()
+        y_true = np.array([0, 0, 0])
+        y_pred = np.array([1, 0, 1])
+        # TP=0, FN=0 -> denominator 0 -> return 0.0
+        assert metric.compute(y_true, y_pred) == 0.0
+
+    def test_name(self) -> None:
+        from urika.evaluation.metrics.classification import Recall
+
+        assert Recall().name() == "recall"
+
+    def test_direction(self) -> None:
+        from urika.evaluation.metrics.classification import Recall
+
+        assert Recall().direction() == "higher_is_better"
+
+
+class TestF1:
+    """Tests for F1 metric."""
+
+    def test_perfect_prediction(self) -> None:
+        from urika.evaluation.metrics.classification import F1
+
+        metric = F1()
+        y_true = np.array([1, 1, 0, 0])
+        y_pred = np.array([1, 1, 0, 0])
+        assert metric.compute(y_true, y_pred) == pytest.approx(1.0)
+
+    def test_known_values(self) -> None:
+        from urika.evaluation.metrics.classification import F1
+
+        metric = F1()
+        y_true = np.array([1, 1, 0, 0, 1])
+        y_pred = np.array([1, 0, 1, 0, 1])
+        # P=2/3, R=2/3 -> F1 = 2*(2/3)*(2/3)/((2/3)+(2/3)) = 2/3
+        assert metric.compute(y_true, y_pred) == pytest.approx(2.0 / 3.0)
+
+    def test_zero_precision_and_recall(self) -> None:
+        from urika.evaluation.metrics.classification import F1
+
+        metric = F1()
+        y_true = np.array([0, 0, 0])
+        y_pred = np.array([0, 0, 0])
+        # P=0, R=0 -> F1 = 0.0
+        assert metric.compute(y_true, y_pred) == 0.0
+
+    def test_name(self) -> None:
+        from urika.evaluation.metrics.classification import F1
+
+        assert F1().name() == "f1"
+
+    def test_direction(self) -> None:
+        from urika.evaluation.metrics.classification import F1
+
+        assert F1().direction() == "higher_is_better"
+
+
+class TestAUC:
+    """Tests for AUC metric."""
+
+    def test_perfect_prediction(self) -> None:
+        from urika.evaluation.metrics.classification import AUC
+
+        metric = AUC()
+        y_true = np.array([0, 0, 1, 1])
+        y_pred = np.array([0.0, 0.1, 0.9, 1.0])
+        assert metric.compute(y_true, y_pred) == pytest.approx(1.0)
+
+    def test_known_values(self) -> None:
+        from urika.evaluation.metrics.classification import AUC
+
+        metric = AUC()
+        y_true = np.array([0, 0, 1, 1])
+        y_pred = np.array([0.1, 0.4, 0.35, 0.8])
+        # sklearn roc_auc_score for these values = 0.75
+        assert metric.compute(y_true, y_pred) == pytest.approx(0.75)
+
+    def test_random_prediction(self) -> None:
+        from urika.evaluation.metrics.classification import AUC
+
+        metric = AUC()
+        y_true = np.array([0, 1, 0, 1])
+        y_pred = np.array([0.5, 0.5, 0.5, 0.5])
+        # All same scores -> AUC = 0.5
+        assert metric.compute(y_true, y_pred) == pytest.approx(0.5)
+
+    def test_name(self) -> None:
+        from urika.evaluation.metrics.classification import AUC
+
+        assert AUC().name() == "auc"
+
+    def test_direction(self) -> None:
+        from urika.evaluation.metrics.classification import AUC
+
+        assert AUC().direction() == "higher_is_better"
