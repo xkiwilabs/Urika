@@ -25,16 +25,12 @@ def project_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def experiment_id(project_dir: Path) -> str:
-    exp = create_experiment(
-        project_dir, name="Test", hypothesis="Test hypothesis"
-    )
+    exp = create_experiment(project_dir, name="Test", hypothesis="Test hypothesis")
     return exp.experiment_id
 
 
 class TestAppendRun:
-    def test_append_single_run(
-        self, project_dir: Path, experiment_id: str
-    ) -> None:
+    def test_append_single_run(self, project_dir: Path, experiment_id: str) -> None:
         run = RunRecord(
             run_id="run-001",
             method="linear_regression",
@@ -47,9 +43,7 @@ class TestAppendRun:
         assert len(progress["runs"]) == 1
         assert progress["runs"][0]["run_id"] == "run-001"
 
-    def test_append_multiple_runs(
-        self, project_dir: Path, experiment_id: str
-    ) -> None:
+    def test_append_multiple_runs(self, project_dir: Path, experiment_id: str) -> None:
         for i in range(3):
             run = RunRecord(
                 run_id=f"run-{i:03d}",
@@ -62,16 +56,10 @@ class TestAppendRun:
         progress = load_progress(project_dir, experiment_id)
         assert len(progress["runs"]) == 3
 
-    def test_append_is_additive(
-        self, project_dir: Path, experiment_id: str
-    ) -> None:
+    def test_append_is_additive(self, project_dir: Path, experiment_id: str) -> None:
         """Appending doesn't overwrite previous runs."""
-        run1 = RunRecord(
-            run_id="run-001", method="a", params={}, metrics={"r2": 0.5}
-        )
-        run2 = RunRecord(
-            run_id="run-002", method="b", params={}, metrics={"r2": 0.7}
-        )
+        run1 = RunRecord(run_id="run-001", method="a", params={}, metrics={"r2": 0.5})
+        run2 = RunRecord(run_id="run-002", method="b", params={}, metrics={"r2": 0.7})
         append_run(project_dir, experiment_id, run1)
         append_run(project_dir, experiment_id, run2)
 
@@ -93,9 +81,7 @@ class TestGetBestRun:
             )
             append_run(project_dir, experiment_id, run)
 
-        best = get_best_run(
-            project_dir, experiment_id, metric="r2", direction="higher"
-        )
+        best = get_best_run(project_dir, experiment_id, metric="r2", direction="higher")
         assert best is not None
         assert best["run_id"] == "run-001"
         assert best["metrics"]["r2"] == 0.9
@@ -118,26 +104,18 @@ class TestGetBestRun:
         assert best is not None
         assert best["metrics"]["rmse"] == 0.1
 
-    def test_best_run_empty(
-        self, project_dir: Path, experiment_id: str
-    ) -> None:
-        best = get_best_run(
-            project_dir, experiment_id, metric="r2", direction="higher"
-        )
+    def test_best_run_empty(self, project_dir: Path, experiment_id: str) -> None:
+        best = get_best_run(project_dir, experiment_id, metric="r2", direction="higher")
         assert best is None
 
 
 class TestUpdateExperimentStatus:
-    def test_update_status(
-        self, project_dir: Path, experiment_id: str
-    ) -> None:
+    def test_update_status(self, project_dir: Path, experiment_id: str) -> None:
         update_experiment_status(project_dir, experiment_id, "in_progress")
         progress = load_progress(project_dir, experiment_id)
         assert progress["status"] == "in_progress"
 
-    def test_update_to_completed(
-        self, project_dir: Path, experiment_id: str
-    ) -> None:
+    def test_update_to_completed(self, project_dir: Path, experiment_id: str) -> None:
         update_experiment_status(project_dir, experiment_id, "completed")
         progress = load_progress(project_dir, experiment_id)
         assert progress["status"] == "completed"

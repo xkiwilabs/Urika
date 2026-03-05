@@ -72,13 +72,10 @@ def create_experiment(
         "status": "pending",
         "runs": [],
     }
-    (exp_dir / "progress.json").write_text(
-        json.dumps(progress, indent=2) + "\n"
-    )
+    (exp_dir / "progress.json").write_text(json.dumps(progress, indent=2) + "\n")
 
     (exp_dir / "labbook" / "notes.md").write_text(
-        f"# Experiment: {name}\n\n"
-        f"**Hypothesis**: {hypothesis}\n\n"
+        f"# Experiment: {name}\n\n**Hypothesis**: {hypothesis}\n\n"
     )
 
     return config
@@ -99,9 +96,7 @@ def list_experiments(project_dir: Path) -> list[ExperimentConfig]:
     return configs
 
 
-def load_experiment(
-    project_dir: Path, experiment_id: str
-) -> ExperimentConfig:
+def load_experiment(project_dir: Path, experiment_id: str) -> ExperimentConfig:
     """Load a specific experiment by ID.
 
     Raises FileNotFoundError if the experiment doesn't exist.

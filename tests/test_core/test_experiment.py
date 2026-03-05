@@ -86,9 +86,7 @@ class TestCreateExperiment:
         assert "baseline-linear-models" in exp.experiment_id
 
     def test_with_builds_on(self, project_dir: Path) -> None:
-        exp1 = create_experiment(
-            project_dir, name="First", hypothesis="Test"
-        )
+        exp1 = create_experiment(project_dir, name="First", hypothesis="Test")
         exp2 = create_experiment(
             project_dir,
             name="Second",
@@ -117,9 +115,7 @@ class TestListExperiments:
 
 class TestLoadExperiment:
     def test_load(self, project_dir: Path) -> None:
-        exp = create_experiment(
-            project_dir, name="Test", hypothesis="Test hypothesis"
-        )
+        exp = create_experiment(project_dir, name="Test", hypothesis="Test hypothesis")
         loaded = load_experiment(project_dir, exp.experiment_id)
         assert loaded.name == "Test"
         assert loaded.hypothesis == "Test hypothesis"

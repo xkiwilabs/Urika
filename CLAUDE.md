@@ -38,9 +38,19 @@ Build on Claude Agent SDK first (v0.x), later build custom Python runtime (v1.x)
 
 Statistical modelling, machine learning, time series, neuroscience, cognitive neuroscience, linguistics, psychology, motor control, and behavioral data.
 
+## Core Modules
+
+- `src/urika/cli.py` — Click CLI: `urika new`, `urika list`, `urika status`
+- `src/urika/core/models.py` — Data models: `ProjectConfig`, `ExperimentConfig`, `RunRecord`
+- `src/urika/core/registry.py` — Central project registry at `~/.urika/projects.json`
+- `src/urika/core/workspace.py` — Project workspace creation and loading
+- `src/urika/core/experiment.py` — Experiment lifecycle: create, list, load
+- `src/urika/core/progress.py` — Append-only progress tracking with best-run queries
+- `src/urika/core/labbook.py` — Auto-generated .md summaries from progress data
+
 ## Project Status
 
-Early stage — implementing core project structure foundation. No code yet.
+Foundation layer complete (models, registry, workspace, experiments, progress, labbook, CLI). Next: agents, evaluation framework, tool system.
 
 ## Development
 

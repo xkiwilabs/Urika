@@ -19,16 +19,12 @@ def load_progress(project_dir: Path, experiment_id: str) -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
-def _save_progress(
-    project_dir: Path, experiment_id: str, data: dict[str, Any]
-) -> None:
+def _save_progress(project_dir: Path, experiment_id: str, data: dict[str, Any]) -> None:
     path = _progress_path(project_dir, experiment_id)
     path.write_text(json.dumps(data, indent=2) + "\n")
 
 
-def append_run(
-    project_dir: Path, experiment_id: str, run: RunRecord
-) -> None:
+def append_run(project_dir: Path, experiment_id: str, run: RunRecord) -> None:
     """Append a run record to an experiment's progress.json."""
     data = load_progress(project_dir, experiment_id)
     data["runs"].append(run.to_dict())

@@ -64,9 +64,7 @@ class TestNewCommand:
         data = json.loads(reg_path.read_text())
         assert "test" in data
 
-    def test_invalid_mode(
-        self, runner: CliRunner, urika_env: dict[str, str]
-    ) -> None:
+    def test_invalid_mode(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         result = runner.invoke(
             cli,
             ["new", "test", "-q", "?", "-m", "invalid"],
@@ -76,16 +74,12 @@ class TestNewCommand:
 
 
 class TestListCommand:
-    def test_empty(
-        self, runner: CliRunner, urika_env: dict[str, str]
-    ) -> None:
+    def test_empty(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         result = runner.invoke(cli, ["list"], env=urika_env)
         assert result.exit_code == 0
         assert "No projects" in result.output
 
-    def test_shows_projects(
-        self, runner: CliRunner, urika_env: dict[str, str]
-    ) -> None:
+    def test_shows_projects(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         runner.invoke(
             cli,
             ["new", "project-a", "-q", "Question A?", "-m", "exploratory"],
@@ -102,17 +96,13 @@ class TestListCommand:
 
 
 class TestStatusCommand:
-    def test_shows_status(
-        self, runner: CliRunner, urika_env: dict[str, str]
-    ) -> None:
+    def test_shows_status(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         runner.invoke(
             cli,
             ["new", "test", "-q", "Does X?", "-m", "exploratory"],
             env=urika_env,
         )
-        result = runner.invoke(
-            cli, ["status", "test"], env=urika_env
-        )
+        result = runner.invoke(cli, ["status", "test"], env=urika_env)
         assert result.exit_code == 0
         assert "test" in result.output
         assert "Does X?" in result.output
@@ -120,7 +110,5 @@ class TestStatusCommand:
     def test_nonexistent_project(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
-        result = runner.invoke(
-            cli, ["status", "nope"], env=urika_env
-        )
+        result = runner.invoke(cli, ["status", "nope"], env=urika_env)
         assert result.exit_code != 0

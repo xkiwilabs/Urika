@@ -68,11 +68,7 @@ class TestUpdateExperimentNotes:
         update_experiment_notes(project_dir, experiment_with_runs)
 
         notes_path = (
-            project_dir
-            / "experiments"
-            / experiment_with_runs
-            / "labbook"
-            / "notes.md"
+            project_dir / "experiments" / experiment_with_runs / "labbook" / "notes.md"
         )
         content = notes_path.read_text()
         assert "linear_regression" in content
@@ -85,11 +81,7 @@ class TestUpdateExperimentNotes:
         update_experiment_notes(project_dir, experiment_with_runs)
 
         notes_path = (
-            project_dir
-            / "experiments"
-            / experiment_with_runs
-            / "labbook"
-            / "notes.md"
+            project_dir / "experiments" / experiment_with_runs / "labbook" / "notes.md"
         )
         content = notes_path.read_text()
         assert "r2" in content

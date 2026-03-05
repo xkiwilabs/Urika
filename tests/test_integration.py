@@ -1,6 +1,5 @@
 """Integration test: full project lifecycle."""
 
-import json
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -34,9 +33,12 @@ def test_full_lifecycle(tmp_path: Path) -> None:
     result = runner.invoke(
         cli,
         [
-            "new", "sleep-study",
-            "-q", "What predicts sleep quality?",
-            "-m", "exploratory",
+            "new",
+            "sleep-study",
+            "-q",
+            "What predicts sleep quality?",
+            "-m",
+            "exploratory",
         ],
         env=env,
     )

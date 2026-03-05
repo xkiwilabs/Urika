@@ -88,9 +88,7 @@ def status(name: str) -> None:
     try:
         config = load_project_config(project_path)
     except FileNotFoundError:
-        raise click.ClickException(
-            f"Project directory missing at {project_path}"
-        )
+        raise click.ClickException(f"Project directory missing at {project_path}")
 
     experiments = list_experiments(project_path)
 
@@ -107,6 +105,5 @@ def status(name: str) -> None:
             n_runs = len(progress.get("runs", []))
             exp_status = progress.get("status", "unknown")
             click.echo(
-                f"  {exp.experiment_id}: {exp.name} "
-                f"[{exp_status}, {n_runs} runs]"
+                f"  {exp.experiment_id}: {exp.name} [{exp_status}, {n_runs} runs]"
             )

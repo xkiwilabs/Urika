@@ -9,9 +9,7 @@ from urika.core.experiment import list_experiments, load_experiment
 from urika.core.progress import load_progress
 
 
-def update_experiment_notes(
-    project_dir: Path, experiment_id: str
-) -> None:
+def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
     """Regenerate the experiment's notes.md from progress.json runs."""
     exp = load_experiment(project_dir, experiment_id)
     progress = load_progress(project_dir, experiment_id)
@@ -46,15 +44,11 @@ def update_experiment_notes(
 
         lines.append("")
 
-    notes_path = (
-        project_dir / "experiments" / experiment_id / "labbook" / "notes.md"
-    )
+    notes_path = project_dir / "experiments" / experiment_id / "labbook" / "notes.md"
     notes_path.write_text("\n".join(lines) + "\n")
 
 
-def generate_experiment_summary(
-    project_dir: Path, experiment_id: str
-) -> None:
+def generate_experiment_summary(project_dir: Path, experiment_id: str) -> None:
     """Generate a summary.md for a completed experiment."""
     exp = load_experiment(project_dir, experiment_id)
     progress = load_progress(project_dir, experiment_id)
@@ -79,18 +73,12 @@ def generate_experiment_summary(
             lines.append("")
 
         metric_names = _all_metric_names(runs)
-        lines.append(
-            "| Run | Method | " + " | ".join(metric_names) + " |"
-        )
-        lines.append(
-            "|-----|--------|" + "|".join("---" for _ in metric_names) + "|"
-        )
+        lines.append("| Run | Method | " + " | ".join(metric_names) + " |")
+        lines.append("|-----|--------|" + "|".join("---" for _ in metric_names) + "|")
         for run in runs:
             metrics = run.get("metrics", {})
             row = f"| {run['run_id']} | {run['method']} | "
-            row += " | ".join(
-                str(metrics.get(m, "")) for m in metric_names
-            )
+            row += " | ".join(str(metrics.get(m, "")) for m in metric_names)
             row += " |"
             lines.append(row)
         lines.append("")
@@ -136,9 +124,7 @@ def generate_results_summary(project_dir: Path) -> None:
                     f"{k}={v}" for k, v in best.get("metrics", {}).items()
                 )
 
-            lines.append(
-                f"| {exp.name} | {method} | {len(runs)} | {metrics_str} |"
-            )
+            lines.append(f"| {exp.name} | {method} | {len(runs)} | {metrics_str} |")
         lines.append("")
 
     path = project_dir / "labbook" / "results-summary.md"
@@ -173,12 +159,8 @@ def generate_key_findings(project_dir: Path) -> None:
             if best_run.get("metrics"):
                 first_metric = next(iter(best_run["metrics"]))
                 for exp_name, run in all_runs:
-                    run_val = run.get("metrics", {}).get(
-                        first_metric, float("-inf")
-                    )
-                    best_val = best_run["metrics"].get(
-                        first_metric, float("-inf")
-                    )
+                    run_val = run.get("metrics", {}).get(first_metric, float("-inf"))
+                    best_val = best_run["metrics"].get(first_metric, float("-inf"))
                     if run_val > best_val:
                         best_exp_name, best_run = exp_name, run
 
@@ -210,9 +192,7 @@ def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
 
     first_metric = next(iter(valid[0]["metrics"]))
-    return max(
-        valid, key=lambda r: r["metrics"].get(first_metric, float("-inf"))
-    )
+    return max(valid, key=lambda r: r["metrics"].get(first_metric, float("-inf")))
 
 
 def _all_metric_names(runs: list[dict[str, Any]]) -> list[str]:
