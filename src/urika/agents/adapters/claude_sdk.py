@@ -79,8 +79,10 @@ class ClaudeSDKRunner(AgentRunner):
         async def handler(
             tool_name: str, input_data: dict[str, Any], context: Any
         ) -> PermissionResultAllow | PermissionResultDeny:
-            if tool_name in ("Write", "Edit"):
-                file_path = input_data.get("file_path", "")
+            if tool_name in ("Write", "Edit", "NotebookEdit"):
+                file_path = input_data.get("file_path", "") or input_data.get(
+                    "notebook_path", ""
+                )
                 if file_path and not policy.is_write_allowed(Path(file_path)):
                     return PermissionResultDeny(
                         message=f"Write to {file_path} not allowed by security policy"

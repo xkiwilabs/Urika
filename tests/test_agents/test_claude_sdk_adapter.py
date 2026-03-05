@@ -163,3 +163,14 @@ class TestClaudeSDKRunnerPermissionHandler:
         handler = runner._make_permission_handler(read_only_config.security)
         result = await handler("Edit", {"file_path": str(tmp_path / "file.py")}, None)
         assert result.behavior == "deny"
+
+    @pytest.mark.asyncio
+    async def test_notebook_edit_checked_like_write(
+        self, read_only_config: AgentConfig, tmp_path: Path
+    ) -> None:
+        runner = ClaudeSDKRunner()
+        handler = runner._make_permission_handler(read_only_config.security)
+        result = await handler(
+            "NotebookEdit", {"notebook_path": str(tmp_path / "nb.ipynb")}, None
+        )
+        assert result.behavior == "deny"

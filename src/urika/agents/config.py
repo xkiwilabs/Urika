@@ -12,7 +12,9 @@ class SecurityPolicy:
     """Filesystem and command boundaries for an agent."""
 
     writable_dirs: list[Path]
-    readable_dirs: list[Path]
+    readable_dirs: list[
+        Path
+    ]  # Informational only — read enforcement deferred to future phase
     allowed_bash_prefixes: list[str]
     blocked_bash_patterns: list[str]
 
