@@ -137,3 +137,40 @@ def fail_session(
     save_session(project_dir, experiment_id, state)
     release_lock(project_dir, experiment_id)
     return state
+
+
+def update_turn(project_dir: Path, experiment_id: str) -> SessionState:
+    """Increment turn counter. Returns updated state."""
+    state = load_session(project_dir, experiment_id)
+    if state is None:
+        msg = f"No session found for experiment {experiment_id}"
+        raise FileNotFoundError(msg)
+
+    state.current_turn += 1
+    save_session(project_dir, experiment_id, state)
+    return state
+
+
+def record_agent_session(
+    project_dir: Path, experiment_id: str, role: str, session_id: str
+) -> None:
+    """Store an agent's SDK session_id for later resumption."""
+    state = load_session(project_dir, experiment_id)
+    if state is None:
+        msg = f"No session found for experiment {experiment_id}"
+        raise FileNotFoundError(msg)
+
+    state.agent_sessions[role] = session_id
+    save_session(project_dir, experiment_id, state)
+
+
+def get_active_experiment(project_dir: Path) -> str | None:
+    """Find which experiment is currently running. Scans for lockfiles."""
+    experiments_dir = project_dir / "experiments"
+    if not experiments_dir.exists():
+        return None
+
+    for exp_dir in sorted(experiments_dir.iterdir()):
+        if exp_dir.is_dir() and (exp_dir / ".lock").exists():
+            return exp_dir.name
+    return None

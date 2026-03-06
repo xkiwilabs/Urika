@@ -12,13 +12,16 @@ from urika.core.session import (
     acquire_lock,
     complete_session,
     fail_session,
+    get_active_experiment,
     is_locked,
     load_session,
     pause_session,
+    record_agent_session,
     release_lock,
     resume_session,
     save_session,
     start_session,
+    update_turn,
 )
 from urika.core.workspace import create_project_workspace
 
@@ -319,3 +322,79 @@ class TestFailSession:
         state = fail_session(project_dir, experiment_id)
         assert state.status == "failed"
         assert "error" not in state.checkpoint
+
+
+class TestUpdateTurn:
+    def test_increments_turn(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        state = update_turn(project_dir, experiment_id)
+        assert state.current_turn == 1
+
+    def test_increments_multiple_times(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        update_turn(project_dir, experiment_id)
+        update_turn(project_dir, experiment_id)
+        state = update_turn(project_dir, experiment_id)
+        assert state.current_turn == 3
+
+    def test_persists_to_disk(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        update_turn(project_dir, experiment_id)
+        loaded = load_session(project_dir, experiment_id)
+        assert loaded is not None
+        assert loaded.current_turn == 1
+
+
+class TestRecordAgentSession:
+    def test_record_agent_session(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        record_agent_session(project_dir, experiment_id, "task_agent", "sess-abc")
+        loaded = load_session(project_dir, experiment_id)
+        assert loaded is not None
+        assert loaded.agent_sessions["task_agent"] == "sess-abc"
+
+    def test_record_multiple_agents(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        record_agent_session(project_dir, experiment_id, "task_agent", "sess-1")
+        record_agent_session(project_dir, experiment_id, "evaluator", "sess-2")
+        loaded = load_session(project_dir, experiment_id)
+        assert loaded is not None
+        assert len(loaded.agent_sessions) == 2
+
+    def test_record_overwrites_same_role(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        record_agent_session(project_dir, experiment_id, "task_agent", "sess-old")
+        record_agent_session(project_dir, experiment_id, "task_agent", "sess-new")
+        loaded = load_session(project_dir, experiment_id)
+        assert loaded is not None
+        assert loaded.agent_sessions["task_agent"] == "sess-new"
+
+
+class TestGetActiveExperiment:
+    def test_no_active_experiment(self, project_dir: Path) -> None:
+        assert get_active_experiment(project_dir) is None
+
+    def test_finds_active_experiment(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        active = get_active_experiment(project_dir)
+        assert active == experiment_id
+
+    def test_no_active_after_pause(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        pause_session(project_dir, experiment_id)
+        assert get_active_experiment(project_dir) is None
+
+    def test_no_active_after_complete(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        complete_session(project_dir, experiment_id)
+        assert get_active_experiment(project_dir) is None
