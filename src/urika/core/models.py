@@ -134,3 +134,48 @@ class RunRecord:
             artifacts=d.get("artifacts", []),
             timestamp=d.get("timestamp", ""),
         )
+
+
+VALID_SESSION_STATUSES = {"running", "paused", "completed", "failed"}
+
+
+@dataclass
+class SessionState:
+    """Orchestration state for an active experiment."""
+
+    experiment_id: str
+    status: str
+    started_at: str
+    paused_at: str | None = None
+    completed_at: str | None = None
+    current_turn: int = 0
+    max_turns: int | None = None
+    agent_sessions: dict[str, str] = field(default_factory=dict)
+    checkpoint: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "experiment_id": self.experiment_id,
+            "status": self.status,
+            "started_at": self.started_at,
+            "paused_at": self.paused_at,
+            "completed_at": self.completed_at,
+            "current_turn": self.current_turn,
+            "max_turns": self.max_turns,
+            "agent_sessions": self.agent_sessions,
+            "checkpoint": self.checkpoint,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> SessionState:
+        return cls(
+            experiment_id=d["experiment_id"],
+            status=d["status"],
+            started_at=d["started_at"],
+            paused_at=d.get("paused_at"),
+            completed_at=d.get("completed_at"),
+            current_turn=d.get("current_turn", 0),
+            max_turns=d.get("max_turns"),
+            agent_sessions=d.get("agent_sessions", {}),
+            checkpoint=d.get("checkpoint", {}),
+        )
