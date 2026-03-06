@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from urika.core.models import SessionState
@@ -25,9 +26,7 @@ def load_session(project_dir: Path, experiment_id: str) -> SessionState | None:
     return SessionState.from_dict(data)
 
 
-def save_session(
-    project_dir: Path, experiment_id: str, state: SessionState
-) -> None:
+def save_session(project_dir: Path, experiment_id: str, state: SessionState) -> None:
     """Persist session state to session.json."""
     path = _session_path(project_dir, experiment_id)
     path.write_text(json.dumps(state.to_dict(), indent=2) + "\n")
@@ -52,3 +51,89 @@ def release_lock(project_dir: Path, experiment_id: str) -> None:
 def is_locked(project_dir: Path, experiment_id: str) -> bool:
     """Check if experiment is locked."""
     return _lock_path(project_dir, experiment_id).exists()
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def start_session(
+    project_dir: Path,
+    experiment_id: str,
+    max_turns: int | None = None,
+) -> SessionState:
+    """Start orchestration for an experiment. Creates session.json and lockfile."""
+    if not acquire_lock(project_dir, experiment_id):
+        msg = f"Experiment {experiment_id} is already running"
+        raise RuntimeError(msg)
+
+    state = SessionState(
+        experiment_id=experiment_id,
+        status="running",
+        started_at=_now_iso(),
+        max_turns=max_turns,
+    )
+    save_session(project_dir, experiment_id, state)
+    return state
+
+
+def pause_session(project_dir: Path, experiment_id: str) -> SessionState:
+    """Pause a running session. Updates status, removes lockfile."""
+    state = load_session(project_dir, experiment_id)
+    if state is None:
+        msg = f"No session found for experiment {experiment_id}"
+        raise FileNotFoundError(msg)
+
+    state.status = "paused"
+    state.paused_at = _now_iso()
+    save_session(project_dir, experiment_id, state)
+    release_lock(project_dir, experiment_id)
+    return state
+
+
+def resume_session(project_dir: Path, experiment_id: str) -> SessionState:
+    """Resume a paused session. Restores status to running, re-acquires lock."""
+    state = load_session(project_dir, experiment_id)
+    if state is None:
+        msg = f"No session found for experiment {experiment_id}"
+        raise FileNotFoundError(msg)
+
+    if not acquire_lock(project_dir, experiment_id):
+        msg = f"Experiment {experiment_id} is already running"
+        raise RuntimeError(msg)
+
+    state.status = "running"
+    save_session(project_dir, experiment_id, state)
+    return state
+
+
+def complete_session(project_dir: Path, experiment_id: str) -> SessionState:
+    """Mark session as completed. Updates status, removes lockfile."""
+    state = load_session(project_dir, experiment_id)
+    if state is None:
+        msg = f"No session found for experiment {experiment_id}"
+        raise FileNotFoundError(msg)
+
+    state.status = "completed"
+    state.completed_at = _now_iso()
+    save_session(project_dir, experiment_id, state)
+    release_lock(project_dir, experiment_id)
+    return state
+
+
+def fail_session(
+    project_dir: Path, experiment_id: str, error: str | None = None
+) -> SessionState:
+    """Mark session as failed. Records error in checkpoint, removes lockfile."""
+    state = load_session(project_dir, experiment_id)
+    if state is None:
+        msg = f"No session found for experiment {experiment_id}"
+        raise FileNotFoundError(msg)
+
+    state.status = "failed"
+    state.completed_at = _now_iso()
+    if error is not None:
+        state.checkpoint["error"] = error
+    save_session(project_dir, experiment_id, state)
+    release_lock(project_dir, experiment_id)
+    return state

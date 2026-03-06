@@ -10,10 +10,15 @@ from urika.core.experiment import create_experiment
 from urika.core.models import ProjectConfig, SessionState
 from urika.core.session import (
     acquire_lock,
+    complete_session,
+    fail_session,
     is_locked,
     load_session,
+    pause_session,
     release_lock,
+    resume_session,
     save_session,
+    start_session,
 )
 from urika.core.workspace import create_project_workspace
 
@@ -182,3 +187,135 @@ class TestLocking:
         self, project_dir: Path, experiment_id: str
     ) -> None:
         assert is_locked(project_dir, experiment_id) is False
+
+
+class TestStartSession:
+    def test_start_creates_session(self, project_dir: Path, experiment_id: str) -> None:
+        state = start_session(project_dir, experiment_id)
+        assert state.status == "running"
+        assert state.experiment_id == experiment_id
+        assert state.current_turn == 0
+        assert state.started_at != ""
+
+    def test_start_acquires_lock(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        assert is_locked(project_dir, experiment_id) is True
+
+    def test_start_with_max_turns(self, project_dir: Path, experiment_id: str) -> None:
+        state = start_session(project_dir, experiment_id, max_turns=50)
+        assert state.max_turns == 50
+
+    def test_start_persists_to_disk(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        loaded = load_session(project_dir, experiment_id)
+        assert loaded is not None
+        assert loaded.status == "running"
+
+    def test_start_raises_if_locked(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        with pytest.raises(RuntimeError, match="already running"):
+            start_session(project_dir, experiment_id)
+
+
+class TestPauseSession:
+    def test_pause_updates_status(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        state = pause_session(project_dir, experiment_id)
+        assert state.status == "paused"
+        assert state.paused_at is not None
+
+    def test_pause_releases_lock(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        pause_session(project_dir, experiment_id)
+        assert is_locked(project_dir, experiment_id) is False
+
+    def test_pause_persists_to_disk(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        pause_session(project_dir, experiment_id)
+        loaded = load_session(project_dir, experiment_id)
+        assert loaded is not None
+        assert loaded.status == "paused"
+
+
+class TestResumeSession:
+    def test_resume_updates_status(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        pause_session(project_dir, experiment_id)
+        state = resume_session(project_dir, experiment_id)
+        assert state.status == "running"
+
+    def test_resume_acquires_lock(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        pause_session(project_dir, experiment_id)
+        resume_session(project_dir, experiment_id)
+        assert is_locked(project_dir, experiment_id) is True
+
+    def test_resume_preserves_turn_count(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        state = load_session(project_dir, experiment_id)
+        assert state is not None
+        state.current_turn = 10
+        save_session(project_dir, experiment_id, state)
+        pause_session(project_dir, experiment_id)
+        resumed = resume_session(project_dir, experiment_id)
+        assert resumed.current_turn == 10
+
+    def test_resume_raises_if_locked(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        with pytest.raises(RuntimeError, match="already running"):
+            resume_session(project_dir, experiment_id)
+
+    def test_resume_raises_if_no_session(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        with pytest.raises(FileNotFoundError, match="No session"):
+            resume_session(project_dir, experiment_id)
+
+
+class TestCompleteSession:
+    def test_complete_updates_status(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        state = complete_session(project_dir, experiment_id)
+        assert state.status == "completed"
+        assert state.completed_at is not None
+
+    def test_complete_releases_lock(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        complete_session(project_dir, experiment_id)
+        assert is_locked(project_dir, experiment_id) is False
+
+
+class TestFailSession:
+    def test_fail_updates_status(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        state = fail_session(project_dir, experiment_id, error="Out of memory")
+        assert state.status == "failed"
+        assert state.completed_at is not None
+        assert state.checkpoint.get("error") == "Out of memory"
+
+    def test_fail_releases_lock(self, project_dir: Path, experiment_id: str) -> None:
+        start_session(project_dir, experiment_id)
+        fail_session(project_dir, experiment_id)
+        assert is_locked(project_dir, experiment_id) is False
+
+    def test_fail_without_error_message(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        state = fail_session(project_dir, experiment_id)
+        assert state.status == "failed"
+        assert "error" not in state.checkpoint
