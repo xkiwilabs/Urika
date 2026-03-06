@@ -72,10 +72,13 @@ class TestMethodRegistry:
         registry.register(method2)
         assert registry.get("same") is method2
 
-    def test_discover_finds_nothing_when_no_builtins(self) -> None:
+    def test_discover_finds_builtin_methods(self) -> None:
         registry = MethodRegistry()
         registry.discover()
-        assert isinstance(registry.list_all(), list)
+        names = registry.list_all()
+        assert "linear_regression" in names
+        assert "random_forest" in names
+        assert "paired_t_test" in names
 
 
 class TestMethodRegistryProjectDiscovery:

@@ -72,10 +72,12 @@ class TestToolRegistry:
         registry.register(tool2)
         assert registry.get("same") is tool2
 
-    def test_discover_finds_nothing_when_no_builtins(self) -> None:
+    def test_discover_finds_builtin_tools(self) -> None:
         registry = ToolRegistry()
         registry.discover()
-        assert isinstance(registry.list_all(), list)
+        names = registry.list_all()
+        assert "data_profiler" in names
+        assert "correlation_analysis" in names
 
 
 class TestToolRegistryProjectDiscovery:
