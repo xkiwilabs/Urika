@@ -442,3 +442,123 @@ class TestRunCommand:
     ) -> None:
         result = runner.invoke(cli, ["run", "nope"], env=urika_env)
         assert result.exit_code != 0
+
+
+class TestKnowledgeIngestCommand:
+    def test_ingests_text_file(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        runner.invoke(
+            cli,
+            ["new", "test-proj", "-q", "Does X?", "-m", "exploratory"],
+            env=urika_env,
+        )
+        projects_dir = Path(urika_env["URIKA_PROJECTS_DIR"])
+        knowledge_dir = projects_dir / "test-proj" / "knowledge"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        note = knowledge_dir / "notes.txt"
+        note.write_text("Some research notes about regression.")
+
+        result = runner.invoke(
+            cli,
+            ["knowledge", "ingest", "test-proj", str(note)],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "k-001" in result.output
+
+    def test_ingest_nonexistent_project(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli,
+            ["knowledge", "ingest", "nope", "/tmp/file.txt"],
+            env=urika_env,
+        )
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+
+class TestKnowledgeSearchCommand:
+    def test_search_with_results(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        runner.invoke(
+            cli,
+            ["new", "test-proj", "-q", "Does X?", "-m", "exploratory"],
+            env=urika_env,
+        )
+        projects_dir = Path(urika_env["URIKA_PROJECTS_DIR"])
+        knowledge_dir = projects_dir / "test-proj" / "knowledge"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        (knowledge_dir / "notes.txt").write_text("Regression analysis is useful.")
+        runner.invoke(
+            cli,
+            ["knowledge", "ingest", "test-proj", str(knowledge_dir / "notes.txt")],
+            env=urika_env,
+        )
+
+        result = runner.invoke(
+            cli,
+            ["knowledge", "search", "test-proj", "regression"],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "notes.txt" in result.output
+
+    def test_search_no_results(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        runner.invoke(
+            cli,
+            ["new", "test-proj", "-q", "Does X?", "-m", "exploratory"],
+            env=urika_env,
+        )
+        result = runner.invoke(
+            cli,
+            ["knowledge", "search", "test-proj", "quantum"],
+            env=urika_env,
+        )
+        assert result.exit_code == 0
+        assert "No results" in result.output
+
+
+class TestKnowledgeListCommand:
+    def test_list_empty(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
+        runner.invoke(
+            cli,
+            ["new", "test-proj", "-q", "Does X?", "-m", "exploratory"],
+            env=urika_env,
+        )
+        result = runner.invoke(
+            cli,
+            ["knowledge", "list", "test-proj"],
+            env=urika_env,
+        )
+        assert result.exit_code == 0
+        assert "No knowledge" in result.output
+
+    def test_list_populated(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
+        runner.invoke(
+            cli,
+            ["new", "test-proj", "-q", "Does X?", "-m", "exploratory"],
+            env=urika_env,
+        )
+        projects_dir = Path(urika_env["URIKA_PROJECTS_DIR"])
+        knowledge_dir = projects_dir / "test-proj" / "knowledge"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        (knowledge_dir / "notes.txt").write_text("Some notes.")
+        runner.invoke(
+            cli,
+            ["knowledge", "ingest", "test-proj", str(knowledge_dir / "notes.txt")],
+            env=urika_env,
+        )
+
+        result = runner.invoke(
+            cli,
+            ["knowledge", "list", "test-proj"],
+            env=urika_env,
+        )
+        assert result.exit_code == 0
+        assert "k-001" in result.output
+        assert "notes.txt" in result.output

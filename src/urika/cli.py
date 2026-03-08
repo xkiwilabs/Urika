@@ -283,3 +283,62 @@ def run(project: str, experiment_id: str | None, max_turns: int) -> None:
         click.echo(f"Experiment failed after {turns} turns: {error}")
     else:
         click.echo(f"Experiment finished with status: {status} ({turns} turns)")
+
+
+@cli.group()
+def knowledge() -> None:
+    """Manage project knowledge base."""
+
+
+@knowledge.command("ingest")
+@click.argument("project")
+@click.argument("source")
+def knowledge_ingest(project: str, source: str) -> None:
+    """Ingest a file or URL into the knowledge store."""
+    from urika.knowledge import KnowledgeStore
+
+    project_path, _config = _resolve_project(project)
+    store = KnowledgeStore(project_path)
+    try:
+        entry = store.ingest(source)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f'Ingested: {entry.id} "{entry.title}" ({entry.source_type})')
+
+
+@knowledge.command("search")
+@click.argument("project")
+@click.argument("query")
+def knowledge_search(project: str, query: str) -> None:
+    """Search the knowledge store."""
+    from urika.knowledge import KnowledgeStore
+
+    project_path, _config = _resolve_project(project)
+    store = KnowledgeStore(project_path)
+    results = store.search(query)
+
+    if not results:
+        click.echo("No results found.")
+        return
+
+    for entry in results:
+        snippet = entry.content[:100].replace("\n", " ")
+        click.echo(f"  {entry.id}  {entry.title}  [{entry.source_type}]  {snippet}")
+
+
+@knowledge.command("list")
+@click.argument("project")
+def knowledge_list(project: str) -> None:
+    """List all knowledge entries."""
+    from urika.knowledge import KnowledgeStore
+
+    project_path, _config = _resolve_project(project)
+    store = KnowledgeStore(project_path)
+    entries = store.list_all()
+
+    if not entries:
+        click.echo("No knowledge entries yet.")
+        return
+
+    for entry in entries:
+        click.echo(f"  {entry.id}  {entry.title}  [{entry.source_type}]")
