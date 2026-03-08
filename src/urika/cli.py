@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -241,3 +242,44 @@ def tools(category: str | None, project: str | None) -> None:
         tool = registry.get(name)
         if tool is not None:
             click.echo(f"  {tool.name()}  [{tool.category()}]  {tool.description()}")
+
+
+@cli.command()
+@click.argument("project")
+@click.option(
+    "--experiment", "experiment_id", default=None, help="Experiment ID to run."
+)
+@click.option("--max-turns", default=50, help="Maximum orchestrator turns.")
+def run(project: str, experiment_id: str | None, max_turns: int) -> None:
+    """Run an experiment using the orchestrator."""
+    from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+    from urika.orchestrator import run_experiment
+
+    project_path, _config = _resolve_project(project)
+
+    if experiment_id is None:
+        experiments = list_experiments(project_path)
+        if not experiments:
+            raise click.ClickException(
+                "No experiments in this project. Create one first."
+            )
+        experiment_id = experiments[-1].experiment_id
+        click.echo(f"Using latest experiment: {experiment_id}")
+
+    click.echo(f"Running experiment {experiment_id} (max {max_turns} turns)...")
+
+    runner = ClaudeSDKRunner()
+    result = asyncio.run(
+        run_experiment(project_path, experiment_id, runner, max_turns=max_turns)
+    )
+
+    status = result.get("status", "unknown")
+    turns = result.get("turns", 0)
+    error = result.get("error")
+
+    if status == "completed":
+        click.echo(f"Experiment completed after {turns} turns.")
+    elif status == "failed":
+        click.echo(f"Experiment failed after {turns} turns: {error}")
+    else:
+        click.echo(f"Experiment finished with status: {status} ({turns} turns)")

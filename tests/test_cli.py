@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -361,3 +362,83 @@ class TestToolsCommand:
         )
         assert result.exit_code == 0
         assert "No tools" in result.output
+
+
+class TestRunCommand:
+    def test_run_completes(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        with (
+            patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner"),
+            patch(
+                "urika.orchestrator.run_experiment", new_callable=AsyncMock
+            ) as mock_run,
+        ):
+            mock_run.return_value = {"status": "completed", "turns": 3, "error": None}
+            result = runner.invoke(cli, ["run", "test-proj"], env=urika_env)
+        assert result.exit_code == 0, result.output
+        assert "completed" in result.output
+        assert "3 turns" in result.output
+
+    def test_run_with_experiment_flag(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        with (
+            patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner"),
+            patch(
+                "urika.orchestrator.run_experiment", new_callable=AsyncMock
+            ) as mock_run,
+        ):
+            mock_run.return_value = {"status": "completed", "turns": 1, "error": None}
+            result = runner.invoke(
+                cli,
+                ["run", "test-proj", "--experiment", "exp-001-baseline"],
+                env=urika_env,
+            )
+        assert result.exit_code == 0
+
+    def test_run_failed(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        with (
+            patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner"),
+            patch(
+                "urika.orchestrator.run_experiment", new_callable=AsyncMock
+            ) as mock_run,
+        ):
+            mock_run.return_value = {
+                "status": "failed",
+                "turns": 2,
+                "error": "SDK error",
+            }
+            result = runner.invoke(cli, ["run", "test-proj"], env=urika_env)
+        assert result.exit_code == 0
+        assert "failed" in result.output
+
+    def test_run_no_experiments(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        result = runner.invoke(cli, ["run", "test-proj"], env=urika_env)
+        assert result.exit_code != 0
+        assert "No experiments" in result.output
+
+    def test_run_nonexistent_project(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["run", "nope"], env=urika_env)
+        assert result.exit_code != 0
