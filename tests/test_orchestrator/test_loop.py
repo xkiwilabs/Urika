@@ -1,0 +1,255 @@
+"""Tests for the orchestrator loop."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from urika.agents.config import AgentConfig
+from urika.agents.runner import AgentResult, AgentRunner
+from urika.core.experiment import create_experiment
+from urika.core.models import ProjectConfig
+from urika.core.progress import load_progress
+from urika.core.session import load_session
+from urika.core.workspace import create_project_workspace
+from urika.orchestrator.loop import run_experiment
+
+
+# --- Canned agent responses ---
+
+_TASK_OUTPUT = """\
+I ran a linear regression model. Here are the results:
+```json
+{
+    "run_id": "run-001",
+    "method": "linear_regression",
+    "params": {"alpha": 0.01},
+    "metrics": {"rmse": 0.42, "r2": 0.87}
+}
+```
+"""
+
+_EVAL_CRITERIA_MET = """\
+The model meets the success criteria.
+```json
+{
+    "criteria_met": true,
+    "score": 0.87,
+    "reasoning": "R2 exceeds 0.8 threshold"
+}
+```
+"""
+
+_EVAL_CRITERIA_NOT_MET = """\
+The model does not yet meet criteria.
+```json
+{
+    "criteria_met": false,
+    "score": 0.42,
+    "reasoning": "R2 below 0.8 threshold"
+}
+```
+"""
+
+_SUGGESTION = """\
+Try a different approach:
+```json
+{
+    "suggestions": [
+        {"method": "random_forest", "rationale": "Non-linear may fit better"}
+    ],
+    "needs_tool": false
+}
+```
+"""
+
+
+# --- FakeRunner ---
+
+
+class FakeRunner(AgentRunner):
+    def __init__(self, responses: dict[str, list[str]]):
+        self._responses = responses
+        self._call_counts: dict[str, int] = {}
+
+    async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+        role = config.name
+        self._call_counts[role] = self._call_counts.get(role, 0) + 1
+        idx = self._call_counts[role] - 1
+        texts = self._responses.get(role, [""])
+        text = texts[idx] if idx < len(texts) else texts[-1]
+        return AgentResult(
+            success=True,
+            messages=[],
+            text_output=text,
+            session_id=f"session-{role}-{idx}",
+            num_turns=1,
+            duration_ms=100,
+        )
+
+
+class FailingRunner(AgentRunner):
+    """Runner that returns success=False for a specific role."""
+
+    def __init__(self, fail_role: str):
+        self._fail_role = fail_role
+
+    async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+        if config.name == self._fail_role:
+            return AgentResult(
+                success=False,
+                messages=[],
+                text_output="",
+                session_id="session-fail",
+                num_turns=0,
+                duration_ms=0,
+                error=f"{config.name} encountered an error",
+            )
+        return AgentResult(
+            success=True,
+            messages=[],
+            text_output=_TASK_OUTPUT,
+            session_id=f"session-{config.name}",
+            num_turns=1,
+            duration_ms=100,
+        )
+
+
+# --- Helpers ---
+
+
+def _setup_project(tmp_path: Path) -> tuple[Path, str]:
+    config = ProjectConfig(
+        name="test-proj",
+        question="Does X predict Y?",
+        mode="exploratory",
+        data_paths=[],
+    )
+    project_dir = tmp_path / "test-proj"
+    create_project_workspace(project_dir, config)
+    exp = create_experiment(project_dir, name="baseline", hypothesis="Linear is enough")
+    return project_dir, exp.experiment_id
+
+
+# --- Tests ---
+
+
+class TestOrchestratorLoop:
+    @pytest.mark.asyncio
+    async def test_completes_when_criteria_met(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "completed"
+        assert result["turns"] == 1
+
+    @pytest.mark.asyncio
+    async def test_stops_at_max_turns(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_NOT_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=3)
+
+        assert result["status"] == "completed"
+        assert result["turns"] == 3
+
+    @pytest.mark.asyncio
+    async def test_records_runs_to_progress(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        progress = load_progress(project_dir, exp_id)
+        assert len(progress["runs"]) == 1
+        assert progress["runs"][0]["run_id"] == "run-001"
+        assert progress["runs"][0]["method"] == "linear_regression"
+
+    @pytest.mark.asyncio
+    async def test_session_state_updated(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        session = load_session(project_dir, exp_id)
+        assert session is not None
+        assert session.status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_handles_runner_error(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FailingRunner(fail_role="task_agent")
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "failed"
+        assert "error" in result
+
+        session = load_session(project_dir, exp_id)
+        assert session is not None
+        assert session.status == "failed"
+
+    @pytest.mark.asyncio
+    async def test_calls_agents_in_order(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        # Both task_agent and evaluator should have been called
+        assert runner._call_counts.get("task_agent", 0) >= 1
+        assert runner._call_counts.get("evaluator", 0) >= 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_turns(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [
+                    _EVAL_CRITERIA_NOT_MET,
+                    _EVAL_CRITERIA_NOT_MET,
+                    _EVAL_CRITERIA_MET,
+                ],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=10)
+
+        assert result["status"] == "completed"
+        assert result["turns"] == 3

@@ -1,0 +1,165 @@
+"""Orchestrator loop: cycle agents through experiments."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from urika.agents.registry import AgentRegistry
+from urika.agents.runner import AgentRunner
+from urika.core.progress import append_run
+from urika.core.session import (
+    complete_session,
+    fail_session,
+    start_session,
+    update_turn,
+)
+from urika.orchestrator.parsing import (
+    parse_evaluation,
+    parse_run_records,
+    parse_suggestions,
+)
+
+
+async def run_experiment(
+    project_dir: Path,
+    experiment_id: str,
+    runner: AgentRunner,
+    *,
+    max_turns: int = 50,
+) -> dict[str, Any]:
+    """Run the orchestration loop for an experiment.
+
+    Cycles through task_agent -> evaluator -> suggestion_agent until
+    criteria are met or max_turns is reached.
+    """
+    registry = AgentRegistry()
+    registry.discover()
+
+    try:
+        start_session(project_dir, experiment_id, max_turns=max_turns)
+    except Exception as exc:
+        return {"status": "failed", "error": str(exc), "turns": 0}
+
+    task_prompt = "Begin the experiment. Try an initial approach."
+
+    for turn in range(1, max_turns + 1):
+        try:
+            # --- task_agent ---
+            task_role = registry.get("task_agent")
+            if task_role is None:
+                fail_session(
+                    project_dir, experiment_id, error="task_agent role not found"
+                )
+                return {
+                    "status": "failed",
+                    "error": "task_agent role not found",
+                    "turns": turn,
+                }
+
+            task_config = task_role.build_config(project_dir=project_dir)
+            task_result = await runner.run(task_config, task_prompt)
+
+            if not task_result.success:
+                fail_session(
+                    project_dir,
+                    experiment_id,
+                    error=task_result.error or "task_agent failed",
+                )
+                return {
+                    "status": "failed",
+                    "error": task_result.error or "task_agent failed",
+                    "turns": turn,
+                }
+
+            # Parse and record runs
+            runs = parse_run_records(task_result.text_output)
+            for run in runs:
+                append_run(project_dir, experiment_id, run)
+
+            # --- evaluator ---
+            eval_role = registry.get("evaluator")
+            if eval_role is None:
+                fail_session(
+                    project_dir, experiment_id, error="evaluator role not found"
+                )
+                return {
+                    "status": "failed",
+                    "error": "evaluator role not found",
+                    "turns": turn,
+                }
+
+            eval_config = eval_role.build_config(project_dir=project_dir)
+            eval_result = await runner.run(eval_config, task_result.text_output)
+
+            if not eval_result.success:
+                fail_session(
+                    project_dir,
+                    experiment_id,
+                    error=eval_result.error or "evaluator failed",
+                )
+                return {
+                    "status": "failed",
+                    "error": eval_result.error or "evaluator failed",
+                    "turns": turn,
+                }
+
+            evaluation = parse_evaluation(eval_result.text_output)
+            if evaluation and evaluation.get("criteria_met"):
+                complete_session(project_dir, experiment_id)
+                return {"status": "completed", "turns": turn}
+
+            # --- suggestion_agent ---
+            suggest_role = registry.get("suggestion_agent")
+            if suggest_role is None:
+                fail_session(
+                    project_dir,
+                    experiment_id,
+                    error="suggestion_agent role not found",
+                )
+                return {
+                    "status": "failed",
+                    "error": "suggestion_agent role not found",
+                    "turns": turn,
+                }
+
+            suggest_config = suggest_role.build_config(project_dir=project_dir)
+            suggest_result = await runner.run(suggest_config, eval_result.text_output)
+
+            if not suggest_result.success:
+                fail_session(
+                    project_dir,
+                    experiment_id,
+                    error=suggest_result.error or "suggestion_agent failed",
+                )
+                return {
+                    "status": "failed",
+                    "error": suggest_result.error or "suggestion_agent failed",
+                    "turns": turn,
+                }
+
+            suggestions = parse_suggestions(suggest_result.text_output)
+
+            # --- optional tool_builder ---
+            if suggestions and suggestions.get("needs_tool"):
+                tool_role = registry.get("tool_builder")
+                if tool_role is not None:
+                    tool_config = tool_role.build_config(project_dir=project_dir)
+                    await runner.run(tool_config, json.dumps(suggestions))
+
+            # Build next task prompt from suggestions
+            if suggestions:
+                task_prompt = json.dumps(suggestions)
+            else:
+                task_prompt = "Continue the experiment with a different approach."
+
+            update_turn(project_dir, experiment_id)
+
+        except Exception as exc:
+            fail_session(project_dir, experiment_id, error=str(exc))
+            return {"status": "failed", "error": str(exc), "turns": turn}
+
+    # Reached max_turns without criteria being met
+    complete_session(project_dir, experiment_id)
+    return {"status": "completed", "turns": max_turns}
