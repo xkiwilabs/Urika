@@ -64,6 +64,19 @@ Try a different approach:
 ```
 """
 
+_LITERATURE_OUTPUT = """\
+I scanned the knowledge directory and found existing entries.
+```json
+{
+    "ingested": [],
+    "total_entries": 1,
+    "relevant_findings": [
+        {"source": "notes.txt", "summary": "Notes about regression"}
+    ]
+}
+```
+"""
+
 
 # --- FakeRunner ---
 
@@ -253,3 +266,80 @@ class TestOrchestratorLoop:
 
         assert result["status"] == "completed"
         assert result["turns"] == 3
+
+
+class TestOrchestratorKnowledgeIntegration:
+    @pytest.mark.asyncio
+    async def test_runs_literature_agent_pre_loop(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        # Add knowledge so pre-loop scan has something to find
+        knowledge_dir = project_dir / "knowledge"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        (knowledge_dir / "notes.txt").write_text("Some research notes.")
+        from urika.knowledge import KnowledgeStore
+
+        store = KnowledgeStore(project_dir)
+        store.ingest(str(knowledge_dir / "notes.txt"))
+
+        runner = FakeRunner(
+            {
+                "literature_agent": [_LITERATURE_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "completed"
+        assert runner._call_counts.get("literature_agent", 0) >= 1
+
+    @pytest.mark.asyncio
+    async def test_skips_literature_when_no_knowledge(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "completed"
+        assert runner._call_counts.get("literature_agent", 0) == 0
+
+    @pytest.mark.asyncio
+    async def test_on_demand_literature_from_suggestion(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        suggestion_with_lit = """\
+Try a different approach:
+```json
+{
+    "suggestions": [
+        {"method": "random_forest", "rationale": "Non-linear may fit better"}
+    ],
+    "needs_tool": false,
+    "needs_literature": true
+}
+```
+"""
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
+                "suggestion_agent": [suggestion_with_lit],
+                "literature_agent": [_LITERATURE_OUTPUT],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "completed"
+        # Literature agent called on-demand
+        assert runner._call_counts.get("literature_agent", 0) >= 1

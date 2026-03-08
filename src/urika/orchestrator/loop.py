@@ -15,6 +15,7 @@ from urika.core.session import (
     start_session,
     update_turn,
 )
+from urika.orchestrator.knowledge import build_knowledge_summary
 from urika.orchestrator.parsing import (
     parse_evaluation,
     parse_run_records,
@@ -43,6 +44,18 @@ async def run_experiment(
         return {"status": "failed", "error": str(exc), "turns": 0}
 
     task_prompt = "Begin the experiment. Try an initial approach."
+
+    # --- Pre-loop: knowledge scan ---
+    knowledge_summary = build_knowledge_summary(project_dir)
+    if knowledge_summary:
+        lit_role = registry.get("literature_agent")
+        if lit_role is not None:
+            lit_config = lit_role.build_config(project_dir=project_dir)
+            await runner.run(
+                lit_config,
+                "Scan the knowledge directory and summarize available knowledge.",
+            )
+        task_prompt = knowledge_summary + "\n\n" + task_prompt
 
     for turn in range(1, max_turns + 1):
         try:
@@ -153,6 +166,15 @@ async def run_experiment(
                 if tool_role is not None:
                     tool_config = tool_role.build_config(project_dir=project_dir)
                     await runner.run(tool_config, json.dumps(suggestions))
+
+            # --- optional literature_agent ---
+            if suggestions and suggestions.get("needs_literature"):
+                lit_role = registry.get("literature_agent")
+                if lit_role is not None:
+                    lit_config = lit_role.build_config(project_dir=project_dir)
+                    lit_result = await runner.run(lit_config, json.dumps(suggestions))
+                    if lit_result.success and lit_result.text_output:
+                        task_prompt = lit_result.text_output + "\n\n" + task_prompt
 
             # Build next task prompt from suggestions
             if suggestions:
