@@ -58,7 +58,7 @@ async def run_experiment(
                     "turns": turn,
                 }
 
-            task_config = task_role.build_config(project_dir=project_dir)
+            task_config = task_role.build_config(project_dir=project_dir, experiment_id=experiment_id)
             task_result = await runner.run(task_config, task_prompt)
 
             if not task_result.success:
@@ -90,7 +90,7 @@ async def run_experiment(
                     "turns": turn,
                 }
 
-            eval_config = eval_role.build_config(project_dir=project_dir)
+            eval_config = eval_role.build_config(project_dir=project_dir, experiment_id=experiment_id)
             eval_result = await runner.run(eval_config, task_result.text_output)
 
             if not eval_result.success:
@@ -124,7 +124,7 @@ async def run_experiment(
                     "turns": turn,
                 }
 
-            suggest_config = suggest_role.build_config(project_dir=project_dir)
+            suggest_config = suggest_role.build_config(project_dir=project_dir, experiment_id=experiment_id)
             suggest_result = await runner.run(suggest_config, eval_result.text_output)
 
             if not suggest_result.success:
