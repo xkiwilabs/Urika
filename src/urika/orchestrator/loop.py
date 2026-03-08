@@ -167,6 +167,12 @@ async def run_experiment(
                     tool_config = tool_role.build_config(project_dir=project_dir)
                     await runner.run(tool_config, json.dumps(suggestions))
 
+            # Build next task prompt from suggestions
+            if suggestions:
+                task_prompt = json.dumps(suggestions)
+            else:
+                task_prompt = "Continue the experiment with a different approach."
+
             # --- optional literature_agent ---
             if suggestions and suggestions.get("needs_literature"):
                 lit_role = registry.get("literature_agent")
@@ -175,12 +181,6 @@ async def run_experiment(
                     lit_result = await runner.run(lit_config, json.dumps(suggestions))
                     if lit_result.success and lit_result.text_output:
                         task_prompt = lit_result.text_output + "\n\n" + task_prompt
-
-            # Build next task prompt from suggestions
-            if suggestions:
-                task_prompt = json.dumps(suggestions)
-            else:
-                task_prompt = "Continue the experiment with a different approach."
 
             update_turn(project_dir, experiment_id)
 
