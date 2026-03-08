@@ -74,3 +74,10 @@ class TestBuildKnowledgeSummary:
         summary = build_knowledge_summary(project_dir)
         assert "a.txt" in summary
         assert "b.txt" in summary
+
+
+class TestKnowledgePublicAPI:
+    def test_build_knowledge_summary_importable(self) -> None:
+        from urika.orchestrator import build_knowledge_summary
+
+        assert callable(build_knowledge_summary)
