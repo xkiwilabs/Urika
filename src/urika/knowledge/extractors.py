@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -44,6 +46,20 @@ def extract_url(url: str) -> str:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Only http/https URLs are supported, got: {parsed.scheme}")
+
+    # Block private/internal IP addresses (SSRF protection)
+    try:
+        hostname = parsed.hostname or ""
+        addr_info = socket.getaddrinfo(hostname, None)
+        for _, _, _, _, sockaddr in addr_info:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                raise ValueError(
+                    f"Access to private/internal addresses is not allowed: {hostname}"
+                )
+    except socket.gaierror as exc:
+        raise ValueError(f"Failed to resolve hostname: {exc}") from exc
+
     try:
         with urlopen(url, timeout=30) as response:
             charset = response.headers.get_content_charset() or "utf-8"

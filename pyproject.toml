@@ -12,7 +12,6 @@ dependencies = [
     "click>=8.0",
     "numpy>=1.24",
     "pandas>=2.0",
-    "pypdf>=4.0",
     "scikit-learn>=1.3",
     "scipy>=1.11",
 ]
@@ -21,7 +20,11 @@ dependencies = [
 agents = [
     "claude-agent-sdk>=0.1",
 ]
+knowledge = [
+    "pypdf>=4.0",
+]
 dev = [
+    "pypdf>=4.0",
     "pytest>=7.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.1",

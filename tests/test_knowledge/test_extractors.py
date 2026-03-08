@@ -81,6 +81,8 @@ class TestExtractPdf:
 
 
 class TestExtractUrl:
+    _public_addrinfo = [(2, 1, 6, "", ("93.184.216.34", 0))]
+
     def test_extracts_html_content(self) -> None:
         html = b"<html><body><h1>Title</h1><p>Some text content.</p></body></html>"
         mock_response = MagicMock()
@@ -89,7 +91,13 @@ class TestExtractUrl:
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("urika.knowledge.extractors.urlopen", return_value=mock_response):
+        with (
+            patch(
+                "urika.knowledge.extractors.socket.getaddrinfo",
+                return_value=self._public_addrinfo,
+            ),
+            patch("urika.knowledge.extractors.urlopen", return_value=mock_response),
+        ):
             result = extract_url("https://example.com")
         assert "Title" in result
         assert "Some text content" in result
@@ -102,14 +110,26 @@ class TestExtractUrl:
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("urika.knowledge.extractors.urlopen", return_value=mock_response):
+        with (
+            patch(
+                "urika.knowledge.extractors.socket.getaddrinfo",
+                return_value=self._public_addrinfo,
+            ),
+            patch("urika.knowledge.extractors.urlopen", return_value=mock_response),
+        ):
             with pytest.raises(ValueError, match="Empty"):
                 extract_url("https://example.com")
 
     def test_unreachable_raises(self) -> None:
-        with patch(
-            "urika.knowledge.extractors.urlopen",
-            side_effect=OSError("Connection refused"),
+        with (
+            patch(
+                "urika.knowledge.extractors.socket.getaddrinfo",
+                return_value=self._public_addrinfo,
+            ),
+            patch(
+                "urika.knowledge.extractors.urlopen",
+                side_effect=OSError("Connection refused"),
+            ),
         ):
             with pytest.raises(ValueError, match="fetch"):
                 extract_url("https://unreachable.example.com")
@@ -121,3 +141,27 @@ class TestExtractUrl:
     def test_rejects_ftp_scheme(self) -> None:
         with pytest.raises(ValueError, match="http"):
             extract_url("ftp://example.com/file")
+
+    def test_rejects_localhost(self) -> None:
+        with patch(
+            "urika.knowledge.extractors.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("127.0.0.1", 0))],
+        ):
+            with pytest.raises(ValueError, match="private"):
+                extract_url("https://evil.com/admin")
+
+    def test_rejects_private_ip(self) -> None:
+        with patch(
+            "urika.knowledge.extractors.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("192.168.1.1", 0))],
+        ):
+            with pytest.raises(ValueError, match="private"):
+                extract_url("https://evil.com/admin")
+
+    def test_rejects_link_local(self) -> None:
+        with patch(
+            "urika.knowledge.extractors.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("169.254.169.254", 0))],
+        ):
+            with pytest.raises(ValueError, match="private"):
+                extract_url("https://evil.com/metadata")
