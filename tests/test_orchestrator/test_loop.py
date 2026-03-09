@@ -400,9 +400,7 @@ class TestOrchestratorResume:
         assert result["turns"] == 3
 
     @pytest.mark.asyncio
-    async def test_resume_uses_last_suggestion_as_prompt(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_resume_uses_last_suggestion_as_prompt(self, tmp_path: Path) -> None:
         """With a run that has next_step, resume picks it up as task prompt."""
         project_dir, exp_id = _setup_project(tmp_path)
 
@@ -465,9 +463,12 @@ class TestOrchestratorResume:
         assert result["turns"] == 1
 
     @pytest.mark.asyncio
-    async def test_resume_with_no_runs_uses_default_prompt(self, tmp_path: Path) -> None:
+    async def test_resume_with_no_runs_uses_default_prompt(
+        self, tmp_path: Path
+    ) -> None:
         project_dir, exp_id = _setup_project(tmp_path)
         from urika.core.session import start_session, pause_session
+
         start_session(project_dir, exp_id, max_turns=50)
         pause_session(project_dir, exp_id)
 
@@ -488,6 +489,7 @@ class TestOrchestratorResume:
     async def test_resume_respects_stored_max_turns(self, tmp_path: Path) -> None:
         project_dir, exp_id = _setup_project(tmp_path)
         from urika.core.session import start_session, pause_session, update_turn
+
         start_session(project_dir, exp_id, max_turns=3)
         update_turn(project_dir, exp_id)  # turn 1
         update_turn(project_dir, exp_id)  # turn 2
