@@ -40,17 +40,23 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Core Modules
 
-- `src/urika/cli.py` — Click CLI: `urika new`, `urika list`, `urika status`
-- `src/urika/core/models.py` — Data models: `ProjectConfig`, `ExperimentConfig`, `RunRecord`
+- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `knowledge`
+- `src/urika/core/models.py` — Data models: `ProjectConfig`, `ExperimentConfig`, `RunRecord`, `SessionState`
 - `src/urika/core/registry.py` — Central project registry at `~/.urika/projects.json`
 - `src/urika/core/workspace.py` — Project workspace creation and loading
 - `src/urika/core/experiment.py` — Experiment lifecycle: create, list, load
 - `src/urika/core/progress.py` — Append-only progress tracking with best-run queries
 - `src/urika/core/labbook.py` — Auto-generated .md summaries from progress data
+- `src/urika/agents/` — Agent roles (task_agent, evaluator, suggestion_agent, tool_builder, literature_agent), registry, config, Claude SDK adapter
+- `src/urika/orchestrator/` — Deterministic loop (task→evaluator→suggestion), output parsing, knowledge integration
+- `src/urika/evaluation/` — Leaderboard ranking, metric computation
+- `src/urika/methods/` — Built-in methods (linear_regression, random_forest, paired_t_test), method registry
+- `src/urika/tools/` — Built-in tools (data_profiler, correlation_analysis), tool registry
+- `src/urika/knowledge/` — Knowledge pipeline: extractors (PDF, text, URL), KnowledgeStore, keyword search
 
 ## Project Status
 
-Foundation layer complete (models, registry, workspace, experiments, progress, labbook, CLI). Next: agents, evaluation framework, tool system.
+528 tests. Foundation, agents, orchestrator, evaluation, methods, tools, knowledge pipeline, and CLI all implemented. Next: session management (run --continue), report generation, end-to-end testing.
 
 ## Development
 
