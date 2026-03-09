@@ -301,6 +301,53 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
         click.echo(f"Experiment finished with status: {run_status} ({turns} turns)")
 
 
+@cli.command()
+@click.argument("project")
+@click.option(
+    "--experiment",
+    "experiment_id",
+    default=None,
+    help="Generate report for a specific experiment.",
+)
+def report(project: str, experiment_id: str | None) -> None:
+    """Generate labbook reports."""
+    from urika.core.labbook import (
+        generate_experiment_summary,
+        generate_key_findings,
+        generate_results_summary,
+        update_experiment_notes,
+    )
+
+    project_path, _config = _resolve_project(project)
+
+    if experiment_id is not None:
+        try:
+            update_experiment_notes(project_path, experiment_id)
+            generate_experiment_summary(project_path, experiment_id)
+        except FileNotFoundError:
+            raise click.ClickException(
+                f"Experiment '{experiment_id}' not found."
+            )
+        notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
+        summary = project_path / "experiments" / experiment_id / "labbook" / "summary.md"
+        click.echo(f"Updated: {notes}")
+        click.echo(f"Generated: {summary}")
+        return
+
+    # Project-level reports
+    generate_results_summary(project_path)
+    generate_key_findings(project_path)
+
+    # Also refresh notes for all experiments
+    for exp in list_experiments(project_path):
+        update_experiment_notes(project_path, exp.experiment_id)
+
+    results_path = project_path / "labbook" / "results-summary.md"
+    findings_path = project_path / "labbook" / "key-findings.md"
+    click.echo(f"Generated: {results_path}")
+    click.echo(f"Generated: {findings_path}")
+
+
 @cli.group()
 def knowledge() -> None:
     """Manage project knowledge base."""

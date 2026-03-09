@@ -522,6 +522,88 @@ class TestRunContinueFlag:
         assert mock_run.call_args.args[1] == "exp-001-baseline"
 
 
+class TestReportCommand:
+    def test_report_project_level(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        result = runner.invoke(cli, ["report", "test-proj"], env=urika_env)
+        assert result.exit_code == 0, result.output
+        assert "results-summary.md" in result.output
+        assert "key-findings.md" in result.output
+
+    def test_report_experiment_level(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        exp_dirs = sorted((project_dir / "experiments").iterdir())
+        exp_id = exp_dirs[0].name
+
+        result = runner.invoke(
+            cli,
+            ["report", "test-proj", "--experiment", exp_id],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "summary.md" in result.output
+        assert "notes.md" in result.output
+
+    def test_report_nonexistent_project(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["report", "nope"], env=urika_env)
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+    def test_report_nonexistent_experiment(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        result = runner.invoke(
+            cli,
+            ["report", "test-proj", "--experiment", "exp-999-fake"],
+            env=urika_env,
+        )
+        assert result.exit_code != 0
+
+    def test_report_creates_files(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+
+        # Run project-level report
+        result = runner.invoke(cli, ["report", "test-proj"], env=urika_env)
+        assert result.exit_code == 0, result.output
+
+        # Check that labbook files exist on disk
+        assert (project_dir / "labbook" / "results-summary.md").exists()
+        assert (project_dir / "labbook" / "key-findings.md").exists()
+
+        # Run experiment-level report
+        exp_dirs = sorted((project_dir / "experiments").iterdir())
+        exp_id = exp_dirs[0].name
+        result = runner.invoke(
+            cli,
+            ["report", "test-proj", "--experiment", exp_id],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert (project_dir / "experiments" / exp_id / "labbook" / "notes.md").exists()
+        assert (project_dir / "experiments" / exp_id / "labbook" / "summary.md").exists()
+
+
 class TestKnowledgeIngestCommand:
     def test_ingests_text_file(
         self, runner: CliRunner, urika_env: dict[str, str]
