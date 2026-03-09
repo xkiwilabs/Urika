@@ -465,6 +465,50 @@ class TestOrchestratorResume:
         assert result["turns"] == 1
 
     @pytest.mark.asyncio
+    async def test_resume_with_no_runs_uses_default_prompt(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        from urika.core.session import start_session, pause_session
+        start_session(project_dir, exp_id, max_turns=50)
+        pause_session(project_dir, exp_id)
+
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(
+            project_dir, exp_id, runner, max_turns=50, resume=True
+        )
+        assert result["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_resume_respects_stored_max_turns(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        from urika.core.session import start_session, pause_session, update_turn
+        start_session(project_dir, exp_id, max_turns=3)
+        update_turn(project_dir, exp_id)  # turn 1
+        update_turn(project_dir, exp_id)  # turn 2
+        pause_session(project_dir, exp_id)
+
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        # Pass max_turns=50, but stored max_turns=3 should win
+        result = await run_experiment(
+            project_dir, exp_id, runner, max_turns=50, resume=True
+        )
+        assert result["status"] == "completed"
+        assert result["turns"] == 3  # max_turns=3 from stored session
+
+    @pytest.mark.asyncio
     async def test_resume_on_non_paused_session_fails(self, tmp_path: Path) -> None:
         """Resuming with no session returns failed."""
         project_dir, exp_id = _setup_project(tmp_path)

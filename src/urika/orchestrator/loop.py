@@ -46,9 +46,11 @@ async def run_experiment(
     if resume:
         try:
             state = resume_session(project_dir, experiment_id)
-        except (FileNotFoundError, RuntimeError) as exc:
+            start_turn = state.current_turn + 1
+            if state.max_turns is not None:
+                max_turns = state.max_turns
+        except Exception as exc:
             return {"status": "failed", "error": str(exc), "turns": 0}
-        start_turn = state.current_turn + 1
 
         # Use the last run's next_step as the initial task prompt, if available
         task_prompt = "Continue the experiment with a different approach."
