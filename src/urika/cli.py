@@ -325,22 +325,28 @@ def report(project: str, experiment_id: str | None) -> None:
             update_experiment_notes(project_path, experiment_id)
             generate_experiment_summary(project_path, experiment_id)
         except FileNotFoundError:
-            raise click.ClickException(
-                f"Experiment '{experiment_id}' not found."
-            )
+            raise click.ClickException(f"Experiment '{experiment_id}' not found.")
         notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
-        summary = project_path / "experiments" / experiment_id / "labbook" / "summary.md"
+        summary = (
+            project_path / "experiments" / experiment_id / "labbook" / "summary.md"
+        )
         click.echo(f"Updated: {notes}")
         click.echo(f"Generated: {summary}")
         return
 
     # Project-level reports
-    generate_results_summary(project_path)
-    generate_key_findings(project_path)
+    try:
+        generate_results_summary(project_path)
+        generate_key_findings(project_path)
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc))
 
     # Also refresh notes for all experiments
     for exp in list_experiments(project_path):
-        update_experiment_notes(project_path, exp.experiment_id)
+        try:
+            update_experiment_notes(project_path, exp.experiment_id)
+        except FileNotFoundError:
+            pass
 
     results_path = project_path / "labbook" / "results-summary.md"
     findings_path = project_path / "labbook" / "key-findings.md"

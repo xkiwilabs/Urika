@@ -571,6 +571,7 @@ class TestReportCommand:
             env=urika_env,
         )
         assert result.exit_code != 0
+        assert "not found" in result.output
 
     def test_report_creates_files(
         self, runner: CliRunner, urika_env: dict[str, str]
@@ -601,7 +602,9 @@ class TestReportCommand:
         )
         assert result.exit_code == 0, result.output
         assert (project_dir / "experiments" / exp_id / "labbook" / "notes.md").exists()
-        assert (project_dir / "experiments" / exp_id / "labbook" / "summary.md").exists()
+        assert (
+            project_dir / "experiments" / exp_id / "labbook" / "summary.md"
+        ).exists()
 
 
 class TestKnowledgeIngestCommand:
