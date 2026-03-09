@@ -22,6 +22,19 @@ def _projects_dir() -> Path:
     return Path.home() / "urika-projects"
 
 
+def _resolve_project(name: str) -> tuple[Path, ProjectConfig]:
+    """Look up project by name. Raises ClickException on error."""
+    registry = ProjectRegistry()
+    project_path = registry.get(name)
+    if project_path is None:
+        raise click.ClickException(f"Project '{name}' not found in registry.")
+    try:
+        config = load_project_config(project_path)
+    except FileNotFoundError:
+        raise click.ClickException(f"Project directory missing at {project_path}")
+    return project_path, config
+
+
 @click.group()
 @click.version_option(package_name="urika")
 def cli() -> None:
@@ -79,16 +92,7 @@ def list_cmd() -> None:
 @click.argument("name")
 def status(name: str) -> None:
     """Show project status."""
-    registry = ProjectRegistry()
-    project_path = registry.get(name)
-
-    if project_path is None:
-        raise click.ClickException(f"Project '{name}' not found in registry.")
-
-    try:
-        config = load_project_config(project_path)
-    except FileNotFoundError:
-        raise click.ClickException(f"Project directory missing at {project_path}")
+    project_path, config = _resolve_project(name)
 
     experiments = list_experiments(project_path)
 

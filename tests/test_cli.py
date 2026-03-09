@@ -95,6 +95,30 @@ class TestListCommand:
         assert "project-b" in result.output
 
 
+class TestResolveProject:
+    """Tests confirming status works after _resolve_project refactor."""
+
+    def test_status_shows_project_info(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        runner.invoke(
+            cli,
+            ["new", "my-proj", "-q", "Does refactor work?", "-m", "exploratory"],
+            env=urika_env,
+        )
+        result = runner.invoke(cli, ["status", "my-proj"], env=urika_env)
+        assert result.exit_code == 0
+        assert "my-proj" in result.output
+        assert "Does refactor work?" in result.output
+
+    def test_status_nonexistent_uses_resolve(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["status", "no-such-project"], env=urika_env)
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+
 class TestStatusCommand:
     def test_shows_status(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         runner.invoke(
