@@ -9,9 +9,9 @@ import pytest
 from urika.agents.config import AgentConfig
 from urika.agents.runner import AgentResult, AgentRunner
 from urika.core.experiment import create_experiment
-from urika.core.models import ProjectConfig
-from urika.core.progress import load_progress
-from urika.core.session import load_session
+from urika.core.models import ProjectConfig, RunRecord
+from urika.core.progress import append_run, load_progress
+from urika.core.session import load_session, pause_session, start_session, update_turn
 from urika.core.workspace import create_project_workspace
 from urika.orchestrator.loop import run_experiment
 
@@ -343,3 +343,144 @@ Try a different approach:
         assert result["status"] == "completed"
         # Literature agent called on-demand
         assert runner._call_counts.get("literature_agent", 0) >= 1
+
+
+class TestOrchestratorResume:
+    @pytest.mark.asyncio
+    async def test_resume_calls_resume_session(self, tmp_path: Path) -> None:
+        """Start+pause a session, then resume=True succeeds and completes."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        # Start and pause the session to create a resumable state
+        start_session(project_dir, exp_id, max_turns=5)
+        pause_session(project_dir, exp_id)
+
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(
+            project_dir, exp_id, runner, max_turns=5, resume=True
+        )
+
+        assert result["status"] == "completed"
+        session = load_session(project_dir, exp_id)
+        assert session is not None
+        assert session.status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_resume_starts_from_current_turn(self, tmp_path: Path) -> None:
+        """Resume starts from current_turn+1, result reports correct turn."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        # Start session, advance turn to 2, then pause
+        start_session(project_dir, exp_id, max_turns=10)
+        update_turn(project_dir, exp_id)  # turn -> 1
+        update_turn(project_dir, exp_id)  # turn -> 2
+        pause_session(project_dir, exp_id)
+
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(
+            project_dir, exp_id, runner, max_turns=10, resume=True
+        )
+
+        assert result["status"] == "completed"
+        # Should complete on turn 3 (current_turn=2, start at 3)
+        assert result["turns"] == 3
+
+    @pytest.mark.asyncio
+    async def test_resume_uses_last_suggestion_as_prompt(
+        self, tmp_path: Path
+    ) -> None:
+        """With a run that has next_step, resume picks it up as task prompt."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        # Start session, add a run with next_step, then pause
+        start_session(project_dir, exp_id, max_turns=5)
+        run_record = RunRecord(
+            run_id="run-prev",
+            method="linear_regression",
+            params={"alpha": 0.01},
+            metrics={"rmse": 0.5},
+            next_step="Try random forest with max_depth=10",
+        )
+        append_run(project_dir, exp_id, run_record)
+        pause_session(project_dir, exp_id)
+
+        prompts_received: list[str] = []
+
+        class CapturingRunner(AgentRunner):
+            async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+                prompts_received.append(prompt)
+                if config.name == "task_agent":
+                    text = _TASK_OUTPUT
+                elif config.name == "evaluator":
+                    text = _EVAL_CRITERIA_MET
+                else:
+                    text = _SUGGESTION
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=text,
+                    session_id=f"session-{config.name}",
+                    num_turns=1,
+                    duration_ms=100,
+                )
+
+        result = await run_experiment(
+            project_dir, exp_id, CapturingRunner(), max_turns=5, resume=True
+        )
+
+        assert result["status"] == "completed"
+        # The first prompt to task_agent should contain the next_step
+        assert "Try random forest with max_depth=10" in prompts_received[0]
+
+    @pytest.mark.asyncio
+    async def test_resume_false_is_default(self, tmp_path: Path) -> None:
+        """Default behavior (resume=False) still works as before."""
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        # Call without resume kwarg — should work exactly as before
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "completed"
+        assert result["turns"] == 1
+
+    @pytest.mark.asyncio
+    async def test_resume_on_non_paused_session_fails(self, tmp_path: Path) -> None:
+        """Resuming with no session returns failed."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        runner = FakeRunner(
+            {
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION],
+            }
+        )
+
+        # No session exists, resume should fail
+        result = await run_experiment(
+            project_dir, exp_id, runner, max_turns=5, resume=True
+        )
+
+        assert result["status"] == "failed"
+        assert "error" in result

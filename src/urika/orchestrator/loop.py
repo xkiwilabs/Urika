@@ -8,10 +8,11 @@ from typing import Any
 
 from urika.agents.registry import AgentRegistry
 from urika.agents.runner import AgentRunner
-from urika.core.progress import append_run
+from urika.core.progress import append_run, load_progress
 from urika.core.session import (
     complete_session,
     fail_session,
+    resume_session,
     start_session,
     update_turn,
 )
@@ -29,21 +30,44 @@ async def run_experiment(
     runner: AgentRunner,
     *,
     max_turns: int = 50,
+    resume: bool = False,
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
     Cycles through task_agent -> evaluator -> suggestion_agent until
     criteria are met or max_turns is reached.
+
+    If *resume* is True, resumes a previously paused session instead of
+    starting a new one.
     """
     registry = AgentRegistry()
     registry.discover()
 
-    try:
-        start_session(project_dir, experiment_id, max_turns=max_turns)
-    except Exception as exc:
-        return {"status": "failed", "error": str(exc), "turns": 0}
+    if resume:
+        try:
+            state = resume_session(project_dir, experiment_id)
+        except (FileNotFoundError, RuntimeError) as exc:
+            return {"status": "failed", "error": str(exc), "turns": 0}
+        start_turn = state.current_turn + 1
 
-    task_prompt = "Begin the experiment. Try an initial approach."
+        # Use the last run's next_step as the initial task prompt, if available
+        task_prompt = "Continue the experiment with a different approach."
+        try:
+            progress = load_progress(project_dir, experiment_id)
+            runs = progress.get("runs", [])
+            if runs:
+                last_next_step = runs[-1].get("next_step", "")
+                if last_next_step:
+                    task_prompt = last_next_step
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+    else:
+        try:
+            start_session(project_dir, experiment_id, max_turns=max_turns)
+        except Exception as exc:
+            return {"status": "failed", "error": str(exc), "turns": 0}
+        start_turn = 1
+        task_prompt = "Begin the experiment. Try an initial approach."
 
     # --- Pre-loop: knowledge scan ---
     knowledge_summary = build_knowledge_summary(project_dir)
@@ -57,7 +81,7 @@ async def run_experiment(
             )
         task_prompt = knowledge_summary + "\n\n" + task_prompt
 
-    for turn in range(1, max_turns + 1):
+    for turn in range(start_turn, max_turns + 1):
         try:
             # --- task_agent ---
             task_role = registry.get("task_agent")
