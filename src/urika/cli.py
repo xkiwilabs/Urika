@@ -250,7 +250,16 @@ def tools(category: str | None, project: str | None) -> None:
     "--experiment", "experiment_id", default=None, help="Experiment ID to run."
 )
 @click.option("--max-turns", default=50, help="Maximum orchestrator turns.")
-def run(project: str, experiment_id: str | None, max_turns: int) -> None:
+@click.option(
+    "--continue",
+    "resume",
+    is_flag=True,
+    default=False,
+    help="Resume a paused or failed experiment.",
+)
+def run(
+    project: str, experiment_id: str | None, max_turns: int, resume: bool
+) -> None:
     """Run an experiment using the orchestrator."""
     from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
     from urika.orchestrator import run_experiment
@@ -266,23 +275,32 @@ def run(project: str, experiment_id: str | None, max_turns: int) -> None:
         experiment_id = experiments[-1].experiment_id
         click.echo(f"Using latest experiment: {experiment_id}")
 
-    click.echo(f"Running experiment {experiment_id} (max {max_turns} turns)...")
+    if resume:
+        click.echo(f"Resuming experiment {experiment_id} (max {max_turns} turns)...")
+    else:
+        click.echo(f"Running experiment {experiment_id} (max {max_turns} turns)...")
 
-    runner = ClaudeSDKRunner()
+    runner_instance = ClaudeSDKRunner()
     result = asyncio.run(
-        run_experiment(project_path, experiment_id, runner, max_turns=max_turns)
+        run_experiment(
+            project_path,
+            experiment_id,
+            runner_instance,
+            max_turns=max_turns,
+            resume=resume,
+        )
     )
 
-    status = result.get("status", "unknown")
+    status_val = result.get("status", "unknown")
     turns = result.get("turns", 0)
     error = result.get("error")
 
-    if status == "completed":
+    if status_val == "completed":
         click.echo(f"Experiment completed after {turns} turns.")
-    elif status == "failed":
+    elif status_val == "failed":
         click.echo(f"Experiment failed after {turns} turns: {error}")
     else:
-        click.echo(f"Experiment finished with status: {status} ({turns} turns)")
+        click.echo(f"Experiment finished with status: {status_val} ({turns} turns)")
 
 
 @cli.group()

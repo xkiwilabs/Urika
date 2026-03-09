@@ -444,6 +444,83 @@ class TestRunCommand:
         assert result.exit_code != 0
 
 
+class TestRunContinueFlag:
+    def test_continue_passes_resume_true(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        with (
+            patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner"),
+            patch(
+                "urika.orchestrator.run_experiment", new_callable=AsyncMock
+            ) as mock_run,
+        ):
+            mock_run.return_value = {"status": "completed", "turns": 3, "error": None}
+            result = runner.invoke(
+                cli, ["run", "test-proj", "--continue"], env=urika_env
+            )
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["resume"] is True
+        assert "Resuming experiment" in result.output
+
+    def test_run_without_continue_passes_resume_false(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        with (
+            patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner"),
+            patch(
+                "urika.orchestrator.run_experiment", new_callable=AsyncMock
+            ) as mock_run,
+        ):
+            mock_run.return_value = {"status": "completed", "turns": 1, "error": None}
+            result = runner.invoke(cli, ["run", "test-proj"], env=urika_env)
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs.get("resume", False) is False
+
+    def test_continue_with_experiment_flag(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        with (
+            patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner"),
+            patch(
+                "urika.orchestrator.run_experiment", new_callable=AsyncMock
+            ) as mock_run,
+        ):
+            mock_run.return_value = {"status": "completed", "turns": 5, "error": None}
+            result = runner.invoke(
+                cli,
+                [
+                    "run",
+                    "test-proj",
+                    "--experiment",
+                    "exp-001-baseline",
+                    "--continue",
+                ],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["resume"] is True
+        # Verify experiment ID was also passed correctly
+        assert mock_run.call_args.args[1] == "exp-001-baseline"
+
+
 class TestKnowledgeIngestCommand:
     def test_ingests_text_file(
         self, runner: CliRunner, urika_env: dict[str, str]
