@@ -235,3 +235,79 @@ class TestExperimentListCommand:
         result = runner.invoke(cli, ["experiment", "list", "nope"], env=urika_env)
         assert result.exit_code != 0
         assert "not found" in result.output
+
+
+class TestResultsCommand:
+    def test_empty_leaderboard(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        result = runner.invoke(cli, ["results", "test-proj"], env=urika_env)
+        assert result.exit_code == 0
+        assert "No results yet." in result.output
+
+    def test_shows_leaderboard(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        from urika.evaluation.leaderboard import update_leaderboard
+
+        _create_project(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        update_leaderboard(
+            project_dir,
+            method="linear_regression",
+            metrics={"r2": 0.85, "rmse": 0.12},
+            run_id="run-001",
+            params={"alpha": 0.1},
+            primary_metric="r2",
+            direction="higher_is_better",
+        )
+        result = runner.invoke(cli, ["results", "test-proj"], env=urika_env)
+        assert result.exit_code == 0
+        assert "linear_regression" in result.output
+        assert "0.85" in result.output
+
+    def test_shows_experiment_runs(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        from urika.core.models import RunRecord
+        from urika.core.progress import append_run
+
+        _create_project(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        # Create an experiment first via CLI
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        # Get the experiment ID from the experiments directory
+        exp_dirs = sorted((project_dir / "experiments").iterdir())
+        exp_id = exp_dirs[0].name
+
+        run = RunRecord(
+            run_id="run-001",
+            method="linear_regression",
+            params={"alpha": 0.1},
+            metrics={"r2": 0.75},
+            hypothesis="Baseline",
+            observation="Decent fit",
+            next_step="Try RF",
+        )
+        append_run(project_dir, exp_id, run)
+
+        result = runner.invoke(
+            cli,
+            ["results", "test-proj", "--experiment", exp_id],
+            env=urika_env,
+        )
+        assert result.exit_code == 0
+        assert "run-001" in result.output
+        assert "linear_regression" in result.output
+
+    def test_nonexistent_project_errors(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["results", "nope"], env=urika_env)
+        assert result.exit_code != 0
+        assert "not found" in result.output

@@ -12,6 +12,7 @@ from urika.core.models import ProjectConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
 from urika.core.workspace import create_project_workspace, load_project_config
+from urika.evaluation.leaderboard import load_leaderboard
 
 
 def _projects_dir() -> Path:
@@ -145,3 +146,40 @@ def experiment_list(project: str) -> None:
         n_runs = len(progress.get("runs", []))
         exp_status = progress.get("status", "unknown")
         click.echo(f"  {exp.experiment_id}  {exp.name}  [{exp_status}, {n_runs} runs]")
+
+
+@cli.command()
+@click.argument("project")
+@click.option(
+    "--experiment",
+    "experiment_id",
+    default=None,
+    help="Show runs for a specific experiment.",
+)
+def results(project: str, experiment_id: str | None) -> None:
+    """Show project results (leaderboard or experiment runs)."""
+    project_path, _config = _resolve_project(project)
+
+    if experiment_id is not None:
+        progress = load_progress(project_path, experiment_id)
+        runs = progress.get("runs", [])
+        if not runs:
+            click.echo("No results yet.")
+            return
+        for run in runs:
+            metrics_str = ", ".join(
+                f"{k}={v}" for k, v in run.get("metrics", {}).items()
+            )
+            click.echo(f"  {run['run_id']}  {run['method']}  {metrics_str}")
+        return
+
+    leaderboard = load_leaderboard(project_path)
+    ranking = leaderboard.get("ranking", [])
+
+    if not ranking:
+        click.echo("No results yet.")
+        return
+
+    for entry in ranking:
+        metrics_str = ", ".join(f"{k}={v}" for k, v in entry.get("metrics", {}).items())
+        click.echo(f"  #{entry['rank']}  {entry['method']}  {metrics_str}")
