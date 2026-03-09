@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from urika.core.experiment import list_experiments
+from urika.core.experiment import create_experiment, list_experiments
 from urika.core.models import ProjectConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
@@ -111,3 +111,37 @@ def status(name: str) -> None:
             click.echo(
                 f"  {exp.experiment_id}: {exp.name} [{exp_status}, {n_runs} runs]"
             )
+
+
+@cli.group()
+def experiment() -> None:
+    """Manage experiments within a project."""
+
+
+@experiment.command("create")
+@click.argument("project")
+@click.argument("name")
+@click.option("--hypothesis", default="", help="Experiment hypothesis.")
+def experiment_create(project: str, name: str, hypothesis: str) -> None:
+    """Create a new experiment in a project."""
+    project_path, _config = _resolve_project(project)
+    exp = create_experiment(project_path, name=name, hypothesis=hypothesis)
+    click.echo(f"{exp.experiment_id}")
+
+
+@experiment.command("list")
+@click.argument("project")
+def experiment_list(project: str) -> None:
+    """List experiments in a project."""
+    project_path, _config = _resolve_project(project)
+    experiments = list_experiments(project_path)
+
+    if not experiments:
+        click.echo("No experiments yet.")
+        return
+
+    for exp in experiments:
+        progress = load_progress(project_path, exp.experiment_id)
+        n_runs = len(progress.get("runs", []))
+        exp_status = progress.get("status", "unknown")
+        click.echo(f"  {exp.experiment_id}  {exp.name}  [{exp_status}, {n_runs} runs]")

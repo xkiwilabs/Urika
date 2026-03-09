@@ -136,3 +136,102 @@ class TestStatusCommand:
     ) -> None:
         result = runner.invoke(cli, ["status", "nope"], env=urika_env)
         assert result.exit_code != 0
+
+
+def _create_project(
+    runner: CliRunner, urika_env: dict[str, str], name: str = "test-proj"
+) -> None:
+    """Helper to create a project for tests."""
+    result = runner.invoke(
+        cli,
+        ["new", name, "-q", "Does X?", "-m", "exploratory"],
+        env=urika_env,
+    )
+    assert result.exit_code == 0, result.output
+
+
+class TestExperimentCreateCommand:
+    def test_creates_experiment(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        result = runner.invoke(
+            cli,
+            [
+                "experiment",
+                "create",
+                "test-proj",
+                "baseline",
+                "--hypothesis",
+                "Linear is enough",
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "exp-001" in result.output
+
+    def test_creates_second_experiment(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "first", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        result = runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "second", "--hypothesis", "H2"],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "exp-002" in result.output
+
+    def test_nonexistent_project_errors(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli,
+            ["experiment", "create", "nope", "baseline"],
+            env=urika_env,
+        )
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+
+class TestExperimentListCommand:
+    def test_empty_shows_message(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        result = runner.invoke(cli, ["experiment", "list", "test-proj"], env=urika_env)
+        assert result.exit_code == 0
+        assert "No experiments yet." in result.output
+
+    def test_shows_experiments_after_create(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            [
+                "experiment",
+                "create",
+                "test-proj",
+                "baseline",
+                "--hypothesis",
+                "Linear is enough",
+            ],
+            env=urika_env,
+        )
+        result = runner.invoke(cli, ["experiment", "list", "test-proj"], env=urika_env)
+        assert result.exit_code == 0
+        assert "exp-001" in result.output
+        assert "baseline" in result.output
+
+    def test_nonexistent_project_errors(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["experiment", "list", "nope"], env=urika_env)
+        assert result.exit_code != 0
+        assert "not found" in result.output
