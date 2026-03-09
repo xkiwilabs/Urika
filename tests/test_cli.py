@@ -311,3 +311,53 @@ class TestResultsCommand:
         result = runner.invoke(cli, ["results", "nope"], env=urika_env)
         assert result.exit_code != 0
         assert "not found" in result.output
+
+
+class TestMethodsCommand:
+    def test_lists_builtins(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
+        result = runner.invoke(cli, ["methods"], env=urika_env)
+        assert result.exit_code == 0
+        assert "linear_regression" in result.output
+        assert "random_forest" in result.output
+        assert "paired_t_test" in result.output
+
+    def test_filter_by_category(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli, ["methods", "--category", "regression"], env=urika_env
+        )
+        assert result.exit_code == 0
+        assert "linear_regression" in result.output
+        assert "paired_t_test" not in result.output
+
+    def test_empty_category(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
+        result = runner.invoke(
+            cli, ["methods", "--category", "nonexistent"], env=urika_env
+        )
+        assert result.exit_code == 0
+        assert "No methods" in result.output
+
+
+class TestToolsCommand:
+    def test_lists_builtins(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
+        result = runner.invoke(cli, ["tools"], env=urika_env)
+        assert result.exit_code == 0
+        assert "data_profiler" in result.output
+        assert "correlation_analysis" in result.output
+
+    def test_filter_by_category(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli, ["tools", "--category", "exploration"], env=urika_env
+        )
+        assert result.exit_code == 0
+        assert "data_profiler" in result.output
+
+    def test_empty_category(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
+        result = runner.invoke(
+            cli, ["tools", "--category", "nonexistent"], env=urika_env
+        )
+        assert result.exit_code == 0
+        assert "No tools" in result.output
