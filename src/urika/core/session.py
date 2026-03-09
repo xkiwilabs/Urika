@@ -92,11 +92,15 @@ def pause_session(project_dir: Path, experiment_id: str) -> SessionState:
 
 
 def resume_session(project_dir: Path, experiment_id: str) -> SessionState:
-    """Resume a paused session. Restores status to running, re-acquires lock."""
+    """Resume a paused or failed session. Restores status to running, re-acquires lock."""
     state = load_session(project_dir, experiment_id)
     if state is None:
         msg = f"No session found for experiment {experiment_id}"
         raise FileNotFoundError(msg)
+
+    if state.status not in ("paused", "failed"):
+        msg = f"Cannot resume experiment {experiment_id}: status is '{state.status}'"
+        raise RuntimeError(msg)
 
     if not acquire_lock(project_dir, experiment_id):
         msg = f"Experiment {experiment_id} is already running"

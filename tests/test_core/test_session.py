@@ -271,17 +271,26 @@ class TestResumeSession:
         resumed = resume_session(project_dir, experiment_id)
         assert resumed.current_turn == 10
 
-    def test_resume_raises_if_locked(
+    def test_resume_raises_if_running(
         self, project_dir: Path, experiment_id: str
     ) -> None:
         start_session(project_dir, experiment_id)
-        with pytest.raises(RuntimeError, match="already running"):
+        with pytest.raises(RuntimeError, match="Cannot resume"):
             resume_session(project_dir, experiment_id)
 
     def test_resume_raises_if_no_session(
         self, project_dir: Path, experiment_id: str
     ) -> None:
         with pytest.raises(FileNotFoundError, match="No session"):
+            resume_session(project_dir, experiment_id)
+
+    def test_resume_completed_session_raises(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        """Cannot resume a completed session."""
+        start_session(project_dir, experiment_id)
+        complete_session(project_dir, experiment_id)
+        with pytest.raises(RuntimeError, match="Cannot resume"):
             resume_session(project_dir, experiment_id)
 
 

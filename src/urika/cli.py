@@ -274,7 +274,7 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
         click.echo(f"Using latest experiment: {experiment_id}")
 
     if resume:
-        click.echo(f"Resuming experiment {experiment_id} (max {max_turns} turns)...")
+        click.echo(f"Resuming experiment {experiment_id}...")
     else:
         click.echo(f"Running experiment {experiment_id} (max {max_turns} turns)...")
 
