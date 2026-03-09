@@ -257,9 +257,7 @@ def tools(category: str | None, project: str | None) -> None:
     default=False,
     help="Resume a paused or failed experiment.",
 )
-def run(
-    project: str, experiment_id: str | None, max_turns: int, resume: bool
-) -> None:
+def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -> None:
     """Run an experiment using the orchestrator."""
     from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
     from urika.orchestrator import run_experiment
@@ -280,27 +278,27 @@ def run(
     else:
         click.echo(f"Running experiment {experiment_id} (max {max_turns} turns)...")
 
-    runner_instance = ClaudeSDKRunner()
+    sdk_runner = ClaudeSDKRunner()
     result = asyncio.run(
         run_experiment(
             project_path,
             experiment_id,
-            runner_instance,
+            sdk_runner,
             max_turns=max_turns,
             resume=resume,
         )
     )
 
-    status_val = result.get("status", "unknown")
+    run_status = result.get("status", "unknown")
     turns = result.get("turns", 0)
     error = result.get("error")
 
-    if status_val == "completed":
+    if run_status == "completed":
         click.echo(f"Experiment completed after {turns} turns.")
-    elif status_val == "failed":
+    elif run_status == "failed":
         click.echo(f"Experiment failed after {turns} turns: {error}")
     else:
-        click.echo(f"Experiment finished with status: {status_val} ({turns} turns)")
+        click.echo(f"Experiment finished with status: {run_status} ({turns} turns)")
 
 
 @cli.group()

@@ -486,7 +486,8 @@ class TestRunContinueFlag:
             mock_run.return_value = {"status": "completed", "turns": 1, "error": None}
             result = runner.invoke(cli, ["run", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
-        assert mock_run.call_args.kwargs.get("resume", False) is False
+        assert "resume" in mock_run.call_args.kwargs
+        assert mock_run.call_args.kwargs["resume"] is False
 
     def test_continue_with_experiment_flag(
         self, runner: CliRunner, urika_env: dict[str, str]
