@@ -354,6 +354,107 @@ def report(project: str, experiment_id: str | None) -> None:
     click.echo(f"Generated: {findings_path}")
 
 
+@cli.command()
+@click.argument("project")
+@click.option(
+    "--data", "data_file", default=None, help="Specific data file to inspect."
+)
+def inspect(project: str, data_file: str | None) -> None:
+    """Inspect project data: schema, dtypes, missing values, preview."""
+    from urika.data.loader import load_dataset
+
+    project_path, config = _resolve_project(project)
+
+    # Find data file
+    if data_file is not None:
+        path = (
+            Path(data_file)
+            if Path(data_file).is_absolute()
+            else project_path / data_file
+        )
+    else:
+        # Look for data files in project's data/ directory
+        data_dir = project_path / "data"
+        if not data_dir.exists():
+            raise click.ClickException("No data/ directory found.")
+        csv_files = list(data_dir.glob("*.csv"))
+        if not csv_files:
+            raise click.ClickException("No CSV files found in data/ directory.")
+        path = csv_files[0]
+        if len(csv_files) > 1:
+            click.echo(f"Multiple data files found. Using: {path.name}")
+
+    try:
+        view = load_dataset(path)
+    except Exception as exc:
+        raise click.ClickException(f"Failed to load data: {exc}")
+
+    click.echo(f"Dataset: {path.name}")
+    click.echo(f"Rows: {view.summary.n_rows}")
+    click.echo(f"Columns: {view.summary.n_columns}")
+    click.echo("")
+
+    # Schema table
+    click.echo("Schema:")
+    for col in view.summary.columns:
+        dtype = view.summary.dtypes.get(col, "unknown")
+        missing = view.summary.missing_counts.get(col, 0)
+        missing_pct = (
+            f" ({100 * missing / view.summary.n_rows:.1f}% missing)"
+            if missing > 0
+            else ""
+        )
+        click.echo(f"  {col:<30s} {dtype:<15s}{missing_pct}")
+    click.echo("")
+
+    # Preview (first 5 rows)
+    click.echo("Preview (first 5 rows):")
+    click.echo(view.data.head().to_string(index=False))
+
+
+@cli.command()
+@click.argument("project")
+@click.option(
+    "--experiment", "experiment_id", default=None, help="Specific experiment."
+)
+def logs(project: str, experiment_id: str | None) -> None:
+    """Show experiment run log."""
+    from urika.core.session import load_session
+
+    project_path, _config = _resolve_project(project)
+
+    if experiment_id is None:
+        experiments = list_experiments(project_path)
+        if not experiments:
+            raise click.ClickException("No experiments in this project.")
+        experiment_id = experiments[-1].experiment_id
+
+    progress = load_progress(project_path, experiment_id)
+    session = load_session(project_path, experiment_id)
+
+    click.echo(f"Experiment: {experiment_id}")
+    if session is not None:
+        click.echo(f"Status: {session.status}")
+        click.echo(f"Turns: {session.current_turn}")
+    click.echo("")
+
+    runs = progress.get("runs", [])
+    if not runs:
+        click.echo("No runs recorded yet.")
+        return
+
+    for run in runs:
+        metrics_str = ", ".join(f"{k}={v}" for k, v in run.get("metrics", {}).items())
+        click.echo(f"  {run['run_id']}  {run['method']}  {metrics_str}")
+        if run.get("hypothesis"):
+            click.echo(f"    Hypothesis: {run['hypothesis']}")
+        if run.get("observation"):
+            click.echo(f"    Observation: {run['observation']}")
+        if run.get("next_step"):
+            click.echo(f"    Next step: {run['next_step']}")
+        click.echo("")
+
+
 @cli.group()
 def knowledge() -> None:
     """Manage project knowledge base."""

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pandas as pd
 import pytest
 from click.testing import CliRunner
 
@@ -725,3 +726,128 @@ class TestKnowledgeListCommand:
         assert result.exit_code == 0
         assert "k-001" in result.output
         assert "notes.txt" in result.output
+
+
+class TestInspectCommand:
+    def test_inspect_shows_schema(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        data_dir = project_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame(
+            {"age": [25, 30, 35], "score": [80.5, 90.1, 85.3], "name": ["A", "B", "C"]}
+        )
+        df.to_csv(data_dir / "sample.csv", index=False)
+
+        result = runner.invoke(cli, ["inspect", "test-proj"], env=urika_env)
+        assert result.exit_code == 0, result.output
+        assert "Rows: 3" in result.output
+        assert "Columns: 3" in result.output
+        assert "age" in result.output
+        assert "score" in result.output
+        assert "name" in result.output
+        assert "Schema:" in result.output
+
+    def test_inspect_no_data_dir(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        # data/ directory exists from project creation but has no CSVs
+        result = runner.invoke(cli, ["inspect", "test-proj"], env=urika_env)
+        assert result.exit_code != 0
+        assert "No CSV files" in result.output or "No data/" in result.output
+
+    def test_inspect_nonexistent_project(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["inspect", "nope"], env=urika_env)
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+    def test_inspect_with_data_flag(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        data_dir = project_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+        specific = data_dir / "specific.csv"
+        df.to_csv(specific, index=False)
+
+        result = runner.invoke(
+            cli,
+            ["inspect", "test-proj", "--data", str(specific)],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "specific.csv" in result.output
+        assert "Rows: 3" in result.output
+
+
+class TestLogsCommand:
+    def test_logs_shows_runs(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        from urika.core.models import RunRecord
+        from urika.core.progress import append_run
+
+        _create_project(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        exp_dirs = sorted((project_dir / "experiments").iterdir())
+        exp_id = exp_dirs[0].name
+
+        run = RunRecord(
+            run_id="run-001",
+            method="linear_regression",
+            params={"alpha": 0.1},
+            metrics={"r2": 0.75},
+            hypothesis="Baseline",
+            observation="Decent fit",
+            next_step="Try RF",
+        )
+        append_run(project_dir, exp_id, run)
+
+        result = runner.invoke(cli, ["logs", "test-proj"], env=urika_env)
+        assert result.exit_code == 0, result.output
+        assert "run-001" in result.output
+        assert "linear_regression" in result.output
+        assert "r2=0.75" in result.output
+        assert "Hypothesis: Baseline" in result.output
+        assert "Observation: Decent fit" in result.output
+        assert "Next step: Try RF" in result.output
+
+    def test_logs_no_experiments(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        result = runner.invoke(cli, ["logs", "test-proj"], env=urika_env)
+        assert result.exit_code != 0
+        assert "No experiments" in result.output
+
+    def test_logs_empty_runs(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        result = runner.invoke(cli, ["logs", "test-proj"], env=urika_env)
+        assert result.exit_code == 0, result.output
+        assert "No runs recorded" in result.output
+
+    def test_logs_nonexistent_project(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["logs", "nope"], env=urika_env)
+        assert result.exit_code != 0
+        assert "not found" in result.output
