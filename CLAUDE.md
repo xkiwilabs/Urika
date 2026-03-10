@@ -24,8 +24,10 @@ Urika is a multi-agent scientific analysis and modelling platform for behavioral
 
 ## Key Design Documents
 
-- `docs/plans/2026-03-05-project-structure-design.md` — Approved design for project structure
-- `docs/plans/2026-03-05-project-foundation.md` — Implementation plan (Phase 1: foundation)
+- `docs/plans/2026-03-05-project-structure-design.md` — Project structure design
+- `docs/plans/2026-03-05-project-foundation.md` — Phase 1 foundation plan
+- `docs/plans/2026-03-10-session-report-design.md` — Session management + report generation
+- `docs/plans/2026-03-11-v01-release-design.md` — v0.1 release readiness
 - `docs/.archive/option-a-claude-agent-sdk.md` — Claude Agent SDK runtime option
 - `docs/.archive/option-b-build-on-pi.md` — Pi SDK runtime option
 - `docs/.archive/option-c-custom-runtime.md` — Custom runtime option
@@ -40,7 +42,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Core Modules
 
-- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `knowledge`
+- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`
 - `src/urika/core/models.py` — Data models: `ProjectConfig`, `ExperimentConfig`, `RunRecord`, `SessionState`
 - `src/urika/core/registry.py` — Central project registry at `~/.urika/projects.json`
 - `src/urika/core/workspace.py` — Project workspace creation and loading
@@ -50,13 +52,13 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/agents/` — Agent roles (task_agent, evaluator, suggestion_agent, tool_builder, literature_agent), registry, config, Claude SDK adapter
 - `src/urika/orchestrator/` — Deterministic loop (task→evaluator→suggestion), output parsing, knowledge integration
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
-- `src/urika/methods/` — Built-in methods (linear_regression, random_forest, paired_t_test), method registry
-- `src/urika/tools/` — Built-in tools (data_profiler, correlation_analysis), tool registry
+- `src/urika/methods/` — Built-in methods (linear_regression, logistic_regression, random_forest, xgboost_regression, paired_t_test, descriptive_stats, one_way_anova, mann_whitney_u), method registry
+- `src/urika/tools/` — Built-in tools (data_profiler, correlation, hypothesis_tests, outlier_detection, visualization), tool registry
 - `src/urika/knowledge/` — Knowledge pipeline: extractors (PDF, text, URL), KnowledgeStore, keyword search
 
 ## Project Status
 
-528 tests. Foundation, agents, orchestrator, evaluation, methods, tools, knowledge pipeline, and CLI all implemented. Next: session management (run --continue), report generation, end-to-end testing.
+665 tests. Foundation, agents, orchestrator, evaluation, methods (8), tools (5), knowledge pipeline, CLI (15 commands), session management, report generation, and end-to-end integration tests all implemented. v0.1 release ready for real-world testing.
 
 ## Development
 
