@@ -15,12 +15,13 @@ Urika is a multi-agent scientific analysis and modelling platform for behavioral
 ## Agent Roles (Research Team Model)
 
 - **Project Builder**: Scopes projects with users (interactive setup)
+- **Planning Agent**: Reviews context and decides the next analytical step
 - **Task Agent**: Writes Python code, runs experiments, records observations
 - **Evaluator**: Read-only scoring, validates against success criteria
 - **Suggestion Agent**: Analyzes results, proposes next experiments
 - **Tool Builder**: Creates project-specific tools and skills
 - **Literature Agent**: Searches papers, builds knowledge base
-- **Orchestrator**: Hybrid deterministic loop + LLM at strategic decision points
+- **Orchestrator**: Hybrid deterministic loop (planning→task→evaluator→suggestion) + LLM at strategic decision points
 
 ## Key Design Documents
 
@@ -42,23 +43,23 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Core Modules
 
-- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`
+- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods <project>`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`
 - `src/urika/core/models.py` — Data models: `ProjectConfig`, `ExperimentConfig`, `RunRecord`, `SessionState`
 - `src/urika/core/registry.py` — Central project registry at `~/.urika/projects.json`
 - `src/urika/core/workspace.py` — Project workspace creation and loading
 - `src/urika/core/experiment.py` — Experiment lifecycle: create, list, load
 - `src/urika/core/progress.py` — Append-only progress tracking with best-run queries
 - `src/urika/core/labbook.py` — Auto-generated .md summaries from progress data
-- `src/urika/agents/` — Agent roles (task_agent, evaluator, suggestion_agent, tool_builder, literature_agent), registry, config, Claude SDK adapter
-- `src/urika/orchestrator/` — Deterministic loop (task→evaluator→suggestion), output parsing, knowledge integration
+- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, suggestion_agent, tool_builder, literature_agent), registry, config, Claude SDK adapter
+- `src/urika/orchestrator/` — Deterministic loop (planning→task→evaluator→suggestion), output parsing, knowledge integration
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
-- `src/urika/methods/` — Built-in methods (linear_regression, logistic_regression, random_forest, xgboost_regression, paired_t_test, descriptive_stats, one_way_anova, mann_whitney_u), method registry
-- `src/urika/tools/` — Built-in tools (data_profiler, correlation, hypothesis_tests, outlier_detection, visualization), tool registry
+- `src/urika/methods/` — Agent-created analytical pipelines (IMethod ABC, MethodRegistry), zero built-ins — agents create methods at runtime
+- `src/urika/tools/` — Built-in tools (correlation_analysis, data_profiler, descriptive_stats, hypothesis_tests, linear_regression, logistic_regression, mann_whitney_u, one_way_anova, outlier_detection, paired_t_test, random_forest, visualization, xgboost_regression), tool registry
 - `src/urika/knowledge/` — Knowledge pipeline: extractors (PDF, text, URL), KnowledgeStore, keyword search
 
 ## Project Status
 
-665 tests. Foundation, agents, orchestrator, evaluation, methods (8), tools (5), knowledge pipeline, CLI (15 commands), session management, report generation, and end-to-end integration tests all implemented. v0.1 release ready for real-world testing.
+678 tests. Foundation, agents, orchestrator, evaluation, methods (agent-created), tools (13 built-in), knowledge pipeline, CLI (15 commands), session management, report generation, and end-to-end integration tests all implemented. v0.1 release ready for real-world testing.
 
 ## Development
 

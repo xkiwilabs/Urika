@@ -63,34 +63,33 @@ urika run sleep-study --continue
 | `urika results <project>` | Show results and leaderboard |
 | `urika report <project>` | Generate labbook reports |
 | `urika logs <project>` | Show experiment run log |
-| `urika methods` | List available analysis methods |
+| `urika methods <project>` | List agent-created methods in a project |
 | `urika tools` | List available analysis tools |
 | `urika knowledge ingest <project> <source>` | Ingest a document |
 | `urika knowledge search <project> <query>` | Search knowledge base |
 | `urika knowledge list <project>` | List knowledge entries |
 
-## Built-in Methods
-
-| Name | Category | Description |
-|------|----------|-------------|
-| `descriptive_stats` | statistics | Descriptive statistics (mean, std, skew, kurtosis) using pandas and scipy |
-| `linear_regression` | regression | Ordinary least-squares linear regression using scikit-learn |
-| `logistic_regression` | classification | Logistic regression for classification using scikit-learn |
-| `mann_whitney_u` | statistical_test | Mann-Whitney U test for comparing two independent samples |
-| `one_way_anova` | statistical_test | One-way ANOVA for comparing means across groups |
-| `paired_t_test` | statistical_test | Paired t-test for comparing two related samples |
-| `random_forest` | regression | Random forest regression using scikit-learn |
-| `xgboost_regression` | regression | Gradient boosting regression using scikit-learn |
-
 ## Built-in Tools
 
-| Name | Category | Description |
+| Tool | Category | Description |
 |------|----------|-------------|
-| `correlation_analysis` | exploration | Compute pairwise correlations and rank strongest relationships |
-| `data_profiler` | exploration | Profile a dataset: counts, dtypes, missing data, and numeric statistics |
-| `hypothesis_tests` | statistics | Run statistical hypothesis tests: t-test, chi-squared, and normality |
-| `outlier_detection` | exploration | Detect outliers using IQR or z-score methods |
-| `visualization` | exploration | Create histogram, scatter, and boxplot visualizations from data |
+| `correlation_analysis` | exploration | Correlation matrix and top correlations |
+| `data_profiler` | exploration | Dataset profiling with summary statistics |
+| `descriptive_stats` | statistics | Descriptive statistics with skew and kurtosis |
+| `hypothesis_tests` | statistics | T-test, chi-squared, and normality tests |
+| `linear_regression` | regression | OLS linear regression |
+| `logistic_regression` | classification | Logistic regression classifier |
+| `mann_whitney_u` | statistical_test | Mann-Whitney U non-parametric test |
+| `one_way_anova` | statistical_test | One-way ANOVA test |
+| `outlier_detection` | exploration | IQR and z-score outlier detection |
+| `paired_t_test` | statistical_test | Paired t-test for related samples |
+| `random_forest` | regression | Random forest regression |
+| `visualization` | exploration | Histogram, scatter, and box plots |
+| `xgboost_regression` | regression | Gradient boosting regression |
+
+## Methods
+
+Methods are agent-created analytical pipelines, not shipped as built-ins. During an experiment, agents combine tools into complete analysis workflows and register them as methods. Use `urika methods <project>` to see what methods agents have created for a project.
 
 ## Project Structure
 
@@ -119,13 +118,14 @@ my-project/
 
 Urika runs an autonomous agent loop for each experiment:
 
-1. **Task Agent** explores data, writes Python code, runs methods
-2. **Evaluator** scores results against success criteria (read-only)
-3. **Suggestion Agent** analyzes results, proposes next experiments
-4. **Tool Builder** creates new tools on demand
-5. **Literature Agent** searches papers and builds knowledge base
+1. **Planning Agent** reviews context and decides the next analytical step
+2. **Task Agent** explores data, writes Python code, runs tools
+3. **Evaluator** scores results against success criteria (read-only)
+4. **Suggestion Agent** analyzes results, proposes next experiments
+5. **Tool Builder** creates new tools on demand
+6. **Literature Agent** searches papers and builds knowledge base
 
-The orchestrator loops through this cycle until success criteria are met or max turns reached.
+The orchestrator loops through `planning -> task -> evaluator -> suggestion` until success criteria are met or max turns reached.
 
 ## Development
 
