@@ -1,25 +1,25 @@
-"""Gradient boosting regression method using scikit-learn."""
+"""Random forest regression tool using scikit-learn."""
 
 from __future__ import annotations
 
 from typing import Any
 
 import numpy as np
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from urika.data.models import DatasetView
-from urika.methods.base import IAnalysisMethod, MethodResult
+from urika.tools.base import ITool, ToolResult
 
 
-class XGBoostRegressionMethod(IAnalysisMethod):
-    """Gradient boosting regression using scikit-learn."""
+class RandomForestMethod(ITool):
+    """Random forest regression using scikit-learn."""
 
     def name(self) -> str:
-        return "xgboost_regression"
+        return "random_forest"
 
     def description(self) -> str:
-        return "Gradient boosting regression using scikit-learn."
+        return "Random forest regression using scikit-learn."
 
     def category(self) -> str:
         return "regression"
@@ -29,21 +29,21 @@ class XGBoostRegressionMethod(IAnalysisMethod):
             "target": "",
             "features": None,
             "n_estimators": 100,
-            "max_depth": 3,
-            "learning_rate": 0.1,
+            "max_depth": None,
+            "random_state": 42,
         }
 
-    def run(self, data: DatasetView, params: dict[str, Any]) -> MethodResult:
+    def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
         target = params.get("target", "")
         features = params.get("features")
         n_estimators = params.get("n_estimators", 100)
-        max_depth = params.get("max_depth", 3)
-        learning_rate = params.get("learning_rate", 0.1)
+        max_depth = params.get("max_depth")
+        random_state = params.get("random_state", 42)
         df = data.data
 
         if target not in df.columns:
-            return MethodResult(
-                metrics={}, valid=False, error=f"Target column '{target}' not found"
+            return ToolResult(
+                outputs={}, metrics={}, valid=False, error=f"Target column '{target}' not found"
             )
 
         numeric_df = df.select_dtypes(include="number")
@@ -53,31 +53,31 @@ class XGBoostRegressionMethod(IAnalysisMethod):
             feature_cols = [c for c in features if c in df.columns]
 
         if not feature_cols:
-            return MethodResult(
-                metrics={}, valid=False, error="No feature columns available"
+            return ToolResult(
+                outputs={}, metrics={}, valid=False, error="No feature columns available"
             )
 
         subset = numeric_df[[target, *feature_cols]].dropna()
         if len(subset) < 2:
-            return MethodResult(
-                metrics={},
+            return ToolResult(
+                outputs={}, metrics={},
                 valid=False,
                 error=f"Insufficient data: {len(subset)} rows after dropping NaN",
             )
 
-        X = subset[feature_cols].values  # noqa: N806
+        X = subset[feature_cols].values
         y = subset[target].values
 
-        model = GradientBoostingRegressor(
+        model = RandomForestRegressor(
             n_estimators=n_estimators,
             max_depth=max_depth,
-            learning_rate=learning_rate,
-            random_state=42,
+            random_state=random_state,
         )
         model.fit(X, y)
         y_pred = model.predict(X)
 
-        return MethodResult(
+        return ToolResult(
+            outputs={},
             metrics={
                 "r2": float(r2_score(y, y_pred)),
                 "rmse": float(np.sqrt(mean_squared_error(y, y_pred))),
@@ -86,6 +86,6 @@ class XGBoostRegressionMethod(IAnalysisMethod):
         )
 
 
-def get_method() -> IAnalysisMethod:
+def get_tool() -> ITool:
     """Factory function for registry auto-discovery."""
-    return XGBoostRegressionMethod()
+    return RandomForestMethod()

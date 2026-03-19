@@ -7,8 +7,8 @@ import pandas as pd
 
 from urika.data.models import DatasetSpec, DatasetView
 from urika.data.profiler import profile_dataset
-from urika.methods.base import MethodResult
-from urika.methods.mann_whitney_u import MannWhitneyUMethod, get_method
+from urika.tools.base import ToolResult
+from urika.tools.mann_whitney_u import MannWhitneyUMethod, get_tool
 
 
 def _make_view(df: pd.DataFrame) -> DatasetView:
@@ -108,10 +108,10 @@ class TestMannWhitneyUMethod:
         view = _make_view(df)
         method = MannWhitneyUMethod()
         result = method.run(view, {"column_a": "a", "column_b": "b"})
-        assert isinstance(result, MethodResult)
+        assert isinstance(result, ToolResult)
 
 
 class TestMannWhitneyUFactory:
-    def test_get_method_returns_instance(self) -> None:
-        method = get_method()
+    def test_get_tool_returns_instance(self) -> None:
+        method = get_tool()
         assert isinstance(method, MannWhitneyUMethod)

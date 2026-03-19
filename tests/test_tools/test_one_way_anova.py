@@ -7,8 +7,8 @@ import pandas as pd
 
 from urika.data.models import DatasetSpec, DatasetView
 from urika.data.profiler import profile_dataset
-from urika.methods.base import MethodResult
-from urika.methods.one_way_anova import OneWayAnovaMethod, get_method
+from urika.tools.base import ToolResult
+from urika.tools.one_way_anova import OneWayAnovaMethod, get_tool
 
 
 def _make_view(df: pd.DataFrame) -> DatasetView:
@@ -121,10 +121,10 @@ class TestOneWayAnovaMethod:
         view = _make_view(df)
         method = OneWayAnovaMethod()
         result = method.run(view, {"group_column": "group", "value_column": "value"})
-        assert isinstance(result, MethodResult)
+        assert isinstance(result, ToolResult)
 
 
 class TestOneWayAnovaFactory:
-    def test_get_method_returns_instance(self) -> None:
-        method = get_method()
+    def test_get_tool_returns_instance(self) -> None:
+        method = get_tool()
         assert isinstance(method, OneWayAnovaMethod)

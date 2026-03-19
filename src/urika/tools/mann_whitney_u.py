@@ -1,4 +1,4 @@
-"""Mann-Whitney U test method using scipy."""
+"""Mann-Whitney U test tool using scipy."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from typing import Any
 from scipy.stats import mannwhitneyu
 
 from urika.data.models import DatasetView
-from urika.methods.base import IAnalysisMethod, MethodResult
+from urika.tools.base import ITool, ToolResult
 
 
-class MannWhitneyUMethod(IAnalysisMethod):
+class MannWhitneyUMethod(ITool):
     """Mann-Whitney U test for comparing two independent samples."""
 
     def name(self) -> str:
@@ -25,28 +25,29 @@ class MannWhitneyUMethod(IAnalysisMethod):
     def default_params(self) -> dict[str, Any]:
         return {"column_a": "", "column_b": ""}
 
-    def run(self, data: DatasetView, params: dict[str, Any]) -> MethodResult:
+    def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
         col_a = params.get("column_a", "")
         col_b = params.get("column_b", "")
         df = data.data
 
         for col in (col_a, col_b):
             if col not in df.columns:
-                return MethodResult(
-                    metrics={}, valid=False, error=f"Column '{col}' not found"
+                return ToolResult(
+                    outputs={}, metrics={}, valid=False, error=f"Column '{col}' not found"
                 )
 
         subset = df[[col_a, col_b]].dropna()
         if len(subset) < 2:
-            return MethodResult(
-                metrics={},
+            return ToolResult(
+                outputs={}, metrics={},
                 valid=False,
                 error=f"Insufficient data: {len(subset)} rows after dropping NaN",
             )
 
         u_stat, p_value = mannwhitneyu(subset[col_a], subset[col_b])
 
-        return MethodResult(
+        return ToolResult(
+            outputs={},
             metrics={
                 "u_statistic": float(u_stat),
                 "p_value": float(p_value),
@@ -54,6 +55,6 @@ class MannWhitneyUMethod(IAnalysisMethod):
         )
 
 
-def get_method() -> IAnalysisMethod:
+def get_tool() -> ITool:
     """Factory function for registry auto-discovery."""
     return MannWhitneyUMethod()

@@ -6,8 +6,8 @@ import pandas as pd
 
 from urika.data.models import DatasetSpec, DatasetView
 from urika.data.profiler import profile_dataset
-from urika.methods.base import MethodResult
-from urika.methods.descriptive_stats import DescriptiveStatsMethod, get_method
+from urika.tools.base import ToolResult
+from urika.tools.descriptive_stats import DescriptiveStatsMethod, get_tool
 
 
 def _make_view(df: pd.DataFrame) -> DatasetView:
@@ -96,10 +96,10 @@ class TestDescriptiveStatsMethod:
         view = _make_view(df)
         method = DescriptiveStatsMethod()
         result = method.run(view, {"columns": None})
-        assert isinstance(result, MethodResult)
+        assert isinstance(result, ToolResult)
 
 
 class TestDescriptiveStatsFactory:
-    def test_get_method_returns_instance(self) -> None:
-        method = get_method()
+    def test_get_tool_returns_instance(self) -> None:
+        method = get_tool()
         assert isinstance(method, DescriptiveStatsMethod)

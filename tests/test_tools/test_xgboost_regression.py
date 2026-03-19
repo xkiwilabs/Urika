@@ -7,8 +7,8 @@ import pandas as pd
 
 from urika.data.models import DatasetSpec, DatasetView
 from urika.data.profiler import profile_dataset
-from urika.methods.base import MethodResult
-from urika.methods.xgboost_regression import XGBoostRegressionMethod, get_method
+from urika.tools.base import ToolResult
+from urika.tools.xgboost_regression import XGBoostRegressionMethod, get_tool
 
 
 def _make_view(df: pd.DataFrame) -> DatasetView:
@@ -126,10 +126,10 @@ class TestXGBoostRegressionMethod:
         view = _make_view(df)
         method = XGBoostRegressionMethod()
         result = method.run(view, {"target": "y"})
-        assert isinstance(result, MethodResult)
+        assert isinstance(result, ToolResult)
 
 
 class TestXGBoostRegressionFactory:
-    def test_get_method_returns_instance(self) -> None:
-        method = get_method()
+    def test_get_tool_returns_instance(self) -> None:
+        method = get_tool()
         assert isinstance(method, XGBoostRegressionMethod)

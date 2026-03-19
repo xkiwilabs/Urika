@@ -7,8 +7,8 @@ import pandas as pd
 
 from urika.data.models import DatasetSpec, DatasetView
 from urika.data.profiler import profile_dataset
-from urika.methods.base import MethodResult
-from urika.methods.random_forest import RandomForestMethod, get_method
+from urika.tools.base import ToolResult
+from urika.tools.random_forest import RandomForestMethod, get_tool
 
 
 def _make_view(df: pd.DataFrame) -> DatasetView:
@@ -152,10 +152,10 @@ class TestRandomForestMethod:
         view = _make_view(df)
         method = RandomForestMethod()
         result = method.run(view, {"target": "y", "random_state": 42})
-        assert isinstance(result, MethodResult)
+        assert isinstance(result, ToolResult)
 
 
 class TestRandomForestFactory:
-    def test_get_method_returns_instance(self) -> None:
-        method = get_method()
+    def test_get_tool_returns_instance(self) -> None:
+        method = get_tool()
         assert isinstance(method, RandomForestMethod)

@@ -1,4 +1,4 @@
-"""Descriptive statistics method using pandas and scipy."""
+"""Descriptive statistics tool using pandas and scipy."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from typing import Any
 from scipy.stats import kurtosis, skew
 
 from urika.data.models import DatasetView
-from urika.methods.base import IAnalysisMethod, MethodResult
+from urika.tools.base import ITool, ToolResult
 
 
-class DescriptiveStatsMethod(IAnalysisMethod):
+class DescriptiveStatsMethod(ITool):
     """Descriptive statistics for numeric columns."""
 
     def name(self) -> str:
@@ -27,7 +27,7 @@ class DescriptiveStatsMethod(IAnalysisMethod):
     def default_params(self) -> dict[str, Any]:
         return {"columns": None}
 
-    def run(self, data: DatasetView, params: dict[str, Any]) -> MethodResult:
+    def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
         columns = params.get("columns")
         df = data.data
 
@@ -36,24 +36,24 @@ class DescriptiveStatsMethod(IAnalysisMethod):
         if columns is not None:
             missing = [c for c in columns if c not in df.columns]
             if missing:
-                return MethodResult(
-                    metrics={},
+                return ToolResult(
+                    outputs={}, metrics={},
                     valid=False,
                     error=f"Columns not found: {', '.join(missing)}",
                 )
             numeric_df = numeric_df[[c for c in columns if c in numeric_df.columns]]
 
         if numeric_df.shape[1] == 0:
-            return MethodResult(
-                metrics={},
+            return ToolResult(
+                outputs={}, metrics={},
                 valid=False,
                 error="No numeric columns available",
             )
 
         clean = numeric_df.dropna(how="all")
         if len(clean) < 1:
-            return MethodResult(
-                metrics={},
+            return ToolResult(
+                outputs={}, metrics={},
                 valid=False,
                 error="No data after dropping all-NaN rows",
             )
@@ -71,7 +71,8 @@ class DescriptiveStatsMethod(IAnalysisMethod):
                 f"skew={col_skew:.4f}, kurtosis={col_kurt:.4f}"
             )
 
-        return MethodResult(
+        return ToolResult(
+            outputs={},
             metrics={
                 "n_rows": float(len(df)),
                 "n_columns": float(numeric_df.shape[1]),
@@ -80,6 +81,6 @@ class DescriptiveStatsMethod(IAnalysisMethod):
         )
 
 
-def get_method() -> IAnalysisMethod:
+def get_tool() -> ITool:
     """Factory function for registry auto-discovery."""
     return DescriptiveStatsMethod()
