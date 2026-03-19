@@ -12,7 +12,7 @@ Analyse the results of experiment `{experiment_id}` and propose 1-3 concrete nex
 
 ## Instructions
 
-1. **Read** the project configuration at `{project_dir}/urika.json` to understand the research question.
+1. **Read** the project configuration at `{project_dir}/urika.toml` to understand the research question.
 2. **Read** the progress file at `{experiment_dir}/progress.json` to review methods tried and metrics achieved.
 3. **Identify gaps** — what hasn't been tried? Where are the biggest potential gains?
 4. **Propose** 1-3 focused next experiments with clear rationale.

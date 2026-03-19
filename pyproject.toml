@@ -20,6 +20,12 @@ dependencies = [
 agents = [
     "claude-agent-sdk>=0.1",
 ]
+ml = [
+    "torch>=2.0",
+    "transformers>=4.30",
+    "xgboost>=2.0",
+    "lightgbm>=4.0",
+]
 knowledge = [
     "pypdf>=4.0",
 ]

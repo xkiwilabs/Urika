@@ -11,7 +11,7 @@ Build or improve ITool implementations in the project's tools directory.
 
 ## Instructions
 
-1. **Read** the project configuration at `{project_dir}/urika.json` to understand the domain and data.
+1. **Read** the project configuration at `{project_dir}/urika.toml` to understand the domain and data.
 2. **Review** existing tools in `{tools_dir}/` to avoid duplication.
 3. **Implement** the requested tool as a Python module in `{tools_dir}/`.
 4. **Test** your tool by running `pytest` to verify correctness.

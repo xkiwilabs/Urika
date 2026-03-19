@@ -12,7 +12,7 @@ Evaluate the results of experiment `{experiment_id}` against the project's succe
 
 ## Instructions
 
-1. **Read** the project configuration at `{project_dir}/urika.json` to understand the research question and success criteria.
+1. **Read** the project configuration at `{project_dir}/urika.toml` to understand the research question and success criteria.
 2. **Read** the progress file at `{experiment_dir}/progress.json` to review all recorded runs.
 3. **Assess** each run's metrics against the success criteria.
 4. **Score** the overall experiment quality.
