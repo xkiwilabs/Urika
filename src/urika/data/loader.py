@@ -39,3 +39,46 @@ def load_dataset(path: Path, name: str | None = None) -> DatasetView:
     spec = DatasetSpec(path=path, format=reader.name(), name=name or path.stem)
 
     return DatasetView(spec=spec, data=df, summary=summary)
+
+
+def load_dataset_directory(
+    path: Path,
+    pattern: str = "*.csv",
+    name: str | None = None,
+) -> DatasetView:
+    """Load all matching files in a directory into a single DataFrame.
+
+    Adds a '_source_file' column with the relative path of each source file.
+
+    Args:
+        path: Path to the directory containing data files.
+        pattern: Glob pattern to match files. Defaults to ``*.csv``.
+        name: Human-friendly name. Defaults to the directory name.
+
+    Returns:
+        A DatasetView with the concatenated data and profiling summary.
+
+    Raises:
+        FileNotFoundError: If the directory does not exist.
+        ValueError: If no files match the pattern.
+    """
+    import pandas as pd
+
+    if not path.exists():
+        raise FileNotFoundError(f"Directory not found: {path}")
+
+    files = sorted(path.glob(pattern))
+    if not files:
+        raise ValueError(f"No files found matching '{pattern}' in {path}")
+
+    frames: list[pd.DataFrame] = []
+    for f in files:
+        df = pd.read_csv(f)
+        df["_source_file"] = str(f.relative_to(path))
+        frames.append(df)
+
+    combined = pd.concat(frames, ignore_index=True)
+    summary = profile_dataset(combined)
+    spec = DatasetSpec(path=path, format="csv_directory", name=name or path.name)
+
+    return DatasetView(spec=spec, data=combined, summary=summary)
