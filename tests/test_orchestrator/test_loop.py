@@ -154,6 +154,7 @@ class TestOrchestratorLoop:
         project_dir, exp_id = _setup_project(tmp_path)
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -170,6 +171,7 @@ class TestOrchestratorLoop:
         project_dir, exp_id = _setup_project(tmp_path)
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_NOT_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -186,6 +188,7 @@ class TestOrchestratorLoop:
         project_dir, exp_id = _setup_project(tmp_path)
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -204,6 +207,7 @@ class TestOrchestratorLoop:
         project_dir, exp_id = _setup_project(tmp_path)
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -235,6 +239,7 @@ class TestOrchestratorLoop:
         project_dir, exp_id = _setup_project(tmp_path)
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -243,7 +248,8 @@ class TestOrchestratorLoop:
 
         await run_experiment(project_dir, exp_id, runner, max_turns=5)
 
-        # Both task_agent and evaluator should have been called
+        # planning_agent, task_agent, and evaluator should have been called
+        assert runner._call_counts.get("planning_agent", 0) >= 1
         assert runner._call_counts.get("task_agent", 0) >= 1
         assert runner._call_counts.get("evaluator", 0) >= 1
 
@@ -252,6 +258,7 @@ class TestOrchestratorLoop:
         project_dir, exp_id = _setup_project(tmp_path)
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [
                     _EVAL_CRITERIA_NOT_MET,
@@ -266,6 +273,116 @@ class TestOrchestratorLoop:
 
         assert result["status"] == "completed"
         assert result["turns"] == 3
+
+
+_PLAN_OUTPUT = """\
+Here is the method plan:
+```json
+{
+    "method_name": "rf_pipeline",
+    "steps": [
+        {"step": 1, "action": "profile data", "tool": "data_profiler"},
+        {"step": 2, "action": "fit random forest"}
+    ],
+    "evaluation": {"strategy": "10-fold CV"},
+    "needs_tool": false
+}
+```
+"""
+
+
+class TestPlanningAgent:
+    @pytest.mark.asyncio
+    async def test_planning_agent_called_before_task_agent(
+        self, tmp_path: Path
+    ) -> None:
+        """When planning_agent is registered, it runs first and its output
+        is passed to task_agent as the prompt."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        call_order: list[str] = []
+        prompts_received: dict[str, list[str]] = {}
+
+        class OrderTrackingRunner(AgentRunner):
+            async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+                call_order.append(config.name)
+                prompts_received.setdefault(config.name, []).append(prompt)
+                responses = {
+                    "planning_agent": _PLAN_OUTPUT,
+                    "task_agent": _TASK_OUTPUT,
+                    "evaluator": _EVAL_CRITERIA_MET,
+                    "suggestion_agent": _SUGGESTION,
+                }
+                text = responses.get(config.name, "")
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=text,
+                    session_id=f"session-{config.name}",
+                    num_turns=1,
+                    duration_ms=100,
+                )
+
+        result = await run_experiment(
+            project_dir, exp_id, OrderTrackingRunner(), max_turns=5
+        )
+
+        assert result["status"] == "completed"
+        # Planning agent should be called before task agent
+        plan_idx = call_order.index("planning_agent")
+        task_idx = call_order.index("task_agent")
+        assert plan_idx < task_idx
+        # Task agent should receive the planning agent's output
+        assert _PLAN_OUTPUT.strip() in prompts_received["task_agent"][0]
+
+    @pytest.mark.asyncio
+    async def test_loop_works_without_planning_agent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When planning_agent is NOT registered, task_agent gets the
+        original task_prompt directly (backward compatibility)."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        # Patch discover() to skip planning_agent registration
+        from urika.agents.registry import AgentRegistry
+
+        _orig_discover = AgentRegistry.discover
+
+        def _discover_without_planner(self: AgentRegistry) -> None:
+            _orig_discover(self)
+            self._roles.pop("planning_agent", None)
+
+        monkeypatch.setattr(AgentRegistry, "discover", _discover_without_planner)
+
+        prompts_received: dict[str, list[str]] = {}
+
+        class CapturingRunner(AgentRunner):
+            async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+                prompts_received.setdefault(config.name, []).append(prompt)
+                responses = {
+                    "task_agent": _TASK_OUTPUT,
+                    "evaluator": _EVAL_CRITERIA_MET,
+                    "suggestion_agent": _SUGGESTION,
+                }
+                text = responses.get(config.name, "")
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=text,
+                    session_id=f"session-{config.name}",
+                    num_turns=1,
+                    duration_ms=100,
+                )
+
+        result = await run_experiment(
+            project_dir, exp_id, CapturingRunner(), max_turns=5
+        )
+
+        assert result["status"] == "completed"
+        # planning_agent should NOT have been called
+        assert "planning_agent" not in prompts_received
+        # task_agent should have received the initial task prompt
+        assert "Begin the experiment" in prompts_received["task_agent"][0]
 
 
 class TestOrchestratorKnowledgeIntegration:
@@ -285,6 +402,7 @@ class TestOrchestratorKnowledgeIntegration:
         runner = FakeRunner(
             {
                 "literature_agent": [_LITERATURE_OUTPUT],
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -302,6 +420,7 @@ class TestOrchestratorKnowledgeIntegration:
 
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -314,26 +433,29 @@ class TestOrchestratorKnowledgeIntegration:
         assert runner._call_counts.get("literature_agent", 0) == 0
 
     @pytest.mark.asyncio
-    async def test_on_demand_literature_from_suggestion(self, tmp_path: Path) -> None:
+    async def test_on_demand_literature_from_plan(self, tmp_path: Path) -> None:
         project_dir, exp_id = _setup_project(tmp_path)
 
-        suggestion_with_lit = """\
-Try a different approach:
+        plan_with_lit = """\
+Here is the method plan:
 ```json
 {
-    "suggestions": [
-        {"method": "random_forest", "rationale": "Non-linear may fit better"}
+    "method_name": "rf_pipeline",
+    "steps": [
+        {"step": 1, "action": "fit random forest"}
     ],
     "needs_tool": false,
-    "needs_literature": true
+    "needs_literature": true,
+    "literature_query": "random forest regression best practices"
 }
 ```
 """
         runner = FakeRunner(
             {
+                "planning_agent": [plan_with_lit],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
-                "suggestion_agent": [suggestion_with_lit],
+                "suggestion_agent": [_SUGGESTION],
                 "literature_agent": [_LITERATURE_OUTPUT],
             }
         )
@@ -341,7 +463,7 @@ Try a different approach:
         result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
 
         assert result["status"] == "completed"
-        # Literature agent called on-demand
+        # Literature agent called on-demand from planning agent
         assert runner._call_counts.get("literature_agent", 0) >= 1
 
 
@@ -357,6 +479,7 @@ class TestOrchestratorResume:
 
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -385,6 +508,7 @@ class TestOrchestratorResume:
 
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -421,7 +545,9 @@ class TestOrchestratorResume:
         class CapturingRunner(AgentRunner):
             async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
                 prompts_received.append(prompt)
-                if config.name == "task_agent":
+                if config.name == "planning_agent":
+                    text = _PLAN_OUTPUT
+                elif config.name == "task_agent":
                     text = _TASK_OUTPUT
                 elif config.name == "evaluator":
                     text = _EVAL_CRITERIA_MET
@@ -441,7 +567,7 @@ class TestOrchestratorResume:
         )
 
         assert result["status"] == "completed"
-        # The first prompt to task_agent should contain the next_step
+        # The first prompt (to planning_agent) should contain the next_step
         assert "Try random forest with max_depth=10" in prompts_received[0]
 
     @pytest.mark.asyncio
@@ -450,6 +576,7 @@ class TestOrchestratorResume:
         project_dir, exp_id = _setup_project(tmp_path)
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -474,6 +601,7 @@ class TestOrchestratorResume:
 
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -497,6 +625,7 @@ class TestOrchestratorResume:
 
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],
@@ -517,6 +646,7 @@ class TestOrchestratorResume:
 
         runner = FakeRunner(
             {
+                "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
                 "suggestion_agent": [_SUGGESTION],

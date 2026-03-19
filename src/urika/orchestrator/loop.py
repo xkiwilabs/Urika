@@ -19,6 +19,7 @@ from urika.core.session import (
 from urika.orchestrator.knowledge import build_knowledge_summary
 from urika.orchestrator.parsing import (
     parse_evaluation,
+    parse_method_plan,
     parse_run_records,
     parse_suggestions,
 )
@@ -85,6 +86,64 @@ async def run_experiment(
 
     for turn in range(start_turn, max_turns + 1):
         try:
+            # --- planning_agent (optional) ---
+            plan_role = registry.get("planning_agent")
+            if plan_role is not None:
+                plan_config = plan_role.build_config(
+                    project_dir=project_dir, experiment_id=experiment_id
+                )
+                plan_result = await runner.run(plan_config, task_prompt)
+
+                if not plan_result.success:
+                    fail_session(
+                        project_dir,
+                        experiment_id,
+                        error=plan_result.error or "planning_agent failed",
+                    )
+                    return {
+                        "status": "failed",
+                        "error": plan_result.error or "planning_agent failed",
+                        "turns": turn,
+                    }
+
+                method_plan = parse_method_plan(plan_result.text_output)
+
+                # Handle planning agent's tool/literature requests
+                if method_plan and method_plan.get("needs_tool"):
+                    tool_role = registry.get("tool_builder")
+                    if tool_role is not None:
+                        tool_config = tool_role.build_config(
+                            project_dir=project_dir
+                        )
+                        await runner.run(tool_config, json.dumps(method_plan))
+
+                if method_plan and method_plan.get("needs_literature"):
+                    lit_role = registry.get("literature_agent")
+                    if lit_role is not None:
+                        lit_config = lit_role.build_config(
+                            project_dir=project_dir
+                        )
+                        lit_result = await runner.run(
+                            lit_config,
+                            method_plan.get(
+                                "literature_query", json.dumps(method_plan)
+                            ),
+                        )
+                        if lit_result.success and lit_result.text_output:
+                            task_input = (
+                                lit_result.text_output
+                                + "\n\n"
+                                + plan_result.text_output
+                            )
+                        else:
+                            task_input = plan_result.text_output
+                    else:
+                        task_input = plan_result.text_output
+                else:
+                    task_input = plan_result.text_output
+            else:
+                task_input = task_prompt
+
             # --- task_agent ---
             task_role = registry.get("task_agent")
             if task_role is None:
@@ -100,7 +159,7 @@ async def run_experiment(
             task_config = task_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
             )
-            task_result = await runner.run(task_config, task_prompt)
+            task_result = await runner.run(task_config, task_input)
 
             if not task_result.success:
                 fail_session(
@@ -186,27 +245,11 @@ async def run_experiment(
 
             suggestions = parse_suggestions(suggest_result.text_output)
 
-            # --- optional tool_builder ---
-            if suggestions and suggestions.get("needs_tool"):
-                tool_role = registry.get("tool_builder")
-                if tool_role is not None:
-                    tool_config = tool_role.build_config(project_dir=project_dir)
-                    await runner.run(tool_config, json.dumps(suggestions))
-
             # Build next task prompt from suggestions
             if suggestions:
                 task_prompt = json.dumps(suggestions)
             else:
                 task_prompt = "Continue the experiment with a different approach."
-
-            # --- optional literature_agent ---
-            if suggestions and suggestions.get("needs_literature"):
-                lit_role = registry.get("literature_agent")
-                if lit_role is not None:
-                    lit_config = lit_role.build_config(project_dir=project_dir)
-                    lit_result = await runner.run(lit_config, json.dumps(suggestions))
-                    if lit_result.success and lit_result.text_output:
-                        task_prompt = lit_result.text_output + "\n\n" + task_prompt
 
             update_turn(project_dir, experiment_id)
 

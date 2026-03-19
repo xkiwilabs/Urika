@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from urika.orchestrator.parsing import (
     parse_evaluation,
+    parse_method_plan,
     parse_run_records,
     parse_suggestions,
 )
@@ -176,3 +177,33 @@ class TestParseSuggestions:
         assert result is not None
         assert result["needs_tool"] is True
         assert "tool_description" in result
+
+
+class TestParseMethodPlan:
+    def test_valid_plan(self) -> None:
+        text = '''Here is the plan:
+```json
+{
+    "method_name": "rf_pipeline",
+    "steps": [
+        {"step": 1, "action": "profile data", "tool": "data_profiler"}
+    ],
+    "evaluation": {"strategy": "10-fold CV"},
+    "needs_tool": false
+}
+```'''
+        result = parse_method_plan(text)
+        assert result is not None
+        assert result["method_name"] == "rf_pipeline"
+        assert len(result["steps"]) == 1
+
+    def test_missing_keys_returns_none(self) -> None:
+        text = '''```json
+{"method_name": "test"}
+```'''
+        result = parse_method_plan(text)
+        assert result is None
+
+    def test_no_blocks_returns_none(self) -> None:
+        result = parse_method_plan("No JSON here")
+        assert result is None

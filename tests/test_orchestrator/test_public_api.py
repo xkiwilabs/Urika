@@ -25,3 +25,9 @@ def test_import_parse_suggestions() -> None:
     from urika.orchestrator import parse_suggestions
 
     assert callable(parse_suggestions)
+
+
+def test_import_parse_method_plan() -> None:
+    from urika.orchestrator import parse_method_plan
+
+    assert callable(parse_method_plan)

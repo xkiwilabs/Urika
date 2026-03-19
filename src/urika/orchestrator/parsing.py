@@ -61,3 +61,12 @@ def parse_suggestions(text: str) -> dict[str, Any] | None:
         if "suggestions" in block:
             return block
     return None
+
+
+def parse_method_plan(text: str) -> dict[str, Any] | None:
+    """Extract the first JSON block containing 'method_name' and 'steps' keys."""
+    blocks = _extract_json_blocks(text)
+    for block in blocks:
+        if "method_name" in block and "steps" in block:
+            return block
+    return None
