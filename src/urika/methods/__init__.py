@@ -1,6 +1,6 @@
-"""Analysis method infrastructure."""
+"""Analysis method infrastructure — agent-created pipelines."""
 
-from urika.methods.base import IAnalysisMethod, MethodResult
+from urika.methods.base import IMethod, MethodResult
 from urika.methods.registry import MethodRegistry
 
-__all__ = ["IAnalysisMethod", "MethodRegistry", "MethodResult"]
+__all__ = ["IMethod", "MethodRegistry", "MethodResult"]

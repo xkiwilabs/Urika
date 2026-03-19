@@ -6,10 +6,10 @@ from __future__ import annotations
 class TestPublicAPI:
     """Test that key types are importable from urika.methods."""
 
-    def test_import_analysis_method(self) -> None:
-        from urika.methods import IAnalysisMethod
+    def test_import_method(self) -> None:
+        from urika.methods import IMethod
 
-        assert IAnalysisMethod is not None
+        assert IMethod is not None
 
     def test_import_method_result(self) -> None:
         from urika.methods import MethodResult

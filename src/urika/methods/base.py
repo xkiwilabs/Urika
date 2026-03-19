@@ -1,4 +1,10 @@
-"""Base method interface and result type."""
+"""Base method interface and result type.
+
+A method is a complete analytical pipeline — the core output of the agent
+system.  Methods combine multiple tools into an end-to-end workflow
+(preprocessing, modelling, evaluation) and are created by agents, not
+shipped as built-ins.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +18,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class MethodResult:
-    """What a method run produced."""
+    """What a method pipeline produced."""
 
     metrics: dict[str, float]
     artifacts: list[str] = field(default_factory=list)
@@ -20,8 +26,13 @@ class MethodResult:
     error: str | None = None
 
 
-class IAnalysisMethod(ABC):
-    """Interface for all analysis methods."""
+class IMethod(ABC):
+    """Interface for agent-created analytical pipelines.
+
+    Unlike tools (individual building blocks), a method represents a
+    complete analysis pipeline: data preparation, feature engineering,
+    model fitting, hyperparameter tuning, and evaluation.
+    """
 
     @abstractmethod
     def name(self) -> str:
@@ -30,20 +41,15 @@ class IAnalysisMethod(ABC):
 
     @abstractmethod
     def description(self) -> str:
-        """Return a human-readable description."""
+        """Return a human-readable description of the pipeline."""
         ...
 
     @abstractmethod
-    def category(self) -> str:
-        """Return the method category (e.g. 'regression', 'classification')."""
-        ...
-
-    @abstractmethod
-    def default_params(self) -> dict[str, Any]:
-        """Return default parameters for this method."""
+    def tools_used(self) -> list[str]:
+        """Return names of tools this method uses."""
         ...
 
     @abstractmethod
     def run(self, data: DatasetView, params: dict[str, Any]) -> MethodResult:
-        """Run the method on data with given parameters."""
+        """Execute the full pipeline on data with given parameters."""
         ...
