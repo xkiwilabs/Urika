@@ -22,13 +22,14 @@ pip install -e ".[dev]"
 ## Quickstart
 
 ```bash
-# 1. Create a project
+# 1. Create a project (with data source)
 urika new sleep-study \
   --question "What predicts sleep quality?" \
-  --mode exploratory
+  --mode exploratory \
+  --data ./my_data.csv
 
-# 2. Add your data
-cp my_data.csv ~/urika-projects/sleep-study/data/
+# The builder scans data sources, profiles datasets, and can
+# ingest papers/docs into the knowledge base automatically.
 
 # 3. Inspect the data
 urika inspect sleep-study
@@ -52,7 +53,7 @@ urika run sleep-study --continue
 
 | Command | Description |
 |---------|-------------|
-| `urika new <name>` | Create a new project |
+| `urika new <name> -q <question> -m <mode> --data <path> --description <desc>` | Create a new project (scans data sources, profiles data, ingests docs into knowledge base) |
 | `urika list` | List all projects |
 | `urika status <project>` | Show project status |
 | `urika inspect <project>` | Inspect project data |

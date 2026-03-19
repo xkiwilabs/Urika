@@ -15,7 +15,9 @@ class TestLoadDatasetDirectory:
         data_dir = tmp_path / "data"
         data_dir.mkdir()
         for i in range(n):
-            df = pd.DataFrame({"x": [i * 10 + j for j in range(5)], "y": [j for j in range(5)]})
+            df = pd.DataFrame(
+                {"x": [i * 10 + j for j in range(5)], "y": [j for j in range(5)]}
+            )
             df.to_csv(data_dir / f"file_{i}.csv", index=False)
         return data_dir
 
@@ -65,4 +67,5 @@ class TestLoadDatasetDirectory:
         data_dir = self._make_csvs(tmp_path, 1)
         view = load_dataset_directory(data_dir)
         from urika.data.models import DatasetView
+
         assert isinstance(view, DatasetView)

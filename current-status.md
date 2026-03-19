@@ -2,12 +2,14 @@
 
 **Date:** 2026-03-20
 **Version:** v0.1 (pre-release)
-**Tests:** 734 passing
+**Tests:** 794 passing
 
 ## What's Built
 
 ### Core Infrastructure
 - **Project lifecycle**: create, register, list, load, inspect
+- **Project Builder**: source scanning, data profiling, multi-file dataset support, builder prompts for interactive agent setup
+- **Multi-file dataset support**: projects can reference multiple data files (CSV, Excel, Parquet, JSON, etc.)
 - **Experiment lifecycle**: create, list, load, progress tracking
 - **Session management**: start, pause, resume, complete, fail, lockfiles
 - **Labbook**: auto-generated notes, summaries, key findings from progress data
@@ -73,13 +75,13 @@ The entire agent execution path has only been tested with mocks:
 4. **Harden output parsing** — add fallback/retry logic if Claude doesn't produce valid JSON blocks
 
 ### Short-Term (Robustness)
-5. **Project builder agent** — currently `urika new` is manual CLI. Build the interactive agent that scopes projects with users and seeds initial suggestions
+5. ~~**Project builder agent**~~ **FOUNDATION DONE** — source scanning, data profiling, multi-file dataset support, and builder prompts implemented. Next: interactive agent loop and first real test with a dataset.
 6. **Method persistence** — the task agent creates method scripts but there's no standard location or auto-registration yet. Wire up `project_dir/methods/` for agent-written method modules
 7. **Tool builder integration test** — test the full tool_builder flow: identify need → create tool → register → use in next run
 8. **Error recovery** — improve graceful handling when agents fail mid-loop (partial results, retry logic)
 
 ### Medium-Term (Usability)
-9. **Dataset auto-loading** — automatically profile and summarize dataset in agent context so agents don't have to read CSV manually
+9. **Dataset auto-loading** — project builder now profiles datasets at creation; next step is injecting profiles into agent context automatically
 10. **Progress dashboard** — richer `urika status` with per-experiment metrics, trends, and method comparison
 11. **Export/share** — export best method as standalone Python script
-12. **Multi-dataset support** — currently one dataset per project, may need multiple
+12. ~~**Multi-dataset support**~~ **DONE** — project builder supports multi-file datasets with source scanning

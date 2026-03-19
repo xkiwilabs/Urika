@@ -82,8 +82,10 @@ class TestProjectConfig:
 
     def test_config_with_description(self) -> None:
         config = ProjectConfig(
-            name="test", question="Q?", mode="exploratory",
-            description="Predict target choices in herding task"
+            name="test",
+            question="Q?",
+            mode="exploratory",
+            description="Predict target choices in herding task",
         )
         assert config.description == "Predict target choices in herding task"
 
@@ -93,8 +95,10 @@ class TestProjectConfig:
 
     def test_description_roundtrips_via_toml(self) -> None:
         config = ProjectConfig(
-            name="test", question="Q?", mode="exploratory",
-            description="My project description"
+            name="test",
+            question="Q?",
+            mode="exploratory",
+            description="My project description",
         )
         d = config.to_toml_dict()
         restored = ProjectConfig.from_toml_dict(d)

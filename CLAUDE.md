@@ -43,10 +43,13 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Core Modules
 
-- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods <project>`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`
+- `src/urika/cli.py` — Click CLI: `new` (with `--data`, `--description`), `list`, `status`, `experiment`, `results`, `methods <project>`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`
 - `src/urika/core/models.py` — Data models: `ProjectConfig`, `ExperimentConfig`, `RunRecord`, `SessionState`
 - `src/urika/core/registry.py` — Central project registry at `~/.urika/projects.json`
 - `src/urika/core/workspace.py` — Project workspace creation and loading
+- `src/urika/core/project_builder.py` — Project builder: source scanning, data profiling, multi-file dataset support, knowledge ingestion
+- `src/urika/core/source_scanner.py` — Scans data sources (CSV, Excel, Parquet, JSON, etc.) and detects file types, sizes, and structure
+- `src/urika/core/builder_prompts.py` — Prompt templates for the interactive project builder agent
 - `src/urika/core/experiment.py` — Experiment lifecycle: create, list, load
 - `src/urika/core/progress.py` — Append-only progress tracking with best-run queries
 - `src/urika/core/labbook.py` — Auto-generated .md summaries from progress data
@@ -59,7 +62,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Project Status
 
-678 tests. Foundation, agents, orchestrator, evaluation, methods (agent-created), tools (13 built-in), knowledge pipeline, CLI (15 commands), session management, report generation, and end-to-end integration tests all implemented. v0.1 release ready for real-world testing.
+794 tests. Foundation, agents, orchestrator, evaluation, methods (agent-created), tools (16 built-in), knowledge pipeline, CLI (15 commands), project builder (source scanning, data profiling, multi-file datasets), session management, report generation, and end-to-end integration tests all implemented. v0.1 release ready for real-world testing.
 
 ## Development
 
