@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-20
 **Version:** v0.1 (pre-release)
-**Tests:** 678 passing
+**Tests:** 734 passing
 
 ## What's Built
 
@@ -14,7 +14,7 @@
 - **Evaluation**: leaderboard ranking, 9 built-in metrics (R², RMSE, MAE, accuracy, F1, precision, recall, AUC, Cohen's d)
 - **Knowledge pipeline**: PDF/text/URL extractors, KnowledgeStore with keyword search
 
-### 13 Built-in Tools
+### 16 Built-in Tools
 | Tool | Category | Purpose |
 |------|----------|---------|
 | data_profiler | exploration | Dataset profiling with summary statistics |
@@ -23,6 +23,9 @@
 | visualization | exploration | Histogram, scatter, and box plots |
 | hypothesis_tests | statistics | T-test, chi-squared, normality (Shapiro-Wilk) |
 | descriptive_stats | statistics | Summary stats with skew and kurtosis |
+| train_val_test_split | preprocessing | Train/val/test split with stratification |
+| cross_validation | preprocessing | K-fold CV with optional stratification |
+| group_split | preprocessing | LOGO CV and group-based splitting (participant-level) |
 | linear_regression | regression | OLS linear regression |
 | logistic_regression | classification | Logistic regression classifier |
 | random_forest | regression | Random forest regression |
@@ -59,12 +62,12 @@ The entire agent execution path has only been tested with mocks:
 3. **Output parsing robustness** — `parse_run_records`, `parse_evaluation`, `parse_suggestions`, `parse_method_plan` depend on Claude returning well-formed JSON
 4. **Planning agent → task agent flow** — the planning agent produces a method plan, task agent implements it. This chain is untested with real LLM output.
 5. **Tool builder creating new tools** — the tool builder can write Python and pip install, but hasn't been exercised
-6. **Known issue**: evaluator prompt references `urika.json` but projects use `urika.toml`
+6. ~~**Known issue**: evaluator prompt references `urika.json` but projects use `urika.toml`~~ **FIXED**
 
 ## Recommended Next Steps
 
 ### Immediate (Real-World Validation)
-1. **Fix evaluator prompt** — change `urika.json` reference to `urika.toml`
+1. ~~**Fix evaluator prompt**~~ **DONE**
 2. **Run a real experiment** — pick a simple dataset (e.g., Iris, Boston housing), create a project, run 2-3 turns with real Claude, observe agent behavior
 3. **Tune prompts** — based on real output, adjust agent prompts for better JSON output, tool usage, and pipeline design
 4. **Harden output parsing** — add fallback/retry logic if Claude doesn't produce valid JSON blocks
