@@ -17,6 +17,7 @@ class ProjectConfig:
     name: str
     question: str
     mode: str
+    description: str = ""
     data_paths: list[str] = field(default_factory=list)
     success_criteria: dict[str, Any] = field(default_factory=dict)
 
@@ -32,6 +33,7 @@ class ProjectConfig:
                 "name": self.name,
                 "question": self.question,
                 "mode": self.mode,
+                "description": self.description,
             }
         }
         if self.data_paths:
@@ -48,6 +50,7 @@ class ProjectConfig:
             name=p["name"],
             question=p["question"],
             mode=p["mode"],
+            description=p.get("description", ""),
             data_paths=p.get("data_paths", []),
             success_criteria=p.get("success_criteria", {}),
         )

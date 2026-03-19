@@ -80,6 +80,26 @@ class TestProjectConfig:
         assert restored.data_paths == original.data_paths
         assert restored.success_criteria == original.success_criteria
 
+    def test_config_with_description(self) -> None:
+        config = ProjectConfig(
+            name="test", question="Q?", mode="exploratory",
+            description="Predict target choices in herding task"
+        )
+        assert config.description == "Predict target choices in herding task"
+
+    def test_description_default_empty(self) -> None:
+        config = ProjectConfig(name="test", question="Q?", mode="exploratory")
+        assert config.description == ""
+
+    def test_description_roundtrips_via_toml(self) -> None:
+        config = ProjectConfig(
+            name="test", question="Q?", mode="exploratory",
+            description="My project description"
+        )
+        d = config.to_toml_dict()
+        restored = ProjectConfig.from_toml_dict(d)
+        assert restored.description == "My project description"
+
 
 class TestExperimentConfig:
     def test_create(self) -> None:
