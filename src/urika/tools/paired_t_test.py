@@ -33,13 +33,17 @@ class PairedTTestMethod(ITool):
         for col in (col_a, col_b):
             if col not in df.columns:
                 return ToolResult(
-                    outputs={}, metrics={}, valid=False, error=f"Column '{col}' not found"
+                    outputs={},
+                    metrics={},
+                    valid=False,
+                    error=f"Column '{col}' not found",
                 )
 
         subset = df[[col_a, col_b]].dropna()
         if len(subset) < 2:
             return ToolResult(
-                outputs={}, metrics={},
+                outputs={},
+                metrics={},
                 valid=False,
                 error=f"Insufficient data: {len(subset)} paired observations after dropping NaN",
             )
@@ -51,7 +55,7 @@ class PairedTTestMethod(ITool):
             metrics={
                 "t_statistic": float(t_stat),
                 "p_value": float(p_value),
-            }
+            },
         )
 
 

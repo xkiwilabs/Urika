@@ -33,7 +33,10 @@ class OneWayAnovaMethod(ITool):
         for col in (group_column, value_column):
             if col not in df.columns:
                 return ToolResult(
-                    outputs={}, metrics={}, valid=False, error=f"Column '{col}' not found"
+                    outputs={},
+                    metrics={},
+                    valid=False,
+                    error=f"Column '{col}' not found",
                 )
 
         subset = df[[group_column, value_column]].dropna()
@@ -42,7 +45,8 @@ class OneWayAnovaMethod(ITool):
 
         if len(groups) < 2:
             return ToolResult(
-                outputs={}, metrics={},
+                outputs={},
+                metrics={},
                 valid=False,
                 error=f"Need at least 2 groups, found {len(groups)}",
             )
@@ -50,7 +54,8 @@ class OneWayAnovaMethod(ITool):
         for grp_name, values in groups.items():
             if len(values) < 2:
                 return ToolResult(
-                    outputs={}, metrics={},
+                    outputs={},
+                    metrics={},
                     valid=False,
                     error=f"Group '{grp_name}' has fewer than 2 observations",
                 )
@@ -63,7 +68,7 @@ class OneWayAnovaMethod(ITool):
             metrics={
                 "f_statistic": float(f_stat),
                 "p_value": float(p_value),
-            }
+            },
         )
 
 

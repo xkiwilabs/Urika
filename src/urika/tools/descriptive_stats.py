@@ -37,7 +37,8 @@ class DescriptiveStatsMethod(ITool):
             missing = [c for c in columns if c not in df.columns]
             if missing:
                 return ToolResult(
-                    outputs={}, metrics={},
+                    outputs={},
+                    metrics={},
                     valid=False,
                     error=f"Columns not found: {', '.join(missing)}",
                 )
@@ -45,7 +46,8 @@ class DescriptiveStatsMethod(ITool):
 
         if numeric_df.shape[1] == 0:
             return ToolResult(
-                outputs={}, metrics={},
+                outputs={},
+                metrics={},
                 valid=False,
                 error="No numeric columns available",
             )
@@ -53,7 +55,8 @@ class DescriptiveStatsMethod(ITool):
         clean = numeric_df.dropna(how="all")
         if len(clean) < 1:
             return ToolResult(
-                outputs={}, metrics={},
+                outputs={},
+                metrics={},
                 valid=False,
                 error="No data after dropping all-NaN rows",
             )

@@ -112,17 +112,13 @@ async def run_experiment(
                 if method_plan and method_plan.get("needs_tool"):
                     tool_role = registry.get("tool_builder")
                     if tool_role is not None:
-                        tool_config = tool_role.build_config(
-                            project_dir=project_dir
-                        )
+                        tool_config = tool_role.build_config(project_dir=project_dir)
                         await runner.run(tool_config, json.dumps(method_plan))
 
                 if method_plan and method_plan.get("needs_literature"):
                     lit_role = registry.get("literature_agent")
                     if lit_role is not None:
-                        lit_config = lit_role.build_config(
-                            project_dir=project_dir
-                        )
+                        lit_config = lit_role.build_config(project_dir=project_dir)
                         lit_result = await runner.run(
                             lit_config,
                             method_plan.get(

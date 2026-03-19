@@ -33,7 +33,10 @@ class LogisticRegressionMethod(ITool):
 
         if target not in df.columns:
             return ToolResult(
-                outputs={}, metrics={}, valid=False, error=f"Target column '{target}' not found"
+                outputs={},
+                metrics={},
+                valid=False,
+                error=f"Target column '{target}' not found",
             )
 
         numeric_df = df.select_dtypes(include="number")
@@ -44,13 +47,17 @@ class LogisticRegressionMethod(ITool):
 
         if not feature_cols:
             return ToolResult(
-                outputs={}, metrics={}, valid=False, error="No feature columns available"
+                outputs={},
+                metrics={},
+                valid=False,
+                error="No feature columns available",
             )
 
         subset = df[[target, *feature_cols]].dropna()
         if len(subset) < 2:
             return ToolResult(
-                outputs={}, metrics={},
+                outputs={},
+                metrics={},
                 valid=False,
                 error=f"Insufficient data: {len(subset)} rows after dropping NaN",
             )
@@ -58,7 +65,8 @@ class LogisticRegressionMethod(ITool):
         classes = subset[target].nunique()
         if classes < 2:
             return ToolResult(
-                outputs={}, metrics={},
+                outputs={},
+                metrics={},
                 valid=False,
                 error=f"Need at least 2 classes in target, found {classes}",
             )
@@ -77,7 +85,7 @@ class LogisticRegressionMethod(ITool):
             metrics={
                 "accuracy": float(accuracy_score(y, y_pred)),
                 "f1": float(f1_score(y, y_pred, average=avg)),
-            }
+            },
         )
 
 

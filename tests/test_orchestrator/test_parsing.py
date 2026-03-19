@@ -181,7 +181,7 @@ class TestParseSuggestions:
 
 class TestParseMethodPlan:
     def test_valid_plan(self) -> None:
-        text = '''Here is the plan:
+        text = """Here is the plan:
 ```json
 {
     "method_name": "rf_pipeline",
@@ -191,16 +191,16 @@ class TestParseMethodPlan:
     "evaluation": {"strategy": "10-fold CV"},
     "needs_tool": false
 }
-```'''
+```"""
         result = parse_method_plan(text)
         assert result is not None
         assert result["method_name"] == "rf_pipeline"
         assert len(result["steps"]) == 1
 
     def test_missing_keys_returns_none(self) -> None:
-        text = '''```json
+        text = """```json
 {"method_name": "test"}
-```'''
+```"""
         result = parse_method_plan(text)
         assert result is None
 

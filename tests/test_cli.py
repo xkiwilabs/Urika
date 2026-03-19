@@ -316,9 +316,7 @@ class TestResultsCommand:
 
 
 class TestMethodsCommand:
-    def test_no_methods_yet(
-        self, runner: CliRunner, urika_env: dict[str, str]
-    ) -> None:
+    def test_no_methods_yet(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         _create_project(runner, urika_env)
         result = runner.invoke(cli, ["methods", "test-proj"], env=urika_env)
         assert result.exit_code == 0

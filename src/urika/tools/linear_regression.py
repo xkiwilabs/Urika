@@ -34,7 +34,10 @@ class LinearRegressionMethod(ITool):
 
         if target not in df.columns:
             return ToolResult(
-                outputs={}, metrics={}, valid=False, error=f"Target column '{target}' not found"
+                outputs={},
+                metrics={},
+                valid=False,
+                error=f"Target column '{target}' not found",
             )
 
         numeric_df = df.select_dtypes(include="number")
@@ -45,13 +48,17 @@ class LinearRegressionMethod(ITool):
 
         if not feature_cols:
             return ToolResult(
-                outputs={}, metrics={}, valid=False, error="No feature columns available"
+                outputs={},
+                metrics={},
+                valid=False,
+                error="No feature columns available",
             )
 
         subset = numeric_df[[target, *feature_cols]].dropna()
         if len(subset) < 2:
             return ToolResult(
-                outputs={}, metrics={},
+                outputs={},
+                metrics={},
                 valid=False,
                 error=f"Insufficient data: {len(subset)} rows after dropping NaN",
             )
@@ -69,7 +76,7 @@ class LinearRegressionMethod(ITool):
                 "r2": float(r2_score(y, y_pred)),
                 "rmse": float(np.sqrt(mean_squared_error(y, y_pred))),
                 "mae": float(mean_absolute_error(y, y_pred)),
-            }
+            },
         )
 
 
