@@ -14,7 +14,6 @@ from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
 from urika.core.workspace import create_project_workspace, load_project_config
 from urika.evaluation.leaderboard import load_leaderboard
-from urika.methods import MethodRegistry
 from urika.tools import ToolRegistry
 
 
@@ -189,32 +188,25 @@ def results(project: str, experiment_id: str | None) -> None:
 
 
 @cli.command()
-@click.option("--category", default=None, help="Filter by category.")
-@click.option("--project", default=None, help="Include project-specific methods.")
-def methods(category: str | None, project: str | None) -> None:
-    """List available analysis methods."""
+@click.argument("project")
+def methods(project: str) -> None:
+    """List agent-created methods in a project."""
+    from urika.methods import MethodRegistry
+
+    project_path, _config = _resolve_project(project)
     registry = MethodRegistry()
-    registry.discover()
+    registry.discover_project(project_path / "methods")
 
-    if project is not None:
-        project_path, _config = _resolve_project(project)
-        registry.discover_project(project_path / "methods")
-
-    if category is not None:
-        names = registry.list_by_category(category)
-    else:
-        names = registry.list_all()
-
+    names = registry.list_all()
     if not names:
-        click.echo("No methods found.")
+        click.echo("No methods created yet.")
         return
 
     for name in names:
         method = registry.get(name)
         if method is not None:
-            click.echo(
-                f"  {method.name()}  [{method.category()}]  {method.description()}"
-            )
+            tools = ", ".join(method.tools_used())
+            click.echo(f"  {method.name()}  [{tools}]  {method.description()}")
 
 
 @cli.command()

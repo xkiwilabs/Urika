@@ -316,29 +316,26 @@ class TestResultsCommand:
 
 
 class TestMethodsCommand:
-    def test_lists_builtins(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
-        result = runner.invoke(cli, ["methods"], env=urika_env)
-        assert result.exit_code == 0
-        assert "linear_regression" in result.output
-        assert "random_forest" in result.output
-        assert "paired_t_test" in result.output
-
-    def test_filter_by_category(
+    def test_no_methods_yet(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
-        result = runner.invoke(
-            cli, ["methods", "--category", "regression"], env=urika_env
-        )
+        _create_project(runner, urika_env)
+        result = runner.invoke(cli, ["methods", "test-proj"], env=urika_env)
         assert result.exit_code == 0
-        assert "linear_regression" in result.output
-        assert "paired_t_test" not in result.output
+        assert "No methods created yet." in result.output
 
-    def test_empty_category(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
-        result = runner.invoke(
-            cli, ["methods", "--category", "nonexistent"], env=urika_env
-        )
-        assert result.exit_code == 0
-        assert "No methods" in result.output
+    def test_requires_project_argument(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["methods"], env=urika_env)
+        assert result.exit_code != 0
+
+    def test_nonexistent_project(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["methods", "nope"], env=urika_env)
+        assert result.exit_code != 0
+        assert "not found" in result.output
 
 
 class TestToolsCommand:
