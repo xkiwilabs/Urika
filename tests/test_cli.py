@@ -66,6 +66,96 @@ class TestNewCommand:
         data = json.loads(reg_path.read_text())
         assert "test" in data
 
+    def test_with_description(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "desc-proj",
+                "-q",
+                "Does X?",
+                "-m",
+                "exploratory",
+                "--description",
+                "A study of X",
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "Created project" in result.output
+
+    def test_with_data_directory(
+        self, runner: CliRunner, urika_env: dict[str, str], tmp_path: Path
+    ) -> None:
+        data_dir = tmp_path / "source_data"
+        data_dir.mkdir()
+        df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        df.to_csv(data_dir / "sample.csv", index=False)
+
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "data-proj",
+                "-q",
+                "What predicts B?",
+                "-m",
+                "exploratory",
+                "--data",
+                str(data_dir),
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "Data files" in result.output
+        assert "Created project" in result.output
+
+    def test_with_data_file(
+        self, runner: CliRunner, urika_env: dict[str, str], tmp_path: Path
+    ) -> None:
+        csv_file = tmp_path / "data.csv"
+        df = pd.DataFrame({"x": [10, 20], "y": [30, 40]})
+        df.to_csv(csv_file, index=False)
+
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "file-proj",
+                "-q",
+                "Predict Y?",
+                "-m",
+                "confirmatory",
+                "--data",
+                str(csv_file),
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert "Created project" in result.output
+
+    def test_data_path_not_found(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "bad-proj",
+                "-q",
+                "Does X?",
+                "-m",
+                "exploratory",
+                "--data",
+                "/nonexistent/path",
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
     def test_invalid_mode(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         result = runner.invoke(
             cli,

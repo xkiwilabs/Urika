@@ -12,7 +12,7 @@ from urika.core.experiment import create_experiment, list_experiments
 from urika.core.models import ProjectConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
-from urika.core.workspace import create_project_workspace, load_project_config
+from urika.core.workspace import load_project_config
 from urika.evaluation.leaderboard import load_leaderboard
 from urika.tools import ToolRegistry
 
@@ -54,21 +54,49 @@ def cli() -> None:
     type=click.Choice(["exploratory", "confirmatory", "pipeline"]),
     help="Investigation mode.",
 )
-@click.option("--data", multiple=True, help="Path(s) to data files.")
-def new(name: str, question: str, mode: str, data: tuple[str, ...]) -> None:
+@click.option(
+    "--data", "data_path", default=None, help="Path to data file or directory."
+)
+@click.option("--description", default="", help="Project description.")
+def new(
+    name: str, question: str, mode: str, data_path: str | None, description: str
+) -> None:
     """Create a new project."""
-    config = ProjectConfig(
+    from urika.core.project_builder import ProjectBuilder
+
+    source = Path(data_path) if data_path else _projects_dir() / name
+    builder = ProjectBuilder(
         name=name,
+        source_path=source,
+        projects_dir=_projects_dir(),
+        description=description,
         question=question,
         mode=mode,
-        data_paths=list(data),
     )
 
-    project_dir = _projects_dir() / name
+    # Scan and profile if a data path was provided
+    if data_path:
+        source_resolved = Path(data_path).resolve()
+        if not source_resolved.exists():
+            raise click.ClickException(f"Data path not found: {data_path}")
+        builder.source_path = source_resolved
+        scan_result = builder.scan()
+        click.echo(scan_result.summary())
+
+        try:
+            summary = builder.profile_data()
+            click.echo(
+                f"\nData profile: {summary.n_rows} rows, {summary.n_columns} columns"
+            )
+        except (ValueError, Exception):
+            pass  # No readable data files — continue without profile
+
     try:
-        create_project_workspace(project_dir, config)
+        project_dir = builder.write_project()
     except FileExistsError:
-        raise click.ClickException(f"Project already exists at {project_dir}")
+        raise click.ClickException(
+            f"Project already exists at {_projects_dir() / name}"
+        )
 
     registry = ProjectRegistry()
     registry.register(name, project_dir)
