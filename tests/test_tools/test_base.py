@@ -58,6 +58,17 @@ class TestToolResult:
         )
         assert len(result.artifacts) == 2
 
+    def test_create_with_metrics(self) -> None:
+        result = ToolResult(
+            outputs={"r2": 0.9},
+            metrics={"r2": 0.9, "rmse": 0.1},
+        )
+        assert result.metrics == {"r2": 0.9, "rmse": 0.1}
+
+    def test_metrics_default_empty(self) -> None:
+        result = ToolResult(outputs={"a": 1})
+        assert result.metrics == {}
+
 
 class TestITool:
     def test_cannot_instantiate_abc(self) -> None:

@@ -16,6 +16,7 @@ class ToolResult:
 
     outputs: dict[str, Any]
     artifacts: list[str] = field(default_factory=list)
+    metrics: dict[str, float] = field(default_factory=dict)
     valid: bool = True
     error: str | None = None
 
