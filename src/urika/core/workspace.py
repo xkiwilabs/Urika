@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import tomllib
 from pathlib import Path
 
@@ -11,14 +10,12 @@ from urika.core.models import ProjectConfig
 _PROJECT_DIRS = [
     "data",
     "tools",
-    "skills",
     "methods",
     "knowledge",
     "knowledge/papers",
     "knowledge/notes",
     "experiments",
     "labbook",
-    "config",
 ]
 
 
@@ -37,10 +34,6 @@ def create_project_workspace(project_dir: Path, config: ProjectConfig) -> None:
         (project_dir / subdir).mkdir(parents=True, exist_ok=True)
 
     _write_toml(project_dir / "urika.toml", config.to_toml_dict())
-
-    (project_dir / "leaderboard.json").write_text(
-        json.dumps({"entries": []}, indent=2) + "\n"
-    )
 
     (project_dir / "labbook" / "key-findings.md").write_text(
         f"# Key Findings: {config.name}\n\nNo findings yet.\n"

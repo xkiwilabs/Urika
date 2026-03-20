@@ -1,6 +1,5 @@
 """Tests for project workspace creation."""
 
-import json
 from pathlib import Path
 
 import pytest
@@ -22,12 +21,10 @@ class TestCreateProjectWorkspace:
         assert (project_dir / "urika.toml").exists()
         assert (project_dir / "data").is_dir()
         assert (project_dir / "tools").is_dir()
-        assert (project_dir / "skills").is_dir()
         assert (project_dir / "methods").is_dir()
         assert (project_dir / "knowledge").is_dir()
         assert (project_dir / "experiments").is_dir()
         assert (project_dir / "labbook").is_dir()
-        assert (project_dir / "config").is_dir()
 
     def test_writes_urika_toml(self, tmp_path: Path) -> None:
         project_dir = tmp_path / "test-project"
@@ -41,14 +38,6 @@ class TestCreateProjectWorkspace:
         loaded = load_project_config(project_dir)
         assert loaded.name == "test-project"
         assert loaded.mode == "confirmatory"
-
-    def test_creates_empty_leaderboard(self, tmp_path: Path) -> None:
-        project_dir = tmp_path / "test"
-        config = ProjectConfig(name="test", question="?", mode="exploratory")
-        create_project_workspace(project_dir, config)
-
-        lb = json.loads((project_dir / "leaderboard.json").read_text())
-        assert lb == {"entries": []}
 
     def test_creates_labbook_stubs(self, tmp_path: Path) -> None:
         project_dir = tmp_path / "test"
