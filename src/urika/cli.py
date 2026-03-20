@@ -101,12 +101,26 @@ def new(
         mode=mode,
     )
 
-    # Scan and profile if a data path was provided
+    # Validate data path before scanning
     if data_path:
         source_resolved = Path(data_path).resolve()
         if not source_resolved.exists():
             raise click.ClickException(f"Data path not found: {data_path}")
         builder.source_path = source_resolved
+
+    # Check if project already exists before doing work
+    project_dir = _projects_dir() / name
+    if (project_dir / "urika.toml").exists():
+        if not click.confirm(
+            f"Project '{name}' already exists at {project_dir}. Overwrite?"
+        ):
+            raise click.ClickException("Aborted.")
+        import shutil
+
+        shutil.rmtree(project_dir)
+
+    # Scan and profile if a data path was provided
+    if data_path:
         scan_result = builder.scan()
         click.echo(scan_result.summary())
 
@@ -118,12 +132,7 @@ def new(
         except (ValueError, Exception):
             pass  # No readable data files — continue without profile
 
-    try:
-        project_dir = builder.write_project()
-    except FileExistsError:
-        raise click.ClickException(
-            f"Project already exists at {_projects_dir() / name}"
-        )
+    project_dir = builder.write_project()
 
     registry = ProjectRegistry()
     registry.register(name, project_dir)
