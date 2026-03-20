@@ -7,9 +7,24 @@ Gracefully degrades when stdout is not a TTY.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import os
 import sys
 import time
+
+
+def _reset_terminal() -> None:
+    """Reset terminal colors and attributes on exit."""
+    try:
+        if sys.stdout.isatty():
+            sys.stdout.write("\033[0m\033[?25h")  # reset attrs + show cursor
+            sys.stdout.flush()
+    except (OSError, ValueError):
+        pass
+
+
+# Ensure terminal is reset even on crashes or Ctrl+C
+atexit.register(_reset_terminal)
 
 
 class _C:
@@ -42,7 +57,8 @@ class _C:
 
 
 _IS_TTY = sys.stdout.isatty()
-if not _IS_TTY:
+# Respect NO_COLOR convention and disable in non-TTY
+if not _IS_TTY or os.environ.get("NO_COLOR"):
     _C.disable()
 
 
@@ -288,9 +304,12 @@ class Spinner:
 
     def __enter__(self) -> Spinner:
         if not _IS_TTY:
-            print(f"  {_C.DIM}{self.message}{_C.RESET}")
+            print(f"  {self.message}")
             return self
         self._active = True
+        # Print initial static message in case spinner thread doesn't start
+        sys.stdout.write(f"  {_C.DIM}{self.message}{_C.RESET}")
+        sys.stdout.flush()
         import threading
 
         self._thread = threading.Thread(target=self._spin, daemon=True)
@@ -302,17 +321,24 @@ class Spinner:
         if self._thread is not None:
             self._thread.join(timeout=1)
         if _IS_TTY:
-            sys.stdout.write("\r\033[K")
-            sys.stdout.flush()
+            # Clear spinner line and reset colors
+            try:
+                sys.stdout.write("\r\033[K\033[0m")
+                sys.stdout.flush()
+            except (OSError, ValueError):
+                pass
 
     def _spin(self) -> None:
         idx = 0
         while self._active:
             ch = _SPINNER[idx % len(_SPINNER)]
-            sys.stdout.write(
-                f"\r  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{self.message}{_C.RESET}"
-            )
-            sys.stdout.flush()
+            try:
+                sys.stdout.write(
+                    f"\r  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{self.message}{_C.RESET}\033[K"
+                )
+                sys.stdout.flush()
+            except (OSError, ValueError):
+                break
             idx += 1
             time.sleep(0.12)
 
