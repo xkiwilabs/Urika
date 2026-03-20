@@ -53,6 +53,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/core/experiment.py` — Experiment lifecycle: create, list, load
 - `src/urika/core/progress.py` — Append-only progress tracking with best-run queries
 - `src/urika/core/labbook.py` — Auto-generated .md summaries from progress data
+- `src/urika/core/criteria.py` — Versioned project criteria: load, append, history
 - `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, suggestion_agent, tool_builder, literature_agent), registry, config, Claude SDK adapter
 - `src/urika/orchestrator/` — Deterministic loop (planning→task→evaluator→suggestion), output parsing, knowledge integration
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
@@ -62,7 +63,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Project Status
 
-794 tests. Foundation, agents, orchestrator, evaluation, methods (agent-created), tools (16 built-in), knowledge pipeline, CLI (15 commands), project builder (source scanning, data profiling, multi-file datasets), session management, report generation, and end-to-end integration tests all implemented. v0.1 release ready for real-world testing.
+797 tests. Foundation, agents, orchestrator, evaluation, methods (agent-created), tools (16 built-in), knowledge pipeline, CLI (15 commands), project builder (source scanning, data profiling, multi-file datasets), session management, report generation, criteria system, and end-to-end integration tests all implemented. v0.1 release ready for real-world testing.
 
 ## Development
 

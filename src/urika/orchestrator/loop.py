@@ -288,6 +288,7 @@ async def run_experiment(
             # Update criteria if suggestion agent proposed changes
             if suggestions and suggestions.get("criteria_update"):
                 from urika.core.criteria import append_criteria
+
                 update = suggestions["criteria_update"]
                 append_criteria(
                     project_dir,

@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-20
 **Version:** v0.1 (pre-release)
-**Tests:** 794 passing
+**Tests:** 797 passing
 
 ## What's Built
 
@@ -13,6 +13,7 @@
 - **Experiment lifecycle**: create, list, load, progress tracking
 - **Session management**: start, pause, resume, complete, fail, lockfiles
 - **Labbook**: auto-generated notes, summaries, key findings from progress data
+- **Criteria system**: versioned criteria.json, evolving during experiments, seeded by project builder, updated by suggestion agent
 - **Evaluation**: leaderboard ranking, 9 built-in metrics (R², RMSE, MAE, accuracy, F1, precision, recall, AUC, Cohen's d)
 - **Knowledge pipeline**: PDF/text/URL extractors, KnowledgeStore with keyword search
 
