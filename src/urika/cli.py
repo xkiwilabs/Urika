@@ -302,6 +302,7 @@ def _run_builder_agent_loop(
     from urika.agents.registry import AgentRegistry
     from urika.cli_display import (
         Spinner,
+        _AGENT_ACTIVITY,
         print_agent,
         print_error,
         print_step,
@@ -387,7 +388,7 @@ def _run_builder_agent_loop(
         project_dir=builder.source_path, experiment_id=""
     )
 
-    with Spinner("Generating suggestions"):
+    with Spinner(_AGENT_ACTIVITY.get("suggestion_agent", thinking_phrase())):
         suggest_result = asyncio.run(runner.run(suggest_config, suggest_prompt))
 
     if not suggest_result.success:
@@ -411,7 +412,7 @@ def _run_builder_agent_loop(
         project_dir=builder.source_path, experiment_id=""
     )
 
-    with Spinner("Designing method plan"):
+    with Spinner(_AGENT_ACTIVITY.get("planning_agent", thinking_phrase())):
         plan_result = asyncio.run(runner.run(plan_config, plan_prompt))
 
     if not plan_result.success:
@@ -440,7 +441,7 @@ def _run_builder_agent_loop(
 
         print_agent("suggestion_agent")
         refined_prompt = suggest_prompt + f"\n\n## User Refinement\n{refinement}"
-        with Spinner("Refining suggestions"):
+        with Spinner(_AGENT_ACTIVITY.get("suggestion_agent", thinking_phrase())):
             suggest_result = asyncio.run(runner.run(suggest_config, refined_prompt))
         if suggest_result.success:
             suggestions = parse_suggestions(suggest_result.text_output)
@@ -448,7 +449,7 @@ def _run_builder_agent_loop(
             plan_prompt = build_planning_prompt(
                 suggestions or {}, description, data_summary
             )
-            with Spinner("Redesigning method plan"):
+            with Spinner(_AGENT_ACTIVITY.get("planning_agent", thinking_phrase())):
                 plan_result = asyncio.run(runner.run(plan_config, plan_prompt))
             if plan_result.success:
                 click.echo(plan_result.text_output.strip())
@@ -710,7 +711,20 @@ def _auto_create_experiment(project_path: Path, project_name: str) -> str | None
     default=False,
     help="Resume a paused or failed experiment.",
 )
-def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -> None:
+@click.option(
+    "-q",
+    "--quiet",
+    is_flag=True,
+    default=False,
+    help="Suppress verbose tool-use streaming output.",
+)
+def run(
+    project: str,
+    experiment_id: str | None,
+    max_turns: int,
+    resume: bool,
+    quiet: bool,
+) -> None:
     """Run an experiment using the orchestrator."""
     try:
         from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
@@ -722,11 +736,14 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
     import time
 
     from urika.cli_display import (
+        ThinkingPanel,
+        print_agent,
         print_error,
         print_footer,
         print_header,
         print_step,
         print_success,
+        print_tool_use,
         print_warning,
     )
     from urika.orchestrator import run_experiment
@@ -788,28 +805,61 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
     original_handler = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, _cleanup_on_interrupt)
 
-    from urika.cli_display import Spinner, thinking_phrase
+    from urika.cli_display import thinking_phrase
 
     start_ms = int(time.monotonic() * 1000)
 
     sdk_runner = ClaudeSDKRunner()
 
-    with Spinner(thinking_phrase()) as sp:
+    panel = ThinkingPanel()
+    panel.project = project
+    panel.activity = thinking_phrase()
+    panel.activate()
+    panel.start_spinner()
+
+    try:
 
         def _on_progress(event: str, detail: str = "") -> None:
             if event == "turn":
-                sp.print_above(f"  {detail}")
-                sp.update(thinking_phrase())
+                print_step(detail)
+                panel.update(turn=detail, activity=thinking_phrase())
             elif event == "agent":
-                sp.print_above(f"\n  {detail}")
-                # Update spinner with agent-specific phrase
-                agent = detail.split("—")[0].strip()
-                sp.update(f"{agent} working")
+                # Extract agent key from "Planning agent — designing method"
+                agent_key = detail.split("—")[0].strip().lower().replace(" ", "_")
+                print_agent(agent_key)
+                panel.update(agent=agent_key, activity=detail)
             elif event == "result":
-                sp.print_above(f"  > {detail}")
+                print_success(detail)
             elif event == "phase":
-                sp.print_above(f"  {detail}")
-                sp.update(thinking_phrase())
+                print_step(detail)
+                panel.update(activity=detail)
+
+        def _on_message(msg: object) -> None:
+            """Handle streaming SDK messages for verbose output."""
+            # Use getattr for safe access — SDK types may vary
+            content = getattr(msg, "content", None)
+            if content is None:
+                return
+            for block in content:
+                # Check for tool use blocks (ToolUseBlock or similar)
+                tool_name = getattr(block, "name", None) or getattr(
+                    block, "tool_name", None
+                )
+                if tool_name:
+                    detail = ""
+                    input_data = getattr(block, "input", None) or getattr(
+                        block, "tool_input", {}
+                    )
+                    if isinstance(input_data, dict):
+                        if "command" in input_data:
+                            detail = input_data["command"]
+                        elif "file_path" in input_data:
+                            detail = input_data["file_path"]
+                        elif "pattern" in input_data:
+                            detail = input_data["pattern"]
+                    if not quiet:
+                        print_tool_use(tool_name, detail)
+                    panel.set_thinking(f"{tool_name}: {detail[:60]}")
 
         result = asyncio.run(
             run_experiment(
@@ -819,8 +869,12 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
                 max_turns=max_turns,
                 resume=resume,
                 on_progress=_on_progress,
+                on_message=_on_message,
             )
         )
+
+    finally:
+        panel.cleanup()
 
     # Restore original handler
     signal.signal(signal.SIGINT, original_handler)

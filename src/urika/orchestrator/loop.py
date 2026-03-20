@@ -56,6 +56,7 @@ async def run_experiment(
     max_turns: int = 50,
     resume: bool = False,
     on_progress: object = None,
+    on_message: object = None,
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
@@ -67,6 +68,9 @@ async def run_experiment(
 
     *on_progress* is an optional callback ``(event, detail) -> None``
     called at key points in the loop.
+
+    *on_message* is an optional callback forwarded to ``runner.run()``
+    that receives each SDK message as it streams in.
     """
     progress = on_progress or _noop_callback
     registry = AgentRegistry()
@@ -111,6 +115,7 @@ async def run_experiment(
                 await runner.run(
                     lit_config,
                     "Scan the knowledge directory and summarize available knowledge.",
+                    on_message=on_message,
                 )
             task_prompt = knowledge_summary + "\n\n" + task_prompt
     except Exception as exc:
@@ -127,7 +132,9 @@ async def run_experiment(
                 plan_config = plan_role.build_config(
                     project_dir=project_dir, experiment_id=experiment_id
                 )
-                plan_result = await runner.run(plan_config, task_prompt)
+                plan_result = await runner.run(
+                    plan_config, task_prompt, on_message=on_message
+                )
 
                 if not plan_result.success:
                     fail_session(
@@ -149,7 +156,11 @@ async def run_experiment(
                     tool_role = registry.get("tool_builder")
                     if tool_role is not None:
                         tool_config = tool_role.build_config(project_dir=project_dir)
-                        await runner.run(tool_config, json.dumps(method_plan))
+                        await runner.run(
+                            tool_config,
+                            json.dumps(method_plan),
+                            on_message=on_message,
+                        )
 
                 if method_plan and method_plan.get("needs_literature"):
                     progress("agent", "Literature agent — searching knowledge")
@@ -161,6 +172,7 @@ async def run_experiment(
                             method_plan.get(
                                 "literature_query", json.dumps(method_plan)
                             ),
+                            on_message=on_message,
                         )
                         if lit_result.success and lit_result.text_output:
                             task_input = (
@@ -193,7 +205,9 @@ async def run_experiment(
             task_config = task_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
             )
-            task_result = await runner.run(task_config, task_input)
+            task_result = await runner.run(
+                task_config, task_input, on_message=on_message
+            )
 
             if not task_result.success:
                 fail_session(
@@ -245,7 +259,9 @@ async def run_experiment(
             eval_config = eval_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
             )
-            eval_result = await runner.run(eval_config, task_result.text_output)
+            eval_result = await runner.run(
+                eval_config, task_result.text_output, on_message=on_message
+            )
 
             if not eval_result.success:
                 fail_session(
@@ -284,7 +300,9 @@ async def run_experiment(
             suggest_config = suggest_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
             )
-            suggest_result = await runner.run(suggest_config, eval_result.text_output)
+            suggest_result = await runner.run(
+                suggest_config, eval_result.text_output, on_message=on_message
+            )
 
             if not suggest_result.success:
                 fail_session(
