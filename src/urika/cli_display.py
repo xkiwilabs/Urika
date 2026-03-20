@@ -291,28 +291,31 @@ class StatusBar:
 
 
 class Spinner:
-    """Simple synchronous spinner for blocking operations.
+    """Synchronous spinner for long operations.
+
+    Supports printing lines above the spinner while it runs, and
+    updating the spinner message dynamically.
 
     Usage:
-        with Spinner("Scanning data files"):
-            do_slow_thing()
+        with Spinner("Working") as sp:
+            sp.print_above("  ▸ Step 1 done")
+            sp.update("Still working")
     """
 
     def __init__(self, message: str) -> None:
         self.message = message
         self._active = False
         self._thread: object = None
+        self._lock: object = None
 
     def __enter__(self) -> Spinner:
         if not _IS_TTY:
             print(f"  {self.message}")
             return self
         self._active = True
-        # Print initial static message in case spinner thread doesn't start
-        sys.stdout.write(f"  {_C.DIM}{self.message}{_C.RESET}")
-        sys.stdout.flush()
         import threading
 
+        self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._spin, daemon=True)
         self._thread.start()
         return self
@@ -322,20 +325,49 @@ class Spinner:
         if self._thread is not None:
             self._thread.join(timeout=1)
         if _IS_TTY:
-            # Clear spinner line and reset colors
             try:
                 sys.stdout.write("\r\033[K\033[0m")
                 sys.stdout.flush()
             except (OSError, ValueError):
                 pass
 
+    def update(self, message: str) -> None:
+        """Update the spinner message."""
+        if self._lock is not None:
+            self._lock.acquire()
+        self.message = message
+        if self._lock is not None:
+            self._lock.release()
+
+    def print_above(self, text: str) -> None:
+        """Print a line above the spinner, keeping the spinner on the last line."""
+        if not _IS_TTY:
+            print(text)
+            return
+        if self._lock is not None:
+            self._lock.acquire()
+        try:
+            # Clear spinner line, print text, spinner will redraw on next tick
+            sys.stdout.write(f"\r\033[K{text}\n")
+            sys.stdout.flush()
+        except (OSError, ValueError):
+            pass
+        finally:
+            if self._lock is not None:
+                self._lock.release()
+
     def _spin(self) -> None:
         idx = 0
         while self._active:
             ch = _SPINNER[idx % len(_SPINNER)]
+            if self._lock is not None:
+                self._lock.acquire()
+            msg = self.message
+            if self._lock is not None:
+                self._lock.release()
             try:
                 sys.stdout.write(
-                    f"\r  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{self.message}{_C.RESET}\033[K"
+                    f"\r  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{msg}{_C.RESET}\033[K"
                 )
                 sys.stdout.flush()
             except (OSError, ValueError):

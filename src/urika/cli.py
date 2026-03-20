@@ -646,32 +646,39 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
     original_handler = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, _cleanup_on_interrupt)
 
+    from urika.cli_display import Spinner, thinking_phrase
+
     start_ms = int(time.monotonic() * 1000)
 
-    def _on_progress(event: str, detail: str = "") -> None:
-        if event == "turn":
-            print_step(detail)
-        elif event == "agent":
-            from urika.cli_display import print_agent as _pa
-
-            agent_name = detail.split("—")[0].strip().lower().replace(" ", "_")
-            _pa(agent_name)
-        elif event == "result":
-            print_success(detail)
-        elif event == "phase":
-            print_step(detail)
-
     sdk_runner = ClaudeSDKRunner()
-    result = asyncio.run(
-        run_experiment(
-            project_path,
-            experiment_id,
-            sdk_runner,
-            max_turns=max_turns,
-            resume=resume,
-            on_progress=_on_progress,
+
+    with Spinner(thinking_phrase()) as sp:
+
+        def _on_progress(event: str, detail: str = "") -> None:
+            if event == "turn":
+                sp.print_above(f"  {detail}")
+                sp.update(thinking_phrase())
+            elif event == "agent":
+                sp.print_above(f"\n  {detail}")
+                # Update spinner with agent-specific phrase
+                agent = detail.split("—")[0].strip()
+                sp.update(f"{agent} working")
+            elif event == "result":
+                sp.print_above(f"  > {detail}")
+            elif event == "phase":
+                sp.print_above(f"  {detail}")
+                sp.update(thinking_phrase())
+
+        result = asyncio.run(
+            run_experiment(
+                project_path,
+                experiment_id,
+                sdk_runner,
+                max_turns=max_turns,
+                resume=resume,
+                on_progress=_on_progress,
+            )
         )
-    )
 
     # Restore original handler
     signal.signal(signal.SIGINT, original_handler)
