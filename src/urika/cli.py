@@ -594,6 +594,14 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
         raise click.ClickException(
             "Claude Agent SDK not installed. Run: pip install urika[agents]"
         )
+    from urika.cli_display import (
+        Spinner,
+        print_error,
+        print_footer,
+        print_header,
+        print_step,
+        print_success,
+    )
     from urika.orchestrator import run_experiment
 
     project_path, _config = _resolve_project(project)
@@ -606,34 +614,47 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
                 f"  urika experiment create {project} <experiment-name>"
             )
         experiment_id = experiments[-1].experiment_id
-        click.echo(f"Using latest experiment: {experiment_id}")
 
-    if resume:
-        click.echo(f"Resuming experiment {experiment_id}...")
-    else:
-        click.echo(f"Running experiment {experiment_id} (max {max_turns} turns)...")
-
-    sdk_runner = ClaudeSDKRunner()
-    result = asyncio.run(
-        run_experiment(
-            project_path,
-            experiment_id,
-            sdk_runner,
-            max_turns=max_turns,
-            resume=resume,
-        )
+    print_header(
+        project_name=project,
+        agent="orchestrator",
+        mode=_config.mode,
     )
 
+    if resume:
+        print_step(f"Resuming experiment {experiment_id}")
+    else:
+        print_step(f"Running experiment {experiment_id} (max {max_turns} turns)")
+
+    import time
+
+    start_ms = int(time.monotonic() * 1000)
+
+    sdk_runner = ClaudeSDKRunner()
+    with Spinner("Running orchestrator loop"):
+        result = asyncio.run(
+            run_experiment(
+                project_path,
+                experiment_id,
+                sdk_runner,
+                max_turns=max_turns,
+                resume=resume,
+            )
+        )
+
+    elapsed_ms = int(time.monotonic() * 1000) - start_ms
     run_status = result.get("status", "unknown")
     turns = result.get("turns", 0)
     error = result.get("error")
 
     if run_status == "completed":
-        click.echo(f"Experiment completed after {turns} turns.")
+        print_success(f"Experiment completed after {turns} turns.")
     elif run_status == "failed":
-        click.echo(f"Experiment failed after {turns} turns: {error}")
+        print_error(f"Experiment failed after {turns} turns: {error}")
     else:
-        click.echo(f"Experiment finished with status: {run_status} ({turns} turns)")
+        print_step(f"Experiment finished with status: {run_status} ({turns} turns)")
+
+    print_footer(duration_ms=elapsed_ms, turns=turns, status=run_status)
 
 
 @cli.command()
