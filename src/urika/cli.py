@@ -45,31 +45,56 @@ def cli() -> None:
 
 
 @cli.command()
-@click.argument("name")
-@click.option("-q", "--question", required=True, help="Research question.")
+@click.argument("name", required=False, default=None)
+@click.option("-q", "--question", default=None, help="Research question.")
 @click.option(
     "-m",
     "--mode",
-    required=True,
+    default=None,
     type=click.Choice(["exploratory", "confirmatory", "pipeline"]),
     help="Investigation mode.",
 )
 @click.option(
     "--data", "data_path", default=None, help="Path to data file or directory."
 )
-@click.option("--description", default="", help="Project description.")
+@click.option("--description", default=None, help="Project description.")
 def new(
-    name: str, question: str, mode: str, data_path: str | None, description: str
+    name: str | None,
+    question: str | None,
+    mode: str | None,
+    data_path: str | None,
+    description: str | None,
 ) -> None:
     """Create a new project."""
     from urika.core.project_builder import ProjectBuilder
+
+    # Prompt for missing required fields
+    if name is None:
+        name = click.prompt("Project name")
+    if data_path is None:
+        data_path = click.prompt("Path to data (file or directory)", default="")
+        if not data_path:
+            data_path = None
+    if description is None:
+        description = click.prompt(
+            "Describe the project — what are you trying to analyse or predict",
+            default="",
+        )
+    if question is None:
+        question = click.prompt("Research question")
+    if mode is None:
+        mode = click.prompt(
+            "Investigation mode",
+            type=click.Choice(["exploratory", "confirmatory", "pipeline"]),
+            default="exploratory",
+        )
 
     source = Path(data_path) if data_path else _projects_dir() / name
     builder = ProjectBuilder(
         name=name,
         source_path=source,
         projects_dir=_projects_dir(),
-        description=description,
+        description=description or "",
         question=question,
         mode=mode,
     )
