@@ -660,3 +660,56 @@ class TestOrchestratorResume:
 
         assert result["status"] == "failed"
         assert "error" in result
+
+
+_SUGGESTION_WITH_CRITERIA = """\
+Try a different approach:
+```json
+{
+    "suggestions": [
+        {"method": "random_forest", "rationale": "Non-linear may fit better"}
+    ],
+    "needs_tool": false,
+    "criteria_update": {
+        "criteria": {"primary_metric": "r2", "threshold": 0.9},
+        "rationale": "Raising threshold after strong baseline"
+    }
+}
+```
+"""
+
+
+class TestCriteriaUpdateFromSuggestions:
+    @pytest.mark.asyncio
+    async def test_criteria_update_written_from_suggestions(
+        self, tmp_path: Path
+    ) -> None:
+        """When suggestion agent output includes criteria_update,
+        the orchestrator writes it to criteria.json."""
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
+                "suggestion_agent": [_SUGGESTION_WITH_CRITERIA],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "completed"
+
+        import json
+
+        criteria_path = project_dir / "criteria.json"
+        assert criteria_path.exists(), "criteria.json should have been created"
+
+        data = json.loads(criteria_path.read_text())
+        versions = data.get("versions", [])
+        assert len(versions) >= 1
+        latest = versions[-1]
+        assert latest["set_by"] == "suggestion_agent"
+        assert latest["criteria"]["primary_metric"] == "r2"
+        assert latest["criteria"]["threshold"] == 0.9
+        assert latest["rationale"] == "Raising threshold after strong baseline"

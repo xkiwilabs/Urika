@@ -285,6 +285,19 @@ async def run_experiment(
 
             suggestions = parse_suggestions(suggest_result.text_output)
 
+            # Update criteria if suggestion agent proposed changes
+            if suggestions and suggestions.get("criteria_update"):
+                from urika.core.criteria import append_criteria
+                update = suggestions["criteria_update"]
+                append_criteria(
+                    project_dir,
+                    update.get("criteria", {}),
+                    set_by="suggestion_agent",
+                    turn=turn,
+                    rationale=update.get("rationale", ""),
+                )
+                progress("result", "Criteria updated")
+
             # Build next task prompt from suggestions
             if suggestions:
                 task_prompt = json.dumps(suggestions)
