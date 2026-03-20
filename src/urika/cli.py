@@ -110,14 +110,22 @@ def new(
 
     # Check if project already exists before doing work
     project_dir = _projects_dir() / name
-    if (project_dir / "urika.toml").exists():
-        if not click.confirm(
-            f"Project '{name}' already exists at {project_dir}. Overwrite?"
-        ):
+    while (project_dir / "urika.toml").exists():
+        choice = click.prompt(
+            f"Project '{name}' already exists. Overwrite, abort, or new name?",
+            type=click.Choice(["overwrite", "abort", "new name"], case_sensitive=False),
+        )
+        if choice == "abort":
             raise click.ClickException("Aborted.")
-        import shutil
+        if choice == "overwrite":
+            import shutil
 
-        shutil.rmtree(project_dir)
+            shutil.rmtree(project_dir)
+            break
+        # new name
+        name = click.prompt("New project name").strip()
+        builder.name = name
+        project_dir = _projects_dir() / name
 
     # Scan and profile if a data path was provided
     if data_path:
