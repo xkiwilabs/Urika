@@ -223,6 +223,43 @@ def new(
 
     print_success(f"Created project '{name}' at {project_dir}")
 
+    # Offer to run the first planned experiment
+    import json
+
+    suggestions_path = project_dir / "suggestions" / "initial.json"
+    if suggestions_path.exists():
+        try:
+            sdata = json.loads(suggestions_path.read_text())
+            first = (sdata.get("suggestions") or [{}])[0]
+            first_name = first.get("name", "")
+            first_desc = first.get("method", first.get("description", ""))
+        except (json.JSONDecodeError, IndexError, KeyError):
+            first_name = ""
+            first_desc = ""
+
+        if first_name:
+            short_desc = (
+                first_desc[:120] + "..." if len(first_desc) > 120 else first_desc
+            )
+            click.echo(f"\n  The plan proposes starting with: {first_name}")
+            if short_desc:
+                click.echo(f"    {short_desc}")
+
+            choice = _prompt_numbered(
+                "\n  Run the first experiment?",
+                ["Yes — create and run it", "Skip — I'll run it later"],
+                default=1,
+            )
+
+            if choice.startswith("Yes"):
+                exp = create_experiment(
+                    project_dir,
+                    name=first_name.replace(" ", "-").lower(),
+                    hypothesis=first_desc[:500] if first_desc else "",
+                )
+                click.echo(f"\n  Created experiment: {exp.experiment_id}")
+                click.echo(f"  Run it with: urika run {name}")
+
 
 def _run_builder_agent_loop(
     builder: object,
@@ -573,6 +610,66 @@ def tools(category: str | None, project: str | None) -> None:
             click.echo(f"  {tool.name()}  [{tool.category()}]  {tool.description()}")
 
 
+def _auto_create_experiment(project_path: Path, project_name: str) -> str | None:
+    """Try to create next experiment from plan/suggestions. Returns experiment_id or None."""
+    import json
+
+    from urika.cli_display import print_step
+
+    # Check for initial suggestions
+    suggestions_path = project_path / "suggestions" / "initial.json"
+    if not suggestions_path.exists():
+        return None
+
+    try:
+        data = json.loads(suggestions_path.read_text())
+        suggestions = data.get("suggestions", [])
+        if not suggestions:
+            return None
+    except (json.JSONDecodeError, KeyError):
+        return None
+
+    # Find first suggestion not yet run as an experiment
+    existing = {e.name for e in list_experiments(project_path)}
+    next_suggestion = None
+    for s in suggestions:
+        name = s.get("name", "").replace(" ", "-").lower()
+        if name and name not in existing:
+            next_suggestion = s
+            break
+
+    if next_suggestion is None:
+        return None
+
+    exp_name = next_suggestion.get("name", "auto-experiment").replace(" ", "-").lower()
+    description = next_suggestion.get("method", next_suggestion.get("description", ""))
+
+    print_step(f"Plan proposes: {exp_name}")
+    if description:
+        # Show first 120 chars of description
+        short = description[:120] + "..." if len(description) > 120 else description
+        click.echo(f"    {short}")
+
+    choice = _prompt_numbered(
+        "\n  Run this experiment?",
+        ["Yes — create and run it", "Run with different name", "Skip — exit"],
+        default=1,
+    )
+
+    if choice.startswith("Skip"):
+        return None
+
+    if choice.startswith("Run with"):
+        exp_name = click.prompt("  Experiment name").strip()
+
+    exp = create_experiment(
+        project_path,
+        name=exp_name,
+        hypothesis=description[:500] if description else "",
+    )
+    return exp.experiment_id
+
+
 @cli.command()
 @click.argument("project")
 @click.option(
@@ -612,11 +709,29 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
     if experiment_id is None:
         experiments = list_experiments(project_path)
         if not experiments:
-            raise click.ClickException(
-                "No experiments in this project. Create one with:\n"
-                f"  urika experiment create {project} <experiment-name>"
-            )
-        experiment_id = experiments[-1].experiment_id
+            # Auto-create from plan if suggestions exist
+            experiment_id = _auto_create_experiment(project_path, project)
+            if experiment_id is None:
+                raise click.ClickException(
+                    "No experiments and no plan found. Create one with:\n"
+                    f"  urika experiment create {project} <experiment-name>"
+                )
+        else:
+            # Find latest non-completed experiment, or offer to create next
+            pending = [
+                e
+                for e in experiments
+                if load_progress(project_path, e.experiment_id).get("status")
+                not in ("completed",)
+            ]
+            if pending:
+                experiment_id = pending[-1].experiment_id
+            else:
+                # All experiments completed — offer to create next from plan
+                experiment_id = _auto_create_experiment(project_path, project)
+                if experiment_id is None:
+                    experiment_id = experiments[-1].experiment_id
+                    print_step(f"All experiments completed. Re-running {experiment_id}")
 
     print_header(
         project_name=project,
