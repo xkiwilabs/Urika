@@ -696,20 +696,25 @@ def _determine_next_experiment(
         except (json.JSONDecodeError, KeyError):
             pass
 
-    # Check initial plan
-    suggestions_path = project_path / "suggestions" / "initial.json"
+    # If user provided instructions, always call suggestion agent to think
+    # Otherwise fall back to initial plan
     next_suggestion = None
-    if suggestions_path.exists():
-        try:
-            data = json.loads(suggestions_path.read_text())
-            suggestions = data.get("suggestions", [])
-            if len(completed) < len(suggestions):
-                next_suggestion = suggestions[len(completed)]
-        except (json.JSONDecodeError, KeyError):
-            pass
+    call_suggestion_agent = bool(instructions) or bool(completed)
 
-    # If initial plan exhausted, call suggestion agent for next steps
-    if next_suggestion is None and completed:
+    if not call_suggestion_agent:
+        # First experiment, no instructions — use initial plan
+        suggestions_path = project_path / "suggestions" / "initial.json"
+        if suggestions_path.exists():
+            try:
+                data = json.loads(suggestions_path.read_text())
+                suggestions = data.get("suggestions", [])
+                if suggestions:
+                    next_suggestion = suggestions[0]
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    # Call suggestion agent to think about next steps
+    if next_suggestion is None:
         try:
             import asyncio
 
