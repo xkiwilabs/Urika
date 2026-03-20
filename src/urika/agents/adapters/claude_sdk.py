@@ -6,7 +6,6 @@ to change the runtime (e.g. custom runtime, Pi SDK).
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import (
@@ -16,9 +15,8 @@ from claude_agent_sdk import (
     TextBlock,
     query,
 )
-from claude_agent_sdk.types import PermissionResultAllow, PermissionResultDeny
 
-from urika.agents.config import AgentConfig, SecurityPolicy
+from urika.agents.config import AgentConfig
 from urika.agents.runner import AgentResult, AgentRunner
 
 
@@ -66,36 +64,11 @@ class ClaudeSDKRunner(AgentRunner):
             system_prompt=config.system_prompt,
             allowed_tools=config.allowed_tools,
             disallowed_tools=config.disallowed_tools,
-            can_use_tool=self._make_permission_handler(config.security),
             max_turns=config.max_turns,
             model=config.model,
             cwd=str(config.cwd) if config.cwd else None,
             permission_mode="bypassPermissions",
         )
-
-    def _make_permission_handler(self, policy: SecurityPolicy) -> Any:
-        """Convert SecurityPolicy into a can_use_tool callback."""
-
-        async def handler(
-            tool_name: str, input_data: dict[str, Any], context: Any
-        ) -> PermissionResultAllow | PermissionResultDeny:
-            if tool_name in ("Write", "Edit", "NotebookEdit"):
-                file_path = input_data.get("file_path", "") or input_data.get(
-                    "notebook_path", ""
-                )
-                if file_path and not policy.is_write_allowed(Path(file_path)):
-                    return PermissionResultDeny(
-                        message=f"Write to {file_path} not allowed by security policy"
-                    )
-            if tool_name == "Bash":
-                cmd = input_data.get("command", "")
-                if cmd and not policy.is_bash_allowed(cmd):
-                    return PermissionResultDeny(
-                        message=f"Command not allowed by security policy: {cmd}"
-                    )
-            return PermissionResultAllow(updated_input=input_data)
-
-        return handler
 
 
 def _message_to_dict(msg: Any) -> dict[str, Any]:
