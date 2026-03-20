@@ -86,7 +86,7 @@ class FakeRunner(AgentRunner):
         self._responses = responses
         self._call_counts: dict[str, int] = {}
 
-    async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+    async def run(self, config: AgentConfig, prompt: str, *, on_message: object = None) -> AgentResult:
         role = config.name
         self._call_counts[role] = self._call_counts.get(role, 0) + 1
         idx = self._call_counts[role] - 1
@@ -108,7 +108,7 @@ class FailingRunner(AgentRunner):
     def __init__(self, fail_role: str):
         self._fail_role = fail_role
 
-    async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+    async def run(self, config: AgentConfig, prompt: str, *, on_message: object = None) -> AgentResult:
         if config.name == self._fail_role:
             return AgentResult(
                 success=False,
@@ -304,7 +304,7 @@ class TestPlanningAgent:
         prompts_received: dict[str, list[str]] = {}
 
         class OrderTrackingRunner(AgentRunner):
-            async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+            async def run(self, config: AgentConfig, prompt: str, *, on_message: object = None) -> AgentResult:
                 call_order.append(config.name)
                 prompts_received.setdefault(config.name, []).append(prompt)
                 responses = {
@@ -357,7 +357,7 @@ class TestPlanningAgent:
         prompts_received: dict[str, list[str]] = {}
 
         class CapturingRunner(AgentRunner):
-            async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+            async def run(self, config: AgentConfig, prompt: str, *, on_message: object = None) -> AgentResult:
                 prompts_received.setdefault(config.name, []).append(prompt)
                 responses = {
                     "task_agent": _TASK_OUTPUT,
@@ -543,7 +543,7 @@ class TestOrchestratorResume:
         prompts_received: list[str] = []
 
         class CapturingRunner(AgentRunner):
-            async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+            async def run(self, config: AgentConfig, prompt: str, *, on_message: object = None) -> AgentResult:
                 prompts_received.append(prompt)
                 if config.name == "planning_agent":
                     text = _PLAN_OUTPUT

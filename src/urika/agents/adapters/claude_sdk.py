@@ -23,7 +23,7 @@ from urika.agents.runner import AgentResult, AgentRunner
 class ClaudeSDKRunner(AgentRunner):
     """Runs agents via Claude Agent SDK."""
 
-    async def run(self, config: AgentConfig, prompt: str) -> AgentResult:
+    async def run(self, config: AgentConfig, prompt: str, *, on_message: object = None) -> AgentResult:
         """Execute an agent and return structured results."""
         options = self._build_options(config)
         messages: list[dict[str, Any]] = []
@@ -35,6 +35,12 @@ class ClaudeSDKRunner(AgentRunner):
         is_error = False
 
         async for msg in query(prompt=prompt, options=options):
+            if on_message is not None:
+                try:
+                    on_message(msg)
+                except Exception:
+                    pass  # Don't let callback errors break the agent
+
             messages.append(_message_to_dict(msg))
             if isinstance(msg, AssistantMessage):
                 for block in msg.content:
