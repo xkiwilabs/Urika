@@ -65,9 +65,8 @@ class _C:
 
 
 _IS_TTY = sys.stdout.isatty()
-# Respect NO_COLOR convention. Disable in non-TTY.
-# Opt-in via URIKA_COLOR=1, disabled by default for safety.
-if not _IS_TTY or os.environ.get("NO_COLOR") or not os.environ.get("URIKA_COLOR"):
+# Colors on by default for TTYs. Disable via NO_COLOR=1.
+if not _IS_TTY or os.environ.get("NO_COLOR"):
     _C.disable()
 
 
