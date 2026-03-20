@@ -739,8 +739,37 @@ def _determine_next_experiment(
                 config = suggest_role.build_config(
                     project_dir=project_path, experiment_id=""
                 )
+
+                from urika.cli_display import (
+                    print_agent,
+                    print_tool_use,
+                )
+
+                print_agent("suggestion_agent")
+
+                def _on_msg(msg: object) -> None:
+                    """Show tool use from suggestion agent."""
+                    try:
+                        if hasattr(msg, "content"):
+                            for block in msg.content:
+                                tool_name = getattr(block, "name", None)
+                                if tool_name:
+                                    inp = getattr(block, "input", {}) or {}
+                                    detail = ""
+                                    if isinstance(inp, dict):
+                                        detail = (
+                                            inp.get("command", "")
+                                            or inp.get("file_path", "")
+                                            or inp.get("pattern", "")
+                                        )
+                                    print_tool_use(tool_name, detail)
+                    except Exception:
+                        pass
+
                 with Spinner("Analyzing project state"):
-                    result = asyncio.run(runner.run(config, context))
+                    result = asyncio.run(
+                        runner.run(config, context, on_message=_on_msg)
+                    )
 
                 if result.success:
                     from urika.orchestrator.parsing import parse_suggestions
