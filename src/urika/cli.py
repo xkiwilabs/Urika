@@ -594,13 +594,16 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
         raise click.ClickException(
             "Claude Agent SDK not installed. Run: pip install urika[agents]"
         )
+    import signal
+    import time
+
     from urika.cli_display import (
-        Spinner,
         print_error,
         print_footer,
         print_header,
         print_step,
         print_success,
+        print_warning,
     )
     from urika.orchestrator import run_experiment
 
@@ -626,21 +629,52 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
     else:
         print_step(f"Running experiment {experiment_id} (max {max_turns} turns)")
 
-    import time
+    # Register Ctrl+C handler to clean up lockfile
+    def _cleanup_on_interrupt(signum: int, frame: object) -> None:
+        print_warning("\nInterrupted — cleaning up...")
+        try:
+            from urika.core.session import fail_session
+
+            fail_session(project_path, experiment_id, error="Interrupted by user")
+        except Exception:
+            # Force remove lockfile if fail_session fails
+            lock = project_path / "experiments" / experiment_id / ".lock"
+            lock.unlink(missing_ok=True)
+        print_step("Experiment paused. Resume with: urika run --continue")
+        raise SystemExit(1)
+
+    original_handler = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, _cleanup_on_interrupt)
 
     start_ms = int(time.monotonic() * 1000)
 
+    def _on_progress(event: str, detail: str = "") -> None:
+        if event == "turn":
+            print_step(detail)
+        elif event == "agent":
+            from urika.cli_display import print_agent as _pa
+
+            agent_name = detail.split("—")[0].strip().lower().replace(" ", "_")
+            _pa(agent_name)
+        elif event == "result":
+            print_success(detail)
+        elif event == "phase":
+            print_step(detail)
+
     sdk_runner = ClaudeSDKRunner()
-    with Spinner("Running orchestrator loop"):
-        result = asyncio.run(
-            run_experiment(
-                project_path,
-                experiment_id,
-                sdk_runner,
-                max_turns=max_turns,
-                resume=resume,
-            )
+    result = asyncio.run(
+        run_experiment(
+            project_path,
+            experiment_id,
+            sdk_runner,
+            max_turns=max_turns,
+            resume=resume,
+            on_progress=_on_progress,
         )
+    )
+
+    # Restore original handler
+    signal.signal(signal.SIGINT, original_handler)
 
     elapsed_ms = int(time.monotonic() * 1000) - start_ms
     run_status = result.get("status", "unknown")

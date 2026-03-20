@@ -25,6 +25,10 @@ from urika.orchestrator.parsing import (
 )
 
 
+def _noop_callback(event: str, detail: str = "") -> None:
+    """Default no-op progress callback."""
+
+
 async def run_experiment(
     project_dir: Path,
     experiment_id: str,
@@ -32,15 +36,20 @@ async def run_experiment(
     *,
     max_turns: int = 50,
     resume: bool = False,
+    on_progress: object = None,
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
-    Cycles through task_agent -> evaluator -> suggestion_agent until
+    Cycles through planning -> task -> evaluator -> suggestion until
     criteria are met or max_turns is reached.
 
     If *resume* is True, resumes a previously paused session instead of
     starting a new one.
+
+    *on_progress* is an optional callback ``(event, detail) -> None``
+    called at key points in the loop.
     """
+    progress = on_progress or _noop_callback
     registry = AgentRegistry()
     registry.discover()
 
@@ -56,8 +65,8 @@ async def run_experiment(
         # Use the last run's next_step as the initial task prompt, if available
         task_prompt = "Continue the experiment with a different approach."
         try:
-            progress = load_progress(project_dir, experiment_id)
-            runs = progress.get("runs", [])
+            prev_progress = load_progress(project_dir, experiment_id)
+            runs = prev_progress.get("runs", [])
             if runs:
                 last_next_step = runs[-1].get("next_step", "")
                 if last_next_step:
@@ -73,6 +82,7 @@ async def run_experiment(
         task_prompt = "Begin the experiment. Try an initial approach."
 
     # --- Pre-loop: knowledge scan ---
+    progress("phase", "Scanning knowledge base")
     try:
         knowledge_summary = build_knowledge_summary(project_dir)
         if knowledge_summary:
@@ -89,10 +99,12 @@ async def run_experiment(
         return {"status": "failed", "error": str(exc), "turns": 0}
 
     for turn in range(start_turn, max_turns + 1):
+        progress("turn", f"Turn {turn}/{max_turns}")
         try:
             # --- planning_agent (optional) ---
             plan_role = registry.get("planning_agent")
             if plan_role is not None:
+                progress("agent", "Planning agent — designing method")
                 plan_config = plan_role.build_config(
                     project_dir=project_dir, experiment_id=experiment_id
                 )
@@ -114,12 +126,14 @@ async def run_experiment(
 
                 # Handle planning agent's tool/literature requests
                 if method_plan and method_plan.get("needs_tool"):
+                    progress("agent", "Tool builder — creating required tool")
                     tool_role = registry.get("tool_builder")
                     if tool_role is not None:
                         tool_config = tool_role.build_config(project_dir=project_dir)
                         await runner.run(tool_config, json.dumps(method_plan))
 
                 if method_plan and method_plan.get("needs_literature"):
+                    progress("agent", "Literature agent — searching knowledge")
                     lit_role = registry.get("literature_agent")
                     if lit_role is not None:
                         lit_config = lit_role.build_config(project_dir=project_dir)
@@ -145,6 +159,7 @@ async def run_experiment(
                 task_input = task_prompt
 
             # --- task_agent ---
+            progress("agent", "Task agent — running experiment")
             task_role = registry.get("task_agent")
             if task_role is None:
                 fail_session(
@@ -177,8 +192,11 @@ async def run_experiment(
             runs = parse_run_records(task_result.text_output)
             for run in runs:
                 append_run(project_dir, experiment_id, run)
+            if runs:
+                progress("result", f"Recorded {len(runs)} run(s)")
 
             # --- evaluator ---
+            progress("agent", "Evaluator — scoring results")
             eval_role = registry.get("evaluator")
             if eval_role is None:
                 fail_session(
@@ -209,10 +227,12 @@ async def run_experiment(
 
             evaluation = parse_evaluation(eval_result.text_output)
             if evaluation and evaluation.get("criteria_met"):
+                progress("result", "Criteria met!")
                 complete_session(project_dir, experiment_id)
                 return {"status": "completed", "turns": turn}
 
             # --- suggestion_agent ---
+            progress("agent", "Suggestion agent — proposing next steps")
             suggest_role = registry.get("suggestion_agent")
             if suggest_role is None:
                 fail_session(
