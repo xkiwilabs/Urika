@@ -128,54 +128,70 @@ def print_header(
     mode: str = "",
     data_source: str = "",
 ) -> None:
-    """Print branded Urika header box with discovery icon."""
-    # Build content lines
-    content = []
-    content.append("  Multi-agent scientific analysis platform")
-    content.append("  Autonomous exploration · modelling · evaluation")
-    content.append("")
+    """Print branded Urika header banner with discovery icon."""
+    # Build right-side content
+    info_parts = []
     if project_name:
-        project_line = f"  Project: {project_name}"
+        p = project_name
         if mode:
-            project_line += f" · {mode}"
-        content.append(project_line)
+            p += f" · {mode}"
+        info_parts.append(p)
     if agent:
-        content.append(f"  Agent: {agent}")
+        info_parts.append(agent)
     if data_source:
-        short = data_source if len(data_source) <= 60 else "…" + data_source[-57:]
-        content.append(f"  Data: {short}")
+        short = data_source if len(data_source) <= 50 else "…" + data_source[-47:]
+        info_parts.append(short)
+    info = ("  " + " │ ".join(info_parts)) if info_parts else ""
 
-    # Icon (discovery dot)
-    icon = [
-        "       ✦       ",
-        "               ",
-        "   ✦   ◆   ✦   ",
-        "               ",
-        "       ✦       ",
-    ]
+    # Banner width — capped at 76
+    min_width = 72
+    max_width = 76
+    content_width = min(max_width, max(min_width, len(info) + 20))
+    bar_top = "─" * (content_width - len(" Urika v0.1 "))
+    bar_bot = "─" * content_width
 
-    # Combine icon + content side by side
-    icon_width = 16
-    content_width = max(len(line) for line in content) + 2
-    total_width = icon_width + content_width
+    B = _C.BLUE
+    R = _C.RESET
+    D = _C.DIM
+    BO = _C.BOLD
 
-    # Pad content to match icon height
-    while len(content) < len(icon):
-        content.append("")
-    while len(icon) < len(content):
-        icon.append(" " * icon_width)
+    # Truncate info to fit
+    max_info = content_width - 7
+    if len(info) > max_info:
+        info = info[: max_info - 1] + "…"
 
-    bar = "─" * (total_width - len(" Urika v0.1 "))
-    print(f"\n{_C.BLUE}╭─ {_C.BOLD}Urika v0.1{_C.RESET}{_C.BLUE} {bar}╮{_C.RESET}")
-    for ic, cn in zip(icon, content):
-        print(
-            f"{_C.BLUE}│{_C.RESET}"
-            f"{_C.BLUE}{ic}{_C.RESET}"
-            f"{cn:<{content_width}}"
-            f"{_C.BLUE}│{_C.RESET}"
-        )
-    bottom = "─" * total_width
-    print(f"{_C.BLUE}╰{bottom}╯{_C.RESET}")
+    w = content_width  # visible character width
+    ver = "Version: 0.1.0        Release: 2026-03-21"
+
+    def _pad(text: str, visible_len: int) -> str:
+        """Pad to fill the box width, accounting for visible chars only."""
+        return " " * (w - visible_len)
+
+    print(f"\n{B}╭─ {BO}Urika{R}{B} {bar_top}╮{R}")
+    print(f"{B}│{R}{' ' * w}{B}│{R}")
+
+    t1 = "Multi-agent scientific analysis platform"
+    print(f"{B}│{R}  {B}✦{R}   {BO}{t1}{R}{_pad(t1, len(t1) + 6)}{B}│{R}")
+
+    print(f"{B}│{R}{' ' * w}{B}│{R}")
+
+    t2 = "Autonomous exploration · modelling · evaluation"
+    print(f"{B}│{R} {B}✦◆✦{R}  {D}{t2}{R}{_pad(t2, len(t2) + 6)}{B}│{R}")
+
+    print(f"{B}│{R}{' ' * w}{B}│{R}")
+
+    t3 = ver
+    print(f"{B}│{R}  {B}✦{R}   {D}{t3}{R}{_pad(t3, len(t3) + 6)}{B}│{R}")
+
+    if info:
+        print(f"{B}│{R}{' ' * w}{B}│{R}")
+        # info already has leading spaces
+        vis_len = len(info.replace("│", "|"))  # approximate visible length
+        pad = " " * max(0, w - vis_len)
+        print(f"{B}│{R}{info}{pad}{B}│{R}")
+
+    print(f"{B}│{R}{' ' * w}{B}│{R}")
+    print(f"{B}╰{bar_bot}╯{R}")
     print()
 
 
