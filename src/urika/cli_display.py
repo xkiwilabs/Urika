@@ -167,31 +167,34 @@ def print_header(
         """Pad to fill the box width, accounting for visible chars only."""
         return " " * (w - visible_len)
 
+    # Double border: right side and bottom get a second line
+    r2 = f"{B}│{R}"  # second right border
+
     print(f"\n{B}╭─ {BO}Urika{R}{B} {bar_top}╮{R}")
-    print(f"{B}│{R}{' ' * w}{B}│{R}")
+    print(f"{B}│{R}{' ' * w}{B}│{r2}")
 
     t1 = "Multi-agent scientific analysis platform"
-    print(f"{B}│{R}  {B}✦{R}   {BO}{t1}{R}{_pad(t1, len(t1) + 6)}{B}│{R}")
+    print(f"{B}│{R}   {B}✦{R}     {BO}{t1}{R}{_pad(t1, len(t1) + 10)}{B}│{r2}")
 
-    print(f"{B}│{R}{' ' * w}{B}│{R}")
+    print(f"{B}│{R}{' ' * w}{B}│{r2}")
 
     t2 = "Autonomous exploration · modelling · evaluation"
-    print(f"{B}│{R} {B}✦◆✦{R}  {D}{t2}{R}{_pad(t2, len(t2) + 6)}{B}│{R}")
+    print(f"{B}│{R} {B}✦   ◆   ✦{R}  {D}{t2}{R}{_pad(t2, len(t2) + 12)}{B}│{r2}")
 
-    print(f"{B}│{R}{' ' * w}{B}│{R}")
+    print(f"{B}│{R}{' ' * w}{B}│{r2}")
 
     t3 = ver
-    print(f"{B}│{R}  {B}✦{R}   {D}{t3}{R}{_pad(t3, len(t3) + 6)}{B}│{R}")
+    print(f"{B}│{R}   {B}✦{R}     {D}{t3}{R}{_pad(t3, len(t3) + 10)}{B}│{r2}")
 
     if info:
-        print(f"{B}│{R}{' ' * w}{B}│{R}")
-        # info already has leading spaces
-        vis_len = len(info.replace("│", "|"))  # approximate visible length
+        print(f"{B}│{R}{' ' * w}{B}│{r2}")
+        vis_len = len(info.replace("│", "|"))
         pad = " " * max(0, w - vis_len)
-        print(f"{B}│{R}{info}{pad}{B}│{R}")
+        print(f"{B}│{R}{info}{pad}{B}│{r2}")
 
-    print(f"{B}│{R}{' ' * w}{B}│{R}")
-    print(f"{B}╰{bar_bot}╯{R}")
+    print(f"{B}│{R}{' ' * w}{B}│{r2}")
+    print(f"{B}╰{bar_bot}╯{r2}")
+    print(f" {B}╰{bar_bot}╯{R}")
     print()
 
 
