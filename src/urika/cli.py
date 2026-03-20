@@ -247,18 +247,45 @@ def new(
 
             choice = _prompt_numbered(
                 "\n  Run the first experiment?",
-                ["Yes — create and run it", "Skip — I'll run it later"],
+                [
+                    "Yes — create and run it",
+                    "Different — I'll describe what to run instead",
+                    "Skip — I'll run it later",
+                ],
                 default=1,
             )
 
-            if choice.startswith("Yes"):
-                exp = create_experiment(
-                    project_dir,
-                    name=first_name.replace(" ", "-").lower(),
-                    hypothesis=first_desc[:500] if first_desc else "",
-                )
+            if choice.startswith("Skip"):
+                pass
+            else:
+                if choice.startswith("Different"):
+                    custom = click.prompt("  Describe the experiment").strip()
+                    exp_name = click.prompt(
+                        "  Experiment name", default="custom-experiment"
+                    ).strip()
+                    exp = create_experiment(
+                        project_dir,
+                        name=exp_name,
+                        hypothesis=custom,
+                    )
+                else:
+                    exp = create_experiment(
+                        project_dir,
+                        name=first_name.replace(" ", "-").lower(),
+                        hypothesis=first_desc[:500] if first_desc else "",
+                    )
+
                 click.echo(f"\n  Created experiment: {exp.experiment_id}")
-                click.echo(f"  Run it with: urika run {name}")
+                click.echo("  Starting orchestrator...\n")
+                # Launch the run command programmatically
+                ctx = click.get_current_context()
+                ctx.invoke(
+                    run,
+                    project=name,
+                    experiment_id=exp.experiment_id,
+                    max_turns=50,
+                    resume=False,
+                )
 
 
 def _run_builder_agent_loop(
