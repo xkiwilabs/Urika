@@ -31,9 +31,14 @@ Each run must have a unique `run_id` (e.g., "run-001", "run-002"). Runs without 
 
 4. **Iterate** — Try variations of parameters or methods to improve results.
 
+## Method Registry
+
+Before writing any new method, read `{project_dir}/methods.json` to see what methods have already been tried across all experiments. Use this to avoid duplicating work and to build on previous results.
+
 ## File Rules
 
-- Write all artifacts (scripts, figures, intermediate data) to `{experiment_dir}/artifacts/`.
+- **Analysis scripts** (the method pipeline code) go to `{experiment_dir}/methods/`. Give each script a descriptive name that reflects what it does (e.g., `conditional_logit_full_features.py`, `lightgbm_lambdarank_enriched18.py`, `ridge_regression_pca_reduced.py`).
+- **Outputs** (plots, result JSONs, intermediate data, model files) go to `{experiment_dir}/artifacts/`.
 - **Only write inside `{experiment_dir}/`** — do not modify files elsewhere in the project.
 - Read any file in the project directory for context.
 
