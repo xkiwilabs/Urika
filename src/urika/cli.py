@@ -44,6 +44,36 @@ def cli() -> None:
     """Urika: Agentic scientific analysis platform."""
 
 
+def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:
+    """Prompt user with numbered options. Returns the selected option text."""
+    click.echo(prompt_text)
+    for i, opt in enumerate(options, 1):
+        marker = " (default, press enter)" if i == default else ""
+        click.echo(f"  {i}. {opt}{marker}")
+    while True:
+        raw = click.prompt("Choice", default=str(default)).strip()
+        try:
+            idx = int(raw)
+            if 1 <= idx <= len(options):
+                return options[idx - 1]
+        except ValueError:
+            pass
+        click.echo(f"Please enter a number between 1 and {len(options)}.")
+
+
+def _prompt_path(prompt_text: str, must_exist: bool = True) -> str | None:
+    """Prompt for a path, re-asking if it doesn't exist. Empty = skip."""
+    while True:
+        raw = click.prompt(prompt_text, default="").strip()
+        if not raw:
+            return None
+        resolved = Path(raw).resolve()
+        if not must_exist or resolved.exists():
+            return str(resolved)
+        click.echo(f"  Path not found: {raw}")
+        click.echo("  Please check the path and try again.")
+
+
 @cli.command()
 @click.argument("name", required=False, default=None)
 @click.option("-q", "--question", default=None, help="Research question.")
@@ -71,24 +101,31 @@ def new(
     # Prompt for missing required fields
     if name is None:
         name = click.prompt("Project name").strip()
+
+    # Validate data path — keep asking until valid or skipped
     if data_path is not None:
         data_path = data_path.strip()
-    if data_path is None:
-        data_path = click.prompt("Path to data (file or directory)", default="").strip()
-        if not data_path:
-            data_path = None
+        resolved = Path(data_path).resolve()
+        if not resolved.exists():
+            click.echo(f"  Path not found: {data_path}")
+            data_path = _prompt_path("Path to data (file or directory)")
+        else:
+            data_path = str(resolved)
+    else:
+        data_path = _prompt_path("Path to data (file or directory)")
+
     if description is None:
         description = click.prompt(
             "Describe the project — what are you trying to analyse or predict",
             default="",
-        )
+        ).strip()
     if question is None:
-        question = click.prompt("Research question")
+        question = click.prompt("Research question").strip()
     if mode is None:
-        mode = click.prompt(
-            "Investigation mode",
-            type=click.Choice(["exploratory", "confirmatory", "pipeline"]),
-            default="exploratory",
+        mode = _prompt_numbered(
+            "Investigation mode:",
+            ["exploratory", "confirmatory", "pipeline"],
+            default=1,
         )
 
     source = Path(data_path) if data_path else _projects_dir() / name
@@ -101,28 +138,25 @@ def new(
         mode=mode,
     )
 
-    # Validate data path before scanning
     if data_path:
-        source_resolved = Path(data_path).resolve()
-        if not source_resolved.exists():
-            raise click.ClickException(f"Data path not found: {data_path}")
-        builder.source_path = source_resolved
+        builder.source_path = Path(data_path)
 
     # Check if project already exists before doing work
     project_dir = _projects_dir() / name
     while (project_dir / "urika.toml").exists():
-        choice = click.prompt(
-            f"Project '{name}' already exists. Overwrite, abort, or new name?",
-            type=click.Choice(["overwrite", "abort", "new name"], case_sensitive=False),
+        choice = _prompt_numbered(
+            f"Project '{name}' already exists:",
+            ["Overwrite", "New name", "Abort"],
+            default=1,
         )
-        if choice == "abort":
+        if choice == "Abort":
             raise click.ClickException("Aborted.")
-        if choice == "overwrite":
+        if choice == "Overwrite":
             import shutil
 
             shutil.rmtree(project_dir)
             break
-        # new name
+        # New name
         name = click.prompt("New project name").strip()
         builder.name = name
         project_dir = _projects_dir() / name

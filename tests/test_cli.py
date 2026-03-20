@@ -136,7 +136,7 @@ class TestNewCommand:
         assert result.exit_code == 0, result.output
         assert "Created project" in result.output
 
-    def test_data_path_not_found(
+    def test_data_path_not_found_warns(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
         result = runner.invoke(
@@ -152,9 +152,9 @@ class TestNewCommand:
                 "/nonexistent/path",
             ],
             env=urika_env,
+            input="\n",  # skip re-prompt with empty input
         )
-        assert result.exit_code != 0
-        assert "not found" in result.output
+        assert "not found" in result.output.lower()
 
     def test_invalid_mode(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         result = runner.invoke(
