@@ -70,9 +70,11 @@ def new(
 
     # Prompt for missing required fields
     if name is None:
-        name = click.prompt("Project name")
+        name = click.prompt("Project name").strip()
+    if data_path is not None:
+        data_path = data_path.strip()
     if data_path is None:
-        data_path = click.prompt("Path to data (file or directory)", default="")
+        data_path = click.prompt("Path to data (file or directory)", default="").strip()
         if not data_path:
             data_path = None
     if description is None:
