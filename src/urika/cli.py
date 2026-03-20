@@ -306,6 +306,7 @@ def _run_builder_agent_loop(
         print_agent,
         print_error,
         print_step,
+        print_tool_use,
         thinking_phrase,
     )
     from urika.core.builder_prompts import (
@@ -317,6 +318,25 @@ def _run_builder_agent_loop(
         _extract_json_blocks,
         parse_suggestions,
     )
+
+    def _on_builder_msg(msg: object) -> None:
+        """Show tool use from builder agents."""
+        try:
+            if hasattr(msg, "content"):
+                for block in msg.content:
+                    tool_name = getattr(block, "name", None)
+                    if tool_name:
+                        inp = getattr(block, "input", {}) or {}
+                        detail = ""
+                        if isinstance(inp, dict):
+                            detail = (
+                                inp.get("command", "")
+                                or inp.get("file_path", "")
+                                or inp.get("pattern", "")
+                            )
+                        print_tool_use(tool_name, detail)
+        except Exception:
+            pass
 
     runner = ClaudeSDKRunner()
     registry = AgentRegistry()
@@ -345,7 +365,7 @@ def _run_builder_agent_loop(
         config = builder_role.build_config(project_dir=builder.source_path)
 
         with Spinner(thinking_phrase()):
-            result = asyncio.run(runner.run(config, prompt))
+            result = asyncio.run(runner.run(config, prompt, on_message=_on_builder_msg))
 
         if not result.success:
             print_error(f"Agent error: {result.error}")
@@ -389,7 +409,9 @@ def _run_builder_agent_loop(
     )
 
     with Spinner(_AGENT_ACTIVITY.get("suggestion_agent", thinking_phrase())):
-        suggest_result = asyncio.run(runner.run(suggest_config, suggest_prompt))
+        suggest_result = asyncio.run(
+            runner.run(suggest_config, suggest_prompt, on_message=_on_builder_msg)
+        )
 
     if not suggest_result.success:
         print_error(f"Suggestion agent error: {suggest_result.error}")
@@ -413,7 +435,9 @@ def _run_builder_agent_loop(
     )
 
     with Spinner(_AGENT_ACTIVITY.get("planning_agent", thinking_phrase())):
-        plan_result = asyncio.run(runner.run(plan_config, plan_prompt))
+        plan_result = asyncio.run(
+            runner.run(plan_config, plan_prompt, on_message=_on_builder_msg)
+        )
 
     if not plan_result.success:
         print_error(f"Planning agent error: {plan_result.error}")
@@ -442,7 +466,9 @@ def _run_builder_agent_loop(
         print_agent("suggestion_agent")
         refined_prompt = suggest_prompt + f"\n\n## User Refinement\n{refinement}"
         with Spinner(_AGENT_ACTIVITY.get("suggestion_agent", thinking_phrase())):
-            suggest_result = asyncio.run(runner.run(suggest_config, refined_prompt))
+            suggest_result = asyncio.run(
+                runner.run(suggest_config, refined_prompt, on_message=_on_builder_msg)
+            )
         if suggest_result.success:
             suggestions = parse_suggestions(suggest_result.text_output)
             print_agent("planning_agent")
@@ -450,7 +476,9 @@ def _run_builder_agent_loop(
                 suggestions or {}, description, data_summary
             )
             with Spinner(_AGENT_ACTIVITY.get("planning_agent", thinking_phrase())):
-                plan_result = asyncio.run(runner.run(plan_config, plan_prompt))
+                plan_result = asyncio.run(
+                    runner.run(plan_config, plan_prompt, on_message=_on_builder_msg)
+                )
             if plan_result.success:
                 click.echo(plan_result.text_output.strip())
 
