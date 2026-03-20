@@ -84,8 +84,11 @@ def _write_toml(path: Path, data: dict) -> None:
 
 def _toml_value(val: object) -> str:
     """Format a Python value as a TOML literal."""
+    if val is None:
+        return '""'
     if isinstance(val, str):
-        return f'"{val}"'
+        escaped = val.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        return f'"{escaped}"'
     if isinstance(val, bool):
         return "true" if val else "false"
     if isinstance(val, (int, float)):

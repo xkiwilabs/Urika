@@ -14,16 +14,20 @@ Explore the dataset in the project directory, develop and run analytical methods
 
 1. **Explore** — Read the project configuration and dataset at `{project_dir}` to understand the research question and available data.
 2. **Analyse** — Write Python scripts to implement analytical methods. Run them to produce results.
-3. **Record** — Document each run as a RunRecord in a JSON block:
+3. **Record** — Document each run as a RunRecord in a JSON block. You MUST include `run_id`, `method`, and `metrics`:
 
 ```json
 {{
+  "run_id": "run-001",
   "method": "<method_name>",
   "params": {{}},
   "metrics": {{}},
-  "observation": "<what you observed>"
+  "observation": "<what you observed>",
+  "next_step": "<what to try next>"
 }}
 ```
+
+Each run must have a unique `run_id` (e.g., "run-001", "run-002"). Runs without `run_id`, `method`, and `metrics` will be ignored.
 
 4. **Iterate** — Try variations of parameters or methods to improve results.
 

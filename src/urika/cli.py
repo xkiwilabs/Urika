@@ -554,7 +554,12 @@ def tools(category: str | None, project: str | None) -> None:
 )
 def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -> None:
     """Run an experiment using the orchestrator."""
-    from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+    except ImportError:
+        raise click.ClickException(
+            "Claude Agent SDK not installed. Run: pip install urika[agents]"
+        )
     from urika.orchestrator import run_experiment
 
     project_path, _config = _resolve_project(project)
@@ -563,7 +568,8 @@ def run(project: str, experiment_id: str | None, max_turns: int, resume: bool) -
         experiments = list_experiments(project_path)
         if not experiments:
             raise click.ClickException(
-                "No experiments in this project. Create one first."
+                "No experiments in this project. Create one with:\n"
+                f"  urika experiment create {project} <experiment-name>"
             )
         experiment_id = experiments[-1].experiment_id
         click.echo(f"Using latest experiment: {experiment_id}")

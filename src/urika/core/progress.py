@@ -14,8 +14,13 @@ def _progress_path(project_dir: Path, experiment_id: str) -> Path:
 
 
 def load_progress(project_dir: Path, experiment_id: str) -> dict[str, Any]:
-    """Load progress.json for an experiment."""
+    """Load progress.json for an experiment.
+
+    Returns a default structure if the file doesn't exist.
+    """
     path = _progress_path(project_dir, experiment_id)
+    if not path.exists():
+        return {"runs": [], "status": "pending"}
     return json.loads(path.read_text())
 
 

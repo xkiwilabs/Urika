@@ -73,16 +73,20 @@ async def run_experiment(
         task_prompt = "Begin the experiment. Try an initial approach."
 
     # --- Pre-loop: knowledge scan ---
-    knowledge_summary = build_knowledge_summary(project_dir)
-    if knowledge_summary:
-        lit_role = registry.get("literature_agent")
-        if lit_role is not None:
-            lit_config = lit_role.build_config(project_dir=project_dir)
-            await runner.run(
-                lit_config,
-                "Scan the knowledge directory and summarize available knowledge.",
-            )
-        task_prompt = knowledge_summary + "\n\n" + task_prompt
+    try:
+        knowledge_summary = build_knowledge_summary(project_dir)
+        if knowledge_summary:
+            lit_role = registry.get("literature_agent")
+            if lit_role is not None:
+                lit_config = lit_role.build_config(project_dir=project_dir)
+                await runner.run(
+                    lit_config,
+                    "Scan the knowledge directory and summarize available knowledge.",
+                )
+            task_prompt = knowledge_summary + "\n\n" + task_prompt
+    except Exception as exc:
+        fail_session(project_dir, experiment_id, error=str(exc))
+        return {"status": "failed", "error": str(exc), "turns": 0}
 
     for turn in range(start_turn, max_turns + 1):
         try:
