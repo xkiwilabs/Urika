@@ -96,7 +96,17 @@ def new(
     description: str | None,
 ) -> None:
     """Create a new project."""
+    from urika.cli_display import (
+        Spinner,
+        print_agent,
+        print_error,
+        print_header,
+        print_success,
+    )
     from urika.core.project_builder import ProjectBuilder
+
+    # Show welcome header immediately
+    print_header()
 
     # Prompt for missing required fields
     if name is None:
@@ -158,14 +168,7 @@ def new(
         builder.name = name
         project_dir = _projects_dir() / name
 
-    from urika.cli_display import (
-        Spinner,
-        print_agent,
-        print_error,
-        print_header,
-        print_success,
-    )
-
+    # Show project details header
     print_header(
         project_name=name,
         mode=mode,
