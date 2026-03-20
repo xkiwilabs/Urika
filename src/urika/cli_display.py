@@ -57,8 +57,9 @@ class _C:
 
 
 _IS_TTY = sys.stdout.isatty()
-# Respect NO_COLOR convention and disable in non-TTY
-if not _IS_TTY or os.environ.get("NO_COLOR"):
+# Disable colors by default until terminal compatibility is verified.
+# Set URIKA_COLOR=1 to enable colors.
+if not _IS_TTY or os.environ.get("NO_COLOR") or not os.environ.get("URIKA_COLOR"):
     _C.disable()
 
 
