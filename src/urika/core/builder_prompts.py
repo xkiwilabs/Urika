@@ -13,16 +13,29 @@ def build_scoping_prompt(
     data_summary: DataSummary | None,
     description: str,
     context: str = "",
+    question: str = "",
 ) -> str:
     """Build a prompt for the project builder agent to generate clarifying questions."""
     parts = [
         "## Research Description",
         description or "(No description provided)",
         "",
-        "## Source Scan",
-        scan_result.summary(),
-        "",
     ]
+    if question:
+        parts.extend(
+            [
+                "## Research Question",
+                question,
+                "",
+            ]
+        )
+    parts.extend(
+        [
+            "## Source Scan",
+            scan_result.summary(),
+            "",
+        ]
+    )
 
     if data_summary is not None:
         parts.extend(

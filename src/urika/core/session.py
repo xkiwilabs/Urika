@@ -113,6 +113,8 @@ def resume_session(project_dir: Path, experiment_id: str) -> SessionState:
 
 def complete_session(project_dir: Path, experiment_id: str) -> SessionState:
     """Mark session as completed. Updates status, removes lockfile."""
+    from urika.core.progress import update_experiment_status
+
     state = load_session(project_dir, experiment_id)
     if state is None:
         msg = f"No session found for experiment {experiment_id}"
@@ -122,6 +124,10 @@ def complete_session(project_dir: Path, experiment_id: str) -> SessionState:
     state.completed_at = _now_iso()
     save_session(project_dir, experiment_id, state)
     release_lock(project_dir, experiment_id)
+    try:
+        update_experiment_status(project_dir, experiment_id, "completed")
+    except Exception:
+        pass  # progress.json may not exist yet
     return state
 
 
@@ -129,6 +135,8 @@ def fail_session(
     project_dir: Path, experiment_id: str, error: str | None = None
 ) -> SessionState:
     """Mark session as failed. Records error in checkpoint, removes lockfile."""
+    from urika.core.progress import update_experiment_status
+
     state = load_session(project_dir, experiment_id)
     if state is None:
         msg = f"No session found for experiment {experiment_id}"
@@ -140,6 +148,10 @@ def fail_session(
         state.checkpoint["error"] = error
     save_session(project_dir, experiment_id, state)
     release_lock(project_dir, experiment_id)
+    try:
+        update_experiment_status(project_dir, experiment_id, "failed")
+    except Exception:
+        pass  # progress.json may not exist yet
     return state
 
 

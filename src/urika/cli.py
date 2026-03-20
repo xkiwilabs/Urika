@@ -128,7 +128,7 @@ def new(
             default=1,
         )
 
-    source = Path(data_path) if data_path else _projects_dir() / name
+    source = Path(data_path) if data_path else None
     builder = ProjectBuilder(
         name=name,
         source_path=source,
@@ -137,9 +137,6 @@ def new(
         question=question,
         mode=mode,
     )
-
-    if data_path:
-        builder.source_path = Path(data_path)
 
     # Check if project already exists before doing work
     project_dir = _projects_dir() / name
@@ -164,6 +161,7 @@ def new(
     # Scan and profile if a data path was provided
     scan_result = None
     data_summary = None
+    has_knowledge = False
     if data_path:
         scan_result = builder.scan()
         click.echo(scan_result.summary())
@@ -248,7 +246,9 @@ def _run_builder_agent_loop(
     click.echo("The project builder will ask a few questions to scope the project.\n")
 
     for i in range(max_questions):
-        prompt = build_scoping_prompt(scan_result, data_summary, description, context)
+        prompt = build_scoping_prompt(
+            scan_result, data_summary, description, context, question=question
+        )
         config = builder_role.build_config(project_dir=builder.source_path)
         result = asyncio.run(runner.run(config, prompt))
 

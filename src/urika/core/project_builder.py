@@ -22,7 +22,7 @@ class ProjectBuilder:
     def __init__(
         self,
         name: str,
-        source_path: Path,
+        source_path: Path | None,
         projects_dir: Path,
         *,
         description: str = "",
@@ -89,25 +89,27 @@ class ProjectBuilder:
 
         project_dir = self.projects_dir / self.name
 
+        data_paths = [str(self.source_path)] if self.source_path else []
         config = ProjectConfig(
             name=self.name,
             question=self.question,
             mode=self.mode,
             description=self.description,
-            data_paths=[str(self.source_path)],
+            data_paths=data_paths,
         )
         create_project_workspace(project_dir, config)
 
-        # Append data section to urika.toml
-        with open(project_dir / "urika.toml", "rb") as f:
-            existing = tomllib.load(f)
+        # Append data section to urika.toml if data source is set
+        if self.source_path:
+            with open(project_dir / "urika.toml", "rb") as f:
+                existing = tomllib.load(f)
 
-        existing["data"] = {
-            "source": str(self.source_path),
-            "format": self._detect_format(),
-            "pattern": "**/*.csv",
-        }
-        _write_toml(project_dir / "urika.toml", existing)
+            existing["data"] = {
+                "source": str(self.source_path),
+                "format": self._detect_format(),
+                "pattern": "**/*.csv",
+            }
+            _write_toml(project_dir / "urika.toml", existing)
 
         # Write initial suggestions if set
         if self._suggestions:

@@ -41,4 +41,5 @@ def build_config(
             blocked_bash_patterns=[],
         ),
         max_turns=10,
+        cwd=project_dir,
     )
