@@ -128,30 +128,54 @@ def print_header(
     mode: str = "",
     data_source: str = "",
 ) -> None:
-    """Print branded Urika header box."""
-    tagline = "  Multi-agent scientific analysis platform"
-    lines = [tagline]
+    """Print branded Urika header box with discovery icon."""
+    # Build content lines
+    content = []
+    content.append("  Multi-agent scientific analysis platform")
+    content.append("  Autonomous exploration · modelling · evaluation")
+    content.append("")
     if project_name:
         project_line = f"  Project: {project_name}"
         if mode:
-            project_line += f" \u00b7 {mode}"
-        lines.append(project_line)
+            project_line += f" · {mode}"
+        content.append(project_line)
     if agent:
-        lines.append(f"  Agent: {agent}")
+        content.append(f"  Agent: {agent}")
     if data_source:
-        short = data_source if len(data_source) <= 60 else "\u2026" + data_source[-57:]
-        lines.append(f"  Data: {short}")
+        short = data_source if len(data_source) <= 60 else "…" + data_source[-57:]
+        content.append(f"  Data: {short}")
 
-    width = max(len(line) for line in lines) + 2
-    bar = "\u2500" * (width - len(" Urika "))
+    # Icon (discovery dot)
+    icon = [
+        "       ✦       ",
+        "               ",
+        "   ✦   ◆   ✦   ",
+        "               ",
+        "       ✦       ",
+    ]
 
-    print(
-        f"\n{_C.BLUE}\u256d\u2500 {_C.BOLD}Urika{_C.RESET}{_C.BLUE} {bar}\u256e{_C.RESET}"
-    )
-    for line in lines:
-        print(f"{_C.BLUE}\u2502{_C.RESET}{line:<{width}}{_C.BLUE}\u2502{_C.RESET}")
-    bottom = "\u2500" * width
-    print(f"{_C.BLUE}\u2570{bottom}\u256f{_C.RESET}")
+    # Combine icon + content side by side
+    icon_width = 16
+    content_width = max(len(line) for line in content) + 2
+    total_width = icon_width + content_width
+
+    # Pad content to match icon height
+    while len(content) < len(icon):
+        content.append("")
+    while len(icon) < len(content):
+        icon.append(" " * icon_width)
+
+    bar = "─" * (total_width - len(" Urika v0.1 "))
+    print(f"\n{_C.BLUE}╭─ {_C.BOLD}Urika v0.1{_C.RESET}{_C.BLUE} {bar}╮{_C.RESET}")
+    for ic, cn in zip(icon, content):
+        print(
+            f"{_C.BLUE}│{_C.RESET}"
+            f"{_C.BLUE}{ic}{_C.RESET}"
+            f"{cn:<{content_width}}"
+            f"{_C.BLUE}│{_C.RESET}"
+        )
+    bottom = "─" * total_width
+    print(f"{_C.BLUE}╰{bottom}╯{_C.RESET}")
     print()
 
 
