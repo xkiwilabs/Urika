@@ -638,66 +638,158 @@ def tools(category: str | None, project: str | None) -> None:
             click.echo(f"  {tool.name()}  [{tool.category()}]  {tool.description()}")
 
 
-def _auto_create_experiment(project_path: Path, project_name: str) -> str | None:
-    """Try to create next experiment from plan/suggestions. Returns experiment_id or None."""
+def _determine_next_experiment(
+    project_path: Path,
+    project_name: str,
+    *,
+    auto: bool = False,
+    instructions: str = "",
+) -> str | None:
+    """Determine and create the next experiment based on project state.
+
+    Reads methods.json, criteria.json, completed experiments, and the initial
+    plan to decide what should run next. If the initial plan is exhausted,
+    calls the suggestion agent for next steps.
+    """
     import json
 
-    from urika.cli_display import print_step
+    from urika.cli_display import Spinner, print_step, print_success
 
-    # Check for initial suggestions
-    suggestions_path = project_path / "suggestions" / "initial.json"
-    if not suggestions_path.exists():
-        return None
-
-    try:
-        data = json.loads(suggestions_path.read_text())
-        suggestions = data.get("suggestions", [])
-        if not suggestions:
-            return None
-    except (json.JSONDecodeError, KeyError):
-        return None
-
-    # Check what's already been done — look at completed experiments
+    # Gather project state
     existing_experiments = list_experiments(project_path)
-    completed_count = sum(
-        1
+    completed = [
+        e
         for e in existing_experiments
         if load_progress(project_path, e.experiment_id).get("status") == "completed"
-    )
+    ]
 
-    # Skip suggestions that have already been run (by index)
-    if completed_count >= len(suggestions):
-        # All suggestions have been run — ask the suggestion agent for next steps
+    # Load methods registry
+    methods_path = project_path / "methods.json"
+    methods_summary = ""
+    if methods_path.exists():
+        try:
+            mdata = json.loads(methods_path.read_text())
+            mlist = mdata.get("methods", [])
+            if mlist:
+                methods_summary = f"{len(mlist)} methods tried. Best: "
+                best = max(
+                    (m for m in mlist if m.get("metrics")),
+                    key=lambda m: max(m["metrics"].values()) if m["metrics"] else 0,
+                    default=None,
+                )
+                if best:
+                    methods_summary += f"{best['name']} ({best.get('metrics', {})})"
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # Load criteria
+    criteria_summary = ""
+    criteria_path = project_path / "criteria.json"
+    if criteria_path.exists():
+        try:
+            cdata = json.loads(criteria_path.read_text())
+            versions = cdata.get("versions", [])
+            if versions:
+                latest = versions[-1]
+                ctype = latest.get("criteria", {}).get("type", "unknown")
+                criteria_summary = f"Criteria: {ctype} (v{latest['version']})"
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # Check initial plan
+    suggestions_path = project_path / "suggestions" / "initial.json"
+    next_suggestion = None
+    if suggestions_path.exists():
+        try:
+            data = json.loads(suggestions_path.read_text())
+            suggestions = data.get("suggestions", [])
+            if len(completed) < len(suggestions):
+                next_suggestion = suggestions[len(completed)]
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # If initial plan exhausted, call suggestion agent for next steps
+    if next_suggestion is None and completed:
+        try:
+            import asyncio
+
+            from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+            from urika.agents.registry import AgentRegistry
+
+            runner = ClaudeSDKRunner()
+            registry = AgentRegistry()
+            registry.discover()
+            suggest_role = registry.get("suggestion_agent")
+
+            if suggest_role is not None:
+                context = (
+                    f"Project: {project_name}\n"
+                    f"Completed experiments: {len(completed)}\n"
+                    f"{methods_summary}\n{criteria_summary}\n"
+                )
+                if instructions:
+                    context += f"\nUser instructions: {instructions}\n"
+                context += "\nPropose the next experiment."
+
+                config = suggest_role.build_config(
+                    project_dir=project_path, experiment_id=""
+                )
+                with Spinner("Analyzing project state"):
+                    result = asyncio.run(runner.run(config, context))
+
+                if result.success:
+                    from urika.orchestrator.parsing import parse_suggestions
+
+                    parsed = parse_suggestions(result.text_output)
+                    if parsed and parsed.get("suggestions"):
+                        next_suggestion = parsed["suggestions"][0]
+                        click.echo(result.text_output.strip())
+        except Exception:
+            pass
+
+    if next_suggestion is None:
         return None
-
-    next_suggestion = suggestions[completed_count]
 
     exp_name = next_suggestion.get("name", "auto-experiment").replace(" ", "-").lower()
     description = next_suggestion.get("method", next_suggestion.get("description", ""))
+    if instructions:
+        description = f"{instructions}\n\n{description}"
 
-    print_step(f"Plan proposes: {exp_name}")
+    # Show plan and confirm (unless --auto)
+    print_step(f"Next experiment: {exp_name}")
     if description:
-        # Show first 120 chars of description
-        short = description[:120] + "..." if len(description) > 120 else description
+        short = description[:200] + "..." if len(description) > 200 else description
         click.echo(f"    {short}")
+    if methods_summary:
+        click.echo(f"    {methods_summary}")
+    if criteria_summary:
+        click.echo(f"    {criteria_summary}")
 
-    choice = _prompt_numbered(
-        "\n  Run this experiment?",
-        ["Yes — create and run it", "Run with different name", "Skip — exit"],
-        default=1,
-    )
+    if not auto:
+        choice = _prompt_numbered(
+            "\n  Proceed?",
+            [
+                "Yes — create and run it",
+                "Different instructions",
+                "Skip — exit",
+            ],
+            default=1,
+        )
 
-    if choice.startswith("Skip"):
-        return None
+        if choice.startswith("Skip"):
+            return None
 
-    if choice.startswith("Run with"):
-        exp_name = click.prompt("  Experiment name").strip()
+        if choice.startswith("Different"):
+            instructions = click.prompt("  Your instructions").strip()
+            if instructions:
+                description = f"{instructions}\n\n{description}"
 
     exp = create_experiment(
         project_path,
         name=exp_name,
         hypothesis=description[:500] if description else "",
     )
+    print_success(f"Created experiment: {exp.experiment_id}")
     return exp.experiment_id
 
 
@@ -721,12 +813,25 @@ def _auto_create_experiment(project_path: Path, project_name: str) -> str | None
     default=False,
     help="Suppress verbose tool-use streaming output.",
 )
+@click.option(
+    "--auto",
+    is_flag=True,
+    default=False,
+    help="Fully autonomous — no confirmation prompts.",
+)
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide the next experiment (e.g. 'focus on FOV-constrained models').",
+)
 def run(
     project: str,
     experiment_id: str | None,
     max_turns: int,
     resume: bool,
     quiet: bool,
+    auto: bool,
+    instructions: str,
 ) -> None:
     """Run an experiment using the orchestrator."""
     try:
@@ -755,30 +860,28 @@ def run(
 
     if experiment_id is None:
         experiments = list_experiments(project_path)
-        if not experiments:
-            # Auto-create from plan if suggestions exist
-            experiment_id = _auto_create_experiment(project_path, project)
-            if experiment_id is None:
-                raise click.ClickException(
-                    "No experiments and no plan found. Create one with:\n"
-                    f"  urika experiment create {project} <experiment-name>"
-                )
+        # Find pending (non-completed) experiments
+        pending = [
+            e
+            for e in experiments
+            if load_progress(project_path, e.experiment_id).get("status")
+            not in ("completed",)
+        ]
+        if pending:
+            experiment_id = pending[-1].experiment_id
         else:
-            # Find latest non-completed experiment, or offer to create next
-            pending = [
-                e
-                for e in experiments
-                if load_progress(project_path, e.experiment_id).get("status")
-                not in ("completed",)
-            ]
-            if pending:
-                experiment_id = pending[-1].experiment_id
-            else:
-                # All experiments completed — offer to create next from plan
-                experiment_id = _auto_create_experiment(project_path, project)
-                if experiment_id is None:
-                    experiment_id = experiments[-1].experiment_id
-                    print_step(f"All experiments completed. Re-running {experiment_id}")
+            # No pending — determine next experiment from state
+            experiment_id = _determine_next_experiment(
+                project_path, project, auto=auto, instructions=instructions
+            )
+            if experiment_id is None:
+                if not experiments:
+                    raise click.ClickException(
+                        "No experiments and no plan found. Create one with:\n"
+                        f"  urika experiment create {project} <experiment-name>"
+                    )
+                experiment_id = experiments[-1].experiment_id
+                print_step(f"All experiments completed. Re-running {experiment_id}")
 
     print_header(
         project_name=project,
@@ -873,6 +976,7 @@ def run(
                 resume=resume,
                 on_progress=_on_progress,
                 on_message=_on_message,
+                instructions=instructions,
             )
         )
 

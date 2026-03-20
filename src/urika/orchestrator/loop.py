@@ -57,6 +57,7 @@ async def run_experiment(
     resume: bool = False,
     on_progress: object = None,
     on_message: object = None,
+    instructions: str = "",
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
@@ -71,6 +72,8 @@ async def run_experiment(
 
     *on_message* is an optional callback forwarded to ``runner.run()``
     that receives each SDK message as it streams in.
+
+    *instructions* is optional user guidance prepended to the initial prompt.
     """
     progress = on_progress or _noop_callback
     registry = AgentRegistry()
@@ -103,6 +106,10 @@ async def run_experiment(
             return {"status": "failed", "error": str(exc), "turns": 0}
         start_turn = 1
         task_prompt = "Begin the experiment. Try an initial approach."
+
+    # Prepend user instructions if provided
+    if instructions:
+        task_prompt = f"User instructions: {instructions}\n\n{task_prompt}"
 
     # --- Pre-loop: knowledge scan ---
     progress("phase", "Scanning knowledge base")
