@@ -214,6 +214,21 @@ async def run_experiment(
             if runs:
                 progress("result", f"Recorded {len(runs)} run(s)")
 
+            # Register methods in project registry
+            from urika.core.method_registry import register_method
+
+            for run in runs:
+                register_method(
+                    project_dir,
+                    name=run.method,
+                    description=run.observation or run.method,
+                    script=f"experiments/{experiment_id}/methods/{run.method}.py",
+                    experiment=experiment_id,
+                    turn=turn,
+                    metrics=run.metrics,
+                )
+                progress("result", f"Registered method: {run.method}")
+
             # --- evaluator ---
             progress("agent", "Evaluator — scoring results")
             eval_role = registry.get("evaluator")
