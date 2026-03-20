@@ -158,49 +158,67 @@ def new(
         builder.name = name
         project_dir = _projects_dir() / name
 
+    from urika.cli_display import (
+        Spinner,
+        print_agent,
+        print_error,
+        print_header,
+        print_success,
+    )
+
+    print_header(
+        project_name=name,
+        mode=mode,
+        data_source=data_path or "",
+    )
+
     # Scan and profile if a data path was provided
     scan_result = None
     data_summary = None
     has_knowledge = False
     if data_path:
-        scan_result = builder.scan()
+        with Spinner("Scanning data source"):
+            scan_result = builder.scan()
         click.echo(scan_result.summary())
 
-        # Offer to ingest docs/papers into knowledge base
         has_knowledge = bool(scan_result.docs or scan_result.papers or scan_result.code)
 
-        try:
-            data_summary = builder.profile_data()
-            click.echo(
-                f"\nData profile: {data_summary.n_rows} rows,"
-                f" {data_summary.n_columns} columns"
-            )
-        except (ValueError, Exception):
-            pass  # No readable data files — continue without profile
+        with Spinner("Profiling data files"):
+            try:
+                data_summary = builder.profile_data()
+                print_success(
+                    f"Data profile: {data_summary.n_rows} rows,"
+                    f" {data_summary.n_columns} columns"
+                )
+            except (ValueError, Exception):
+                pass
 
     # --- Interactive agent loop ---
-    click.echo("\nStarting interactive project scoping...\n")
+    print_agent("project_builder")
     try:
         _run_builder_agent_loop(
             builder, scan_result, data_summary, description or "", question
         )
     except Exception as exc:
-        click.echo(f"\nAgent loop unavailable ({exc}). Continuing with manual setup.")
+        print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
 
-    project_dir = builder.write_project()
+    with Spinner("Writing project files"):
+        project_dir = builder.write_project()
 
     # Ingest knowledge if available
     if data_path and scan_result and has_knowledge:
         ingest = click.confirm(
-            "Ingest documentation and papers into the knowledge base?", default=True
+            "\nIngest documentation and papers into the knowledge base?",
+            default=True,
         )
         if ingest:
-            _ingest_knowledge(project_dir, scan_result)
+            with Spinner("Ingesting knowledge"):
+                _ingest_knowledge(project_dir, scan_result)
 
     registry = ProjectRegistry()
     registry.register(name, project_dir)
 
-    click.echo(f"\nCreated project '{name}' at {project_dir}")
+    print_success(f"Created project '{name}' at {project_dir}")
 
 
 def _run_builder_agent_loop(
@@ -215,6 +233,13 @@ def _run_builder_agent_loop(
 
     from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
     from urika.agents.registry import AgentRegistry
+    from urika.cli_display import (
+        Spinner,
+        print_agent,
+        print_error,
+        print_step,
+        thinking_phrase,
+    )
     from urika.core.builder_prompts import (
         build_planning_prompt,
         build_scoping_prompt,
@@ -232,28 +257,30 @@ def _run_builder_agent_loop(
     # --- Phase 1: Clarifying questions ---
     builder_role = registry.get("project_builder")
     if builder_role is None:
-        click.echo("Project builder agent not found. Skipping interactive scoping.")
+        print_error("Project builder agent not found. Skipping interactive scoping.")
         return
 
     if scan_result is None:
-        click.echo("No data scanned. Skipping interactive scoping.")
+        print_error("No data scanned. Skipping interactive scoping.")
         return
 
     answers: dict[str, str] = {}
     context = ""
     max_questions = 5
 
-    click.echo("The project builder will ask a few questions to scope the project.\n")
+    print_step("The project builder will ask a few questions to scope the project.")
 
     for i in range(max_questions):
         prompt = build_scoping_prompt(
             scan_result, data_summary, description, context, question=question
         )
         config = builder_role.build_config(project_dir=builder.source_path)
-        result = asyncio.run(runner.run(config, prompt))
+
+        with Spinner(thinking_phrase()):
+            result = asyncio.run(runner.run(config, prompt))
 
         if not result.success:
-            click.echo(f"Agent error: {result.error}")
+            print_error(f"Agent error: {result.error}")
             break
 
         # Try to parse structured question from JSON block
@@ -269,7 +296,6 @@ def _run_builder_agent_loop(
                 break
 
         if question_text is None:
-            # Fallback: use raw text output as the question
             question_text = result.text_output.strip()
             if not question_text:
                 break
@@ -283,30 +309,32 @@ def _run_builder_agent_loop(
         context += f"Q: {question_text}\nA: {answer}\n\n"
 
     # --- Phase 2: Suggestion agent ---
-    click.echo("\nGenerating initial suggestions...\n")
+    print_agent("suggestion_agent")
     suggest_role = registry.get("suggestion_agent")
     if suggest_role is None:
-        click.echo("Suggestion agent not found. Skipping.")
+        print_error("Suggestion agent not found. Skipping.")
         return
 
     suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
     suggest_config = suggest_role.build_config(
         project_dir=builder.source_path, experiment_id=""
     )
-    suggest_result = asyncio.run(runner.run(suggest_config, suggest_prompt))
+
+    with Spinner("Generating suggestions"):
+        suggest_result = asyncio.run(runner.run(suggest_config, suggest_prompt))
 
     if not suggest_result.success:
-        click.echo(f"Suggestion agent error: {suggest_result.error}")
+        print_error(f"Suggestion agent error: {suggest_result.error}")
         return
 
     suggestions = parse_suggestions(suggest_result.text_output)
     click.echo(suggest_result.text_output.strip())
 
     # --- Phase 3: Planning agent ---
-    click.echo("\nGenerating initial plan...\n")
+    print_agent("planning_agent")
     plan_role = registry.get("planning_agent")
     if plan_role is None:
-        click.echo("Planning agent not found. Skipping.")
+        print_error("Planning agent not found. Skipping.")
         if suggestions:
             builder.set_initial_suggestions(suggestions)
         return
@@ -315,10 +343,12 @@ def _run_builder_agent_loop(
     plan_config = plan_role.build_config(
         project_dir=builder.source_path, experiment_id=""
     )
-    plan_result = asyncio.run(runner.run(plan_config, plan_prompt))
+
+    with Spinner("Designing method plan"):
+        plan_result = asyncio.run(runner.run(plan_config, plan_prompt))
 
     if not plan_result.success:
-        click.echo(f"Planning agent error: {plan_result.error}")
+        print_error(f"Planning agent error: {plan_result.error}")
         if suggestions:
             builder.set_initial_suggestions(suggestions)
         return
@@ -337,21 +367,22 @@ def _run_builder_agent_loop(
             raise click.ClickException("Aborted.")
         if choice.startswith("Looks good"):
             break
-        # Refine
         refinement = click.prompt("Your suggestions").strip()
         if not refinement:
             continue
 
-        # Re-run suggestion + planning with refinement
-        click.echo("\nRefining plan...\n")
+        print_agent("suggestion_agent")
         refined_prompt = suggest_prompt + f"\n\n## User Refinement\n{refinement}"
-        suggest_result = asyncio.run(runner.run(suggest_config, refined_prompt))
+        with Spinner("Refining suggestions"):
+            suggest_result = asyncio.run(runner.run(suggest_config, refined_prompt))
         if suggest_result.success:
             suggestions = parse_suggestions(suggest_result.text_output)
+            print_agent("planning_agent")
             plan_prompt = build_planning_prompt(
                 suggestions or {}, description, data_summary
             )
-            plan_result = asyncio.run(runner.run(plan_config, plan_prompt))
+            with Spinner("Redesigning method plan"):
+                plan_result = asyncio.run(runner.run(plan_config, plan_prompt))
             if plan_result.success:
                 click.echo(plan_result.text_output.strip())
 
