@@ -147,6 +147,15 @@ class TestProjectBuilderWrite:
         project_dir = builder.write_project()
         assert not (project_dir / "suggestions" / "initial.json").exists()
 
+    def test_write_creates_criteria(self, tmp_path: Path) -> None:
+        builder = self._make_builder(tmp_path)
+        project_dir = builder.write_project()
+        criteria_path = project_dir / "criteria.json"
+        assert criteria_path.exists()
+        data = json.loads(criteria_path.read_text())
+        assert len(data["versions"]) == 1
+        assert data["versions"][0]["set_by"] == "project_builder"
+
     def test_write_directory_data_format(self, tmp_path: Path) -> None:
         source = tmp_path / "data"
         sub = source / "group1"

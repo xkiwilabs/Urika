@@ -127,6 +127,22 @@ class ProjectBuilder:
                 json.dumps(self._tasks, indent=2) + "\n"
             )
 
+        # Seed initial criteria
+        from urika.core.criteria import append_criteria
+
+        initial_criteria = {
+            "type": "exploratory",
+            "quality": {"min_approaches": 2},
+            "completeness": ["establish baselines"],
+        }
+        append_criteria(
+            project_dir,
+            initial_criteria,
+            set_by="project_builder",
+            turn=0,
+            rationale="Initial project criteria",
+        )
+
         return project_dir
 
     def _detect_format(self) -> str:
