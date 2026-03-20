@@ -657,17 +657,20 @@ def _auto_create_experiment(project_path: Path, project_name: str) -> str | None
     except (json.JSONDecodeError, KeyError):
         return None
 
-    # Find first suggestion not yet run as an experiment
-    existing = {e.name for e in list_experiments(project_path)}
-    next_suggestion = None
-    for s in suggestions:
-        name = s.get("name", "").replace(" ", "-").lower()
-        if name and name not in existing:
-            next_suggestion = s
-            break
+    # Check what's already been done — look at completed experiments
+    existing_experiments = list_experiments(project_path)
+    completed_count = sum(
+        1
+        for e in existing_experiments
+        if load_progress(project_path, e.experiment_id).get("status") == "completed"
+    )
 
-    if next_suggestion is None:
+    # Skip suggestions that have already been run (by index)
+    if completed_count >= len(suggestions):
+        # All suggestions have been run — ask the suggestion agent for next steps
         return None
+
+    next_suggestion = suggestions[completed_count]
 
     exp_name = next_suggestion.get("name", "auto-experiment").replace(" ", "-").lower()
     description = next_suggestion.get("method", next_suggestion.get("description", ""))
