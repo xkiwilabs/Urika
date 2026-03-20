@@ -1,4 +1,4 @@
-"""Terminal display for Urika CLI — header, spinner, status bar.
+"""Terminal display for Urika CLI — colors, agent labels, spinners, thinking panel.
 
 Pure ANSI escape sequences, no external dependencies.
 Gracefully degrades when stdout is not a TTY.
@@ -6,10 +6,10 @@ Gracefully degrades when stdout is not a TTY.
 
 from __future__ import annotations
 
-import asyncio
 import atexit
 import os
 import sys
+import threading
 import time
 
 
@@ -27,22 +27,30 @@ def _reset_terminal() -> None:
 atexit.register(_reset_terminal)
 
 
+# ── Color system ─────────────────────────────────────────────────
+
+
 class _C:
     """ANSI color codes."""
 
-    CYAN = "\033[36m"
-    DIM = "\033[2m"
-    GREEN = "\033[32m"
-    RED = "\033[31m"
-    YELLOW = "\033[33m"
+    # Urika brand
+    BLUE = "\033[34m"
+    # Agent colors
+    CYAN = "\033[36m"  # planning_agent, tool_builder
+    GREEN = "\033[32m"  # task_agent, success
+    YELLOW = "\033[33m"  # evaluator, warnings
+    MAGENTA = "\033[35m"  # suggestion_agent
+    RED = "\033[31m"  # errors
+    # Modifiers
     BOLD = "\033[1m"
+    DIM = "\033[2m"
     WHITE = "\033[97m"
-    MAGENTA = "\033[35m"
     RESET = "\033[0m"
 
     @classmethod
     def disable(cls) -> None:
         for attr in (
+            "BLUE",
             "CYAN",
             "DIM",
             "GREEN",
@@ -63,29 +71,52 @@ if not _IS_TTY or os.environ.get("NO_COLOR") or not os.environ.get("URIKA_COLOR"
     _C.disable()
 
 
-# ── Spinner ──────────────────────────────────────────────────────
+# ── Agent color map ──────────────────────────────────────────────
 
-_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_AGENT_COLORS: dict[str, str] = {
+    "project_builder": _C.BLUE,
+    "planning_agent": _C.CYAN,
+    "task_agent": _C.GREEN,
+    "evaluator": _C.YELLOW,
+    "suggestion_agent": _C.MAGENTA,
+    "tool_builder": _C.CYAN + _C.DIM,
+    "literature_agent": _C.BLUE + _C.DIM,
+}
+
+_AGENT_LABELS: dict[str, str] = {
+    "project_builder": "Project Builder",
+    "planning_agent": "Planning Agent",
+    "task_agent": "Task Agent",
+    "evaluator": "Evaluator",
+    "suggestion_agent": "Suggestion Agent",
+    "tool_builder": "Tool Builder",
+    "literature_agent": "Literature Agent",
+}
+
+
+# ── Spinner frames ───────────────────────────────────────────────
+
+_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
 
 _THINKING_PHRASES = [
-    "Thinking…",
-    "Reasoning…",
-    "Analyzing…",
-    "Considering…",
-    "Evaluating…",
-    "Postulating…",
-    "Theorizing…",
-    "Examining…",
+    "Thinking\u2026",
+    "Reasoning\u2026",
+    "Analyzing\u2026",
+    "Considering\u2026",
+    "Evaluating\u2026",
+    "Postulating\u2026",
+    "Theorizing\u2026",
+    "Examining\u2026",
 ]
 
-_AGENT_ACTIVITY = {
-    "project_builder": "Scoping project…",
-    "planning_agent": "Designing method…",
-    "task_agent": "Running experiment…",
-    "evaluator": "Evaluating results…",
-    "suggestion_agent": "Generating suggestions…",
-    "tool_builder": "Building tool…",
-    "literature_agent": "Searching knowledge…",
+_AGENT_ACTIVITY: dict[str, str] = {
+    "project_builder": "Scoping project\u2026",
+    "planning_agent": "Designing method\u2026",
+    "task_agent": "Running experiment\u2026",
+    "evaluator": "Evaluating results\u2026",
+    "suggestion_agent": "Generating suggestions\u2026",
+    "tool_builder": "Building tool\u2026",
+    "literature_agent": "Searching knowledge\u2026",
 }
 
 
@@ -104,21 +135,24 @@ def print_header(
     if project_name:
         project_line = f"  Project: {project_name}"
         if mode:
-            project_line += f" · {mode}"
+            project_line += f" \u00b7 {mode}"
         lines.append(project_line)
     if agent:
         lines.append(f"  Agent: {agent}")
     if data_source:
-        short = data_source if len(data_source) <= 60 else "…" + data_source[-57:]
+        short = data_source if len(data_source) <= 60 else "\u2026" + data_source[-57:]
         lines.append(f"  Data: {short}")
 
     width = max(len(line) for line in lines) + 2
-    bar = "─" * (width - len(" Urika "))
+    bar = "\u2500" * (width - len(" Urika "))
 
-    print(f"\n{_C.CYAN}╭─ {_C.BOLD}Urika{_C.RESET}{_C.CYAN} {bar}╮{_C.RESET}")
+    print(
+        f"\n{_C.BLUE}\u256d\u2500 {_C.BOLD}Urika{_C.RESET}{_C.BLUE} {bar}\u256e{_C.RESET}"
+    )
     for line in lines:
-        print(f"{_C.CYAN}│{_C.RESET}{line:<{width}}{_C.CYAN}│{_C.RESET}")
-    print(f"{_C.CYAN}╰{'─' * width}╯{_C.RESET}")
+        print(f"{_C.BLUE}\u2502{_C.RESET}{line:<{width}}{_C.BLUE}\u2502{_C.RESET}")
+    bottom = "\u2500" * width
+    print(f"{_C.BLUE}\u2570{bottom}\u256f{_C.RESET}")
     print()
 
 
@@ -140,12 +174,14 @@ def print_footer(
     if extra:
         parts.append(extra)
 
-    print(f"\n{_C.DIM}{'─' * 44}{_C.RESET}")
-    print(f"  {' · '.join(parts)}")
+    rule = "\u2500" * 44
+    sep = " \u00b7 ".join(parts)
+    print(f"\n{_C.DIM}{rule}{_C.RESET}")
+    print(f"  {sep}")
     if status == "completed":
-        print(f"  {_C.GREEN}✓ Complete{_C.RESET}")
+        print(f"  {_C.GREEN}\u2713 Complete{_C.RESET}")
     elif status == "failed":
-        print(f"  {_C.RED}✗ Failed{_C.RESET}")
+        print(f"  {_C.RED}\u2717 Failed{_C.RESET}")
     print()
 
 
@@ -155,19 +191,19 @@ def print_footer(
 def print_step(label: str, detail: str = "") -> None:
     """Print a step indicator."""
     if detail:
-        print(f"  {_C.CYAN}▸{_C.RESET} {label} {_C.DIM}{detail}{_C.RESET}")
+        print(f"  {_C.CYAN}\u25b8{_C.RESET} {label} {_C.DIM}{detail}{_C.RESET}")
     else:
-        print(f"  {_C.CYAN}▸{_C.RESET} {label}")
+        print(f"  {_C.CYAN}\u25b8{_C.RESET} {label}")
 
 
 def print_success(msg: str) -> None:
     """Print a success message."""
-    print(f"  {_C.GREEN}✓{_C.RESET} {msg}")
+    print(f"  {_C.GREEN}\u2713{_C.RESET} {msg}")
 
 
 def print_error(msg: str) -> None:
     """Print an error message."""
-    print(f"  {_C.RED}✗{_C.RESET} {msg}")
+    print(f"  {_C.RED}\u2717{_C.RESET} {msg}")
 
 
 def print_warning(msg: str) -> None:
@@ -176,33 +212,71 @@ def print_warning(msg: str) -> None:
 
 
 def print_agent(agent_name: str) -> None:
-    """Print agent activity label."""
-    activity = _AGENT_ACTIVITY.get(agent_name, f"Running {agent_name}…")
-    print(f"\n  {_C.MAGENTA}◆{_C.RESET} {_C.BOLD}{activity}{_C.RESET}")
+    """Print agent activity label with colored separator line."""
+    color = _AGENT_COLORS.get(agent_name, _C.BLUE)
+    label = _AGENT_LABELS.get(agent_name, agent_name)
+    print(
+        f"\n  {color}\u2500\u2500\u2500 {label}"
+        f" \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        f"\u2500\u2500\u2500\u2500{_C.RESET}"
+    )
 
 
-# ── Status bar ───────────────────────────────────────────────────
+# ── Verbose tool output ─────────────────────────────────────────
 
 
-class StatusBar:
-    """Persistent status bar pinned to terminal bottom via scroll region.
+def print_tool_use(tool_name: str, detail: str = "") -> None:
+    """Print a tool use event (for verbose mode)."""
+    tool_colors: dict[str, str] = {
+        "Bash": _C.YELLOW,
+        "Write": _C.GREEN,
+        "Edit": _C.GREEN,
+        "Read": _C.DIM,
+        "Glob": _C.DIM,
+        "Grep": _C.DIM,
+    }
+    color = tool_colors.get(tool_name, _C.DIM)
+    icon = "\u25b8"
+    short = detail[:100] + "..." if len(detail) > 100 else detail
+    print(f"    {color}{icon} {tool_name}{_C.RESET} {_C.DIM}{short}{_C.RESET}")
 
-    Includes animated spinner showing current activity.
+
+# ── Thinking panel (scroll-region status bar) ────────────────────
+
+
+class ThinkingPanel:
+    """Persistent 3-line panel pinned to terminal bottom via scroll region.
+
+    Line 1: separator (thin horizontal rule)
+    Line 2: status (elapsed . turn . agent . project)
+    Line 3: spinner + current activity text
+
+    Uses threading.Thread for the spinner so it works during asyncio.run() calls.
+    All ANSI writes are wrapped in try/except for safety.
     """
 
     def __init__(self) -> None:
         self.start = time.monotonic()
         self.project = ""
         self.agent = ""
+        self.turn = ""
         self.activity = ""
         self._active = False
         self._rows = 0
         self._cols = 0
         self._spin_idx = 0
-        self._spin_task: asyncio.Task | None = None
+        self._lock = threading.Lock()
+        self._spin_thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
 
     def activate(self) -> None:
-        """Switch on scroll region. Call BEFORE any print() output."""
+        """Set up scroll region, reserving 3 bottom lines.
+
+        Call BEFORE any print() output. Becomes a no-op if terminal is
+        too small (< 10 rows) or not a TTY.
+        """
         if not _IS_TTY:
             return
         try:
@@ -213,78 +287,130 @@ class StatusBar:
             return
         if self._rows < 10:
             return
-        self._active = True
-        sys.stdout.write(f"\033[2J\033[1;{self._rows - 2}r\033[H")
-        sys.stdout.flush()
+        try:
+            self._active = True
+            # Clear visible area (scrollback preserved), set scroll region
+            # reserving 3 lines at the bottom, move cursor to home.
+            sys.stdout.write(f"\033[2J\033[1;{self._rows - 3}r\033[H")
+            sys.stdout.flush()
+            atexit.register(self.cleanup)
+        except (OSError, ValueError):
+            self._active = False
 
     def start_spinner(self) -> None:
-        """Start background spinner animation task."""
-        if not self._active or self._spin_task is not None:
+        """Start background spinner animation thread."""
+        if not self._active or self._spin_thread is not None:
             return
-        self._spin_task = asyncio.create_task(self._spin_loop())
+        self._stop_event.clear()
+        self._spin_thread = threading.Thread(target=self._spin_loop, daemon=True)
+        self._spin_thread.start()
 
-    async def _spin_loop(self) -> None:
-        """Animate spinner at ~8 Hz."""
-        try:
-            while True:
-                await asyncio.sleep(0.12)
+    def _spin_loop(self) -> None:
+        """Animate spinner character at ~8 Hz."""
+        while not self._stop_event.is_set():
+            self._stop_event.wait(0.12)
+            if self._stop_event.is_set():
+                break
+            with self._lock:
                 if self._active:
                     self._spin_idx = (self._spin_idx + 1) % len(_SPINNER)
                     self._render()
-        except asyncio.CancelledError:
-            pass
 
     def _render(self) -> None:
-        """Draw status bar in the 2 reserved rows below scroll region."""
+        """Draw the 3 reserved rows below the scroll region.
+
+        Must be called with self._lock held or from a safe context.
+        """
         if not self._active:
             return
-        elapsed = _format_duration(int((time.monotonic() - self.start) * 1000))
-        parts = [elapsed]
-        if self.project:
-            parts.append(self.project)
-        if self.agent:
-            parts.append(self.agent)
-        status = " · ".join(parts)
+        try:
+            elapsed = _format_duration(int((time.monotonic() - self.start) * 1000))
+            parts = [elapsed]
+            if self.turn:
+                parts.append(self.turn)
+            if self.agent:
+                agent_color = _AGENT_COLORS.get(self.agent, _C.BLUE)
+                agent_label = _AGENT_LABELS.get(self.agent, self.agent)
+                parts.append(f"{agent_color}{agent_label}{_C.RESET}{_C.DIM}")
+            if self.project:
+                parts.append(self.project)
+            status = " \u00b7 ".join(parts)
 
-        act = ""
-        if self.activity:
-            ch = _SPINNER[self._spin_idx]
-            act = f"  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{self.activity}{_C.RESET}"
+            # Activity line with spinner
+            act = ""
+            if self.activity:
+                ch = _SPINNER[self._spin_idx]
+                act = f"  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{self.activity}{_C.RESET}"
 
-        buf = "\0337"
-        buf += f"\033[{self._rows - 1};1H\033[K{_C.DIM}{'─' * self._cols}{_C.RESET}"
-        buf += (
-            f"\033[{self._rows};1H\033[K"
-            f"  {_C.CYAN}▪{_C.RESET} {_C.DIM}{status}{_C.RESET}{act}"
-        )
-        buf += "\0338"
-        sys.stdout.write(buf)
-        sys.stdout.flush()
+            # DEC save/restore cursor around absolute positioning.
+            sep = "\u2501" * self._cols
+            buf = "\0337"  # save cursor
+            # Line 1: separator
+            buf += f"\033[{self._rows - 2};1H\033[K{_C.DIM}{sep}{_C.RESET}"
+            # Line 2: status
+            buf += f"\033[{self._rows - 1};1H\033[K  {_C.DIM}{status}{_C.RESET}"
+            # Line 3: spinner + activity
+            buf += f"\033[{self._rows};1H\033[K{act}"
+            buf += "\0338"  # restore cursor
+            sys.stdout.write(buf)
+            sys.stdout.flush()
+        except (OSError, ValueError):
+            pass
 
     def render(self) -> None:
         """Public render with spin index reset."""
-        self._spin_idx = 0
-        self._render()
+        with self._lock:
+            self._spin_idx = 0
+            self._render()
 
-    def update(self, **kw: str) -> None:
-        """Update status bar fields and re-render."""
-        for k, v in kw.items():
-            if hasattr(self, k):
-                setattr(self, k, v)
-        self.render()
+    def update(
+        self,
+        agent: str = "",
+        activity: str = "",
+        turn: str = "",
+        project: str = "",
+    ) -> None:
+        """Update panel fields and re-render.
+
+        Only non-empty values are updated; pass empty string to keep current.
+        """
+        with self._lock:
+            if agent:
+                self.agent = agent
+            if activity:
+                self.activity = activity
+            if turn:
+                self.turn = turn
+            if project:
+                self.project = project
+            self._spin_idx = 0
+            self._render()
+
+    def set_thinking(self, text: str) -> None:
+        """Update the thinking/activity line."""
+        with self._lock:
+            self.activity = text
+            self._render()
 
     def cleanup(self) -> None:
-        """Reset scroll region and clear status rows."""
-        if self._spin_task is not None:
-            self._spin_task.cancel()
-            self._spin_task = None
+        """Reset scroll region and clear panel rows. Always safe to call."""
+        self._stop_event.set()
+        if self._spin_thread is not None:
+            self._spin_thread.join(timeout=1)
+            self._spin_thread = None
         if not self._active:
             return
         self._active = False
-        sys.stdout.write(f"\033[{self._rows - 1};1H\033[K")
-        sys.stdout.write(f"\033[{self._rows};1H\033[K")
-        sys.stdout.write(f"\033[r\033[{self._rows - 2};1H")
-        sys.stdout.flush()
+        try:
+            # Clear the 3 reserved lines
+            sys.stdout.write(f"\033[{self._rows - 2};1H\033[K")
+            sys.stdout.write(f"\033[{self._rows - 1};1H\033[K")
+            sys.stdout.write(f"\033[{self._rows};1H\033[K")
+            # Restore full scroll region and position cursor
+            sys.stdout.write(f"\033[r\033[{self._rows - 3};1H")
+            sys.stdout.flush()
+        except (OSError, ValueError):
+            pass
 
 
 # ── Sync spinner context manager ─────────────────────────────────
@@ -305,16 +431,14 @@ class Spinner:
     def __init__(self, message: str) -> None:
         self.message = message
         self._active = False
-        self._thread: object = None
-        self._lock: object = None
+        self._thread: threading.Thread | None = None
+        self._lock: threading.Lock | None = None
 
     def __enter__(self) -> Spinner:
         if not _IS_TTY:
             print(f"  {self.message}")
             return self
         self._active = True
-        import threading
-
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._spin, daemon=True)
         self._thread.start()
