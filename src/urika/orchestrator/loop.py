@@ -29,6 +29,25 @@ def _noop_callback(event: str, detail: str = "") -> None:
     """Default no-op progress callback."""
 
 
+def _generate_reports(project_dir: Path, experiment_id: str, progress: object) -> None:
+    """Generate labbook reports after experiment completion."""
+    try:
+        from urika.core.labbook import (
+            generate_experiment_summary,
+            generate_key_findings,
+            generate_results_summary,
+            update_experiment_notes,
+        )
+
+        progress("phase", "Generating reports")
+        update_experiment_notes(project_dir, experiment_id)
+        generate_experiment_summary(project_dir, experiment_id)
+        generate_results_summary(project_dir)
+        generate_key_findings(project_dir)
+    except Exception:
+        pass  # Reports are best-effort, don't fail the experiment
+
+
 async def run_experiment(
     project_dir: Path,
     experiment_id: str,
@@ -229,6 +248,7 @@ async def run_experiment(
             if evaluation and evaluation.get("criteria_met"):
                 progress("result", "Criteria met!")
                 complete_session(project_dir, experiment_id)
+                _generate_reports(project_dir, experiment_id, progress)
                 return {"status": "completed", "turns": turn}
 
             # --- suggestion_agent ---
@@ -279,4 +299,5 @@ async def run_experiment(
 
     # Reached max_turns without criteria being met
     complete_session(project_dir, experiment_id)
+    _generate_reports(project_dir, experiment_id, progress)
     return {"status": "completed", "turns": max_turns}
