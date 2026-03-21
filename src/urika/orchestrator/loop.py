@@ -29,7 +29,13 @@ def _noop_callback(event: str, detail: str = "") -> None:
     """Default no-op progress callback."""
 
 
-def _generate_reports(project_dir: Path, experiment_id: str, progress: object) -> None:
+async def _generate_reports(
+    project_dir: Path,
+    experiment_id: str,
+    progress: object,
+    runner: AgentRunner | None = None,
+    on_message: object = None,
+) -> None:
     """Generate labbook reports and update README after experiment completion."""
     try:
         from urika.core.labbook import (
@@ -47,13 +53,92 @@ def _generate_reports(project_dir: Path, experiment_id: str, progress: object) -
     except Exception:
         pass  # Reports are best-effort, don't fail the experiment
 
-    # Update project README.md
+    # Update project README.md with agent-written summary
     try:
         from urika.core.readme_generator import write_readme
 
-        write_readme(project_dir)
+        summary = ""
+        if runner is not None:
+            try:
+                summary = await _async_generate_summary(
+                    project_dir, experiment_id, runner, on_message
+                )
+            except Exception:
+                pass
+        write_readme(project_dir, summary=summary)
+        progress("result", "README.md updated")
     except Exception:
         pass
+
+
+async def _async_generate_summary(
+    project_dir: Path,
+    experiment_id: str,
+    runner: AgentRunner,
+    on_message: object = None,
+) -> str:
+    """Call evaluator agent to write a short project status summary."""
+    import json as _json
+
+    registry = AgentRegistry()
+    registry.discover()
+
+    eval_role = registry.get("evaluator")
+    if eval_role is None:
+        return ""
+
+    # Build context from methods.json and progress
+    methods_path = project_dir / "methods.json"
+    methods_info = ""
+    if methods_path.exists():
+        try:
+            mdata = _json.loads(methods_path.read_text())
+            mlist = mdata.get("methods", [])
+            methods_info = f"{len(mlist)} methods tried.\n"
+            for m in mlist[-5:]:  # last 5 methods
+                metrics = m.get("metrics", {})
+                acc = metrics.get(
+                    "top1_accuracy",
+                    metrics.get("accuracy", ""),
+                )
+                if acc:
+                    methods_info += f"  {m['name']}: {acc}\n"
+        except Exception:
+            pass
+
+    exp_progress = load_progress(project_dir, experiment_id)
+    runs = exp_progress.get("runs", [])
+    last_obs = ""
+    if runs:
+        last_obs = runs[-1].get("observation", "")[:300]
+
+    prompt = (
+        "Write a 2-3 sentence summary of the current project status for a README.md. "
+        "Be specific about key findings and numbers. No markdown headers, just a paragraph.\n\n"
+        f"Latest experiment: {experiment_id}\n"
+        f"Runs in this experiment: {len(runs)}\n"
+        f"{methods_info}\n"
+        f"Latest observation: {last_obs}\n"
+    )
+
+    config = eval_role.build_config(
+        project_dir=project_dir, experiment_id=experiment_id
+    )
+    config.max_turns = 3  # Keep it short
+
+    result = await runner.run(config, prompt, on_message=on_message)
+    if result.success and result.text_output:
+        # Strip any JSON blocks, just get the text
+        text = result.text_output.strip()
+        # Remove JSON blocks if agent included them
+        import re
+
+        text = re.sub(r"```json.*?```", "", text, flags=re.DOTALL).strip()
+        # Take first paragraph
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        if paragraphs:
+            return paragraphs[0]
+    return ""
 
 
 def _print_run_summary(project_dir: Path, experiment_id: str, progress: object) -> None:
@@ -342,7 +427,13 @@ async def run_experiment(
             if evaluation and evaluation.get("criteria_met"):
                 progress("result", "Criteria met!")
                 complete_session(project_dir, experiment_id)
-                _generate_reports(project_dir, experiment_id, progress)
+                await _generate_reports(
+                    project_dir,
+                    experiment_id,
+                    progress,
+                    runner=runner,
+                    on_message=on_message,
+                )
                 _print_run_summary(project_dir, experiment_id, progress)
                 return {"status": "completed", "turns": turn}
 
@@ -410,6 +501,8 @@ async def run_experiment(
 
     # Reached max_turns without criteria being met
     complete_session(project_dir, experiment_id)
-    _generate_reports(project_dir, experiment_id, progress)
+    await _generate_reports(
+        project_dir, experiment_id, progress, runner=runner, on_message=on_message
+    )
     _print_run_summary(project_dir, experiment_id, progress)
     return {"status": "completed", "turns": max_turns}
