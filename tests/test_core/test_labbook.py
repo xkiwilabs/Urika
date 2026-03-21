@@ -128,7 +128,7 @@ class TestGenerateResultsSummary:
     ) -> None:
         generate_results_summary(project_dir)
 
-        path = project_dir / "labbook" / "results-summary.md"
+        path = project_dir / "projectbook" / "results-summary.md"
         content = path.read_text()
         assert "Baseline" in content
         assert "ridge_regression" in content or "0.73" in content
@@ -140,6 +140,6 @@ class TestGenerateKeyFindings:
     ) -> None:
         generate_key_findings(project_dir)
 
-        path = project_dir / "labbook" / "key-findings.md"
+        path = project_dir / "projectbook" / "key-findings.md"
         content = path.read_text()
         assert "test-project" in content or "Key Findings" in content

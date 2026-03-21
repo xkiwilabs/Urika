@@ -674,9 +674,9 @@ class TestReportCommand:
         result = runner.invoke(cli, ["report", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
 
-        # Check that labbook files exist on disk
-        assert (project_dir / "labbook" / "results-summary.md").exists()
-        assert (project_dir / "labbook" / "key-findings.md").exists()
+        # Check that projectbook files exist on disk
+        assert (project_dir / "projectbook" / "results-summary.md").exists()
+        assert (project_dir / "projectbook" / "key-findings.md").exists()
 
         # Run experiment-level report
         exp_dirs = sorted((project_dir / "experiments").iterdir())

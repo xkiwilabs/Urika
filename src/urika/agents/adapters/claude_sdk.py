@@ -23,7 +23,9 @@ from urika.agents.runner import AgentResult, AgentRunner
 class ClaudeSDKRunner(AgentRunner):
     """Runs agents via Claude Agent SDK."""
 
-    async def run(self, config: AgentConfig, prompt: str, *, on_message: object = None) -> AgentResult:
+    async def run(
+        self, config: AgentConfig, prompt: str, *, on_message: object = None
+    ) -> AgentResult:
         """Execute an agent and return structured results."""
         options = self._build_options(config)
         messages: list[dict[str, Any]] = []

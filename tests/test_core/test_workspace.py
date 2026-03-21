@@ -24,7 +24,7 @@ class TestCreateProjectWorkspace:
         assert (project_dir / "methods").is_dir()
         assert (project_dir / "knowledge").is_dir()
         assert (project_dir / "experiments").is_dir()
-        assert (project_dir / "labbook").is_dir()
+        assert (project_dir / "projectbook").is_dir()
 
     def test_writes_urika_toml(self, tmp_path: Path) -> None:
         project_dir = tmp_path / "test-project"
@@ -39,14 +39,14 @@ class TestCreateProjectWorkspace:
         assert loaded.name == "test-project"
         assert loaded.mode == "confirmatory"
 
-    def test_creates_labbook_stubs(self, tmp_path: Path) -> None:
+    def test_creates_projectbook_stubs(self, tmp_path: Path) -> None:
         project_dir = tmp_path / "test"
         config = ProjectConfig(name="test", question="?", mode="exploratory")
         create_project_workspace(project_dir, config)
 
-        assert (project_dir / "labbook" / "key-findings.md").exists()
-        assert (project_dir / "labbook" / "results-summary.md").exists()
-        assert (project_dir / "labbook" / "progress-overview.md").exists()
+        assert (project_dir / "projectbook" / "key-findings.md").exists()
+        assert (project_dir / "projectbook" / "results-summary.md").exists()
+        assert (project_dir / "projectbook" / "progress-overview.md").exists()
 
     def test_raises_if_dir_exists(self, tmp_path: Path) -> None:
         project_dir = tmp_path / "exists"

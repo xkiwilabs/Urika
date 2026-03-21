@@ -147,11 +147,11 @@ def test_full_lifecycle(tmp_path: Path) -> None:
     ).read_text()
     assert "xgboost" in summary2 or "0.85" in summary2
 
-    results = (project_dir / "labbook" / "results-summary.md").read_text()
+    results = (project_dir / "projectbook" / "results-summary.md").read_text()
     assert "Baseline" in results
     assert "Tree-based" in results
 
-    findings = (project_dir / "labbook" / "key-findings.md").read_text()
+    findings = (project_dir / "projectbook" / "key-findings.md").read_text()
     assert "Key Findings" in findings
 
     # 8. Verify CLI status
@@ -266,8 +266,8 @@ def test_cli_smoke_test(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "results-summary.md" in result.output
     assert "key-findings.md" in result.output
-    assert (project_dir / "labbook" / "results-summary.md").exists()
-    assert (project_dir / "labbook" / "key-findings.md").exists()
+    assert (project_dir / "projectbook" / "results-summary.md").exists()
+    assert (project_dir / "projectbook" / "key-findings.md").exists()
 
     # 8. urika report (experiment-level)
     result = runner.invoke(

@@ -15,7 +15,7 @@ _PROJECT_DIRS = [
     "knowledge/papers",
     "knowledge/notes",
     "experiments",
-    "labbook",
+    "projectbook",
 ]
 
 
@@ -35,13 +35,13 @@ def create_project_workspace(project_dir: Path, config: ProjectConfig) -> None:
 
     _write_toml(project_dir / "urika.toml", config.to_toml_dict())
 
-    (project_dir / "labbook" / "key-findings.md").write_text(
+    (project_dir / "projectbook" / "key-findings.md").write_text(
         f"# Key Findings: {config.name}\n\nNo findings yet.\n"
     )
-    (project_dir / "labbook" / "results-summary.md").write_text(
+    (project_dir / "projectbook" / "results-summary.md").write_text(
         f"# Results Summary: {config.name}\n\nNo experiments completed yet.\n"
     )
-    (project_dir / "labbook" / "progress-overview.md").write_text(
+    (project_dir / "projectbook" / "progress-overview.md").write_text(
         f"# Progress Overview: {config.name}\n\n"
         f"**Question**: {config.question}\n\n"
         f"**Mode**: {config.mode}\n\nProject created. No experiments run yet.\n"

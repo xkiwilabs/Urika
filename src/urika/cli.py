@@ -1132,8 +1132,8 @@ def report(project: str, experiment_id: str | None) -> None:
         except FileNotFoundError:
             pass
 
-    results_path = project_path / "labbook" / "results-summary.md"
-    findings_path = project_path / "labbook" / "key-findings.md"
+    results_path = project_path / "projectbook" / "results-summary.md"
+    findings_path = project_path / "projectbook" / "key-findings.md"
     click.echo(f"Generated: {results_path}")
     click.echo(f"Generated: {findings_path}")
 

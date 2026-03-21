@@ -27,7 +27,9 @@ class AgentRunner(ABC):
     """Run an agent and get results — implemented by adapters."""
 
     @abstractmethod
-    async def run(self, config: AgentConfig, prompt: str, *, on_message: object = None) -> AgentResult:
+    async def run(
+        self, config: AgentConfig, prompt: str, *, on_message: object = None
+    ) -> AgentResult:
         """Execute an agent with the given config and prompt.
 
         on_message: optional callback called with each SDK message as it arrives.
