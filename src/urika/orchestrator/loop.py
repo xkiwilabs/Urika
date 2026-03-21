@@ -505,18 +505,18 @@ async def run_experiment(
                 _print_run_summary(project_dir, experiment_id, progress)
                 return {"status": "completed", "turns": turn}
 
-            # --- suggestion_agent ---
-            progress("agent", "Suggestion agent — proposing next steps")
-            suggest_role = registry.get("suggestion_agent")
+            # --- advisor_agent ---
+            progress("agent", "Advisor agent — proposing next steps")
+            suggest_role = registry.get("advisor_agent")
             if suggest_role is None:
                 fail_session(
                     project_dir,
                     experiment_id,
-                    error="suggestion_agent role not found",
+                    error="advisor_agent role not found",
                 )
                 return {
                     "status": "failed",
-                    "error": "suggestion_agent role not found",
+                    "error": "advisor_agent role not found",
                     "turns": turn,
                 }
 
@@ -531,11 +531,11 @@ async def run_experiment(
                 fail_session(
                     project_dir,
                     experiment_id,
-                    error=suggest_result.error or "suggestion_agent failed",
+                    error=suggest_result.error or "advisor_agent failed",
                 )
                 return {
                     "status": "failed",
-                    "error": suggest_result.error or "suggestion_agent failed",
+                    "error": suggest_result.error or "advisor_agent failed",
                     "turns": turn,
                 }
 
@@ -549,7 +549,7 @@ async def run_experiment(
                 append_criteria(
                     project_dir,
                     update.get("criteria", {}),
-                    set_by="suggestion_agent",
+                    set_by="advisor_agent",
                     turn=turn,
                     rationale=update.get("rationale", ""),
                 )

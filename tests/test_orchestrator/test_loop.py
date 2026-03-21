@@ -161,7 +161,7 @@ class TestOrchestratorLoop:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -178,7 +178,7 @@ class TestOrchestratorLoop:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_NOT_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -195,7 +195,7 @@ class TestOrchestratorLoop:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -214,7 +214,7 @@ class TestOrchestratorLoop:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -246,7 +246,7 @@ class TestOrchestratorLoop:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -269,7 +269,7 @@ class TestOrchestratorLoop:
                     _EVAL_CRITERIA_NOT_MET,
                     _EVAL_CRITERIA_MET,
                 ],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -317,7 +317,7 @@ class TestPlanningAgent:
                     "planning_agent": _PLAN_OUTPUT,
                     "task_agent": _TASK_OUTPUT,
                     "evaluator": _EVAL_CRITERIA_MET,
-                    "suggestion_agent": _SUGGESTION,
+                    "advisor_agent": _SUGGESTION,
                 }
                 text = responses.get(config.name, "")
                 return AgentResult(
@@ -370,7 +370,7 @@ class TestPlanningAgent:
                 responses = {
                     "task_agent": _TASK_OUTPUT,
                     "evaluator": _EVAL_CRITERIA_MET,
-                    "suggestion_agent": _SUGGESTION,
+                    "advisor_agent": _SUGGESTION,
                 }
                 text = responses.get(config.name, "")
                 return AgentResult(
@@ -413,7 +413,7 @@ class TestOrchestratorKnowledgeIntegration:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -431,7 +431,7 @@ class TestOrchestratorKnowledgeIntegration:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -463,7 +463,7 @@ Here is the method plan:
                 "planning_agent": [plan_with_lit],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
                 "literature_agent": [_LITERATURE_OUTPUT],
             }
         )
@@ -490,7 +490,7 @@ class TestOrchestratorResume:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -519,7 +519,7 @@ class TestOrchestratorResume:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -589,7 +589,7 @@ class TestOrchestratorResume:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -614,7 +614,7 @@ class TestOrchestratorResume:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -638,7 +638,7 @@ class TestOrchestratorResume:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -659,7 +659,7 @@ class TestOrchestratorResume:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION],
+                "advisor_agent": [_SUGGESTION],
             }
         )
 
@@ -702,7 +702,7 @@ class TestCriteriaUpdateFromSuggestions:
                 "planning_agent": [_PLAN_OUTPUT],
                 "task_agent": [_TASK_OUTPUT],
                 "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
-                "suggestion_agent": [_SUGGESTION_WITH_CRITERIA],
+                "advisor_agent": [_SUGGESTION_WITH_CRITERIA],
             }
         )
 
@@ -719,7 +719,7 @@ class TestCriteriaUpdateFromSuggestions:
         versions = data.get("versions", [])
         assert len(versions) >= 1
         latest = versions[-1]
-        assert latest["set_by"] == "suggestion_agent"
+        assert latest["set_by"] == "advisor_agent"
         assert latest["criteria"]["primary_metric"] == "r2"
         assert latest["criteria"]["threshold"] == 0.9
         assert latest["rationale"] == "Raising threshold after strong baseline"

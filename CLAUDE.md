@@ -54,7 +54,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/core/progress.py` — Append-only progress tracking with best-run queries
 - `src/urika/core/labbook.py` — Auto-generated .md summaries from progress data
 - `src/urika/core/criteria.py` — Versioned project criteria: load, append, history
-- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, suggestion_agent, tool_builder, literature_agent), registry, config, Claude SDK adapter
+- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent), registry, config, Claude SDK adapter
 - `src/urika/orchestrator/` — Deterministic loop (planning→task→evaluator→suggestion), output parsing, knowledge integration
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
 - `src/urika/methods/` — Agent-created analytical pipelines (IMethod ABC, MethodRegistry), zero built-ins — agents create methods at runtime

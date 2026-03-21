@@ -39,7 +39,7 @@ class _C:
     CYAN = "\033[36m"  # planning_agent, tool_builder
     GREEN = "\033[32m"  # task_agent, success
     YELLOW = "\033[33m"  # evaluator, warnings
-    MAGENTA = "\033[35m"  # suggestion_agent
+    MAGENTA = "\033[35m"  # advisor_agent
     RED = "\033[31m"  # errors
     # Modifiers
     BOLD = "\033[1m"
@@ -77,7 +77,7 @@ _AGENT_COLORS: dict[str, str] = {
     "planning_agent": _C.CYAN,
     "task_agent": _C.GREEN,
     "evaluator": _C.YELLOW,
-    "suggestion_agent": _C.MAGENTA,
+    "advisor_agent": _C.MAGENTA,
     "tool_builder": _C.CYAN + _C.DIM,
     "literature_agent": _C.BLUE + _C.DIM,
 }
@@ -87,7 +87,7 @@ _AGENT_LABELS: dict[str, str] = {
     "planning_agent": "Planning Agent",
     "task_agent": "Task Agent",
     "evaluator": "Evaluator",
-    "suggestion_agent": "Suggestion Agent",
+    "advisor_agent": "Advisor Agent",
     "tool_builder": "Tool Builder",
     "literature_agent": "Literature Agent",
 }
@@ -113,7 +113,7 @@ _AGENT_ACTIVITY: dict[str, str] = {
     "planning_agent": "Designing method\u2026",
     "task_agent": "Running experiment\u2026",
     "evaluator": "Evaluating results\u2026",
-    "suggestion_agent": "Generating suggestions\u2026",
+    "advisor_agent": "Generating suggestions\u2026",
     "tool_builder": "Building tool\u2026",
     "literature_agent": "Searching knowledge\u2026",
 }

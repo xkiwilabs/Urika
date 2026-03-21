@@ -1,4 +1,4 @@
-"""Suggestion agent — proposes next experiments based on results."""
+"""Advisor agent — reviews results and proposes next experiments."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 def get_role() -> AgentRole:
     return AgentRole(
-        name="suggestion_agent",
-        description="Reviews results and proposes next experiments",
+        name="advisor_agent",
+        description="Research advisor — reviews results and proposes next experiments",
         build_config=build_config,
     )
 
@@ -23,9 +23,9 @@ def build_config(
 ) -> AgentConfig:
     experiment_dir = project_dir / "experiments" / experiment_id
     return AgentConfig(
-        name="suggestion_agent",
+        name="advisor_agent",
         system_prompt=load_prompt(
-            _PROMPTS_DIR / "suggestion_agent_system.md",
+            _PROMPTS_DIR / "advisor_agent_system.md",
             variables={
                 "project_dir": str(project_dir),
                 "experiment_id": experiment_id,

@@ -1,4 +1,4 @@
-"""Tests for the suggestion agent role."""
+"""Tests for the advisor agent role."""
 
 from __future__ import annotations
 
@@ -6,20 +6,20 @@ from pathlib import Path
 
 from urika.agents.config import AgentConfig, AgentRole
 from urika.agents.registry import AgentRegistry
-from urika.agents.roles.suggestion_agent import get_role
+from urika.agents.roles.advisor_agent import get_role
 
 
-class TestSuggestionAgentRole:
+class TestAdvisorAgentRole:
     def test_get_role_returns_agent_role(self) -> None:
         role = get_role()
         assert isinstance(role, AgentRole)
-        assert role.name == "suggestion_agent"
+        assert role.name == "advisor_agent"
 
     def test_build_config_returns_agent_config(self, tmp_path: Path) -> None:
         role = get_role()
         config = role.build_config(tmp_path, experiment_id="exp-001")
         assert isinstance(config, AgentConfig)
-        assert config.name == "suggestion_agent"
+        assert config.name == "advisor_agent"
 
     def test_config_has_read_only_tools(self, tmp_path: Path) -> None:
         role = get_role()
@@ -54,4 +54,4 @@ class TestSuggestionAgentRole:
     def test_discoverable_by_registry(self) -> None:
         registry = AgentRegistry()
         registry.discover()
-        assert "suggestion_agent" in registry.list_all()
+        assert "advisor_agent" in registry.list_all()

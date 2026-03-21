@@ -396,11 +396,11 @@ def _run_builder_agent_loop(
         answers[question_text] = answer
         context += f"Q: {question_text}\nA: {answer}\n\n"
 
-    # --- Phase 2: Suggestion agent ---
-    print_agent("suggestion_agent")
-    suggest_role = registry.get("suggestion_agent")
+    # --- Phase 2: Advisor agent ---
+    print_agent("advisor_agent")
+    suggest_role = registry.get("advisor_agent")
     if suggest_role is None:
-        print_error("Suggestion agent not found. Skipping.")
+        print_error("Advisor agent not found. Skipping.")
         return
 
     suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
@@ -408,13 +408,13 @@ def _run_builder_agent_loop(
         project_dir=builder.source_path, experiment_id=""
     )
 
-    with Spinner(_AGENT_ACTIVITY.get("suggestion_agent", thinking_phrase())):
+    with Spinner(_AGENT_ACTIVITY.get("advisor_agent", thinking_phrase())):
         suggest_result = asyncio.run(
             runner.run(suggest_config, suggest_prompt, on_message=_on_builder_msg)
         )
 
     if not suggest_result.success:
-        print_error(f"Suggestion agent error: {suggest_result.error}")
+        print_error(f"Advisor agent error: {suggest_result.error}")
         return
 
     suggestions = parse_suggestions(suggest_result.text_output)
@@ -463,9 +463,9 @@ def _run_builder_agent_loop(
         if not refinement:
             continue
 
-        print_agent("suggestion_agent")
+        print_agent("advisor_agent")
         refined_prompt = suggest_prompt + f"\n\n## User Refinement\n{refinement}"
-        with Spinner(_AGENT_ACTIVITY.get("suggestion_agent", thinking_phrase())):
+        with Spinner(_AGENT_ACTIVITY.get("advisor_agent", thinking_phrase())):
             suggest_result = asyncio.run(
                 runner.run(suggest_config, refined_prompt, on_message=_on_builder_msg)
             )
@@ -725,12 +725,12 @@ def _determine_next_experiment(
         except (json.JSONDecodeError, KeyError):
             pass
 
-    # If user provided instructions, always call suggestion agent to think
+    # If user provided instructions, always call advisor agent to think
     # Otherwise fall back to initial plan
     next_suggestion = None
-    call_suggestion_agent = bool(instructions) or bool(completed)
+    call_advisor_agent = bool(instructions) or bool(completed)
 
-    if not call_suggestion_agent:
+    if not call_advisor_agent:
         # First experiment, no instructions — use initial plan
         suggestions_path = project_path / "suggestions" / "initial.json"
         if suggestions_path.exists():
@@ -753,7 +753,7 @@ def _determine_next_experiment(
             runner = ClaudeSDKRunner()
             registry = AgentRegistry()
             registry.discover()
-            suggest_role = registry.get("suggestion_agent")
+            suggest_role = registry.get("advisor_agent")
 
             if suggest_role is not None:
                 context = (
@@ -774,9 +774,9 @@ def _determine_next_experiment(
                     print_tool_use,
                 )
 
-                print_agent("suggestion_agent")
+                print_agent("advisor_agent")
                 if panel is not None:
-                    panel.update(agent="suggestion_agent", activity="Analyzing…")
+                    panel.update(agent="advisor_agent", activity="Analyzing…")
 
                 def _on_msg(msg: object) -> None:
                     """Show tool use from suggestion agent."""
