@@ -79,7 +79,11 @@ Produce a single JSON block with the slide deck:
 - **figure-text** — two-column layout: figure on the left, bullet points on the right. Use for results that need both a visual and explanation side-by-side. Add optional `bottom_text` for a centered note below both columns.
 - **stat** — hero slide with a large number, label, and optional context bullets
 
-Choose the best layout for each slide. Use `figure-text` when a figure needs explanation alongside it. Use `figure` when the image speaks for itself.
+Choose the best layout for each slide:
+- Use `figure` (single column) for complex figures with multiple panels, charts with many data points, or images that need full width to be readable
+- Use `figure-text` (two columns) only for simple figures that need explanation alongside — the figure must be clear at half width
+- If a slide has a figure but no bullets to put beside it, use `figure` not `figure-text`
+- Never use `figure-text` with an empty right column
 
 ## Rules
 

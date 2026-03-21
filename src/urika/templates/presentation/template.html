@@ -21,7 +21,7 @@
             display: flex !important;
             flex-direction: column;
             justify-content: center;
-            padding: 20px 50px;
+            padding: 15px 50px 40px;
             box-sizing: border-box;
             height: 100%;
         }
@@ -36,22 +36,22 @@
             margin-bottom: 0.3em;
             text-align: center;
         }
-        .reveal h1 { font-size: 1.8em; }
-        .reveal h2 { font-size: 1.3em; margin-top: 0; }
+        .reveal h1 { font-size: 1.6em; }
+        .reveal h2 { font-size: 1.2em; margin-top: 0; }
         .reveal ul {
-            font-size: 0.75em;
+            font-size: 0.7em;
             line-height: 1.5;
             display: block;
             text-align: left;
         }
-        .reveal li { margin-bottom: 0.3em; }
-        .reveal p { font-size: 0.8em; }
+        .reveal li { margin-bottom: 0.25em; }
+        .reveal p { font-size: 0.7em; }
 
         /* Title slide */
         .title-slide { text-align: center; }
-        .title-slide h1 { font-size: 2em; margin-bottom: 0.3em; }
+        .title-slide h1 { font-size: 1.8em; margin-bottom: 0.3em; }
         .title-slide .subtitle {
-            font-size: 0.9em;
+            font-size: 0.85em;
             color: #666;
             margin-top: 0.5em;
         }
@@ -65,17 +65,17 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         .slide-figure .caption {
-            font-size: 0.6em;
+            font-size: 0.55em;
             color: #888;
             margin-top: 0.3em;
             font-style: italic;
         }
-        .slide-figure ul { margin-top: 0.5em; }
+        .slide-figure ul { margin-top: 0.4em; }
 
         /* Two-column layout: figure left, text right */
         .slide-two-col .columns {
             display: flex;
-            gap: 30px;
+            gap: 25px;
             align-items: center;
             flex: 1;
         }
@@ -85,7 +85,7 @@
         }
         .slide-two-col .col-figure img {
             max-width: 100%;
-            max-height: 38vh;
+            max-height: 36vh;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
@@ -93,43 +93,119 @@
             flex: 1;
         }
         .slide-two-col .col-text ul {
-            font-size: 0.75em;
+            font-size: 0.68em;
         }
         .slide-two-col .caption {
-            font-size: 0.55em;
+            font-size: 0.5em;
             color: #888;
             font-style: italic;
             margin-top: 0.3em;
         }
         .slide-two-col .bottom-text {
             text-align: center;
-            font-size: 0.7em;
+            font-size: 0.65em;
             color: #555;
-            margin-top: 0.5em;
+            margin-top: 0.4em;
         }
 
         /* Stat slides */
         .slide-stat { text-align: center; }
         .slide-stat .big-number {
-            font-size: 4em;
+            font-size: 3.5em;
             font-weight: 700;
             color: var(--urika-blue);
             margin: 0.1em 0;
             line-height: 1.1;
         }
         .slide-stat .stat-label {
-            font-size: 1em;
+            font-size: 0.9em;
             color: #666;
         }
         .slide-stat ul {
-            margin-top: 0.5em;
+            margin-top: 0.4em;
             text-align: center;
             list-style: none;
         }
 
-        /* Navigation arrows — overlay on sides */
+        /* Navigation arrows */
         .reveal .controls {
             color: var(--urika-blue);
+        }
+
+        /* Thumbnail strip at bottom */
+        #thumb-strip {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0 10px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            transition: height 0.25s ease, padding 0.25s ease;
+        }
+        #thumb-strip:hover, #thumb-strip.active {
+            height: 60px;
+            padding: 6px 10px;
+        }
+        .thumb-trigger {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 12px;
+            z-index: 99;
+        }
+        .thumb-item {
+            flex-shrink: 0;
+            width: 80px;
+            height: 48px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.5em;
+            color: #aaa;
+            transition: border-color 0.15s, background 0.15s;
+            position: relative;
+        }
+        .thumb-item:hover {
+            border-color: var(--urika-blue);
+            background: rgba(255,255,255,0.15);
+        }
+        .thumb-item.current {
+            border-color: var(--urika-accent);
+            background: rgba(37,99,235,0.2);
+            color: white;
+        }
+        .thumb-item .thumb-num {
+            font-weight: 600;
+            font-size: 1.2em;
+        }
+        .thumb-item .thumb-title {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.9em;
+            white-space: nowrap;
+            display: none;
+            margin-bottom: 4px;
+        }
+        .thumb-item:hover .thumb-title {
+            display: block;
         }
 
         /* Urika branding */
@@ -151,6 +227,8 @@
         .reveal .slide-number {
             font-size: 0.5em;
             color: #999;
+            right: 12px;
+            bottom: 14px;
         }
     </style>
 </head>
@@ -163,6 +241,11 @@
             <span class="icon">&#10022;&#9670;&#10022;</span> Urika
         </div>
     </div>
+
+    <!-- Thumbnail trigger zone and strip -->
+    <div class="thumb-trigger" id="thumb-trigger"></div>
+    <div id="thumb-strip"></div>
+
     <script src="reveal.min.js"></script>
     <script>
         Reveal.initialize({
@@ -179,6 +262,50 @@
             controlsLayout: 'edges',
             overview: true,
             touch: true
+        });
+
+        // Build thumbnail strip
+        Reveal.on('ready', function() {
+            var strip = document.getElementById('thumb-strip');
+            var slides = document.querySelectorAll('.reveal .slides > section');
+            slides.forEach(function(slide, i) {
+                var thumb = document.createElement('div');
+                thumb.className = 'thumb-item' + (i === 0 ? ' current' : '');
+
+                var num = document.createElement('span');
+                num.className = 'thumb-num';
+                num.textContent = String(i + 1);
+                thumb.appendChild(num);
+
+                var titleEl = slide.querySelector('h1, h2');
+                var tipText = titleEl ? titleEl.textContent : 'Slide ' + (i + 1);
+                var tip = document.createElement('span');
+                tip.className = 'thumb-title';
+                tip.textContent = tipText;
+                thumb.appendChild(tip);
+
+                thumb.addEventListener('click', function() { Reveal.slide(i); });
+                strip.appendChild(thumb);
+            });
+
+            // Hover triggers
+            document.getElementById('thumb-trigger').addEventListener('mouseenter', function() {
+                strip.classList.add('active');
+            });
+            strip.addEventListener('mouseenter', function() {
+                strip.classList.add('active');
+            });
+            strip.addEventListener('mouseleave', function() {
+                strip.classList.remove('active');
+            });
+        });
+
+        // Highlight current slide in strip
+        Reveal.on('slidechanged', function(event) {
+            var thumbs = document.querySelectorAll('.thumb-item');
+            thumbs.forEach(function(t, i) {
+                t.classList.toggle('current', i === event.indexh);
+            });
         });
     </script>
 </body>
