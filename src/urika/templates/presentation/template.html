@@ -15,67 +15,96 @@
         .reveal {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
+
+        /* Vertical centering — content starts ~1/3 down */
+        .reveal .slides section {
+            display: flex !important;
+            flex-direction: column;
+            justify-content: center;
+            padding: 0 40px;
+            box-sizing: border-box;
+            height: 100%;
+        }
+
+        /* Scale content to fit viewport */
+        .reveal .slides section > * {
+            flex-shrink: 0;
+        }
+
         .reveal h1, .reveal h2 {
             color: var(--urika-blue);
             font-weight: 600;
             text-transform: none;
+            margin-bottom: 0.4em;
         }
-        .reveal h1 { font-size: 2.2em; }
-        .reveal h2 { font-size: 1.6em; }
-        .reveal ul { font-size: 0.9em; line-height: 1.8; }
-        .reveal li { margin-bottom: 0.5em; }
+        .reveal h1 { font-size: 2em; }
+        .reveal h2 { font-size: 1.4em; }
+        .reveal ul {
+            font-size: 0.85em;
+            line-height: 1.6;
+            display: block;
+            text-align: left;
+        }
+        .reveal li { margin-bottom: 0.4em; }
 
         /* Title slide */
-        .title-slide h1 { font-size: 2.5em; margin-bottom: 0.3em; }
+        .title-slide h1 { font-size: 2.2em; margin-bottom: 0.3em; }
         .title-slide .subtitle {
-            font-size: 1.1em;
+            font-size: 1em;
             color: #666;
             margin-top: 0.5em;
         }
 
         /* Figure slides */
         .slide-figure img {
-            max-width: 70%;
-            max-height: 55vh;
+            max-width: 65%;
+            max-height: 45vh;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            align-self: center;
         }
         .slide-figure .caption {
-            font-size: 0.7em;
+            font-size: 0.65em;
             color: #888;
-            margin-top: 0.5em;
+            margin-top: 0.4em;
             font-style: italic;
+            text-align: center;
         }
 
         /* Stat slides */
+        .slide-stat {
+            text-align: center;
+        }
         .slide-stat .big-number {
-            font-size: 5em;
+            font-size: 4.5em;
             font-weight: 700;
             color: var(--urika-blue);
-            margin: 0.2em 0;
+            margin: 0.1em 0;
+            line-height: 1.1;
         }
         .slide-stat .stat-label {
-            font-size: 1.2em;
+            font-size: 1.1em;
             color: #666;
         }
 
         /* Urika branding */
         .urika-brand {
             position: fixed;
-            bottom: 16px;
-            left: 20px;
-            font-size: 0.6em;
+            bottom: 12px;
+            left: 16px;
+            font-size: 0.55em;
             color: var(--urika-accent);
-            opacity: 0.5;
+            opacity: 0.4;
+            z-index: 10;
         }
         .urika-brand .icon { margin-right: 4px; }
 
         /* Progress bar */
-        .reveal .progress { color: var(--urika-blue); height: 4px; }
+        .reveal .progress { color: var(--urika-blue); height: 3px; }
 
         /* Slide number */
         .reveal .slide-number {
-            font-size: 0.6em;
+            font-size: 0.55em;
             color: #999;
         }
     </style>
@@ -97,9 +126,11 @@
             slideNumber: true,
             transition: 'fade',
             transitionSpeed: 'fast',
-            width: 1200,
+            width: 1100,
             height: 700,
-            margin: 0.1
+            margin: 0.04,
+            center: true,
+            disableLayout: false
         });
     </script>
 </body>
