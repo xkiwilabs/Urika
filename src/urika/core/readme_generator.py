@@ -58,20 +58,6 @@ def generate_readme(project_dir: Path, summary: str = "") -> str:
         else:
             parts.append(f"{n_completed}/{n_exp} experiments completed.\n")
 
-    # Methods table
-    methods = _load_methods(project_dir)
-    if methods:
-        parts.append("## Methods\n")
-        parts.append("| Method | Experiment | Metrics | Status |")
-        parts.append("|--------|-----------|---------|--------|")
-        for m in methods:
-            metrics_str = _format_metrics(m.get("metrics", {}))
-            parts.append(
-                f"| {m['name']} | {m.get('experiment', '')} "
-                f"| {metrics_str} | {m.get('status', '')} |"
-            )
-        parts.append("")
-
     # Experiments table
     if experiments:
         parts.append("## Experiments\n")
@@ -87,6 +73,20 @@ def generate_readme(project_dir: Path, summary: str = "") -> str:
                 f"(experiments/{exp.experiment_id}/labbook/summary.md)"
             )
             parts.append(f"| {summary_link} | {status} | {len(runs)} | {finding} |")
+        parts.append("")
+
+    # Methods table
+    methods = _load_methods(project_dir)
+    if methods:
+        parts.append("## Methods\n")
+        parts.append("| Method | Experiment | Metrics | Status |")
+        parts.append("|--------|-----------|---------|--------|")
+        for m in methods:
+            metrics_str = _format_metrics(m.get("metrics", {}))
+            parts.append(
+                f"| {m['name']} | {m.get('experiment', '')} "
+                f"| {metrics_str} | {m.get('status', '')} |"
+            )
         parts.append("")
 
     # Criteria
