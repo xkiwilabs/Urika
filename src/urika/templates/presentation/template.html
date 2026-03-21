@@ -16,120 +16,60 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
 
-        /* Vertical centering + prevent overflow */
-        .reveal .slides section {
-            display: flex !important;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            padding: 15px 50px 40px;
-            box-sizing: border-box;
-            height: 100%;
-            overflow: hidden;
-        }
-        .reveal .slides section > * {
-            flex-shrink: 1;
-            max-width: 100%;
-        }
-
+        /* Let reveal.js handle layout — minimal overrides only */
         .reveal h1, .reveal h2 {
             color: var(--urika-blue);
             font-weight: 600;
             text-transform: none;
-            margin-bottom: 0.3em;
-            text-align: center;
         }
-        .reveal h1 { font-size: 1.6em; }
-        .reveal h2 { font-size: 1.2em; margin-top: 0; }
-        .reveal ul {
-            font-size: 0.7em;
-            line-height: 1.5;
-            display: block;
-            text-align: left;
-            width: 90%;
-        }
-        .reveal li { margin-bottom: 0.25em; }
-        .reveal p { font-size: 0.7em; }
+        .reveal h1 { font-size: 1.5em; }
+        .reveal h2 { font-size: 1.1em; }
+        .reveal ul { font-size: 0.65em; line-height: 1.4; }
+        .reveal li { margin-bottom: 0.2em; }
+        .reveal p { font-size: 0.65em; }
 
         /* Title slide */
-        .title-slide { text-align: center; }
-        .title-slide h1 { font-size: 1.8em; margin-bottom: 0.3em; }
-        .title-slide .subtitle {
-            font-size: 0.85em;
-            color: #666;
-            margin-top: 0.5em;
-        }
+        .title-slide h1 { font-size: 1.7em; }
+        .title-slide .subtitle { font-size: 0.8em; color: #666; }
 
-        /* Figure slides — single column, image centered */
+        /* Figure slides */
         .slide-figure { text-align: center; }
         .slide-figure img {
-            max-width: 60%;
-            max-height: 40vh;
+            max-width: 55%;
+            max-height: 50%;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: block;
+            margin: 0 auto;
         }
-        .slide-figure .caption {
-            font-size: 0.55em;
-            color: #888;
-            margin-top: 0.3em;
-            font-style: italic;
-        }
-        .slide-figure ul { margin-top: 0.4em; }
+        .slide-figure .caption { font-size: 0.5em; color: #888; font-style: italic; }
 
-        /* Two-column layout: figure left, text right */
+        /* Two-column layout */
         .slide-two-col .columns {
             display: flex;
-            gap: 25px;
+            gap: 20px;
             align-items: center;
-            flex: 1;
         }
-        .slide-two-col .col-figure {
-            flex: 1;
-            text-align: center;
-        }
+        .slide-two-col .col-figure { flex: 1; text-align: center; }
         .slide-two-col .col-figure img {
-            max-width: 100%;
-            max-height: 36vh;
+            max-width: 95%;
+            max-height: 45%;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
-        .slide-two-col .col-text {
-            flex: 1;
-        }
-        .slide-two-col .col-text ul {
-            font-size: 0.68em;
-        }
-        .slide-two-col .caption {
-            font-size: 0.5em;
-            color: #888;
-            font-style: italic;
-            margin-top: 0.3em;
-        }
-        .slide-two-col .bottom-text {
-            text-align: center;
-            font-size: 0.65em;
-            color: #555;
-            margin-top: 0.4em;
-        }
+        .slide-two-col .col-text { flex: 1; }
+        .slide-two-col .col-text ul { font-size: 0.6em; }
+        .slide-two-col .caption { font-size: 0.45em; color: #888; font-style: italic; }
+        .slide-two-col .bottom-text { text-align: center; font-size: 0.55em; color: #555; }
 
         /* Stat slides */
         .slide-stat { text-align: center; }
         .slide-stat .big-number {
-            font-size: 3.5em;
-            font-weight: 700;
-            color: var(--urika-blue);
-            margin: 0.1em 0;
-            line-height: 1.1;
+            font-size: 3em; font-weight: 700; color: var(--urika-blue);
+            margin: 0.1em 0; line-height: 1.1;
         }
-        .slide-stat .stat-label {
-            font-size: 0.9em;
-            color: #666;
-        }
-        .slide-stat ul {
-            margin-top: 0.4em;
-            text-align: center;
-            list-style: none;
-        }
+        .slide-stat .stat-label { font-size: 0.8em; color: #666; }
+        .slide-stat ul { text-align: center; list-style: none; }
 
         /* Navigation arrows */
         .reveal .controls {
@@ -260,14 +200,16 @@
             slideNumber: true,
             transition: 'fade',
             transitionSpeed: 'fast',
-            width: 1100,
-            height: 680,
-            margin: 0.04,
+            width: 960,
+            height: 600,
+            margin: 0.1,
             center: true,
             controls: true,
             controlsLayout: 'edges',
             overview: true,
-            touch: true
+            touch: true,
+            minScale: 0.2,
+            maxScale: 1.5
         });
 
         // Build thumbnail strip
