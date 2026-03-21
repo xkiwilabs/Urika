@@ -34,10 +34,11 @@ Create a clear, professional slide presentation summarising the results of exper
 Design 6-12 slides following this narrative arc:
 1. **Title slide** — experiment name, project, date
 2. **Context** (1-2 slides) — research question, what was known before, what gap this addresses
-3. **Approach** (1-3 slides) — what methods were used and why, key design decisions
-4. **Results** (2-4 slides) — key findings with figures, comparison to baselines
-5. **Key Finding** (1 slide) — the headline result as a big stat
-6. **Next Steps** (1 slide) — what should be tried next
+3. **Method Explanation** (1-2 slides) — if an advanced modelling approach, statistical technique, or time series method was used (e.g., LightGBM, conditional logit, SHAP, recurrence analysis, spectral analysis), explain what it is and how it works in plain language. Use analogies. A researcher outside this specific field should understand. Skip this for basic analyses (t-tests, descriptive stats).
+4. **Approach** (1-2 slides) — what was done specifically, key design decisions (features, CV strategy, parameters)
+5. **Results** (2-4 slides) — key findings with figures, comparison to baselines
+6. **Key Finding** (1 slide) — the headline result as a big stat
+7. **Next Steps** (1 slide) — what should be tried next
 
 ## Output Format
 
