@@ -70,6 +70,74 @@ async def _generate_reports(
     except Exception:
         pass
 
+    # Generate presentation slide deck
+    if runner is not None:
+        try:
+            await _generate_presentation(
+                project_dir, experiment_id, runner, progress, on_message
+            )
+        except Exception:
+            pass
+
+
+async def _generate_presentation(
+    project_dir: Path,
+    experiment_id: str,
+    runner: AgentRunner,
+    progress: object,
+    on_message: object = None,
+) -> None:
+    """Generate a reveal.js presentation from experiment results."""
+    import tomllib
+
+    from urika.core.presentation import parse_slide_json, render_presentation
+
+    registry = AgentRegistry()
+    registry.discover()
+
+    pres_role = registry.get("presentation_agent")
+    if pres_role is None:
+        return
+
+    progress("agent", "Presentation agent — creating slide deck")
+
+    config = pres_role.build_config(
+        project_dir=project_dir, experiment_id=experiment_id
+    )
+    result = await runner.run(
+        config,
+        f"Create a presentation for experiment {experiment_id}.",
+        on_message=on_message,
+    )
+
+    if not result.success:
+        return
+
+    slide_data = parse_slide_json(result.text_output)
+    if slide_data is None:
+        return
+
+    # Read theme preference
+    theme = "light"
+    toml_path = project_dir / "urika.toml"
+    if toml_path.exists():
+        try:
+            with open(toml_path, "rb") as f:
+                tdata = tomllib.load(f)
+            theme = tdata.get("preferences", {}).get("presentation_theme", "light")
+        except Exception:
+            pass
+
+    experiment_dir = project_dir / "experiments" / experiment_id
+    output_dir = experiment_dir / "presentation"
+    render_presentation(
+        slide_data,
+        output_dir,
+        theme=theme,
+        experiment_dir=experiment_dir,
+    )
+    progress("result", f"Presentation saved to {output_dir}/index.html")
+
 
 async def _async_generate_summary(
     project_dir: Path,
