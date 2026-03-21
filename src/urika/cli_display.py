@@ -341,7 +341,7 @@ class ThinkingPanel:
         self._stop_event = threading.Event()
 
     def activate(self) -> None:
-        """Set up scroll region, reserving 2 bottom lines.
+        """Set up scroll region, reserving 3 bottom lines.
 
         Call BEFORE any print() output. Becomes a no-op if terminal is
         too small (< 10 rows) or not a TTY.
@@ -358,7 +358,7 @@ class ThinkingPanel:
             return
         try:
             self._active = True
-            sys.stdout.write(f"\033[2J\033[1;{self._rows - 2}r\033[H")
+            sys.stdout.write(f"\033[2J\033[1;{self._rows - 3}r\033[H")
             sys.stdout.flush()
             atexit.register(self.cleanup)
         except (OSError, ValueError):
@@ -396,30 +396,33 @@ class ThinkingPanel:
         try:
             elapsed = _format_duration(int((time.monotonic() - self.start) * 1000))
 
-            # Left side: spinner + agent + activity verb
+            # Left side: spinner + agent + activity verb (blue)
             ch = _SPINNER[self._spin_idx]
             agent_color = _AGENT_COLORS.get(self.agent, _C.BLUE)
             agent_label = _AGENT_LABELS.get(self.agent, self.agent)
             left = (
-                f"  {agent_color}{ch}{_C.RESET}"
+                f"  {_C.BLUE}{ch}{_C.RESET}"
                 f" {agent_color}{agent_label}{_C.RESET}"
-                f" {_C.DIM}· {self.activity}{_C.RESET}"
+                f" {_C.BLUE}· {self.activity}{_C.RESET}"
             )
 
-            # Right side: project + model + elapsed
+            # Right side: project (dim) + model (cyan) + elapsed (red)
             right_parts = []
             if self.project:
-                right_parts.append(self.project)
+                right_parts.append(f"{_C.DIM}{self.project}{_C.RESET}")
             if self.model:
-                right_parts.append(self.model)
-            right_parts.append(elapsed)
-            right = f"{_C.DIM}{' · '.join(right_parts)}{_C.RESET}"
+                right_parts.append(f"{_C.CYAN}{self.model}{_C.RESET}")
+            right_parts.append(f"{_C.RED}{elapsed}{_C.RESET}")
+            right = f" {_C.DIM}·{_C.RESET} ".join(right_parts)
 
+            sep = "\u2500" * self._cols
             buf = "\0337"  # save cursor
-            # Line 1: empty padding
-            buf += f"\033[{self._rows - 1};1H\033[K"
+            # Line 1: separator
+            buf += f"\033[{self._rows - 2};1H\033[K{_C.DIM}{sep}{_C.RESET}"
             # Line 2: status line
-            buf += f"\033[{self._rows};1H\033[K{left}  {right}"
+            buf += f"\033[{self._rows - 1};1H\033[K{left}  {right}"
+            # Line 3: empty padding
+            buf += f"\033[{self._rows};1H\033[K"
             buf += "\0338"  # restore cursor
             sys.stdout.write(buf)
             sys.stdout.flush()
@@ -487,11 +490,12 @@ class ThinkingPanel:
             return
         self._active = False
         try:
-            # Clear the 2 reserved lines
+            # Clear the 3 reserved lines
+            sys.stdout.write(f"\033[{self._rows - 2};1H\033[K")
             sys.stdout.write(f"\033[{self._rows - 1};1H\033[K")
             sys.stdout.write(f"\033[{self._rows};1H\033[K")
             # Restore full scroll region and position cursor
-            sys.stdout.write(f"\033[r\033[{self._rows - 2};1H")
+            sys.stdout.write(f"\033[r\033[{self._rows - 3};1H")
             sys.stdout.flush()
         except (OSError, ValueError):
             pass
