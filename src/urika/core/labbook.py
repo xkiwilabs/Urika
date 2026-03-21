@@ -21,6 +21,10 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
         "",
     ]
 
+    # Collect all artifact figures for inline matching
+    all_figures = _collect_experiment_figures(project_dir, experiment_id)
+    figure_names = {f.stem.lower(): f for f in all_figures}
+
     for run in progress.get("runs", []):
         lines.append(f"## {run['run_id']}: {run['method']}")
         lines.append("")
@@ -41,6 +45,25 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
             lines.append(f"- **Observation**: {run['observation']}")
         if run.get("next_step"):
             lines.append(f"- **Next step**: {run['next_step']}")
+
+        # Inline figures that match this run's method name
+        method_lower = run["method"].lower()
+        matched = []
+        for fname, fpath in figure_names.items():
+            if method_lower in fname or fname in method_lower:
+                matched.append(fpath)
+        # Also check run artifacts list
+        for art in run.get("artifacts", []):
+            art_path = Path(art)
+            if art_path.suffix.lower() == ".png" and art_path.name.lower() not in [
+                m.name.lower() for m in matched
+            ]:
+                if (project_dir / "experiments" / experiment_id / art).exists():
+                    matched.append(project_dir / "experiments" / experiment_id / art)
+        for fig in matched[:3]:  # Max 3 figures per run
+            caption = _caption_from_filename(fig.name)
+            lines.append("")
+            lines.append(f"![{caption}](../artifacts/{fig.name})")
 
         lines.append("")
 
