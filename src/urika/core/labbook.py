@@ -91,6 +91,16 @@ def generate_experiment_summary(project_dir: Path, experiment_id: str) -> None:
             lines.append(f"- {obs}")
         lines.append("")
 
+    # Embed artifact figures
+    figures = _collect_experiment_figures(project_dir, experiment_id)
+    if figures:
+        lines.append("## Figures")
+        lines.append("")
+        for fig_path in figures:
+            caption = _caption_from_filename(fig_path.name)
+            lines.append(f"![{caption}](../artifacts/{fig_path.name})")
+            lines.append("")
+
     summary_path = (
         project_dir / "experiments" / experiment_id / "labbook" / "summary.md"
     )
@@ -127,12 +137,14 @@ def generate_results_summary(project_dir: Path) -> None:
             lines.append(f"| {exp.name} | {method} | {len(runs)} | {metrics_str} |")
         lines.append("")
 
-    path = project_dir / "labbook" / "results-summary.md"
+    path = project_dir / "projectbook" / "results-summary.md"
     path.write_text("\n".join(lines) + "\n")
 
 
 def generate_key_findings(project_dir: Path) -> None:
     """Generate the project-level key-findings.md."""
+    import json
+
     from urika.core.workspace import load_project_config
 
     config = load_project_config(project_dir)
@@ -141,9 +153,82 @@ def generate_key_findings(project_dir: Path) -> None:
     lines = [
         f"# Key Findings: {config.name}",
         "",
-        f"**Question**: {config.question}",
-        "",
     ]
+
+    # --- Project Overview ---
+    lines.append("## Project Overview")
+    lines.append("")
+    lines.append(f"**Name**: {config.name}")
+    lines.append(f"**Question**: {config.question}")
+    if config.description:
+        lines.append(f"**Description**: {config.description}")
+    lines.append(f"**Mode**: {config.mode}")
+    lines.append("")
+
+    # --- Experiments ---
+    lines.append("## Experiments")
+    lines.append("")
+    if not experiments:
+        lines.append("No experiments yet.")
+        lines.append("")
+    else:
+        lines.append("| Experiment | Status | Runs |")
+        lines.append("|------------|--------|------|")
+        for exp in experiments:
+            progress = load_progress(project_dir, exp.experiment_id)
+            runs = progress.get("runs", [])
+            status = progress.get("status", "pending")
+            lines.append(f"| {exp.name} | {status} | {len(runs)} |")
+        lines.append("")
+
+    # --- Methods Tried ---
+    methods_path = project_dir / "methods.json"
+    if methods_path.exists():
+        try:
+            mdata = json.loads(methods_path.read_text())
+            mlist = mdata.get("methods", [])
+            if mlist:
+                lines.append("## Methods Tried")
+                lines.append("")
+                lines.append("| Method | Experiment | Metrics |")
+                lines.append("|--------|-----------|---------|")
+                for m in mlist:
+                    metrics_str = ", ".join(
+                        f"{k}={v}" for k, v in m.get("metrics", {}).items()
+                    )
+                    lines.append(
+                        f"| {m.get('name', '?')} "
+                        f"| {m.get('experiment', '')} "
+                        f"| {metrics_str} |"
+                    )
+                lines.append("")
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # --- Current Criteria ---
+    criteria_path = project_dir / "criteria.json"
+    if criteria_path.exists():
+        try:
+            cdata = json.loads(criteria_path.read_text())
+            versions = cdata.get("versions", [])
+            if versions:
+                latest = versions[-1]
+                lines.append("## Current Criteria")
+                lines.append("")
+                ctype = latest.get("criteria", {}).get("type", "unknown")
+                lines.append(f"Type: {ctype} (v{latest.get('version', '?')})")
+                threshold = latest.get("criteria", {}).get("threshold", {})
+                primary = threshold.get("primary", {})
+                if primary:
+                    for metric, val in primary.items():
+                        lines.append(f"- {metric}: {val}")
+                lines.append("")
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # --- Key Findings ---
+    lines.append("## Key Findings")
+    lines.append("")
 
     if not experiments:
         lines.append("No findings yet.")
@@ -178,7 +263,23 @@ def generate_key_findings(project_dir: Path) -> None:
             )
             lines.append("")
 
-    path = project_dir / "labbook" / "key-findings.md"
+    # Embed figures from all experiments
+    all_figures: list[tuple[str, Path]] = []
+    for exp in experiments:
+        for fig in _collect_experiment_figures(project_dir, exp.experiment_id):
+            all_figures.append((exp.experiment_id, fig))
+
+    if all_figures:
+        lines.append("## Figures")
+        lines.append("")
+        for exp_id, fig_path in all_figures:
+            caption = _caption_from_filename(fig_path.name)
+            lines.append(
+                f"![{caption}](../experiments/{exp_id}/artifacts/{fig_path.name})"
+            )
+            lines.append("")
+
+    path = project_dir / "projectbook" / "key-findings.md"
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -202,3 +303,26 @@ def _all_metric_names(runs: list[dict[str, Any]]) -> list[str]:
         for key in run.get("metrics", {}):
             seen[key] = None
     return list(seen)
+
+
+_MAX_FIGURES_PER_EXPERIMENT = 10
+
+
+def _collect_experiment_figures(project_dir: Path, experiment_id: str) -> list[Path]:
+    """Return sorted .png files from an experiment's artifacts dir (max 10)."""
+    artifacts_dir = project_dir / "experiments" / experiment_id / "artifacts"
+    if not artifacts_dir.is_dir():
+        return []
+    figures = sorted(artifacts_dir.glob("*.png"))
+    return figures[:_MAX_FIGURES_PER_EXPERIMENT]
+
+
+def _caption_from_filename(filename: str) -> str:
+    """Derive a human-readable caption from a filename.
+
+    Strips the extension and replaces underscores with spaces.
+    The first letter is capitalised; the rest is left as-is.
+    """
+    stem = Path(filename).stem
+    caption = stem.replace("_", " ")
+    return caption[0].upper() + caption[1:] if caption else caption
