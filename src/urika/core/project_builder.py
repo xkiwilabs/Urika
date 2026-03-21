@@ -143,6 +143,11 @@ class ProjectBuilder:
             rationale="Initial project criteria",
         )
 
+        # Generate initial README.md
+        from urika.core.readme_generator import write_readme
+
+        write_readme(project_dir)
+
         return project_dir
 
     def _detect_format(self) -> str:

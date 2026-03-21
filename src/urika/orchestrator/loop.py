@@ -30,7 +30,7 @@ def _noop_callback(event: str, detail: str = "") -> None:
 
 
 def _generate_reports(project_dir: Path, experiment_id: str, progress: object) -> None:
-    """Generate labbook reports after experiment completion."""
+    """Generate labbook reports and update README after experiment completion."""
     try:
         from urika.core.labbook import (
             generate_experiment_summary,
@@ -46,6 +46,14 @@ def _generate_reports(project_dir: Path, experiment_id: str, progress: object) -
         generate_key_findings(project_dir)
     except Exception:
         pass  # Reports are best-effort, don't fail the experiment
+
+    # Update project README.md
+    try:
+        from urika.core.readme_generator import write_readme
+
+        write_readme(project_dir)
+    except Exception:
+        pass
 
 
 def _print_run_summary(project_dir: Path, experiment_id: str, progress: object) -> None:
