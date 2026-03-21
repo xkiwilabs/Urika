@@ -487,6 +487,20 @@ async def run_experiment(
                 )
                 progress("result", "Criteria updated")
 
+            # Save suggestion for this turn
+            suggestions_dir = (
+                project_dir / "experiments" / experiment_id / "suggestions"
+            )
+            suggestions_dir.mkdir(exist_ok=True)
+            suggestion_data = {
+                "turn": turn,
+                "raw_text": suggest_result.text_output,
+                "parsed": suggestions,
+            }
+            (suggestions_dir / f"turn-{turn}.json").write_text(
+                json.dumps(suggestion_data, indent=2) + "\n"
+            )
+
             # Build next task prompt from suggestions
             if suggestions:
                 task_prompt = json.dumps(suggestions)
