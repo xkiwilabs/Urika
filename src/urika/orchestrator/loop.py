@@ -48,6 +48,54 @@ def _generate_reports(project_dir: Path, experiment_id: str, progress: object) -
         pass  # Reports are best-effort, don't fail the experiment
 
 
+def _print_run_summary(project_dir: Path, experiment_id: str, progress: object) -> None:
+    """Print a summary of what was achieved in this experiment."""
+    try:
+        exp_progress = load_progress(project_dir, experiment_id)
+        runs = exp_progress.get("runs", [])
+        if not runs:
+            return
+
+        progress("phase", "")
+        progress("phase", "━━━ Run Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+        # Methods tried
+        methods = [r["method"] for r in runs]
+        progress("result", f"{len(runs)} runs across {len(set(methods))} methods")
+
+        # Best metrics
+        best_acc = None
+        best_method = None
+        for r in runs:
+            for key in ("top1_accuracy", "accuracy", "loso_top1_accuracy"):
+                val = r.get("metrics", {}).get(key)
+                if val is not None and (best_acc is None or val > best_acc):
+                    best_acc = val
+                    best_method = r["method"]
+
+        if best_acc is not None:
+            progress("result", f"Best: {best_method} ({best_acc:.1%} accuracy)")
+
+        # Key observations from last run
+        last = runs[-1]
+        if last.get("observation"):
+            obs = last["observation"][:200]
+            if len(last["observation"]) > 200:
+                obs += "…"
+            progress("phase", f"Latest: {obs}")
+
+        # Next step from last run
+        if last.get("next_step"):
+            ns = last["next_step"][:150]
+            if len(last["next_step"]) > 150:
+                ns += "…"
+            progress("phase", f"Next: {ns}")
+
+        progress("phase", "")
+    except Exception:
+        pass
+
+
 async def run_experiment(
     project_dir: Path,
     experiment_id: str,
@@ -287,6 +335,7 @@ async def run_experiment(
                 progress("result", "Criteria met!")
                 complete_session(project_dir, experiment_id)
                 _generate_reports(project_dir, experiment_id, progress)
+                _print_run_summary(project_dir, experiment_id, progress)
                 return {"status": "completed", "turns": turn}
 
             # --- suggestion_agent ---
@@ -354,4 +403,5 @@ async def run_experiment(
     # Reached max_turns without criteria being met
     complete_session(project_dir, experiment_id)
     _generate_reports(project_dir, experiment_id, progress)
+    _print_run_summary(project_dir, experiment_id, progress)
     return {"status": "completed", "turns": max_turns}

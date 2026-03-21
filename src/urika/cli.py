@@ -671,6 +671,7 @@ def _determine_next_experiment(
     project_name: str,
     *,
     auto: bool = False,
+    panel: object = None,
     instructions: str = "",
 ) -> str | None:
     """Determine and create the next experiment based on project state.
@@ -681,7 +682,7 @@ def _determine_next_experiment(
     """
     import json
 
-    from urika.cli_display import Spinner, print_step, print_success
+    from urika.cli_display import print_step, print_success
 
     # Gather project state
     existing_experiments = list_experiments(project_path)
@@ -774,10 +775,15 @@ def _determine_next_experiment(
                 )
 
                 print_agent("suggestion_agent")
+                if panel is not None:
+                    panel.update(agent="suggestion_agent", activity="Analyzing…")
 
                 def _on_msg(msg: object) -> None:
                     """Show tool use from suggestion agent."""
                     try:
+                        model = getattr(msg, "model", None)
+                        if model and panel is not None:
+                            panel.set_model(model)
                         if hasattr(msg, "content"):
                             for block in msg.content:
                                 tool_name = getattr(block, "name", None)
@@ -791,13 +797,15 @@ def _determine_next_experiment(
                                             or inp.get("pattern", "")
                                         )
                                     print_tool_use(tool_name, detail)
+                                    if panel is not None:
+                                        panel.set_thinking(tool_name)
+                                else:
+                                    if panel is not None:
+                                        panel.set_thinking("Thinking…")
                     except Exception:
                         pass
 
-                with Spinner("Analyzing project state"):
-                    result = asyncio.run(
-                        runner.run(config, context, on_message=_on_msg)
-                    )
+                result = asyncio.run(runner.run(config, context, on_message=_on_msg))
 
                 if result.success:
                     from urika.orchestrator.parsing import parse_suggestions
@@ -918,7 +926,23 @@ def run(
     )
     from urika.orchestrator import run_experiment
 
+    from urika.cli_display import thinking_phrase
+
     project_path, _config = _resolve_project(project)
+
+    # Show header immediately
+    print_header(
+        project_name=project,
+        agent="orchestrator",
+        mode=_config.mode,
+    )
+
+    # Create panel early so it's available during experiment selection
+    panel = ThinkingPanel()
+    panel.project = project
+    panel.activity = thinking_phrase()
+    panel.activate()
+    panel.start_spinner()
 
     if experiment_id is None:
         experiments = list_experiments(project_path)
@@ -934,7 +958,11 @@ def run(
         else:
             # No pending — determine next experiment from state
             experiment_id = _determine_next_experiment(
-                project_path, project, auto=auto, instructions=instructions
+                project_path,
+                project,
+                auto=auto,
+                instructions=instructions,
+                panel=panel,
             )
             if experiment_id is None:
                 if not experiments:
@@ -944,12 +972,6 @@ def run(
                     )
                 experiment_id = experiments[-1].experiment_id
                 print_step(f"All experiments completed. Re-running {experiment_id}")
-
-    print_header(
-        project_name=project,
-        agent="orchestrator",
-        mode=_config.mode,
-    )
 
     if resume:
         print_step(f"Resuming experiment {experiment_id}")
@@ -973,18 +995,11 @@ def run(
     original_handler = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, _cleanup_on_interrupt)
 
-    from urika.cli_display import thinking_phrase
-
     start_ms = int(time.monotonic() * 1000)
 
     sdk_runner = ClaudeSDKRunner()
 
-    panel = ThinkingPanel()
-    panel.project = project
-    panel.activity = thinking_phrase()
-    panel.activate()
-    panel.start_spinner()
-
+    # Panel already created and active from experiment selection above
     try:
 
         def _on_progress(event: str, detail: str = "") -> None:
