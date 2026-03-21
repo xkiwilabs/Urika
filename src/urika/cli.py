@@ -1004,12 +1004,16 @@ def run(
 
         def _on_message(msg: object) -> None:
             """Handle streaming SDK messages for verbose output."""
+            # Capture model name from AssistantMessage
+            model = getattr(msg, "model", None)
+            if model:
+                panel.set_model(model)
+
             # Use getattr for safe access — SDK types may vary
             content = getattr(msg, "content", None)
             if content is None:
                 return
             for block in content:
-                # Check for tool use blocks (ToolUseBlock or similar)
                 tool_name = getattr(block, "name", None) or getattr(
                     block, "tool_name", None
                 )
@@ -1027,7 +1031,10 @@ def run(
                             detail = input_data["pattern"]
                     if not quiet:
                         print_tool_use(tool_name, detail)
-                    panel.set_thinking(f"{tool_name}: {detail[:60]}")
+                    panel.set_thinking(tool_name)
+                else:
+                    # Text block — agent is thinking
+                    panel.set_thinking("Thinking…")
 
         result = asyncio.run(
             run_experiment(

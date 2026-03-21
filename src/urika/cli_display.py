@@ -304,12 +304,22 @@ def print_tool_use(tool_name: str, detail: str = "") -> None:
 # ── Thinking panel (scroll-region status bar) ────────────────────
 
 
-class ThinkingPanel:
-    """Persistent 3-line panel pinned to terminal bottom via scroll region.
+_TOOL_VERBS: dict[str, str] = {
+    "Bash": "Running…",
+    "Write": "Writing…",
+    "Edit": "Editing…",
+    "Read": "Reading…",
+    "Glob": "Searching…",
+    "Grep": "Searching…",
+    "TodoWrite": "Planning…",
+}
 
-    Line 1: separator (thin horizontal rule)
-    Line 2: status (elapsed . turn . agent . project)
-    Line 3: spinner + current activity text
+
+class ThinkingPanel:
+    """Persistent 2-line panel pinned to terminal bottom via scroll region.
+
+    Line 1: empty padding
+    Line 2: spinner + agent + activity verb ... project + model + elapsed
 
     Uses threading.Thread for the spinner so it works during asyncio.run() calls.
     All ANSI writes are wrapped in try/except for safety.
@@ -319,8 +329,9 @@ class ThinkingPanel:
         self.start = time.monotonic()
         self.project = ""
         self.agent = ""
+        self.model = ""
         self.turn = ""
-        self.activity = ""
+        self.activity = "Thinking…"
         self._active = False
         self._rows = 0
         self._cols = 0
@@ -330,7 +341,7 @@ class ThinkingPanel:
         self._stop_event = threading.Event()
 
     def activate(self) -> None:
-        """Set up scroll region, reserving 3 bottom lines.
+        """Set up scroll region, reserving 2 bottom lines.
 
         Call BEFORE any print() output. Becomes a no-op if terminal is
         too small (< 10 rows) or not a TTY.
@@ -347,9 +358,7 @@ class ThinkingPanel:
             return
         try:
             self._active = True
-            # Clear visible area (scrollback preserved), set scroll region
-            # reserving 3 lines at the bottom, move cursor to home.
-            sys.stdout.write(f"\033[2J\033[1;{self._rows - 3}r\033[H")
+            sys.stdout.write(f"\033[2J\033[1;{self._rows - 2}r\033[H")
             sys.stdout.flush()
             atexit.register(self.cleanup)
         except (OSError, ValueError):
@@ -375,7 +384,10 @@ class ThinkingPanel:
                     self._render()
 
     def _render(self) -> None:
-        """Draw the 3 reserved rows below the scroll region.
+        """Draw the 2 reserved rows below the scroll region.
+
+        Line 1: empty padding
+        Line 2: spinner + agent + verb ... project + model + elapsed
 
         Must be called with self._lock held or from a safe context.
         """
@@ -383,32 +395,31 @@ class ThinkingPanel:
             return
         try:
             elapsed = _format_duration(int((time.monotonic() - self.start) * 1000))
-            parts = [elapsed]
-            if self.turn:
-                parts.append(self.turn)
-            if self.agent:
-                agent_color = _AGENT_COLORS.get(self.agent, _C.BLUE)
-                agent_label = _AGENT_LABELS.get(self.agent, self.agent)
-                parts.append(f"{agent_color}{agent_label}{_C.RESET}{_C.DIM}")
+
+            # Left side: spinner + agent + activity verb
+            ch = _SPINNER[self._spin_idx]
+            agent_color = _AGENT_COLORS.get(self.agent, _C.BLUE)
+            agent_label = _AGENT_LABELS.get(self.agent, self.agent)
+            left = (
+                f"  {agent_color}{ch}{_C.RESET}"
+                f" {agent_color}{agent_label}{_C.RESET}"
+                f" {_C.DIM}· {self.activity}{_C.RESET}"
+            )
+
+            # Right side: project + model + elapsed
+            right_parts = []
             if self.project:
-                parts.append(self.project)
-            status = " \u00b7 ".join(parts)
+                right_parts.append(self.project)
+            if self.model:
+                right_parts.append(self.model)
+            right_parts.append(elapsed)
+            right = f"{_C.DIM}{' · '.join(right_parts)}{_C.RESET}"
 
-            # Activity line with spinner
-            act = ""
-            if self.activity:
-                ch = _SPINNER[self._spin_idx]
-                act = f"  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{self.activity}{_C.RESET}"
-
-            # DEC save/restore cursor around absolute positioning.
-            sep = "\u2501" * self._cols
             buf = "\0337"  # save cursor
-            # Line 1: separator
-            buf += f"\033[{self._rows - 2};1H\033[K{_C.DIM}{sep}{_C.RESET}"
-            # Line 2: status
-            buf += f"\033[{self._rows - 1};1H\033[K  {_C.DIM}{status}{_C.RESET}"
-            # Line 3: spinner + activity
-            buf += f"\033[{self._rows};1H\033[K{act}"
+            # Line 1: empty padding
+            buf += f"\033[{self._rows - 1};1H\033[K"
+            # Line 2: status line
+            buf += f"\033[{self._rows};1H\033[K{left}  {right}"
             buf += "\0338"  # restore cursor
             sys.stdout.write(buf)
             sys.stdout.flush()
@@ -427,6 +438,7 @@ class ThinkingPanel:
         activity: str = "",
         turn: str = "",
         project: str = "",
+        model: str = "",
     ) -> None:
         """Update panel fields and re-render.
 
@@ -441,13 +453,28 @@ class ThinkingPanel:
                 self.turn = turn
             if project:
                 self.project = project
+            if model:
+                self.model = model
             self._spin_idx = 0
             self._render()
 
     def set_thinking(self, text: str) -> None:
-        """Update the thinking/activity line."""
+        """Update the activity verb from a tool name or raw text."""
         with self._lock:
-            self.activity = text
+            # Map tool names to short verbs
+            self.activity = _TOOL_VERBS.get(text, text)
+            self._render()
+
+    def set_model(self, model: str) -> None:
+        """Update the model name (e.g. from AssistantMessage.model)."""
+        with self._lock:
+            # Shorten model name
+            short = model
+            if "/" in short:
+                short = short.split("/")[-1]
+            if len(short) > 25:
+                short = short[:22] + "…"
+            self.model = short
             self._render()
 
     def cleanup(self) -> None:
@@ -460,12 +487,11 @@ class ThinkingPanel:
             return
         self._active = False
         try:
-            # Clear the 3 reserved lines
-            sys.stdout.write(f"\033[{self._rows - 2};1H\033[K")
+            # Clear the 2 reserved lines
             sys.stdout.write(f"\033[{self._rows - 1};1H\033[K")
             sys.stdout.write(f"\033[{self._rows};1H\033[K")
             # Restore full scroll region and position cursor
-            sys.stdout.write(f"\033[r\033[{self._rows - 3};1H")
+            sys.stdout.write(f"\033[r\033[{self._rows - 2};1H")
             sys.stdout.flush()
         except (OSError, ValueError):
             pass
