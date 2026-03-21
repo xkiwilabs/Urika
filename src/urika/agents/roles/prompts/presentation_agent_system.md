@@ -75,8 +75,11 @@ Produce a single JSON block with the slide deck:
 ## Slide Types
 
 - **bullets** — text-focused slide with title and bullet points
-- **figure** — image slide with a figure from artifacts, caption, optional bullets below
+- **figure** — image slide with a figure centered, caption below, optional bullets
+- **figure-text** — two-column layout: figure on the left, bullet points on the right. Use for results that need both a visual and explanation side-by-side. Add optional `bottom_text` for a centered note below both columns.
 - **stat** — hero slide with a large number, label, and optional context bullets
+
+Choose the best layout for each slide. Use `figure-text` when a figure needs explanation alongside it. Use `figure` when the image speaks for itself.
 
 ## Rules
 

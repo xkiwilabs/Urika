@@ -62,6 +62,8 @@ def render_presentation(
             slides_html += _render_stat_slide(slide)
         elif slide_type == "figure":
             slides_html += _render_figure_slide(slide, figures_dir, experiment_dir)
+        elif slide_type == "figure-text":
+            slides_html += _render_two_col_slide(slide, figures_dir, experiment_dir)
         else:
             slides_html += _render_bullets_slide(slide)
 
@@ -163,6 +165,51 @@ def _render_figure_slide(
                 <img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">
                 {cap}
                 {items}
+            </section>
+"""
+
+
+def _render_two_col_slide(
+    slide: dict[str, Any],
+    figures_dir: Path,
+    experiment_dir: Path | None,
+) -> str:
+    """Render a two-column slide: figure left, text right."""
+    title = slide.get("title", "")
+    figure_path = slide.get("figure", "")
+    caption = slide.get("figure_caption", "")
+    bullets = slide.get("bullets", [])
+    bottom = slide.get("bottom_text", "")
+
+    fig_name = Path(figure_path).name
+    if experiment_dir and figure_path:
+        src = experiment_dir / figure_path
+        if src.exists():
+            figures_dir.mkdir(exist_ok=True)
+            shutil.copy2(src, figures_dir / fig_name)
+
+    cap = f'<p class="caption">{_escape(caption)}</p>' if caption else ""
+    items = ""
+    if bullets:
+        items_html = "\n".join(
+            f"                        <li>{_escape(b)}</li>" for b in bullets
+        )
+        items = f"<ul>{items_html}</ul>"
+    bot = f'<p class="bottom-text">{_escape(bottom)}</p>' if bottom else ""
+
+    return f"""
+            <section class="slide-two-col">
+                <h2>{_escape(title)}</h2>
+                <div class="columns">
+                    <div class="col-figure">
+                        <img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">
+                        {cap}
+                    </div>
+                    <div class="col-text">
+                        {items}
+                    </div>
+                </div>
+                {bot}
             </section>
 """
 
