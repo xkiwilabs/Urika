@@ -38,8 +38,8 @@ def cmd_help(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-@command("projects", description="List all projects")
-def cmd_projects(session: ReplSession, args: str) -> None:
+@command("list", description="List all projects")
+def cmd_list(session: ReplSession, args: str) -> None:
     from urika.core.registry import ProjectRegistry
 
     registry = ProjectRegistry()

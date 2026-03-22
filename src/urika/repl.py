@@ -76,7 +76,7 @@ def run_repl() -> None:
     prompt_session = PromptSession(
         history=history,
         completer=completer,
-        complete_while_typing=False,
+        complete_while_typing=True,
     )
 
     while True:

@@ -13,7 +13,7 @@ from urika.repl_session import ReplSession
 
 class TestCommandRegistration:
     def test_global_commands_has_expected_keys(self) -> None:
-        expected = {"help", "projects", "project", "new", "quit"}
+        expected = {"help", "list", "project", "new", "quit"}
         assert expected.issubset(set(GLOBAL_COMMANDS.keys()))
 
     def test_project_commands_has_expected_keys(self) -> None:
