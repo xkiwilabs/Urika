@@ -1,0 +1,202 @@
+"""Interactive REPL shell for Urika."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+
+import click
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.history import InMemoryHistory
+
+from urika.cli_display import print_agent, print_error, print_header
+from urika.repl_commands import (
+    PROJECT_COMMANDS,
+    get_all_commands,
+    get_command_names,
+    get_experiment_ids,
+    get_project_names,
+)
+from urika.repl_session import ReplSession
+
+
+class UrikaCompleter(Completer):
+    """Tab completer for REPL — commands, project names, experiment IDs."""
+
+    def __init__(self, session: ReplSession):
+        self.session = session
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor.lstrip()
+
+        if text.startswith("/"):
+            parts = text[1:].split(" ", 1)
+            cmd = parts[0]
+
+            if len(parts) == 1 and not text.endswith(" "):
+                # Completing the command name
+                for name in get_command_names(self.session):
+                    if name.startswith(cmd):
+                        yield Completion(name, start_position=-len(cmd))
+            elif len(parts) >= 1:
+                # Completing arguments
+                if cmd == "project":
+                    arg = parts[1] if len(parts) > 1 else ""
+                    for name in get_project_names():
+                        if name.startswith(arg):
+                            yield Completion(name, start_position=-len(arg))
+                elif cmd in ("present", "logs"):
+                    arg = parts[1] if len(parts) > 1 else ""
+                    for eid in get_experiment_ids(self.session):
+                        if eid.startswith(arg):
+                            yield Completion(eid, start_position=-len(arg))
+
+
+def run_repl() -> None:
+    """Main REPL entry point."""
+    session = ReplSession()
+    history = InMemoryHistory()
+    completer = UrikaCompleter(session)
+
+    # Show header
+    print_header()
+
+    # List projects on startup
+    from urika.core.registry import ProjectRegistry
+
+    registry = ProjectRegistry()
+    projects = registry.list_all()
+    if projects:
+        click.echo("  Projects:")
+        for name in projects:
+            click.echo(f"    {name}")
+        click.echo()
+
+    prompt_session = PromptSession(
+        history=history,
+        completer=completer,
+        complete_while_typing=False,
+    )
+
+    while True:
+        try:
+            # Build prompt
+            if session.has_project:
+                prompt_text = f"urika:{session.project_name}> "
+            else:
+                prompt_text = "urika> "
+
+            user_input = prompt_session.prompt(prompt_text).strip()
+
+            if not user_input:
+                continue
+
+            if user_input.startswith("/"):
+                _handle_command(session, user_input)
+            else:
+                _handle_free_text(session, user_input)
+
+        except (EOFError, KeyboardInterrupt):
+            click.echo("\n  Goodbye.")
+            break
+        except SystemExit:
+            break
+
+
+def _handle_command(session: ReplSession, text: str) -> None:
+    """Parse and execute a slash command."""
+    parts = text[1:].split(" ", 1)
+    cmd_name = parts[0].lower()
+    args = parts[1] if len(parts) > 1 else ""
+
+    all_cmds = get_all_commands(session)
+    if cmd_name not in all_cmds:
+        # Check if it's a project command but no project loaded
+        if cmd_name in PROJECT_COMMANDS and not session.has_project:
+            print_error("Load a project first: /project <name>")
+        else:
+            print_error(f"Unknown command: /{cmd_name}. Type /help for commands.")
+        return
+
+    handler = all_cmds[cmd_name]["func"]
+    try:
+        handler(session, args)
+    except Exception as exc:
+        print_error(f"Error: {exc}")
+
+
+def _handle_free_text(session: ReplSession, text: str) -> None:
+    """Send free text to the advisor agent."""
+    if not session.has_project:
+        click.echo("  Load a project first: /project <name>")
+        return
+
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.registry import AgentRegistry
+        from urika.cli_display import Spinner, print_tool_use
+
+        runner = ClaudeSDKRunner()
+        registry = AgentRegistry()
+        registry.discover()
+
+        advisor = registry.get("advisor_agent")
+        if advisor is None:
+            print_error("Advisor agent not found.")
+            return
+
+        # Build context
+        context = f"Project: {session.project_name}\n"
+        conv = session.get_conversation_context()
+        if conv:
+            context += f"\nPrevious conversation:\n{conv}\n"
+        context += f"\nUser: {text}\n"
+
+        # Load project state
+        methods_path = session.project_path / "methods.json"
+        if methods_path.exists():
+            try:
+                mdata = json.loads(methods_path.read_text())
+                mlist = mdata.get("methods", [])
+                context += f"\n{len(mlist)} methods tried.\n"
+            except Exception:
+                pass
+
+        config = advisor.build_config(
+            project_dir=session.project_path, experiment_id=""
+        )
+
+        def _on_msg(msg):
+            try:
+                if hasattr(msg, "content"):
+                    for block in msg.content:
+                        tool_name = getattr(block, "name", None)
+                        if tool_name:
+                            inp = getattr(block, "input", {}) or {}
+                            detail = ""
+                            if isinstance(inp, dict):
+                                detail = (
+                                    inp.get("command", "")
+                                    or inp.get("file_path", "")
+                                    or inp.get("pattern", "")
+                                )
+                            print_tool_use(tool_name, detail)
+            except Exception:
+                pass
+
+        print_agent("advisor_agent")
+        with Spinner("Thinking"):
+            result = asyncio.run(runner.run(config, context, on_message=_on_msg))
+
+        if result.success and result.text_output:
+            click.echo(f"\n{result.text_output.strip()}\n")
+            session.add_message("user", text)
+            session.add_message("advisor", result.text_output.strip())
+        else:
+            print_error(f"Advisor error: {result.error}")
+
+    except ImportError:
+        print_error("Claude Agent SDK not installed. Run: pip install urika[agents]")
+    except Exception as exc:
+        print_error(f"Error: {exc}")

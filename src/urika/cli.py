@@ -38,10 +38,15 @@ def _resolve_project(name: str) -> tuple[Path, ProjectConfig]:
     return project_path, config
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(package_name="urika")
-def cli() -> None:
+@click.pass_context
+def cli(ctx) -> None:
     """Urika: Agentic scientific analysis platform."""
+    if ctx.invoked_subcommand is None:
+        from urika.repl import run_repl
+
+        run_repl()
 
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:
