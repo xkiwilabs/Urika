@@ -701,9 +701,18 @@ def _determine_next_experiment(
             mlist = mdata.get("methods", [])
             if mlist:
                 methods_summary = f"{len(mlist)} methods tried. Best: "
+
+                def _best_metric_val(m: dict) -> float:
+                    nums = [
+                        v
+                        for v in m.get("metrics", {}).values()
+                        if isinstance(v, (int, float))
+                    ]
+                    return max(nums) if nums else 0
+
                 best = max(
                     (m for m in mlist if m.get("metrics")),
-                    key=lambda m: max(m["metrics"].values()) if m["metrics"] else 0,
+                    key=_best_metric_val,
                     default=None,
                 )
                 if best:
