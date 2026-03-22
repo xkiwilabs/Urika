@@ -2,6 +2,7 @@
 
 from urika.orchestrator.knowledge import build_knowledge_summary
 from urika.orchestrator.loop import run_experiment
+from urika.orchestrator.meta import run_project
 from urika.orchestrator.parsing import (
     parse_evaluation,
     parse_method_plan,
@@ -16,4 +17,5 @@ __all__ = [
     "parse_run_records",
     "parse_suggestions",
     "run_experiment",
+    "run_project",
 ]
