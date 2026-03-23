@@ -325,8 +325,11 @@ def new(
     if data_path and scan_result and has_knowledge:
         n_docs = len(scan_result.docs)
         n_papers = len(scan_result.papers)
+        click.echo(
+            f"\n  Found {n_docs} documentation file(s) and {n_papers} paper(s)"
+            " in the data path."
+        )
         ingest = click.confirm(
-            f"\n  Found {n_docs} documentation file(s) and {n_papers} paper(s).\n"
             "  Ingest into the knowledge base?",
             default=True,
         )
@@ -334,34 +337,80 @@ def new(
             with Spinner("Ingesting knowledge"):
                 _ingest_knowledge(project_dir, scan_result)
 
-        # Check if docs likely contain methods/procedures description
-        has_readme = any(
+    # Always offer to add more knowledge — even if some was found
+    if data_path and scan_result:
+        has_readme = has_knowledge and any(
             d.name.lower() in ("readme.md", "readme.txt", "readme")
             for d in scan_result.docs
         )
-        if not has_readme and n_papers == 0:
-            click.echo(
-                "\n  Tip: No README or papers found. Consider adding a document\n"
-                "  describing the data collection methods and procedures used.\n"
-                "  Even a brief description helps agents understand your data."
+        n_papers = len(scan_result.papers) if scan_result else 0
+
+        tips = []
+        if not has_readme:
+            tips.append(
+                "a description of the data collection methods and procedures"
             )
-        elif n_papers == 0:
+        if n_papers == 0:
+            tips.append("1-2 relevant research papers from your domain")
+
+        if tips:
             click.echo(
-                "\n  Tip: No research papers found. Even 1-2 relevant papers\n"
-                "  can significantly improve analysis quality — agents use them\n"
-                "  to select established methods and understand domain context."
+                "\n  Adding knowledge improves analysis quality. Consider adding:"
             )
-    elif data_path and scan_result:
-        click.echo(
-            "\n  No documentation or papers found in the data path.\n"
-            "  Adding relevant material to your project's knowledge/papers/\n"
-            "  directory can significantly improve analysis quality.\n\n"
-            "  Recommended:\n"
-            "    - A description of the data collection methods and procedures\n"
-            "    - 1-2 relevant research papers from your domain\n\n"
-            "  You can add these at any time with:\n"
-            f"    urika knowledge ingest {name} <path>"
+            for tip in tips:
+                click.echo(f"    - {tip}")
+
+        extra_path = _prompt_path(
+            "\n  Path to additional knowledge to ingest (paper, doc, or folder)"
+            " — press Enter to skip"
         )
+        if extra_path:
+            from urika.knowledge import KnowledgeStore
+
+            store = KnowledgeStore(project_dir)
+            extra = Path(extra_path)
+            if extra.is_dir():
+                ingested = 0
+                for f in sorted(extra.rglob("*")):
+                    if f.is_file() and f.suffix.lower() in (
+                        ".pdf", ".md", ".txt", ".rst", ".html",
+                    ):
+                        try:
+                            store.ingest(str(f))
+                            ingested += 1
+                        except Exception:
+                            pass
+                if ingested:
+                    print_success(f"Ingested {ingested} file(s)")
+            else:
+                try:
+                    entry = store.ingest(str(extra))
+                    print_success(
+                        f'Ingested: {entry.id} "{entry.title}" ({entry.source_type})'
+                    )
+                except Exception as exc:
+                    print_error(f"Could not ingest: {exc}")
+    elif not data_path:
+        pass  # No data path — skip knowledge entirely
+    else:
+        click.echo(
+            "\n  No documentation or papers found in the data path."
+        )
+        extra_path = _prompt_path(
+            "  Path to knowledge to ingest (paper, doc, or folder)"
+            " — press Enter to skip"
+        )
+        if extra_path:
+            from urika.knowledge import KnowledgeStore
+
+            store = KnowledgeStore(project_dir)
+            try:
+                entry = store.ingest(str(extra_path))
+                print_success(
+                    f'Ingested: {entry.id} "{entry.title}" ({entry.source_type})'
+                )
+            except Exception as exc:
+                print_error(f"Could not ingest: {exc}")
 
     # --- Interactive agent loop (after knowledge is available) ---
     print_agent("project_builder")
