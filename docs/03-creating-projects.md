@@ -139,11 +139,12 @@ After collecting basic project information, the project builder agent runs an in
 
 ### Phase 1: Clarifying questions (Project Builder agent)
 
-The project builder agent examines your data profile and project description, then asks up to 5 clarifying questions. Each question helps scope the project. Examples:
+The project builder agent examines your data profile and project description, then asks clarifying questions (up to 10, but typically 3-6 depending on how much context is needed). The agent stops on its own when it has enough information. Examples:
 
+- "How was this data collected? What methods and procedures were used?"
 - "What is the target variable you want to predict?"
-- "Are there known confounding variables to control for?"
-- "Do you have a specific performance threshold in mind?"
+- "Are there relevant papers or established methods for this kind of analysis?"
+- "How should the data be split for evaluation?"
 
 Answer each question, or type `done` to skip ahead.
 

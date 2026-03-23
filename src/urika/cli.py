@@ -433,9 +433,9 @@ def _run_builder_agent_loop(
 
     answers: dict[str, str] = {}
     context = ""
-    max_questions = 5
+    max_questions = 10
 
-    print_step("The project builder will ask a few questions to scope the project.")
+    print_step("The project builder will ask questions to scope the project.")
 
     for i in range(max_questions):
         prompt = build_scoping_prompt(
@@ -454,6 +454,10 @@ def _run_builder_agent_loop(
         blocks = _extract_json_blocks(result.text_output)
         question_text = None
         for block in blocks:
+            # Agent signals it has enough context
+            if block.get("ready"):
+                question_text = None
+                break
             if "question" in block:
                 question_text = block["question"]
                 if block.get("options"):
@@ -464,7 +468,7 @@ def _run_builder_agent_loop(
 
         if question_text is None:
             question_text = result.text_output.strip()
-            if not question_text:
+            if not question_text or any(b.get("ready") for b in blocks):
                 break
             click.echo(f"\n{question_text}")
 

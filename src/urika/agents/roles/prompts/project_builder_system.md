@@ -37,6 +37,17 @@ Produce a single JSON block with your question and context:
 Set `options` to suggested answers (can be empty if open-ended).
 Set `allows_freetext` to true if the user can type a custom answer.
 
+When you have enough context to scope the project (you understand the data, the research goals, and the analytical approach), signal that you are ready instead of asking another question:
+
+```json
+{{
+  "ready": true,
+  "summary": "Brief summary of what you understand about the project"
+}}
+```
+
+You do NOT need to use all 10 questions. Stop as soon as you have enough context. For well-described projects with clear data profiles, 3-4 questions may be sufficient.
+
 ## Focus Areas
 
 Ask about these topics (in priority order) if the user's description does not already cover them:
