@@ -81,6 +81,17 @@ Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it acr
 
 If you have a Claude Max or Pro subscription, the Claude Agent SDK can authenticate through your account login. No API key needed — just ensure you're logged in via Claude Code.
 
+## Two ways to use Urika
+
+Urika has two interfaces that share the same commands and produce identical results:
+
+- **Interactive REPL** — Run `urika` with no arguments. Gives you a prompt with tab completion, `/help`, conversation history, and a bottom status bar. Best for learning the system and exploratory work.
+- **CLI commands** — Run `urika <command>` directly from your shell. Best for scripting, automation, and when you know exactly what you want to run.
+
+If you're new to Urika, **start with the REPL** — you can discover all commands with tab completion and `/help`, and ask the advisor agent questions in plain text without needing to know any commands at all.
+
+See [CLI Reference](06-cli-reference.md) and [Interactive REPL](07-interactive-repl.md) for full details on each interface.
+
 ## Quickstart
 
 ### 1. Create a project
@@ -89,47 +100,39 @@ If you have a Claude Max or Pro subscription, the Claude Agent SDK can authentic
 urika new my-study --data /path/to/data.csv
 ```
 
-Urika will prompt you for a research question, investigation mode, and project description. The project builder agent then asks clarifying questions, proposes initial experiments, and writes the project files.
+Urika prompts for a research question, investigation mode, and description. The project builder agent asks clarifying questions, proposes initial experiments, and writes the project files.
 
-### 2. Run the first experiment
-
-```bash
-urika run my-study
-```
-
-The orchestrator picks up the planned experiment and cycles through agents (planning, task execution, evaluation, advising) for up to the configured number of turns.
-
-### 3. Check status
-
-```bash
-urika status my-study
-```
-
-Shows the project question, mode, number of experiments, and per-experiment run counts.
-
-### 4. View results
-
-```bash
-urika results my-study
-```
-
-Displays the leaderboard ranking methods by their metrics.
-
-### 5. Generate a report
-
-```bash
-urika report my-study
-```
-
-Produces labbook notes, narrative summaries, and a project README.
-
-### 6. Launch the interactive REPL
+### 2. Launch the REPL (recommended for first-time users)
 
 ```bash
 urika
 ```
 
-Running `urika` with no subcommand opens the interactive shell, where you can use slash commands like `/run`, `/report`, `/advisor`, and more.
+This opens the interactive shell. Load your project and explore:
+
+```
+urika> /project my-study
+urika:my-study> /status
+urika:my-study> /run
+```
+
+Or type a question in plain text — it goes straight to the advisor agent:
+
+```
+urika:my-study> what approaches should I try for this dataset?
+```
+
+### 3. Or use CLI commands directly
+
+```bash
+urika run my-study              # run the next experiment
+urika status my-study           # check progress
+urika results my-study          # view leaderboard
+urika report my-study           # generate reports
+urika present my-study          # generate presentation
+```
+
+Every REPL slash command has a matching CLI command and vice versa.
 
 ## Project location
 
