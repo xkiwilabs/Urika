@@ -77,31 +77,53 @@ def run_repl() -> None:
 
     # Projects available via /list
 
-    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.styles import Style
     from urika.cli_display import _format_duration
 
+    toolbar_style = Style.from_dict(
+        {
+            "bottom-toolbar": "bg:#000000 #888888",
+            "bottom-toolbar.text": "bg:#000000",
+            "separator": "bg:#000000 #444444",
+            "brand": "bg:#000000 #2563eb bold",
+            "project": "bg:#000000 #888888",
+            "model": "bg:#000000 #06b6d4",
+            "time": "bg:#000000 #ef4444",
+            "tokens": "bg:#000000 #a3a3a3",
+            "cost": "bg:#000000 #22c55e",
+        }
+    )
+
     def _bottom_toolbar():
-        """Dynamic bottom toolbar showing session stats."""
+        """Dynamic bottom toolbar with colored segments."""
         parts = []
+        parts.append(("class:separator", "─" * 120 + "\n"))
+        parts.append(("class:brand", " urika"))
+
         if session.has_project:
-            parts.append(session.project_name)
+            parts.append(("class:project", f" · {session.project_name}"))
         if session.model:
-            parts.append(session.model)
+            parts.append(("class:model", f" · {session.model}"))
+
         elapsed = _format_duration(session.elapsed_ms)
-        parts.append(elapsed)
+        parts.append(("class:time", f" · {elapsed}"))
+
         if session.agent_calls > 0:
             tokens = session.total_tokens_in + session.total_tokens_out
             tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
-            parts.append(f"{tok_str} tokens")
-            parts.append(f"{session.agent_calls} calls")
+            parts.append(
+                ("class:tokens", f" · {tok_str} tokens · {session.agent_calls} calls")
+            )
             if session.total_cost_usd > 0:
-                parts.append(f"~${session.total_cost_usd:.2f}")
-        return HTML(f" <b>urika</b> · {' · '.join(parts)}")
+                parts.append(("class:cost", f" · ~${session.total_cost_usd:.2f}"))
+
+        return parts
 
     prompt_session = PromptSession(
         history=history,
         completer=completer,
         complete_while_typing=True,
+        style=toolbar_style,
         bottom_toolbar=_bottom_toolbar,
     )
 
