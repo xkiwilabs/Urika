@@ -2,6 +2,8 @@
 
 Urika lets you configure which AI models and endpoints each agent uses, on a per-project basis. This gives you control over cost, performance, and data privacy.
 
+> **What needs to be private stays private.** You decide which agents access your data and where they run -- local models, secure institutional servers, or any combination. Different projects can have completely different privacy settings.
+
 
 ## Models and Endpoints
 
@@ -9,7 +11,7 @@ Urika currently uses the **Claude Agent SDK** as its runtime backend. This suppo
 
 - **Claude models** via the Anthropic API (Haiku, Sonnet, Opus)
 - **Local models** via Ollama (Llama, Mistral, etc.)
-- **Institutional endpoints** -- any Anthropic-compatible API server
+- **Institutional endpoints** -- any Anthropic-compatible API server (e.g., a university's secure Claude instance)
 
 Future releases will add adapters for OpenAI Agents SDK, Google ADK, and Pi coding agent.
 
@@ -36,72 +38,96 @@ If no `[runtime]` section is present, Urika uses the default Claude model.
 
 ## Named Endpoints
 
-Endpoints are named API targets defined in `[privacy.endpoints]`. Three patterns are common:
+Endpoints are named API targets defined in `[privacy.endpoints]`. You can define as many as you need.
 
-### Cloud (default)
+### Open (default)
 
 The standard Anthropic API. No configuration needed -- this is the default when no endpoint is specified.
 
-### Local (Ollama)
+### Private (local models)
 
-A local model server running on your machine. Full data privacy -- nothing leaves your network.
+A local model server running on your machine. Nothing leaves your network.
 
 ```toml
-[privacy.endpoints.local]
+[privacy.endpoints.private]
 base_url = "http://localhost:11434"
 ```
 
-### Trusted (institutional server)
+### Private (institutional server)
 
-An Anthropic-compatible endpoint running on a university or organization server, with its own API key.
+A secure Anthropic-compatible endpoint running on a university or organization server, with its own API key. This is also a "private" endpoint -- private means anything within your data governance boundary.
 
 ```toml
-[privacy.endpoints.trusted]
+[privacy.endpoints.private]
 base_url = "https://secure-ai.university.edu/v1"
 api_key_env = "UNI_API_KEY"
 ```
 
 The `api_key_env` field names an environment variable that contains the API key. Urika reads the key from that variable at runtime -- the key itself is never stored in `urika.toml`.
 
+You can define multiple private endpoints with different names:
+
+```toml
+[privacy.endpoints.local]
+base_url = "http://localhost:11434"
+
+[privacy.endpoints.university]
+base_url = "https://secure-ai.university.edu/v1"
+api_key_env = "UNI_API_KEY"
+```
+
 
 ## Privacy Modes
 
 The `[privacy]` section in `urika.toml` controls how agents are routed to endpoints. There are three modes.
 
-### Cloud mode (default)
+### Open mode (default)
 
-All agents use the cloud Anthropic API. No special configuration needed.
+All agents use the Anthropic API. No special configuration needed.
 
 ```toml
 [privacy]
-mode = "cloud"
+mode = "open"
 ```
 
 This is the default behavior when no `[privacy]` section exists.
 
-### Local mode
+### Private mode
 
-All agents use a local endpoint. Full data privacy, but model capability depends on what you can run locally.
+All agents use a private endpoint. This can be local models (Ollama on your machine), a secure institutional server, or any Anthropic-compatible endpoint within your data governance boundary.
 
 ```toml
 [privacy]
-mode = "local"
+mode = "private"
 
-[privacy.endpoints.local]
+[privacy.endpoints.private]
 base_url = "http://localhost:11434"
+```
+
+Or using an institutional server:
+
+```toml
+[privacy]
+mode = "private"
+
+[privacy.endpoints.private]
+base_url = "https://secure-ai.university.edu/v1"
+api_key_env = "UNI_API_KEY"
 ```
 
 ### Hybrid mode
 
-The recommended mode for privacy-sensitive research. A local **Data Agent** reads raw data and outputs sanitized summaries. All other agents run on cloud models for maximum analytical power, but never see raw data.
+The recommended mode for privacy-sensitive research. A private **Data Agent** reads raw data and outputs sanitized summaries. All other agents run on open cloud models for maximum analytical power, but never see raw data.
 
 ```toml
 [privacy]
 mode = "hybrid"
 
-[privacy.endpoints.local]
+[privacy.endpoints.private]
 base_url = "http://localhost:11434"
 ```
+
+The default hybrid split covers most use cases, but you can customize which agents use which endpoints -- see Per-Agent Endpoint Assignment below.
 
 
 ## Hybrid Architecture
@@ -110,34 +136,28 @@ Hybrid mode is designed for research with sensitive data. The key insight: only 
 
 ### How it works
 
-1. The **Data Agent** runs on the local (or trusted) endpoint. It reads raw data files, computes features, and outputs sanitized summaries -- aggregated statistics, feature names, distributions, and processed DataFrames. It never includes raw identifiable records in its text output.
+1. The **Data Agent** runs on the private endpoint. It reads raw data files, computes features, and outputs sanitized summaries -- aggregated statistics, feature names, distributions, and processed DataFrames. It never includes raw identifiable records in its text output.
 
-2. The **orchestrator** passes the Data Agent's sanitized output to the cloud-based agents. The raw data never reaches the cloud.
+2. The **orchestrator** passes the Data Agent's sanitized output to the open cloud agents. The raw data never reaches the cloud.
 
 3. All other agents (Planning, Task, Evaluator, Advisor, Tool Builder, Literature) run on cloud models. They receive only the sanitized summaries and work from those.
 
 ### Orchestrator flow
 
 ```
-Data Agent (LOCAL) --> sanitized summary --> Task Agent (CLOUD) --> code + results
-```
-
-In the orchestrator loop, the Data Agent runs between the Planning Agent and the Task Agent. Its sanitized output is prepended to the task input:
-
-```
-Planning Agent (CLOUD)
+Planning Agent (OPEN/CLOUD)
        |
        v
-Data Agent (LOCAL) -- reads raw data, outputs sanitized features/stats
+Data Agent (PRIVATE) -- reads raw data, outputs sanitized features/stats
        |
        v
-Task Agent (CLOUD) -- receives sanitized summary + plan, writes code
+Task Agent (OPEN/CLOUD) -- receives sanitized summary + plan, writes code
        |
        v
-Evaluator (CLOUD) -- scores results against criteria
+Evaluator (OPEN/CLOUD) -- scores results against criteria
        |
        v
-Advisor Agent (CLOUD) -- proposes next steps
+Advisor Agent (OPEN/CLOUD) -- proposes next steps
 ```
 
 ### What the Data Agent outputs
@@ -159,12 +179,12 @@ This includes row/column counts, feature names, summary statistics, and paths to
 
 ### Default hybrid assignments
 
-In hybrid mode, the following agents default to the local endpoint:
+In hybrid mode, the following agents default to the private endpoint:
 
 - **data_agent** -- reads and sanitizes raw data
 - **tool_builder** -- creates project-specific tools (may need data access)
 
-All other agents default to the cloud endpoint. These defaults can be overridden with per-agent endpoint assignments.
+All other agents default to the open cloud endpoint. These defaults can be overridden with per-agent endpoint assignments to ensure what needs to be private stays private.
 
 
 ## Per-Agent Endpoint Assignment
@@ -173,19 +193,19 @@ Any agent can be assigned to any named endpoint, regardless of the privacy mode:
 
 ```toml
 [runtime.models.data_agent]
-endpoint = "trusted"
+endpoint = "university"
 model = "claude-sonnet-4-6"
 
 [runtime.models.task_agent]
-endpoint = "cloud"
+endpoint = "open"
 model = "claude-opus-4-6"
 
 [runtime.models.evaluator]
-endpoint = "cloud"
+endpoint = "open"
 model = "claude-haiku-4-5"
 ```
 
-This overrides the defaults set by the privacy mode. You can mix and match endpoints freely.
+This overrides the defaults set by the privacy mode. You can mix and match endpoints freely -- ensuring that what needs to be private stays private, while everything else gets the full power of frontier models.
 
 
 ## Use Cases
@@ -198,12 +218,12 @@ Patient data stays on a university server. The Data Agent runs on the trusted in
 [privacy]
 mode = "hybrid"
 
-[privacy.endpoints.trusted]
+[privacy.endpoints.private]
 base_url = "https://secure-ai.university.edu/v1"
 api_key_env = "UNI_API_KEY"
 
 [runtime.models.data_agent]
-endpoint = "trusted"
+endpoint = "private"
 ```
 
 ### GDPR compliance
@@ -228,15 +248,15 @@ model = "claude-haiku-4-5"
 model = "claude-haiku-4-5"
 ```
 
-### Fully local
+### Fully private
 
-Run everything on your own hardware with no cloud dependency:
+Run everything on your own hardware or institutional server with no external cloud dependency:
 
 ```toml
 [privacy]
-mode = "local"
+mode = "private"
 
-[privacy.endpoints.local]
+[privacy.endpoints.private]
 base_url = "http://localhost:11434"
 
 [runtime]
@@ -256,9 +276,9 @@ model = "llama3:70b"
 3. **Configure the endpoint** in your project's `urika.toml`:
    ```toml
    [privacy]
-   mode = "local"
+   mode = "private"
 
-   [privacy.endpoints.local]
+   [privacy.endpoints.private]
    base_url = "http://localhost:11434"
 
    [runtime]
@@ -276,6 +296,7 @@ Larger models (70B+ parameters) are recommended for the Task Agent and Tool Buil
 ## Important Notes
 
 - **Installation does not change.** Model and privacy configuration is entirely per-project, set in `urika.toml`.
-- **Different projects can have different settings.** One project can run fully local while another uses cloud models.
-- **Default behavior is unchanged.** If you do not add `[privacy]` or `[runtime]` sections to `urika.toml`, everything runs on the cloud Anthropic API as before.
+- **Different projects can have different settings.** One project can run fully private while another uses open cloud models.
+- **Default behavior is unchanged.** If you do not add `[privacy]` or `[runtime]` sections to `urika.toml`, everything runs on the Anthropic API as before.
+- **What needs to be private stays private.** You control exactly which agents access which endpoints. The hybrid default covers most cases, but full customization is available.
 - **Currently only Claude Agent SDK is supported.** OpenAI Agents SDK, Google ADK, and Pi coding agent adapters are planned for upcoming releases.

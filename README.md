@@ -11,7 +11,9 @@
 
 ---
 
-Urika uses multiple AI agents (powered by Claude) to autonomously explore analytical approaches for your dataset and research question. It creates experiments, tries different methods, evaluates results, and documents everything in a structured projectbook.
+Urika uses multiple AI agents to autonomously explore analytical approaches for your dataset and research question. It creates experiments, tries different methods, evaluates results, and documents everything in a structured projectbook.
+
+Currently supports the **Claude Agent SDK** (Anthropic). Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **Pi** (for local models via Ollama) are planned for upcoming releases.
 
 ## Installation
 
@@ -76,11 +78,11 @@ See [Agent System](docs/06-agent-system.md) for details on each agent role.
 
 Each project can configure which models and endpoints its agents use. Three privacy modes:
 
-- **Cloud** (default) -- all agents use Claude via Anthropic API
-- **Local** -- all agents use local models via Ollama for full data privacy
-- **Hybrid** -- a local Data Agent reads raw data and outputs sanitized summaries; all other agents run on cloud models for maximum analytical power while keeping sensitive data on-machine
+- **Open** (default) -- all agents use cloud models via API. No restrictions.
+- **Private** -- all agents use private endpoints only. This can be local models (Ollama), a secure institutional server, or any combination -- whatever stays within your data governance boundary.
+- **Hybrid** -- a private Data Agent reads raw data and outputs sanitized summaries; all other agents run on cloud models for maximum analytical power. Raw data never leaves your private environment. The default hybrid split covers most cases, but you can customize which agents use which endpoints to ensure what needs to be private stays private.
 
-Per-agent model routing lets you optimize for cost (Haiku for simple tasks, Opus for complex reasoning) or compliance (institutional servers for data access, cloud for method design).
+Per-agent model routing lets you optimize for cost (Haiku for simple tasks, Opus for complex reasoning) or compliance (institutional servers for data access, cloud for method design). Different projects can have completely different privacy and model settings.
 
 Currently supports Claude Agent SDK. OpenAI, Google, and Pi adapters are planned for upcoming releases.
 

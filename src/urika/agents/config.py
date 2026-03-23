@@ -73,7 +73,7 @@ class EndpointConfig:
 class AgentModelConfig:
     """Per-agent model and endpoint assignment."""
 
-    endpoint: str = "cloud"  # name from [privacy.endpoints]
+    endpoint: str = "open"  # name from [privacy.endpoints]
     model: str = ""  # model name, empty = use default
 
 
@@ -84,7 +84,7 @@ class RuntimeConfig:
     backend: str = "claude"
     model: str = ""
     model_overrides: dict[str, AgentModelConfig] = field(default_factory=dict)
-    privacy_mode: str = "cloud"  # cloud | local | hybrid
+    privacy_mode: str = "open"  # open | private | hybrid
     endpoints: dict[str, EndpointConfig] = field(default_factory=dict)
 
 
@@ -107,7 +107,7 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
         for agent_name, agent_cfg in raw_models.items():
             if isinstance(agent_cfg, dict):
                 model_overrides[agent_name] = AgentModelConfig(
-                    endpoint=agent_cfg.get("endpoint", "cloud"),
+                    endpoint=agent_cfg.get("endpoint", "open"),
                     model=agent_cfg.get("model", ""),
                 )
             elif isinstance(agent_cfg, str):
@@ -128,7 +128,7 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
             backend=runtime.get("backend", "claude"),
             model=runtime.get("model", ""),
             model_overrides=model_overrides,
-            privacy_mode=privacy.get("mode", "cloud"),
+            privacy_mode=privacy.get("mode", "open"),
             endpoints=endpoints,
         )
     except Exception:
@@ -150,7 +150,7 @@ def build_agent_env_for_endpoint(
     """Build environment dict for an agent based on privacy/endpoint config.
 
     Combines venv env (if enabled) with endpoint env (base_url, api_key).
-    Returns None if using defaults (cloud, no venv).
+    Returns None if using defaults (open, no venv).
     """
     import os
 
@@ -168,18 +168,18 @@ def build_agent_env_for_endpoint(
 
     # Determine which endpoint this agent should use
     agent_config = runtime_config.model_overrides.get(agent_name)
-    endpoint_name = "cloud"
+    endpoint_name = "open"
     if agent_config:
         endpoint_name = agent_config.endpoint
-    elif runtime_config.privacy_mode == "local":
-        endpoint_name = "local"
+    elif runtime_config.privacy_mode == "private":
+        endpoint_name = "private"
     elif runtime_config.privacy_mode == "hybrid":
-        # Default hybrid assignments — data_agent and tool_builder run locally
-        _LOCAL_AGENTS = {"data_agent", "tool_builder"}
-        if agent_name in _LOCAL_AGENTS:
-            endpoint_name = "local"
+        # Default hybrid: data_agent and tool_builder use private endpoint
+        _PRIVATE_AGENTS = {"data_agent", "tool_builder"}
+        if agent_name in _PRIVATE_AGENTS:
+            endpoint_name = "private"
 
-    if endpoint_name != "cloud":
+    if endpoint_name != "open":
         endpoint = runtime_config.endpoints.get(endpoint_name)
         if endpoint:
             if env is None:
