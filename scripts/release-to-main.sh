@@ -17,6 +17,8 @@ DEV_ONLY=(
     "docs/.archive"
     "current-status.md"
     "tests"
+    "CLAUDE.md"
+    "scripts"
 )
 
 for path in "${DEV_ONLY[@]}"; do
