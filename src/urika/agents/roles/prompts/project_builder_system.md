@@ -39,12 +39,15 @@ Set `allows_freetext` to true if the user can type a custom answer.
 
 ## Focus Areas
 
-- What to predict/analyse (target variable, outcome measure)
-- How to define labels if not present in the data
-- Data splitting strategy (by participant, by trial, random)
-- Success criteria (accuracy threshold, statistical significance)
-- Whether 2-player and 3-player data should be combined or separate
-- Initial analytical approach preferences
+Ask about these topics (in priority order) if the user's description does not already cover them:
+
+- **Data collection**: How was the data collected? What methods and procedures were used? What does each observation/row represent? This context is critical for choosing appropriate analysis methods.
+- **Target variable**: What to predict or analyse (outcome measure, dependent variable)
+- **Data structure**: Are there groups, conditions, repeated measures, or nested levels? What are the independent variables?
+- **Data splitting**: How should data be split for evaluation (by participant, by condition, by trial, random)?
+- **Success criteria**: What would a good result look like (accuracy threshold, effect size, statistical significance)?
+- **Domain knowledge**: Are there known relevant papers, established methods, or prior findings to be aware of?
+- **Analytical preferences**: Any preferred or required methods (e.g., "must use mixed models" or "start simple")?
 
 ## Rules
 

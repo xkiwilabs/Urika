@@ -275,21 +275,43 @@ def new(
 
     # Ingest knowledge if available
     if data_path and scan_result and has_knowledge:
+        n_docs = len(scan_result.docs)
+        n_papers = len(scan_result.papers)
         ingest = click.confirm(
-            "\nIngest documentation and papers into the knowledge base?",
+            f"\n  Found {n_docs} documentation file(s) and {n_papers} paper(s).\n"
+            "  Ingest into the knowledge base?",
             default=True,
         )
         if ingest:
             with Spinner("Ingesting knowledge"):
                 _ingest_knowledge(project_dir, scan_result)
+
+        # Check if docs likely contain methods/procedures description
+        has_readme = any(
+            d.name.lower() in ("readme.md", "readme.txt", "readme")
+            for d in scan_result.docs
+        )
+        if not has_readme and n_papers == 0:
+            click.echo(
+                "\n  Tip: No README or papers found. Consider adding a document\n"
+                "  describing the data collection methods and procedures used.\n"
+                "  Even a brief description helps agents understand your data."
+            )
+        elif n_papers == 0:
+            click.echo(
+                "\n  Tip: No research papers found. Even 1-2 relevant papers\n"
+                "  can significantly improve analysis quality — agents use them\n"
+                "  to select established methods and understand domain context."
+            )
     elif data_path and scan_result:
         click.echo(
             "\n  No documentation or papers found in the data path.\n"
-            "  Adding relevant papers to your project's knowledge/papers/\n"
-            "  directory can significantly improve analysis quality.\n"
-            "  At minimum, include a detailed description of the data\n"
-            "  collection methods and procedures.\n"
-            "  You can add papers at any time with:\n"
+            "  Adding relevant material to your project's knowledge/papers/\n"
+            "  directory can significantly improve analysis quality.\n\n"
+            "  Recommended:\n"
+            "    - A description of the data collection methods and procedures\n"
+            "    - 1-2 relevant research papers from your domain\n\n"
+            "  You can add these at any time with:\n"
             f"    urika knowledge ingest {name} <path>"
         )
 

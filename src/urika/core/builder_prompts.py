@@ -54,7 +54,11 @@ def build_scoping_prompt(
         parts.extend(["## Previous Answers", context, ""])
 
     parts.append(
-        "Based on the above, generate the next clarifying question to scope this project."
+        "Based on the above, generate the next clarifying question to scope this project.\n\n"
+        "If the user has not yet described how the data was collected (the methods and "
+        "procedures used), ask about this early — it is critical context for selecting "
+        "appropriate analysis methods. Also ask about domain knowledge: are there relevant "
+        "papers or established methods the agents should know about?"
     )
     return "\n".join(parts)
 
