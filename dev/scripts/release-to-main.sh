@@ -29,16 +29,20 @@ DEV_SHA=$(git rev-parse --short HEAD)
 
 git checkout main
 
+# Clean public-facing directories on main before syncing from dev.
+# This ensures renamed/deleted files don't linger on main.
+git rm -rq src/ docs/ 2>/dev/null || true
+
 # Checkout all public-facing files from dev
-# Source code
 git checkout dev -- src/
-# Documentation (but not dev/)
 git checkout dev -- docs/ 2>/dev/null || true
-# Config files
 git checkout dev -- pyproject.toml
 git checkout dev -- README.md
 git checkout dev -- LICENSE
 git checkout dev -- .gitignore
+
+# Remove dev-only files that came along with docs/
+git rm -rq docs/tutorials/ 2>/dev/null || true
 
 # Stage everything
 git add -A
