@@ -359,6 +359,123 @@ def cmd_methods(session: ReplSession, args: str) -> None:
     click.echo()
 
 
+@command("results", requires_project=True, description="Show project results/leaderboard")
+def cmd_results(session: ReplSession, args: str) -> None:
+    from urika.evaluation.leaderboard import load_leaderboard
+    from urika.core.experiment import list_experiments
+    from urika.core.progress import load_progress
+
+    leaderboard = load_leaderboard(session.project_path)
+    ranking = leaderboard.get("ranking", [])
+
+    if ranking:
+        click.echo(f"\n  {_C.BOLD}Leaderboard:{_C.RESET}")
+        for entry in ranking:
+            metrics_str = ", ".join(
+                f"{k}={v}" for k, v in entry.get("metrics", {}).items()
+            )
+            click.echo(f"    #{entry['rank']}  {entry['method']}  {metrics_str}")
+        click.echo()
+        return
+
+    # No leaderboard — show runs from the most recent experiment
+    experiments = list_experiments(session.project_path)
+    if not experiments:
+        click.echo("  No results yet.")
+        return
+
+    exp = experiments[-1]
+    progress = load_progress(session.project_path, exp.experiment_id)
+    runs = progress.get("runs", [])
+    if not runs:
+        click.echo("  No results yet.")
+        return
+
+    click.echo(f"\n  {_C.BOLD}Runs for {exp.experiment_id}:{_C.RESET}")
+    for run in runs:
+        metrics_str = ", ".join(
+            f"{k}={v}" for k, v in run.get("metrics", {}).items()
+        )
+        click.echo(f"    {run['run_id']}  {run['method']}  {metrics_str}")
+    click.echo()
+
+
+@command("tools", description="List available tools")
+def cmd_tools(session: ReplSession, args: str) -> None:
+    from urika.tools import ToolRegistry
+
+    registry = ToolRegistry()
+    registry.discover()
+
+    # Also discover project-specific tools if a project is loaded
+    if session.has_project:
+        registry.discover_project(session.project_path / "tools")
+
+    names = registry.list_all()
+    if not names:
+        click.echo("  No tools found.")
+        return
+
+    click.echo()
+    for name in names:
+        tool = registry.get(name)
+        if tool is not None:
+            click.echo(f"    {tool.name()}  [{tool.category()}]  {tool.description()}")
+    click.echo()
+
+
+@command("resume", requires_project=True, description="Resume a paused/failed experiment")
+def cmd_resume(session: ReplSession, args: str) -> None:
+    from urika.core.experiment import list_experiments
+    from urika.core.progress import load_progress
+
+    experiments = list_experiments(session.project_path)
+    resumable = []
+    for exp in experiments:
+        progress = load_progress(session.project_path, exp.experiment_id)
+        status = progress.get("status", "pending")
+        if status in ("paused", "failed"):
+            resumable.append((exp, status))
+
+    if not resumable:
+        click.echo("  No paused or failed experiments to resume.")
+        return
+
+    # If multiple, let user pick; if one, use it directly
+    if len(resumable) == 1:
+        exp, status = resumable[0]
+        click.echo(f"  Resuming {exp.experiment_id} [{status}]...")
+    else:
+        options = [
+            f"{exp.experiment_id} [{status}]" for exp, status in resumable
+        ]
+        choice = _prompt_numbered("\n  Select experiment to resume:", options, default=1)
+        exp_id = choice.split(" [")[0]
+        click.echo(f"  Resuming {exp_id}...")
+        # Find matching exp
+        exp = next(e for e, _s in resumable if e.experiment_id == exp_id)
+
+    import os
+
+    os.environ["URIKA_REPL"] = "1"
+    try:
+        from urika.cli import run as cli_run
+
+        ctx = click.Context(cli_run)
+        ctx.invoke(
+            cli_run,
+            project=session.project_name,
+            experiment_id=exp.experiment_id,
+            max_turns=50,
+            resume=True,
+            quiet=False,
+            auto=False,
+            instructions="",
+        )
+    finally:
+        os.environ.pop("URIKA_REPL", None)
+
+
 @command("criteria", requires_project=True, description="Show current criteria")
 def cmd_criteria(session: ReplSession, args: str) -> None:
     from urika.core.criteria import load_criteria

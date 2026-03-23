@@ -920,7 +920,7 @@ def _determine_next_experiment(
 @click.option(
     "--experiment", "experiment_id", default=None, help="Experiment ID to run."
 )
-@click.option("--max-turns", default=50, help="Maximum orchestrator turns.")
+@click.option("--max-turns", default=None, type=int, help="Maximum orchestrator turns.")
 @click.option(
     "--continue",
     "resume",
@@ -949,7 +949,7 @@ def _determine_next_experiment(
 def run(
     project: str,
     experiment_id: str | None,
-    max_turns: int,
+    max_turns: int | None,
     resume: bool,
     quiet: bool,
     auto: bool,
@@ -982,6 +982,23 @@ def run(
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # If --max-turns was not explicitly provided, read from urika.toml
+    if max_turns is None:
+        import tomllib
+
+        toml_path = project_path / "urika.toml"
+        if toml_path.exists():
+            try:
+                with open(toml_path, "rb") as f:
+                    data = tomllib.load(f)
+                max_turns = data.get("preferences", {}).get(
+                    "max_turns_per_experiment", 5
+                )
+            except Exception:
+                max_turns = 5
+        else:
+            max_turns = 5
 
     # Show header (skip if called from REPL — already has header)
     if not os.environ.get("URIKA_REPL"):
@@ -1263,9 +1280,12 @@ def report(project: str, experiment_id: str | None) -> None:
 
     if experiment_id == "project":
         # Project-level reports
+        from urika.core.readme_generator import write_readme
+
         try:
             generate_results_summary(project_path)
             generate_key_findings(project_path)
+            write_readme(project_path)
         except FileNotFoundError as exc:
             raise click.ClickException(str(exc))
 
@@ -1278,8 +1298,10 @@ def report(project: str, experiment_id: str | None) -> None:
 
         results_path = project_path / "projectbook" / "results-summary.md"
         findings_path = project_path / "projectbook" / "key-findings.md"
+        readme_path = project_path / "README.md"
         click.echo(f"Generated: {results_path}")
         click.echo(f"Generated: {findings_path}")
+        click.echo(f"Generated: {readme_path}")
 
         # Call report agent for project-level narrative
         narrative = _run_report_agent(
@@ -1543,9 +1565,23 @@ def advisor(project: str | None, text: str | None) -> None:
     print_agent("advisor_agent")
     config = role.build_config(project_dir=project_path, experiment_id="")
 
+    # Build richer context (like REPL's _handle_free_text)
+    import json as _json
+
+    context = f"Project: {project}\n"
+    context += f"\nUser: {text}\n"
+    methods_path = project_path / "methods.json"
+    if methods_path.exists():
+        try:
+            mdata = _json.loads(methods_path.read_text())
+            mlist = mdata.get("methods", [])
+            context += f"\n{len(mlist)} methods tried.\n"
+        except Exception:
+            pass
+
     with Spinner("Thinking"):
         result = asyncio.run(
-            runner.run(config, text, on_message=_make_on_message())
+            runner.run(config, context, on_message=_make_on_message())
         )
 
     if result.success and result.text_output:
@@ -1594,6 +1630,56 @@ def evaluate(project: str | None, experiment_id: str | None) -> None:
             runner.run(
                 config,
                 f"Evaluate experiment {experiment_id}.",
+                on_message=_make_on_message(),
+            )
+        )
+
+    if result.success and result.text_output:
+        click.echo(f"\n{result.text_output.strip()}\n")
+    else:
+        click.echo(f"Error: {result.error}")
+
+
+@cli.command()
+@click.argument("project", required=False, default=None)
+@click.argument("experiment_id", required=False, default=None)
+def plan(project: str | None, experiment_id: str | None) -> None:
+    """Run the planning agent to design the next method."""
+    import asyncio
+
+    from urika.cli_display import Spinner, print_agent
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    if experiment_id is None:
+        experiments = list_experiments(project_path)
+        if not experiments:
+            raise click.ClickException("No experiments.")
+        experiment_id = experiments[-1].experiment_id
+
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.registry import AgentRegistry
+    except ImportError:
+        raise click.ClickException("Claude Agent SDK not installed.")
+
+    runner = ClaudeSDKRunner()
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get("planning_agent")
+    if role is None:
+        raise click.ClickException("Planning agent not found.")
+
+    print_agent("planning_agent")
+    config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
+
+    click.echo(f"  Planning for {experiment_id}...")
+    with Spinner("Designing method"):
+        result = asyncio.run(
+            runner.run(
+                config,
+                "Design the next method based on current results.",
                 on_message=_make_on_message(),
             )
         )
