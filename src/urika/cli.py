@@ -317,24 +317,11 @@ def new(
     builder.web_search = web_search
     builder.use_venv = use_venv
 
-    # --- Interactive agent loop ---
-    print_agent("project_builder")
-    try:
-        _run_builder_agent_loop(
-            builder,
-            scan_result,
-            data_summary,
-            description or "",
-            question,
-            extra_profiles=extra_profiles if data_path else None,
-        )
-    except Exception as exc:
-        print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
-
+    # Write project files first so knowledge can be ingested
     with Spinner("Writing project files"):
         project_dir = builder.write_project()
 
-    # Ingest knowledge if available
+    # Ingest knowledge BEFORE agent Q&A — agents benefit from domain context
     if data_path and scan_result and has_knowledge:
         n_docs = len(scan_result.docs)
         n_papers = len(scan_result.papers)
@@ -375,6 +362,20 @@ def new(
             "  You can add these at any time with:\n"
             f"    urika knowledge ingest {name} <path>"
         )
+
+    # --- Interactive agent loop (after knowledge is available) ---
+    print_agent("project_builder")
+    try:
+        _run_builder_agent_loop(
+            builder,
+            scan_result,
+            data_summary,
+            description or "",
+            question,
+            extra_profiles=extra_profiles if data_path else None,
+        )
+    except Exception as exc:
+        print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
 
     registry = ProjectRegistry()
     registry.register(name, project_dir)
