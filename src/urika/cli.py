@@ -1753,6 +1753,59 @@ def plan(project: str | None, experiment_id: str | None) -> None:
         click.echo(f"Error: {result.error}")
 
 
+@cli.command("build-tool")
+@click.argument("project", required=False, default=None)
+@click.argument("instructions", required=False, default=None)
+def build_tool(project: str | None, instructions: str | None) -> None:
+    """Build a custom tool for the project.
+
+    Give the tool builder agent instructions to create a specific tool,
+    install a package, or build a data reader. Examples:
+
+    \b
+      urika build-tool my-project "create an EEG epoch extractor using MNE"
+      urika build-tool my-project "build a tool that computes ICC using pingouin"
+      urika build-tool my-project "install librosa and create an audio feature extractor"
+    """
+    import asyncio
+
+    from urika.cli_display import Spinner, print_agent
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    if instructions is None:
+        instructions = click.prompt(
+            "Describe the tool to build (e.g., 'create a correlation heatmap tool using seaborn')"
+        ).strip()
+
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.registry import AgentRegistry
+    except ImportError:
+        raise click.ClickException("Claude Agent SDK not installed.")
+
+    runner = ClaudeSDKRunner()
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get("tool_builder")
+    if role is None:
+        raise click.ClickException("Tool builder agent not found.")
+
+    print_agent("tool_builder")
+    config = role.build_config(project_dir=project_path)
+
+    with Spinner("Building tool"):
+        result = asyncio.run(
+            runner.run(config, instructions, on_message=_make_on_message())
+        )
+
+    if result.success and result.text_output:
+        click.echo(f"\n{result.text_output.strip()}\n")
+    else:
+        click.echo(f"Error: {result.error}")
+
+
 @cli.command()
 @click.argument("project", required=False, default=None)
 def present(project: str | None) -> None:

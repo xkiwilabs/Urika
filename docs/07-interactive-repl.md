@@ -128,6 +128,7 @@ These require a project to be loaded first. Running them without a project shows
 | `/plan [experiment_id]` | Run the planning agent to design the next method. Includes conversation context if available. |
 | `/present [experiment_id]` | Generate a reveal.js presentation. Prompts to choose: specific experiment, all experiments, or project-level. |
 | `/report [experiment_id]` | Generate labbook reports. Prompts to choose: specific experiment, all experiments, or project-level. Produces notes, summary, and agent-written narrative. |
+| `/build-tool <instructions>` | Build a custom tool. E.g., `/build-tool create an EEG epoch extractor using MNE` or `/build-tool install mediapipe and add a tool that extracts facial pose data from video`. |
 | `/resume` | Resume a paused or failed experiment. Lists resumable experiments and lets you pick which to continue. |
 
 

@@ -300,7 +300,62 @@ Logistic regression for binary and multiclass classification using scikit-learn.
 
 ## Project-Specific Tools
 
-Beyond the 16 built-in tools, the **tool builder** agent can create project-specific tools during experiments. These are Python files placed in the project's `tools/` directory. Each must follow the same pattern:
+Beyond the 16 built-in tools, the **tool builder** agent can create project-specific tools. There are two ways to trigger this:
+
+### 1. Automatically during experiments
+
+When the planning agent identifies a need that built-in tools don't cover, it flags `needs_tool: true` and the tool builder is called automatically.
+
+### 2. Directly via command
+
+You can request specific tools at any time:
+
+```bash
+# Neuroscience
+urika build-tool my-project "create an EEG epoch extractor using MNE"
+
+# Statistics
+urika build-tool my-project "build a tool that computes ICC using pingouin"
+
+# Audio / speech
+urika build-tool my-project "install librosa and create an audio feature extractor"
+
+# Computer vision / motion capture
+urika build-tool my-project "install mediapipe and add a tool that extracts facial pose data from video"
+
+# NLP / text analysis
+urika build-tool my-project "install sentence-transformers and build a tool that extracts word embeddings"
+
+# Image annotation / object detection
+urika build-tool my-project "install ultralytics and create a tool that detects and annotates people in images using YOLOv8"
+
+# Genomics
+urika build-tool my-project "install biopython and create a sequence alignment tool"
+
+# Geospatial
+urika build-tool my-project "install geopandas and build a spatial clustering tool"
+
+# Climate / environmental
+urika build-tool my-project "install xarray and create a NetCDF climate data loader"
+```
+
+```
+# REPL examples
+/build-tool create a correlation heatmap tool using seaborn
+/build-tool build a data loader for our custom HDF5 format
+/build-tool install spacy and create a named entity extraction tool
+/build-tool install parselmouth and build a tool that extracts speech acoustics (pitch, formants)
+```
+
+You can also ask the advisor agent conversationally and it will route to the tool builder:
+
+```
+urika:my-project> I need a tool that computes inter-rater reliability
+```
+
+### Tool structure
+
+Project-specific tools are Python files placed in the project's `tools/` directory. Each must follow the same pattern:
 
 ```python
 # my_project/tools/custom_metric.py

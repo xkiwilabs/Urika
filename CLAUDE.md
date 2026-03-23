@@ -33,10 +33,10 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Core Modules
 
-- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`, `advisor`, `evaluate`, `present`, `plan`, `criteria`, `usage`
+- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`, `advisor`, `evaluate`, `present`, `plan`, `build-tool`, `criteria`, `usage`
 - `src/urika/cli_display.py` — Terminal display: colors, spinners, ThinkingPanel, agent labels, ASCII header
 - `src/urika/repl.py` — Interactive REPL shell with prompt_toolkit, tab completion, slash commands
-- `src/urika/repl_commands.py` — REPL slash command handlers (/run, /project, /report, /present, /advisor, /evaluate, /plan, /results, /tools, /resume, etc.)
+- `src/urika/repl_commands.py` — REPL slash command handlers (/run, /project, /report, /present, /advisor, /evaluate, /plan, /build-tool, /results, /tools, /resume, etc.)
 - `src/urika/repl_session.py` — REPL session state: project context, advisor conversation history
 - `src/urika/core/models.py` — Data models: `ProjectConfig`, `ExperimentConfig`, `RunRecord`, `SessionState`
 - `src/urika/core/registry.py` — Central project registry at `~/.urika/projects.json`

@@ -798,6 +798,26 @@ def cmd_plan(session: ReplSession, args: str) -> None:
     _run_single_agent(session, "planning_agent", exp_id, context)
 
 
+@command(
+    "build-tool",
+    requires_project=True,
+    description="Build a custom tool for the project",
+)
+def cmd_build_tool(session: ReplSession, args: str) -> None:
+    instructions = args.strip()
+    if not instructions:
+        click.echo(
+            "  Usage: /build-tool <instructions>\n"
+            "  Examples:\n"
+            "    /build-tool create an EEG epoch extractor using MNE\n"
+            "    /build-tool build a tool that computes ICC using pingouin\n"
+            "    /build-tool install librosa and create an audio feature extractor"
+        )
+        return
+
+    _run_single_agent(session, "tool_builder", "", instructions)
+
+
 def _run_single_agent(
     session: ReplSession, agent_name: str, experiment_id: str, prompt: str
 ) -> str:

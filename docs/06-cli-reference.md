@@ -378,6 +378,31 @@ urika plan [PROJECT] [EXPERIMENT_ID]
 | `EXPERIMENT_ID` | Experiment to plan for (defaults to most recent) |
 
 
+### `urika build-tool`
+
+Build a custom tool for the project. The tool builder agent creates a Python module in the project's `tools/` directory based on your instructions.
+
+```
+urika build-tool [PROJECT] [INSTRUCTIONS]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `PROJECT` | Project name (prompted if omitted) |
+| `INSTRUCTIONS` | What tool to build (prompted if omitted) |
+
+**Examples:**
+
+```bash
+urika build-tool my-project "create an EEG epoch extractor using MNE"
+urika build-tool my-project "build a tool that computes ICC using pingouin"
+urika build-tool my-project "install librosa and create an audio feature extractor"
+```
+
+---
+
 ## Knowledge
 
 ### `urika knowledge ingest`
