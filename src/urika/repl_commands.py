@@ -302,22 +302,51 @@ def cmd_criteria(session: ReplSession, args: str) -> None:
     click.echo()
 
 
+def _pick_experiment(
+    session: ReplSession, args: str, allow_all: bool = False
+) -> str | None:
+    """Prompt user to pick an experiment. Returns exp_id or 'all' or None."""
+    from urika.core.experiment import list_experiments
+    from urika.core.progress import load_progress
+
+    exp_id = args.strip()
+    if exp_id:
+        return exp_id
+
+    experiments = list_experiments(session.project_path)
+    if not experiments:
+        click.echo("  No experiments.")
+        return None
+
+    # Build options — most recent first
+    reversed_exps = list(reversed(experiments))
+    options = []
+    for exp in reversed_exps:
+        progress = load_progress(session.project_path, exp.experiment_id)
+        status = progress.get("status", "pending")
+        runs = len(progress.get("runs", []))
+        options.append(f"{exp.experiment_id} [{status}, {runs} runs]")
+    if allow_all:
+        options.append("All experiments (project-level report)")
+
+    choice = _prompt_numbered("\n  Select experiment:", options, default=1)
+
+    if choice.startswith("All"):
+        return "all"
+
+    # Extract exp_id from the choice string
+    return choice.split(" [")[0]
+
+
 @command(
     "present",
     requires_project=True,
     description="Generate presentation for an experiment",
 )
 def cmd_present(session: ReplSession, args: str) -> None:
-    exp_id = args.strip()
-    if not exp_id:
-        # Use latest experiment
-        from urika.core.experiment import list_experiments
-
-        experiments = list_experiments(session.project_path)
-        if not experiments:
-            click.echo("  No experiments.")
-            return
-        exp_id = experiments[-1].experiment_id
+    exp_id = _pick_experiment(session, args)
+    if exp_id is None:
+        return
 
     click.echo(f"  Generating presentation for {exp_id}...")
     try:
@@ -343,29 +372,53 @@ def cmd_present(session: ReplSession, args: str) -> None:
 
 @command("report", requires_project=True, description="Generate reports")
 def cmd_report(session: ReplSession, args: str) -> None:
+    exp_choice = _pick_experiment(session, args, allow_all=True)
+    if exp_choice is None:
+        return
+
     from urika.core.labbook import (
         generate_experiment_summary,
         generate_key_findings,
         generate_results_summary,
         update_experiment_notes,
     )
-    from urika.core.experiment import list_experiments
     from urika.core.readme_generator import write_readme
 
-    click.echo("  Generating reports...")
-    for exp in list_experiments(session.project_path):
+    if exp_choice == "all":
+        click.echo("  Generating project-level reports...")
+        from urika.core.experiment import list_experiments
+
+        for exp in list_experiments(session.project_path):
+            try:
+                update_experiment_notes(session.project_path, exp.experiment_id)
+                generate_experiment_summary(session.project_path, exp.experiment_id)
+            except Exception:
+                pass
         try:
-            update_experiment_notes(session.project_path, exp.experiment_id)
-            generate_experiment_summary(session.project_path, exp.experiment_id)
+            generate_results_summary(session.project_path)
+            generate_key_findings(session.project_path)
+            write_readme(session.project_path)
         except Exception:
             pass
-    try:
-        generate_results_summary(session.project_path)
-        generate_key_findings(session.project_path)
-        write_readme(session.project_path)
-    except Exception:
-        pass
-    click.echo("  \u2713 Reports updated")
+        click.echo("  \u2713 All reports updated")
+    else:
+        click.echo(f"  Generating report for {exp_choice}...")
+        try:
+            update_experiment_notes(session.project_path, exp_choice)
+            generate_experiment_summary(session.project_path, exp_choice)
+            summary_path = (
+                session.project_path
+                / "experiments"
+                / exp_choice
+                / "labbook"
+                / "summary.md"
+            )
+            link = _file_link(
+                summary_path, f"experiments/{exp_choice}/labbook/summary.md"
+            )
+            click.echo(f"  \u2713 Report: {link}")
+        except Exception as exc:
+            click.echo(f"  \u2717 Error: {exc}")
 
 
 @command("inspect", requires_project=True, description="Inspect dataset")
