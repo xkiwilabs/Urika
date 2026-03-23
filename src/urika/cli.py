@@ -38,6 +38,34 @@ def _resolve_project(name: str) -> tuple[Path, ProjectConfig]:
     return project_path, config
 
 
+def _ensure_project(project: str | None) -> str:
+    """If project is None, prompt user to pick from registered projects."""
+    if project:
+        return project
+    registry = ProjectRegistry()
+    projects = registry.list_all()
+    if not projects:
+        raise click.ClickException("No projects registered. Create one with: urika new")
+    names = list(projects.keys())
+    if len(names) == 1:
+        return names[0]
+    click.echo("\n  Select project:")
+    for i, name in enumerate(names, 1):
+        marker = " (default)" if i == 1 else ""
+        click.echo(f"    {i}. {name}{marker}")
+    while True:
+        raw = click.prompt("  Choice", default="1").strip()
+        try:
+            idx = int(raw)
+            if 1 <= idx <= len(names):
+                return names[idx - 1]
+        except ValueError:
+            # Try as project name
+            if raw in names:
+                return raw
+        click.echo(f"  Please enter 1-{len(names)} or a project name.")
+
+
 @click.group(invoke_without_command=True)
 @click.version_option(package_name="urika")
 @click.pass_context
@@ -557,20 +585,22 @@ def experiment() -> None:
 
 
 @experiment.command("create")
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.argument("name")
 @click.option("--hypothesis", default="", help="Experiment hypothesis.")
 def experiment_create(project: str, name: str, hypothesis: str) -> None:
     """Create a new experiment in a project."""
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
     exp = create_experiment(project_path, name=name, hypothesis=hypothesis)
     click.echo(f"{exp.experiment_id}")
 
 
 @experiment.command("list")
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 def experiment_list(project: str) -> None:
     """List experiments in a project."""
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
     experiments = list_experiments(project_path)
 
@@ -586,7 +616,7 @@ def experiment_list(project: str) -> None:
 
 
 @cli.command()
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.option(
     "--experiment",
     "experiment_id",
@@ -595,6 +625,7 @@ def experiment_list(project: str) -> None:
 )
 def results(project: str, experiment_id: str | None) -> None:
     """Show project results (leaderboard or experiment runs)."""
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
     if experiment_id is not None:
@@ -623,11 +654,12 @@ def results(project: str, experiment_id: str | None) -> None:
 
 
 @cli.command()
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 def methods(project: str) -> None:
     """List agent-created methods in a project."""
     from urika.methods import MethodRegistry
 
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
     registry = MethodRegistry()
     registry.discover_project(project_path / "methods")
@@ -878,7 +910,7 @@ def _determine_next_experiment(
 
 
 @cli.command()
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.option(
     "--experiment", "experiment_id", default=None, help="Experiment ID to run."
 )
@@ -942,6 +974,7 @@ def run(
 
     from urika.cli_display import thinking_phrase
 
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
     # Show header (skip if called from REPL — already has header)
@@ -1101,7 +1134,7 @@ def run(
 
 
 @cli.command()
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.option(
     "--experiment",
     "experiment_id",
@@ -1117,6 +1150,7 @@ def report(project: str, experiment_id: str | None) -> None:
         update_experiment_notes,
     )
 
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
     if experiment_id is not None:
@@ -1154,7 +1188,7 @@ def report(project: str, experiment_id: str | None) -> None:
 
 
 @cli.command()
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.option(
     "--data", "data_file", default=None, help="Specific data file to inspect."
 )
@@ -1162,6 +1196,7 @@ def inspect(project: str, data_file: str | None) -> None:
     """Inspect project data: schema, dtypes, missing values, preview."""
     from urika.data.loader import load_dataset
 
+    project = _ensure_project(project)
     project_path, config = _resolve_project(project)
 
     # Find data file
@@ -1212,7 +1247,7 @@ def inspect(project: str, data_file: str | None) -> None:
 
 
 @cli.command()
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.option(
     "--experiment", "experiment_id", default=None, help="Specific experiment."
 )
@@ -1220,6 +1255,7 @@ def logs(project: str, experiment_id: str | None) -> None:
     """Show experiment run log."""
     from urika.core.session import load_session
 
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
     if experiment_id is None:
@@ -1260,12 +1296,13 @@ def knowledge() -> None:
 
 
 @knowledge.command("ingest")
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.argument("source")
 def knowledge_ingest(project: str, source: str) -> None:
     """Ingest a file or URL into the knowledge store."""
     from urika.knowledge import KnowledgeStore
 
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
     store = KnowledgeStore(project_path)
     try:
@@ -1276,12 +1313,13 @@ def knowledge_ingest(project: str, source: str) -> None:
 
 
 @knowledge.command("search")
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.argument("query")
 def knowledge_search(project: str, query: str) -> None:
     """Search the knowledge store."""
     from urika.knowledge import KnowledgeStore
 
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
     store = KnowledgeStore(project_path)
     results = store.search(query)
@@ -1296,11 +1334,12 @@ def knowledge_search(project: str, query: str) -> None:
 
 
 @knowledge.command("list")
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 def knowledge_list(project: str) -> None:
     """List all knowledge entries."""
     from urika.knowledge import KnowledgeStore
 
+    project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
     store = KnowledgeStore(project_path)
     entries = store.list_all()
