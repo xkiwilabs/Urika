@@ -227,6 +227,22 @@ def new(
             default=1,
         )
 
+    web_search = click.confirm(
+        "\nAllow agents to search the web for relevant papers?",
+        default=False,
+    )
+
+    click.echo(
+        "\n  Isolated environments prevent package conflicts between projects.\n"
+        "  Use one if agents will pip install large packages (e.g., torch,\n"
+        "  mne, transformers) or if you run multiple projects with different\n"
+        "  library versions."
+    )
+    use_venv = click.confirm(
+        "Create isolated environment for this project?",
+        default=False,
+    )
+
     source = Path(data_path) if data_path else None
     builder = ProjectBuilder(
         name=name,
@@ -294,27 +310,11 @@ def new(
                 formats = ", ".join(profile.get("formats", []))
                 print_success(f"{dtype.title()}: {count} files ({formats})")
 
-    # --- Web search and venv — ask before agent loop ---
+    # --- Set builder settings from earlier prompts ---
     builder.privacy_mode = privacy_mode_val
     builder.private_endpoint_url = private_endpoint_url
     builder.private_endpoint_key_env = private_endpoint_key_env
-
-    web_search = click.confirm(
-        "\nAllow agents to search the web for relevant papers?",
-        default=False,
-    )
     builder.web_search = web_search
-
-    click.echo(
-        "\n  Isolated environments prevent package conflicts between projects.\n"
-        "  Use one if agents will pip install large packages (e.g., torch,\n"
-        "  mne, transformers) or if you run multiple projects with different\n"
-        "  library versions."
-    )
-    use_venv = click.confirm(
-        "Create isolated environment for this project?",
-        default=False,
-    )
     builder.use_venv = use_venv
 
     # --- Interactive agent loop ---
