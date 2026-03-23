@@ -37,45 +37,61 @@ Your hardware needs depend on what kind of analysis you plan to do:
 pip install urika
 ```
 
-This installs the core platform with the Claude Agent SDK, statistical tools (numpy, pandas, scipy, scikit-learn), and all ten agent roles. Everything you need to get started.
+This installs the core platform with everything you need to get started:
 
-### With visualization
+| Package | What it provides |
+|---------|-----------------|
+| claude-agent-sdk | Agent runtime (all 10 agent roles) |
+| numpy, pandas | Data manipulation |
+| scipy | Scientific computing, statistical tests |
+| scikit-learn | ML basics: SVM, classification, clustering, regression, cross-validation, PCA, preprocessing, pipelines |
+| statsmodels | Advanced statistics: GLM, mixed effects, multilevel models, ARIMA, time series |
+| pingouin | Effect sizes, Bayesian tests, ICC, partial correlations |
 
-```bash
-pip install "urika[viz]"
-```
-
-Adds matplotlib and seaborn for chart generation.
-
-### With ML libraries
-
-```bash
-pip install "urika[ml]"
-```
-
-Adds xgboost and lightgbm for gradient boosting methods.
-
-### With knowledge/PDF support
+### Optional install groups
 
 ```bash
-pip install "urika[knowledge]"
+pip install "urika[viz]"          # visualization
+pip install "urika[ml]"           # machine learning
+pip install "urika[dl]"           # deep learning
+pip install "urika[knowledge]"    # PDF ingestion
+pip install "urika[all]"          # everything
 ```
 
-Adds pypdf for ingesting PDF research papers into the knowledge base.
+| Group | Packages | What it adds |
+|-------|----------|-------------|
+| `[viz]` | matplotlib, seaborn | Charts, plots, heatmaps |
+| `[ml]` | xgboost, lightgbm, optuna, shap, imbalanced-learn | Gradient boosting, hyperparameter tuning, model explainability, class imbalance handling |
+| `[dl]` | torch, transformers, sentence-transformers, torchvision, torchaudio, timm | Neural networks, LLM fine-tuning, text embeddings, image/audio models |
+| `[knowledge]` | pypdf | PDF paper ingestion into the knowledge base |
+| `[all]` | All of the above | Everything in one install |
 
-### Full dev install (everything)
+You can combine groups: `pip install "urika[ml,viz,knowledge]"`
 
+### Agents install packages automatically
+
+You don't need to install everything upfront. When agents need a package that isn't installed, they `pip install` it themselves during experiments. For example, if the advisor suggests trying an LSTM approach, the task agent will `pip install torch` automatically.
+
+You can also tell agents to install specific packages:
+
+**Via the advisor (conversational):**
+```
+urika:my-project> I want to use MNE for EEG analysis, can you set that up?
+```
+The advisor will route to the tool builder, which will `pip install mne` and create the appropriate tools.
+
+**Via the build-tool command (direct):**
 ```bash
-pip install -e ".[dev]"
+# CLI
+urika build-tool my-project "install mne and create an EEG epoch extraction tool"
+urika build-tool my-project "install lifelines and build a survival analysis tool"
+
+# REPL
+/build-tool install networkx and create a graph analysis tool
+/build-tool install geopandas and build a spatial clustering tool
 ```
 
-Includes pytest, pytest-asyncio, ruff, and pypdf.
-
-### Install everything at once
-
-```bash
-pip install "urika[agents,viz,ml,knowledge]"
-```
+The tool builder installs the package, creates a reusable tool that wraps it, and registers it so all agents can use it in subsequent experiments. If you have a project venv enabled, packages install into the project's isolated environment rather than the global one.
 
 ## Authentication
 
