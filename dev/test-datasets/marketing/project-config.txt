@@ -7,7 +7,7 @@
 marketing-test
 
 # Data path:
-dev/test-datasets/marketing/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/marketing/data
 
 # Description:
 Synthetic customer data simulating a retail company's customer relationship management (CRM)

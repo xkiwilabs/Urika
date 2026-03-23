@@ -7,7 +7,7 @@
 gene-expression-analysis
 
 # Data path:
-dev/test-datasets/gene-expression/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/gene-expression/data
 
 # Description:
 Gene expression microarray data from tumour and normal tissue samples. 80 tissue samples

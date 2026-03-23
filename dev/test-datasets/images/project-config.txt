@@ -7,7 +7,7 @@
 images-test
 
 # Data path:
-dev/test-datasets/images/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/images/data
 
 # Description:
 Tiny synthetic image classification dataset for testing Urika's source scanner, data

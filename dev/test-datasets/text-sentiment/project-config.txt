@@ -7,7 +7,7 @@
 text-sentiment-test
 
 # Data path:
-dev/test-datasets/text-sentiment/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/text-sentiment/data
 
 # Description:
 Synthetic product review dataset for binary sentiment classification. Each row contains a

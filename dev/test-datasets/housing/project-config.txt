@@ -7,7 +7,7 @@
 housing-test
 
 # Data path:
-dev/test-datasets/housing/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/housing/data
 
 # Description:
 The California Housing dataset from the 1990 U.S. Census, distributed via scikit-learn.

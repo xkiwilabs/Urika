@@ -7,7 +7,7 @@
 stroop-test
 
 # Data path:
-dev/test-datasets/stroop/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/stroop/data
 
 # Description:
 Reaction time data from a classic Stroop color-word interference experiment. Participants

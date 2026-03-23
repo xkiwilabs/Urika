@@ -7,7 +7,7 @@
 depression-test
 
 # Data path:
-dev/test-datasets/depression/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/depression/data
 
 # Description:
 Synthetic cross-sectional survey data modeled after clinical depression screening studies.

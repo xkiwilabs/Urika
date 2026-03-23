@@ -7,7 +7,7 @@
 energy-forecast-test
 
 # Data path:
-dev/test-datasets/energy-forecast/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/energy-forecast/data
 
 # Description:
 Hourly energy demand forecasting from a regional electricity grid over 2 years (2023-2024). The dataset contains 17,520 hourly observations of electricity demand in megawatts alongside weather covariates (temperature, wind speed, solar irradiance) and temporal features (hour, day of week, month, weekend indicator). Demand exhibits strong daily cycles (peak at 18:00, trough at 04:00), weekly patterns (lower weekends), annual seasonality (heating/cooling), a slight upward trend, and non-linear temperature effects (U-shaped — high demand at both temperature extremes). The goal is to build a forecasting model that predicts demand 24-48 hours ahead. This problem is well-suited to comparing traditional time series methods (ARIMA, Prophet), gradient boosting (XGBoost/LightGBM with lag features), recurrent neural networks (LSTM), and transformer architectures. The non-linear interactions and multiple seasonalities mean deep learning approaches should outperform simple linear models.

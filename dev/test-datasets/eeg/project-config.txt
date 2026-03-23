@@ -7,7 +7,7 @@
 eeg-motor-imagery
 
 # Data path:
-dev/test-datasets/eeg/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/eeg/data
 
 # Description:
 EEG motor imagery data from a brain-computer interface experiment. 10 participants performed

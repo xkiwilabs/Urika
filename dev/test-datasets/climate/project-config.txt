@@ -7,7 +7,7 @@
 co2-emissions-analysis
 
 # Data path:
-dev/test-datasets/climate/data/
+/home/mrichardson/Projects/Urika/dev/test-datasets/climate/data
 
 # Description:
 Global CO2 emissions data from Our World in Data, covering 200+ countries from 1750 to
