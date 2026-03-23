@@ -23,9 +23,11 @@ dependencies = [
     "click>=8.0",
     "numpy>=1.24",
     "pandas>=2.0",
+    "pingouin>=0.5",
     "prompt-toolkit>=3.0",
     "scikit-learn>=1.3",
     "scipy>=1.11",
+    "statsmodels>=0.14",
 ]
 
 [project.optional-dependencies]
@@ -36,10 +38,17 @@ viz = [
 ml = [
     "xgboost>=2.0",
     "lightgbm>=4.0",
+    "optuna>=3.0",
+    "shap>=0.42",
+    "imbalanced-learn>=0.11",
 ]
 dl = [
     "torch>=2.0",
     "transformers>=4.30",
+    "sentence-transformers>=2.2",
+    "torchvision>=0.15",
+    "torchaudio>=2.0",
+    "timm>=0.9",
 ]
 knowledge = [
     "pypdf>=4.0",
@@ -50,8 +59,15 @@ all = [
     "seaborn>=0.13",
     "xgboost>=2.0",
     "lightgbm>=4.0",
+    "optuna>=3.0",
+    "shap>=0.42",
+    "imbalanced-learn>=0.11",
     "torch>=2.0",
     "transformers>=4.30",
+    "sentence-transformers>=2.2",
+    "torchvision>=0.15",
+    "torchaudio>=2.0",
+    "timm>=0.9",
     "pypdf>=4.0",
 ]
 dev = [
