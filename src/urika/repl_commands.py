@@ -305,7 +305,7 @@ def cmd_criteria(session: ReplSession, args: str) -> None:
 def _pick_experiment(
     session: ReplSession, args: str, allow_all: bool = False
 ) -> str | None:
-    """Prompt user to pick an experiment. Returns exp_id or 'all' or None."""
+    """Prompt user to pick an experiment. Returns exp_id, 'all', 'project', or None."""
     from urika.core.experiment import list_experiments
     from urika.core.progress import load_progress
 
@@ -327,12 +327,15 @@ def _pick_experiment(
         runs = len(progress.get("runs", []))
         options.append(f"{exp.experiment_id} [{status}, {runs} runs]")
     if allow_all:
-        options.append("All experiments (project-level report)")
+        options.append("All experiments (generate for each)")
+        options.append("Project level (one overarching report)")
 
-    choice = _prompt_numbered("\n  Select experiment:", options, default=1)
+    choice = _prompt_numbered("\n  Select:", options, default=1)
 
     if choice.startswith("All"):
         return "all"
+    if choice.startswith("Project"):
+        return "project"
 
     # Extract exp_id from the choice string
     return choice.split(" [")[0]
@@ -348,44 +351,45 @@ def cmd_present(session: ReplSession, args: str) -> None:
     if exp_choice is None:
         return
 
-    try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
-        from urika.orchestrator.loop import _generate_presentation, _noop_callback
+    if exp_choice == "all":
+        # Generate presentation for each experiment
+        from urika.core.experiment import list_experiments
 
-        runner = ClaudeSDKRunner()
-
-        if exp_choice == "all":
-            from urika.core.experiment import list_experiments
-
-            experiments = list_experiments(session.project_path)
-            for exp in experiments:
-                click.echo(f"  Generating presentation for {exp.experiment_id}...")
-                asyncio.run(
-                    _generate_presentation(
-                        session.project_path, exp.experiment_id, runner, _noop_callback
-                    )
-                )
-            click.echo("  \u2713 All presentations generated")
-        else:
-            click.echo(f"  Generating presentation for {exp_choice}...")
-            asyncio.run(
-                _generate_presentation(
-                    session.project_path, exp_choice, runner, _noop_callback
-                )
+        experiments = list_experiments(session.project_path)
+        for exp in experiments:
+            click.echo(f"  Generating presentation for {exp.experiment_id}...")
+            text = _run_single_agent(
+                session,
+                "presentation_agent",
+                exp.experiment_id,
+                f"Create a presentation for experiment {exp.experiment_id}.",
             )
-            pres_path = (
-                session.project_path
-                / "experiments"
-                / exp_choice
-                / "presentation"
-                / "index.html"
-            )
-            link = _file_link(
-                pres_path, f"experiments/{exp_choice}/presentation/index.html"
-            )
-            click.echo(f"  \u2713 Saved: {link}")
-    except Exception as exc:
-        click.echo(f"  \u2717 Error: {exc}")
+            if text:
+                _save_presentation(session, text, exp.experiment_id)
+        click.echo("  \u2713 All presentations generated")
+    elif exp_choice == "project":
+        # One project-level presentation covering everything
+        click.echo("  Generating project-level presentation...")
+        text = _run_single_agent(
+            session,
+            "presentation_agent",
+            "",
+            "Create a project-level presentation covering ALL experiments, "
+            "the research progression, key findings across the entire project, "
+            "and next steps. This is an overview presentation, not per-experiment.",
+        )
+        if text:
+            _save_presentation(session, text, None)
+    else:
+        # Single experiment presentation
+        text = _run_single_agent(
+            session,
+            "presentation_agent",
+            exp_choice,
+            f"Create a presentation for experiment {exp_choice}.",
+        )
+        if text:
+            _save_presentation(session, text, exp_choice)
 
 
 @command("report", requires_project=True, description="Generate reports")
@@ -403,24 +407,46 @@ def cmd_report(session: ReplSession, args: str) -> None:
     from urika.core.readme_generator import write_readme
 
     if exp_choice == "all":
-        click.echo("  Generating project-level reports...")
+        # Generate reports for each experiment
+        click.echo("  Generating reports for all experiments...")
         from urika.core.experiment import list_experiments
 
         for exp in list_experiments(session.project_path):
+            click.echo(f"  Processing {exp.experiment_id}...")
             try:
                 update_experiment_notes(session.project_path, exp.experiment_id)
                 generate_experiment_summary(session.project_path, exp.experiment_id)
             except Exception:
                 pass
+            text = _run_single_agent(
+                session,
+                "report_agent",
+                exp.experiment_id,
+                f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+            )
+            if text:
+                from urika.core.report_writer import write_versioned
+
+                narrative_path = (
+                    session.project_path
+                    / "experiments"
+                    / exp.experiment_id
+                    / "labbook"
+                    / "narrative.md"
+                )
+                narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                write_versioned(narrative_path, text + "\n")
+        click.echo("  \u2713 All experiment reports updated")
+    elif exp_choice == "project":
+        # Project-level reports
+        click.echo("  Generating project-level reports...")
         try:
             generate_results_summary(session.project_path)
             generate_key_findings(session.project_path)
             write_readme(session.project_path)
         except Exception:
             pass
-        click.echo("  \u2713 All template reports updated")
 
-        # Generate project-level narrative via report agent
         text = _run_single_agent(
             session,
             "report_agent",
@@ -434,7 +460,9 @@ def cmd_report(session: ReplSession, args: str) -> None:
             narrative_path.parent.mkdir(parents=True, exist_ok=True)
             write_versioned(narrative_path, text + "\n")
             link = _file_link(narrative_path, "projectbook/narrative.md")
-            click.echo(f"  \u2713 Narrative: {link}")
+            click.echo(f"  \u2713 Project narrative: {link}")
+            readme_link = _file_link(session.project_path / "README.md", "README.md")
+            click.echo(f"  \u2713 README: {readme_link}")
     else:
         click.echo(f"  Generating report for {exp_choice}...")
         try:
@@ -739,6 +767,42 @@ def get_experiment_ids(session: ReplSession) -> list[str]:
     from urika.core.experiment import list_experiments
 
     return [e.experiment_id for e in list_experiments(session.project_path)]
+
+
+def _save_presentation(session: ReplSession, text: str, exp_id: str | None) -> None:
+    """Parse slide JSON and render presentation, with clickable output link."""
+    import tomllib
+
+    from urika.core.presentation import parse_slide_json, render_presentation
+
+    slide_data = parse_slide_json(text)
+    if not slide_data:
+        click.echo("  \u2717 Could not parse slide data from agent output")
+        return
+
+    theme = "light"
+    toml_path = session.project_path / "urika.toml"
+    if toml_path.exists():
+        try:
+            with open(toml_path, "rb") as f:
+                tdata = tomllib.load(f)
+            theme = tdata.get("preferences", {}).get("presentation_theme", "light")
+        except Exception:
+            pass
+
+    if exp_id:
+        exp_dir = session.project_path / "experiments" / exp_id
+        output_dir = exp_dir / "presentation"
+        render_presentation(slide_data, output_dir, theme=theme, experiment_dir=exp_dir)
+        display = f"experiments/{exp_id}/presentation/index.html"
+    else:
+        output_dir = session.project_path / "projectbook" / "presentation"
+        render_presentation(slide_data, output_dir, theme=theme)
+        display = "projectbook/presentation/index.html"
+
+    pres_path = output_dir / "index.html"
+    link = _file_link(pres_path, display)
+    click.echo(f"  \u2713 Saved: {link}")
 
 
 def _file_link(path: Path, display: str = "") -> str:
