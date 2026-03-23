@@ -17,6 +17,31 @@ from urika.evaluation.leaderboard import load_leaderboard
 from urika.tools import ToolRegistry
 
 
+def _make_on_message() -> object:
+    """Create an on_message callback that prints tool use events."""
+    from urika.cli_display import print_tool_use
+
+    def _on_msg(msg: object) -> None:
+        try:
+            if hasattr(msg, "content"):
+                for block in msg.content:
+                    tool_name = getattr(block, "name", None)
+                    if tool_name:
+                        inp = getattr(block, "input", {}) or {}
+                        detail = ""
+                        if isinstance(inp, dict):
+                            detail = (
+                                inp.get("command", "")
+                                or inp.get("file_path", "")
+                                or inp.get("pattern", "")
+                            )
+                        print_tool_use(tool_name, detail)
+        except Exception:
+            pass
+
+    return _on_msg
+
+
 def _projects_dir() -> Path:
     """Default directory for new projects."""
     env = os.environ.get("URIKA_PROJECTS_DIR")
@@ -339,7 +364,6 @@ def _run_builder_agent_loop(
         print_agent,
         print_error,
         print_step,
-        print_tool_use,
         thinking_phrase,
     )
     from urika.core.builder_prompts import (
@@ -352,24 +376,7 @@ def _run_builder_agent_loop(
         parse_suggestions,
     )
 
-    def _on_builder_msg(msg: object) -> None:
-        """Show tool use from builder agents."""
-        try:
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    tool_name = getattr(block, "name", None)
-                    if tool_name:
-                        inp = getattr(block, "input", {}) or {}
-                        detail = ""
-                        if isinstance(inp, dict):
-                            detail = (
-                                inp.get("command", "")
-                                or inp.get("file_path", "")
-                                or inp.get("pattern", "")
-                            )
-                        print_tool_use(tool_name, detail)
-        except Exception:
-            pass
+    _on_builder_msg = _make_on_message()
 
     runner = ClaudeSDKRunner()
     registry = AgentRegistry()
@@ -1146,7 +1153,7 @@ def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> st
     try:
         from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
         from urika.agents.registry import AgentRegistry
-        from urika.cli_display import Spinner, print_agent, print_tool_use
+        from urika.cli_display import Spinner, print_agent
 
         runner = ClaudeSDKRunner()
         registry = AgentRegistry()
@@ -1161,26 +1168,10 @@ def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> st
             project_dir=project_path, experiment_id=experiment_id
         )
 
-        def _on_msg(msg: object) -> None:
-            try:
-                if hasattr(msg, "content"):
-                    for block in msg.content:
-                        tool_name = getattr(block, "name", None)
-                        if tool_name:
-                            inp = getattr(block, "input", {}) or {}
-                            detail = ""
-                            if isinstance(inp, dict):
-                                detail = (
-                                    inp.get("command", "")
-                                    or inp.get("file_path", "")
-                                    or inp.get("pattern", "")
-                                )
-                            print_tool_use(tool_name, detail)
-            except Exception:
-                pass
-
         with Spinner("Writing narrative"):
-            result = asyncio.run(runner.run(config, prompt, on_message=_on_msg))
+            result = asyncio.run(
+                runner.run(config, prompt, on_message=_make_on_message())
+            )
 
         if result.success and result.text_output:
             return result.text_output.strip()
@@ -1526,7 +1517,7 @@ def advisor(project: str | None, text: str | None) -> None:
     """Ask the advisor agent a question about the project."""
     import asyncio
 
-    from urika.cli_display import Spinner, print_agent, print_tool_use
+    from urika.cli_display import Spinner, print_agent
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -1552,26 +1543,10 @@ def advisor(project: str | None, text: str | None) -> None:
     print_agent("advisor_agent")
     config = role.build_config(project_dir=project_path, experiment_id="")
 
-    def _on_msg(msg: object) -> None:
-        try:
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    tool_name = getattr(block, "name", None)
-                    if tool_name:
-                        inp = getattr(block, "input", {}) or {}
-                        detail = ""
-                        if isinstance(inp, dict):
-                            detail = (
-                                inp.get("command", "")
-                                or inp.get("file_path", "")
-                                or inp.get("pattern", "")
-                            )
-                        print_tool_use(tool_name, detail)
-        except Exception:
-            pass
-
     with Spinner("Thinking"):
-        result = asyncio.run(runner.run(config, text, on_message=_on_msg))
+        result = asyncio.run(
+            runner.run(config, text, on_message=_make_on_message())
+        )
 
     if result.success and result.text_output:
         click.echo(f"\n{result.text_output.strip()}\n")
@@ -1586,7 +1561,7 @@ def evaluate(project: str | None, experiment_id: str | None) -> None:
     """Run the evaluator agent on an experiment."""
     import asyncio
 
-    from urika.cli_display import Spinner, print_agent, print_tool_use
+    from urika.cli_display import Spinner, print_agent
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -1613,29 +1588,13 @@ def evaluate(project: str | None, experiment_id: str | None) -> None:
     print_agent("evaluator")
     config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
 
-    def _on_msg(msg: object) -> None:
-        try:
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    tool_name = getattr(block, "name", None)
-                    if tool_name:
-                        inp = getattr(block, "input", {}) or {}
-                        detail = ""
-                        if isinstance(inp, dict):
-                            detail = (
-                                inp.get("command", "")
-                                or inp.get("file_path", "")
-                                or inp.get("pattern", "")
-                            )
-                        print_tool_use(tool_name, detail)
-        except Exception:
-            pass
-
     click.echo(f"  Evaluating {experiment_id}...")
     with Spinner("Working"):
         result = asyncio.run(
             runner.run(
-                config, f"Evaluate experiment {experiment_id}.", on_message=_on_msg
+                config,
+                f"Evaluate experiment {experiment_id}.",
+                on_message=_make_on_message(),
             )
         )
 
@@ -1651,7 +1610,7 @@ def present(project: str | None) -> None:
     """Generate a presentation for an experiment."""
     import asyncio
 
-    from urika.cli_display import print_agent, print_success
+    from urika.cli_display import Spinner, print_agent, print_success
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -1680,17 +1639,22 @@ def present(project: str | None) -> None:
         raise click.ClickException("Claude Agent SDK not installed.")
 
     runner = ClaudeSDKRunner()
+    on_msg = _make_on_message()
 
     if choice.startswith("All"):
         # Generate presentation for each experiment
         for exp in experiments:
             print_agent("presentation_agent")
-            click.echo(f"  Generating presentation for {exp.experiment_id}...")
-            asyncio.run(
-                _generate_presentation(
-                    project_path, exp.experiment_id, runner, _noop_callback
+            with Spinner("Creating slides"):
+                asyncio.run(
+                    _generate_presentation(
+                        project_path,
+                        exp.experiment_id,
+                        runner,
+                        _noop_callback,
+                        on_message=on_msg,
+                    )
                 )
-            )
             print_success(
                 f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
             )
@@ -1698,17 +1662,27 @@ def present(project: str | None) -> None:
     elif choice.startswith("Project"):
         # Project-level presentation
         print_agent("presentation_agent")
-        click.echo("  Generating project-level presentation...")
-        asyncio.run(_generate_presentation(project_path, "", runner, _noop_callback))
+        with Spinner("Creating slides"):
+            asyncio.run(
+                _generate_presentation(
+                    project_path, "", runner, _noop_callback, on_message=on_msg
+                )
+            )
         print_success("Saved to projectbook/presentation/index.html")
     else:
         # Single experiment
         exp_id = choice.split(" [")[0]
         print_agent("presentation_agent")
-        click.echo(f"  Generating presentation for {exp_id}...")
-        asyncio.run(
-            _generate_presentation(project_path, exp_id, runner, _noop_callback)
-        )
+        with Spinner("Creating slides"):
+            asyncio.run(
+                _generate_presentation(
+                    project_path,
+                    exp_id,
+                    runner,
+                    _noop_callback,
+                    on_message=on_msg,
+                )
+            )
         print_success(f"Saved to experiments/{exp_id}/presentation/index.html")
 
 
