@@ -202,6 +202,23 @@ urika:my-project> I've added some papers to the knowledge folder, please review 
 
 The literature agent will search the knowledge base when proposing methods and designing experiments.
 
+## Isolated environments
+
+During project creation, you will be asked:
+
+```
+Create isolated environment for this project? [y/N]:
+```
+
+If you say yes, Urika creates a Python virtual environment (`.venv/`) inside the project directory. This venv inherits your global packages (numpy, pandas, etc.) via `--system-site-packages`, so only project-specific packages are installed into it. This prevents conflicts when different projects need different library versions.
+
+The default is no — agents install packages into whatever Python environment is active. This is fine for most use cases. Choose yes if:
+- Multiple projects might need conflicting package versions
+- You want a clean, reproducible environment per project
+- Your organisation requires environment isolation
+
+You can also create a venv later with `urika venv create <project>`. Check status with `urika venv status <project>`. The setting is stored in `urika.toml` under `[environment] venv = true`.
+
 ## What gets created
 
 After the interactive setup, Urika creates the following directory structure:

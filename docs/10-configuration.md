@@ -58,6 +58,17 @@ The `[runtime]` section controls which AI model each agent uses, with a project-
 
 These sections are covered in detail in [Models and Privacy](07-models-and-privacy.md).
 
+### [environment] section
+
+Controls whether the project uses an isolated Python virtual environment:
+
+```toml
+[environment]
+venv = true    # false = use global environment (default), true = per-project venv
+```
+
+When enabled, a `.venv/` directory is created inside the project with `--system-site-packages`, inheriting the global base packages. Agents install project-specific packages into this venv. See [Creating Projects](03-creating-projects.md#isolated-environments) for details.
+
 
 ## criteria.json
 
