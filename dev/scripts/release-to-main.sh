@@ -1,36 +1,59 @@
 #!/bin/bash
 # Release dev changes to main (public-facing branch).
-# Merges dev into main, removes dev-only files, pushes to both remotes.
+#
+# Strategy: instead of merging (which causes rename/delete conflicts),
+# we checkout the public-facing files from dev into main. This avoids
+# conflicts entirely because we never merge the dev-only paths.
 #
 # Usage: ./dev/scripts/release-to-main.sh
 
 set -e
 
+# Must be on dev to start
+CURRENT=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT" != "dev" ]; then
+    echo "ERROR: Must be on dev branch. Currently on: $CURRENT"
+    exit 1
+fi
+
+# Must be clean
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "ERROR: Working tree has uncommitted changes. Commit or stash first."
+    exit 1
+fi
+
 echo "Releasing dev → main..."
 
+# Save the dev commit hash for the message
+DEV_SHA=$(git rev-parse --short HEAD)
+
 git checkout main
-git merge dev --no-edit
 
-# Remove dev-only paths that should not be on the public branch
-DEV_ONLY=(
-    "dev"
-    "CLAUDE.md"
-    "tests"
-)
+# Checkout all public-facing files from dev
+# Source code
+git checkout dev -- src/
+# Documentation (but not dev/)
+git checkout dev -- docs/ 2>/dev/null || true
+# Config files
+git checkout dev -- pyproject.toml
+git checkout dev -- README.md
+git checkout dev -- LICENSE
+git checkout dev -- .gitignore
 
-for path in "${DEV_ONLY[@]}"; do
-    if [ -e "$path" ]; then
-        git rm -rq "$path" 2>/dev/null || true
-    fi
-done
+# Stage everything
+git add -A
 
-# Only commit if there's something to clean
+# Only commit if there are changes
 if ! git diff --cached --quiet 2>/dev/null; then
-    git commit -m "chore: exclude dev-only files from main"
+    git commit -m "release: sync from dev ($DEV_SHA)"
+else
+    echo "No changes to release."
+    git checkout dev
+    exit 0
 fi
 
 git push origin main
 git push public main
 git checkout dev
 
-echo "Done. Main pushed to origin + public. Back on dev."
+echo "Done. Main synced to dev ($DEV_SHA). Back on dev."
