@@ -9,6 +9,26 @@ Urika works with data from any scientific discipline — tabular data (CSV, Exce
 - **Python 3.11 or later** (3.12 also supported)
 - **Claude access** via Anthropic API key or Claude Max/Pro account
 
+### Hardware requirements by use case
+
+Your hardware needs depend on what kind of analysis you plan to do:
+
+| Use Case | CPU | RAM | GPU | Storage | Example |
+|----------|-----|-----|-----|---------|---------|
+| **Statistical analysis** | Any modern CPU | 4 GB+ | Not needed | Minimal | T-tests, ANOVA, regression on survey data |
+| **Machine learning** | Multi-core recommended | 8 GB+ | Not needed | 1-2 GB for packages | Random forest, XGBoost on tabular data |
+| **Deep learning** | Multi-core | 16 GB+ | Recommended (NVIDIA, 8GB+ VRAM) | 5-10 GB for PyTorch | LSTM, Transformers for forecasting or NLP |
+| **Local LLMs (private mode)** | Multi-core | 32 GB+ | Required (24GB+ VRAM) or shared memory | 50-100 GB for model weights | Running gpt-oss:120b or similar locally via Ollama |
+| **Hybrid mode** | Multi-core | 16 GB+ | Depends on local model size | 10-50 GB | Data Agent on local model, thinking on cloud |
+
+**Most users start with statistical analysis or machine learning** — no GPU required, works on any laptop. Deep learning and local LLMs are opt-in when you need them.
+
+**Cloud-only mode (default):** All the heavy computation happens on your machine (Python code the agents write), but the AI reasoning happens via the Claude API. Your CPU and RAM matter for data processing; GPU only matters if agents build neural network models.
+
+**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `gpt-oss:20b` need ~16 GB RAM. Larger models like `gpt-oss:120b` need a GPU with 80 GB VRAM or equivalent shared memory (e.g., Apple Silicon with unified memory). See [Models and Privacy](07-models-and-privacy.md) for configuration details.
+
+**Shared memory systems (Apple Silicon, etc.):** Macs with M-series chips share memory between CPU and GPU. A MacBook Pro with 64 GB unified memory can run models that would require a dedicated GPU on other systems. Ollama handles this automatically.
+
 ## Installation
 
 ### Basic install
