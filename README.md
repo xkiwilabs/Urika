@@ -19,7 +19,7 @@ Urika uses multiple AI agents (powered by Claude) to autonomously explore analyt
 pip install -e ".[agents]"
 ```
 
-Requires Python >= 3.11 and a Claude API key (`ANTHROPIC_API_KEY` environment variable).
+Requires Python >= 3.11 and Claude access via API key (`ANTHROPIC_API_KEY`) or Claude Max/Pro account.
 
 See [Getting Started](docs/01-getting-started.md) for full installation options.
 

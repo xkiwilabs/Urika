@@ -5,7 +5,7 @@ Urika is a multi-agent scientific analysis platform. You give it a dataset and a
 ## Requirements
 
 - **Python 3.11 or later** (3.12 also supported)
-- **Anthropic API key** for Claude (used by all agent roles)
+- **Claude access** via Anthropic API key or Claude Max/Pro account
 
 ## Installation
 
@@ -63,15 +63,23 @@ Includes pytest, pytest-asyncio, ruff, and pypdf.
 pip install "urika[agents,viz,ml,knowledge]"
 ```
 
-## Setting up your API key
+## Authentication
 
-Urika's agents use the Anthropic Claude API. Set your key as an environment variable:
+Urika's agents need access to Claude. Two options:
+
+### Option 1: API key
+
+Set your Anthropic API key as an environment variable:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
 Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it across sessions.
+
+### Option 2: Claude Max/Pro account
+
+If you have a Claude Max or Pro subscription, the Claude Agent SDK can authenticate through your account login. No API key needed — just ensure you're logged in via Claude Code.
 
 ## Quickstart
 
