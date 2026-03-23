@@ -2,7 +2,7 @@
 # Install git hooks for the Urika development workflow.
 # Run this after cloning urika-dev on a new machine.
 #
-# Usage: ./scripts/setup-hooks.sh
+# Usage: ./dev/scripts/setup-hooks.sh
 
 set -e
 
@@ -11,7 +11,7 @@ HOOK_DIR="$(git rev-parse --show-toplevel)/.git/hooks"
 cat > "$HOOK_DIR/pre-push" << 'HOOK'
 #!/bin/bash
 # Pre-push hook: block pushing main if dev-only files are present.
-# These files should be stripped by scripts/release-to-main.sh before pushing.
+# These files should be stripped by dev/scripts/release-to-main.sh before pushing.
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 
@@ -21,13 +21,10 @@ fi
 
 DEV_ONLY_FILES=(
     "CLAUDE.md"
-    "current-status.md"
 )
 DEV_ONLY_DIRS=(
-    "docs/plans"
-    "docs/.archive"
+    "dev"
     "tests"
-    "scripts"
 )
 
 leaked=""

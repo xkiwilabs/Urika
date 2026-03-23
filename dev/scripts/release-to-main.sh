@@ -2,7 +2,7 @@
 # Release dev changes to main (public-facing branch).
 # Merges dev into main, removes dev-only files, pushes to both remotes.
 #
-# Usage: ./scripts/release-to-main.sh
+# Usage: ./dev/scripts/release-to-main.sh
 
 set -e
 
@@ -11,14 +11,11 @@ echo "Releasing dev → main..."
 git checkout main
 git merge dev --no-edit
 
-# Remove dev-only files that should not be on the public branch
+# Remove dev-only paths that should not be on the public branch
 DEV_ONLY=(
-    "docs/plans"
-    "docs/.archive"
-    "current-status.md"
-    "tests"
+    "dev"
     "CLAUDE.md"
-    "scripts"
+    "tests"
 )
 
 for path in "${DEV_ONLY[@]}"; do

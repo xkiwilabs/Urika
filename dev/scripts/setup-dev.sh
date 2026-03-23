@@ -2,7 +2,7 @@
 # Full development environment setup for Urika.
 # Run after cloning urika-dev on a new machine.
 #
-# Usage: ./scripts/setup-dev.sh
+# Usage: ./dev/scripts/setup-dev.sh
 #
 # What it does:
 #   1. Adds the public remote (xkiwilabs/Urika)
@@ -29,7 +29,7 @@ git fetch --all --quiet
 echo "✓ Fetched all remotes"
 
 # 2. Install git hooks
-./scripts/setup-hooks.sh
+./dev/scripts/setup-hooks.sh
 
 # 3. Create venv and install
 if [ ! -d ".venv" ]; then
@@ -59,7 +59,7 @@ echo ""
 echo "  Activate venv:    source .venv/bin/activate"
 echo "  Run tests:        pytest -v"
 echo "  Launch Urika:     urika"
-echo "  Release to main:  ./scripts/release-to-main.sh"
+echo "  Release to main:  ./dev/scripts/release-to-main.sh"
 echo ""
 echo "  Remotes:"
 echo "    origin  → urika-dev (private, daily work)"
