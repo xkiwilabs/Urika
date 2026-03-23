@@ -260,7 +260,7 @@ mode = "private"
 base_url = "http://localhost:11434"
 
 [runtime]
-model = "llama3:70b"
+model = "gpt-oss:120b"
 ```
 
 
@@ -270,7 +270,7 @@ model = "llama3:70b"
 
 2. **Pull a model:**
    ```bash
-   ollama pull llama3:70b
+   ollama pull gpt-oss:120b
    ```
 
 3. **Configure the endpoint** in your project's `urika.toml`:
@@ -282,7 +282,7 @@ model = "llama3:70b"
    base_url = "http://localhost:11434"
 
    [runtime]
-   model = "llama3:70b"
+   model = "gpt-oss:120b"
    ```
 
 4. **Run as normal:**
@@ -290,7 +290,7 @@ model = "llama3:70b"
    urika run my-project
    ```
 
-Larger models (70B+ parameters) are recommended for the Task Agent and Tool Builder, as these agents write code and need strong reasoning capability. Smaller models may work for the Evaluator or Planning Agent.
+Models with strong reasoning and code generation capabilities are recommended for the Task Agent and Tool Builder (e.g., `gpt-oss:120b` which runs on a single 80GB GPU). Smaller models like `gpt-oss:20b` (16GB) may work for the Evaluator or Planning Agent.
 
 
 ## Important Notes
