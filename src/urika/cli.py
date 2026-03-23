@@ -1009,6 +1009,12 @@ def _determine_next_experiment(
     default="",
     help="Guide the next experiment (e.g. 'focus on FOV-constrained models').",
 )
+@click.option(
+    "--max-experiments",
+    default=None,
+    type=int,
+    help="Run multiple experiments via meta-orchestrator (capped mode).",
+)
 def run(
     project: str,
     experiment_id: str | None,
@@ -1017,6 +1023,7 @@ def run(
     quiet: bool,
     auto: bool,
     instructions: str,
+    max_experiments: int | None,
 ) -> None:
     """Run an experiment using the orchestrator."""
     try:
@@ -1039,7 +1046,7 @@ def run(
         print_tool_use,
         print_warning,
     )
-    from urika.orchestrator import run_experiment
+    from urika.orchestrator import run_experiment, run_project
 
     from urika.cli_display import thinking_phrase
 
@@ -1078,6 +1085,100 @@ def run(
     panel.activate()
     panel.start_spinner()
 
+    # --- Meta-orchestrator path: --max-experiments delegates to run_project ---
+    if max_experiments is not None:
+        print_step(
+            f"Meta-orchestrator: up to {max_experiments} experiments"
+            f" (max {max_turns} turns each)"
+        )
+
+        # Determine mode: capped auto unless auto flag gives unlimited
+        meta_mode = "unlimited" if auto else "capped"
+
+        original_handler = signal.getsignal(signal.SIGINT)
+
+        def _cleanup_meta(signum: int, frame: object) -> None:
+            print_warning("\nInterrupted — stopping meta-orchestrator...")
+            print_step("Run stopped. Resume with: urika run")
+            raise SystemExit(1)
+
+        signal.signal(signal.SIGINT, _cleanup_meta)
+
+        start_ms = int(time.monotonic() * 1000)
+        sdk_runner = ClaudeSDKRunner()
+
+        try:
+
+            def _on_progress(event: str, detail: str = "") -> None:
+                if event == "turn":
+                    print_step(detail)
+                    panel.update(turn=detail, activity=thinking_phrase())
+                elif event == "agent":
+                    agent_key = (
+                        detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+                    )
+                    print_agent(agent_key)
+                    panel.update(agent=agent_key, activity=detail)
+                elif event == "result":
+                    print_success(detail)
+                elif event == "phase":
+                    print_step(detail)
+                    panel.update(activity=detail)
+
+            def _on_message(msg: object) -> None:
+                model = getattr(msg, "model", None)
+                if model:
+                    panel.set_model(model)
+                content = getattr(msg, "content", None)
+                if content is None:
+                    return
+                for block in content:
+                    tool_name = getattr(block, "name", None) or getattr(
+                        block, "tool_name", None
+                    )
+                    if tool_name:
+                        detail = ""
+                        input_data = getattr(block, "input", None) or getattr(
+                            block, "tool_input", {}
+                        )
+                        if isinstance(input_data, dict):
+                            if "command" in input_data:
+                                detail = input_data["command"]
+                            elif "file_path" in input_data:
+                                detail = input_data["file_path"]
+                            elif "pattern" in input_data:
+                                detail = input_data["pattern"]
+                        if not quiet:
+                            print_tool_use(tool_name, detail)
+                        panel.set_thinking(tool_name)
+                    else:
+                        panel.set_thinking("Thinking\u2026")
+
+            result = asyncio.run(
+                run_project(
+                    project_path,
+                    sdk_runner,
+                    mode=meta_mode,
+                    max_experiments=max_experiments,
+                    max_turns=max_turns,
+                    instructions=instructions,
+                    on_progress=_on_progress,
+                    on_message=_on_message,
+                )
+            )
+
+        finally:
+            panel.cleanup()
+
+        signal.signal(signal.SIGINT, original_handler)
+
+        elapsed_ms = int(time.monotonic() * 1000) - start_ms
+        n_exp = result.get("experiments_run", 0)
+        print_success(f"Meta-orchestrator completed: {n_exp} experiment(s) run.")
+        print_footer(duration_ms=elapsed_ms, turns=n_exp, status="completed")
+        return
+
+    # --- Single experiment path ---
     if experiment_id is None:
         experiments = list_experiments(project_path)
         # Find pending (non-completed) experiments
@@ -1151,7 +1252,7 @@ def run(
                 panel.update(turn=detail, activity=thinking_phrase())
             elif event == "agent":
                 # Extract agent key from "Planning agent — designing method"
-                agent_key = detail.split("—")[0].strip().lower().replace(" ", "_")
+                agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
                 print_agent(agent_key)
                 panel.update(agent=agent_key, activity=detail)
             elif event == "result":
@@ -1192,7 +1293,7 @@ def run(
                     panel.set_thinking(tool_name)
                 else:
                     # Text block — agent is thinking
-                    panel.set_thinking("Thinking…")
+                    panel.set_thinking("Thinking\u2026")
 
         result = asyncio.run(
             run_experiment(
@@ -1389,9 +1490,7 @@ def report(project: str, experiment_id: str | None) -> None:
     except FileNotFoundError:
         raise click.ClickException(f"Experiment '{experiment_id}' not found.")
     notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
-    summary = (
-        project_path / "experiments" / experiment_id / "labbook" / "summary.md"
-    )
+    summary = project_path / "experiments" / experiment_id / "labbook" / "summary.md"
     click.echo(f"Updated: {notes}")
     click.echo(f"Generated: {summary}")
 
@@ -1405,11 +1504,7 @@ def report(project: str, experiment_id: str | None) -> None:
         from urika.core.report_writer import write_versioned
 
         narrative_path = (
-            project_path
-            / "experiments"
-            / experiment_id
-            / "labbook"
-            / "narrative.md"
+            project_path / "experiments" / experiment_id / "labbook" / "narrative.md"
         )
         narrative_path.parent.mkdir(parents=True, exist_ok=True)
         write_versioned(narrative_path, narrative + "\n")
@@ -1643,9 +1738,7 @@ def advisor(project: str | None, text: str | None) -> None:
             pass
 
     with Spinner("Thinking"):
-        result = asyncio.run(
-            runner.run(config, context, on_message=_make_on_message())
-        )
+        result = asyncio.run(runner.run(config, context, on_message=_make_on_message()))
 
     if result.success and result.text_output:
         click.echo(f"\n{result.text_output.strip()}\n")

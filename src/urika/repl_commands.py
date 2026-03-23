@@ -267,6 +267,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
 
     max_turns = defaults["max_turns"]
     auto_mode = defaults["auto_mode"]
+    max_experiments = None
     run_instructions = ""
 
     if choice == "Custom settings":
@@ -292,8 +293,6 @@ def cmd_run(session: ReplSession, args: str) -> None:
         }.get(auto_mode.split("—")[0].strip(), "checkpoint")
         if auto_mode == "capped":
             max_experiments = int(_click.prompt("  Max experiments", default="10"))
-            # TODO: pass max_experiments to meta-orchestrator when wired
-            _ = max_experiments  # stored for future use
         run_instructions = _click.prompt(
             "  Instructions (optional, enter to skip)", default=""
         )
@@ -319,6 +318,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
             quiet=False,
             auto=(auto_mode != "checkpoint"),
             instructions=run_instructions,
+            max_experiments=max_experiments,
         )
     finally:
         os.environ.pop("URIKA_REPL", None)
@@ -359,7 +359,9 @@ def cmd_methods(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-@command("results", requires_project=True, description="Show project results/leaderboard")
+@command(
+    "results", requires_project=True, description="Show project results/leaderboard"
+)
 def cmd_results(session: ReplSession, args: str) -> None:
     from urika.evaluation.leaderboard import load_leaderboard
     from urika.core.experiment import list_experiments
@@ -393,9 +395,7 @@ def cmd_results(session: ReplSession, args: str) -> None:
 
     click.echo(f"\n  {_C.BOLD}Runs for {exp.experiment_id}:{_C.RESET}")
     for run in runs:
-        metrics_str = ", ".join(
-            f"{k}={v}" for k, v in run.get("metrics", {}).items()
-        )
+        metrics_str = ", ".join(f"{k}={v}" for k, v in run.get("metrics", {}).items())
         click.echo(f"    {run['run_id']}  {run['method']}  {metrics_str}")
     click.echo()
 
@@ -424,7 +424,9 @@ def cmd_tools(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-@command("resume", requires_project=True, description="Resume a paused/failed experiment")
+@command(
+    "resume", requires_project=True, description="Resume a paused/failed experiment"
+)
 def cmd_resume(session: ReplSession, args: str) -> None:
     from urika.core.experiment import list_experiments
     from urika.core.progress import load_progress
@@ -446,10 +448,10 @@ def cmd_resume(session: ReplSession, args: str) -> None:
         exp, status = resumable[0]
         click.echo(f"  Resuming {exp.experiment_id} [{status}]...")
     else:
-        options = [
-            f"{exp.experiment_id} [{status}]" for exp, status in resumable
-        ]
-        choice = _prompt_numbered("\n  Select experiment to resume:", options, default=1)
+        options = [f"{exp.experiment_id} [{status}]" for exp, status in resumable]
+        choice = _prompt_numbered(
+            "\n  Select experiment to resume:", options, default=1
+        )
         exp_id = choice.split(" [")[0]
         click.echo(f"  Resuming {exp_id}...")
         # Find matching exp
@@ -471,6 +473,7 @@ def cmd_resume(session: ReplSession, args: str) -> None:
             quiet=False,
             auto=False,
             instructions="",
+            max_experiments=None,
         )
     finally:
         os.environ.pop("URIKA_REPL", None)
@@ -865,6 +868,8 @@ def _run_single_agent(
 
         # Track usage
         session.record_agent_call(
+            tokens_in=getattr(result, "tokens_in", 0) or 0,
+            tokens_out=getattr(result, "tokens_out", 0) or 0,
             cost_usd=result.cost_usd or 0.0,
             model=getattr(result, "model", "") or "",
         )

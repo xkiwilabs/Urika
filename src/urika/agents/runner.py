@@ -23,6 +23,7 @@ class AgentResult:
     error: str | None = None
     tokens_in: int = 0
     tokens_out: int = 0
+    model: str = ""
 
 
 class AgentRunner(ABC):

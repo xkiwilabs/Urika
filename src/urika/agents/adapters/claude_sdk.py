@@ -36,6 +36,7 @@ class ClaudeSDKRunner(AgentRunner):
         cost_usd: float | None = None
         tokens_in = 0
         tokens_out = 0
+        model_name = ""
         is_error = False
 
         async for msg in query(prompt=prompt, options=options):
@@ -50,6 +51,9 @@ class ClaudeSDKRunner(AgentRunner):
                 for block in msg.content:
                     if isinstance(block, TextBlock):
                         text_parts.append(block.text)
+                # Capture the model name from the latest assistant message
+                if getattr(msg, "model", None):
+                    model_name = msg.model
             elif isinstance(msg, ResultMessage):
                 session_id = msg.session_id
                 num_turns = msg.num_turns
@@ -71,6 +75,7 @@ class ClaudeSDKRunner(AgentRunner):
             error="Agent reported error" if is_error else None,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            model=model_name,
         )
 
     def _build_options(self, config: AgentConfig) -> ClaudeAgentOptions:

@@ -528,17 +528,38 @@ class Spinner:
     freezes in place when a new line is printed above, creating a
     visual pattern in the terminal.
 
+    When ``session_info`` is provided, the spinner line shows session
+    details on the right side (project, model, elapsed time, cost).
+
     Usage:
         with Spinner("Working") as sp:
             sp.print_above("  ▸ Step 1 done")
             sp.update("Still working")
+
+        with Spinner("Thinking", session_info={"project": "my-proj"}) as sp:
+            sp.update_session(model="claude-3", cost=0.12)
     """
 
-    def __init__(self, message: str, **_kwargs: object) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        session_info: dict[str, object] | None = None,
+        **_kwargs: object,
+    ) -> None:
         self.message = message
         self._active = False
         self._thread: threading.Thread | None = None
         self._lock: threading.Lock | None = None
+        # Session info shown on the right side of the spinner line
+        self._project: str = ""
+        self._model: str = ""
+        self._cost: float = 0.0
+        self._start: float = time.monotonic()
+        if session_info is not None:
+            self._project = str(session_info.get("project", ""))
+            self._model = str(session_info.get("model", ""))
+            self._cost = float(session_info.get("cost", 0.0) or 0.0)
 
     def __enter__(self) -> Spinner:
         if not _IS_TTY:
@@ -569,8 +590,28 @@ class Spinner:
         if self._lock is not None:
             self._lock.release()
 
-    def update_session(self, **_kwargs: object) -> None:
-        """No-op for backward compatibility."""
+    def update_session(self, **kwargs: object) -> None:
+        """Update session info fields and re-render on the next tick.
+
+        Accepted keyword arguments: ``model``, ``cost``, ``project``.
+        """
+        if self._lock is not None:
+            self._lock.acquire()
+        try:
+            if "model" in kwargs and kwargs["model"]:
+                raw = str(kwargs["model"])
+                if "/" in raw:
+                    raw = raw.split("/")[-1]
+                if len(raw) > 25:
+                    raw = raw[:22] + "\u2026"
+                self._model = raw
+            if "cost" in kwargs and kwargs["cost"] is not None:
+                self._cost = float(kwargs["cost"])  # type: ignore[arg-type]
+            if "project" in kwargs and kwargs["project"]:
+                self._project = str(kwargs["project"])
+        finally:
+            if self._lock is not None:
+                self._lock.release()
 
     def print_above(self, text: str) -> None:
         """Print a line above the spinner, keeping the spinner on the last line."""
@@ -588,6 +629,19 @@ class Spinner:
             if self._lock is not None:
                 self._lock.release()
 
+    def _build_right_info(self) -> str:
+        """Build the right-side session info string (plain text, no ANSI)."""
+        parts: list[str] = []
+        if self._project:
+            parts.append(self._project)
+        if self._model:
+            parts.append(self._model)
+        elapsed_ms = int((time.monotonic() - self._start) * 1000)
+        parts.append(_format_duration(elapsed_ms))
+        if self._cost > 0:
+            parts.append(f"~${self._cost:.2f}")
+        return " \u00b7 ".join(parts)
+
     def _spin(self) -> None:
         idx = 0
         while self._active:
@@ -595,12 +649,31 @@ class Spinner:
             if self._lock is not None:
                 self._lock.acquire()
             msg = self.message
+            right_info = (
+                self._build_right_info() if self._project or self._model else ""
+            )
             if self._lock is not None:
                 self._lock.release()
             try:
-                sys.stdout.write(
-                    f"\r  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{msg}{_C.RESET}\033[K"
-                )
+                if right_info:
+                    # Get terminal width for right-alignment
+                    try:
+                        cols = os.get_terminal_size().columns
+                    except OSError:
+                        cols = 80
+                    # Left: "  <spinner> <message>"
+                    left_visible = 2 + 1 + 1 + len(msg)  # "  " + ch + " " + msg
+                    right_visible = len(right_info)
+                    gap = max(2, cols - left_visible - right_visible)
+                    sys.stdout.write(
+                        f"\r  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{msg}{_C.RESET}"
+                        f"{' ' * gap}"
+                        f"{_C.DIM}{right_info}{_C.RESET}\033[K"
+                    )
+                else:
+                    sys.stdout.write(
+                        f"\r  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{msg}{_C.RESET}\033[K"
+                    )
                 sys.stdout.flush()
             except (OSError, ValueError):
                 break

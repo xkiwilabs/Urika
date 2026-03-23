@@ -46,7 +46,15 @@ class UrikaCompleter(Completer):
                     for name in get_project_names():
                         if name.startswith(arg):
                             yield Completion(name, start_position=-len(arg))
-                elif cmd in ("present", "logs", "evaluate", "report", "plan", "results", "resume"):
+                elif cmd in (
+                    "present",
+                    "logs",
+                    "evaluate",
+                    "report",
+                    "plan",
+                    "results",
+                    "resume",
+                ):
                     arg = parts[1] if len(parts) > 1 else ""
                     for eid in get_experiment_ids(self.session):
                         if eid.startswith(arg):
@@ -220,6 +228,14 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             result = asyncio.run(
                 runner.run(config, context, on_message=_on_msg_with_footer)
             )
+
+        # Track usage
+        session.record_agent_call(
+            tokens_in=getattr(result, "tokens_in", 0) or 0,
+            tokens_out=getattr(result, "tokens_out", 0) or 0,
+            cost_usd=result.cost_usd or 0.0,
+            model=getattr(result, "model", "") or "",
+        )
 
         if result.success and result.text_output:
             click.echo(f"\n{result.text_output.strip()}\n")
