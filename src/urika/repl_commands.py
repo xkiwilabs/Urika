@@ -131,6 +131,42 @@ def cmd_status(session: ReplSession, args: str) -> None:
 @command("run", requires_project=True, description="Run next experiment")
 def cmd_run(session: ReplSession, args: str) -> None:
     import click as _click
+    from urika.cli_display import print_warning
+    from urika.core.experiment import list_experiments
+
+    # Check if any experiment is already running (lockfile exists)
+    experiments = list_experiments(session.project_path)
+    for exp in experiments:
+        lock = session.project_path / "experiments" / exp.experiment_id / ".lock"
+        if lock.exists():
+            print_warning(f"Experiment '{exp.experiment_id}' is currently running.")
+            choice = _prompt_numbered(
+                "  What would you like to do?",
+                [
+                    "Wait for it to complete (recommended)",
+                    "Stop it and start a new run",
+                    "Cancel",
+                ],
+                default=1,
+            )
+            if choice.startswith("Wait"):
+                click.echo("  Waiting is recommended. Check back after it completes.")
+                return
+            if choice.startswith("Cancel"):
+                return
+            # Stop it
+            try:
+                from urika.core.session import fail_session
+
+                fail_session(
+                    session.project_path,
+                    exp.experiment_id,
+                    error="Stopped by user from REPL",
+                )
+                click.echo(f"  Stopped {exp.experiment_id}")
+            except Exception:
+                lock.unlink(missing_ok=True)
+            break
 
     # Show defaults, offer custom
     defaults = _load_run_defaults(session)
