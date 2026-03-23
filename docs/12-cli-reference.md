@@ -2,7 +2,7 @@
 
 Complete reference for all Urika CLI commands. Run `urika --help` for a summary, or `urika <command> --help` for any individual command.
 
-Running `urika` with no subcommand launches the interactive REPL (see [Interactive REPL](07-interactive-repl.md)).
+Running `urika` with no subcommand launches the interactive REPL (see [Interactive REPL](13-interactive-repl.md)).
 
 
 ## Project Management

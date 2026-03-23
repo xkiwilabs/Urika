@@ -121,9 +121,9 @@ Or provide a list of tools you know you'll need in the project description durin
 
 Searches the project's knowledge base for domain-relevant information. When the planning agent flags that a method requires literature context (e.g., a specific algorithm or domain knowledge), the literature agent searches ingested documents and returns relevant excerpts.
 
-The literature agent can also search the web for relevant papers and methods when web search is enabled (see [Configuration](11-configuration.md)). This allows it to find whether a proposed method has been used in similar research before, or discover methods that might be useful for your specific problem.
+The literature agent can also search the web for relevant papers and methods when web search is enabled (see [Configuration](10-configuration.md)). This allows it to find whether a proposed method has been used in similar research before, or discover methods that might be useful for your specific problem.
 
-Adding even 1-2 relevant papers to your project's `knowledge/papers/` directory significantly improves the quality of the agents' work. See [Knowledge Pipeline](10-knowledge-pipeline.md) for details.
+Adding even 1-2 relevant papers to your project's `knowledge/papers/` directory significantly improves the quality of the agents' work. See [Knowledge Pipeline](09-knowledge-pipeline.md) for details.
 
 | Property | Value |
 |----------|-------|

@@ -92,7 +92,7 @@ Urika has two interfaces that share the same commands and produce identical resu
 
 If you're new to Urika, **start with the REPL** — you can discover all commands with tab completion and `/help`, and ask the advisor agent questions in plain text without needing to know any commands at all.
 
-See [CLI Reference](06-cli-reference.md) and [Interactive REPL](07-interactive-repl.md) for full details on each interface.
+See [CLI Reference](12-cli-reference.md) and [Interactive REPL](13-interactive-repl.md) for full details on each interface.
 
 ## Quickstart
 

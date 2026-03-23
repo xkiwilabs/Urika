@@ -52,6 +52,12 @@ presentation_theme = "light"
 
 These preferences can be overridden at runtime via CLI flags or REPL prompts.
 
+### [runtime] and [privacy] sections
+
+The `[runtime]` section controls which AI model each agent uses, with a project-wide default and per-agent overrides. The `[privacy]` section defines named endpoints (cloud, local, trusted) and sets the privacy mode (`cloud`, `local`, or `hybrid`).
+
+These sections are covered in detail in [Models and Privacy](07-models-and-privacy.md).
+
 
 ## criteria.json
 
