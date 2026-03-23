@@ -62,3 +62,5 @@ Set `needs_literature` to `true` if you need research literature to inform the p
 - Be specific about which tools to use and with what parameters.
 - Design methods that are executable — every step must be actionable.
 - Consider what has been tried before and avoid repeating failed approaches.
+- Use plain language — explain methods and concepts so a researcher outside this specific field can understand.
+- Define acronyms on first use.

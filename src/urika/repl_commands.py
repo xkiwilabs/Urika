@@ -291,9 +291,9 @@ def cmd_run(session: ReplSession, args: str) -> None:
             "Unlimited": "unlimited",
         }.get(auto_mode.split("—")[0].strip(), "checkpoint")
         if auto_mode == "capped":
-            _max_exp = int(_click.prompt("  Max experiments", default="10"))
-            # TODO: pass _max_exp to meta-orchestrator when wired
-            _ = _max_exp
+            max_experiments = int(_click.prompt("  Max experiments", default="10"))
+            # TODO: pass max_experiments to meta-orchestrator when wired
+            _ = max_experiments  # stored for future use
         run_instructions = _click.prompt(
             "  Instructions (optional, enter to skip)", default=""
         )

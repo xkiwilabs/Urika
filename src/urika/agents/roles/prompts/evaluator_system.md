@@ -108,3 +108,5 @@ The `assessment` object should only include layers that are present in the crite
 - Base your assessment only on recorded data — do not speculate beyond the evidence.
 - Be precise about which criteria are met and which are not.
 - Default to `"criteria_met": false` unless all criteria-met rules above are satisfied.
+- Use plain language — explain methods and concepts so a researcher outside this specific field can understand.
+- Define acronyms on first use.

@@ -555,9 +555,10 @@ def list_cmd() -> None:
 
 
 @cli.command()
-@click.argument("name")
-def status(name: str) -> None:
+@click.argument("name", required=False, default=None)
+def status(name: str | None) -> None:
     """Show project status."""
+    name = _ensure_project(name)
     project_path, config = _resolve_project(name)
 
     experiments = list_experiments(project_path)
@@ -657,23 +658,21 @@ def results(project: str, experiment_id: str | None) -> None:
 @click.argument("project", required=False, default=None)
 def methods(project: str) -> None:
     """List agent-created methods in a project."""
-    from urika.methods import MethodRegistry
+    from urika.core.method_registry import load_methods
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
-    registry = MethodRegistry()
-    registry.discover_project(project_path / "methods")
 
-    names = registry.list_all()
-    if not names:
+    method_list = load_methods(project_path)
+    if not method_list:
         click.echo("No methods created yet.")
         return
 
-    for name in names:
-        method = registry.get(name)
-        if method is not None:
-            tools = ", ".join(method.tools_used())
-            click.echo(f"  {method.name()}  [{tools}]  {method.description()}")
+    for m in method_list:
+        metrics = m.get("metrics", {})
+        nums = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
+        metric_str = ", ".join(f"{k}={v}" for k, v in list(nums.items())[:2])
+        click.echo(f"  {m['name']}  [{m.get('status', '')}]  {metric_str}")
 
 
 @cli.command()
@@ -1133,6 +1132,56 @@ def run(
     print_footer(duration_ms=elapsed_ms, turns=turns, status=run_status)
 
 
+def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> str:
+    """Run the report agent and return its text output."""
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.registry import AgentRegistry
+        from urika.cli_display import Spinner, print_agent, print_tool_use
+
+        runner = ClaudeSDKRunner()
+        registry = AgentRegistry()
+        registry.discover()
+
+        role = registry.get("report_agent")
+        if role is None:
+            return ""
+
+        print_agent("report_agent")
+        config = role.build_config(
+            project_dir=project_path, experiment_id=experiment_id
+        )
+
+        def _on_msg(msg: object) -> None:
+            try:
+                if hasattr(msg, "content"):
+                    for block in msg.content:
+                        tool_name = getattr(block, "name", None)
+                        if tool_name:
+                            inp = getattr(block, "input", {}) or {}
+                            detail = ""
+                            if isinstance(inp, dict):
+                                detail = (
+                                    inp.get("command", "")
+                                    or inp.get("file_path", "")
+                                    or inp.get("pattern", "")
+                                )
+                            print_tool_use(tool_name, detail)
+            except Exception:
+                pass
+
+        with Spinner("Writing narrative"):
+            result = asyncio.run(runner.run(config, prompt, on_message=_on_msg))
+
+        if result.success and result.text_output:
+            return result.text_output.strip()
+        return ""
+    except ImportError:
+        return ""
+    except Exception:
+        return ""
+
+
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option(
@@ -1165,6 +1214,26 @@ def report(project: str, experiment_id: str | None) -> None:
         )
         click.echo(f"Updated: {notes}")
         click.echo(f"Generated: {summary}")
+
+        # Call report agent to write narrative (like REPL)
+        narrative = _run_report_agent(
+            project_path,
+            experiment_id,
+            f"Write a detailed narrative report for experiment {experiment_id}.",
+        )
+        if narrative:
+            from urika.core.report_writer import write_versioned
+
+            narrative_path = (
+                project_path
+                / "experiments"
+                / experiment_id
+                / "labbook"
+                / "narrative.md"
+            )
+            narrative_path.parent.mkdir(parents=True, exist_ok=True)
+            write_versioned(narrative_path, narrative + "\n")
+            click.echo(f"Generated: {narrative_path}")
         return
 
     # Project-level reports
@@ -1185,6 +1254,21 @@ def report(project: str, experiment_id: str | None) -> None:
     findings_path = project_path / "projectbook" / "key-findings.md"
     click.echo(f"Generated: {results_path}")
     click.echo(f"Generated: {findings_path}")
+
+    # Call report agent for project-level narrative
+    narrative = _run_report_agent(
+        project_path,
+        "",
+        "Write a project-level narrative report covering all experiments "
+        "and the research progression.",
+    )
+    if narrative:
+        from urika.core.report_writer import write_versioned
+
+        narrative_path = project_path / "projectbook" / "narrative.md"
+        narrative_path.parent.mkdir(parents=True, exist_ok=True)
+        write_versioned(narrative_path, narrative + "\n")
+        click.echo(f"Generated: {narrative_path}")
 
 
 @cli.command()
@@ -1484,7 +1568,7 @@ def present(project: str | None) -> None:
     """Generate a presentation for an experiment."""
     import asyncio
 
-    from urika.cli_display import print_agent
+    from urika.cli_display import print_agent, print_success
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -1493,23 +1577,18 @@ def present(project: str | None) -> None:
     if not experiments:
         raise click.ClickException("No experiments.")
 
-    # Pick experiment
-    click.echo("\n  Select experiment:")
-    for i, exp in enumerate(reversed(experiments), 1):
+    # Build options — most recent first, plus all/project choices
+    reversed_exps = list(reversed(experiments))
+    options = []
+    for exp in reversed_exps:
         progress = load_progress(project_path, exp.experiment_id)
-        status = progress.get("status", "pending")
+        exp_status = progress.get("status", "pending")
         runs = len(progress.get("runs", []))
-        marker = " (default)" if i == 1 else ""
-        click.echo(f"    {i}. {exp.experiment_id} [{status}, {runs} runs]{marker}")
-    while True:
-        raw = click.prompt("  Choice", default="1").strip()
-        try:
-            idx = int(raw)
-            if 1 <= idx <= len(experiments):
-                exp_id = list(reversed(experiments))[idx - 1].experiment_id
-                break
-        except ValueError:
-            pass
+        options.append(f"{exp.experiment_id} [{exp_status}, {runs} runs]")
+    options.append("All experiments (generate for each)")
+    options.append("Project level (one overarching presentation)")
+
+    choice = _prompt_numbered("\n  Select:", options, default=1)
 
     try:
         from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
@@ -1517,11 +1596,37 @@ def present(project: str | None) -> None:
     except ImportError:
         raise click.ClickException("Claude Agent SDK not installed.")
 
-    print_agent("presentation_agent")
-    click.echo(f"  Generating presentation for {exp_id}...")
     runner = ClaudeSDKRunner()
-    asyncio.run(_generate_presentation(project_path, exp_id, runner, _noop_callback))
-    click.echo(f"  ✓ Saved to experiments/{exp_id}/presentation/index.html")
+
+    if choice.startswith("All"):
+        # Generate presentation for each experiment
+        for exp in experiments:
+            print_agent("presentation_agent")
+            click.echo(f"  Generating presentation for {exp.experiment_id}...")
+            asyncio.run(
+                _generate_presentation(
+                    project_path, exp.experiment_id, runner, _noop_callback
+                )
+            )
+            print_success(
+                f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
+            )
+        print_success("All presentations generated")
+    elif choice.startswith("Project"):
+        # Project-level presentation
+        print_agent("presentation_agent")
+        click.echo("  Generating project-level presentation...")
+        asyncio.run(_generate_presentation(project_path, "", runner, _noop_callback))
+        print_success("Saved to projectbook/presentation/index.html")
+    else:
+        # Single experiment
+        exp_id = choice.split(" [")[0]
+        print_agent("presentation_agent")
+        click.echo(f"  Generating presentation for {exp_id}...")
+        asyncio.run(
+            _generate_presentation(project_path, exp_id, runner, _noop_callback)
+        )
+        print_success(f"Saved to experiments/{exp_id}/presentation/index.html")
 
 
 @cli.command()

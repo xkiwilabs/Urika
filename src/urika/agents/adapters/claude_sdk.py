@@ -34,6 +34,8 @@ class ClaudeSDKRunner(AgentRunner):
         num_turns = 0
         duration_ms = 0
         cost_usd: float | None = None
+        tokens_in = 0
+        tokens_out = 0
         is_error = False
 
         async for msg in query(prompt=prompt, options=options):
@@ -54,6 +56,9 @@ class ClaudeSDKRunner(AgentRunner):
                 duration_ms = msg.duration_ms
                 cost_usd = msg.total_cost_usd
                 is_error = msg.is_error
+                # Populate token counts if available from SDK
+                tokens_in = getattr(msg, "total_input_tokens", 0) or 0
+                tokens_out = getattr(msg, "total_output_tokens", 0) or 0
 
         return AgentResult(
             success=not is_error,
@@ -64,6 +69,8 @@ class ClaudeSDKRunner(AgentRunner):
             duration_ms=duration_ms,
             cost_usd=cost_usd,
             error="Agent reported error" if is_error else None,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
         )
 
     def _build_options(self, config: AgentConfig) -> ClaudeAgentOptions:

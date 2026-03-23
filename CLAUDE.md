@@ -18,10 +18,10 @@ Urika is a multi-agent scientific analysis and modelling platform for behavioral
 - **Planning Agent**: Reviews context and decides the next analytical step
 - **Task Agent**: Writes Python code, runs experiments, records observations
 - **Evaluator**: Read-only scoring, validates against success criteria
-- **Suggestion Agent**: Analyzes results, proposes next experiments
+- **Advisor Agent**: Analyzes results, proposes next experiments
 - **Tool Builder**: Creates project-specific tools and skills
 - **Literature Agent**: Searches papers, builds knowledge base
-- **Orchestrator**: Hybrid deterministic loop (planning→task→evaluator→suggestion) + LLM at strategic decision points
+- **Orchestrator**: Hybrid deterministic loop (planning→task→evaluator→advisor) + LLM at strategic decision points
 
 ## Key Design Documents
 
@@ -43,7 +43,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Core Modules
 
-- `src/urika/cli.py` — Click CLI: `new` (with `--data`, `--description`), `list`, `status`, `experiment`, `results`, `methods <project>`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`
+- `src/urika/cli.py` — Click CLI: `new` (with `--data`, `--description`), `list`, `status`, `experiment`, `results`, `methods <project>`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`, `advisor`, `evaluate`, `present`, `criteria`, `usage`
 - `src/urika/cli_display.py` — Terminal display: colors, spinners, ThinkingPanel, agent labels, ASCII header
 - `src/urika/repl.py` — Interactive REPL shell with prompt_toolkit, tab completion, slash commands
 - `src/urika/repl_commands.py` — REPL slash command handlers (/run, /project, /report, /present, /advisor, /evaluate, /plan, etc.)

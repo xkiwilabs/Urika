@@ -21,6 +21,8 @@ class AgentResult:
     duration_ms: int
     cost_usd: float | None = None
     error: str | None = None
+    tokens_in: int = 0
+    tokens_out: int = 0
 
 
 class AgentRunner(ABC):

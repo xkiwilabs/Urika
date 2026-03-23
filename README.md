@@ -69,14 +69,21 @@ urika run sleep-study --continue
 | `urika knowledge ingest <project> <source>` | Ingest a document |
 | `urika knowledge search <project> <query>` | Search knowledge base |
 | `urika knowledge list <project>` | List knowledge entries |
+| `urika advisor <project> <text>` | Ask the advisor agent a question |
+| `urika evaluate <project> [experiment]` | Run evaluator on an experiment |
+| `urika present <project>` | Generate a presentation |
+| `urika criteria <project>` | Show current project criteria |
+| `urika usage [project]` | Show usage stats |
 
 ## Built-in Tools
 
 | Tool | Category | Description |
 |------|----------|-------------|
 | `correlation_analysis` | exploration | Correlation matrix and top correlations |
+| `cross_validation` | evaluation | Cross-validation scoring |
 | `data_profiler` | exploration | Dataset profiling with summary statistics |
 | `descriptive_stats` | statistics | Descriptive statistics with skew and kurtosis |
+| `group_split` | preprocessing | Group-aware train/test splitting |
 | `hypothesis_tests` | statistics | T-test, chi-squared, and normality tests |
 | `linear_regression` | regression | OLS linear regression |
 | `logistic_regression` | classification | Logistic regression classifier |
@@ -85,6 +92,7 @@ urika run sleep-study --continue
 | `outlier_detection` | exploration | IQR and z-score outlier detection |
 | `paired_t_test` | statistical_test | Paired t-test for related samples |
 | `random_forest` | regression | Random forest regression |
+| `train_val_test_split` | preprocessing | Train/validation/test splitting |
 | `visualization` | exploration | Histogram, scatter, and box plots |
 | `xgboost_regression` | regression | Gradient boosting regression |
 
@@ -122,7 +130,7 @@ Urika runs an autonomous agent loop for each experiment:
 1. **Planning Agent** reviews context and decides the next analytical step
 2. **Task Agent** explores data, writes Python code, runs tools
 3. **Evaluator** scores results against success criteria (read-only)
-4. **Suggestion Agent** analyzes results, proposes next experiments
+4. **Advisor Agent** analyzes results, proposes next experiments
 5. **Tool Builder** creates new tools on demand
 6. **Literature Agent** searches papers and builds knowledge base
 

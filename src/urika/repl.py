@@ -46,7 +46,7 @@ class UrikaCompleter(Completer):
                     for name in get_project_names():
                         if name.startswith(arg):
                             yield Completion(name, start_position=-len(arg))
-                elif cmd in ("present", "logs"):
+                elif cmd in ("present", "logs", "evaluate", "report", "plan"):
                     arg = parts[1] if len(parts) > 1 else ""
                     for eid in get_experiment_ids(self.session):
                         if eid.startswith(arg):

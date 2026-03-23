@@ -17,8 +17,8 @@ Analyse the results of experiment `{experiment_id}` and propose 1-3 concrete nex
 3. **Read** the progress file at `{experiment_dir}/progress.json` to review methods tried and metrics achieved.
 4. **Read** the method registry at `{project_dir}/methods.json` to see all previously tried methods across experiments, their metrics, and status. Use this to identify what has already been explored and where genuine gaps remain.
 5. **Identify gaps** — what hasn't been tried? Where are the biggest potential gains?
-5. **Propose** 1-3 focused next experiments with clear rationale.
-6. **Evaluate criteria** — determine whether the project's success criteria should be updated based on what has been learned so far.
+6. **Propose** 1-3 focused next experiments with clear rationale.
+7. **Evaluate criteria** — determine whether the project's success criteria should be updated based on what has been learned so far.
 
 ## Output Format
 
@@ -70,3 +70,5 @@ Do **not** propose criteria updates speculatively. Base every proposal on concre
 - Do NOT run any bash commands.
 - Keep suggestions actionable and specific — avoid vague recommendations.
 - Prioritise suggestions by expected impact.
+- Use plain language — explain methods and concepts so a researcher outside this specific field can understand.
+- Define acronyms on first use.
