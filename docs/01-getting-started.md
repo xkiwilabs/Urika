@@ -1,6 +1,6 @@
 # Getting Started
 
-Urika is a multi-agent scientific analysis platform for behavioral and health sciences. You give it a dataset and a research question; its agents autonomously explore analytical approaches, build tools, evaluate methods, and document everything in a structured projectbook.
+Urika is a multi-agent scientific analysis platform. You give it a dataset and a research question; its agents autonomously explore analytical approaches, build tools, evaluate methods, and document everything in a structured projectbook.
 
 ## Requirements
 

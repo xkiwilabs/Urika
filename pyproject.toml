@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "urika"
 version = "0.1.0"
-description = "Agentic scientific analysis platform for behavioral and health sciences"
+description = "Multi-agent scientific analysis platform"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

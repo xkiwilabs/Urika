@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Urika is a multi-agent scientific analysis and modelling platform for behavioral and health sciences. Users create projects (one dataset + one research question each), and Urika's agents autonomously explore analytical approaches, build tools, evaluate methods, and document everything in a structured labbook.
+Urika is a multi-agent scientific analysis and modelling platform. Users create projects (one dataset + one research question each), and Urika's agents autonomously explore analytical approaches, build tools, evaluate methods, and document everything in a structured projectbook.
 
 ## Hierarchy
 

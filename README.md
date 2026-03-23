@@ -1,9 +1,5 @@
 <p align="center">
-  <img src="docs/assets/header.svg" alt="Urika" width="520">
-</p>
-
-<p align="center">
-  <strong>Multi-agent scientific analysis platform for behavioral and health sciences.</strong>
+  <img src="docs/assets/header.png" alt="Urika" width="580">
 </p>
 
 <p align="center">
