@@ -70,6 +70,64 @@ async def _generate_reports(
     except Exception:
         pass
 
+    # Generate agent-written experiment narrative
+    if runner is not None:
+        try:
+            registry = AgentRegistry()
+            registry.discover()
+            report_role = registry.get("report_agent")
+            if report_role is not None:
+                progress("agent", "Report agent \u2014 writing experiment narrative")
+                config = report_role.build_config(
+                    project_dir=project_dir, experiment_id=experiment_id
+                )
+                result = await runner.run(
+                    config,
+                    f"Write a detailed narrative report for experiment {experiment_id}.",
+                    on_message=on_message,
+                )
+                if result.success and result.text_output:
+                    from urika.core.report_writer import write_versioned
+
+                    narrative_path = (
+                        project_dir
+                        / "experiments"
+                        / experiment_id
+                        / "labbook"
+                        / "narrative.md"
+                    )
+                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                    write_versioned(narrative_path, result.text_output.strip() + "\n")
+                    progress("result", "Experiment narrative written")
+        except Exception:
+            pass
+
+    # Generate project-level narrative
+    if runner is not None:
+        try:
+            registry = AgentRegistry()
+            registry.discover()
+            report_role = registry.get("report_agent")
+            if report_role is not None:
+                progress("agent", "Report agent \u2014 writing project narrative")
+                config = report_role.build_config(
+                    project_dir=project_dir, experiment_id=""
+                )
+                result = await runner.run(
+                    config,
+                    "Write a project-level narrative report covering all experiments and the research progression.",
+                    on_message=on_message,
+                )
+                if result.success and result.text_output:
+                    from urika.core.report_writer import write_versioned
+
+                    narrative_path = project_dir / "projectbook" / "narrative.md"
+                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                    write_versioned(narrative_path, result.text_output.strip() + "\n")
+                    progress("result", "Project narrative written")
+        except Exception:
+            pass
+
     # Generate presentation slide deck
     if runner is not None:
         try:

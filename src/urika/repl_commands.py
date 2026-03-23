@@ -418,7 +418,23 @@ def cmd_report(session: ReplSession, args: str) -> None:
             write_readme(session.project_path)
         except Exception:
             pass
-        click.echo("  \u2713 All reports updated")
+        click.echo("  \u2713 All template reports updated")
+
+        # Generate project-level narrative via report agent
+        text = _run_single_agent(
+            session,
+            "report_agent",
+            "",
+            "Write a project-level narrative report covering all experiments and the research progression.",
+        )
+        if text:
+            from urika.core.report_writer import write_versioned
+
+            narrative_path = session.project_path / "projectbook" / "narrative.md"
+            narrative_path.parent.mkdir(parents=True, exist_ok=True)
+            write_versioned(narrative_path, text + "\n")
+            link = _file_link(narrative_path, "projectbook/narrative.md")
+            click.echo(f"  \u2713 Narrative: {link}")
     else:
         click.echo(f"  Generating report for {exp_choice}...")
         try:
@@ -437,6 +453,31 @@ def cmd_report(session: ReplSession, args: str) -> None:
             click.echo(f"  \u2713 Report: {link}")
         except Exception as exc:
             click.echo(f"  \u2717 Error: {exc}")
+
+        # Generate experiment narrative via report agent
+        text = _run_single_agent(
+            session,
+            "report_agent",
+            exp_choice,
+            f"Write a detailed narrative report for experiment {exp_choice}.",
+        )
+        if text:
+            from urika.core.report_writer import write_versioned
+
+            narrative_path = (
+                session.project_path
+                / "experiments"
+                / exp_choice
+                / "labbook"
+                / "narrative.md"
+            )
+            narrative_path.parent.mkdir(parents=True, exist_ok=True)
+            write_versioned(narrative_path, text + "\n")
+            link = _file_link(
+                narrative_path,
+                f"experiments/{exp_choice}/labbook/narrative.md",
+            )
+            click.echo(f"  \u2713 Narrative: {link}")
 
 
 @command("inspect", requires_project=True, description="Inspect dataset")
@@ -536,8 +577,8 @@ def cmd_plan(session: ReplSession, args: str) -> None:
 
 def _run_single_agent(
     session: ReplSession, agent_name: str, experiment_id: str, prompt: str
-) -> None:
-    """Run a single agent and display its output."""
+) -> str:
+    """Run a single agent and display its output. Returns the text output."""
     try:
         from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
         from urika.agents.registry import AgentRegistry
@@ -550,7 +591,7 @@ def _run_single_agent(
         role = registry.get(agent_name)
         if role is None:
             print_error(f"Agent '{agent_name}' not found.")
-            return
+            return ""
 
         print_agent(agent_name)
 
@@ -581,17 +622,21 @@ def _run_single_agent(
 
         if result.success and result.text_output:
             click.echo(f"\n{result.text_output.strip()}\n")
+            return result.text_output.strip()
         else:
             print_error(f"Error: {result.error}")
+            return ""
 
     except ImportError:
         from urika.cli_display import print_error
 
         print_error("Claude Agent SDK not installed.")
+        return ""
     except Exception as exc:
         from urika.cli_display import print_error
 
         print_error(f"Error: {exc}")
+        return ""
 
 
 def get_global_stats() -> dict:

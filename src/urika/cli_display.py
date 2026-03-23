@@ -80,6 +80,8 @@ _AGENT_COLORS: dict[str, str] = {
     "advisor_agent": _C.MAGENTA,
     "tool_builder": _C.CYAN + _C.DIM,
     "literature_agent": _C.BLUE + _C.DIM,
+    "report_agent": _C.BLUE,
+    "presentation_agent": _C.BLUE + _C.DIM,
 }
 
 _AGENT_LABELS: dict[str, str] = {
@@ -90,6 +92,8 @@ _AGENT_LABELS: dict[str, str] = {
     "advisor_agent": "Advisor Agent",
     "tool_builder": "Tool Builder",
     "literature_agent": "Literature Agent",
+    "report_agent": "Report Agent",
+    "presentation_agent": "Presentation Agent",
 }
 
 
@@ -116,6 +120,8 @@ _AGENT_ACTIVITY: dict[str, str] = {
     "advisor_agent": "Generating suggestions\u2026",
     "tool_builder": "Building tool\u2026",
     "literature_agent": "Searching knowledge\u2026",
+    "report_agent": "Writing report\u2026",
+    "presentation_agent": "Creating slides\u2026",
 }
 
 

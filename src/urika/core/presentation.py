@@ -80,7 +80,9 @@ def render_presentation(
     html = html.replace("{{THEME_CSS}}", theme_css)
     html = html.replace("{{SLIDES_HTML}}", slides_html)
 
-    (output_dir / "index.html").write_text(html)
+    from urika.core.report_writer import write_versioned
+
+    write_versioned(output_dir / "index.html", html)
     return output_dir
 
 

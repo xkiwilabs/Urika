@@ -1,4 +1,5 @@
 """Tests for REPL slash command handlers."""
+
 from __future__ import annotations
 from pathlib import Path
 
@@ -18,9 +19,16 @@ class TestCommandRegistration:
 
     def test_project_commands_has_expected_keys(self) -> None:
         expected = {
-            "status", "run", "experiments", "methods",
-            "criteria", "present", "report", "inspect",
-            "logs", "knowledge",
+            "status",
+            "run",
+            "experiments",
+            "methods",
+            "criteria",
+            "present",
+            "report",
+            "inspect",
+            "logs",
+            "knowledge",
         }
         assert expected.issubset(set(PROJECT_COMMANDS.keys()))
 
@@ -29,7 +37,9 @@ class TestCommandRegistration:
             assert "func" in entry, f"Command '{name}' missing 'func'"
             assert "description" in entry, f"Command '{name}' missing 'description'"
             assert callable(entry["func"]), f"Command '{name}' func not callable"
-            assert isinstance(entry["description"], str), f"Command '{name}' description not str"
+            assert isinstance(entry["description"], str), (
+                f"Command '{name}' description not str"
+            )
 
 
 class TestGetCommandNames:
