@@ -135,7 +135,11 @@ Best for: "I need a working prediction pipeline" or "I want to deploy this model
 
 ## The project builder agent flow
 
-After collecting basic project information, the project builder agent runs an interactive question-and-answer session with three phases:
+After collecting basic project information, the project builder agent runs an interactive question-and-answer session. This is the most important part of project creation — each answer you provide adds **context** that all agents use throughout the project.
+
+Think of this as context engineering: Urika's agents are only as effective as the context they have. A project with a rich description, detailed answers about data collection methods and procedures, and a few relevant papers will produce dramatically better analysis than one with minimal context. The agent is helping you build that context in a structured way.
+
+The session has three phases:
 
 ### Phase 1: Clarifying questions (Project Builder agent)
 
