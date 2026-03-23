@@ -197,10 +197,24 @@ def cmd_run(session: ReplSession, args: str) -> None:
         max_turns = int(
             _click.prompt("  Max turns", default=str(defaults["max_turns"]))
         )
-        auto_mode = _click.prompt(
-            "  Auto mode (checkpoint/capped/unlimited)", default=defaults["auto_mode"]
+        auto_mode = _prompt_numbered(
+            "\n  Auto mode:",
+            [
+                "Checkpoint — pause between experiments for review",
+                "Capped — run up to max experiments with no pauses",
+                "Unlimited — run until criteria met or advisor says done",
+            ],
+            default={"checkpoint": 1, "capped": 2, "unlimited": 3}.get(
+                defaults["auto_mode"], 1
+            ),
         )
-        run_instructions = _click.prompt("  Instructions", default="")
+        # Map back to short name
+        auto_mode = {
+            "Checkpoint": "checkpoint",
+            "Capped": "capped",
+            "Unlimited": "unlimited",
+        }.get(auto_mode.split("—")[0].strip(), "checkpoint")
+        run_instructions = _click.prompt("  Instructions (optional)", default="")
 
     # Use conversation context as instructions if none provided
     if not run_instructions and session.conversation:
