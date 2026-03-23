@@ -35,6 +35,7 @@ class ProjectBuilder:
         self.description = description
         self.question = question
         self.mode = mode
+        self.web_search: bool = False
         self._scan_result: ScanResult | None = None
         self._data_summary: DataSummary | None = None
         self._suggestions: dict[str, Any] | None = None
@@ -99,17 +100,19 @@ class ProjectBuilder:
         )
         create_project_workspace(project_dir, config)
 
-        # Append data section to urika.toml if data source is set
-        if self.source_path:
-            with open(project_dir / "urika.toml", "rb") as f:
-                existing = tomllib.load(f)
+        # Append data section and preferences to urika.toml
+        with open(project_dir / "urika.toml", "rb") as f:
+            existing = tomllib.load(f)
 
+        if self.source_path:
             existing["data"] = {
                 "source": str(self.source_path),
                 "format": self._detect_format(),
                 "pattern": "**/*.csv",
             }
-            _write_toml(project_dir / "urika.toml", existing)
+
+        existing.setdefault("preferences", {})["web_search"] = self.web_search
+        _write_toml(project_dir / "urika.toml", existing)
 
         # Write initial suggestions if set
         if self._suggestions:

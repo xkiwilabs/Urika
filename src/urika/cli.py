@@ -263,6 +263,13 @@ def new(
     except Exception as exc:
         print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
 
+    # Ask about web search before writing project files
+    web_search = click.confirm(
+        "\nAllow agents to search the web for relevant papers?",
+        default=False,
+    )
+    builder.web_search = web_search
+
     with Spinner("Writing project files"):
         project_dir = builder.write_project()
 
@@ -275,6 +282,16 @@ def new(
         if ingest:
             with Spinner("Ingesting knowledge"):
                 _ingest_knowledge(project_dir, scan_result)
+    elif data_path and scan_result:
+        click.echo(
+            "\n  No documentation or papers found in the data path.\n"
+            "  Adding relevant papers to your project's knowledge/papers/\n"
+            "  directory can significantly improve analysis quality.\n"
+            "  At minimum, include a detailed description of the data\n"
+            "  collection methods and procedures.\n"
+            "  You can add papers at any time with:\n"
+            f"    urika knowledge ingest {name} <path>"
+        )
 
     registry = ProjectRegistry()
     registry.register(name, project_dir)

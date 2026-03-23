@@ -49,6 +49,7 @@ Output a JSON block with your findings:
 }}
 ```
 
+{web_search_section}
 ## Constraints
 
 - Only write files inside `{knowledge_dir}/`

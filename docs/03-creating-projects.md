@@ -18,7 +18,7 @@ urika new [NAME] [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--data PATH` | Path to a data file or directory. Can be a single CSV, a directory of CSVs, Excel files, Parquet, JSON, etc. |
+| `--data PATH` | Path to a data file or directory. Can include data files (CSV, Excel, Parquet, JSON), research papers (PDF), documentation (MD, TXT), and code. Urika scans and classifies everything it finds. |
 | `-q, --question TEXT` | The research question for this project. |
 | `-m, --mode MODE` | Investigation mode: `exploratory`, `confirmatory`, or `pipeline`. |
 | `--description TEXT` | Free-text description of what you are trying to analyse or predict. |
