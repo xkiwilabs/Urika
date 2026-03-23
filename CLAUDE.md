@@ -23,19 +23,9 @@ Urika is a multi-agent scientific analysis and modelling platform for behavioral
 - **Literature Agent**: Searches papers, builds knowledge base
 - **Orchestrator**: Hybrid deterministic loop (planning→task→evaluator→advisor) + LLM at strategic decision points
 
-## Key Design Documents
+## Runtime
 
-- `docs/plans/2026-03-05-project-structure-design.md` — Project structure design
-- `docs/plans/2026-03-05-project-foundation.md` — Phase 1 foundation plan
-- `docs/plans/2026-03-10-session-report-design.md` — Session management + report generation
-- `docs/plans/2026-03-11-v01-release-design.md` — v0.1 release readiness
-- `docs/.archive/option-a-claude-agent-sdk.md` — Claude Agent SDK runtime option
-- `docs/.archive/option-b-build-on-pi.md` — Pi SDK runtime option
-- `docs/.archive/option-c-custom-runtime.md` — Custom runtime option
-
-## Runtime Strategy
-
-Build on Claude Agent SDK first (v0.x), later build custom Python runtime (v1.x) for model-agnostic support.
+Built on Claude Agent SDK. Agents run as Claude Code subprocesses with configured tools, permission boundaries, and security policies.
 
 ## Target Domains
 
