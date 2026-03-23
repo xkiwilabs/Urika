@@ -35,6 +35,17 @@ def create_project_workspace(project_dir: Path, config: ProjectConfig) -> None:
 
     _write_toml(project_dir / "urika.toml", config.to_toml_dict())
 
+    # Append privacy section comment for discoverability (opt-in)
+    with open(project_dir / "urika.toml", "a") as f:
+        f.write(
+            "# [privacy]\n"
+            '# mode = "cloud"  # cloud | local | hybrid\n'
+            "#\n"
+            "# [privacy.endpoints.local]\n"
+            '# base_url = "http://localhost:11434"\n'
+            '# api_key_env = ""\n'
+        )
+
     (project_dir / "projectbook" / "key-findings.md").write_text(
         f"# Key Findings: {config.name}\n\nNo findings yet.\n"
     )

@@ -62,13 +62,30 @@ class AgentConfig:
 
 
 @dataclass
+class EndpointConfig:
+    """A named API endpoint."""
+
+    base_url: str = ""  # empty = default Anthropic API
+    api_key_env: str = ""  # env var name containing the API key (e.g. "UNI_API_KEY")
+
+
+@dataclass
+class AgentModelConfig:
+    """Per-agent model and endpoint assignment."""
+
+    endpoint: str = "cloud"  # name from [privacy.endpoints]
+    model: str = ""  # model name, empty = use default
+
+
+@dataclass
 class RuntimeConfig:
     """Project-level runtime configuration."""
 
     backend: str = "claude"
     model: str = ""
-    model_overrides: dict[str, str] = field(default_factory=dict)
+    model_overrides: dict[str, AgentModelConfig] = field(default_factory=dict)
     privacy_mode: str = "cloud"  # cloud | local | hybrid
+    endpoints: dict[str, EndpointConfig] = field(default_factory=dict)
 
 
 def load_runtime_config(project_dir: Path) -> RuntimeConfig:
@@ -82,11 +99,37 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         runtime = data.get("runtime", {})
+        privacy = data.get("privacy", {})
+
+        # Parse per-agent model overrides from [runtime.models.<agent_name>]
+        raw_models = runtime.get("models", {})
+        model_overrides: dict[str, AgentModelConfig] = {}
+        for agent_name, agent_cfg in raw_models.items():
+            if isinstance(agent_cfg, dict):
+                model_overrides[agent_name] = AgentModelConfig(
+                    endpoint=agent_cfg.get("endpoint", "cloud"),
+                    model=agent_cfg.get("model", ""),
+                )
+            elif isinstance(agent_cfg, str):
+                # Backward compat: plain string is treated as model name
+                model_overrides[agent_name] = AgentModelConfig(model=agent_cfg)
+
+        # Parse endpoint definitions from [privacy.endpoints.<name>]
+        raw_endpoints = privacy.get("endpoints", {})
+        endpoints: dict[str, EndpointConfig] = {}
+        for ep_name, ep_cfg in raw_endpoints.items():
+            if isinstance(ep_cfg, dict):
+                endpoints[ep_name] = EndpointConfig(
+                    base_url=ep_cfg.get("base_url", ""),
+                    api_key_env=ep_cfg.get("api_key_env", ""),
+                )
+
         return RuntimeConfig(
             backend=runtime.get("backend", "claude"),
             model=runtime.get("model", ""),
-            model_overrides=runtime.get("models", {}),
-            privacy_mode=data.get("privacy", {}).get("mode", "cloud"),
+            model_overrides=model_overrides,
+            privacy_mode=privacy.get("mode", "cloud"),
+            endpoints=endpoints,
         )
     except Exception:
         return RuntimeConfig()
@@ -97,6 +140,71 @@ def build_agent_env(project_dir: Path) -> dict[str, str] | None:
     from urika.core.venv import get_venv_env
 
     return get_venv_env(project_dir)
+
+
+def build_agent_env_for_endpoint(
+    project_dir: Path,
+    agent_name: str,
+    runtime_config: RuntimeConfig | None = None,
+) -> dict[str, str] | None:
+    """Build environment dict for an agent based on privacy/endpoint config.
+
+    Combines venv env (if enabled) with endpoint env (base_url, api_key).
+    Returns None if using defaults (cloud, no venv).
+    """
+    import os
+
+    from urika.core.venv import get_venv_env
+
+    if runtime_config is None:
+        runtime_config = load_runtime_config(project_dir)
+
+    env = None
+
+    # Start with venv env if enabled
+    venv_env = get_venv_env(project_dir)
+    if venv_env:
+        env = dict(venv_env)
+
+    # Determine which endpoint this agent should use
+    agent_config = runtime_config.model_overrides.get(agent_name)
+    endpoint_name = "cloud"
+    if agent_config:
+        endpoint_name = agent_config.endpoint
+    elif runtime_config.privacy_mode == "local":
+        endpoint_name = "local"
+    elif runtime_config.privacy_mode == "hybrid":
+        # Default hybrid assignments — data_agent and tool_builder run locally
+        _LOCAL_AGENTS = {"data_agent", "tool_builder"}
+        if agent_name in _LOCAL_AGENTS:
+            endpoint_name = "local"
+
+    if endpoint_name != "cloud":
+        endpoint = runtime_config.endpoints.get(endpoint_name)
+        if endpoint:
+            if env is None:
+                env = dict(os.environ)
+            if endpoint.base_url:
+                env["ANTHROPIC_BASE_URL"] = endpoint.base_url
+            if endpoint.api_key_env:
+                # Read the actual key from the environment
+                key = os.environ.get(endpoint.api_key_env, "")
+                if key:
+                    env["ANTHROPIC_API_KEY"] = key
+                elif endpoint.base_url and "localhost" in endpoint.base_url:
+                    env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
+            elif endpoint.base_url and "localhost" in endpoint.base_url:
+                env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
+
+    return env
+
+
+def get_agent_model(agent_name: str, runtime_config: RuntimeConfig) -> str | None:
+    """Get the model override for a specific agent, or None for default."""
+    agent_config = runtime_config.model_overrides.get(agent_name)
+    if agent_config and agent_config.model:
+        return agent_config.model
+    return runtime_config.model or None
 
 
 @dataclass

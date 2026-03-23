@@ -5,7 +5,14 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from urika.agents.config import AgentConfig, AgentRole, SecurityPolicy, build_agent_env
+from urika.agents.config import (
+    AgentConfig,
+    AgentRole,
+    SecurityPolicy,
+    build_agent_env_for_endpoint,
+    get_agent_model,
+    load_runtime_config,
+)
 from urika.agents.prompt import load_prompt
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -33,6 +40,7 @@ def get_role() -> AgentRole:
 
 
 def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
+    runtime_config = load_runtime_config(project_dir)
     knowledge_dir = project_dir / "knowledge"
     web_search_enabled = _is_web_search_enabled(project_dir)
 
@@ -80,5 +88,8 @@ def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
         ),
         max_turns=15,
         cwd=project_dir,
-        env=build_agent_env(project_dir),
+        model=get_agent_model("literature_agent", runtime_config),
+        env=build_agent_env_for_endpoint(
+            project_dir, "literature_agent", runtime_config
+        ),
     )

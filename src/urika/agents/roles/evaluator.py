@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from urika.agents.config import AgentConfig, AgentRole, SecurityPolicy
+from urika.agents.config import (
+    AgentConfig,
+    AgentRole,
+    SecurityPolicy,
+    build_agent_env_for_endpoint,
+    get_agent_model,
+    load_runtime_config,
+)
 from urika.agents.prompt import load_prompt
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -21,6 +28,7 @@ def get_role() -> AgentRole:
 def build_config(
     project_dir: Path, *, experiment_id: str = "", **kwargs: object
 ) -> AgentConfig:
+    runtime_config = load_runtime_config(project_dir)
     experiment_dir = project_dir / "experiments" / experiment_id
     return AgentConfig(
         name="evaluator",
@@ -42,4 +50,6 @@ def build_config(
         ),
         max_turns=10,
         cwd=project_dir,
+        model=get_agent_model("evaluator", runtime_config),
+        env=build_agent_env_for_endpoint(project_dir, "evaluator", runtime_config),
     )

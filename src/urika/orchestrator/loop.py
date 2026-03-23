@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from urika.agents.config import load_runtime_config
 from urika.agents.registry import AgentRegistry
 from urika.agents.runner import AgentRunner
 from urika.core.progress import append_run, load_progress
@@ -469,6 +470,21 @@ async def run_experiment(
                     task_input = plan_result.text_output
             else:
                 task_input = task_prompt
+
+            # --- data_agent (hybrid mode only) ---
+            runtime_config = load_runtime_config(project_dir)
+            if runtime_config.privacy_mode == "hybrid":
+                data_role = registry.get("data_agent")
+                if data_role is not None:
+                    progress("agent", "Data agent \u2014 extracting features")
+                    data_config = data_role.build_config(
+                        project_dir=project_dir, experiment_id=experiment_id
+                    )
+                    data_result = await runner.run(
+                        data_config, task_input, on_message=on_message
+                    )
+                    if data_result.success and data_result.text_output:
+                        task_input = data_result.text_output + "\n\n" + task_input
 
             # --- task_agent ---
             progress("agent", "Task agent — running experiment")

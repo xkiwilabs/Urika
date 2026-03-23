@@ -1,4 +1,4 @@
-"""Project builder agent — scopes new projects by analysing data."""
+"""Data agent — reads raw data and outputs sanitized summaries."""
 
 from __future__ import annotations
 
@@ -19,34 +19,36 @@ _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 def get_role() -> AgentRole:
     return AgentRole(
-        name="project_builder",
-        description="Analyses data and generates clarifying questions for project setup",
+        name="data_agent",
+        description="Reads raw data and outputs sanitized summaries and features",
         build_config=build_config,
     )
 
 
 def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
     runtime_config = load_runtime_config(project_dir)
+    data_dir = project_dir / "data"
+    experiments_dir = project_dir / "experiments"
+
     return AgentConfig(
-        name="project_builder",
+        name="data_agent",
         system_prompt=load_prompt(
-            _PROMPTS_DIR / "project_builder_system.md",
+            _PROMPTS_DIR / "data_agent_system.md",
             variables={
                 "project_dir": str(project_dir),
+                "data_dir": str(data_dir),
             },
         ),
-        allowed_tools=["Read", "Glob", "Grep"],
+        allowed_tools=["Read", "Bash", "Glob", "Grep", "Write"],
         disallowed_tools=[],
         security=SecurityPolicy(
-            writable_dirs=[],
+            writable_dirs=[experiments_dir, data_dir],
             readable_dirs=[project_dir],
-            allowed_bash_prefixes=[],
-            blocked_bash_patterns=[],
+            allowed_bash_prefixes=["python ", "pip "],
+            blocked_bash_patterns=["rm -rf", "git push", "git reset"],
         ),
         max_turns=10,
         cwd=project_dir,
-        model=get_agent_model("project_builder", runtime_config),
-        env=build_agent_env_for_endpoint(
-            project_dir, "project_builder", runtime_config
-        ),
+        model=get_agent_model("data_agent", runtime_config),
+        env=build_agent_env_for_endpoint(project_dir, "data_agent", runtime_config),
     )
