@@ -39,7 +39,21 @@ ml = [
     "xgboost>=2.0",
     "lightgbm>=4.0",
 ]
+dl = [
+    "torch>=2.0",
+    "transformers>=4.30",
+]
 knowledge = [
+    "pypdf>=4.0",
+]
+all = [
+    "claude-agent-sdk>=0.1",
+    "matplotlib>=3.7",
+    "seaborn>=0.13",
+    "xgboost>=2.0",
+    "lightgbm>=4.0",
+    "torch>=2.0",
+    "transformers>=4.30",
     "pypdf>=4.0",
 ]
 dev = [
