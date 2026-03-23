@@ -6,8 +6,6 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from urika.core.venv import create_project_venv, get_venv_env, is_venv_enabled
 
 
