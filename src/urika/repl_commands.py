@@ -214,7 +214,9 @@ def cmd_run(session: ReplSession, args: str) -> None:
             "Capped": "capped",
             "Unlimited": "unlimited",
         }.get(auto_mode.split("—")[0].strip(), "checkpoint")
-        run_instructions = _click.prompt("  Instructions (optional)", default="")
+        run_instructions = _click.prompt(
+            "  Instructions (optional, enter to skip)", default=""
+        )
 
     # Use conversation context as instructions if none provided
     if not run_instructions and session.conversation:
