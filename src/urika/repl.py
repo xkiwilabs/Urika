@@ -166,7 +166,8 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
     try:
         from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
         from urika.agents.registry import AgentRegistry
-        from urika.cli_display import Spinner, print_tool_use
+        from urika.cli import _make_on_message
+        from urika.cli_display import Spinner
 
         runner = ClaudeSDKRunner()
         registry = AgentRegistry()
@@ -198,23 +199,7 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             project_dir=session.project_path, experiment_id=""
         )
 
-        def _on_msg(msg):
-            try:
-                if hasattr(msg, "content"):
-                    for block in msg.content:
-                        tool_name = getattr(block, "name", None)
-                        if tool_name:
-                            inp = getattr(block, "input", {}) or {}
-                            detail = ""
-                            if isinstance(inp, dict):
-                                detail = (
-                                    inp.get("command", "")
-                                    or inp.get("file_path", "")
-                                    or inp.get("pattern", "")
-                                )
-                            print_tool_use(tool_name, detail)
-            except Exception:
-                pass
+        _on_msg = _make_on_message()
 
         print_agent("advisor_agent")
         session_info = {

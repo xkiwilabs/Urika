@@ -688,7 +688,8 @@ def _run_single_agent(
     try:
         from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
         from urika.agents.registry import AgentRegistry
-        from urika.cli_display import Spinner, print_agent, print_error, print_tool_use
+        from urika.cli import _make_on_message
+        from urika.cli_display import Spinner, print_agent, print_error
 
         runner = ClaudeSDKRunner()
         registry = AgentRegistry()
@@ -701,23 +702,7 @@ def _run_single_agent(
 
         print_agent(agent_name)
 
-        def _on_msg(msg: object) -> None:
-            try:
-                if hasattr(msg, "content"):
-                    for block in msg.content:
-                        tool_name = getattr(block, "name", None)
-                        if tool_name:
-                            inp = getattr(block, "input", {}) or {}
-                            detail = ""
-                            if isinstance(inp, dict):
-                                detail = (
-                                    inp.get("command", "")
-                                    or inp.get("file_path", "")
-                                    or inp.get("pattern", "")
-                                )
-                            print_tool_use(tool_name, detail)
-            except Exception:
-                pass
+        _on_msg = _make_on_message()
 
         config = role.build_config(
             project_dir=session.project_path, experiment_id=experiment_id
