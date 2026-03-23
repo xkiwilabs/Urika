@@ -300,3 +300,11 @@ Models with strong reasoning and code generation capabilities are recommended fo
 - **Default behavior is unchanged.** If you do not add `[privacy]` or `[runtime]` sections to `urika.toml`, everything runs on the Anthropic API as before.
 - **What needs to be private stays private.** You control exactly which agents access which endpoints. The hybrid default covers most cases, but full customization is available.
 - **Currently only Claude Agent SDK is supported.** OpenAI Agents SDK, Google ADK, and Pi coding agent adapters are planned for upcoming releases.
+
+### Data privacy disclaimer
+
+Hybrid mode is designed to minimize the risk of sensitive data reaching cloud endpoints. The Data Agent sanitizes its output to include only aggregated statistics, feature names, and summaries — not raw individual records. However, **there is always some risk of unintended data leakage in hybrid mode**. For example, an unusual feature name, a rare category value in a summary statistic, or a highly specific data description could indirectly reveal information about the underlying data.
+
+If you are working with highly sensitive data (patient records, classified information, personally identifiable data) or where data privacy or intellectual property protection is a strict requirement, **use private mode for a complete guarantee**. Private mode ensures that no data — raw or summarised — ever reaches an external endpoint.
+
+Urika is provided "as is" without warranty. The authors do not guarantee that hybrid mode will prevent all forms of data leakage. Users are responsible for evaluating whether hybrid mode meets their organisation's data governance requirements.
