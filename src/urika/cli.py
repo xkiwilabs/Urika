@@ -163,8 +163,9 @@ def new(
     )
     from urika.core.project_builder import ProjectBuilder
 
-    # Show welcome header immediately
-    print_header()
+    # Show welcome header immediately (skip if called from REPL)
+    if not os.environ.get("URIKA_REPL"):
+        print_header()
 
     # Prompt for missing required fields
     if name is None:
@@ -273,12 +274,13 @@ def new(
         builder.name = name
         project_dir = _projects_dir() / name
 
-    # Show project details header
-    print_header(
-        project_name=name,
-        mode=mode,
-        data_source=data_path or "",
-    )
+    # Show project details header (skip if called from REPL)
+    if not os.environ.get("URIKA_REPL"):
+        print_header(
+            project_name=name,
+            mode=mode,
+            data_source=data_path or "",
+        )
 
     # Scan and profile if a data path was provided
     scan_result = None
@@ -1320,8 +1322,7 @@ def run(
 
         finally:
             panel.cleanup()
-
-        signal.signal(signal.SIGINT, original_handler)
+            signal.signal(signal.SIGINT, original_handler)
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
         n_exp = result.get("experiments_run", 0)
@@ -1461,9 +1462,8 @@ def run(
 
     finally:
         panel.cleanup()
-
-    # Restore original handler
-    signal.signal(signal.SIGINT, original_handler)
+        # Restore original handler
+        signal.signal(signal.SIGINT, original_handler)
 
     elapsed_ms = int(time.monotonic() * 1000) - start_ms
     run_status = result.get("status", "unknown")

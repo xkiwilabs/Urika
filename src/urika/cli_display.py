@@ -374,7 +374,8 @@ class ThinkingPanel:
             return
         try:
             self._active = True
-            sys.stdout.write(f"\033[2J\033[1;{self._rows - 3}r\033[H")
+            # Set scroll region without clearing screen (preserves scroll history)
+            sys.stdout.write(f"\033[1;{self._rows - 3}r\033[{self._rows - 4};1H")
             sys.stdout.flush()
             atexit.register(self.cleanup)
         except (OSError, ValueError):

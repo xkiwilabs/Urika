@@ -37,9 +37,18 @@ class ReplSession:
         return int((time.monotonic() - self.session_start) * 1000)
 
     def load_project(self, path: Path, name: str) -> None:
+        self.save_usage()  # save current project's usage first
         self.project_path = path
         self.project_name = name
         self.conversation = []
+        # Reset usage for new project
+        self.session_start = time.monotonic()
+        self.session_start_iso = datetime.now(timezone.utc).isoformat()
+        self.total_tokens_in = 0
+        self.total_tokens_out = 0
+        self.total_cost_usd = 0.0
+        self.agent_calls = 0
+        self.experiments_run = 0
 
     def clear_project(self) -> None:
         self.project_path = None

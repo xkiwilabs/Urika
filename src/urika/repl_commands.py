@@ -75,8 +75,7 @@ def cmd_project(session: ReplSession, args: str) -> None:
         return
 
     if session.has_project:
-        # Could check for running experiments here
-        pass
+        session.save_usage()
 
     try:
         config = load_project_config(path)
@@ -101,13 +100,29 @@ def cmd_project(session: ReplSession, args: str) -> None:
 
 @command("new", description="Create a new project")
 def cmd_new(session: ReplSession, args: str) -> None:
+    import os as _os
+
     from urika.cli import new as cli_new
 
+    _os.environ["URIKA_REPL"] = "1"
     ctx = click.Context(cli_new)
     try:
         ctx.invoke(cli_new, name=None, question=None, mode=None, data_path=None, description=None)
     except SystemExit:
         pass
+    finally:
+        _os.environ.pop("URIKA_REPL", None)
+
+    # Auto-load the newly created project
+    from urika.core.registry import ProjectRegistry
+
+    registry = ProjectRegistry()
+    projects = registry.list_all()
+    if projects:
+        latest_name = list(projects.keys())[-1]
+        latest_path = projects[latest_name]
+        session.load_project(latest_path, latest_name)
+        click.echo(f"  Loaded project: {latest_name}")
 
 
 @command("quit", description="Exit Urika")
@@ -319,6 +334,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
             instructions=run_instructions,
             max_experiments=max_experiments,
         )
+        session.experiments_run += 1
     finally:
         os.environ.pop("URIKA_REPL", None)
 
@@ -463,14 +479,15 @@ def cmd_resume(session: ReplSession, args: str) -> None:
         from urika.cli import run as cli_run
 
         ctx = click.Context(cli_run)
+        defaults = _load_run_defaults(session)
         ctx.invoke(
             cli_run,
             project=session.project_name,
             experiment_id=exp.experiment_id,
-            max_turns=50,
+            max_turns=defaults["max_turns"],
             resume=True,
             quiet=False,
-            auto=False,
+            auto=(defaults["auto_mode"] != "checkpoint"),
             instructions="",
             max_experiments=None,
         )
@@ -901,7 +918,7 @@ def _run_single_agent(
     except ImportError:
         from urika.cli_display import print_error
 
-        print_error("Claude Agent SDK not installed.")
+        print_error("Claude Agent SDK not installed. Run: pip install urika[agents]")
         return ""
     except Exception as exc:
         from urika.cli_display import print_error
@@ -973,7 +990,10 @@ def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> 
         marker = " (default)" if i == default else ""
         click.echo(f"    {i}. {opt}{marker}")
     while True:
-        raw = click.prompt("  Choice", default=str(default)).strip()
+        try:
+            raw = click.prompt("  Choice", default=str(default)).strip()
+        except (EOFError, KeyboardInterrupt):
+            return options[default - 1]
         try:
             idx = int(raw)
             if 1 <= idx <= len(options):

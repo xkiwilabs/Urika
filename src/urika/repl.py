@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 import click
 from prompt_toolkit import PromptSession
@@ -91,7 +92,11 @@ def run_repl() -> None:
     def _bottom_toolbar():
         """Dynamic bottom toolbar — grey separator, colored text, no shading."""
         parts = []
-        parts.append("\033[2m" + "─" * 80 + "\033[0m\n")
+        try:
+            cols = os.get_terminal_size().columns
+        except OSError:
+            cols = 80
+        parts.append("\033[2m" + "─" * cols + "\033[0m\n")
         parts.append(" \033[34;1murika\033[0m")
         if session.has_project:
             parts.append(f" \033[2m· {session.project_name}\033[0m")
@@ -109,11 +114,18 @@ def run_repl() -> None:
                 parts.append(f" \033[32m· ~${session.total_cost_usd:.2f}\033[0m")
         return ANSI("".join(parts))
 
+    from prompt_toolkit.styles import Style
+
+    custom_style = Style.from_dict({
+        'bottom-toolbar': 'noreverse',
+    })
+
     prompt_session = PromptSession(
         history=history,
         completer=completer,
         complete_while_typing=True,
         bottom_toolbar=_bottom_toolbar,
+        style=custom_style,
     )
 
     while True:
