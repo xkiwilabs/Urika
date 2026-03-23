@@ -13,7 +13,7 @@
 
 Urika uses multiple AI agents to autonomously explore analytical approaches for your dataset and research question. It creates experiments, tries different methods, evaluates results, and documents everything in a structured projectbook.
 
-Currently supports the **Claude Agent SDK** (Anthropic). Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **Pi** (for local models via Ollama) are planned for upcoming releases.
+Currently supports the **Claude Agent SDK** (Anthropic), including local models via Ollama. Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **Pi** are planned for upcoming releases.
 
 ## Installation
 
@@ -84,7 +84,7 @@ Each project can configure which models and endpoints its agents use. Three priv
 
 Per-agent model routing lets you optimize for cost (Haiku for simple tasks, Opus for complex reasoning) or compliance (institutional servers for data access, cloud for method design). Different projects can have completely different privacy and model settings.
 
-Currently supports Claude Agent SDK. OpenAI, Google, and Pi adapters are planned for upcoming releases.
+See above for supported and upcoming SDK adapters.
 
 See [Models and Privacy](docs/07-models-and-privacy.md) for configuration details.
 
