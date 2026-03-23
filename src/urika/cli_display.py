@@ -189,24 +189,34 @@ def print_header(
     bar_top = "─" * (w - len(" v0.1 "))
     bar_bot = "─" * w
 
+    def _center(text: str, icon: str = "") -> tuple[str, str]:
+        """Return left padding and right padding to center text in box."""
+        visible = len(icon) + (1 if icon else 0) + len(text)
+        total_pad = w - visible
+        left = total_pad // 2
+        right = total_pad - left
+        return " " * left, " " * right
+
     print(f"\n{B}╭─ v0.1 {bar_top}╮╮{R}")
     print(f"{B}│{R}{' ' * w}{B}││{R}")
     for line in logo:
-        pad = " " * (w - len(line) - 2)
-        print(f"{B}│{R}  {B}{line}{R}{pad}{B}││{R}")
+        total_pad = w - len(line)
+        left = total_pad // 2
+        right = total_pad - left
+        print(f"{B}│{R}{' ' * left}{B}{line}{R}{' ' * right}{B}││{R}")
     print(f"{B}│{R}{' ' * w}{B}││{R}")
 
     t1 = "Multi-agent scientific analysis platform"
-    p1 = " " * (w - len(t1) - 4)
-    print(f"{B}│{R}  {B}✦{R} {BO}{t1}{R}{p1}{B}││{R}")
+    l1, r1 = _center(t1, "✦")
+    print(f"{B}│{R}{l1}{B}✦{R} {BO}{t1}{R}{r1}{B}││{R}")
 
-    t2 = "Autonomous exploration · modelling · evaluation"
-    p2 = " " * (w - len(t2) - 4)
-    print(f"{B}│{R}  {B}◆{R} {D}{t2}{R}{p2}{B}││{R}")
+    t2 = "Autonomous exploration · analysis · modelling · evaluation"
+    l2, r2 = _center(t2, "◆")
+    print(f"{B}│{R}{l2}{B}◆{R} {D}{t2}{R}{r2}{B}││{R}")
 
     t3 = ver
-    p3 = " " * (w - len(t3) - 4)
-    print(f"{B}│{R}  {B}✦{R} {D}{t3}{R}{p3}{B}││{R}")
+    l3, r3 = _center(t3, "✦")
+    print(f"{B}│{R}{l3}{B}✦{R} {D}{t3}{R}{r3}{B}││{R}")
 
     if info:
         print(f"{B}│{R}{' ' * w}{B}││{R}")
