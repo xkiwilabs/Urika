@@ -26,7 +26,7 @@ AgentRunner (ABC)
 
 | Adapter | SDK Package | Models | Tool Use | Local Models | Notes |
 |---------|-------------|--------|----------|-------------|-------|
-| `ClaudeSDKRunner` | `claude-agent-sdk` | Claude Opus, Sonnet, Haiku | SDK-managed | No | Current default. Full coding agent with file/bash access. |
+| `ClaudeSDKRunner` | `claude-agent-sdk` | Claude Opus, Sonnet, Haiku (+ Bedrock/Vertex/Foundry) | SDK-managed | Via proxy | Current default. Full coding agent with file/bash access. Supports 3P providers (AWS Bedrock, GCP Vertex, Azure Foundry) via settings. May work with local models via LiteLLM proxy but tool use compatibility not guaranteed. |
 | `OpenAIAgentsRunner` | `openai-agents-python` | GPT-4o, GPT-4.1, o3, o4-mini | SDK-managed | No | OpenAI's native agent framework. Tool use, handoffs, guardrails. |
 | `GoogleADKRunner` | `google-adk` | Gemini 2.5 Pro/Flash | SDK-managed | No | Google's agent development kit. Multi-agent, tool use. |
 | `PiRunner` | `pi-agent` (Node CLI) | All of the above + Ollama, llama.cpp, any OpenAI-compatible | Pi-managed | Yes | TypeScript coding agent. Called as subprocess. Best option for local models. |
@@ -231,10 +231,112 @@ No breaking changes. Default backend remains `claude`. Existing projects work wi
 
 ## Open Questions
 
-1. **Tool compatibility:** Each SDK has different tool-use capabilities. Should Urika define a minimal tool set that all backends must support, or gracefully degrade?
+1. **Tool compatibility:** Each SDK has different tool-use capabilities. Urika should define a minimal tool set (Read, Write, Edit, Bash, Glob, Grep) that all backends must support. Adapters that can't provide one should raise a clear error at startup rather than failing mid-experiment.
 
-2. **Streaming:** Claude SDK streams tool use events via `on_message`. OpenAI and Google have different streaming APIs. Should the adapter normalise streaming, or is it OK for some backends to not stream?
+2. **Streaming:** Normalise to a common `on_message(msg)` callback. Each adapter translates their SDK's streaming format into Urika's message format. Backends that don't stream can call `on_message` once at the end with the full result.
 
-3. **Session persistence:** Claude SDK supports session IDs for resuming conversations. Do other SDKs? If not, the resume feature may be backend-dependent.
+3. **Session persistence:** Backend-dependent. Claude SDK supports session IDs for resume. Other SDKs may not — resume would replay from progress.json instead of from SDK state. Document which backends support native resume.
 
-4. **Quality threshold:** Local models (Llama 3 70B) may not be good enough for complex agent tasks (writing Python, parsing JSON). Should Urika warn users or set minimum model requirements per agent role?
+4. **Quality threshold:** Local models (Llama 3 70B) may not be good enough for complex agent tasks (writing Python, parsing JSON). Urika should warn during `urika run` if the configured model is below a recommended tier for a given agent role, but not block execution.
+
+---
+
+## Virtual Environment Management
+
+### Problem
+
+When agents `pip install` packages during experiments, they install into whatever Python environment is active. This causes conflicts when multiple projects need different package versions.
+
+### Design: Hybrid with shared base
+
+```
+Global Urika venv (installed by user)
+├── numpy, pandas, scipy, scikit-learn, click  ← shared base
+├── claude-agent-sdk                            ← shared
+└── urika                                      ← shared
+
+Per-project venv (opt-in, inherits from global)
+├── inherits all packages from global via --system-site-packages
+└── mne==1.6  ← project-specific, no conflicts
+```
+
+**Default:** Global — agents install into the active environment. No isolation, no overhead.
+
+**Opt-in:** Per-project — created during `urika new` or later via `urika.toml`. Inherits the global base so only the delta is installed (not 2GB of PyTorch per project).
+
+### Configuration
+
+```toml
+# urika.toml
+[environment]
+venv = true                    # false = use global, true = per-project venv
+venv_path = ".venv"            # relative to project dir (default)
+```
+
+### Implementation
+
+#### AgentConfig gains `env` field
+
+```python
+@dataclass
+class AgentConfig:
+    ...
+    env: dict[str, str] | None = None  # environment vars for agent subprocess
+```
+
+Each adapter maps `env` to their SDK's mechanism:
+- **Claude SDK:** `ClaudeAgentOptions(env=config.env)` — native support
+- **OpenAI SDK:** Pass to `subprocess.Popen(env=...)` for tool execution
+- **Google ADK:** Similar subprocess env
+- **Pi:** Pass as env vars to the pi subprocess
+- **Ollama:** Our custom tool loop uses `subprocess.run(env=...)`
+
+#### Venv activation in agent configs
+
+When a project has `venv = true`, the agent role's `build_config()` sets:
+
+```python
+venv_bin = project_dir / ".venv" / "bin"
+env = {
+    "PATH": f"{venv_bin}:{os.environ.get('PATH', '')}",
+    "VIRTUAL_ENV": str(project_dir / ".venv"),
+}
+```
+
+This goes into `AgentConfig.env`, and the adapter passes it through to the SDK.
+
+#### Project creation flow
+
+In `urika new`, after the existing questions:
+
+```
+Create isolated environment for this project? [y/N]:
+```
+
+If yes:
+1. Create venv: `python -m venv <project>/.venv --system-site-packages`
+2. Set `environment.venv = true` in `urika.toml`
+3. Agents now install packages into the project venv
+
+#### CLI commands
+
+```bash
+# Create venv for existing project
+urika venv create my-project
+
+# Show venv status
+urika venv status my-project
+
+# Run a command in the project venv
+urika venv run my-project pip list
+```
+
+### Phase integration
+
+Venv support should be implemented as **Phase 1.5** — after the backend plumbing (Phase 1) adds `env` to AgentConfig, but before any new adapters. This way all adapters get venv support from the start.
+
+| Phase | What |
+|-------|------|
+| 1 | Backend plumbing: `get_runner()`, `RuntimeConfig`, `env` in AgentConfig |
+| 1.5 | Venv: creation, activation, `urika.toml` config, CLI commands |
+| 2+ | Individual backend adapters (all inherit venv support via `env`) |
