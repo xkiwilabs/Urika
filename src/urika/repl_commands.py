@@ -723,8 +723,23 @@ def _run_single_agent(
             project_dir=session.project_path, experiment_id=experiment_id
         )
 
-        with Spinner("Working"):
-            result = asyncio.run(runner.run(config, prompt, on_message=_on_msg))
+        session_info = {
+            "project": session.project_name or "",
+            "model": session.model or "",
+            "tokens": session.total_tokens_in + session.total_tokens_out,
+            "cost": session.total_cost_usd,
+        }
+        with Spinner("Working", session_info=session_info) as sp:
+
+            def _on_msg_with_footer(msg: object) -> None:
+                _on_msg(msg)
+                model = getattr(msg, "model", None)
+                if model:
+                    sp.update_session(model=model)
+
+            result = asyncio.run(
+                runner.run(config, prompt, on_message=_on_msg_with_footer)
+            )
 
         # Track usage
         session.record_agent_call(

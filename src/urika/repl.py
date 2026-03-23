@@ -236,8 +236,24 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
                 pass
 
         print_agent("advisor_agent")
-        with Spinner("Thinking"):
-            result = asyncio.run(runner.run(config, context, on_message=_on_msg))
+        session_info = {
+            "project": session.project_name or "",
+            "model": session.model or "",
+            "tokens": session.total_tokens_in + session.total_tokens_out,
+            "cost": session.total_cost_usd,
+        }
+        with Spinner("Thinking", session_info=session_info) as sp:
+
+            def _on_msg_with_footer(msg):
+                _on_msg(msg)
+                # Update footer with model from message
+                model = getattr(msg, "model", None)
+                if model:
+                    sp.update_session(model=model)
+
+            result = asyncio.run(
+                runner.run(config, context, on_message=_on_msg_with_footer)
+            )
 
         if result.success and result.text_output:
             click.echo(f"\n{result.text_output.strip()}\n")
