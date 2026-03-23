@@ -344,28 +344,46 @@ def _pick_experiment(
     description="Generate presentation for an experiment",
 )
 def cmd_present(session: ReplSession, args: str) -> None:
-    exp_id = _pick_experiment(session, args)
-    if exp_id is None:
+    exp_choice = _pick_experiment(session, args, allow_all=True)
+    if exp_choice is None:
         return
 
-    click.echo(f"  Generating presentation for {exp_id}...")
     try:
         from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
         from urika.orchestrator.loop import _generate_presentation, _noop_callback
 
         runner = ClaudeSDKRunner()
-        asyncio.run(
-            _generate_presentation(session.project_path, exp_id, runner, _noop_callback)
-        )
-        pres_path = (
-            session.project_path
-            / "experiments"
-            / exp_id
-            / "presentation"
-            / "index.html"
-        )
-        link = _file_link(pres_path, f"experiments/{exp_id}/presentation/index.html")
-        click.echo(f"  \u2713 Saved: {link}")
+
+        if exp_choice == "all":
+            from urika.core.experiment import list_experiments
+
+            experiments = list_experiments(session.project_path)
+            for exp in experiments:
+                click.echo(f"  Generating presentation for {exp.experiment_id}...")
+                asyncio.run(
+                    _generate_presentation(
+                        session.project_path, exp.experiment_id, runner, _noop_callback
+                    )
+                )
+            click.echo("  \u2713 All presentations generated")
+        else:
+            click.echo(f"  Generating presentation for {exp_choice}...")
+            asyncio.run(
+                _generate_presentation(
+                    session.project_path, exp_choice, runner, _noop_callback
+                )
+            )
+            pres_path = (
+                session.project_path
+                / "experiments"
+                / exp_choice
+                / "presentation"
+                / "index.html"
+            )
+            link = _file_link(
+                pres_path, f"experiments/{exp_choice}/presentation/index.html"
+            )
+            click.echo(f"  \u2713 Saved: {link}")
     except Exception as exc:
         click.echo(f"  \u2717 Error: {exc}")
 
