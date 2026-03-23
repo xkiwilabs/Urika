@@ -66,10 +66,15 @@ urika new
 When you run `urika new`, any fields not supplied via command-line options are prompted interactively:
 
 1. **Project name** -- a short identifier (used as the directory name)
-2. **Data path** -- path to a file or directory containing your data (can be skipped by pressing Enter)
-3. **Description** -- what you are trying to analyse or predict
-4. **Research question** -- the specific question to investigate
-5. **Investigation mode** -- select from a numbered list
+2. **Privacy mode** -- open, private, or hybrid. If private or hybrid, you configure the endpoint URL and API key immediately
+3. **Data path** -- path to a file or directory containing your data (can be skipped by pressing Enter). This can include data files, papers, documentation, and code — Urika scans and classifies everything
+4. **Description** -- what you are trying to analyse or predict
+5. **Research question** -- the specific question to investigate
+6. **Investigation mode** -- exploratory, confirmatory, or pipeline
+7. **Web search** -- allow agents to search the web for relevant papers (default: no)
+8. **Isolated environment** -- create a per-project venv for package isolation (default: no)
+
+After these prompts, Urika scans and profiles the data, ingests any knowledge found (and offers to add more), then runs the interactive agent Q&A.
 
 If a project with the same name already exists, Urika offers three choices:
 - Overwrite the existing project
@@ -247,16 +252,22 @@ The project is registered in the global registry at `~/.urika/projects.json`, wh
 
 ## Running the first experiment
 
-After project creation, if the planning loop produced experiment suggestions, Urika offers to run the first one immediately:
+After project creation, if the planning loop produced experiment suggestions, Urika offers to run:
 
 ```
 The plan proposes starting with: baseline-linear-models
   Fit OLS and regularised linear models to establish baseline performance...
 
-Run the first experiment?
-  1. Yes -- create and run it (default, press enter)
-  2. Different -- I'll describe what to run instead
-  3. Skip -- I'll run it later
+How would you like to proceed?
+  1. Run one experiment — start with the planned first experiment (default)
+  2. Run multiple — run up to N experiments, pause between each
+  3. Run until done — fully autonomous until criteria met
+  4. Different — I'll describe what to run instead
+  5. Skip — I'll run later
 ```
 
-Choosing option 1 creates the experiment and launches the orchestrator. Option 2 lets you describe a custom experiment. Option 3 exits, and you can run it later with `urika run`.
+- **Option 1** creates the experiment and runs the orchestrator for one experiment.
+- **Option 2** asks how many experiments, then runs the meta-orchestrator with pauses between each for review.
+- **Option 3** runs fully autonomous — the meta-orchestrator keeps creating and running experiments until criteria are met or a safety cap is reached.
+- **Option 4** lets you describe a custom experiment instead of using the plan.
+- **Option 5** exits — you can run later with `urika run`.
