@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 
-DATASETS = ["stroop", "depression", "marketing", "housing", "text-sentiment", "images", "eeg", "gene-expression", "climate"]
+DATASETS = ["stroop", "depression", "marketing", "housing", "text-sentiment", "images", "eeg", "gene-expression", "climate", "energy-forecast"]
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +459,82 @@ def download_climate(data_dir: Path) -> None:
 # Registry
 # ---------------------------------------------------------------------------
 
+def download_energy_forecast(output_dir: Path) -> None:
+    """Generate synthetic energy demand dataset for deep learning forecasting."""
+    csv_path = output_dir / "energy_demand.csv"
+    data_dir = output_dir
+    if csv_path.exists():
+        print(f"  Already exists: {csv_path}")
+        return
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2 years of hourly data = 17,520 rows
+    np.random.seed(42)
+    hours = 365 * 2 * 24
+    timestamps = pd.date_range("2023-01-01", periods=hours, freq="h")
+
+    # Build realistic energy demand with multiple patterns
+    t = np.arange(hours)
+
+    # Daily cycle (peak at 18:00, trough at 04:00)
+    daily = 15 * np.sin(2 * np.pi * (t - 6) / 24)
+
+    # Weekly cycle (lower on weekends)
+    weekly = 5 * np.sin(2 * np.pi * t / (24 * 7))
+
+    # Annual cycle (higher in winter/summer for heating/cooling)
+    annual = 20 * np.sin(2 * np.pi * (t - 24 * 30) / (24 * 365))
+
+    # Trend (slight upward)
+    trend = 0.001 * t
+
+    # Non-linear interactions (what makes DL outperform ARIMA)
+    hour_of_day = t % 24
+    day_of_week = (t // 24) % 7
+    month = ((t // (24 * 30)) % 12).astype(float)
+
+    # Temperature (correlated with annual cycle + noise)
+    temperature = 15 + 12 * np.sin(2 * np.pi * (t - 24 * 30) / (24 * 365)) + np.random.normal(0, 3, hours)
+
+    # Non-linear temperature effect (U-shaped: high demand at extremes)
+    temp_effect = 0.3 * (temperature - 18) ** 2
+
+    # Holiday effects (random days with reduced demand)
+    holidays = np.zeros(hours)
+    holiday_days = np.random.choice(365 * 2, size=20, replace=False)
+    for hd in holiday_days:
+        start = hd * 24
+        end = min(start + 24, hours)
+        holidays[start:end] = -15
+
+    # Base demand
+    base = 150
+    demand = base + daily + weekly + annual + trend + temp_effect + holidays
+    demand += np.random.normal(0, 5, hours)  # noise
+    demand = np.maximum(demand, 50)  # floor
+
+    # Wind and solar (affect net demand)
+    wind_speed = np.abs(5 + 3 * np.sin(2 * np.pi * t / (24 * 3)) + np.random.normal(0, 2, hours))
+    solar_irradiance = np.maximum(0, np.sin(np.pi * (hour_of_day - 6) / 12)) * (0.8 + 0.2 * np.random.random(hours))
+    solar_irradiance *= (1 + 0.3 * np.sin(2 * np.pi * t / (24 * 365)))  # seasonal
+
+    df = pd.DataFrame({
+        "timestamp": timestamps,
+        "demand_mw": np.round(demand, 1),
+        "temperature_c": np.round(temperature, 1),
+        "wind_speed_ms": np.round(wind_speed, 1),
+        "solar_irradiance": np.round(solar_irradiance, 3),
+        "hour": hour_of_day,
+        "day_of_week": day_of_week,
+        "is_weekend": (day_of_week >= 5).astype(int),
+        "month": (month + 1).astype(int),
+    })
+
+    df.to_csv(csv_path, index=False)
+    print(f"  Generated {len(df)} rows -> {csv_path}")
+
+
 DOWNLOADERS = {
     "stroop": download_stroop,
     "depression": download_depression,
@@ -469,6 +545,7 @@ DOWNLOADERS = {
     "eeg": download_eeg,
     "gene-expression": download_gene_expression,
     "climate": download_climate,
+    "energy-forecast": download_energy_forecast,
 }
 
 
