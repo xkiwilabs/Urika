@@ -59,8 +59,21 @@ def run_repl() -> None:
     history = InMemoryHistory()
     completer = UrikaCompleter(session)
 
+    from urika.cli_display import _C
+    from urika.repl_commands import get_global_stats
+
     # Show header
     print_header()
+
+    # Show global stats footer
+    stats = get_global_stats()
+    click.echo(
+        f"  {_C.DIM}{stats['projects']} projects · "
+        f"{stats['experiments']} experiments · "
+        f"{stats['methods']} methods · "
+        f"{stats['sdk']}{_C.RESET}"
+    )
+    click.echo()
 
     # List projects on startup
     from urika.core.registry import ProjectRegistry

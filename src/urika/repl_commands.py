@@ -353,6 +353,158 @@ def cmd_knowledge(session: ReplSession, args: str) -> None:
             click.echo(f"    {entry.id}  {entry.title}  [{entry.source_type}]")
 
 
+@command(
+    "advisor", requires_project=True, description="Ask the advisor agent a question"
+)
+def cmd_advisor(session: ReplSession, args: str) -> None:
+    text = args.strip()
+    if not text:
+        click.echo("  Usage: /advisor <question or instructions>")
+        return
+    # Delegate to the free-text handler in repl.py
+    from urika.repl import _handle_free_text
+
+    _handle_free_text(session, text)
+
+
+@command(
+    "evaluate", requires_project=True, description="Run evaluator on an experiment"
+)
+def cmd_evaluate(session: ReplSession, args: str) -> None:
+    exp_id = args.strip()
+    if not exp_id:
+        from urika.core.experiment import list_experiments
+
+        experiments = list_experiments(session.project_path)
+        if not experiments:
+            click.echo("  No experiments.")
+            return
+        exp_id = experiments[-1].experiment_id
+
+    click.echo(f"  Running evaluator on {exp_id}...")
+    _run_single_agent(session, "evaluator", exp_id, f"Evaluate experiment {exp_id}.")
+
+
+@command(
+    "plan", requires_project=True, description="Run planning agent to design a method"
+)
+def cmd_plan(session: ReplSession, args: str) -> None:
+    exp_id = args.strip()
+    if not exp_id:
+        from urika.core.experiment import list_experiments
+
+        experiments = list_experiments(session.project_path)
+        if not experiments:
+            click.echo("  No experiments.")
+            return
+        exp_id = experiments[-1].experiment_id
+
+    context = "Design the next method based on current results."
+    if session.conversation:
+        context = session.get_conversation_context() + "\n\n" + context
+
+    click.echo(f"  Running planning agent for {exp_id}...")
+    _run_single_agent(session, "planning_agent", exp_id, context)
+
+
+def _run_single_agent(
+    session: ReplSession, agent_name: str, experiment_id: str, prompt: str
+) -> None:
+    """Run a single agent and display its output."""
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.registry import AgentRegistry
+        from urika.cli_display import Spinner, print_agent, print_error, print_tool_use
+
+        runner = ClaudeSDKRunner()
+        registry = AgentRegistry()
+        registry.discover()
+
+        role = registry.get(agent_name)
+        if role is None:
+            print_error(f"Agent '{agent_name}' not found.")
+            return
+
+        print_agent(agent_name)
+
+        def _on_msg(msg: object) -> None:
+            try:
+                if hasattr(msg, "content"):
+                    for block in msg.content:
+                        tool_name = getattr(block, "name", None)
+                        if tool_name:
+                            inp = getattr(block, "input", {}) or {}
+                            detail = ""
+                            if isinstance(inp, dict):
+                                detail = (
+                                    inp.get("command", "")
+                                    or inp.get("file_path", "")
+                                    or inp.get("pattern", "")
+                                )
+                            print_tool_use(tool_name, detail)
+            except Exception:
+                pass
+
+        config = role.build_config(
+            project_dir=session.project_path, experiment_id=experiment_id
+        )
+
+        with Spinner("Working"):
+            result = asyncio.run(runner.run(config, prompt, on_message=_on_msg))
+
+        if result.success and result.text_output:
+            click.echo(f"\n{result.text_output.strip()}\n")
+        else:
+            print_error(f"Error: {result.error}")
+
+    except ImportError:
+        from urika.cli_display import print_error
+
+        print_error("Claude Agent SDK not installed.")
+    except Exception as exc:
+        from urika.cli_display import print_error
+
+        print_error(f"Error: {exc}")
+
+
+def get_global_stats() -> dict:
+    """Get global Urika stats for the footer."""
+    from urika.core.registry import ProjectRegistry
+
+    stats = {"projects": 0, "experiments": 0, "methods": 0, "sdk": "unknown"}
+
+    registry = ProjectRegistry()
+    projects = registry.list_all()
+    stats["projects"] = len(projects)
+
+    for name, path in projects.items():
+        try:
+            from urika.core.experiment import list_experiments
+
+            exps = list_experiments(path)
+            stats["experiments"] += len(exps)
+        except Exception:
+            pass
+        try:
+            import json
+
+            methods_path = path / "methods.json"
+            if methods_path.exists():
+                mdata = json.loads(methods_path.read_text())
+                stats["methods"] += len(mdata.get("methods", []))
+        except Exception:
+            pass
+
+    try:
+        import claude_agent_sdk
+
+        stats["sdk"] = f"claude-agent-sdk {claude_agent_sdk.__version__}"
+    except (ImportError, AttributeError):
+        stats["sdk"] = "not installed"
+
+    return stats
+
+
 def _load_run_defaults(session: ReplSession) -> dict:
     """Load run defaults from urika.toml preferences."""
     import tomllib
