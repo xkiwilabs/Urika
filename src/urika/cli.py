@@ -170,6 +170,37 @@ def new(
     if name is None:
         name = click.prompt("Project name").strip()
 
+    # Privacy mode — ask FIRST, before data path
+    privacy_choice = _prompt_numbered(
+        "\nData privacy mode:",
+        [
+            "Open — agents use cloud models, no restrictions (default)",
+            "Private — all agents use private/local endpoints only",
+            "Hybrid — data reading is private, thinking uses cloud models",
+        ],
+        default=1,
+    )
+    _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
+    privacy_mode_val = _privacy_map.get(
+        privacy_choice.split(" —")[0].strip(), "open"
+    )
+
+    private_endpoint_url = ""
+    private_endpoint_key_env = ""
+    if privacy_mode_val in ("private", "hybrid"):
+        click.echo(
+            "\n  Configure the private endpoint for data-touching agents.\n"
+            "  This can be a local Ollama instance or a secure institutional server."
+        )
+        private_endpoint_url = click.prompt(
+            "  Private endpoint URL",
+            default="http://localhost:11434",
+        ).strip()
+        private_endpoint_key_env = click.prompt(
+            "  API key environment variable (leave empty for Ollama)",
+            default="",
+        ).strip()
+
     # Validate data path — keep asking until valid or skipped
     if data_path is not None:
         data_path = data_path.strip()
@@ -263,6 +294,29 @@ def new(
                 formats = ", ".join(profile.get("formats", []))
                 print_success(f"{dtype.title()}: {count} files ({formats})")
 
+    # --- Web search and venv — ask before agent loop ---
+    builder.privacy_mode = privacy_mode_val
+    builder.private_endpoint_url = private_endpoint_url
+    builder.private_endpoint_key_env = private_endpoint_key_env
+
+    web_search = click.confirm(
+        "\nAllow agents to search the web for relevant papers?",
+        default=False,
+    )
+    builder.web_search = web_search
+
+    click.echo(
+        "\n  Isolated environments prevent package conflicts between projects.\n"
+        "  Use one if agents will pip install large packages (e.g., torch,\n"
+        "  mne, transformers) or if you run multiple projects with different\n"
+        "  library versions."
+    )
+    use_venv = click.confirm(
+        "Create isolated environment for this project?",
+        default=False,
+    )
+    builder.use_venv = use_venv
+
     # --- Interactive agent loop ---
     print_agent("project_builder")
     try:
@@ -276,20 +330,6 @@ def new(
         )
     except Exception as exc:
         print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
-
-    # Ask about web search before writing project files
-    web_search = click.confirm(
-        "\nAllow agents to search the web for relevant papers?",
-        default=False,
-    )
-    builder.web_search = web_search
-
-    # Ask about isolated environment
-    use_venv = click.confirm(
-        "Create isolated environment for this project?",
-        default=False,
-    )
-    builder.use_venv = use_venv
 
     with Spinner("Writing project files"):
         project_dir = builder.write_project()

@@ -101,14 +101,13 @@ def cmd_project(session: ReplSession, args: str) -> None:
 
 @command("new", description="Create a new project")
 def cmd_new(session: ReplSession, args: str) -> None:
-    # Calls the same project builder flow as CLI
     from urika.cli import new as cli_new
-    from click.testing import CliRunner
 
-    runner = CliRunner(mix_stderr=False)
-    runner.invoke(cli_new, [], standalone_mode=False, catch_exceptions=False)
-    # After creation, auto-load the project
-    # (handled by checking registry for latest)
+    ctx = click.Context(cli_new)
+    try:
+        ctx.invoke(cli_new, name=None, question=None, mode=None, data_path=None, description=None)
+    except SystemExit:
+        pass
 
 
 @command("quit", description="Exit Urika")

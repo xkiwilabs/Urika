@@ -37,6 +37,9 @@ class ProjectBuilder:
         self.mode = mode
         self.web_search: bool = False
         self.use_venv: bool = False
+        self.privacy_mode: str = "open"
+        self.private_endpoint_url: str = ""
+        self.private_endpoint_key_env: str = ""
         self._scan_result: ScanResult | None = None
         self._data_summary: DataSummary | None = None
         self._suggestions: dict[str, Any] | None = None
@@ -136,6 +139,16 @@ class ProjectBuilder:
             }
 
         existing.setdefault("preferences", {})["web_search"] = self.web_search
+
+        if self.privacy_mode != "open":
+            privacy = existing.setdefault("privacy", {})
+            privacy["mode"] = self.privacy_mode
+            if self.private_endpoint_url:
+                endpoints = privacy.setdefault("endpoints", {})
+                endpoint = endpoints.setdefault("private", {})
+                endpoint["base_url"] = self.private_endpoint_url
+                if self.private_endpoint_key_env:
+                    endpoint["api_key_env"] = self.private_endpoint_key_env
 
         if self.use_venv:
             existing.setdefault("environment", {})["venv"] = True
