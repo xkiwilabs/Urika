@@ -10,6 +10,8 @@ Urika organizes work into three levels:
 
 A project pairs **one dataset** with **one research question**. It is the top-level container. Creating a project (`urika new`) produces a directory with configuration (`urika.toml`), data, knowledge, methods, experiments, and a projectbook.
 
+The dataset can be in any format — tabular (CSV, Excel, Parquet, SPSS, Stata), images, audio, time series (HDF5, EDF, MAT), spatial/3D (PLY, PCD, C3D), or domain-specific formats. Urika detects and profiles the data automatically, and agents install whatever libraries they need to work with it.
+
 A project has an **investigation mode** that shapes how agents approach the work:
 
 - **exploratory** -- open-ended analysis, establishing baselines, surveying what works

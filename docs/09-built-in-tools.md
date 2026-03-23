@@ -336,3 +336,14 @@ registry.discover_project(project_path / "tools")
 Files starting with `_` are skipped. Each file must export a `get_tool()` function returning an `ITool` instance.
 
 Project tools appear alongside built-in tools in the registry and are available to all agents during that project's experiments.
+
+## Data Handling for Different Research Domains
+
+The 16 built-in tools focus on tabular data analysis (statistics, regression, classification, preprocessing). For non-tabular data — images, audio, time series, spatial/3D, neuroimaging — agents handle things differently:
+
+1. **Detection**: The source scanner recognises 40+ file extensions across all major research data types (CSV, HDF5, EDF, NIfTI, WAV, PNG, PLY, SPSS .sav, Stata .dta, and many more)
+2. **Profiling**: During project creation, Urika profiles what it can — image dimensions, audio duration/sample rate, HDF5 structure — giving agents context about the data
+3. **Tool building**: When agents need to work with a format the built-in tools don't handle, the tool builder creates a project-specific data reader or preprocessor
+4. **Library installation**: Agents can `pip install` domain-specific libraries as needed (e.g., `mne` for EEG, `librosa` for audio, `nibabel` for neuroimaging, `h5py` for HDF5, `Pillow` for images, `open3d` for point clouds)
+
+This means Urika works across scientific disciplines without shipping heavy domain dependencies. The agents adapt to whatever data you provide.
