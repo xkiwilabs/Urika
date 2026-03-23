@@ -1350,3 +1350,235 @@ def knowledge_list(project: str) -> None:
 
     for entry in entries:
         click.echo(f"  {entry.id}  {entry.title}  [{entry.source_type}]")
+
+
+@cli.command()
+@click.argument("project", required=False, default=None)
+@click.argument("text", required=False, default=None)
+def advisor(project: str | None, text: str | None) -> None:
+    """Ask the advisor agent a question about the project."""
+    import asyncio
+
+    from urika.cli_display import Spinner, print_agent, print_tool_use
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    if text is None:
+        text = click.prompt("Question or instructions").strip()
+
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.registry import AgentRegistry
+    except ImportError:
+        raise click.ClickException(
+            "Claude Agent SDK not installed. Run: pip install urika[agents]"
+        )
+
+    runner = ClaudeSDKRunner()
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get("advisor_agent")
+    if role is None:
+        raise click.ClickException("Advisor agent not found.")
+
+    print_agent("advisor_agent")
+    config = role.build_config(project_dir=project_path, experiment_id="")
+
+    def _on_msg(msg: object) -> None:
+        try:
+            if hasattr(msg, "content"):
+                for block in msg.content:
+                    tool_name = getattr(block, "name", None)
+                    if tool_name:
+                        inp = getattr(block, "input", {}) or {}
+                        detail = ""
+                        if isinstance(inp, dict):
+                            detail = (
+                                inp.get("command", "")
+                                or inp.get("file_path", "")
+                                or inp.get("pattern", "")
+                            )
+                        print_tool_use(tool_name, detail)
+        except Exception:
+            pass
+
+    with Spinner("Thinking"):
+        result = asyncio.run(runner.run(config, text, on_message=_on_msg))
+
+    if result.success and result.text_output:
+        click.echo(f"\n{result.text_output.strip()}\n")
+    else:
+        click.echo(f"Error: {result.error}")
+
+
+@cli.command()
+@click.argument("project", required=False, default=None)
+@click.argument("experiment_id", required=False, default=None)
+def evaluate(project: str | None, experiment_id: str | None) -> None:
+    """Run the evaluator agent on an experiment."""
+    import asyncio
+
+    from urika.cli_display import Spinner, print_agent, print_tool_use
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    if experiment_id is None:
+        experiments = list_experiments(project_path)
+        if not experiments:
+            raise click.ClickException("No experiments.")
+        experiment_id = experiments[-1].experiment_id
+
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.registry import AgentRegistry
+    except ImportError:
+        raise click.ClickException("Claude Agent SDK not installed.")
+
+    runner = ClaudeSDKRunner()
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get("evaluator")
+    if role is None:
+        raise click.ClickException("Evaluator agent not found.")
+
+    print_agent("evaluator")
+    config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
+
+    def _on_msg(msg: object) -> None:
+        try:
+            if hasattr(msg, "content"):
+                for block in msg.content:
+                    tool_name = getattr(block, "name", None)
+                    if tool_name:
+                        inp = getattr(block, "input", {}) or {}
+                        detail = ""
+                        if isinstance(inp, dict):
+                            detail = (
+                                inp.get("command", "")
+                                or inp.get("file_path", "")
+                                or inp.get("pattern", "")
+                            )
+                        print_tool_use(tool_name, detail)
+        except Exception:
+            pass
+
+    click.echo(f"  Evaluating {experiment_id}...")
+    with Spinner("Working"):
+        result = asyncio.run(
+            runner.run(
+                config, f"Evaluate experiment {experiment_id}.", on_message=_on_msg
+            )
+        )
+
+    if result.success and result.text_output:
+        click.echo(f"\n{result.text_output.strip()}\n")
+    else:
+        click.echo(f"Error: {result.error}")
+
+
+@cli.command()
+@click.argument("project", required=False, default=None)
+def present(project: str | None) -> None:
+    """Generate a presentation for an experiment."""
+    import asyncio
+
+    from urika.cli_display import print_agent
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    experiments = list_experiments(project_path)
+    if not experiments:
+        raise click.ClickException("No experiments.")
+
+    # Pick experiment
+    click.echo("\n  Select experiment:")
+    for i, exp in enumerate(reversed(experiments), 1):
+        progress = load_progress(project_path, exp.experiment_id)
+        status = progress.get("status", "pending")
+        runs = len(progress.get("runs", []))
+        marker = " (default)" if i == 1 else ""
+        click.echo(f"    {i}. {exp.experiment_id} [{status}, {runs} runs]{marker}")
+    while True:
+        raw = click.prompt("  Choice", default="1").strip()
+        try:
+            idx = int(raw)
+            if 1 <= idx <= len(experiments):
+                exp_id = list(reversed(experiments))[idx - 1].experiment_id
+                break
+        except ValueError:
+            pass
+
+    try:
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.orchestrator.loop import _generate_presentation, _noop_callback
+    except ImportError:
+        raise click.ClickException("Claude Agent SDK not installed.")
+
+    print_agent("presentation_agent")
+    click.echo(f"  Generating presentation for {exp_id}...")
+    runner = ClaudeSDKRunner()
+    asyncio.run(_generate_presentation(project_path, exp_id, runner, _noop_callback))
+    click.echo(f"  ✓ Saved to experiments/{exp_id}/presentation/index.html")
+
+
+@cli.command()
+@click.argument("project", required=False, default=None)
+def criteria(project: str | None) -> None:
+    """Show current project criteria."""
+    from urika.core.criteria import load_criteria
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    c = load_criteria(project_path)
+    if c is None:
+        click.echo("  No criteria set.")
+        return
+    click.echo(f"\n  Criteria v{c.version} (set by {c.set_by})")
+    click.echo(f"  Type: {c.criteria.get('type', 'unknown')}")
+    threshold = c.criteria.get("threshold", {})
+    primary = threshold.get("primary", {})
+    if primary:
+        click.echo(
+            f"  Primary: {primary.get('metric')} "
+            f"{primary.get('direction', '>')} {primary.get('target')}"
+        )
+    click.echo()
+
+
+@cli.command()
+@click.argument("project", required=False, default=None)
+def usage(project: str | None) -> None:
+    """Show usage stats for a project."""
+    from urika.core.usage import format_usage, get_last_session, get_totals
+
+    if project:
+        project = _ensure_project(project)
+        project_path, _config = _resolve_project(project)
+        last = get_last_session(project_path)
+        totals = get_totals(project_path)
+        click.echo(f"\n  Usage: {project}")
+        click.echo(format_usage(last, totals))
+    else:
+        # All projects
+        registry = ProjectRegistry()
+        projects = registry.list_all()
+        if not projects:
+            click.echo("  No projects.")
+            return
+        click.echo("\n  Usage across all projects:")
+        for name, path in projects.items():
+            totals = get_totals(path)
+            if totals.get("sessions", 0) > 0:
+                tokens = totals.get("total_tokens_in", 0) + totals.get(
+                    "total_tokens_out", 0
+                )
+                tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
+                click.echo(
+                    f"  {name}: {totals['sessions']} sessions · "
+                    f"{tok_str} tokens · ~${totals['total_cost_usd']:.2f}"
+                )
+    click.echo()
