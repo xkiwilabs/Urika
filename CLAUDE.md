@@ -52,7 +52,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/core/readme_generator.py` — Auto-generated README.md with agent-written summary
 - `src/urika/core/report_writer.py` — Versioned file writer (timestamped backups)
 - `src/urika/core/presentation.py` — Render slide JSON into reveal.js HTML presentations
-- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent, presentation_agent, report_agent, project_builder), registry, config, Claude SDK adapter
+- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent, presentation_agent, report_agent, project_builder, data_agent), registry, config, Claude SDK adapter
 - `src/urika/orchestrator/` — Experiment loop (planning→task→evaluator→advisor), meta-orchestrator (experiment-to-experiment), output parsing, knowledge integration
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
 - `src/urika/methods/` — Agent-created analytical pipelines (IMethod ABC, MethodRegistry), zero built-ins — agents create methods at runtime
@@ -62,7 +62,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Project Status
 
-869+ tests. Foundation, agents (9 roles), orchestrator (experiment + meta), evaluation, methods (agent-created), tools (16 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 15+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), criteria system (versioned, evolving), method registry, usage tracking, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
+882+ tests. Foundation, agents (10 roles), orchestrator (experiment + meta), evaluation, methods (agent-created), tools (16 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 15+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), criteria system (versioned, evolving), method registry, usage tracking, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
 
 ## Development
 

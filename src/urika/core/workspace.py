@@ -39,7 +39,7 @@ def create_project_workspace(project_dir: Path, config: ProjectConfig) -> None:
     with open(project_dir / "urika.toml", "a") as f:
         f.write(
             "# [privacy]\n"
-            '# mode = "cloud"  # cloud | local | hybrid\n'
+            '# mode = "open"  # open | private | hybrid\n'
             "#\n"
             "# [privacy.endpoints.local]\n"
             '# base_url = "http://localhost:11434"\n'

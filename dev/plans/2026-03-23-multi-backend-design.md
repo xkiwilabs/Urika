@@ -240,8 +240,8 @@ Tool Builder                             writes narrative
 
 ```toml
 [privacy]
-mode = "cloud"       # all agents use cloud models (default, current behavior)
-# mode = "local"     # all agents use local models (full privacy, weaker analysis)
+mode = "open"        # all agents use cloud models (default, current behavior)
+# mode = "private"   # all agents use local models (full privacy, weaker analysis)
 # mode = "hybrid"    # data agents local, thinking agents cloud (best of both)
 ```
 

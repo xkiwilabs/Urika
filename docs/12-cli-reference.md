@@ -454,6 +454,56 @@ urika knowledge list [PROJECT]
 ```
 
 
+## Environment
+
+### `urika venv create`
+
+Create an isolated virtual environment for a project. The venv inherits shared base packages (numpy, pandas, scipy, etc.) via `--system-site-packages` so only project-specific packages are installed into it.
+
+```
+urika venv create [PROJECT]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `PROJECT` | Project name (prompted if omitted) |
+
+**Example:**
+
+```bash
+urika venv create my-project
+```
+
+Creates `.venv/` inside the project directory. Agents will install packages into this venv instead of the global environment.
+
+---
+
+### `urika venv status`
+
+Show the virtual environment status for a project: whether a venv exists, its path, and installed packages.
+
+```
+urika venv status [PROJECT]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `PROJECT` | Project name (prompted if omitted) |
+
+**Example output:**
+
+```
+Project: my-project
+Venv: /home/user/urika-projects/my-project/.venv
+Status: active
+Packages: 47 installed (12 project-specific)
+```
+
+
 ## System
 
 ### `urika tools`

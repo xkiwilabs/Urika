@@ -25,7 +25,7 @@ This installs the core platform with statistical tools (numpy, pandas, scipy, sc
 pip install "urika[agents]"
 ```
 
-Adds the Claude Agent SDK, which powers all nine agent roles.
+Adds the Claude Agent SDK, which powers all ten agent roles.
 
 ### With visualization
 

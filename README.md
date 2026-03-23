@@ -70,7 +70,7 @@ flowchart TD
     M -.-> D
 ```
 
-Nine agents work together in an orchestrated loop. The **Orchestrator** cycles through `planning -> task -> evaluator -> advisor` each turn. A **Meta-Orchestrator** manages experiment-to-experiment transitions.
+Ten agents work together in an orchestrated loop. The **Orchestrator** cycles through `planning -> task -> evaluator -> advisor` each turn. A **Meta-Orchestrator** manages experiment-to-experiment transitions.
 
 See [Agent System](docs/06-agent-system.md) for details on each agent role.
 

@@ -163,6 +163,24 @@ Creates reveal.js slide deck content from experiment results. The agent reads pr
 | Writable dirs | None (read-only) |
 | Max turns | 10 |
 
+---
+
+### 10. Data Agent
+
+**Name:** `data_agent`
+
+The Data Agent is the only agent that reads raw data in hybrid privacy mode. It runs on a private endpoint (local model or secure institutional server) and outputs sanitized summaries — aggregated statistics, feature names, distributions, and processed DataFrames. Other agents only see these summaries, never raw data.
+
+In open mode, the Data Agent is not used. In hybrid mode, the orchestrator calls it before the Task Agent each turn.
+
+| Property | Value |
+|----------|-------|
+| Tools | Read, Write, Bash, Glob, Grep |
+| Writable dirs | `experiments/`, `data/` |
+| Allowed bash | `python`, `pip` |
+| Blocked bash | `rm -rf`, `git push`, `git reset` |
+| Max turns | 10 |
+
 
 ## The Orchestrator
 
