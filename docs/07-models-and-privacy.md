@@ -11,7 +11,7 @@ Urika currently uses the **Claude Agent SDK** as its runtime backend. This suppo
 
 - **Claude models** via the Anthropic API (Haiku, Sonnet, Opus)
 - **Local models** via Ollama (Llama, Mistral, etc.)
-- **Institutional endpoints** -- any Anthropic-compatible API server (e.g., a university's secure Claude instance)
+- **Institutional endpoints** -- any Anthropic-compatible API server (e.g., an organisation's secure Claude instance)
 
 Future releases will add adapters for OpenAI Agents SDK, Google ADK, and Pi coding agent.
 
@@ -55,7 +55,7 @@ base_url = "http://localhost:11434"
 
 ### Private (institutional server)
 
-A secure Anthropic-compatible endpoint running on a university or organization server, with its own API key. This is also a "private" endpoint -- private means anything within your data governance boundary.
+A secure Anthropic-compatible endpoint running on a secure organisation, institution, or cloud server, with its own API key. This is also a "private" endpoint -- private means anything within your data governance boundary.
 
 ```toml
 [privacy.endpoints.private]
@@ -212,7 +212,7 @@ This overrides the defaults set by the privacy mode. You can mix and match endpo
 
 ### Clinical research
 
-Patient data stays on a university server. The Data Agent runs on the trusted institutional endpoint, reads participant records, and outputs anonymized feature matrices. Cloud-based agents design and evaluate analytical methods without ever seeing identifiable data.
+Patient data stays on a secure institutional server. The Data Agent runs on the trusted institutional endpoint, reads participant records, and outputs anonymized feature matrices. Cloud-based agents design and evaluate analytical methods without ever seeing identifiable data.
 
 ```toml
 [privacy]
