@@ -199,18 +199,143 @@ literature_agent = "gemini-2.5-flash"  # good at search/summarisation
 
 The runner factory accepts an agent name and returns the appropriate runner.
 
-## Implementation Order
+## Data Privacy and Hybrid Execution
+
+### The problem
+
+Some research data cannot leave the local machine — patient data, clinical trials, government data, GDPR-protected records. But local models (Llama 3 70B, Mistral) are significantly weaker than cloud models (Claude Opus, GPT-4o) for complex tasks like writing analysis code and designing methods.
+
+### The solution: hybrid mode
+
+The orchestrator is a natural firewall. Agents communicate via structured JSON (metrics, observations, method descriptions) — not raw data. This means:
+
+- **Data-touching agents** (task_agent, evaluator, tool_builder) can run on LOCAL models — they read files, write code, run experiments
+- **Thinking agents** (planning_agent, advisor_agent, report_agent, literature_agent, presentation_agent) can run on CLOUD models — they only see summaries, metrics, and method descriptions
+
+Raw data never reaches the cloud.
+
+```
+LOCAL models (on-machine)              CLOUD models (API)
+─────────────────────────              ──────────────────
+Task Agent                             Planning Agent
+  reads raw data                         sees only: method plans
+  writes Python code                     designs next approach
+  runs experiments
+  outputs: metrics, observations ──────→ Advisor Agent
+                                         sees only: metrics, summaries
+Evaluator                                proposes next experiments
+  reads results
+  scores against criteria ─────────────→ Report Agent
+                                         sees only: aggregated findings
+Tool Builder                             writes narrative
+  reads data to build tools
+                                        Literature Agent
+                                         searches papers (no data access)
+
+                                        Presentation Agent
+                                         renders slides from summaries
+```
+
+### Three privacy modes
+
+```toml
+[privacy]
+mode = "cloud"       # all agents use cloud models (default, current behavior)
+# mode = "local"     # all agents use local models (full privacy, weaker analysis)
+# mode = "hybrid"    # data agents local, thinking agents cloud (best of both)
+```
+
+### Hybrid mode enforcement
+
+When `mode = "hybrid"`:
+
+1. **Per-agent backend routing** assigns local/cloud automatically:
+
+```toml
+# Auto-configured when mode = "hybrid":
+[runtime.models]
+task_agent = "ollama:llama3:70b"          # LOCAL — touches data
+evaluator = "ollama:llama3:70b"           # LOCAL — reads results
+tool_builder = "ollama:llama3:70b"        # LOCAL — writes code with data
+planning_agent = "claude-sonnet-4-5"      # CLOUD — sees only plans
+advisor_agent = "claude-opus-4-5"         # CLOUD — sees only summaries
+literature_agent = "claude-haiku-4-5"     # CLOUD — searches papers only
+report_agent = "claude-sonnet-4-5"        # CLOUD — writes from summaries
+presentation_agent = "claude-haiku-4-5"   # CLOUD — renders from summaries
+```
+
+Users can override any assignment, but the defaults enforce the data boundary.
+
+2. **Cloud agents lose file access to data**:
+
+```python
+# When hybrid mode, cloud agents get restricted security:
+if privacy_mode == "hybrid" and agent_is_cloud:
+    security = SecurityPolicy(
+        readable_dirs=[
+            project_dir / "experiments",  # metrics, progress
+            project_dir / "methods",      # method descriptions
+            project_dir / "projectbook",  # reports
+            project_dir / "suggestions",  # suggestions
+            # NO access to project_dir / "data"
+            # NO access to raw experiment artifacts
+        ],
+        writable_dirs=[],  # cloud agents don't write files
+        allowed_bash_prefixes=[],  # cloud agents don't run commands
+    )
+```
+
+3. **Output sanitization** (optional, for `data_sensitivity = "high"`):
+
+The orchestrator can check task agent output before passing to cloud agents:
+- Flag if output contains more than N rows of numeric data
+- Strip file paths that reference the data directory
+- Warn if raw data values appear in observations
+
+```toml
+[privacy]
+mode = "hybrid"
+data_sensitivity = "high"    # "low" | "medium" | "high"
+# high = strict checks, cloud agents see only metrics and text summaries
+# medium = cloud agents see project config but not data
+# low = no restrictions (cloud mode)
+```
+
+### Why this matters
+
+This makes Urika viable for:
+- **Clinical research** — patient data stays local, Claude designs the analysis
+- **Government/defense** — classified data on-premise, cloud for method design
+- **GDPR-protected data** — European personal data never leaves the jurisdiction
+- **Institutional review boards** — can demonstrate data never reaches external services
+- **Industry R&D** — proprietary data stays internal
+
+The hybrid approach gives researchers the analytical power of frontier models while maintaining data sovereignty. This is a significant differentiator from other analysis platforms.
+
+### Implementation phase
+
+Privacy/hybrid mode is **Phase 7** — after per-agent model routing (Phase 6), since it builds on the same per-agent backend assignment mechanism.
+
+| Phase | What | Effort | Depends On |
+|-------|------|--------|------------|
+| 7 | Privacy modes (cloud/local/hybrid) + data firewall + output sanitization | Medium | Phase 1, 6 |
+
+## Implementation Order (Updated)
 
 | Phase | What | Effort | Depends On |
 |-------|------|--------|------------|
 | 1 | Backend selection plumbing (factory, config, replace hardcoded runners) | Small | Nothing |
+| 1.5 | Venv management (global/per-project, env in AgentConfig) | Small | Phase 1 |
 | 2 | OpenAI Agents SDK adapter | Medium | Phase 1 |
 | 3 | Google ADK adapter | Medium | Phase 1 |
 | 4 | Pi adapter | Small | Phase 1, Node.js |
 | 5 | Ollama direct adapter (custom tool loop) | Large | Phase 1 |
 | 6 | Per-agent model routing | Small | Phase 1 |
+| 7 | Privacy modes (cloud/local/hybrid) + data firewall | Medium | Phase 1, 6 |
 
-**Recommended order:** 1 → 4 → 2 → 3 → 6 → 5
+**Recommended order:** 1 → 1.5 → 6 → 7 → 4 → 2 → 3 → 5
+
+Phase 6+7 (routing + privacy) moved up because hybrid mode is a key differentiator. Phase 4 (Pi) gives local model access needed for hybrid. Phases 2, 3, 5 are nice-to-have after the core is solid.
 
 Phase 4 (Pi) gives the most backends for the least work — one adapter, access to Claude, OpenAI, Gemini, AND local models. Phase 5 (Ollama direct) is the most work but removes the Node.js dependency.
 
