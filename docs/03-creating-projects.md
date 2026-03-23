@@ -29,7 +29,7 @@ The project description is the single most important input you provide. Urika's 
 
 **Weak:** "Analyse this dataset"
 
-**Strong:** "Model target selection decisions in a multiplayer herding task from the player's local perspective. Players in 2-player and 3-player teams herd autonomous targets into a containment zone. Predict which target a player will pursue next based on field-of-view visibility, angular deviation, and distance. Global information models serve as comparison baselines, but the primary goal is understanding decisions from what the player can actually see."
+**Strong:** "Predict student exam performance from study habits and engagement data. 500 university students tracked over one semester — variables include hours studied per week, lecture attendance rate, assignment completion percentage, library visits, and online forum participation. The goal is to identify which behaviours are the strongest predictors of final exam scores, and whether there is a critical threshold of engagement below which students are at risk of failing. Data is split by student (not by assessment) to avoid data leakage."
 
 Include: what the data represents, what you want to predict or understand, what variables matter, what domain knowledge is relevant, and what success looks like.
 
