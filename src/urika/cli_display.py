@@ -513,44 +513,28 @@ class ThinkingPanel:
 class Spinner:
     """Synchronous spinner for long operations.
 
-    Supports printing lines above the spinner while it runs,
-    updating the spinner message dynamically, and an optional
-    persistent footer line below the spinner with session stats.
+    Supports printing lines above the spinner while it runs, and
+    updating the spinner message dynamically. The spinner character
+    freezes in place when a new line is printed above, creating a
+    visual pattern in the terminal.
 
     Usage:
         with Spinner("Working") as sp:
             sp.print_above("  ▸ Step 1 done")
             sp.update("Still working")
-
-        # With footer (shows session stats below the spinner):
-        with Spinner("Working", session_info={"project": "my-proj", "model": "claude"}) as sp:
-            sp.update_session(tokens=12000, cost=0.50)
     """
 
-    def __init__(
-        self,
-        message: str,
-        session_info: dict[str, str] | None = None,
-    ) -> None:
+    def __init__(self, message: str, **_kwargs: object) -> None:
         self.message = message
         self._active = False
         self._thread: threading.Thread | None = None
         self._lock: threading.Lock | None = None
-        # Footer session info: project, model, tokens, cost, calls, etc.
-        self._session_info: dict[str, object] = (
-            dict(session_info) if session_info else {}
-        )
-        self._footer_start: float = time.monotonic()
-        self._has_footer = bool(session_info)
-        # Number of rendered lines (1 without footer, 3 with footer)
-        self._render_lines = 3 if self._has_footer else 1
 
     def __enter__(self) -> Spinner:
         if not _IS_TTY:
             print(f"  {self.message}")
             return self
         self._active = True
-        self._footer_start = time.monotonic()
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._spin, daemon=True)
         self._thread.start()
@@ -562,18 +546,7 @@ class Spinner:
             self._thread.join(timeout=1)
         if _IS_TTY:
             try:
-                # Clear all rendered lines (spinner + optional footer)
-                if self._has_footer:
-                    # Move up to spinner line, clear down
-                    sys.stdout.write(
-                        "\r\033[K"  # clear spinner line
-                        "\033[1B\033[K"  # clear separator line
-                        "\033[1B\033[K"  # clear footer line
-                        f"\033[{self._render_lines - 1}A"  # move back up
-                        "\r\033[0m"
-                    )
-                else:
-                    sys.stdout.write("\r\033[K\033[0m")
+                sys.stdout.write("\r\033[K\033[0m")
                 sys.stdout.flush()
             except (OSError, ValueError):
                 pass
@@ -586,13 +559,8 @@ class Spinner:
         if self._lock is not None:
             self._lock.release()
 
-    def update_session(self, **kwargs: object) -> None:
-        """Update session info fields (tokens, cost, calls, model, project)."""
-        if self._lock is not None:
-            self._lock.acquire()
-        self._session_info.update(kwargs)
-        if self._lock is not None:
-            self._lock.release()
+    def update_session(self, **_kwargs: object) -> None:
+        """No-op for backward compatibility."""
 
     def print_above(self, text: str) -> None:
         """Print a line above the spinner, keeping the spinner on the last line."""
@@ -602,61 +570,13 @@ class Spinner:
         if self._lock is not None:
             self._lock.acquire()
         try:
-            if self._has_footer:
-                # Move to spinner line, clear it and footer lines below,
-                # print the text, then let the next tick redraw spinner+footer
-                sys.stdout.write(
-                    "\r\033[K"  # clear spinner line
-                    "\033[1B\033[K"  # clear separator line
-                    "\033[1B\033[K"  # clear footer line
-                    f"\033[{self._render_lines - 1}A"  # back to spinner line
-                    f"\r{text}\n"  # print text and move down
-                )
-            else:
-                # Clear spinner line, print text, spinner will redraw on next tick
-                sys.stdout.write(f"\r\033[K{text}\n")
+            sys.stdout.write(f"\r\033[K{text}\n")
             sys.stdout.flush()
         except (OSError, ValueError):
             pass
         finally:
             if self._lock is not None:
                 self._lock.release()
-
-    def _build_footer_line(self) -> str:
-        """Build the footer status line from session_info."""
-        elapsed = _format_duration(int((time.monotonic() - self._footer_start) * 1000))
-
-        parts: list[str] = []
-        parts.append(f"{_C.BLUE}urika{_C.RESET}")
-
-        project = self._session_info.get("project", "")
-        if project:
-            parts.append(f"{_C.DIM}{project}{_C.RESET}")
-
-        model = self._session_info.get("model", "")
-        if model:
-            # Shorten model name
-            short = str(model)
-            if "/" in short:
-                short = short.split("/")[-1]
-            if len(short) > 25:
-                short = short[:22] + "\u2026"
-            parts.append(f"{_C.CYAN}{short}{_C.RESET}")
-
-        parts.append(f"{_C.RED}{elapsed}{_C.RESET}")
-
-        tokens = self._session_info.get("tokens", 0)
-        if tokens and int(str(tokens)) > 0:
-            tok_val = int(str(tokens))
-            tok_str = f"{tok_val / 1000:.0f}K" if tok_val >= 1000 else str(tok_val)
-            parts.append(f"{_C.DIM}{tok_str} tokens{_C.RESET}")
-
-        cost = self._session_info.get("cost", 0.0)
-        if cost and float(str(cost)) > 0:
-            parts.append(f"{_C.GREEN}~${float(str(cost)):.2f}{_C.RESET}")
-
-        sep = " \u00b7 "
-        return f" {sep.join(parts)}"
 
     def _spin(self) -> None:
         idx = 0
@@ -668,25 +588,9 @@ class Spinner:
             if self._lock is not None:
                 self._lock.release()
             try:
-                spinner_line = (
+                sys.stdout.write(
                     f"\r  {_C.CYAN}{ch}{_C.RESET} {_C.DIM}{msg}{_C.RESET}\033[K"
                 )
-                if self._has_footer:
-                    # Get terminal width for separator
-                    try:
-                        cols = os.get_terminal_size().columns
-                    except OSError:
-                        cols = 80
-                    sep = "\u2500" * cols
-                    footer = self._build_footer_line()
-                    sys.stdout.write(
-                        f"{spinner_line}\n"
-                        f"{_C.DIM}{sep}{_C.RESET}\033[K\n"
-                        f"{footer}\033[K"
-                        f"\033[2A\r"  # move back up to spinner line
-                    )
-                else:
-                    sys.stdout.write(spinner_line)
                 sys.stdout.flush()
             except (OSError, ValueError):
                 break
