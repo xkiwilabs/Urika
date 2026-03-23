@@ -113,7 +113,83 @@ def cmd_new(session: ReplSession, args: str) -> None:
 
 @command("quit", description="Exit Urika")
 def cmd_quit(session: ReplSession, args: str) -> None:
+    session.save_usage()
     raise SystemExit(0)
+
+
+@command("usage", description="Show usage stats")
+def cmd_usage(session: ReplSession, args: str) -> None:
+    from urika.cli_display import _format_duration
+    from urika.core.usage import format_usage, get_last_session, get_totals
+
+    # Check if on subscription (SDK cost returns None)
+    is_sub = session.total_cost_usd == 0 and session.agent_calls > 0
+
+    if session.has_project:
+        click.echo(f"\n  {_C.BOLD}Usage: {session.project_name}{_C.RESET}")
+
+        # Current session
+        elapsed = _format_duration(session.elapsed_ms)
+        tokens = session.total_tokens_in + session.total_tokens_out
+        cost_str = f"~${session.total_cost_usd:.2f}"
+        if is_sub:
+            cost_str += " (estimated — plan user)"
+        click.echo(
+            f"  This session: {elapsed} · {_fmt_tokens(tokens)} tokens · "
+            f"{cost_str} · {session.agent_calls} agent calls"
+        )
+
+        # Historical
+        last = get_last_session(session.project_path)
+        totals = get_totals(session.project_path)
+        if totals.get("sessions", 0) > 0:
+            click.echo(format_usage(last, totals, is_subscription=is_sub))
+    else:
+        # Show usage across all projects
+        from urika.core.registry import ProjectRegistry
+
+        registry = ProjectRegistry()
+        projects = registry.list_all()
+        if not projects:
+            click.echo("  No projects.")
+            return
+
+        click.echo(f"\n  {_C.BOLD}Usage across all projects:{_C.RESET}")
+        grand_tokens = 0
+        grand_cost = 0.0
+        grand_calls = 0
+        grand_sessions = 0
+        for name, path in projects.items():
+            totals = get_totals(path)
+            if totals.get("sessions", 0) > 0:
+                tokens = totals.get("total_tokens_in", 0) + totals.get(
+                    "total_tokens_out", 0
+                )
+                click.echo(
+                    f"  {name}: {totals['sessions']} sessions · "
+                    f"{_fmt_tokens(tokens)} tokens · "
+                    f"~${totals['total_cost_usd']:.2f}"
+                )
+                grand_tokens += tokens
+                grand_cost += totals["total_cost_usd"]
+                grand_calls += totals["total_agent_calls"]
+                grand_sessions += totals["sessions"]
+        if grand_sessions > 0:
+            click.echo(
+                f"\n  {_C.BOLD}Total: {grand_sessions} sessions · "
+                f"{_fmt_tokens(grand_tokens)} tokens · "
+                f"~${grand_cost:.2f} · {grand_calls} agent calls{_C.RESET}"
+            )
+    click.echo()
+
+
+def _fmt_tokens(n: int) -> str:
+    """Format token count."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.0f}K"
+    return str(n)
 
 
 # Project-specific commands
@@ -649,6 +725,12 @@ def _run_single_agent(
 
         with Spinner("Working"):
             result = asyncio.run(runner.run(config, prompt, on_message=_on_msg))
+
+        # Track usage
+        session.record_agent_call(
+            cost_usd=result.cost_usd or 0.0,
+            model=getattr(result, "model", "") or "",
+        )
 
         if result.success and result.text_output:
             click.echo(f"\n{result.text_output.strip()}\n")

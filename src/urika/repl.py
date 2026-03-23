@@ -77,10 +77,32 @@ def run_repl() -> None:
 
     # Projects available via /list
 
+    from prompt_toolkit.formatted_text import HTML
+    from urika.cli_display import _format_duration
+
+    def _bottom_toolbar():
+        """Dynamic bottom toolbar showing session stats."""
+        parts = []
+        if session.has_project:
+            parts.append(session.project_name)
+        if session.model:
+            parts.append(session.model)
+        elapsed = _format_duration(session.elapsed_ms)
+        parts.append(elapsed)
+        if session.agent_calls > 0:
+            tokens = session.total_tokens_in + session.total_tokens_out
+            tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
+            parts.append(f"{tok_str} tokens")
+            parts.append(f"{session.agent_calls} calls")
+            if session.total_cost_usd > 0:
+                parts.append(f"~${session.total_cost_usd:.2f}")
+        return HTML(f" <b>urika</b> · {' · '.join(parts)}")
+
     prompt_session = PromptSession(
         history=history,
         completer=completer,
         complete_while_typing=True,
+        bottom_toolbar=_bottom_toolbar,
     )
 
     while True:
@@ -102,9 +124,11 @@ def run_repl() -> None:
                 _handle_free_text(session, user_input)
 
         except (EOFError, KeyboardInterrupt):
+            session.save_usage()
             click.echo("\n  Goodbye.")
             break
         except SystemExit:
+            session.save_usage()
             break
 
 
