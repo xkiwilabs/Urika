@@ -282,18 +282,25 @@ def _print_run_summary(project_dir: Path, experiment_id: str, progress: object) 
         methods = [r["method"] for r in runs]
         progress("result", f"{len(runs)} runs across {len(set(methods))} methods")
 
-        # Best metrics
-        best_acc = None
+        # Best metrics — find the first numeric metric across all runs
+        best_val = None
         best_method = None
+        best_metric_name = None
         for r in runs:
-            for key in ("top1_accuracy", "accuracy", "loso_top1_accuracy"):
-                val = r.get("metrics", {}).get(key)
-                if val is not None and (best_acc is None or val > best_acc):
-                    best_acc = val
-                    best_method = r["method"]
+            for key, val in r.get("metrics", {}).items():
+                if isinstance(val, (int, float)):
+                    if best_metric_name is None:
+                        best_metric_name = key
+                    if key == best_metric_name and (best_val is None or val > best_val):
+                        best_val = val
+                        best_method = r["method"]
 
-        if best_acc is not None:
-            progress("result", f"Best: {best_method} ({best_acc:.1%} accuracy)")
+        if best_val is not None:
+            label = best_metric_name.replace("_", " ")
+            if 0 <= best_val <= 1:
+                progress("result", f"Best: {best_method} ({best_val:.1%} {label})")
+            else:
+                progress("result", f"Best: {best_method} ({best_val:.4g} {label})")
 
         # Key observations from last run
         last = runs[-1]

@@ -68,6 +68,7 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
         lines.append("")
 
     notes_path = project_dir / "experiments" / experiment_id / "labbook" / "notes.md"
+    notes_path.parent.mkdir(parents=True, exist_ok=True)
     notes_path.write_text("\n".join(lines) + "\n")
 
 
@@ -127,6 +128,7 @@ def generate_experiment_summary(project_dir: Path, experiment_id: str) -> None:
     summary_path = (
         project_dir / "experiments" / experiment_id / "labbook" / "summary.md"
     )
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text("\n".join(lines) + "\n")
 
 
@@ -161,6 +163,7 @@ def generate_results_summary(project_dir: Path) -> None:
         lines.append("")
 
     path = project_dir / "projectbook" / "results-summary.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -303,6 +306,7 @@ def generate_key_findings(project_dir: Path) -> None:
             lines.append("")
 
     path = project_dir / "projectbook" / "key-findings.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
 
 

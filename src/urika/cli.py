@@ -1002,6 +1002,10 @@ def run(
         ]
         if pending:
             experiment_id = pending[-1].experiment_id
+            print_step(
+                f"Resuming pending experiment: {experiment_id}",
+                f"({len(pending)} pending)",
+            )
         else:
             # No pending — determine next experiment from state
             experiment_id = _determine_next_experiment(
@@ -1011,7 +1015,12 @@ def run(
                 instructions=instructions,
                 panel=panel,
             )
-            if experiment_id is None:
+            if experiment_id is not None:
+                print_step(
+                    f"Created new experiment: {experiment_id}",
+                    "based on advisor suggestions",
+                )
+            elif experiment_id is None:
                 if not experiments:
                     raise click.ClickException(
                         "No experiments and no plan found. Create one with:\n"
@@ -1202,70 +1211,130 @@ def report(project: str, experiment_id: str | None) -> None:
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
-    if experiment_id is not None:
-        try:
-            update_experiment_notes(project_path, experiment_id)
-            generate_experiment_summary(project_path, experiment_id)
-        except FileNotFoundError:
-            raise click.ClickException(f"Experiment '{experiment_id}' not found.")
-        notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
-        summary = (
-            project_path / "experiments" / experiment_id / "labbook" / "summary.md"
-        )
-        click.echo(f"Updated: {notes}")
-        click.echo(f"Generated: {summary}")
+    # If no experiment specified, offer selection (like REPL's _pick_experiment)
+    if experiment_id is None:
+        experiments = list_experiments(project_path)
+        if not experiments:
+            # No experiments — fall through to project-level reports
+            experiment_id = "project"
+        else:
+            # Build numbered options — most recent first
+            reversed_exps = list(reversed(experiments))
+            options = []
+            for exp in reversed_exps:
+                progress = load_progress(project_path, exp.experiment_id)
+                status = progress.get("status", "pending")
+                runs = len(progress.get("runs", []))
+                options.append(f"{exp.experiment_id} [{status}, {runs} runs]")
+            options.append("All experiments (generate for each)")
+            options.append("Project level (one overarching report)")
 
-        # Call report agent to write narrative (like REPL)
+            choice = _prompt_numbered(
+                "\nSelect experiment for report:", options, default=1
+            )
+
+            if choice.startswith("All"):
+                experiment_id = "all"
+            elif choice.startswith("Project"):
+                experiment_id = "project"
+            else:
+                experiment_id = choice.split(" [")[0]
+
+    if experiment_id == "all":
+        # Generate reports for each experiment
+        for exp in list_experiments(project_path):
+            click.echo(f"Processing {exp.experiment_id}...")
+            try:
+                update_experiment_notes(project_path, exp.experiment_id)
+                generate_experiment_summary(project_path, exp.experiment_id)
+            except FileNotFoundError:
+                pass
+            narrative = _run_report_agent(
+                project_path,
+                exp.experiment_id,
+                f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+            )
+            if narrative:
+                from urika.core.report_writer import write_versioned
+
+                narrative_path = (
+                    project_path
+                    / "experiments"
+                    / exp.experiment_id
+                    / "labbook"
+                    / "narrative.md"
+                )
+                narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                write_versioned(narrative_path, narrative + "\n")
+                click.echo(f"Generated: {narrative_path}")
+        click.echo("All experiment reports generated.")
+        return
+
+    if experiment_id == "project":
+        # Project-level reports
+        try:
+            generate_results_summary(project_path)
+            generate_key_findings(project_path)
+        except FileNotFoundError as exc:
+            raise click.ClickException(str(exc))
+
+        # Also refresh notes for all experiments
+        for exp in list_experiments(project_path):
+            try:
+                update_experiment_notes(project_path, exp.experiment_id)
+            except FileNotFoundError:
+                pass
+
+        results_path = project_path / "projectbook" / "results-summary.md"
+        findings_path = project_path / "projectbook" / "key-findings.md"
+        click.echo(f"Generated: {results_path}")
+        click.echo(f"Generated: {findings_path}")
+
+        # Call report agent for project-level narrative
         narrative = _run_report_agent(
             project_path,
-            experiment_id,
-            f"Write a detailed narrative report for experiment {experiment_id}.",
+            "",
+            "Write a project-level narrative report covering all experiments "
+            "and the research progression.",
         )
         if narrative:
             from urika.core.report_writer import write_versioned
 
-            narrative_path = (
-                project_path
-                / "experiments"
-                / experiment_id
-                / "labbook"
-                / "narrative.md"
-            )
+            narrative_path = project_path / "projectbook" / "narrative.md"
             narrative_path.parent.mkdir(parents=True, exist_ok=True)
             write_versioned(narrative_path, narrative + "\n")
             click.echo(f"Generated: {narrative_path}")
         return
 
-    # Project-level reports
+    # Single experiment report
     try:
-        generate_results_summary(project_path)
-        generate_key_findings(project_path)
-    except FileNotFoundError as exc:
-        raise click.ClickException(str(exc))
+        update_experiment_notes(project_path, experiment_id)
+        generate_experiment_summary(project_path, experiment_id)
+    except FileNotFoundError:
+        raise click.ClickException(f"Experiment '{experiment_id}' not found.")
+    notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
+    summary = (
+        project_path / "experiments" / experiment_id / "labbook" / "summary.md"
+    )
+    click.echo(f"Updated: {notes}")
+    click.echo(f"Generated: {summary}")
 
-    # Also refresh notes for all experiments
-    for exp in list_experiments(project_path):
-        try:
-            update_experiment_notes(project_path, exp.experiment_id)
-        except FileNotFoundError:
-            pass
-
-    results_path = project_path / "projectbook" / "results-summary.md"
-    findings_path = project_path / "projectbook" / "key-findings.md"
-    click.echo(f"Generated: {results_path}")
-    click.echo(f"Generated: {findings_path}")
-
-    # Call report agent for project-level narrative
+    # Call report agent to write narrative (like REPL)
     narrative = _run_report_agent(
         project_path,
-        "",
-        "Write a project-level narrative report covering all experiments "
-        "and the research progression.",
+        experiment_id,
+        f"Write a detailed narrative report for experiment {experiment_id}.",
     )
     if narrative:
         from urika.core.report_writer import write_versioned
 
-        narrative_path = project_path / "projectbook" / "narrative.md"
+        narrative_path = (
+            project_path
+            / "experiments"
+            / experiment_id
+            / "labbook"
+            / "narrative.md"
+        )
         narrative_path.parent.mkdir(parents=True, exist_ok=True)
         write_versioned(narrative_path, narrative + "\n")
         click.echo(f"Generated: {narrative_path}")
@@ -1346,7 +1415,21 @@ def logs(project: str, experiment_id: str | None) -> None:
         experiments = list_experiments(project_path)
         if not experiments:
             raise click.ClickException("No experiments in this project.")
-        experiment_id = experiments[-1].experiment_id
+        if len(experiments) == 1:
+            experiment_id = experiments[0].experiment_id
+        else:
+            # Offer selection when multiple experiments exist
+            reversed_exps = list(reversed(experiments))
+            options = []
+            for exp in reversed_exps:
+                progress_data = load_progress(project_path, exp.experiment_id)
+                status = progress_data.get("status", "pending")
+                runs = len(progress_data.get("runs", []))
+                options.append(f"{exp.experiment_id} [{status}, {runs} runs]")
+            choice = _prompt_numbered(
+                "\nSelect experiment to view logs:", options, default=1
+            )
+            experiment_id = choice.split(" [")[0]
 
     progress = load_progress(project_path, experiment_id)
     session = load_session(project_path, experiment_id)

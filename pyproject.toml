@@ -5,9 +5,19 @@ build-backend = "hatchling.build"
 [project]
 name = "urika"
 version = "0.1.0"
-description = "Agentic scientific analysis platform"
+description = "Agentic scientific analysis platform for behavioral and health sciences"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "click>=8.0",
     "numpy>=1.24",
@@ -21,9 +31,11 @@ dependencies = [
 agents = [
     "claude-agent-sdk>=0.1",
 ]
+viz = [
+    "matplotlib>=3.7",
+    "seaborn>=0.13",
+]
 ml = [
-    "torch>=2.0",
-    "transformers>=4.30",
     "xgboost>=2.0",
     "lightgbm>=4.0",
 ]

@@ -72,7 +72,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Project Status
 
-860 tests. Foundation, agents (9 roles), orchestrator (experiment + meta), evaluation, methods (agent-created), tools (16 built-in), knowledge pipeline, CLI (15+ commands), REPL (interactive shell with slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), criteria system (versioned, evolving), method registry, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
+869+ tests. Foundation, agents (9 roles), orchestrator (experiment + meta), evaluation, methods (agent-created), tools (16 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 15+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), criteria system (versioned, evolving), method registry, usage tracking, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
 
 ## Development
 

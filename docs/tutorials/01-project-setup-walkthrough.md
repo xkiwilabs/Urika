@@ -207,11 +207,29 @@ Ingested 10 files into knowledge base.
 ├── tools/              # For agent-created tools
 ├── knowledge/          # Ingested papers and docs
 ├── experiments/        # Created when you run experiments
-├── labbook/            # Project-level reports
+├── projectbook/        # Project-level reports
 └── suggestions/        # Initial plan from project builder
     └── initial.json
 ```
 
-## Next: Running the First Experiment
+## Next Steps
 
-See [Tutorial 02: Running Experiments](02-running-experiments.md).
+From here you can:
+
+```bash
+# Launch the interactive REPL
+urika
+
+# Or run the first experiment directly
+urika run dht-target-selection-v2 --max-turns 5
+
+# Check project status
+urika status dht-target-selection-v2
+
+# View results after a run
+urika results dht-target-selection-v2
+urika report dht-target-selection-v2
+
+# Generate a presentation
+urika present dht-target-selection-v2
+```

@@ -261,8 +261,10 @@ def test_cli_smoke_test(tmp_path: Path) -> None:
     assert "linear_regression" in result.output
     assert "random_forest" in result.output
 
-    # 7. urika report (project-level)
-    result = runner.invoke(cli, ["report", "smoke-test"], env=env)
+    # 7. urika report (project-level) — select "Project level" from the prompt
+    result = runner.invoke(
+        cli, ["report", "smoke-test"], env=env, input="3\n"
+    )
     assert result.exit_code == 0, result.output
     assert "results-summary.md" in result.output
     assert "key-findings.md" in result.output

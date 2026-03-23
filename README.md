@@ -2,7 +2,7 @@
 
 Agentic scientific analysis platform for behavioral and health sciences.
 
-Urika uses multiple AI agents (powered by Claude) to autonomously explore analytical approaches for your dataset and research question. It creates experiments, tries different methods, evaluates results, and documents everything in a structured labbook.
+Urika uses multiple AI agents (powered by Claude) to autonomously explore analytical approaches for your dataset and research question. It creates experiments, tries different methods, evaluates results, and documents everything in a structured projectbook.
 
 ## Installation
 
@@ -28,31 +28,61 @@ urika new sleep-study \
   --mode exploratory \
   --data ./my_data.csv
 
-# The builder scans data sources, profiles datasets, and can
+# The Project Builder scans data sources, profiles datasets, and can
 # ingest papers/docs into the knowledge base automatically.
 
-# 3. Inspect the data
+# 2. Inspect the data
 urika inspect sleep-study
 
-# 4. Create an experiment
+# 3. Create an experiment
 urika experiment create sleep-study "baseline models" \
   --hypothesis "Linear models establish a baseline"
 
-# 5. Run the experiment (requires Claude API key)
+# 4. Run the experiment (requires Claude API key)
 urika run sleep-study --max-turns 20
 
-# 6. View results
+# 5. View results
 urika results sleep-study
 urika report sleep-study
 
-# 7. Resume if needed
+# 6. Resume if needed
 urika run sleep-study --continue
 ```
+
+## Interactive REPL
+
+Running `urika` with no subcommand launches an interactive REPL with tab completion and slash commands. The REPL lets you load a project, run experiments, generate reports, and interact with agents conversationally.
+
+```bash
+# Launch the REPL
+urika
+
+# Inside the REPL, use slash commands:
+/project sleep-study      # Load a project
+/run                      # Run the next experiment
+/status                   # Show project status
+/experiments              # List experiments
+/methods                  # Show agent-created methods
+/report                   # Generate reports
+/present                  # Generate a reveal.js presentation
+/advisor <question>       # Ask the advisor agent a question
+/evaluate                 # Run evaluator on an experiment
+/plan                     # Run planning agent to design a method
+/criteria                 # Show current project criteria
+/usage                    # Show usage stats
+/knowledge <query>        # Search the knowledge base
+/inspect                  # Inspect the dataset
+/logs                     # Show experiment logs
+/help                     # Show all available commands
+```
+
+Free-text input (without a `/` prefix) is sent to the advisor agent as a conversational query about your project.
 
 ## CLI Reference
 
 | Command | Description |
 |---------|-------------|
+| `urika` | Launch interactive REPL |
 | `urika new <name> -q <question> -m <mode> --data <path> --description <desc>` | Create a new project (scans data sources, profiles data, ingests docs into knowledge base) |
 | `urika list` | List all projects |
 | `urika status <project>` | Show project status |
@@ -62,7 +92,7 @@ urika run sleep-study --continue
 | `urika run <project>` | Run an experiment |
 | `urika run <project> --continue` | Resume a paused experiment |
 | `urika results <project>` | Show results and leaderboard |
-| `urika report <project>` | Generate labbook reports |
+| `urika report <project>` | Generate projectbook reports |
 | `urika logs <project>` | Show experiment run log |
 | `urika methods <project>` | List agent-created methods in a project |
 | `urika tools` | List available analysis tools |
@@ -113,28 +143,39 @@ my-project/
 │       ├── experiment.json
 │       ├── progress.json
 │       ├── session.json
+│       ├── leaderboard.json
 │       ├── methods/
 │       ├── labbook/
+│       ├── suggestions/
 │       └── artifacts/
 ├── knowledge/            # Ingested papers/notes
+│   ├── papers/
+│   └── notes/
 ├── methods/              # Project-specific methods
 ├── tools/                # Project-specific tools
-├── labbook/              # Project-level reports
-└── leaderboard.json      # Method rankings
+├── suggestions/          # Initial analytical suggestions
+└── projectbook/          # Project-level reports and presentations
+    ├── key-findings.md
+    ├── results-summary.md
+    ├── progress-overview.md
+    └── presentation/
 ```
 
 ## How It Works
 
-Urika runs an autonomous agent loop for each experiment:
+Urika runs an autonomous agent loop for each experiment, coordinated by the **Orchestrator**:
 
-1. **Planning Agent** reviews context and decides the next analytical step
-2. **Task Agent** explores data, writes Python code, runs tools
-3. **Evaluator** scores results against success criteria (read-only)
-4. **Advisor Agent** analyzes results, proposes next experiments
-5. **Tool Builder** creates new tools on demand
-6. **Literature Agent** searches papers and builds knowledge base
+1. **Project Builder** scopes the project interactively — scans data sources, profiles datasets, ingests knowledge, and seeds initial criteria
+2. **Planning Agent** reviews context and decides the next analytical step
+3. **Task Agent** explores data, writes Python code, runs tools, and records results
+4. **Evaluator** scores results against success criteria (read-only)
+5. **Advisor Agent** analyzes results, proposes next experiments
+6. **Tool Builder** creates new tools on demand
+7. **Literature Agent** searches papers and builds knowledge base
+8. **Report Agent** generates structured projectbook reports from experiment data
+9. **Presentation Agent** renders results into reveal.js slide decks
 
-The orchestrator loops through `planning -> task -> evaluator -> suggestion` until success criteria are met or max turns reached.
+The **Orchestrator** loops through `planning -> task -> evaluator -> advisor` until success criteria are met or max turns reached. A **Meta-Orchestrator** manages experiment-to-experiment transitions, deciding when to start new experiments based on advisor suggestions.
 
 ## Development
 
