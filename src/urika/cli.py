@@ -944,12 +944,13 @@ def run(
 
     project_path, _config = _resolve_project(project)
 
-    # Show header immediately
-    print_header(
-        project_name=project,
-        agent="orchestrator",
-        mode=_config.mode,
-    )
+    # Show header (skip if called from REPL — already has header)
+    if not os.environ.get("URIKA_REPL"):
+        print_header(
+            project_name=project,
+            agent="orchestrator",
+            mode=_config.mode,
+        )
 
     # Create panel early so it's available during experiment selection
     panel = ThinkingPanel()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 import click
 from urika.repl_session import ReplSession
 
@@ -169,20 +170,26 @@ def cmd_run(session: ReplSession, args: str) -> None:
     if not run_instructions and session.conversation:
         run_instructions = session.get_conversation_context()
 
-    # Call the existing run flow
-    from urika.cli import run as cli_run
+    # Run directly without going through CLI (avoids duplicate header)
+    import os
 
-    ctx = click.Context(cli_run)
-    ctx.invoke(
-        cli_run,
-        project=session.project_name,
-        experiment_id=None,
-        max_turns=max_turns,
-        resume=False,
-        quiet=False,
-        auto=(auto_mode != "checkpoint"),
-        instructions=run_instructions,
-    )
+    os.environ["URIKA_REPL"] = "1"
+    try:
+        from urika.cli import run as cli_run
+
+        ctx = click.Context(cli_run)
+        ctx.invoke(
+            cli_run,
+            project=session.project_name,
+            experiment_id=None,
+            max_turns=max_turns,
+            resume=False,
+            quiet=False,
+            auto=(auto_mode != "checkpoint"),
+            instructions=run_instructions,
+        )
+    finally:
+        os.environ.pop("URIKA_REPL", None)
 
 
 @command("experiments", requires_project=True, description="List experiments")
@@ -265,7 +272,15 @@ def cmd_present(session: ReplSession, args: str) -> None:
         asyncio.run(
             _generate_presentation(session.project_path, exp_id, runner, _noop_callback)
         )
-        click.echo(f"  \u2713 Saved to experiments/{exp_id}/presentation/index.html")
+        pres_path = (
+            session.project_path
+            / "experiments"
+            / exp_id
+            / "presentation"
+            / "index.html"
+        )
+        link = _file_link(pres_path, f"experiments/{exp_id}/presentation/index.html")
+        click.echo(f"  \u2713 Saved: {link}")
     except Exception as exc:
         click.echo(f"  \u2717 Error: {exc}")
 
@@ -400,3 +415,14 @@ def get_experiment_ids(session: ReplSession) -> list[str]:
     from urika.core.experiment import list_experiments
 
     return [e.experiment_id for e in list_experiments(session.project_path)]
+
+
+def _file_link(path: Path, display: str = "") -> str:
+    """Create a clickable terminal hyperlink using OSC 8 escape sequence."""
+    import sys
+
+    label = display or str(path)
+    if not sys.stdout.isatty():
+        return label
+    uri = path.resolve().as_uri()
+    return f"\033]8;;{uri}\033\\{label}\033]8;;\033\\"
