@@ -17,15 +17,7 @@ Urika works with data from any scientific discipline — tabular data (CSV, Exce
 pip install urika
 ```
 
-This installs the core platform with statistical tools (numpy, pandas, scipy, scikit-learn).
-
-### With agent support (required for running experiments)
-
-```bash
-pip install "urika[agents]"
-```
-
-Adds the Claude Agent SDK, which powers all ten agent roles.
+This installs the core platform with the Claude Agent SDK, statistical tools (numpy, pandas, scipy, scikit-learn), and all ten agent roles. Everything you need to get started.
 
 ### With visualization
 

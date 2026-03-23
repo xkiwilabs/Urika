@@ -18,7 +18,7 @@ Currently supports the **Claude Agent SDK** (Anthropic), including local models 
 ## Installation
 
 ```bash
-pip install -e ".[agents]"
+pip install urika
 ```
 
 Requires Python >= 3.11 and Claude access via API key (`ANTHROPIC_API_KEY`) or Claude Max/Pro account.
