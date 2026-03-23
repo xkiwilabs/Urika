@@ -404,45 +404,99 @@ def new(
                 click.echo(f"    {short_desc}")
 
             choice = _prompt_numbered(
-                "\n  Run the first experiment?",
+                "\n  How would you like to proceed?",
                 [
-                    "Yes — create and run it",
+                    "Run one experiment — start with the planned first experiment",
+                    "Run multiple — run up to N experiments, pause between each",
+                    "Run until done — fully autonomous until criteria met",
                     "Different — I'll describe what to run instead",
-                    "Skip — I'll run it later",
+                    "Skip — I'll run later",
                 ],
                 default=1,
             )
 
             if choice.startswith("Skip"):
                 pass
-            else:
-                if choice.startswith("Different"):
-                    custom = click.prompt("  Describe the experiment").strip()
-                    exp_name = click.prompt(
-                        "  Experiment name", default="custom-experiment"
-                    ).strip()
-                    exp = create_experiment(
-                        project_dir,
-                        name=exp_name,
-                        hypothesis=custom,
-                    )
-                else:
-                    exp = create_experiment(
-                        project_dir,
-                        name=first_name.replace(" ", "-").lower(),
-                        hypothesis=first_desc[:500] if first_desc else "",
-                    )
-
+            elif choice.startswith("Different"):
+                custom = click.prompt("  Describe the experiment").strip()
+                exp_name = click.prompt(
+                    "  Experiment name", default="custom-experiment"
+                ).strip()
+                exp = create_experiment(
+                    project_dir,
+                    name=exp_name,
+                    hypothesis=custom,
+                )
                 click.echo(f"\n  Created experiment: {exp.experiment_id}")
                 click.echo("  Starting orchestrator...\n")
-                # Launch the run command programmatically
                 ctx = click.get_current_context()
                 ctx.invoke(
                     run,
                     project=name,
                     experiment_id=exp.experiment_id,
-                    max_turns=50,
+                    max_turns=None,
                     resume=False,
+                    max_experiments=None,
+                )
+            elif choice.startswith("Run multiple"):
+                max_exp = int(
+                    click.prompt("  How many experiments?", default="3")
+                )
+                exp = create_experiment(
+                    project_dir,
+                    name=first_name.replace(" ", "-").lower(),
+                    hypothesis=first_desc[:500] if first_desc else "",
+                )
+                click.echo(f"\n  Created experiment: {exp.experiment_id}")
+                click.echo(
+                    f"  Starting meta-orchestrator ({max_exp} experiments)...\n"
+                )
+                ctx = click.get_current_context()
+                ctx.invoke(
+                    run,
+                    project=name,
+                    experiment_id=exp.experiment_id,
+                    max_turns=None,
+                    resume=False,
+                    max_experiments=max_exp,
+                )
+            elif choice.startswith("Run until"):
+                exp = create_experiment(
+                    project_dir,
+                    name=first_name.replace(" ", "-").lower(),
+                    hypothesis=first_desc[:500] if first_desc else "",
+                )
+                click.echo(f"\n  Created experiment: {exp.experiment_id}")
+                click.echo(
+                    "  Starting meta-orchestrator (autonomous)...\n"
+                )
+                ctx = click.get_current_context()
+                ctx.invoke(
+                    run,
+                    project=name,
+                    experiment_id=exp.experiment_id,
+                    max_turns=None,
+                    resume=False,
+                    auto=True,
+                    max_experiments=50,
+                )
+            else:
+                # Run one experiment
+                exp = create_experiment(
+                    project_dir,
+                    name=first_name.replace(" ", "-").lower(),
+                    hypothesis=first_desc[:500] if first_desc else "",
+                )
+                click.echo(f"\n  Created experiment: {exp.experiment_id}")
+                click.echo("  Starting orchestrator...\n")
+                ctx = click.get_current_context()
+                ctx.invoke(
+                    run,
+                    project=name,
+                    experiment_id=exp.experiment_id,
+                    max_turns=None,
+                    resume=False,
+                    max_experiments=None,
                 )
 
 
