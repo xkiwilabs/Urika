@@ -75,16 +75,7 @@ def run_repl() -> None:
     )
     click.echo()
 
-    # List projects on startup
-    from urika.core.registry import ProjectRegistry
-
-    registry = ProjectRegistry()
-    projects = registry.list_all()
-    if projects:
-        click.echo("  Projects:")
-        for name in projects:
-            click.echo(f"    {name}")
-        click.echo()
+    # Projects available via /list
 
     prompt_session = PromptSession(
         history=history,
