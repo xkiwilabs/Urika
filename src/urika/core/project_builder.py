@@ -36,6 +36,7 @@ class ProjectBuilder:
         self.question = question
         self.mode = mode
         self.web_search: bool = False
+        self.use_venv: bool = False
         self._scan_result: ScanResult | None = None
         self._data_summary: DataSummary | None = None
         self._suggestions: dict[str, Any] | None = None
@@ -135,7 +136,16 @@ class ProjectBuilder:
             }
 
         existing.setdefault("preferences", {})["web_search"] = self.web_search
+
+        if self.use_venv:
+            existing.setdefault("environment", {})["venv"] = True
+
         _write_toml(project_dir / "urika.toml", existing)
+
+        if self.use_venv:
+            from urika.core.venv import create_project_venv
+
+            create_project_venv(project_dir)
 
         # Write initial suggestions if set
         if self._suggestions:

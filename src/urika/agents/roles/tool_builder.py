@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from urika.agents.config import AgentConfig, AgentRole, SecurityPolicy
+from urika.agents.config import AgentConfig, AgentRole, SecurityPolicy, build_agent_env
 from urika.agents.prompt import load_prompt
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -39,4 +39,5 @@ def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
         ),
         max_turns=15,
         cwd=project_dir,
+        env=build_agent_env(project_dir),
     )

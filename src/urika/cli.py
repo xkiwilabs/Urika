@@ -284,6 +284,13 @@ def new(
     )
     builder.web_search = web_search
 
+    # Ask about isolated environment
+    use_venv = click.confirm(
+        "Create isolated environment for this project?",
+        default=False,
+    )
+    builder.use_venv = use_venv
+
     with Spinner("Writing project files"):
         project_dir = builder.write_project()
 
@@ -2039,3 +2046,51 @@ def usage(project: str | None) -> None:
                     f"{tok_str} tokens · ~${totals['total_cost_usd']:.2f}"
                 )
     click.echo()
+
+
+@cli.group("venv")
+def venv_group() -> None:
+    """Manage project virtual environments."""
+
+
+@venv_group.command("create")
+@click.argument("project", required=False, default=None)
+def venv_create(project: str | None) -> None:
+    """Create a venv for a project."""
+    import tomllib
+
+    from urika.core.venv import create_project_venv
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    venv_path = create_project_venv(project_path)
+
+    # Update urika.toml to enable venv
+    toml_path = project_path / "urika.toml"
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+    data.setdefault("environment", {})["venv"] = True
+    from urika.core.workspace import _write_toml
+
+    _write_toml(toml_path, data)
+
+    click.echo(f"Created .venv at {venv_path}")
+
+
+@venv_group.command("status")
+@click.argument("project", required=False, default=None)
+def venv_status(project: str | None) -> None:
+    """Show venv status for a project."""
+    from urika.core.venv import is_venv_enabled
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    if is_venv_enabled(project_path):
+        venv_path = project_path / ".venv"
+        exists = venv_path.exists()
+        click.echo(f"Venv: enabled ({'exists' if exists else 'NOT FOUND'})")
+        click.echo(f"Path: {venv_path}")
+    else:
+        click.echo("Venv: not enabled (using global environment)")

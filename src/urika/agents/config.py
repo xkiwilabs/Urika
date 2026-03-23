@@ -92,6 +92,13 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
         return RuntimeConfig()
 
 
+def build_agent_env(project_dir: Path) -> dict[str, str] | None:
+    """Get venv environment for agents, if project has one configured."""
+    from urika.core.venv import get_venv_env
+
+    return get_venv_env(project_dir)
+
+
 @dataclass
 class AgentRole:
     """Definition of an agent role."""
