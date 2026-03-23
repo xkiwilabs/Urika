@@ -23,6 +23,18 @@ urika new [NAME] [OPTIONS]
 | `-m, --mode MODE` | Investigation mode: `exploratory`, `confirmatory`, or `pipeline`. |
 | `--description TEXT` | Free-text description of what you are trying to analyse or predict. |
 
+### The description matters
+
+The project description is the single most important input you provide. Urika's agents use it to understand your research goals, select appropriate methods, and interpret results. A vague description produces vague analysis.
+
+**Weak:** "Analyse this dataset"
+
+**Strong:** "Model target selection decisions in a multiplayer herding task from the player's local perspective. Players in 2-player and 3-player teams herd autonomous targets into a containment zone. Predict which target a player will pursue next based on field-of-view visibility, angular deviation, and distance. Global information models serve as comparison baselines, but the primary goal is understanding decisions from what the player can actually see."
+
+Include: what the data represents, what you want to predict or understand, what variables matter, what domain knowledge is relevant, and what success looks like.
+
+You can update the description later by editing `urika.toml` directly if you find the agents are misunderstanding your goals or heading in the wrong direction.
+
 ### Examples
 
 Fully non-interactive (all required fields supplied):
@@ -81,7 +93,7 @@ The scanner reports what it found -- number of data files, documentation files, 
 
 ### Data profiling
 
-For data files (CSVs are profiled first), Urika loads a sample (up to 5 files) and generates a profile:
+For tabular data files (CSV, Excel, Parquet), Urika loads a sample (up to 5 files) and generates a profile:
 
 - Number of rows and columns
 - Column names and data types
@@ -89,6 +101,15 @@ For data files (CSVs are profiled first), Urika loads a sample (up to 5 files) a
 - Basic summary statistics
 
 This profile informs the project builder agent about your data structure.
+
+### Describing non-tabular or complex data
+
+The data profiler currently handles tabular formats (CSV, Excel, Parquet) automatically. If your data is in other formats — images, text corpora, time series in HDF5, audio files, domain-specific formats — include a clear description of the data structure in your project description. For example:
+
+- "The data directory contains 500 EEG recordings in EDF format, each with 64 channels sampled at 256 Hz, plus a participants.csv with demographics and condition labels."
+- "Each subdirectory is one participant, containing 24 CSV trial files with columns for timestamp, x, y, target_id, and event_type."
+
+The more the agents understand your data structure, the better they can work with it. If your data is in a format the profiler doesn't recognise, the agents will still examine it using their file reading and bash tools — they just won't have the automated profile to start from.
 
 ## Investigation modes
 
@@ -152,6 +173,29 @@ You will be prompted:
 ```
 Ingest documentation and papers into the knowledge base? [Y/n]
 ```
+
+### Adding papers makes a big difference
+
+Even 1-2 relevant research papers can dramatically improve the quality of Urika's analysis. When agents have access to domain literature, they:
+
+- Choose methods that are established in your field rather than generic approaches
+- Understand domain-specific terminology in your data
+- Reference prior work when designing experiments
+- Avoid reinventing approaches that have already been tried
+
+You can add papers at any time — just drop PDF files into your project's `knowledge/papers/` directory and run:
+
+```bash
+urika knowledge ingest my-project /path/to/paper.pdf
+```
+
+Or from the REPL, use the advisor in plain text:
+
+```
+urika:my-project> I've added some papers to the knowledge folder, please review them
+```
+
+The literature agent will search the knowledge base when proposing methods and designing experiments.
 
 ## What gets created
 
