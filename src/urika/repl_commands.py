@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 import click
+from urika.cli_display import _C
 from urika.repl_session import ReplSession
 
 
@@ -28,7 +29,6 @@ def command(name: str, requires_project: bool = False, description: str = ""):
 
 @command("help", description="Show available commands")
 def cmd_help(session: ReplSession, args: str) -> None:
-    from urika.cli_display import _C
 
     click.echo(f"\n  {_C.BOLD}Commands:{_C.RESET}")
     for name, entry in sorted(GLOBAL_COMMANDS.items()):
@@ -357,7 +357,9 @@ def cmd_present(session: ReplSession, args: str) -> None:
 
         experiments = list_experiments(session.project_path)
         for exp in experiments:
-            click.echo(f"  Generating presentation for {exp.experiment_id}...")
+            click.echo(
+                f"  {_C.BLUE}Generating presentation for {exp.experiment_id}...{_C.RESET}"
+            )
             text = _run_single_agent(
                 session,
                 "presentation_agent",
@@ -369,7 +371,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
         click.echo("  \u2713 All presentations generated")
     elif exp_choice == "project":
         # One project-level presentation covering everything
-        click.echo("  Generating project-level presentation...")
+        click.echo(f"  {_C.BLUE}Generating project-level presentation...{_C.RESET}")
         text = _run_single_agent(
             session,
             "presentation_agent",
@@ -408,11 +410,11 @@ def cmd_report(session: ReplSession, args: str) -> None:
 
     if exp_choice == "all":
         # Generate reports for each experiment
-        click.echo("  Generating reports for all experiments...")
+        click.echo(f"  {_C.BLUE}Generating reports for all experiments...{_C.RESET}")
         from urika.core.experiment import list_experiments
 
         for exp in list_experiments(session.project_path):
-            click.echo(f"  Processing {exp.experiment_id}...")
+            click.echo(f"  {_C.BLUE}Processing {exp.experiment_id}...{_C.RESET}")
             try:
                 update_experiment_notes(session.project_path, exp.experiment_id)
                 generate_experiment_summary(session.project_path, exp.experiment_id)
@@ -439,7 +441,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
         click.echo("  \u2713 All experiment reports updated")
     elif exp_choice == "project":
         # Project-level reports
-        click.echo("  Generating project-level reports...")
+        click.echo(f"  {_C.BLUE}Generating project-level reports...{_C.RESET}")
         try:
             generate_results_summary(session.project_path)
             generate_key_findings(session.project_path)
@@ -464,7 +466,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
             readme_link = _file_link(session.project_path / "README.md", "README.md")
             click.echo(f"  \u2713 README: {readme_link}")
     else:
-        click.echo(f"  Generating report for {exp_choice}...")
+        click.echo(f"  {_C.BLUE}Generating report for {exp_choice}...{_C.RESET}")
         try:
             update_experiment_notes(session.project_path, exp_choice)
             generate_experiment_summary(session.project_path, exp_choice)
