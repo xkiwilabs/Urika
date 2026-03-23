@@ -1,0 +1,35 @@
+# CO2 Emissions — Test Project Configuration
+#
+# Data size: ~50,000+ rows x 70+ columns (real data from Our World in Data)
+# Download: python dev/test-datasets/download.py --dataset climate
+#
+# Project name:
+co2-emissions-analysis
+
+# Data path:
+dev/test-datasets/climate/data/
+
+# Description:
+Global CO2 emissions data from Our World in Data, covering 200+ countries from 1750 to
+present. Variables include annual CO2 emissions (total and per capita), emissions by fuel
+type (coal, oil, gas, cement, flaring), cumulative emissions, population, GDP, energy
+consumption, and other climate-related indicators. The goal is to identify the key drivers
+of CO2 emission changes over time and across countries, and to model which economic and
+energy factors best predict a country's emission trajectory.
+
+# Research question:
+What economic and energy factors best predict CO2 emissions per capita across countries, and
+how have these relationships changed over time?
+
+# Mode:
+exploratory
+
+# Web search:
+no
+
+# Venv:
+no
+
+# Knowledge suggestions:
+Add the data-description.md from dev/test-datasets/climate/knowledge/. Optionally add
+references on the Kaya identity, Environmental Kuznets Curve, or IPCC emissions modelling.

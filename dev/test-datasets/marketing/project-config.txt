@@ -1,0 +1,38 @@
+# Customer Segmentation — Test Project Configuration
+#
+# Data size: 400 rows x 8 columns
+# Download: python dev/test-datasets/download.py --dataset marketing
+#
+# Project name:
+marketing-test
+
+# Data path:
+dev/test-datasets/marketing/data/
+
+# Description:
+Synthetic customer data simulating a retail company's customer relationship management (CRM)
+database. Each row represents a customer with demographic and behavioral attributes:
+customer ID, age, gender, annual income, spending score (1-100 composite metric reflecting
+purchase value and frequency), education level, marital status, and monthly purchase
+frequency. The spending score was designed as a proprietary metric combining transaction
+value, frequency, and recency. Income follows a log-normal distribution reflecting real-world
+wealth patterns. The research goal is to discover natural customer segments using
+unsupervised learning methods (clustering) and to characterize each segment by its
+demographic and behavioral profile, enabling targeted marketing strategies.
+
+# Research question:
+What natural customer segments exist in the data based on demographic and behavioral
+features, and how can each segment be characterized to inform targeted marketing strategies?
+
+# Mode:
+exploratory
+
+# Web search:
+no
+
+# Venv:
+no
+
+# Knowledge suggestions:
+Add the data-description.md from dev/test-datasets/marketing/knowledge/. Optionally add
+references to RFM analysis or customer segmentation methodology.

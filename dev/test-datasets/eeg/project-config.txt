@@ -1,0 +1,34 @@
+# EEG Motor Imagery — Test Project Configuration
+#
+# Data size: ~35,000 rows x 6 columns (synthetic)
+# Download: python dev/test-datasets/download.py --dataset eeg
+#
+# Project name:
+eeg-motor-imagery
+
+# Data path:
+dev/test-datasets/eeg/data/
+
+# Description:
+EEG motor imagery data from a brain-computer interface experiment. 10 participants performed
+left-hand and right-hand motor imagery tasks while 7-channel EEG was recorded at 250 Hz.
+Each trial is a 1-second epoch time-locked to a visual cue. The goal is to classify which
+hand the participant imagined moving based on the EEG signal patterns, particularly
+lateralised mu-rhythm desynchronisation over motor cortex (channels C3 and C4).
+
+# Research question:
+Can motor imagery (left vs right hand) be classified from EEG spectral features, and which
+channels and frequency bands are most discriminative?
+
+# Mode:
+pipeline
+
+# Web search:
+no
+
+# Venv:
+no
+
+# Knowledge suggestions:
+Add the data-description.md from dev/test-datasets/eeg/knowledge/. Optionally add references
+on mu-rhythm desynchronisation, common spatial patterns (CSP), or BCI classification methods.

@@ -1,0 +1,39 @@
+# Stroop Task — Test Project Configuration
+#
+# Data size: ~50 rows x 3-5 columns (varies by version)
+# Download: python dev/test-datasets/download.py --dataset stroop
+#
+# Project name:
+stroop-test
+
+# Data path:
+dev/test-datasets/stroop/data/
+
+# Description:
+Reaction time data from a classic Stroop color-word interference experiment. Participants
+named the ink color of printed words under congruent conditions (word "RED" in red ink) and
+incongruent conditions (word "RED" in blue ink). The dataset captures response times in
+milliseconds and accuracy for each trial, along with participant identifiers and condition
+labels. The data was collected in a within-subjects design where every participant completed
+both congruent and incongruent trials. The goal is to quantify the Stroop interference
+effect — the magnitude and reliability of the reaction time difference between incongruent
+and congruent conditions — and determine whether the effect is statistically significant
+across participants.
+
+# Research question:
+Is there a statistically significant difference in reaction time between congruent and
+incongruent conditions in the Stroop task, and what is the effect size of the Stroop
+interference effect?
+
+# Mode:
+confirmatory
+
+# Web search:
+no
+
+# Venv:
+no
+
+# Knowledge suggestions:
+Add the data-description.md from dev/test-datasets/stroop/knowledge/. Optionally add
+Stroop (1935) original paper or a modern meta-analysis of the Stroop effect.

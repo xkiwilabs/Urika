@@ -29,3 +29,6 @@ Thumbs.db
 
 # Urika project data (not part of the repo)
 urika-projects/
+
+# Test dataset downloads (configs and knowledge ARE tracked)
+dev/test-datasets/*/data/

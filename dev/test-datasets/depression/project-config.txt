@@ -1,0 +1,40 @@
+# Depression Survey — Test Project Configuration
+#
+# Data size: 500 rows x 10 columns
+# Download: python dev/test-datasets/download.py --dataset depression
+#
+# Project name:
+depression-test
+
+# Data path:
+dev/test-datasets/depression/data/
+
+# Description:
+Synthetic cross-sectional survey data modeled after clinical depression screening studies.
+Each row represents a participant who completed the Beck Depression Inventory (BDI) along
+with self-report measures of lifestyle and psychosocial factors. Variables include age,
+gender, BDI depression score (0-63), average nightly sleep hours, weekly exercise frequency,
+perceived social support score (1-10), self-rated stress level (1-10), income bracket, and
+a derived depression severity category (minimal, mild, moderate, severe) based on standard
+BDI cutoffs. The data was generated to reflect realistic correlational structure: poor
+sleep, low exercise, weak social support, and high stress are associated with higher BDI
+scores. The research goal is to identify which modifiable lifestyle factors are the
+strongest predictors of depression severity and to build a predictive model for BDI score.
+
+# Research question:
+Which modifiable lifestyle factors (sleep, exercise, social support, stress) are the
+strongest predictors of depression severity, and can we build a reliable predictive model
+for BDI score from these variables?
+
+# Mode:
+exploratory
+
+# Web search:
+no
+
+# Venv:
+no
+
+# Knowledge suggestions:
+Add the data-description.md from dev/test-datasets/depression/knowledge/. Optionally add
+background on the Beck Depression Inventory scoring and clinical cutoffs.

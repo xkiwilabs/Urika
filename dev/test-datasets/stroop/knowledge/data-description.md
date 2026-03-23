@@ -1,0 +1,5 @@
+# Stroop Task Data Description
+
+This dataset contains reaction time data from a Stroop color-word interference experiment, collected by Daniel Lakens and made publicly available for teaching and replication purposes. In the classic Stroop paradigm, participants are presented with color words (e.g., "RED", "BLUE", "GREEN") printed in different ink colors and are asked to name the ink color as quickly as possible while ignoring the word itself. The key manipulation is whether the word meaning and ink color are congruent (word "RED" in red ink) or incongruent (word "RED" in blue ink).
+
+The experiment uses a within-subjects design where each participant completes trials in both conditions. Reaction times are recorded in milliseconds from stimulus onset to vocal response. The expected finding is the Stroop interference effect: significantly slower reaction times in the incongruent condition compared to the congruent condition, reflecting the cognitive cost of suppressing automatic word reading. This is one of the most robust and widely replicated effects in cognitive psychology, with typical effect sizes (Cohen's d) ranging from 0.5 to 1.5 depending on methodology.

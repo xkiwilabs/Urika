@@ -1,0 +1,41 @@
+# Image Classification — Test Project Configuration
+#
+# Data size: 50 images (64x64 RGB PNG) in 3 subdirectories (cats/dogs/birds)
+# Download: python dev/test-datasets/download.py --dataset images
+#
+# Project name:
+images-test
+
+# Data path:
+dev/test-datasets/images/data/
+
+# Description:
+Tiny synthetic image classification dataset for testing Urika's source scanner, data
+profiler, and image-handling capabilities. The dataset contains 50 small (64x64 pixel) RGB
+PNG images organized into three subdirectories representing classes: cats (17 images), dogs
+(17 images), and birds (16 images). Each image consists of random pixel patterns with a
+class-specific color tint (warm orange for cats, blue-purple for dogs, green for birds) and
+overlaid geometric shapes for texture variety. These are not real photographs — the color
+tinting provides a trivially learnable signal, making the classification task achievable
+even with simple pixel-based features. The purpose is to verify that Urika can detect image
+file types, profile directory-structured datasets, and orchestrate a basic image
+classification pipeline. Success is achieving high classification accuracy (>90%) given the
+clear color separation between classes.
+
+# Research question:
+Can a simple image classification pipeline distinguish between the three classes (cats,
+dogs, birds) based on color and texture features, and what classification accuracy is
+achievable?
+
+# Mode:
+exploratory
+
+# Web search:
+no
+
+# Venv:
+yes
+
+# Knowledge suggestions:
+Add the data-description.md from dev/test-datasets/images/knowledge/. No additional
+knowledge needed for this synthetic test dataset.

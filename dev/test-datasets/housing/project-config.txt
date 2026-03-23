@@ -1,0 +1,41 @@
+# California Housing — Test Project Configuration
+#
+# Data size: 20,640 rows x 9 columns
+# Download: python dev/test-datasets/download.py --dataset housing
+#
+# Project name:
+housing-test
+
+# Data path:
+dev/test-datasets/housing/data/
+
+# Description:
+The California Housing dataset from the 1990 U.S. Census, distributed via scikit-learn.
+Each row represents a census block group (the smallest geographical unit for which the U.S.
+Census Bureau publishes sample data, typically 600-3000 people). Features include median
+income of households in the block group, median house age, average number of rooms per
+household, average number of bedrooms per household, block group population, average
+household occupancy, latitude, and longitude. The target variable is the median house value
+for the block group in units of $100,000. This is a well-known regression benchmark with
+real spatial structure, non-linear relationships, and geographic clustering effects. The
+research goal is to build an accurate predictive model for median house value and to
+understand which features (economic, demographic, geographic) are most important for
+predicting housing prices in California.
+
+# Research question:
+What are the most important predictors of median house value in California census block
+groups, and what is the best achievable prediction accuracy using the available features?
+
+# Mode:
+pipeline
+
+# Web search:
+no
+
+# Venv:
+no
+
+# Knowledge suggestions:
+Add the data-description.md from dev/test-datasets/housing/knowledge/. This is a classic
+ML benchmark — no additional knowledge needed, but a reference to Pace & Barry (1997)
+"Sparse Spatial Autoregressions" could be useful.

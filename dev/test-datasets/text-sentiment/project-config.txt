@@ -1,0 +1,41 @@
+# Text Sentiment — Test Project Configuration
+#
+# Data size: 200 rows x 2 columns
+# Download: python dev/test-datasets/download.py --dataset text-sentiment
+#
+# Project name:
+text-sentiment-test
+
+# Data path:
+dev/test-datasets/text-sentiment/data/
+
+# Description:
+Synthetic product review dataset for binary sentiment classification. Each row contains a
+short product review text (1-2 sentences) and a sentiment label (positive or negative). The
+reviews were generated from templates with varied adjectives, nouns, and adverbs to simulate
+realistic consumer language. Positive reviews mention product quality, satisfaction, and
+recommendation; negative reviews mention defects, disappointment, and returns. The dataset
+is balanced with 100 positive and 100 negative reviews. This is a small-scale NLP
+classification task designed to test Urika's ability to handle text data, perform feature
+extraction (TF-IDF, bag-of-words, or embeddings), and build text classification models.
+Success is measured by classification accuracy on held-out data, with a reasonable baseline
+around 75-85% given the template-based generation.
+
+# Research question:
+Can we build a reliable binary sentiment classifier from short product reviews, and which
+text representation method (bag-of-words, TF-IDF, or embeddings) yields the best
+classification accuracy?
+
+# Mode:
+exploratory
+
+# Web search:
+no
+
+# Venv:
+yes
+
+# Knowledge suggestions:
+Add the data-description.md from dev/test-datasets/text-sentiment/knowledge/. Optionally
+add references to sentiment analysis methodology or scikit-learn text classification
+tutorials.
