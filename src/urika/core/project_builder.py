@@ -76,6 +76,29 @@ class ProjectBuilder:
         self._data_summary = profile_dataset(combined)
         return self._data_summary
 
+    def profile_all_data(self) -> dict[str, dict]:
+        """Profile all data types found in the scan."""
+        from urika.data.profiler import (
+            profile_audio,
+            profile_images,
+            profile_spatial,
+            profile_timeseries,
+        )
+
+        profiles: dict[str, dict] = {}
+        if self._scan_result is None:
+            return profiles
+
+        if self._scan_result.images:
+            profiles["images"] = profile_images(self._scan_result.images)
+        if self._scan_result.audio:
+            profiles["audio"] = profile_audio(self._scan_result.audio)
+        if self._scan_result.timeseries:
+            profiles["timeseries"] = profile_timeseries(self._scan_result.timeseries)
+        if self._scan_result.spatial:
+            profiles["spatial"] = profile_spatial(self._scan_result.spatial)
+        return profiles
+
     def set_initial_suggestions(self, suggestions: dict[str, Any]) -> None:
         """Store initial suggestions from the planning loop."""
         self._suggestions = suggestions

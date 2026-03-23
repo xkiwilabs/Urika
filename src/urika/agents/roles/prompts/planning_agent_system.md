@@ -55,6 +55,21 @@ Produce a single JSON block with your method plan:
 Set `needs_tool` to `true` if the plan requires a tool that doesn't exist yet, and describe it.
 Set `needs_literature` to `true` if you need research literature to inform the plan.
 
+## Data Format Awareness
+
+The user's data description and data profile provide critical context about format and structure. Before designing a pipeline, consider:
+
+- **What format is the data?** Tabular data (CSV, Parquet) can go straight into modelling. Non-tabular data (images, audio, time series, spatial, neuroimaging) needs a loading and feature-extraction step first.
+- **Are the required libraries available?** If the pipeline needs domain-specific libraries (e.g., `mne` for EEG, `nibabel` for neuroimaging, `librosa` for audio, `open3d` for point clouds), include a setup step or note that the task agent should `pip install` them.
+- **Set `needs_tool: true`** when the data format requires a custom reader, loader, or feature extractor that doesn't exist yet. Describe the tool clearly in `tool_description` so the tool builder knows what to build.
+- **Match the method to the data type.** Don't plan tabular methods (e.g., linear regression on raw columns) for inherently non-tabular data. For example:
+  - Image data → feature extraction (CNN embeddings, histograms) or computer vision methods
+  - Audio data → spectral features, MFCCs, or waveform models
+  - EEG/time series → epoch extraction, spectral power, connectivity, or sequence models
+  - 3D/spatial data → geometric features, point cloud descriptors
+  - Text → embeddings, bag-of-words, or language model features
+- After feature extraction, the resulting numeric features can be analysed with standard statistical or ML methods.
+
 ## Rules
 
 - Do NOT modify any files.

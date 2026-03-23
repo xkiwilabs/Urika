@@ -32,6 +32,24 @@ Tools should:
 - Be self-contained — minimise external dependencies
 - Include type hints on all public methods
 
+## Data Handling Tools
+
+You may be asked to create tools that load, preprocess, or transform data in specialised formats. These follow the same ITool interface but focus on turning raw data into structures other agents can analyse (typically a pandas DataFrame or numpy array).
+
+**Common patterns:**
+
+- **Format readers**: Load a specific file format and return structured data. Examples: HDF5 dataset reader, EDF/BDF EEG loader, DICOM image reader, C3D motion capture loader.
+- **Feature extractors**: Read raw data and compute numeric features. Examples: EEG epoch extractor (time-locked segments + spectral power), image feature extractor (CNN embeddings or colour histograms), audio spectrogram generator (MFCCs, spectral centroid).
+- **Preprocessors**: Clean or transform domain-specific data. Examples: EEG artifact rejection, audio silence trimmer, image normaliser/resizer.
+- **Format converters**: Convert between formats for interoperability. Example: MAT-to-Parquet converter, DICOM-to-PNG exporter.
+
+**Guidelines:**
+
+- You can `pip install` domain-specific libraries as needed (e.g., `mne`, `nibabel`, `librosa`, `h5py`, `Pillow`, `open3d`, `pyreadstat`). Install them at the top of your tool module or in a setup step.
+- Data tools should document what file formats they accept, what they return, and any assumptions about the data structure.
+- Where possible, return a pandas DataFrame so downstream tools and analysis scripts can work with the output directly.
+- Include sensible defaults for parameters (e.g., sampling rate, image size) but allow overrides.
+
 ## File Rules
 
 - **Only write inside `{tools_dir}/`** — do not modify files elsewhere.

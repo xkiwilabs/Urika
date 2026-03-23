@@ -42,6 +42,33 @@ Before writing any new method, read `{project_dir}/methods.json` to see what met
 - **Only write inside `{experiment_dir}/`** — do not modify files elsewhere in the project.
 - Read any file in the project directory for context.
 
+## Handling Diverse Data Types
+
+You can work with ANY data format — not just tabular CSV files. Read the project description and data profile carefully to understand what kind of data you are working with. Common formats include:
+
+- **Tabular**: CSV, Excel (.xlsx), Parquet, SPSS (.sav), Stata (.dta), SAS
+- **Time series / neurophysiology**: HDF5 (.h5), EDF/BDF (EEG), MAT (MATLAB), NIfTI (.nii/.nii.gz)
+- **Images**: PNG, JPEG, TIFF, DICOM
+- **Audio / speech**: WAV, MP3, FLAC
+- **Spatial / 3D**: PLY, PCD, C3D, OBJ
+- **Text**: plain text corpora, JSON-lines, XML/TEI
+- **Domain-specific**: any format with a Python reader
+
+**What to do:**
+
+1. If the data is non-tabular, your first step should always be loading the data and understanding its structure (shape, channels, sampling rate, resolution, labels) before attempting any analysis.
+2. You can `pip install` any library you need. Common examples:
+   - `mne` for EEG/MEG/electrophysiology
+   - `nibabel` for neuroimaging (NIfTI, GIFTI)
+   - `librosa` for audio analysis
+   - `h5py` for HDF5 datasets
+   - `Pillow` or `torchvision` for images
+   - `open3d` for point clouds and 3D data
+   - `pyreadstat` for SPSS/Stata/SAS
+   - `scipy.io` for MATLAB .mat files
+3. If the data format is not handled by the project's built-in tools, either write the data loading code yourself in your analysis script or request a reusable tool from the tool builder.
+4. For complex or domain-specific formats, always verify that the data loaded correctly (check shapes, dtypes, sample values) before proceeding with analysis.
+
 ## Command Rules
 
 - Only run `python` or `pip` commands via Bash.

@@ -236,6 +236,7 @@ def new(
     # Scan and profile if a data path was provided
     scan_result = None
     data_summary = None
+    extra_profiles: dict | None = None
     has_knowledge = False
     if data_path:
         with Spinner("Scanning data source"):
@@ -254,11 +255,24 @@ def new(
             except (ValueError, Exception):
                 pass
 
+        # Profile non-tabular data types
+        extra_profiles = builder.profile_all_data()
+        if extra_profiles:
+            for dtype, profile in extra_profiles.items():
+                count = profile.get("count", 0)
+                formats = ", ".join(profile.get("formats", []))
+                print_success(f"{dtype.title()}: {count} files ({formats})")
+
     # --- Interactive agent loop ---
     print_agent("project_builder")
     try:
         _run_builder_agent_loop(
-            builder, scan_result, data_summary, description or "", question
+            builder,
+            scan_result,
+            data_summary,
+            description or "",
+            question,
+            extra_profiles=extra_profiles if data_path else None,
         )
     except Exception as exc:
         print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
@@ -391,6 +405,7 @@ def _run_builder_agent_loop(
     data_summary: object,
     description: str,
     question: str,
+    extra_profiles: dict | None = None,
 ) -> None:
     """Run the interactive agent loop: questions → suggestions → plan."""
     import asyncio
@@ -439,7 +454,12 @@ def _run_builder_agent_loop(
 
     for i in range(max_questions):
         prompt = build_scoping_prompt(
-            scan_result, data_summary, description, context, question=question
+            scan_result,
+            data_summary,
+            description,
+            context,
+            question=question,
+            extra_profiles=extra_profiles,
         )
         config = builder_role.build_config(project_dir=builder.source_path)
 

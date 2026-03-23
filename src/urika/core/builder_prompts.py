@@ -14,6 +14,7 @@ def build_scoping_prompt(
     description: str,
     context: str = "",
     question: str = "",
+    extra_profiles: dict | None = None,
 ) -> str:
     """Build a prompt for the project builder agent to generate clarifying questions."""
     parts = [
@@ -49,6 +50,26 @@ def build_scoping_prompt(
                 "",
             ]
         )
+
+    if extra_profiles:
+        parts.append("## Non-Tabular Data Profiles")
+        for dtype, profile in extra_profiles.items():
+            count = profile.get("count", 0)
+            formats = ", ".join(profile.get("formats", []))
+            parts.append(f"### {dtype.title()}: {count} files ({formats})")
+            if "dimensions" in profile:
+                parts.append(f"Dimensions: {profile['dimensions']}")
+            if "total_duration_s" in profile:
+                parts.append(f"Total duration: {profile['total_duration_s']}s")
+            if "sample_rates" in profile:
+                parts.append(f"Sample rates: {profile['sample_rates']}")
+            if "hdf5_groups" in profile:
+                parts.append(f"HDF5 groups: {profile['hdf5_groups']}")
+            if "hdf5_datasets" in profile:
+                parts.append(f"HDF5 datasets: {profile['hdf5_datasets']}")
+            if "note" in profile:
+                parts.append(f"Note: {profile['note']}")
+            parts.append("")
 
     if context:
         parts.extend(["## Previous Answers", context, ""])

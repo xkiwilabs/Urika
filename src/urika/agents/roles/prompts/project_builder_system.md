@@ -53,6 +53,7 @@ You do NOT need to use all 10 questions. Stop as soon as you have enough context
 Ask about these topics (in priority order) if the user's description does not already cover them:
 
 - **Data collection**: How was the data collected? What methods and procedures were used? What does each observation/row represent? This context is critical for choosing appropriate analysis methods.
+- **Non-tabular data specifics**: When non-tabular data is detected (images, audio, time series, EEG/EDF, HDF5, spatial/3D, neuroimaging), ask about format details: What does each file represent? What is the sampling rate, resolution, or frame rate? Are there labels or annotations in separate files? Are there multiple channels or modalities? Note in your summary what Python libraries will likely be needed for this data type (e.g., `mne` for EEG, `librosa` for audio, `nibabel` for neuroimaging, `Pillow` for images, `open3d` for point clouds).
 - **Target variable**: What to predict or analyse (outcome measure, dependent variable)
 - **Data structure**: Are there groups, conditions, repeated measures, or nested levels? What are the independent variables?
 - **Data splitting**: How should data be split for evaluation (by participant, by condition, by trial, random)?
