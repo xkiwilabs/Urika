@@ -38,3 +38,20 @@ class AgentRunner(ABC):
         on_message: optional callback called with each SDK message as it arrives.
         """
         ...
+
+
+def get_runner(backend: str = "claude", **kwargs: object) -> AgentRunner:
+    """Get an AgentRunner for the specified backend.
+
+    Defaults to 'claude'. Other backends raise ValueError with
+    install instructions until their adapters are implemented.
+    """
+    if backend == "claude":
+        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+
+        return ClaudeSDKRunner()
+    else:
+        raise ValueError(
+            f"Backend '{backend}' is not yet supported. "
+            f"Available backends: claude"
+        )

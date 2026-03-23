@@ -410,7 +410,7 @@ def _run_builder_agent_loop(
     """Run the interactive agent loop: questions → suggestions → plan."""
     import asyncio
 
-    from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+    from urika.agents.runner import get_runner
     from urika.agents.registry import AgentRegistry
     from urika.cli_display import (
         Spinner,
@@ -432,7 +432,7 @@ def _run_builder_agent_loop(
 
     _on_builder_msg = _make_on_message()
 
-    runner = ClaudeSDKRunner()
+    runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
 
@@ -862,10 +862,10 @@ def _determine_next_experiment(
         try:
             import asyncio
 
-            from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+            from urika.agents.runner import get_runner
             from urika.agents.registry import AgentRegistry
 
-            runner = ClaudeSDKRunner()
+            runner = get_runner()
             registry = AgentRegistry()
             registry.discover()
             suggest_role = registry.get("advisor_agent")
@@ -1027,7 +1027,7 @@ def run(
 ) -> None:
     """Run an experiment using the orchestrator."""
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
     except ImportError:
         raise click.ClickException(
             "Claude Agent SDK not installed. Run: pip install urika[agents]"
@@ -1105,7 +1105,7 @@ def run(
         signal.signal(signal.SIGINT, _cleanup_meta)
 
         start_ms = int(time.monotonic() * 1000)
-        sdk_runner = ClaudeSDKRunner()
+        sdk_runner = get_runner()
 
         try:
 
@@ -1241,7 +1241,7 @@ def run(
 
     start_ms = int(time.monotonic() * 1000)
 
-    sdk_runner = ClaudeSDKRunner()
+    sdk_runner = get_runner()
 
     # Panel already created and active from experiment selection above
     try:
@@ -1332,11 +1332,11 @@ def run(
 def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> str:
     """Run the report agent and return its text output."""
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
         from urika.cli_display import Spinner, print_agent
 
-        runner = ClaudeSDKRunner()
+        runner = get_runner()
         registry = AgentRegistry()
         registry.discover()
 
@@ -1706,14 +1706,14 @@ def advisor(project: str | None, text: str | None) -> None:
         text = click.prompt("Question or instructions").strip()
 
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
         raise click.ClickException(
             "Claude Agent SDK not installed. Run: pip install urika[agents]"
         )
 
-    runner = ClaudeSDKRunner()
+    runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("advisor_agent")
@@ -1765,12 +1765,12 @@ def evaluate(project: str | None, experiment_id: str | None) -> None:
         experiment_id = experiments[-1].experiment_id
 
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
         raise click.ClickException("Claude Agent SDK not installed.")
 
-    runner = ClaudeSDKRunner()
+    runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("evaluator")
@@ -1815,12 +1815,12 @@ def plan(project: str | None, experiment_id: str | None) -> None:
         experiment_id = experiments[-1].experiment_id
 
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
         raise click.ClickException("Claude Agent SDK not installed.")
 
-    runner = ClaudeSDKRunner()
+    runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("planning_agent")
@@ -1873,12 +1873,12 @@ def build_tool(project: str | None, instructions: str | None) -> None:
         ).strip()
 
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
         raise click.ClickException("Claude Agent SDK not installed.")
 
-    runner = ClaudeSDKRunner()
+    runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("tool_builder")
@@ -1928,12 +1928,12 @@ def present(project: str | None) -> None:
     choice = _prompt_numbered("\n  Select:", options, default=1)
 
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
         from urika.orchestrator.loop import _generate_presentation, _noop_callback
     except ImportError:
         raise click.ClickException("Claude Agent SDK not installed.")
 
-    runner = ClaudeSDKRunner()
+    runner = get_runner()
     on_msg = _make_on_message()
 
     if choice.startswith("All"):

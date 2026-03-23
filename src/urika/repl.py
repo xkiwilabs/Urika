@@ -172,12 +172,12 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         return
 
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
         from urika.cli import _make_on_message
         from urika.cli_display import Spinner
 
-        runner = ClaudeSDKRunner()
+        runner = get_runner()
         registry = AgentRegistry()
         registry.discover()
 

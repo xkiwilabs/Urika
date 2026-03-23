@@ -844,12 +844,12 @@ def _run_single_agent(
 ) -> str:
     """Run a single agent and display its output. Returns the text output."""
     try:
-        from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
         from urika.cli import _make_on_message
         from urika.cli_display import Spinner, print_agent, print_error
 
-        runner = ClaudeSDKRunner()
+        runner = get_runner()
         registry = AgentRegistry()
         registry.discover()
 

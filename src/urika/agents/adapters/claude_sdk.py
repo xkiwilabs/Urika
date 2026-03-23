@@ -88,6 +88,7 @@ class ClaudeSDKRunner(AgentRunner):
             model=config.model,
             cwd=str(config.cwd) if config.cwd else None,
             permission_mode="bypassPermissions",
+            env=config.env or {},
         )
 
 

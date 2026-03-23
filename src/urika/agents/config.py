@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -58,6 +58,38 @@ class AgentConfig:
     max_turns: int = 50
     model: str | None = None
     cwd: Path | None = None
+    env: dict[str, str] | None = None  # environment vars for agent subprocess
+
+
+@dataclass
+class RuntimeConfig:
+    """Project-level runtime configuration."""
+
+    backend: str = "claude"
+    model: str = ""
+    model_overrides: dict[str, str] = field(default_factory=dict)
+    privacy_mode: str = "cloud"  # cloud | local | hybrid
+
+
+def load_runtime_config(project_dir: Path) -> RuntimeConfig:
+    """Load runtime config from urika.toml. Returns defaults if not configured."""
+    import tomllib
+
+    toml_path = project_dir / "urika.toml"
+    if not toml_path.exists():
+        return RuntimeConfig()
+    try:
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        runtime = data.get("runtime", {})
+        return RuntimeConfig(
+            backend=runtime.get("backend", "claude"),
+            model=runtime.get("model", ""),
+            model_overrides=runtime.get("models", {}),
+            privacy_mode=data.get("privacy", {}).get("mode", "cloud"),
+        )
+    except Exception:
+        return RuntimeConfig()
 
 
 @dataclass
