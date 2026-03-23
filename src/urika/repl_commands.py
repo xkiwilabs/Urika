@@ -726,19 +726,37 @@ def cmd_logs(session: ReplSession, args: str) -> None:
     )
 
 
-@command("knowledge", requires_project=True, description="Search knowledge base")
+@command("knowledge", requires_project=True, description="Search, list, or ingest knowledge")
 def cmd_knowledge(session: ReplSession, args: str) -> None:
     from urika.knowledge import KnowledgeStore
 
+    arg = args.strip()
     store = KnowledgeStore(session.project_path)
-    if args.strip():
-        results = store.search(args.strip())
+
+    # /knowledge ingest <path>
+    if arg.startswith("ingest "):
+        source = arg[7:].strip()
+        if not source:
+            click.echo("  Usage: /knowledge ingest <path>")
+            return
+        try:
+            entry = store.ingest(source)
+            click.echo(f'  Ingested: {entry.id} "{entry.title}" ({entry.source_type})')
+        except (FileNotFoundError, ValueError) as exc:
+            click.echo(f"  Error: {exc}")
+        return
+
+    # /knowledge <query> — search
+    if arg:
+        results = store.search(arg)
         if not results:
             click.echo("  No results.")
             return
         for entry in results:
-            click.echo(f"    {entry.id}  {entry.title}")
+            snippet = entry.content[:80].replace("\n", " ")
+            click.echo(f"    {entry.id}  {entry.title}  {_C.DIM}{snippet}{_C.RESET}")
     else:
+        # /knowledge — list all
         entries = store.list_all()
         if not entries:
             click.echo("  No knowledge entries.")
