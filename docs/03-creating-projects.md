@@ -40,17 +40,17 @@ You can update the description later by editing `urika.toml` directly if you fin
 Fully non-interactive (all required fields supplied):
 
 ```bash
-urika new sleep-study \
-  --data /path/to/sleep_data.csv \
-  --question "Does sleep duration predict reaction time?" \
+urika new plant-growth \
+  --data /path/to/growth_data.csv \
+  --question "Which soil nutrients best predict plant growth rate?" \
   --mode exploratory \
-  --description "Analysing sleep-reaction time relationship in shift workers"
+  --description "Analysing the relationship between soil composition and growth rates across 12 greenhouse conditions"
 ```
 
 Partially interactive (prompts for missing fields):
 
 ```bash
-urika new sleep-study --data /path/to/sleep_data.csv
+urika new plant-growth --data /path/to/growth_data.csv
 # Urika will prompt for: description, question, mode
 ```
 
