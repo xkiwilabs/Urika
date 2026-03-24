@@ -17,7 +17,7 @@ The knowledge pipeline:
 
 | Source Type | Extensions/Format | Extractor |
 |-------------|-------------------|-----------|
-| PDF | `.pdf` | `pypdf` -- extracts text from all pages (requires `pip install urika[knowledge]`) |
+| PDF | `.pdf` | `pypdf` -- extracts text from all pages (requires `pip install -e ".[knowledge]"`) |
 | Text | `.txt`, `.md`, `.markdown` | Direct file read |
 | URL | `http://`, `https://` | Fetches HTML, strips tags and scripts, returns plain text |
 

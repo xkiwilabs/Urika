@@ -120,7 +120,7 @@ Create histogram, scatter, and boxplot visualizations. Saves plots as PNG files 
 | Outputs | `plot_paths` (list of saved file paths) |
 | Artifacts | PNG plot files |
 
-Scatter plots require exactly 2 columns. Requires `matplotlib` (install with `pip install urika[viz]`).
+Scatter plots require exactly 2 columns. Requires `matplotlib` (install with `pip install -e ".[viz]"`).
 
 ---
 

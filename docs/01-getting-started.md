@@ -68,7 +68,7 @@ pip install -e ".[all]"          # everything
 | `[knowledge]` | pypdf | PDF paper ingestion into the knowledge base |
 | `[all]` | All of the above | Everything in one install |
 
-You can combine groups: `pip install "urika[ml,viz,knowledge]"`
+You can combine groups: `pip install -e ".[ml,viz,knowledge]"`
 
 ### Agents install packages automatically
 
