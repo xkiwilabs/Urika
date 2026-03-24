@@ -234,10 +234,13 @@ def _create_project(
     runner: CliRunner, urika_env: dict[str, str], name: str = "test-proj"
 ) -> None:
     """Helper to create a project for tests."""
+    # Prompts: privacy(1=open), data_path(empty), description(empty),
+    #          web_search(n), venv(n), run(5=skip)
     result = runner.invoke(
         cli,
         ["new", name, "-q", "Does X?", "-m", "exploratory"],
         env=urika_env,
+        input="1\n\n\nn\nn\n5\n",
     )
     assert result.exit_code == 0, result.output
 

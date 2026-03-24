@@ -31,6 +31,7 @@ def test_full_lifecycle(tmp_path: Path) -> None:
     runner = CliRunner()
 
     # 1. Create project via CLI
+    # Input: privacy=1(open), web_search=n, venv=n, run=5(skip)
     result = runner.invoke(
         cli,
         [
@@ -42,6 +43,7 @@ def test_full_lifecycle(tmp_path: Path) -> None:
             "exploratory",
         ],
         env=env,
+        input="1\n\n\nn\nn\n5\n",
     )
     assert result.exit_code == 0
 
@@ -178,6 +180,7 @@ def test_cli_smoke_test(tmp_path: Path) -> None:
     runner = CliRunner()
 
     # 1. urika new
+    # Input: privacy=1(open), web_search=n, venv=n, run=5(skip)
     result = runner.invoke(
         cli,
         [
@@ -189,6 +192,7 @@ def test_cli_smoke_test(tmp_path: Path) -> None:
             "exploratory",
         ],
         env=env,
+        input="1\n\n\nn\nn\n5\n",
     )
     assert result.exit_code == 0, result.output
     assert "Created project" in result.output

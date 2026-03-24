@@ -437,6 +437,8 @@ def new(
     import json
 
     suggestions_path = project_dir / "suggestions" / "initial.json"
+    first_name = ""
+    first_desc = ""
     if suggestions_path.exists():
         try:
             sdata = json.loads(suggestions_path.read_text())
@@ -444,112 +446,113 @@ def new(
             first_name = first.get("name", "")
             first_desc = first.get("method", first.get("description", ""))
         except (json.JSONDecodeError, IndexError, KeyError):
-            first_name = ""
-            first_desc = ""
+            pass
 
-        if first_name:
-            short_desc = (
-                first_desc[:120] + "..." if len(first_desc) > 120 else first_desc
-            )
-            click.echo(f"\n  The plan proposes starting with: {first_name}")
-            if short_desc:
-                click.echo(f"    {short_desc}")
+    if first_name:
+        short_desc = (
+            first_desc[:120] + "..." if len(first_desc) > 120 else first_desc
+        )
+        click.echo(f"\n  The plan proposes starting with: {first_name}")
+        if short_desc:
+            click.echo(f"    {short_desc}")
 
-            choice = _prompt_numbered(
-                "\n  How would you like to proceed?",
-                [
-                    "Run one experiment — start with the planned first experiment",
-                    "Run multiple — run up to N experiments, pause between each",
-                    "Run until done — fully autonomous until criteria met",
-                    "Different — I'll describe what to run instead",
-                    "Skip — I'll run later",
-                ],
-                default=1,
-            )
+    # Always offer to run — even without suggestions
+    exp_name_default = (
+        first_name.replace(" ", "-").lower() if first_name else "experiment-1"
+    )
+    exp_hypothesis = first_desc[:500] if first_desc else ""
 
-            if choice.startswith("Skip"):
-                pass
-            elif choice.startswith("Different"):
-                custom = click.prompt("  Describe the experiment").strip()
-                exp_name = click.prompt(
-                    "  Experiment name", default="custom-experiment"
-                ).strip()
-                exp = create_experiment(
-                    project_dir,
-                    name=exp_name,
-                    hypothesis=custom,
-                )
-                click.echo(f"\n  Created experiment: {exp.experiment_id}")
-                click.echo("  Starting orchestrator...\n")
-                ctx = click.get_current_context()
-                ctx.invoke(
-                    run,
-                    project=name,
-                    experiment_id=exp.experiment_id,
-                    max_turns=None,
-                    resume=False,
-                    max_experiments=None,
-                )
-            elif choice.startswith("Run multiple"):
-                max_exp = int(
-                    click.prompt("  How many experiments?", default="3")
-                )
-                exp = create_experiment(
-                    project_dir,
-                    name=first_name.replace(" ", "-").lower(),
-                    hypothesis=first_desc[:500] if first_desc else "",
-                )
-                click.echo(f"\n  Created experiment: {exp.experiment_id}")
-                click.echo(
-                    f"  Starting meta-orchestrator ({max_exp} experiments)...\n"
-                )
-                ctx = click.get_current_context()
-                ctx.invoke(
-                    run,
-                    project=name,
-                    experiment_id=exp.experiment_id,
-                    max_turns=None,
-                    resume=False,
-                    max_experiments=max_exp,
-                )
-            elif choice.startswith("Run until"):
-                exp = create_experiment(
-                    project_dir,
-                    name=first_name.replace(" ", "-").lower(),
-                    hypothesis=first_desc[:500] if first_desc else "",
-                )
-                click.echo(f"\n  Created experiment: {exp.experiment_id}")
-                click.echo(
-                    "  Starting meta-orchestrator (autonomous)...\n"
-                )
-                ctx = click.get_current_context()
-                ctx.invoke(
-                    run,
-                    project=name,
-                    experiment_id=exp.experiment_id,
-                    max_turns=None,
-                    resume=False,
-                    auto=True,
-                    max_experiments=50,
-                )
-            else:
-                # Run one experiment
-                exp = create_experiment(
-                    project_dir,
-                    name=first_name.replace(" ", "-").lower(),
-                    hypothesis=first_desc[:500] if first_desc else "",
-                )
-                click.echo(f"\n  Created experiment: {exp.experiment_id}")
-                click.echo("  Starting orchestrator...\n")
-                ctx = click.get_current_context()
-                ctx.invoke(
-                    run,
-                    project=name,
-                    experiment_id=exp.experiment_id,
-                    max_turns=None,
-                    resume=False,
-                    max_experiments=None,
-                )
+    choice = _prompt_numbered(
+        "\n  How would you like to proceed?",
+        [
+            "Run one experiment",
+            "Run multiple — run up to N experiments, pause between each",
+            "Run until done — fully autonomous until criteria met",
+            "Different — I'll describe what to run instead",
+            "Skip — I'll run later",
+        ],
+        default=1,
+    )
+
+    if choice.startswith("Skip"):
+        pass
+    elif choice.startswith("Different"):
+        custom = click.prompt("  Describe the experiment").strip()
+        custom_name = click.prompt(
+            "  Experiment name", default="custom-experiment"
+        ).strip()
+        exp = create_experiment(
+            project_dir,
+            name=custom_name,
+            hypothesis=custom,
+        )
+        click.echo(f"\n  Created experiment: {exp.experiment_id}")
+        click.echo("  Starting orchestrator...\n")
+        ctx = click.get_current_context()
+        ctx.invoke(
+            run,
+            project=name,
+            experiment_id=exp.experiment_id,
+            max_turns=None,
+            resume=False,
+            max_experiments=None,
+        )
+    elif choice.startswith("Run multiple"):
+        max_exp = int(click.prompt("  How many experiments?", default="3"))
+        exp = create_experiment(
+            project_dir,
+            name=exp_name_default,
+            hypothesis=exp_hypothesis,
+        )
+        click.echo(f"\n  Created experiment: {exp.experiment_id}")
+        click.echo(
+            f"  Starting meta-orchestrator ({max_exp} experiments)...\n"
+        )
+        ctx = click.get_current_context()
+        ctx.invoke(
+            run,
+            project=name,
+            experiment_id=exp.experiment_id,
+            max_turns=None,
+            resume=False,
+            max_experiments=max_exp,
+        )
+    elif choice.startswith("Run until"):
+        exp = create_experiment(
+            project_dir,
+            name=exp_name_default,
+            hypothesis=exp_hypothesis,
+        )
+        click.echo(f"\n  Created experiment: {exp.experiment_id}")
+        click.echo("  Starting meta-orchestrator (autonomous)...\n")
+        ctx = click.get_current_context()
+        ctx.invoke(
+            run,
+            project=name,
+            experiment_id=exp.experiment_id,
+            max_turns=None,
+            resume=False,
+            auto=True,
+            max_experiments=50,
+        )
+    else:
+        # Run one experiment
+        exp = create_experiment(
+            project_dir,
+            name=exp_name_default,
+            hypothesis=exp_hypothesis,
+        )
+        click.echo(f"\n  Created experiment: {exp.experiment_id}")
+        click.echo("  Starting orchestrator...\n")
+        ctx = click.get_current_context()
+        ctx.invoke(
+            run,
+            project=name,
+            experiment_id=exp.experiment_id,
+            max_turns=None,
+            resume=False,
+            max_experiments=None,
+        )
 
 
 def _run_builder_agent_loop(
