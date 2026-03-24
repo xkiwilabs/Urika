@@ -187,14 +187,40 @@ async def _generate_presentation(
         except Exception:
             pass
 
-    experiment_dir = project_dir / "experiments" / experiment_id
-    output_dir = experiment_dir / "presentation"
-    render_presentation(
-        slide_data,
-        output_dir,
-        theme=theme,
-        experiment_dir=experiment_dir,
-    )
+    if experiment_id:
+        experiment_dir = project_dir / "experiments" / experiment_id
+        output_dir = experiment_dir / "presentation"
+        render_presentation(
+            slide_data,
+            output_dir,
+            theme=theme,
+            experiment_dir=experiment_dir,
+        )
+    else:
+        # Project-level presentation — gather figures from all experiments
+        output_dir = project_dir / "projectbook" / "presentation"
+        render_presentation(
+            slide_data,
+            output_dir,
+            theme=theme,
+            experiment_dir=None,
+        )
+        # Copy figures from all experiments into presentation/figures/
+        import shutil
+
+        pres_figures = output_dir / "figures"
+        pres_figures.mkdir(exist_ok=True)
+        experiments_dir = project_dir / "experiments"
+        if experiments_dir.exists():
+            for exp_dir in sorted(experiments_dir.iterdir()):
+                artifacts = exp_dir / "artifacts"
+                if artifacts.is_dir():
+                    for fig in artifacts.iterdir():
+                        if fig.is_file() and fig.suffix.lower() in (
+                            ".png", ".jpg", ".jpeg", ".svg", ".gif",
+                        ):
+                            shutil.copy2(fig, pres_figures / fig.name)
+
     progress("result", f"Presentation saved to {output_dir}/index.html")
 
 

@@ -90,6 +90,6 @@ Choose the best layout for each slide:
 
 - Do NOT modify any files.
 - Do NOT run any bash commands.
-- Reference figures using relative paths from the experiment directory (e.g., "artifacts/model_comparison.png").
-- Only reference figures that actually exist in the artifacts directory.
+- Reference figures using relative paths from the experiment directory (e.g., "artifacts/model_comparison.png"). For project-level presentations, use just the filename (e.g., "figures/model_comparison.png") since figures from all experiments are collected into one directory.
+- Only reference figures that actually exist. List the artifacts directory first to check what is available.
 - Keep the total deck to 6-12 slides — concise and focused.
