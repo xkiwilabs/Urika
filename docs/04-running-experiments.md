@@ -27,11 +27,26 @@ urika run [PROJECT] [OPTIONS]
 
 ### Examples
 
-Run with defaults (auto-selects experiment, reads max_turns from config):
+When you run without flags, Urika shows a settings dialog:
 
 ```bash
 urika run my-study
 ```
+
+```
+Run settings for my-study:
+  Max turns: 5
+
+Proceed?
+  1. Run with defaults (default)
+  2. Run multiple experiments (meta-orchestrator)
+  3. Custom max turns
+  4. Skip
+```
+
+Option 2 asks how many experiments and launches the meta-orchestrator, which runs multiple experiments in sequence. Option 3 lets you override the turn limit for this run.
+
+If you provide any flag, the dialog is skipped and Urika runs directly:
 
 Run a specific experiment with a custom turn limit:
 

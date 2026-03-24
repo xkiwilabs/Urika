@@ -189,10 +189,23 @@ urika run [PROJECT] [OPTIONS]
 |--------|-------------|
 | `--experiment ID` | Specific experiment ID to run (auto-selected if omitted) |
 | `--max-turns N` | Maximum orchestrator turns (default: from `urika.toml`, or 5) |
+| `--max-experiments N` | Run multiple experiments via meta-orchestrator |
 | `--continue` | Resume a paused or failed experiment |
 | `-q`, `--quiet` | Suppress verbose tool-use streaming output |
 | `--auto` | Fully autonomous mode -- no confirmation prompts |
 | `--instructions TEXT` | Guide the next experiment (e.g., "focus on tree-based models") |
+
+**Interactive settings:** When called with no flags, shows a settings dialog:
+
+```
+Proceed?
+  1. Run with defaults
+  2. Run multiple experiments (meta-orchestrator)
+  3. Custom max turns
+  4. Skip
+```
+
+This dialog is skipped when any flag is provided or when called from the REPL.
 
 **Experiment selection logic** (when `--experiment` is not provided):
 1. If there are pending (non-completed) experiments, resumes the most recent one
@@ -202,8 +215,11 @@ urika run [PROJECT] [OPTIONS]
 **Examples:**
 
 ```bash
-# Run with defaults (auto-selects experiment)
+# Run with defaults (shows settings dialog)
 urika run my-project
+
+# Run multiple experiments
+urika run my-project --max-experiments 5
 
 # Run specific experiment with more turns
 urika run my-project --experiment exp-002 --max-turns 10
