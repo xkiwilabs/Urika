@@ -122,6 +122,7 @@ _AGENT_ACTIVITY: dict[str, str] = {
     "literature_agent": "Searching knowledge\u2026",
     "report_agent": "Writing report\u2026",
     "presentation_agent": "Creating slides\u2026",
+    "finalizer": "Finalizing project\u2026",
 }
 
 

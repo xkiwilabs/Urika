@@ -838,6 +838,24 @@ def cmd_plan(session: ReplSession, args: str) -> None:
 
 
 @command(
+    "finalize",
+    requires_project=True,
+    description="Finalize project — methods, report, presentation",
+)
+def cmd_finalize(session: ReplSession, args: str) -> None:
+    import os
+
+    os.environ["URIKA_REPL"] = "1"
+    try:
+        from urika.cli import finalize as cli_finalize
+
+        ctx = click.Context(cli_finalize)
+        ctx.invoke(cli_finalize, project=session.project_name)
+    finally:
+        os.environ.pop("URIKA_REPL", None)
+
+
+@command(
     "build-tool",
     requires_project=True,
     description="Build a custom tool for the project",

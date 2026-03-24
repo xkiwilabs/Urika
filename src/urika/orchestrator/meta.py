@@ -79,6 +79,15 @@ async def run_project(
             print_success("All criteria met.")
             break
 
+    # Finalize after all experiments complete
+    if results:
+        try:
+            from urika.orchestrator.finalize import finalize_project
+
+            await finalize_project(project_dir, runner, on_progress, on_message)
+        except Exception:
+            pass  # Finalization is best-effort
+
     return {"experiments_run": len(results), "results": results}
 
 

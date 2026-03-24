@@ -2080,6 +2080,90 @@ def plan(project: str | None, experiment_id: str | None) -> None:
         click.echo(f"Error: {result.error}")
 
 
+@cli.command()
+@click.argument("project", required=False, default=None)
+def finalize(project: str | None) -> None:
+    """Finalize the project — produce polished methods, report, and presentation."""
+    from urika.cli_display import (
+        ThinkingPanel,
+        print_agent,
+        print_error,
+        print_success,
+        print_tool_use,
+    )
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    panel = ThinkingPanel()
+    panel.project = project
+    panel.activity = "Finalizing..."
+    panel.activate()
+    panel.start_spinner()
+
+    try:
+        from urika.agents.runner import get_runner
+        from urika.orchestrator.finalize import finalize_project
+    except ImportError:
+        panel.cleanup()
+        raise click.ClickException("Claude Agent SDK not installed.")
+
+    runner = get_runner()
+
+    def _on_progress(event: str, detail: str = "") -> None:
+        if event == "agent":
+            agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+            print_agent(agent_key)
+            panel.update(agent=agent_key, activity=detail)
+        elif event == "result":
+            print_success(detail)
+
+    def _on_message(msg: object) -> None:
+        try:
+            model = getattr(msg, "model", None)
+            if model:
+                panel.set_model(model)
+            if hasattr(msg, "content"):
+                for block in msg.content:
+                    tool_name = getattr(block, "name", None)
+                    if tool_name:
+                        inp = getattr(block, "input", {}) or {}
+                        detail = ""
+                        if isinstance(inp, dict):
+                            detail = (
+                                inp.get("command", "")
+                                or inp.get("file_path", "")
+                                or inp.get("pattern", "")
+                            )
+                        print_tool_use(tool_name, detail)
+                        panel.set_thinking(tool_name)
+                    else:
+                        panel.set_thinking("Thinking\u2026")
+        except Exception:
+            pass
+
+    try:
+        result = asyncio.run(
+            finalize_project(project_path, runner, _on_progress, _on_message)
+        )
+    finally:
+        panel.cleanup()
+
+    if result.get("success"):
+        print_success("Project finalized!")
+        click.echo(f"  Methods:       {project_path / 'methods/'}")
+        click.echo(
+            f"  Final report:  {project_path / 'projectbook' / 'final-report.md'}"
+        )
+        click.echo(
+            f"  Presentation:  "
+            f"{project_path / 'projectbook' / 'final-presentation' / 'index.html'}"
+        )
+        click.echo(f"  Reproduce:     {project_path / 'reproduce.sh'}")
+    else:
+        print_error(f"Finalization failed: {result.get('error', 'unknown')}")
+
+
 @cli.command("build-tool")
 @click.argument("project", required=False, default=None)
 @click.argument("instructions", required=False, default=None)
