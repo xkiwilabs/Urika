@@ -89,6 +89,18 @@ async def finalize_project(
                         pass
                 output_dir = project_dir / "projectbook" / "final-presentation"
                 render_presentation(slide_data, output_dir, theme=theme)
+
+                # Copy project-level figures into the presentation directory
+                project_figures = project_dir / "projectbook" / "figures"
+                if project_figures.exists():
+                    import shutil
+
+                    pres_figures = output_dir / "figures"
+                    pres_figures.mkdir(exist_ok=True)
+                    for fig in project_figures.iterdir():
+                        if fig.is_file():
+                            shutil.copy2(fig, pres_figures / fig.name)
+
                 progress("result", "Final presentation saved")
 
     # Step 4: Update README

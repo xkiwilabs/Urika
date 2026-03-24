@@ -1,7 +1,5 @@
 /**
- * White theme for reveal.js. This is the opposite of the 'black' theme.
- *
- * By Hakim El Hattab, http://hakim.se
+ * Urika Light Theme for reveal.js
  */
 @import url(./fonts/source-sans-pro/source-sans-pro.css);
 section.has-dark-background, section.has-dark-background h1, section.has-dark-background h2, section.has-dark-background h3, section.has-dark-background h4, section.has-dark-background h5, section.has-dark-background h6 {
@@ -12,17 +10,17 @@ section.has-dark-background, section.has-dark-background h1, section.has-dark-ba
  * GLOBAL STYLES
  *********************************************/
 :root {
-  --r-background-color: #fff;
+  --r-background-color: #fafbfc;
   --r-main-font: Source Sans Pro, Helvetica, sans-serif;
   --r-main-font-size: 42px;
-  --r-main-color: #222;
+  --r-main-color: #1e293b;
   --r-block-margin: 20px;
   --r-heading-margin: 0 0 20px 0;
   --r-heading-font: Source Sans Pro, Helvetica, sans-serif;
-  --r-heading-color: #222;
+  --r-heading-color: #2563eb;
   --r-heading-line-height: 1.2;
   --r-heading-letter-spacing: normal;
-  --r-heading-text-transform: uppercase;
+  --r-heading-text-transform: none;
   --r-heading-text-shadow: none;
   --r-heading-font-weight: 600;
   --r-heading1-text-shadow: none;
@@ -31,17 +29,17 @@ section.has-dark-background, section.has-dark-background h1, section.has-dark-ba
   --r-heading3-size: 1.3em;
   --r-heading4-size: 1em;
   --r-code-font: monospace;
-  --r-link-color: #2a76dd;
-  --r-link-color-dark: #1a53a1;
-  --r-link-color-hover: #6ca0e8;
-  --r-selection-background-color: #98bdef;
+  --r-link-color: #3b82f6;
+  --r-link-color-dark: #1d4ed8;
+  --r-link-color-hover: #60a5fa;
+  --r-selection-background-color: #93c5fd;
   --r-selection-color: #fff;
   --r-overlay-element-bg-color: 0, 0, 0;
   --r-overlay-element-fg-color: 240, 240, 240;
 }
 
 .reveal-viewport {
-  background: #fff;
+  background: #fafbfc;
   background-color: var(--r-background-color);
 }
 
@@ -68,6 +66,13 @@ section.has-dark-background, section.has-dark-background h1, section.has-dark-ba
 .reveal .slides section > section {
   line-height: 1.3;
   font-weight: inherit;
+}
+
+/* Slide card effect */
+.reveal .slides section {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
 /*********************************************

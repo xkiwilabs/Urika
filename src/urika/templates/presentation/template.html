@@ -14,69 +14,128 @@
         }
         .reveal {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #1e293b;
         }
 
-        /* Let reveal.js handle layout — minimal overrides only */
+        /* ── Global typography — smaller, fits the slide ── */
         .reveal h1, .reveal h2 {
-            color: var(--urika-blue);
+            color: #2563eb;
             font-weight: 600;
             text-transform: none;
         }
-        .reveal h1 { font-size: 1.5em; }
-        .reveal h2 { font-size: 1.1em; }
-        .reveal ul { font-size: 0.65em; line-height: 1.4; }
-        .reveal li { margin-bottom: 0.2em; }
-        .reveal p { font-size: 0.65em; }
+        .reveal h1 { font-size: 1.3em; margin-bottom: 0.3em; }
+        .reveal h2 { font-size: 0.9em; margin-bottom: 0.4em; font-weight: 600; }
+        .reveal ul, .reveal ol { font-size: 0.5em; line-height: 1.6; }
+        .reveal p { font-size: 0.5em; line-height: 1.5; }
+        .reveal li { margin-bottom: 0.3em; }
 
-        /* Title slide */
-        .title-slide h1 { font-size: 1.7em; }
-        .title-slide .subtitle { font-size: 0.8em; color: #666; }
+        /* ── Overflow protection — content MUST fit ── */
+        .reveal .slides > section {
+            overflow: hidden;
+            padding: 30px 50px;
+            box-sizing: border-box;
+        }
 
-        /* Figure slides */
+        /* ── Content slide headings ── */
+        .reveal section h2 {
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0.2em;
+            margin-bottom: 0.5em;
+        }
+
+        /* ── Title slide ── */
+        .title-slide {
+            text-align: center;
+        }
+        .title-slide h1 {
+            font-size: 1.8em;
+            margin-bottom: 0.1em;
+            background: linear-gradient(135deg, #2563eb, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .title-slide .subtitle {
+            font-size: 0.6em;
+            color: #64748b;
+            font-weight: 300;
+        }
+        .title-slide::after {
+            content: '';
+            display: block;
+            width: 80px;
+            height: 3px;
+            background: linear-gradient(135deg, #2563eb, #3b82f6);
+            margin: 0.5em auto 0;
+            border-radius: 2px;
+        }
+
+        /* ── Figure slides — larger images ── */
         .slide-figure { text-align: center; }
         .slide-figure img {
-            max-width: 55%;
-            max-height: 50%;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-width: 70%;
+            max-height: 55vh;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             display: block;
             margin: 0 auto;
         }
-        .slide-figure .caption { font-size: 0.5em; color: #888; font-style: italic; }
+        .slide-figure .caption { font-size: 0.45em; color: #64748b; font-style: italic; }
 
-        /* Two-column layout */
+        /* ── Two-column layout — proper sizing ── */
         .slide-two-col .columns {
             display: flex;
-            gap: 20px;
-            align-items: center;
+            gap: 30px;
+            align-items: flex-start;
         }
-        .slide-two-col .col-figure { flex: 1; text-align: center; }
+        .slide-two-col .col-figure {
+            flex: 1;
+            text-align: center;
+        }
         .slide-two-col .col-figure img {
-            max-width: 95%;
-            max-height: 45%;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-width: 100%;
+            max-height: 45vh;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }
         .slide-two-col .col-text { flex: 1; }
-        .slide-two-col .col-text ul { font-size: 0.6em; }
-        .slide-two-col .caption { font-size: 0.45em; color: #888; font-style: italic; }
-        .slide-two-col .bottom-text { text-align: center; font-size: 0.55em; color: #555; }
+        .slide-two-col .col-text ul { font-size: 0.5em; }
+        .slide-two-col .caption { font-size: 0.4em; color: #64748b; font-style: italic; }
+        .slide-two-col .bottom-text { text-align: center; font-size: 0.5em; color: #475569; }
 
-        /* Stat slides */
+        /* ── Stat slides — cleaner ── */
         .slide-stat { text-align: center; }
         .slide-stat .big-number {
-            font-size: 3em; font-weight: 700; color: var(--urika-blue);
-            margin: 0.1em 0; line-height: 1.1;
+            font-size: 3.5em;
+            font-weight: 800;
+            background: linear-gradient(135deg, #2563eb, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0.15em 0;
+            line-height: 1.1;
         }
-        .slide-stat .stat-label { font-size: 0.8em; color: #666; }
+        .slide-stat .stat-label { font-size: 0.7em; color: #64748b; }
         .slide-stat ul { text-align: center; list-style: none; }
 
-        /* Navigation arrows */
+        /* ── Slide footer ── */
+        .slide-footer {
+            position: absolute;
+            bottom: 12px;
+            left: 40px;
+            right: 40px;
+            font-size: 0.35em;
+            color: #94a3b8;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* ── Navigation arrows ── */
         .reveal .controls {
             color: var(--urika-blue);
         }
 
-        /* Thumbnail strip at bottom */
+        /* ── Thumbnail strip at bottom ── */
         #thumb-strip {
             position: fixed;
             bottom: 0;
@@ -154,7 +213,7 @@
             display: block;
         }
 
-        /* Urika branding */
+        /* ── Urika branding ── */
         .urika-brand {
             position: fixed;
             bottom: 10px;
@@ -166,10 +225,10 @@
         }
         .urika-brand .icon { margin-right: 3px; }
 
-        /* Progress bar */
+        /* ── Progress bar ── */
         .reveal .progress { color: var(--urika-blue); height: 3px; }
 
-        /* Slide number */
+        /* ── Slide number ── */
         .reveal .slide-number {
             font-size: 0.5em;
             color: #999;
@@ -201,22 +260,24 @@
             transition: 'fade',
             transitionSpeed: 'fast',
             width: 960,
-            height: 600,
-            margin: 0.1,
+            height: 700,
+            margin: 0.04,
             center: true,
             controls: true,
             controlsLayout: 'edges',
             overview: true,
             touch: true,
-            minScale: 0.2,
+            minScale: 0.1,
             maxScale: 1.5
         });
 
-        // Build thumbnail strip
+        // Build thumbnail strip + slide footers
         Reveal.on('ready', function() {
             var strip = document.getElementById('thumb-strip');
             var slides = document.querySelectorAll('.reveal .slides > section');
+            var total = slides.length;
             slides.forEach(function(slide, i) {
+                // Thumbnail item
                 var thumb = document.createElement('div');
                 thumb.className = 'thumb-item' + (i === 0 ? ' current' : '');
 
@@ -234,6 +295,13 @@
 
                 thumb.addEventListener('click', function() { Reveal.slide(i); });
                 strip.appendChild(thumb);
+
+                // Slide footer
+                var footer = document.createElement('div');
+                footer.className = 'slide-footer';
+                var title = titleEl ? titleEl.textContent : '';
+                footer.innerHTML = '<span>\u2726 Urika</span><span>' + title + '</span><span>' + (i+1) + ' / ' + total + '</span>';
+                slide.appendChild(footer);
             });
 
             // Hover triggers
