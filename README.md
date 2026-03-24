@@ -29,21 +29,13 @@ See [Getting Started](docs/01-getting-started.md) for full installation options.
 
 ## Quickstart
 
+See the [Getting Started](docs/01-getting-started.md) guide for a full walkthrough. In short:
+
 ```bash
-# Create a project
-urika new my-study \
-  --question "What predicts the outcome?" \
-  --data ./my_data.csv
-
-# Run an experiment
-urika run my-study
-
-# View results
-urika results my-study
-urika report my-study
-
-# Or use the interactive REPL
-urika
+urika new my-study --data ./my_data.csv    # create a project
+urika run my-study                          # run experiments
+urika finalize my-study                     # produce final report
+urika                                       # or use the interactive REPL
 ```
 
 ## How It Works
