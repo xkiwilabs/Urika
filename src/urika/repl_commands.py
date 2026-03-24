@@ -307,6 +307,8 @@ def cmd_run(session: ReplSession, args: str) -> None:
         }.get(auto_mode.split("—")[0].strip(), "checkpoint")
         if auto_mode == "capped":
             max_experiments = int(_click.prompt("  Max experiments", default="10"))
+        elif auto_mode == "unlimited":
+            max_experiments = 50  # safety cap
         run_instructions = _click.prompt(
             "  Instructions (optional, enter to skip)", default=""
         )
