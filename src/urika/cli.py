@@ -1272,6 +1272,40 @@ def run(
         else:
             max_turns = 5
 
+    # If no flags provided and not from REPL, show settings dialog
+    if (
+        not os.environ.get("URIKA_REPL")
+        and experiment_id is None
+        and max_experiments is None
+        and not auto
+        and not resume
+        and not instructions
+    ):
+        click.echo(f"\n  Run settings for {project}:")
+        click.echo(f"    Max turns: {max_turns}")
+
+        choice = _prompt_numbered(
+            "\n  Proceed?",
+            [
+                "Run with defaults",
+                "Run multiple experiments (meta-orchestrator)",
+                "Custom max turns",
+                "Skip",
+            ],
+            default=1,
+        )
+
+        if choice.startswith("Skip"):
+            return
+        elif choice.startswith("Run multiple"):
+            max_experiments = int(
+                click.prompt("  How many experiments?", default="3")
+            )
+        elif choice.startswith("Custom"):
+            max_turns = int(
+                click.prompt("  Max turns per experiment", default=str(max_turns))
+            )
+
     # Show header (skip if called from REPL — already has header)
     if not os.environ.get("URIKA_REPL"):
         print_header(
