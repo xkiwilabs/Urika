@@ -31,10 +31,12 @@ Your hardware needs depend on what kind of analysis you plan to do:
 
 ## Installation
 
-### Basic install
+### Clone and install
 
 ```bash
-pip install urika
+git clone https://github.com/xkiwilabs/Urika.git
+cd Urika
+pip install -e .
 ```
 
 This installs the core platform with everything you need to get started:
@@ -51,11 +53,11 @@ This installs the core platform with everything you need to get started:
 ### Optional install groups
 
 ```bash
-pip install "urika[viz]"          # visualization
-pip install "urika[ml]"           # machine learning
-pip install "urika[dl]"           # deep learning
-pip install "urika[knowledge]"    # PDF ingestion
-pip install "urika[all]"          # everything
+pip install -e ".[viz]"          # + visualization
+pip install -e ".[ml]"           # + machine learning
+pip install -e ".[dl]"           # + deep learning
+pip install -e ".[knowledge]"    # + PDF ingestion
+pip install -e ".[all]"          # everything
 ```
 
 | Group | Packages | What it adds |
