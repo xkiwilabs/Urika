@@ -379,6 +379,28 @@ class ThinkingPanel:
             sys.stdout.write(f"\033[1;{self._rows - 3}r\033[{self._rows - 4};1H")
             sys.stdout.flush()
             atexit.register(self.cleanup)
+            # Handle terminal resize
+            import signal
+
+            self._prev_winch = signal.getsignal(signal.SIGWINCH)
+
+            def _on_resize(signum: int, frame: object) -> None:
+                try:
+                    size = os.get_terminal_size()
+                    with self._lock:
+                        self._rows = size.lines
+                        self._cols = size.columns
+                        if self._rows >= 10:
+                            sys.stdout.write(
+                                f"\033[1;{self._rows - 3}r"
+                                f"\033[{self._rows - 4};1H"
+                            )
+                            sys.stdout.flush()
+                            self._render()
+                except (OSError, ValueError):
+                    pass
+
+            signal.signal(signal.SIGWINCH, _on_resize)
         except (OSError, ValueError):
             self._active = False
 
@@ -507,6 +529,14 @@ class ThinkingPanel:
         if not self._active:
             return
         self._active = False
+        try:
+            # Restore SIGWINCH handler
+            import signal
+
+            if hasattr(self, "_prev_winch"):
+                signal.signal(signal.SIGWINCH, self._prev_winch)
+        except (OSError, ValueError):
+            pass
         try:
             # Clear the 3 reserved lines
             sys.stdout.write(f"\033[{self._rows - 2};1H\033[K")
