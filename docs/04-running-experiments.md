@@ -292,6 +292,19 @@ urika run my-study --instructions "investigate interaction effects between age a
 
 Instructions are also used when the advisor proposes a new experiment -- they are incorporated into the experiment description and influence the planning agent's method design.
 
+## Finalizing a project
+
+After experiments are complete and you are satisfied with results, finalize the project to produce polished deliverables:
+
+```bash
+urika finalize my-study
+```
+
+Finalization runs the Finalizer Agent (which selects the best methods and writes standalone scripts, findings, and reproducibility artifacts), followed by the Report Agent (final report) and Presentation Agent (final presentation). The outputs are standalone -- they work without Urika installed.
+
+See [Finalizing Projects](14-finalizing-projects.md) for full details.
+
+
 ## Related commands
 
 | Command | Description |

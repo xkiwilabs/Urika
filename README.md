@@ -70,7 +70,7 @@ flowchart TD
     M -.-> D
 ```
 
-Ten agents work together in an orchestrated loop. The **Orchestrator** cycles through `planning -> task -> evaluator -> advisor` each turn. A **Meta-Orchestrator** manages experiment-to-experiment transitions.
+Eleven agents work together in an orchestrated loop. The **Orchestrator** cycles through `planning -> task -> evaluator -> advisor` each turn. A **Meta-Orchestrator** manages experiment-to-experiment transitions. When experiments are complete, the **Finalizer** produces standalone deliverables.
 
 See [Agent System](docs/06-agent-system.md) for details on each agent role.
 
@@ -97,7 +97,7 @@ See [Models and Privacy](docs/07-models-and-privacy.md) for configuration detail
 | [Creating Projects](docs/03-creating-projects.md) | `urika new`, data scanning, knowledge ingestion |
 | [Running Experiments](docs/04-running-experiments.md) | Orchestrator loop, turns, auto mode, resume |
 | [Viewing Results](docs/05-viewing-results.md) | Reports, presentations, methods, leaderboard |
-| [Agent System](docs/06-agent-system.md) | All 10 agent roles and how they interact |
+| [Agent System](docs/06-agent-system.md) | All 11 agent roles and how they interact |
 | [Models and Privacy](docs/07-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
 | [Built-in Tools](docs/08-built-in-tools.md) | 16 analysis tools agents use |
 | [Knowledge Pipeline](docs/09-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
@@ -105,6 +105,7 @@ See [Models and Privacy](docs/07-models-and-privacy.md) for configuration detail
 | [Project Structure](docs/11-project-structure.md) | File layout and what each file does |
 | [CLI Reference](docs/12-cli-reference.md) | Every command with full options |
 | [Interactive REPL](docs/13-interactive-repl.md) | Slash commands, tab completion, conversation mode |
+| [Finalizing Projects](docs/14-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
 
 ## License
 

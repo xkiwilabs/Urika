@@ -181,6 +181,22 @@ In open mode, the Data Agent is not used. In hybrid mode, the orchestrator calls
 | Blocked bash | `rm -rf`, `git push`, `git reset` |
 | Max turns | 10 |
 
+---
+
+### 11. Finalizer
+
+**Name:** `finalizer`
+
+Consolidates all research into polished, standalone deliverables. The Finalizer reads every experiment in the project, selects the best methods (typically 1--4 covering prediction, interpretation, and robustness), and writes each as a standalone Python script with argparse. It also produces a structured findings summary (`projectbook/findings.json`), a methods README, `requirements.txt`, and cross-platform reproduce scripts (`reproduce.sh` and `reproduce.bat`). After the Finalizer completes, the Report Agent writes a final report and the Presentation Agent creates a final presentation from the findings.
+
+| Property | Value |
+|----------|-------|
+| Tools | Read, Write, Bash, Glob, Grep |
+| Writable dirs | `methods/`, `projectbook/`, project root |
+| Allowed bash | `python`, `pip` |
+| Blocked bash | `rm -rf`, `git push`, `git reset` |
+| Max turns | 20 |
+
 
 ## The Orchestrator
 
@@ -261,6 +277,8 @@ These agents can read the entire project directory but cannot write to any files
 - Report Agent
 - Presentation Agent
 
+Note: The Finalizer agent has write access (see Writable Agents below).
+
 ### Writable Agents
 
 These agents have write access restricted to specific directories:
@@ -270,6 +288,7 @@ These agents have write access restricted to specific directories:
 | Task Agent | `experiments/<id>/` | `python`, `pip` |
 | Tool Builder | `tools/` | `python`, `pip`, `pytest` |
 | Literature Agent | `knowledge/` | `python`, `pip` |
+| Finalizer | `methods/`, `projectbook/`, project root | `python`, `pip` |
 
 ### Blocked Patterns
 

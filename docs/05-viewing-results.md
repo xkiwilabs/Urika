@@ -102,6 +102,15 @@ Reports are written as versioned markdown files (previous versions are backed up
 | `narrative.md` | Agent-written project-level narrative covering the full research progression. |
 | `README.md` | Auto-generated project README at the project root, with an agent-written status summary. |
 
+**Finalization outputs** (produced by `urika finalize`, stored in `projectbook/`):
+
+| File | Contents |
+|------|----------|
+| `final-report.md` | Comprehensive final report written by the Report Agent from the Finalizer's findings. Structured as Abstract, Introduction, Methods, Results, Discussion, Reproducibility, References. |
+| `final-presentation/` | Definitive reveal.js presentation created by the Presentation Agent from the Finalizer's findings. |
+
+See [Finalizing Projects](14-finalizing-projects.md) for the complete list of finalization outputs.
+
 
 ## Presentations
 

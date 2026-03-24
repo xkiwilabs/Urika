@@ -394,6 +394,30 @@ urika plan [PROJECT] [EXPERIMENT_ID]
 | `EXPERIMENT_ID` | Experiment to plan for (defaults to most recent) |
 
 
+### `urika finalize`
+
+Run the finalization sequence on a project: Finalizer Agent (selects best methods, writes standalone scripts, findings, and reproducibility artifacts), Report Agent (final report), Presentation Agent (final presentation), and README update.
+
+```
+urika finalize [PROJECT]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `PROJECT` | Project name (prompted if omitted) |
+
+**Example:**
+
+```bash
+urika finalize my-project
+```
+
+See [Finalizing Projects](14-finalizing-projects.md) for details on what is produced.
+
+---
+
 ### `urika build-tool`
 
 Build a custom tool for the project. The tool builder agent creates a Python module in the project's `tools/` directory based on your instructions.

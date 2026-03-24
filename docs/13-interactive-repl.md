@@ -129,6 +129,7 @@ These require a project to be loaded first. Running them without a project shows
 | `/present [experiment_id]` | Generate a reveal.js presentation. Prompts to choose: specific experiment, all experiments, or project-level. |
 | `/report [experiment_id]` | Generate labbook reports. Prompts to choose: specific experiment, all experiments, or project-level. Produces notes, summary, and agent-written narrative. |
 | `/build-tool <instructions>` | Build a custom tool. E.g., `/build-tool create an EEG epoch extractor using MNE` or `/build-tool install mediapipe and add a tool that extracts facial pose data from video`. |
+| `/finalize` | Run the finalization sequence: Finalizer Agent, Report Agent, Presentation Agent, and README update. Produces standalone methods, findings, and reproducibility artifacts. |
 | `/resume` | Resume a paused or failed experiment. Lists resumable experiments and lets you pick which to continue. |
 
 
