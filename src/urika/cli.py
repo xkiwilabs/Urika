@@ -567,10 +567,12 @@ def _run_builder_agent_loop(
     from urika.agents.registry import AgentRegistry
     from urika.cli_display import (
         Spinner,
+        ThinkingPanel,
         _AGENT_ACTIVITY,
         print_agent,
         print_error,
         print_step,
+        print_tool_use,
         thinking_phrase,
     )
     from urika.core.builder_prompts import (
@@ -582,8 +584,6 @@ def _run_builder_agent_loop(
         _extract_json_blocks,
         parse_suggestions,
     )
-
-    _on_builder_msg = _make_on_message()
 
     runner = get_runner()
     registry = AgentRegistry()
@@ -599,109 +599,155 @@ def _run_builder_agent_loop(
         print_error("No data scanned. Skipping interactive scoping.")
         return
 
+    # Create persistent footer panel for the entire builder loop
+    panel = ThinkingPanel()
+    panel.project = getattr(builder, "name", "")
+    panel.activity = thinking_phrase()
+    panel.activate()
+    panel.start_spinner()
+
+    def _on_builder_msg(msg: object) -> None:
+        """Show tool use + update panel from builder agents."""
+        try:
+            model = getattr(msg, "model", None)
+            if model:
+                panel.set_model(model)
+            if hasattr(msg, "content"):
+                for block in msg.content:
+                    tool_name = getattr(block, "name", None)
+                    if tool_name:
+                        inp = getattr(block, "input", {}) or {}
+                        detail = ""
+                        if isinstance(inp, dict):
+                            detail = (
+                                inp.get("command", "")
+                                or inp.get("file_path", "")
+                                or inp.get("pattern", "")
+                            )
+                        print_tool_use(tool_name, detail)
+                        panel.set_thinking(tool_name)
+                    else:
+                        panel.set_thinking("Thinking…")
+        except Exception:
+            pass
+
     answers: dict[str, str] = {}
     context = ""
     max_questions = 10
 
     print_step("The project builder will ask questions to scope the project.")
 
-    for i in range(max_questions):
-        prompt = build_scoping_prompt(
-            scan_result,
-            data_summary,
-            description,
-            context,
-            question=question,
-            extra_profiles=extra_profiles,
+    try:
+        for i in range(max_questions):
+            prompt = build_scoping_prompt(
+                scan_result,
+                data_summary,
+                description,
+                context,
+                question=question,
+                extra_profiles=extra_profiles,
+            )
+            config = builder_role.build_config(project_dir=builder.source_path)
+
+            panel.update(agent="project_builder", activity=thinking_phrase())
+            result = asyncio.run(
+                runner.run(config, prompt, on_message=_on_builder_msg)
+            )
+
+            if not result.success:
+                print_error(f"Agent error: {result.error}")
+                break
+
+            # Try to parse structured question from JSON block
+            blocks = _extract_json_blocks(result.text_output)
+            question_text = None
+            for block in blocks:
+                # Agent signals it has enough context
+                if block.get("ready"):
+                    question_text = None
+                    break
+                if "question" in block:
+                    question_text = block["question"]
+                    if block.get("options"):
+                        click.echo(f"\n{question_text}")
+                        for j, opt in enumerate(block["options"], 1):
+                            click.echo(f"  {j}. {opt}")
+                    break
+
+            if question_text is None:
+                question_text = result.text_output.strip()
+                if not question_text or any(b.get("ready") for b in blocks):
+                    break
+                click.echo(f"\n{question_text}")
+
+            answer = click.prompt("\nYour answer (or 'done' to move on)").strip()
+            if answer.lower() == "done":
+                break
+
+            answers[question_text] = answer
+            context += f"Q: {question_text}\nA: {answer}\n\n"
+
+        # --- Phase 2: Advisor agent ---
+        print_agent("advisor_agent")
+        suggest_role = registry.get("advisor_agent")
+        if suggest_role is None:
+            print_error("Advisor agent not found. Skipping.")
+            return
+
+        suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
+        suggest_config = suggest_role.build_config(
+            project_dir=builder.source_path, experiment_id=""
         )
-        config = builder_role.build_config(project_dir=builder.source_path)
 
-        with Spinner(thinking_phrase()):
-            result = asyncio.run(runner.run(config, prompt, on_message=_on_builder_msg))
-
-        if not result.success:
-            print_error(f"Agent error: {result.error}")
-            break
-
-        # Try to parse structured question from JSON block
-        blocks = _extract_json_blocks(result.text_output)
-        question_text = None
-        for block in blocks:
-            # Agent signals it has enough context
-            if block.get("ready"):
-                question_text = None
-                break
-            if "question" in block:
-                question_text = block["question"]
-                if block.get("options"):
-                    click.echo(f"\n{question_text}")
-                    for j, opt in enumerate(block["options"], 1):
-                        click.echo(f"  {j}. {opt}")
-                break
-
-        if question_text is None:
-            question_text = result.text_output.strip()
-            if not question_text or any(b.get("ready") for b in blocks):
-                break
-            click.echo(f"\n{question_text}")
-
-        answer = click.prompt("\nYour answer (or 'done' to move on)").strip()
-        if answer.lower() == "done":
-            break
-
-        answers[question_text] = answer
-        context += f"Q: {question_text}\nA: {answer}\n\n"
-
-    # --- Phase 2: Advisor agent ---
-    print_agent("advisor_agent")
-    suggest_role = registry.get("advisor_agent")
-    if suggest_role is None:
-        print_error("Advisor agent not found. Skipping.")
-        return
-
-    suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
-    suggest_config = suggest_role.build_config(
-        project_dir=builder.source_path, experiment_id=""
-    )
-
-    with Spinner(_AGENT_ACTIVITY.get("advisor_agent", thinking_phrase())):
+        panel.update(
+            agent="advisor_agent",
+            activity=_AGENT_ACTIVITY.get("advisor_agent", thinking_phrase()),
+        )
         suggest_result = asyncio.run(
             runner.run(suggest_config, suggest_prompt, on_message=_on_builder_msg)
         )
 
-    if not suggest_result.success:
-        print_error(f"Advisor agent error: {suggest_result.error}")
-        return
+        if not suggest_result.success:
+            print_error(f"Advisor agent error: {suggest_result.error}")
+            return
 
-    suggestions = parse_suggestions(suggest_result.text_output)
-    click.echo(suggest_result.text_output.strip())
+        suggestions = parse_suggestions(suggest_result.text_output)
+        click.echo(suggest_result.text_output.strip())
 
-    # --- Phase 3: Planning agent ---
-    print_agent("planning_agent")
-    plan_role = registry.get("planning_agent")
-    if plan_role is None:
-        print_error("Planning agent not found. Skipping.")
-        if suggestions:
-            builder.set_initial_suggestions(suggestions)
-        return
+        # --- Phase 3: Planning agent ---
+        print_agent("planning_agent")
+        plan_role = registry.get("planning_agent")
+        if plan_role is None:
+            print_error("Planning agent not found. Skipping.")
+            if suggestions:
+                builder.set_initial_suggestions(suggestions)
+            return
 
-    plan_prompt = build_planning_prompt(suggestions or {}, description, data_summary)
-    plan_config = plan_role.build_config(
-        project_dir=builder.source_path, experiment_id=""
-    )
+        plan_prompt = build_planning_prompt(
+            suggestions or {}, description, data_summary
+        )
+        plan_config = plan_role.build_config(
+            project_dir=builder.source_path, experiment_id=""
+        )
 
-    with Spinner(_AGENT_ACTIVITY.get("planning_agent", thinking_phrase())):
+        panel.update(
+            agent="planning_agent",
+            activity=_AGENT_ACTIVITY.get("planning_agent", thinking_phrase()),
+        )
         plan_result = asyncio.run(
             runner.run(plan_config, plan_prompt, on_message=_on_builder_msg)
         )
 
-    if not plan_result.success:
-        print_error(f"Planning agent error: {plan_result.error}")
-        if suggestions:
-            builder.set_initial_suggestions(suggestions)
-        return
+        if not plan_result.success:
+            print_error(f"Planning agent error: {plan_result.error}")
+            if suggestions:
+                builder.set_initial_suggestions(suggestions)
+            return
 
-    click.echo(plan_result.text_output.strip())
+        click.echo(plan_result.text_output.strip())
+
+    finally:
+        panel.cleanup()
 
     # --- Phase 4: User refinement loop ---
     while True:
