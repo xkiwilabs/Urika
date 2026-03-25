@@ -195,7 +195,9 @@ def new(
         print_agent,
         print_error,
         print_header,
+        print_step,
         print_success,
+        print_warning,
     )
     from urika.core.project_builder import ProjectBuilder
 
