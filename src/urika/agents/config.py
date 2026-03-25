@@ -199,17 +199,32 @@ def build_agent_env_for_endpoint(
                 env = dict(os.environ)
             if endpoint.base_url:
                 env["ANTHROPIC_BASE_URL"] = endpoint.base_url
+                # Disable beta headers that local servers reject
+                env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] = "1"
             if endpoint.api_key_env:
                 # Read the actual key from the environment
                 key = os.environ.get(endpoint.api_key_env, "")
                 if key:
                     env["ANTHROPIC_API_KEY"] = key
-                elif endpoint.base_url and "localhost" in endpoint.base_url:
+                elif _is_local_endpoint(endpoint.base_url):
                     env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
-            elif endpoint.base_url and "localhost" in endpoint.base_url:
+                    env.pop("ANTHROPIC_API_KEY", None)
+            elif _is_local_endpoint(endpoint.base_url):
                 env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
+                env.pop("ANTHROPIC_API_KEY", None)
 
     return env
+
+
+def _is_local_endpoint(url: str) -> bool:
+    """Check if a URL points to a local server (Ollama, LM Studio, etc.)."""
+    if not url:
+        return False
+    return (
+        "localhost" in url
+        or "127.0.0.1" in url
+        or "0.0.0.0" in url
+    )
 
 
 def get_agent_model(agent_name: str, runtime_config: RuntimeConfig) -> str | None:

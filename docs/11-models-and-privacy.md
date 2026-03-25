@@ -264,13 +264,21 @@ model = "gpt-oss:120b"
 ```
 
 
-## Setting Up Ollama for Local Models
+## Setting Up Local Models
+
+Urika supports local model servers that provide an Anthropic-compatible API. Two options work out of the box:
+
+### Option 1: Ollama (recommended)
+
+Requires Ollama v0.14 or later, which includes native Anthropic API compatibility.
 
 1. **Install Ollama** from [ollama.com](https://ollama.com)
 
-2. **Pull a model:**
+2. **Pull a model** with strong reasoning and code generation:
    ```bash
-   ollama pull gpt-oss:120b
+   ollama pull qwen3-coder        # 30B, needs 24GB+ VRAM
+   ollama pull qwen3.5            # lighter alternative
+   ollama pull glm-4.7-flash      # fast, good for simpler agents
    ```
 
 3. **Configure the endpoint** in your project's `urika.toml`:
@@ -282,7 +290,7 @@ model = "gpt-oss:120b"
    base_url = "http://localhost:11434"
 
    [runtime]
-   model = "gpt-oss:120b"
+   model = "qwen3-coder"
    ```
 
 4. **Run as normal:**
@@ -290,7 +298,64 @@ model = "gpt-oss:120b"
    urika run my-project
    ```
 
-Models with strong reasoning and code generation capabilities are recommended for the Task Agent and Tool Builder (e.g., `gpt-oss:120b` which runs on a single 80GB GPU). Smaller models like `gpt-oss:20b` (16GB) may work for the Evaluator or Planning Agent.
+Models with strong reasoning and code generation capabilities are recommended for the Task Agent and Tool Builder. Smaller models may work for the Evaluator or Planning Agent — use per-agent overrides to mix model sizes:
+
+```toml
+[runtime]
+model = "qwen3-coder"
+
+[runtime.models.evaluator]
+model = "glm-4.7-flash"
+
+[runtime.models.planning_agent]
+model = "glm-4.7-flash"
+```
+
+### Option 2: LM Studio
+
+LM Studio 0.4.1+ provides an Anthropic-compatible endpoint on port 1234.
+
+1. **Install LM Studio** from [lmstudio.ai](https://lmstudio.ai)
+2. **Load a model** in LM Studio and start the local server
+3. **Configure:**
+   ```toml
+   [privacy]
+   mode = "private"
+
+   [privacy.endpoints.private]
+   base_url = "http://localhost:1234"
+
+   [runtime]
+   model = "your-loaded-model-name"
+   ```
+
+### Option 3: LiteLLM Proxy (advanced)
+
+For maximum flexibility — mix local and cloud models, add load balancing, or use providers without native Anthropic compatibility:
+
+1. **Install:** `pip install 'litellm[proxy]'`
+2. **Create `litellm-config.yaml`:**
+   ```yaml
+   model_list:
+     - model_name: "local-coder"
+       litellm_params:
+         model: "ollama_chat/qwen3-coder"
+         api_base: "http://localhost:11434"
+   ```
+3. **Start proxy:** `litellm --config litellm-config.yaml --port 4000`
+4. **Configure:**
+   ```toml
+   [privacy.endpoints.private]
+   base_url = "http://localhost:4000"
+   api_key_env = "LITELLM_KEY"
+   ```
+
+### Requirements for local models
+
+- **Claude Code CLI must be installed** (system-wide, not just the SDK). Install via: `npm install -g @anthropic-ai/claude-code`
+- **Context window**: 64K tokens minimum recommended. Agents use substantial context for reading files and tracking experiments.
+- **Tool/function calling**: The model must support tool use. Most modern models (Qwen, GLM, Llama 3.1+, Mistral) do.
+- **Quality varies**: Local models produce lower-quality analysis than Claude. Results will differ from cloud mode. For best local results, use the largest model your hardware supports.
 
 
 ## Important Notes
@@ -299,6 +364,7 @@ Models with strong reasoning and code generation capabilities are recommended fo
 - **Different projects can have different settings.** One project can run fully private while another uses open cloud models.
 - **Default behavior is unchanged.** If you do not add `[privacy]` or `[runtime]` sections to `urika.toml`, everything runs on the Anthropic API as before.
 - **What needs to be private stays private.** You control exactly which agents access which endpoints. The hybrid default covers most cases, but full customization is available.
+- **Claude Code CLI required for local models.** The Claude Agent SDK spawns the `claude` CLI as a subprocess. For local model support, the system-installed CLI is used (not the bundled one). Install via `npm install -g @anthropic-ai/claude-code`.
 - **Currently only Claude Agent SDK is supported.** OpenAI Agents SDK, Google ADK, and PI adapters are planned for upcoming releases.
 
 ### Data privacy disclaimer

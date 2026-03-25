@@ -80,16 +80,27 @@ class ClaudeSDKRunner(AgentRunner):
 
     def _build_options(self, config: AgentConfig) -> ClaudeAgentOptions:
         """Translate AgentConfig to ClaudeAgentOptions."""
-        return ClaudeAgentOptions(
-            system_prompt=config.system_prompt,
-            allowed_tools=config.allowed_tools,
-            disallowed_tools=config.disallowed_tools,
-            max_turns=config.max_turns,
-            model=config.model,
-            cwd=str(config.cwd) if config.cwd else None,
-            permission_mode="bypassPermissions",
-            env=config.env or {},
-        )
+        kwargs: dict[str, object] = {
+            "system_prompt": config.system_prompt,
+            "allowed_tools": config.allowed_tools,
+            "disallowed_tools": config.disallowed_tools,
+            "max_turns": config.max_turns,
+            "model": config.model,
+            "cwd": str(config.cwd) if config.cwd else None,
+            "permission_mode": "bypassPermissions",
+            "env": config.env or {},
+        }
+        # When using a custom endpoint, prefer the system-installed
+        # CLI over the bundled one — the bundled CLI may ignore
+        # ANTHROPIC_BASE_URL (claude-agent-sdk-python issue #677).
+        env = config.env or {}
+        if env.get("ANTHROPIC_BASE_URL"):
+            import shutil
+
+            system_cli = shutil.which("claude")
+            if system_cli:
+                kwargs["cli_path"] = system_cli
+        return ClaudeAgentOptions(**kwargs)  # type: ignore[arg-type]
 
 
 def _message_to_dict(msg: Any) -> dict[str, Any]:
