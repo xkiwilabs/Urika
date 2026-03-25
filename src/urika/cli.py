@@ -2042,6 +2042,10 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
         # Look for data files in project's data/ directory
         data_dir = project_path / "data"
         if not data_dir.exists():
+            if json_output:
+                from urika.cli_helpers import output_json_error
+                output_json_error("No data/ directory found.")
+                raise SystemExit(1)
             raise click.ClickException("No data/ directory found.")
         _supported_exts = (
             "*.csv",
@@ -2056,6 +2060,12 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
         for _ext in _supported_exts:
             data_files.extend(data_dir.glob(_ext))
         if not data_files:
+            if json_output:
+                from urika.cli_helpers import output_json_error
+                output_json_error(
+                    "No supported data files in data/ directory."
+                )
+                raise SystemExit(1)
             raise click.ClickException(
                 "No supported data files found in data/ directory."
             )
