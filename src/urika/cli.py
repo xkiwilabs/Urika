@@ -165,12 +165,14 @@ def _prompt_path(prompt_text: str, must_exist: bool = True) -> str | None:
     "--data", "data_path", default=None, help="Path to data file or directory."
 )
 @click.option("--description", default=None, help="Project description.")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def new(
     name: str | None,
     question: str | None,
     mode: str | None,
     data_path: str | None,
     description: str | None,
+    json_output: bool = False,
 ) -> None:
     """Create a new project."""
     from urika.cli_display import (
@@ -493,6 +495,12 @@ def new(
 
     registry = ProjectRegistry()
     registry.register(name, project_dir)
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"project": name, "path": str(project_dir)})
+        return
 
     print_success(f"Created project '{name}' at {project_dir}")
 
@@ -871,10 +879,20 @@ def _ingest_knowledge(
 
 
 @cli.command("list")
-def list_cmd() -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def list_cmd(json_output: bool) -> None:
     """List all registered projects."""
     registry = ProjectRegistry()
     projects = registry.list_all()
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        projects_data = [
+            {"name": name, "path": str(path)} for name, path in projects.items()
+        ]
+        output_json({"projects": projects_data})
+        return
 
     if not projects:
         click.echo("No projects registered.")
@@ -887,12 +905,34 @@ def list_cmd() -> None:
 
 @cli.command()
 @click.argument("name", required=False, default=None)
-def status(name: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def status(name: str | None, json_output: bool) -> None:
     """Show project status."""
     name = _ensure_project(name)
     project_path, config = _resolve_project(name)
 
     experiments = list_experiments(project_path)
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        exps_data = []
+        for exp in experiments:
+            progress = load_progress(project_path, exp.experiment_id)
+            exps_data.append({
+                "experiment_id": exp.experiment_id,
+                "name": exp.name,
+                "status": progress.get("status", "unknown"),
+                "runs": len(progress.get("runs", [])),
+            })
+        output_json({
+            "project": config.name,
+            "question": config.question,
+            "mode": config.mode,
+            "path": str(project_path),
+            "experiments": exps_data,
+        })
+        return
 
     click.echo(f"Project: {config.name}")
     click.echo(f"Question: {config.question}")
@@ -955,7 +995,8 @@ def experiment_list(project: str) -> None:
     default=None,
     help="Show runs for a specific experiment.",
 )
-def results(project: str, experiment_id: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def results(project: str, experiment_id: str | None, json_output: bool) -> None:
     """Show project results (leaderboard or experiment runs)."""
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -963,6 +1004,11 @@ def results(project: str, experiment_id: str | None) -> None:
     if experiment_id is not None:
         progress = load_progress(project_path, experiment_id)
         runs = progress.get("runs", [])
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({"runs": runs})
+            return
         if not runs:
             click.echo("No results yet.")
             return
@@ -976,6 +1022,12 @@ def results(project: str, experiment_id: str | None) -> None:
     leaderboard = load_leaderboard(project_path)
     ranking = leaderboard.get("ranking", [])
 
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"ranking": ranking})
+        return
+
     if not ranking:
         click.echo("No results yet.")
         return
@@ -987,7 +1039,8 @@ def results(project: str, experiment_id: str | None) -> None:
 
 @cli.command()
 @click.argument("project", required=False, default=None)
-def methods(project: str) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def methods(project: str, json_output: bool) -> None:
     """List agent-created methods in a project."""
     from urika.core.method_registry import load_methods
 
@@ -995,6 +1048,13 @@ def methods(project: str) -> None:
     project_path, _config = _resolve_project(project)
 
     method_list = load_methods(project_path)
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"methods": method_list})
+        return
+
     if not method_list:
         click.echo("No methods created yet.")
         return
@@ -1009,7 +1069,8 @@ def methods(project: str) -> None:
 @cli.command()
 @click.option("--category", default=None, help="Filter by category.")
 @click.option("--project", default=None, help="Include project-specific tools.")
-def tools(category: str | None, project: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def tools(category: str | None, project: str | None, json_output: bool) -> None:
     """List available analysis tools."""
     registry = ToolRegistry()
     registry.discover()
@@ -1022,6 +1083,21 @@ def tools(category: str | None, project: str | None) -> None:
         names = registry.list_by_category(category)
     else:
         names = registry.list_all()
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        tools_data = []
+        for name in names:
+            tool = registry.get(name)
+            if tool is not None:
+                tools_data.append({
+                    "name": tool.name(),
+                    "category": tool.category(),
+                    "description": tool.description(),
+                })
+        output_json({"tools": tools_data})
+        return
 
     if not names:
         click.echo("No tools found.")
@@ -1277,6 +1353,7 @@ def _determine_next_experiment(
     type=int,
     help="Run multiple experiments via meta-orchestrator (capped mode).",
 )
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def run(
     project: str,
     experiment_id: str | None,
@@ -1286,6 +1363,7 @@ def run(
     auto: bool,
     instructions: str,
     max_experiments: int | None,
+    json_output: bool = False,
 ) -> None:
     """Run an experiment using the orchestrator."""
     try:
@@ -1475,6 +1553,14 @@ def run(
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
         n_exp = result.get("experiments_run", 0)
+
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            result["duration_ms"] = elapsed_ms
+            output_json(result)
+            return
+
         print_success(f"Meta-orchestrator completed: {n_exp} experiment(s) run.")
         print_footer(duration_ms=elapsed_ms, turns=n_exp, status="completed")
         return
@@ -1619,6 +1705,13 @@ def run(
     turns = result.get("turns", 0)
     error = result.get("error")
 
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        result["duration_ms"] = elapsed_ms
+        output_json(result)
+        return
+
     if run_status == "completed":
         print_success(f"Experiment completed after {turns} turns.")
     elif run_status == "failed":
@@ -1671,7 +1764,8 @@ def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> st
     default=None,
     help="Generate report for a specific experiment.",
 )
-def report(project: str, experiment_id: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def report(project: str, experiment_id: str | None, json_output: bool = False) -> None:
     """Generate labbook reports."""
     from urika.core.labbook import (
         generate_experiment_summary,
@@ -1738,7 +1832,13 @@ def report(project: str, experiment_id: str | None) -> None:
                 )
                 narrative_path.parent.mkdir(parents=True, exist_ok=True)
                 write_versioned(narrative_path, narrative + "\n")
-                click.echo(f"Generated: {narrative_path}")
+                if not json_output:
+                    click.echo(f"Generated: {narrative_path}")
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({"output": "All experiment reports generated."})
+            return
         click.echo("All experiment reports generated.")
         return
 
@@ -1763,9 +1863,6 @@ def report(project: str, experiment_id: str | None) -> None:
         results_path = project_path / "projectbook" / "results-summary.md"
         findings_path = project_path / "projectbook" / "key-findings.md"
         readme_path = project_path / "README.md"
-        click.echo(f"Generated: {results_path}")
-        click.echo(f"Generated: {findings_path}")
-        click.echo(f"Generated: {readme_path}")
 
         # Call report agent for project-level narrative
         narrative = _run_report_agent(
@@ -1780,6 +1877,20 @@ def report(project: str, experiment_id: str | None) -> None:
             narrative_path = project_path / "projectbook" / "narrative.md"
             narrative_path.parent.mkdir(parents=True, exist_ok=True)
             write_versioned(narrative_path, narrative + "\n")
+
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({
+                "output": "Project-level reports generated.",
+                "path": str(results_path),
+            })
+            return
+
+        click.echo(f"Generated: {results_path}")
+        click.echo(f"Generated: {findings_path}")
+        click.echo(f"Generated: {readme_path}")
+        if narrative:
             click.echo(f"Generated: {narrative_path}")
         return
 
@@ -1791,8 +1902,6 @@ def report(project: str, experiment_id: str | None) -> None:
         raise click.ClickException(f"Experiment '{experiment_id}' not found.")
     notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
     summary = project_path / "experiments" / experiment_id / "labbook" / "summary.md"
-    click.echo(f"Updated: {notes}")
-    click.echo(f"Generated: {summary}")
 
     # Call report agent to write narrative (like REPL)
     narrative = _run_report_agent(
@@ -1808,6 +1917,19 @@ def report(project: str, experiment_id: str | None) -> None:
         )
         narrative_path.parent.mkdir(parents=True, exist_ok=True)
         write_versioned(narrative_path, narrative + "\n")
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({
+            "output": f"Report generated for {experiment_id}.",
+            "path": str(summary),
+        })
+        return
+
+    click.echo(f"Updated: {notes}")
+    click.echo(f"Generated: {summary}")
+    if narrative:
         click.echo(f"Generated: {narrative_path}")
 
 
@@ -1816,7 +1938,8 @@ def report(project: str, experiment_id: str | None) -> None:
 @click.option(
     "--data", "data_file", default=None, help="Specific data file to inspect."
 )
-def inspect(project: str, data_file: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def inspect(project: str, data_file: str | None, json_output: bool) -> None:
     """Inspect project data: schema, dtypes, missing values, preview."""
     from urika.data.loader import load_dataset
 
@@ -1852,13 +1975,30 @@ def inspect(project: str, data_file: str | None) -> None:
                 "No supported data files found in data/ directory."
             )
         path = data_files[0]
-        if len(data_files) > 1:
+        if len(data_files) > 1 and not json_output:
             click.echo(f"Multiple data files found. Using: {path.name}")
 
     try:
         view = load_dataset(path)
     except Exception as exc:
         raise click.ClickException(f"Failed to load data: {exc}")
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        columns_data = []
+        for col in view.summary.columns:
+            columns_data.append({
+                "name": col,
+                "dtype": view.summary.dtypes.get(col, "unknown"),
+                "missing": view.summary.missing_counts.get(col, 0),
+            })
+        output_json({
+            "dataset": path.name,
+            "rows": view.summary.n_rows,
+            "columns": columns_data,
+        })
+        return
 
     click.echo(f"Dataset: {path.name}")
     click.echo(f"Rows: {view.summary.n_rows}")
@@ -1888,7 +2028,8 @@ def inspect(project: str, data_file: str | None) -> None:
 @click.option(
     "--experiment", "experiment_id", default=None, help="Specific experiment."
 )
-def logs(project: str, experiment_id: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def logs(project: str, experiment_id: str | None, json_output: bool) -> None:
     """Show experiment run log."""
     from urika.core.session import load_session
 
@@ -1902,21 +2043,39 @@ def logs(project: str, experiment_id: str | None) -> None:
         if len(experiments) == 1:
             experiment_id = experiments[0].experiment_id
         else:
-            # Offer selection when multiple experiments exist
-            reversed_exps = list(reversed(experiments))
-            options = []
-            for exp in reversed_exps:
-                progress_data = load_progress(project_path, exp.experiment_id)
-                status = progress_data.get("status", "pending")
-                runs = len(progress_data.get("runs", []))
-                options.append(f"{exp.experiment_id} [{status}, {runs} runs]")
-            choice = _prompt_numbered(
-                "\nSelect experiment to view logs:", options, default=1
-            )
-            experiment_id = choice.split(" [")[0]
+            if json_output:
+                # Default to most recent experiment for JSON mode
+                experiment_id = experiments[-1].experiment_id
+            else:
+                # Offer selection when multiple experiments exist
+                reversed_exps = list(reversed(experiments))
+                options = []
+                for exp in reversed_exps:
+                    progress_data = load_progress(project_path, exp.experiment_id)
+                    status = progress_data.get("status", "pending")
+                    runs = len(progress_data.get("runs", []))
+                    options.append(f"{exp.experiment_id} [{status}, {runs} runs]")
+                choice = _prompt_numbered(
+                    "\nSelect experiment to view logs:", options, default=1
+                )
+                experiment_id = choice.split(" [")[0]
 
     progress = load_progress(project_path, experiment_id)
     session = load_session(project_path, experiment_id)
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        runs = progress.get("runs", [])
+        data = {
+            "experiment_id": experiment_id,
+            "runs": runs,
+        }
+        if session is not None:
+            data["status"] = session.status
+            data["turns"] = session.current_turn
+        output_json(data)
+        return
 
     click.echo(f"Experiment: {experiment_id}")
     if session is not None:
@@ -1949,7 +2108,8 @@ def knowledge() -> None:
 @knowledge.command("ingest")
 @click.argument("project", required=False, default=None)
 @click.argument("source")
-def knowledge_ingest(project: str, source: str) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def knowledge_ingest(project: str, source: str, json_output: bool) -> None:
     """Ingest a file or URL into the knowledge store."""
     from urika.knowledge import KnowledgeStore
 
@@ -1960,33 +2120,51 @@ def knowledge_ingest(project: str, source: str) -> None:
         entry = store.ingest(source)
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc))
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"id": entry.id, "title": entry.title, "source_type": entry.source_type})
+        return
+
     click.echo(f'Ingested: {entry.id} "{entry.title}" ({entry.source_type})')
 
 
 @knowledge.command("search")
 @click.argument("project", required=False, default=None)
 @click.argument("query")
-def knowledge_search(project: str, query: str) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def knowledge_search(project: str, query: str, json_output: bool) -> None:
     """Search the knowledge store."""
     from urika.knowledge import KnowledgeStore
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
     store = KnowledgeStore(project_path)
-    results = store.search(query)
+    results_list = store.search(query)
 
-    if not results:
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"results": [
+            {"id": e.id, "title": e.title, "source_type": e.source_type, "snippet": e.content[:200]}
+            for e in results_list
+        ]})
+        return
+
+    if not results_list:
         click.echo("No results found.")
         return
 
-    for entry in results:
+    for entry in results_list:
         snippet = entry.content[:100].replace("\n", " ")
         click.echo(f"  {entry.id}  {entry.title}  [{entry.source_type}]  {snippet}")
 
 
 @knowledge.command("list")
 @click.argument("project", required=False, default=None)
-def knowledge_list(project: str) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def knowledge_list(project: str, json_output: bool) -> None:
     """List all knowledge entries."""
     from urika.knowledge import KnowledgeStore
 
@@ -1994,6 +2172,15 @@ def knowledge_list(project: str) -> None:
     project_path, _config = _resolve_project(project)
     store = KnowledgeStore(project_path)
     entries = store.list_all()
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"entries": [
+            {"id": e.id, "title": e.title, "source_type": e.source_type}
+            for e in entries
+        ]})
+        return
 
     if not entries:
         click.echo("No knowledge entries yet.")
@@ -2006,7 +2193,8 @@ def knowledge_list(project: str) -> None:
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("text", required=False, default=None)
-def advisor(project: str | None, text: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     """Ask the advisor agent a question about the project."""
     import asyncio
 
@@ -2035,7 +2223,8 @@ def advisor(project: str | None, text: str | None) -> None:
     if role is None:
         raise click.ClickException("Advisor agent not found.")
 
-    print_agent("advisor_agent")
+    if not json_output:
+        print_agent("advisor_agent")
     config = role.build_config(project_dir=project_path, experiment_id="")
 
     # Build richer context (like REPL's _handle_free_text)
@@ -2053,7 +2242,19 @@ def advisor(project: str | None, text: str | None) -> None:
             pass
 
     with Spinner("Thinking"):
-        result = asyncio.run(runner.run(config, context, on_message=_make_on_message()))
+        result = asyncio.run(
+            runner.run(
+                config,
+                context,
+                on_message=_make_on_message() if not json_output else lambda m: None,
+            )
+        )
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"output": result.text_output.strip() if result.success else result.error})
+        return
 
     if result.success and result.text_output:
         click.echo(f"\n{result.text_output.strip()}\n")
@@ -2064,7 +2265,8 @@ def advisor(project: str | None, text: str | None) -> None:
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("experiment_id", required=False, default=None)
-def evaluate(project: str | None, experiment_id: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def evaluate(project: str | None, experiment_id: str | None, json_output: bool) -> None:
     """Run the evaluator agent on an experiment."""
     import asyncio
 
@@ -2092,18 +2294,26 @@ def evaluate(project: str | None, experiment_id: str | None) -> None:
     if role is None:
         raise click.ClickException("Evaluator agent not found.")
 
-    print_agent("evaluator")
+    if not json_output:
+        print_agent("evaluator")
     config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
 
-    click.echo(f"  Evaluating {experiment_id}...")
+    if not json_output:
+        click.echo(f"  Evaluating {experiment_id}...")
     with Spinner("Working"):
         result = asyncio.run(
             runner.run(
                 config,
                 f"Evaluate experiment {experiment_id}.",
-                on_message=_make_on_message(),
+                on_message=_make_on_message() if not json_output else lambda m: None,
             )
         )
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"output": result.text_output.strip() if result.success else result.error})
+        return
 
     if result.success and result.text_output:
         click.echo(f"\n{result.text_output.strip()}\n")
@@ -2114,7 +2324,8 @@ def evaluate(project: str | None, experiment_id: str | None) -> None:
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("experiment_id", required=False, default=None)
-def plan(project: str | None, experiment_id: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def plan(project: str | None, experiment_id: str | None, json_output: bool) -> None:
     """Run the planning agent to design the next method."""
     import asyncio
 
@@ -2142,18 +2353,26 @@ def plan(project: str | None, experiment_id: str | None) -> None:
     if role is None:
         raise click.ClickException("Planning agent not found.")
 
-    print_agent("planning_agent")
+    if not json_output:
+        print_agent("planning_agent")
     config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
 
-    click.echo(f"  Planning for {experiment_id}...")
+    if not json_output:
+        click.echo(f"  Planning for {experiment_id}...")
     with Spinner("Designing method"):
         result = asyncio.run(
             runner.run(
                 config,
                 "Design the next method based on current results.",
-                on_message=_make_on_message(),
+                on_message=_make_on_message() if not json_output else lambda m: None,
             )
         )
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"output": result.text_output.strip() if result.success else result.error})
+        return
 
     if result.success and result.text_output:
         click.echo(f"\n{result.text_output.strip()}\n")
@@ -2168,7 +2387,8 @@ def plan(project: str | None, experiment_id: str | None) -> None:
     default="",
     help="Optional instructions for the finalizer agent.",
 )
-def finalize(project: str | None, instructions: str) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def finalize(project: str | None, instructions: str, json_output: bool) -> None:
     """Finalize the project — produce polished methods, report, and presentation."""
     from urika.cli_display import (
         ThinkingPanel,
@@ -2241,6 +2461,12 @@ def finalize(project: str | None, instructions: str) -> None:
     finally:
         panel.cleanup()
 
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json(result)
+        return
+
     if result.get("success"):
         print_success("Project finalized!")
         click.echo(f"  Methods:       {project_path / 'methods/'}")
@@ -2278,12 +2504,14 @@ def finalize(project: str | None, instructions: str) -> None:
     is_flag=True,
     help="Show revision history.",
 )
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def update_project(
     project: str | None,
     field: str | None,
     value: str | None,
     reason: str,
     history: bool,
+    json_output: bool,
 ) -> None:
     """Update project description, question, or mode.
 
@@ -2312,6 +2540,13 @@ def update_project(
         from urika.core.revisions import load_revisions
 
         revs = load_revisions(project_path)
+
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({"revisions": revs})
+            return
+
         if not revs:
             click.echo("  No revisions recorded.")
             return
@@ -2390,7 +2625,8 @@ def update_project(
 @cli.command("build-tool")
 @click.argument("project", required=False, default=None)
 @click.argument("instructions", required=False, default=None)
-def build_tool(project: str | None, instructions: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def build_tool(project: str | None, instructions: str | None, json_output: bool) -> None:
     """Build a custom tool for the project.
 
     Give the tool builder agent instructions to create a specific tool,
@@ -2428,13 +2664,24 @@ def build_tool(project: str | None, instructions: str | None) -> None:
     if role is None:
         raise click.ClickException("Tool builder agent not found.")
 
-    print_agent("tool_builder")
+    if not json_output:
+        print_agent("tool_builder")
     config = role.build_config(project_dir=project_path)
 
     with Spinner("Building tool"):
         result = asyncio.run(
-            runner.run(config, instructions, on_message=_make_on_message())
+            runner.run(
+                config,
+                instructions,
+                on_message=_make_on_message() if not json_output else lambda m: None,
+            )
         )
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json({"output": result.text_output.strip() if result.success else result.error})
+        return
 
     if result.success and result.text_output:
         click.echo(f"\n{result.text_output.strip()}\n")
@@ -2444,7 +2691,8 @@ def build_tool(project: str | None, instructions: str | None) -> None:
 
 @cli.command()
 @click.argument("project", required=False, default=None)
-def present(project: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def present(project: str | None, json_output: bool) -> None:
     """Generate a presentation for an experiment."""
     import asyncio
 
@@ -2482,7 +2730,8 @@ def present(project: str | None) -> None:
     if choice.startswith("All"):
         # Generate presentation for each experiment
         for exp in experiments:
-            print_agent("presentation_agent")
+            if not json_output:
+                print_agent("presentation_agent")
             with Spinner("Creating slides"):
                 asyncio.run(
                     _generate_presentation(
@@ -2493,24 +2742,38 @@ def present(project: str | None) -> None:
                         on_message=on_msg,
                     )
                 )
-            print_success(
-                f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
-            )
+            if not json_output:
+                print_success(
+                    f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
+                )
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({"path": str(project_path / "experiments")})
+            return
         print_success("All presentations generated")
     elif choice.startswith("Project"):
         # Project-level presentation
-        print_agent("presentation_agent")
+        if not json_output:
+            print_agent("presentation_agent")
         with Spinner("Creating slides"):
             asyncio.run(
                 _generate_presentation(
                     project_path, "", runner, _noop_callback, on_message=on_msg
                 )
             )
+        pres_path = project_path / "projectbook" / "presentation" / "index.html"
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({"path": str(pres_path)})
+            return
         print_success("Saved to projectbook/presentation/index.html")
     else:
         # Single experiment
         exp_id = choice.split(" [")[0]
-        print_agent("presentation_agent")
+        if not json_output:
+            print_agent("presentation_agent")
         with Spinner("Creating slides"):
             asyncio.run(
                 _generate_presentation(
@@ -2521,12 +2784,21 @@ def present(project: str | None) -> None:
                     on_message=on_msg,
                 )
             )
+        pres_path = (
+            project_path / "experiments" / exp_id / "presentation" / "index.html"
+        )
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({"path": str(pres_path)})
+            return
         print_success(f"Saved to experiments/{exp_id}/presentation/index.html")
 
 
 @cli.command()
 @click.argument("project", required=False, default=None)
-def criteria(project: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def criteria(project: str | None, json_output: bool) -> None:
     """Show current project criteria."""
     from urika.core.criteria import load_criteria
 
@@ -2534,6 +2806,20 @@ def criteria(project: str | None) -> None:
     project_path, _config = _resolve_project(project)
 
     c = load_criteria(project_path)
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        if c is None:
+            output_json({"criteria": None})
+        else:
+            output_json({"criteria": {
+                "version": c.version,
+                "set_by": c.set_by,
+                **c.criteria,
+            }})
+        return
+
     if c is None:
         click.echo("  No criteria set.")
         return
@@ -2551,7 +2837,8 @@ def criteria(project: str | None) -> None:
 
 @cli.command()
 @click.argument("project", required=False, default=None)
-def usage(project: str | None) -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def usage(project: str | None, json_output: bool) -> None:
     """Show usage stats for a project."""
     from urika.core.usage import format_usage, get_last_session, get_totals
 
@@ -2560,12 +2847,29 @@ def usage(project: str | None) -> None:
         project_path, _config = _resolve_project(project)
         last = get_last_session(project_path)
         totals = get_totals(project_path)
+
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({"session": last or {}, "total": totals})
+            return
+
         click.echo(f"\n  Usage: {project}")
         click.echo(format_usage(last, totals))
     else:
         # All projects
-        registry = ProjectRegistry()
-        projects = registry.list_all()
+        registry_obj = ProjectRegistry()
+        projects = registry_obj.list_all()
+
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            all_usage = {}
+            for name, path in projects.items():
+                all_usage[name] = get_totals(path)
+            output_json({"projects": all_usage})
+            return
+
         if not projects:
             click.echo("  No projects.")
             return
@@ -2595,12 +2899,14 @@ def usage(project: str | None) -> None:
 @click.option("--endpoint-key-env", default=None, help="API key env var.")
 @click.option("--model", default=None, help="Default model.")
 @click.option("--show", is_flag=True, help="Show current settings.")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def config_command(
     privacy: str | None,
     endpoint_url: str | None,
     endpoint_key_env: str | None,
     model: str | None,
     show: bool,
+    json_output: bool,
 ) -> None:
     """View or set global defaults for new projects.
 
@@ -2630,6 +2936,13 @@ def config_command(
     ):
         settings = load_settings()
         path = _settings_path()
+
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json(settings)
+            return
+
         click.echo(f"\n  Global settings: {path}\n")
         if not settings:
             click.echo("  No settings configured. Using defaults.")
@@ -2693,7 +3006,8 @@ def config_command(
 
 
 @cli.command("setup")
-def setup_command() -> None:
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def setup_command(json_output: bool) -> None:
     """Check installation and install optional packages."""
     from urika.cli_display import (
         print_error,
@@ -2701,6 +3015,55 @@ def setup_command() -> None:
         print_success,
         print_warning,
     )
+
+    if json_output:
+        # Collect package status and hardware info as JSON
+        _all_packages = {
+            "numpy": "numpy",
+            "pandas": "pandas",
+            "scipy": "scipy",
+            "scikit-learn": "sklearn",
+            "statsmodels": "statsmodels",
+            "pingouin": "pingouin",
+            "click": "click",
+            "claude-agent-sdk": "claude_agent_sdk",
+            "matplotlib": "matplotlib",
+            "seaborn": "seaborn",
+            "xgboost": "xgboost",
+            "lightgbm": "lightgbm",
+            "optuna": "optuna",
+            "shap": "shap",
+            "imbalanced-learn": "imblearn",
+            "pypdf": "pypdf",
+            "torch": "torch",
+            "transformers": "transformers",
+            "torchvision": "torchvision",
+            "torchaudio": "torchaudio",
+        }
+        pkg_status = {}
+        for name, imp in _all_packages.items():
+            try:
+                __import__(imp)
+                pkg_status[name] = True
+            except ImportError:
+                pkg_status[name] = False
+
+        hw_data: dict = {}
+        try:
+            from urika.core.hardware import detect_hardware as _dh
+
+            hw_data = dict(_dh())
+        except Exception:
+            pass
+
+        from urika.cli_helpers import output_json
+
+        output_json({
+            "packages": pkg_status,
+            "hardware": hw_data,
+            "anthropic_api_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        })
+        return
 
     click.echo()
     click.echo("  Urika Setup")
