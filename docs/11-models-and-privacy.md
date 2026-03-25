@@ -350,11 +350,26 @@ For maximum flexibility — mix local and cloud models, add load balancing, or u
    api_key_env = "LITELLM_KEY"
    ```
 
+### Tested models
+
+Not all local models work with Urika. The model must support **tool/function calling** via Ollama's Anthropic-compatible API. Tested results:
+
+| Model | Size | Tools | Urika | Notes |
+|-------|------|-------|-------|-------|
+| `qwen3:14b` | 9 GB | Yes | **Recommended** | Best local option. Full pipeline with reports. |
+| `qwen3:8b` | 5 GB | Yes | Works | Lighter, may not format structured output perfectly. |
+| `qwen3-coder` | 18 GB | Yes | Good | Strong code generation. Needs 24GB+ VRAM. |
+| `devstral` | 15 GB | Yes | Partial | Has tools but may not follow prompt structure. |
+| `gemma3:12b` | 8 GB | No | Fails | Ollama reports "does not support tools". |
+| `llama3:8b` | 5 GB | No | Fails | Ollama reports "does not support tools". |
+
+**Recommendation:** Use `qwen3:14b` for the best balance of quality and speed. Use `qwen3:8b` if VRAM is limited. Larger Qwen3 variants (30B+) will produce better results if your hardware supports them.
+
 ### Requirements for local models
 
 - **Claude Code CLI must be installed** (system-wide, not just the SDK). Install via: `npm install -g @anthropic-ai/claude-code`
 - **Context window**: 64K tokens minimum recommended. Agents use substantial context for reading files and tracking experiments.
-- **Tool/function calling**: The model must support tool use. Most modern models (Qwen, GLM, Llama 3.1+, Mistral) do.
+- **Tool/function calling**: The model must support tool use via Ollama. Check the table above — not all models work.
 - **Quality varies**: Local models produce lower-quality analysis than Claude. Results will differ from cloud mode. For best local results, use the largest model your hardware supports.
 
 
