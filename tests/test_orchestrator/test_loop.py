@@ -723,3 +723,166 @@ class TestCriteriaUpdateFromSuggestions:
         assert latest["criteria"]["primary_metric"] == "r2"
         assert latest["criteria"]["threshold"] == 0.9
         assert latest["rationale"] == "Raising threshold after strong baseline"
+
+
+class TestGetUserInputCallback:
+    @pytest.mark.asyncio
+    async def test_user_input_prepended_to_advisor_prompt(
+        self, tmp_path: Path
+    ) -> None:
+        """When get_user_input returns text, it is prepended to the advisor prompt."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        advisor_prompts: list[str] = []
+        call_count = 0
+
+        def _fake_user_input() -> str:
+            nonlocal call_count
+            call_count += 1
+            return "Focus on tree-based methods"
+
+        class CapturingRunner(AgentRunner):
+            async def run(
+                self, config: AgentConfig, prompt: str, *, on_message: object = None
+            ) -> AgentResult:
+                if config.name == "advisor_agent":
+                    advisor_prompts.append(prompt)
+                responses = {
+                    "planning_agent": _PLAN_OUTPUT,
+                    "task_agent": _TASK_OUTPUT,
+                    "evaluator": _EVAL_CRITERIA_NOT_MET,
+                    "advisor_agent": _SUGGESTION,
+                }
+                # End on second turn so we get one advisor call
+                if config.name == "evaluator" and len(advisor_prompts) >= 1:
+                    text = _EVAL_CRITERIA_MET
+                else:
+                    text = responses.get(config.name, "")
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=text,
+                    session_id=f"session-{config.name}",
+                    num_turns=1,
+                    duration_ms=100,
+                )
+
+        result = await run_experiment(
+            project_dir,
+            exp_id,
+            CapturingRunner(),
+            max_turns=5,
+            get_user_input=_fake_user_input,
+        )
+
+        assert result["status"] == "completed"
+        assert call_count >= 1
+        assert len(advisor_prompts) >= 1
+        assert advisor_prompts[0].startswith("User instruction: Focus on tree-based methods")
+
+    @pytest.mark.asyncio
+    async def test_no_user_input_leaves_advisor_prompt_unchanged(
+        self, tmp_path: Path
+    ) -> None:
+        """When get_user_input returns empty string, advisor prompt is unchanged."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        advisor_prompts: list[str] = []
+
+        def _empty_user_input() -> str:
+            return ""
+
+        class CapturingRunner(AgentRunner):
+            async def run(
+                self, config: AgentConfig, prompt: str, *, on_message: object = None
+            ) -> AgentResult:
+                if config.name == "advisor_agent":
+                    advisor_prompts.append(prompt)
+                responses = {
+                    "planning_agent": _PLAN_OUTPUT,
+                    "task_agent": _TASK_OUTPUT,
+                    "evaluator": _EVAL_CRITERIA_NOT_MET,
+                    "advisor_agent": _SUGGESTION,
+                }
+                if config.name == "evaluator" and len(advisor_prompts) >= 1:
+                    text = _EVAL_CRITERIA_MET
+                else:
+                    text = responses.get(config.name, "")
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=text,
+                    session_id=f"session-{config.name}",
+                    num_turns=1,
+                    duration_ms=100,
+                )
+
+        result = await run_experiment(
+            project_dir,
+            exp_id,
+            CapturingRunner(),
+            max_turns=5,
+            get_user_input=_empty_user_input,
+        )
+
+        assert result["status"] == "completed"
+        assert len(advisor_prompts) >= 1
+        # Should NOT start with "User instruction:" since callback returned ""
+        assert not advisor_prompts[0].startswith("User instruction:")
+
+    @pytest.mark.asyncio
+    async def test_callback_exception_is_swallowed(
+        self, tmp_path: Path
+    ) -> None:
+        """If get_user_input raises, the error is swallowed and the loop continues."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        def _broken_callback() -> str:
+            raise RuntimeError("queue broken")
+
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
+                "advisor_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(
+            project_dir,
+            exp_id,
+            runner,
+            max_turns=5,
+            get_user_input=_broken_callback,
+        )
+
+        assert result["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_none_callback_is_default(
+        self, tmp_path: Path
+    ) -> None:
+        """When get_user_input is None (default), the loop works normally."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "advisor_agent": [_SUGGESTION],
+            }
+        )
+
+        # Explicitly pass None (the default)
+        result = await run_experiment(
+            project_dir,
+            exp_id,
+            runner,
+            max_turns=5,
+            get_user_input=None,
+        )
+
+        assert result["status"] == "completed"
+        assert result["turns"] == 1

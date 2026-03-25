@@ -399,6 +399,7 @@ async def run_experiment(
     on_progress: object = None,
     on_message: object = None,
     instructions: str = "",
+    get_user_input: object = None,
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
@@ -415,6 +416,10 @@ async def run_experiment(
     that receives each SDK message as it streams in.
 
     *instructions* is optional user guidance prepended to the initial prompt.
+
+    *get_user_input* is an optional callable ``() -> str`` that returns
+    queued user text (or ``""``).  When non-empty the text is prepended to
+    the advisor prompt so users can steer experiments mid-run.
     """
     progress = on_progress or _noop_callback
     registry = AgentRegistry()
@@ -691,11 +696,26 @@ async def run_experiment(
                     "turns": turn,
                 }
 
+            # Check for queued user input
+            user_inject = ""
+            if get_user_input is not None:
+                try:
+                    user_inject = get_user_input()
+                except Exception:
+                    pass
+
+            # Pass evaluator output + any user input to advisor
+            advisor_prompt = eval_result.text_output
+            if user_inject:
+                advisor_prompt = (
+                    f"User instruction: {user_inject}\n\n{advisor_prompt}"
+                )
+
             suggest_config = suggest_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
             )
             suggest_result = await runner.run(
-                suggest_config, eval_result.text_output, on_message=on_message
+                suggest_config, advisor_prompt, on_message=on_message
             )
 
             if not suggest_result.success:

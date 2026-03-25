@@ -336,7 +336,13 @@ def cmd_run(session: ReplSession, args: str) -> None:
     # Run directly without going through CLI (avoids duplicate header)
     import os
 
+    global _user_input_callback  # noqa: PLW0603
+
+    def _get_user_input() -> str:
+        return session.pop_queued_input()
+
     os.environ["URIKA_REPL"] = "1"
+    _user_input_callback = _get_user_input
     try:
         from urika.cli import run as cli_run
 
@@ -354,6 +360,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
         )
         session.experiments_run += 1
     finally:
+        _user_input_callback = None
         os.environ.pop("URIKA_REPL", None)
 
 

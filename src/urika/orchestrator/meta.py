@@ -19,6 +19,7 @@ async def run_project(
     instructions: str = "",
     on_progress: object = None,
     on_message: object = None,
+    get_user_input: object = None,
 ) -> dict[str, Any]:
     """Run experiments until criteria met or limits reached.
 
@@ -62,6 +63,7 @@ async def run_project(
             on_progress=on_progress,
             on_message=on_message,
             instructions=instructions,
+            get_user_input=get_user_input,
         )
         results.append(result)
 

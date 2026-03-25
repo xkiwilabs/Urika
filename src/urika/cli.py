@@ -1432,6 +1432,16 @@ def run(
     from urika.cli_display import thinking_phrase
     from urika.cli_helpers import interactive_prompt
 
+    # Pick up queued-input callback when invoked from the REPL
+    _get_user_input = None
+    if os.environ.get("URIKA_REPL"):
+        try:
+            from urika.repl_commands import _user_input_callback
+
+            _get_user_input = _user_input_callback
+        except ImportError:
+            pass
+
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
@@ -1599,6 +1609,7 @@ def run(
                     instructions=instructions,
                     on_progress=_on_progress,
                     on_message=_on_message,
+                    get_user_input=_get_user_input,
                 )
             )
 
@@ -1761,6 +1772,7 @@ def run(
                 on_progress=_on_progress,
                 on_message=_on_message,
                 instructions=instructions,
+                get_user_input=_get_user_input,
             )
         )
 
