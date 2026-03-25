@@ -16,6 +16,9 @@ class ReplSession:
     project_name: str | None = None
     conversation: list[dict[str, str]] = field(default_factory=list)
 
+    # Input queue — lets users type while agents run
+    _input_queue: list[str] = field(default_factory=list)
+
     # Usage tracking
     session_start: float = field(default_factory=time.monotonic)
     session_start_iso: str = field(
@@ -35,6 +38,24 @@ class ReplSession:
     @property
     def elapsed_ms(self) -> int:
         return int((time.monotonic() - self.session_start) * 1000)
+
+    @property
+    def has_queued_input(self) -> bool:
+        """Check if there's queued user input."""
+        return len(self._input_queue) > 0
+
+    def queue_input(self, text: str) -> None:
+        """Queue user input for injection into the next agent call."""
+        if text.strip():
+            self._input_queue.append(text.strip())
+
+    def pop_queued_input(self) -> str:
+        """Pop all queued input as a single string. Clears the queue."""
+        if not self._input_queue:
+            return ""
+        combined = "\n".join(self._input_queue)
+        self._input_queue.clear()
+        return combined
 
     def load_project(self, path: Path, name: str) -> None:
         self.save_usage()  # save current project's usage first

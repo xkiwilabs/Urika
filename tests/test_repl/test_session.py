@@ -43,3 +43,30 @@ class TestReplSession:
         assert not session.has_project
         session.load_project(tmp_path, "proj")
         assert session.has_project
+
+    def test_input_queue_empty_by_default(self) -> None:
+        session = ReplSession()
+        assert session.has_queued_input is False
+        assert session.pop_queued_input() == ""
+
+    def test_input_queue_stores_and_retrieves(self) -> None:
+        session = ReplSession()
+        session.queue_input("try random forest")
+        assert session.has_queued_input is True
+        text = session.pop_queued_input()
+        assert text == "try random forest"
+        assert session.has_queued_input is False
+
+    def test_input_queue_concatenates_multiple(self) -> None:
+        session = ReplSession()
+        session.queue_input("first instruction")
+        session.queue_input("second instruction")
+        text = session.pop_queued_input()
+        assert "first instruction" in text
+        assert "second instruction" in text
+
+    def test_input_queue_ignores_whitespace(self) -> None:
+        session = ReplSession()
+        session.queue_input("  ")
+        session.queue_input("")
+        assert session.has_queued_input is False
