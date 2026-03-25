@@ -117,6 +117,14 @@ def run_repl() -> None:
         parts.append(" \033[34;1murika\033[0m")
         if session.has_project:
             parts.append(f" \033[2m· {session.project_name}\033[0m")
+            # Show privacy mode if not open
+            try:
+                from urika.agents.config import load_runtime_config
+                rc = load_runtime_config(session.project_path)
+                if rc.privacy_mode != "open":
+                    parts.append(f" \033[33m· {rc.privacy_mode}\033[0m")
+            except Exception:
+                pass
         if session.model:
             parts.append(f" \033[36m· {session.model}\033[0m")
         elapsed = _format_duration(session.elapsed_ms)

@@ -118,6 +118,26 @@ def cli(ctx) -> None:
         run_repl()
 
 
+def _test_endpoint(url: str) -> bool:
+    """Test if an API endpoint is reachable (3s timeout)."""
+    import urllib.request
+    import urllib.error
+
+    # Try common health/version endpoints
+    for path in ["", "/api/tags", "/v1/models"]:
+        try:
+            test_url = url.rstrip("/") + path
+            req = urllib.request.Request(
+                test_url,
+                headers={"User-Agent": "urika-endpoint-check"},
+            )
+            with urllib.request.urlopen(req, timeout=3):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:
     """Prompt user with numbered options. Returns the selected option text."""
     click.echo(prompt_text)
@@ -209,14 +229,36 @@ def new(
             "\n  Configure the private endpoint for data-touching agents.\n"
             "  This can be a local Ollama instance or a secure institutional server."
         )
-        private_endpoint_url = click.prompt(
-            "  Private endpoint URL",
-            default="http://localhost:11434",
-        ).strip()
-        private_endpoint_key_env = click.prompt(
-            "  API key environment variable (leave empty for Ollama)",
-            default="",
-        ).strip()
+        while True:
+            private_endpoint_url = click.prompt(
+                "  Private endpoint URL",
+                default="http://localhost:11434",
+            ).strip()
+            private_endpoint_key_env = click.prompt(
+                "  API key environment variable (leave empty for Ollama)",
+                default="",
+            ).strip()
+            # Validate the endpoint is reachable
+            print_step("Testing endpoint connection…")
+            if _test_endpoint(private_endpoint_url):
+                print_success(f"Connected to {private_endpoint_url}")
+                break
+            else:
+                print_error(f"Could not connect to {private_endpoint_url}")
+                retry = click.prompt(
+                    "  Try again, switch to open mode, or quit?",
+                    type=click.Choice(["retry", "open", "quit"]),
+                    default="retry",
+                )
+                if retry == "open":
+                    privacy_mode_val = "open"
+                    private_endpoint_url = ""
+                    private_endpoint_key_env = ""
+                    print_step("Switched to open mode.")
+                    break
+                elif retry == "quit":
+                    raise click.Abort()
+                # retry loops back
 
     # Validate data path — keep asking until valid or skipped
     if data_path is not None:
@@ -618,6 +660,9 @@ def _run_builder_agent_loop(
         print_error("No data scanned. Skipping interactive scoping.")
         return
 
+    # Resolve the actual project directory (where urika.toml lives)
+    project_dir = getattr(builder, "projects_dir", Path.home() / "urika-projects") / getattr(builder, "name", "")
+
     # Create persistent footer panel for the entire builder loop
     panel = ThinkingPanel()
     panel.project = getattr(builder, "name", "")
@@ -666,7 +711,7 @@ def _run_builder_agent_loop(
                 question=question,
                 extra_profiles=extra_profiles,
             )
-            config = builder_role.build_config(project_dir=builder.source_path)
+            config = builder_role.build_config(project_dir=project_dir)
 
             panel.update(agent="project_builder", activity=thinking_phrase())
             result = asyncio.run(
@@ -715,7 +760,7 @@ def _run_builder_agent_loop(
 
         suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
         suggest_config = suggest_role.build_config(
-            project_dir=builder.source_path, experiment_id=""
+            project_dir=project_dir, experiment_id=""
         )
 
         panel.update(
@@ -746,7 +791,7 @@ def _run_builder_agent_loop(
             suggestions or {}, description, data_summary
         )
         plan_config = plan_role.build_config(
-            project_dir=builder.source_path, experiment_id=""
+            project_dir=project_dir, experiment_id=""
         )
 
         panel.update(
@@ -1331,8 +1376,13 @@ def run(
         )
 
     # Create panel early so it's available during experiment selection
+    from urika.agents.config import load_runtime_config as _load_rc
+
+    _rc = _load_rc(project_path)
+    _privacy_label = f" · {_rc.privacy_mode}" if _rc.privacy_mode != "open" else ""
+
     panel = ThinkingPanel()
-    panel.project = project
+    panel.project = f"{project}{_privacy_label}"
     panel.activity = thinking_phrase()
     panel.activate()
     panel.start_spinner()
