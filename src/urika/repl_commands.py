@@ -12,6 +12,10 @@ from urika.repl_session import ReplSession
 GLOBAL_COMMANDS = {}
 PROJECT_COMMANDS = {}
 
+# Module-level callback for passing queued user input into the orchestrator.
+# Set before invoking the CLI run command from the REPL, cleared after.
+_user_input_callback = None
+
 
 def command(name: str, requires_project: bool = False, description: str = ""):
     """Decorator to register a REPL command."""
@@ -103,26 +107,38 @@ def cmd_new(session: ReplSession, args: str) -> None:
     import os as _os
 
     from urika.cli import new as cli_new
+    from urika.core.registry import ProjectRegistry
+
+    name = args.strip() if args.strip() else None
+
+    # Snapshot existing projects so we can detect a new one
+    registry = ProjectRegistry()
+    before = set(registry.list_all().keys())
 
     _os.environ["URIKA_REPL"] = "1"
     ctx = click.Context(cli_new)
     try:
-        ctx.invoke(cli_new, name=None, question=None, mode=None, data_path=None, description=None)
+        ctx.invoke(
+            cli_new,
+            name=name,
+            question=None,
+            mode=None,
+            data_path=None,
+            description=None,
+        )
     except SystemExit:
         pass
     finally:
         _os.environ.pop("URIKA_REPL", None)
 
-    # Auto-load the newly created project
-    from urika.core.registry import ProjectRegistry
-
+    # Auto-load the newly created project (only if one was actually created)
     registry = ProjectRegistry()
-    projects = registry.list_all()
-    if projects:
-        latest_name = list(projects.keys())[-1]
-        latest_path = projects[latest_name]
-        session.load_project(latest_path, latest_name)
-        click.echo(f"  Loaded project: {latest_name}")
+    after = registry.list_all()
+    new_projects = set(after.keys()) - before
+    if new_projects:
+        new_name = new_projects.pop()
+        session.load_project(after[new_name], new_name)
+        click.echo(f"  Loaded project: {new_name}")
 
 
 @command("quit", description="Exit Urika")
