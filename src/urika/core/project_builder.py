@@ -153,6 +153,15 @@ class ProjectBuilder:
         if self.use_venv:
             existing.setdefault("environment", {})["venv"] = True
 
+        # Apply global runtime defaults (model, backend)
+        from urika.core.settings import get_default_runtime
+
+        runtime_defaults = get_default_runtime()
+        if runtime_defaults.get("model"):
+            existing.setdefault("runtime", {}).setdefault(
+                "model", runtime_defaults["model"]
+            )
+
         _write_toml(project_dir / "urika.toml", existing)
 
         if self.use_venv:

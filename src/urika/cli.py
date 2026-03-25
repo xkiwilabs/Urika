@@ -207,15 +207,28 @@ def new(
     if name is None:
         name = click.prompt("Project name").strip()
 
+    # Load saved defaults from ~/.urika/settings.toml
+    from urika.core.settings import get_default_privacy
+
+    _saved_privacy = get_default_privacy()
+    _saved_mode = _saved_privacy.get("mode", "open")
+    _saved_endpoints = _saved_privacy.get("endpoints", {})
+    _saved_private_ep = _saved_endpoints.get("private", {})
+    _saved_url = _saved_private_ep.get("base_url", "")
+    _saved_key_env = _saved_private_ep.get("api_key_env", "")
+
     # Privacy mode — ask FIRST, before data path
+    _mode_default = {"open": 1, "private": 2, "hybrid": 3}.get(_saved_mode, 1)
+    _has_saved = _saved_mode != "open"
+    _saved_hint = f" (saved default: {_saved_mode})" if _has_saved else ""
     privacy_choice = _prompt_numbered(
-        "\nData privacy mode:",
+        f"\nData privacy mode:{_saved_hint}",
         [
-            "Open — agents use cloud models, no restrictions (default)",
+            "Open — agents use cloud models, no restrictions",
             "Private — all agents use private/local endpoints only",
             "Hybrid — data reading is private, thinking uses cloud models",
         ],
-        default=1,
+        default=_mode_default,
     )
     _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
     privacy_mode_val = _privacy_map.get(
@@ -225,18 +238,29 @@ def new(
     private_endpoint_url = ""
     private_endpoint_key_env = ""
     if privacy_mode_val in ("private", "hybrid"):
-        click.echo(
-            "\n  Configure the private endpoint for data-touching agents.\n"
-            "  This can be a local Ollama instance or a secure institutional server."
-        )
+        _url_default = _saved_url or "http://localhost:11434"
+        _key_default = _saved_key_env or ""
+        if _saved_url:
+            click.echo(
+                f"\n  Using saved endpoint: {_saved_url}"
+            )
+            click.echo(
+                "  Press Enter to keep, or type a new URL."
+            )
+        else:
+            click.echo(
+                "\n  Configure the private endpoint.\n"
+                "  This can be a local Ollama instance or "
+                "a secure institutional server."
+            )
         while True:
             private_endpoint_url = click.prompt(
                 "  Private endpoint URL",
-                default="http://localhost:11434",
+                default=_url_default,
             ).strip()
             private_endpoint_key_env = click.prompt(
-                "  API key environment variable (leave empty for Ollama)",
-                default="",
+                "  API key env var (empty for Ollama)",
+                default=_key_default,
             ).strip()
             # Validate the endpoint is reachable
             print_step("Testing endpoint connection…")
@@ -2567,6 +2591,116 @@ def usage(project: str | None) -> None:
                     f"{tok_str} tokens · ~${totals['total_cost_usd']:.2f}"
                 )
     click.echo()
+
+
+@cli.command("config")
+@click.option(
+    "--privacy",
+    type=click.Choice(["open", "private", "hybrid"]),
+    default=None,
+    help="Set default privacy mode for new projects.",
+)
+@click.option("--endpoint-url", default=None, help="Private endpoint URL.")
+@click.option("--endpoint-key-env", default=None, help="API key env var.")
+@click.option("--model", default=None, help="Default model.")
+@click.option("--show", is_flag=True, help="Show current settings.")
+def config_command(
+    privacy: str | None,
+    endpoint_url: str | None,
+    endpoint_key_env: str | None,
+    model: str | None,
+    show: bool,
+) -> None:
+    """View or set global defaults for new projects.
+
+    Settings are stored in ~/.urika/settings.toml and used as
+    defaults when creating new projects with `urika new`.
+
+    Examples:
+
+        urika config --show
+
+        urika config --privacy private --endpoint-url http://localhost:11434
+
+        urika config --model qwen3-coder
+    """
+    from urika.cli_display import print_step, print_success
+    from urika.core.settings import (
+        _settings_path,
+        load_settings,
+        save_settings,
+    )
+
+    if show or (
+        privacy is None
+        and endpoint_url is None
+        and endpoint_key_env is None
+        and model is None
+    ):
+        settings = load_settings()
+        path = _settings_path()
+        click.echo(f"\n  Global settings: {path}\n")
+        if not settings:
+            click.echo("  No settings configured. Using defaults.")
+            click.echo(
+                "  Run `urika config --privacy private "
+                "--endpoint-url http://localhost:11434`"
+                " to set up local models.\n"
+            )
+            return
+        p = settings.get("privacy", {})
+        r = settings.get("runtime", {})
+        pref = settings.get("preferences", {})
+        print_step(f"Privacy mode: {p.get('mode', 'open')}")
+        eps = p.get("endpoints", {})
+        for ep_name, ep in eps.items():
+            url = ep.get("base_url", "")
+            key = ep.get("api_key_env", "")
+            label = f"  {ep_name}: {url}"
+            if key:
+                label += f" (key: ${key})"
+            print_step(label)
+        if r.get("model"):
+            print_step(f"Default model: {r['model']}")
+        if r.get("backend") and r["backend"] != "claude":
+            print_step(f"Backend: {r['backend']}")
+        for k, v in pref.items():
+            print_step(f"Preference: {k} = {v}")
+        click.echo()
+        return
+
+    settings = load_settings()
+    changed = False
+
+    if privacy is not None:
+        settings.setdefault("privacy", {})["mode"] = privacy
+        print_success(f"Default privacy: {privacy}")
+        changed = True
+
+    if endpoint_url is not None:
+        p = settings.setdefault("privacy", {})
+        ep = p.setdefault("endpoints", {}).setdefault("private", {})
+        ep["base_url"] = endpoint_url
+        print_success(f"Private endpoint: {endpoint_url}")
+        changed = True
+
+    if endpoint_key_env is not None:
+        p = settings.setdefault("privacy", {})
+        ep = p.setdefault("endpoints", {}).setdefault("private", {})
+        ep["api_key_env"] = endpoint_key_env
+        print_success(f"Endpoint key env: {endpoint_key_env}")
+        changed = True
+
+    if model is not None:
+        settings.setdefault("runtime", {})["model"] = model
+        print_success(f"Default model: {model}")
+        changed = True
+
+    if changed:
+        save_settings(settings)
+        print_step(
+            f"Saved to {_settings_path()}"
+        )
 
 
 @cli.command("setup")
