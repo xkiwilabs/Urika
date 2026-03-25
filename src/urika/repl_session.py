@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -30,6 +31,14 @@ class ReplSession:
     agent_calls: int = 0
     experiments_run: int = 0
     model: str = ""
+
+    # Agent activity state — updated by background threads, read by toolbar
+    agent_running: bool = False
+    agent_name: str = ""
+    agent_activity: str = ""
+    agent_turn: str = ""
+    agent_error: str = ""
+    _agent_lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
     def has_project(self) -> bool:
@@ -101,6 +110,43 @@ class ReplSession:
         self.total_cost_usd += cost_usd
         if model:
             self.model = model
+
+    def set_agent_running(
+        self,
+        agent_name: str = "",
+        activity: str = "",
+    ) -> None:
+        """Mark an agent as running (called from background thread)."""
+        with self._agent_lock:
+            self.agent_running = True
+            self.agent_name = agent_name
+            self.agent_activity = activity or "Working\u2026"
+            self.agent_turn = ""
+            self.agent_error = ""
+
+    def set_agent_idle(self, error: str = "") -> None:
+        """Mark the agent as finished (called from background thread)."""
+        with self._agent_lock:
+            self.agent_running = False
+            self.agent_name = ""
+            self.agent_activity = ""
+            self.agent_turn = ""
+            self.agent_error = error
+
+    def update_agent_activity(
+        self,
+        activity: str = "",
+        turn: str = "",
+        model: str = "",
+    ) -> None:
+        """Update agent activity fields (called from background thread)."""
+        with self._agent_lock:
+            if activity:
+                self.agent_activity = activity
+            if turn:
+                self.agent_turn = turn
+            if model:
+                self.model = model
 
     def save_usage(self) -> None:
         """Save session usage to project's usage.json."""

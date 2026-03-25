@@ -70,3 +70,56 @@ class TestReplSession:
         session.queue_input("  ")
         session.queue_input("")
         assert session.has_queued_input is False
+
+    # ── Agent state ──────────────────────────────────────────────
+
+    def test_agent_not_running_by_default(self) -> None:
+        session = ReplSession()
+        assert session.agent_running is False
+        assert session.agent_name == ""
+        assert session.agent_activity == ""
+
+    def test_set_agent_running(self) -> None:
+        session = ReplSession()
+        session.set_agent_running(agent_name="task_agent", activity="Running\u2026")
+        assert session.agent_running is True
+        assert session.agent_name == "task_agent"
+        assert session.agent_activity == "Running\u2026"
+
+    def test_set_agent_idle(self) -> None:
+        session = ReplSession()
+        session.set_agent_running(agent_name="task_agent")
+        session.set_agent_idle()
+        assert session.agent_running is False
+        assert session.agent_name == ""
+        assert session.agent_activity == ""
+
+    def test_set_agent_idle_with_error(self) -> None:
+        session = ReplSession()
+        session.set_agent_running(agent_name="task_agent")
+        session.set_agent_idle(error="something went wrong")
+        assert session.agent_running is False
+        assert session.agent_error == "something went wrong"
+
+    def test_update_agent_activity(self) -> None:
+        session = ReplSession()
+        session.set_agent_running(agent_name="task_agent")
+        session.update_agent_activity(
+            activity="Evaluating\u2026", turn="Turn 3/5", model="claude-3"
+        )
+        assert session.agent_activity == "Evaluating\u2026"
+        assert session.agent_turn == "Turn 3/5"
+        assert session.model == "claude-3"
+
+    def test_update_agent_activity_partial(self) -> None:
+        session = ReplSession()
+        session.set_agent_running(agent_name="task_agent", activity="Working\u2026")
+        session.update_agent_activity(model="claude-3")
+        # Activity should remain unchanged since we passed empty string
+        assert session.agent_activity == "Working\u2026"
+        assert session.model == "claude-3"
+
+    def test_set_agent_running_defaults_activity(self) -> None:
+        session = ReplSession()
+        session.set_agent_running(agent_name="task_agent")
+        assert session.agent_activity == "Working\u2026"
