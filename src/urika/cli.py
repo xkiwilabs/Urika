@@ -96,6 +96,22 @@ def _ensure_project(project: str | None) -> str:
 @click.pass_context
 def cli(ctx) -> None:
     """Urika: Agentic scientific analysis platform."""
+    # Check for updates on every CLI invocation (cached, non-blocking)
+    try:
+        from urika.core.updates import (
+            check_for_updates,
+            format_update_message,
+        )
+
+        update_info = check_for_updates()
+        if update_info:
+            from urika.cli_display import _C
+
+            msg = format_update_message(update_info)
+            click.echo(f"{_C.DIM}  ↑ {msg}{_C.RESET}")
+    except Exception:
+        pass
+
     if ctx.invoked_subcommand is None:
         from urika.repl import run_repl
 
