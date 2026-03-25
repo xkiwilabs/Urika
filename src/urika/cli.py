@@ -182,12 +182,28 @@ def new(
         print_header,
         print_step,
         print_success,
-        print_warning,
     )
     from urika.core.project_builder import ProjectBuilder
 
+    # JSON mode requires all essential flags — refuse to go interactive
+    if json_output:
+        missing = []
+        if name is None:
+            missing.append("NAME argument")
+        if question is None:
+            missing.append("--question / -q")
+        if mode is None:
+            missing.append("--mode / -m")
+        if missing:
+            from urika.cli_helpers import output_json_error
+
+            output_json_error(
+                f"Missing required flags for --json mode: {', '.join(missing)}"
+            )
+            raise SystemExit(1)
+
     # Show welcome header immediately (skip if called from REPL)
-    if not os.environ.get("URIKA_REPL"):
+    if not json_output and not os.environ.get("URIKA_REPL"):
         print_header()
 
     # Prompt for missing required fields
@@ -206,108 +222,122 @@ def new(
     _saved_url = _saved_private_ep.get("base_url", "")
     _saved_key_env = _saved_private_ep.get("api_key_env", "")
 
-    # Privacy mode — ask FIRST, before data path
-    _mode_default = {"open": 1, "private": 2, "hybrid": 3}.get(_saved_mode, 1)
-    _has_saved = _saved_mode != "open"
-    _saved_hint = f" (saved default: {_saved_mode})" if _has_saved else ""
-    privacy_choice = _prompt_numbered(
-        f"\nData privacy mode:{_saved_hint}",
-        [
-            "Open — agents use cloud models, no restrictions",
-            "Private — all agents use private/local endpoints only",
-            "Hybrid — data reading is private, thinking uses cloud models",
-        ],
-        default=_mode_default,
-    )
-    _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
-    privacy_mode_val = _privacy_map.get(privacy_choice.split(" —")[0].strip(), "open")
-
-    private_endpoint_url = ""
-    private_endpoint_key_env = ""
-    if privacy_mode_val in ("private", "hybrid"):
-        _url_default = _saved_url or "http://localhost:11434"
-        _key_default = _saved_key_env or ""
-        if _saved_url:
-            click.echo(f"\n  Using saved endpoint: {_saved_url}")
-            click.echo("  Press Enter to keep, or type a new URL.")
-        else:
-            click.echo(
-                "\n  Configure the private endpoint.\n"
-                "  This can be a local Ollama instance or "
-                "a secure institutional server."
-            )
-        while True:
-            private_endpoint_url = interactive_prompt(
-                "Private endpoint URL",
-                default=_url_default,
-            )
-            private_endpoint_key_env = interactive_prompt(
-                "API key env var (empty for Ollama)",
-                default=_key_default,
-            )
-            # Validate the endpoint is reachable
-            print_step("Testing endpoint connection…")
-            if _test_endpoint(private_endpoint_url):
-                print_success(f"Connected to {private_endpoint_url}")
-                break
-            else:
-                print_error(f"Could not connect to {private_endpoint_url}")
-                retry = click.prompt(
-                    "  Try again, switch to open mode, or quit?",
-                    type=click.Choice(["retry", "open", "quit"]),
-                    default="retry",
-                )
-                if retry == "open":
-                    privacy_mode_val = "open"
-                    private_endpoint_url = ""
-                    private_endpoint_key_env = ""
-                    print_step("Switched to open mode.")
-                    break
-                elif retry == "quit":
-                    raise click.Abort()
-                # retry loops back
-
-    # Validate data path — keep asking until valid or skipped
-    if data_path is not None:
-        data_path = data_path.strip()
-        resolved = Path(data_path).resolve()
-        if not resolved.exists():
-            click.echo(f"  Path not found: {data_path}")
-            data_path = _prompt_path("Path to data (file or directory)")
-        else:
-            data_path = str(resolved)
+    # In JSON mode, skip all interactive prompts — use saved defaults
+    if json_output:
+        privacy_mode_val = _saved_mode
+        private_endpoint_url = _saved_url
+        private_endpoint_key_env = _saved_key_env
+        if data_path is not None:
+            data_path = data_path.strip()
+            resolved = Path(data_path).resolve()
+            data_path = str(resolved) if resolved.exists() else None
+        if description is None:
+            description = ""
+        web_search = False
+        use_venv = False
     else:
-        data_path = _prompt_path("Path to data (file or directory)")
-
-    if description is None:
-        description = interactive_prompt(
-            "Describe the project — what are you trying to analyse or predict",
-            default="",
+        # Privacy mode — ask FIRST, before data path
+        _mode_default = {"open": 1, "private": 2, "hybrid": 3}.get(_saved_mode, 1)
+        _has_saved = _saved_mode != "open"
+        _saved_hint = f" (saved default: {_saved_mode})" if _has_saved else ""
+        privacy_choice = _prompt_numbered(
+            f"\nData privacy mode:{_saved_hint}",
+            [
+                "Open — agents use cloud models, no restrictions",
+                "Private — all agents use private/local endpoints only",
+                "Hybrid — data reading is private, thinking uses cloud models",
+            ],
+            default=_mode_default,
         )
-    if question is None:
-        question = interactive_prompt("Research question", required=True)
-    if mode is None:
-        mode = _prompt_numbered(
-            "Investigation mode:",
-            ["exploratory", "confirmatory", "pipeline"],
-            default=1,
+        _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
+        privacy_mode_val = _privacy_map.get(privacy_choice.split(" —")[0].strip(), "open")
+
+        private_endpoint_url = ""
+        private_endpoint_key_env = ""
+        if privacy_mode_val in ("private", "hybrid"):
+            _url_default = _saved_url or "http://localhost:11434"
+            _key_default = _saved_key_env or ""
+            if _saved_url:
+                click.echo(f"\n  Using saved endpoint: {_saved_url}")
+                click.echo("  Press Enter to keep, or type a new URL.")
+            else:
+                click.echo(
+                    "\n  Configure the private endpoint.\n"
+                    "  This can be a local Ollama instance or "
+                    "a secure institutional server."
+                )
+            while True:
+                private_endpoint_url = interactive_prompt(
+                    "Private endpoint URL",
+                    default=_url_default,
+                )
+                private_endpoint_key_env = interactive_prompt(
+                    "API key env var (empty for Ollama)",
+                    default=_key_default,
+                )
+                # Validate the endpoint is reachable
+                print_step("Testing endpoint connection…")
+                if _test_endpoint(private_endpoint_url):
+                    print_success(f"Connected to {private_endpoint_url}")
+                    break
+                else:
+                    print_error(f"Could not connect to {private_endpoint_url}")
+                    retry = click.prompt(
+                        "  Try again, switch to open mode, or quit?",
+                        type=click.Choice(["retry", "open", "quit"]),
+                        default="retry",
+                    )
+                    if retry == "open":
+                        privacy_mode_val = "open"
+                        private_endpoint_url = ""
+                        private_endpoint_key_env = ""
+                        print_step("Switched to open mode.")
+                        break
+                    elif retry == "quit":
+                        raise click.Abort()
+                    # retry loops back
+
+        # Validate data path — keep asking until valid or skipped
+        if data_path is not None:
+            data_path = data_path.strip()
+            resolved = Path(data_path).resolve()
+            if not resolved.exists():
+                click.echo(f"  Path not found: {data_path}")
+                data_path = _prompt_path("Path to data (file or directory)")
+            else:
+                data_path = str(resolved)
+        else:
+            data_path = _prompt_path("Path to data (file or directory)")
+
+        if description is None:
+            description = interactive_prompt(
+                "Describe the project — what are you trying to analyse or predict",
+                default="",
+            )
+        if question is None:
+            question = interactive_prompt("Research question", required=True)
+        if mode is None:
+            mode = _prompt_numbered(
+                "Investigation mode:",
+                ["exploratory", "confirmatory", "pipeline"],
+                default=1,
+            )
+
+        web_search = interactive_confirm(
+            "Allow agents to search the web for relevant papers?",
+            default=False,
         )
 
-    web_search = interactive_confirm(
-        "Allow agents to search the web for relevant papers?",
-        default=False,
-    )
-
-    click.echo(
-        "\n  Isolated environments prevent package conflicts between projects.\n"
-        "  Use one if agents will pip install large packages (e.g., torch,\n"
-        "  mne, transformers) or if you run multiple projects with different\n"
-        "  library versions."
-    )
-    use_venv = interactive_confirm(
-        "Create isolated environment for this project?",
-        default=False,
-    )
+        click.echo(
+            "\n  Isolated environments prevent package conflicts between projects.\n"
+            "  Use one if agents will pip install large packages (e.g., torch,\n"
+            "  mne, transformers) or if you run multiple projects with different\n"
+            "  library versions."
+        )
+        use_venv = interactive_confirm(
+            "Create isolated environment for this project?",
+            default=False,
+        )
 
     source = Path(data_path) if data_path else None
     builder = ProjectBuilder(
@@ -321,31 +351,55 @@ def new(
 
     # Check if project already exists before doing work
     project_dir = _projects_dir() / name
-    while (project_dir / "urika.toml").exists():
-        choice = _prompt_numbered(
-            f"Project '{name}' already exists:",
-            ["Overwrite", "New name", "Abort"],
-            default=1,
-        )
-        if choice == "Abort":
-            raise click.ClickException("Aborted.")
-        if choice == "Overwrite":
+    if json_output:
+        # In JSON mode, overwrite silently if exists
+        if (project_dir / "urika.toml").exists():
             import shutil
 
             shutil.rmtree(project_dir)
-            break
-        # New name
-        name = interactive_prompt("New project name", required=True)
-        builder.name = name
-        project_dir = _projects_dir() / name
+    else:
+        while (project_dir / "urika.toml").exists():
+            choice = _prompt_numbered(
+                f"Project '{name}' already exists:",
+                ["Overwrite", "New name", "Abort"],
+                default=1,
+            )
+            if choice == "Abort":
+                raise click.ClickException("Aborted.")
+            if choice == "Overwrite":
+                import shutil
 
-    # Show project details header (skip if called from REPL)
-    if not os.environ.get("URIKA_REPL"):
+                shutil.rmtree(project_dir)
+                break
+            # New name
+            name = interactive_prompt("New project name", required=True)
+            builder.name = name
+            project_dir = _projects_dir() / name
+
+    # Show project details header (skip if called from REPL or JSON mode)
+    if not json_output and not os.environ.get("URIKA_REPL"):
         print_header(
             project_name=name,
             mode=mode,
             data_source=data_path or "",
         )
+
+    # --- Set builder settings from earlier prompts ---
+    builder.privacy_mode = privacy_mode_val
+    builder.private_endpoint_url = private_endpoint_url
+    builder.private_endpoint_key_env = private_endpoint_key_env
+    builder.web_search = web_search
+    builder.use_venv = use_venv
+
+    # JSON mode: fast path — just write project and return
+    if json_output:
+        project_dir = builder.write_project()
+        registry = ProjectRegistry()
+        registry.register(name, project_dir)
+        from urika.cli_helpers import output_json
+
+        output_json({"project": name, "path": str(project_dir)})
+        return
 
     # Scan and profile if a data path was provided
     scan_result = None
@@ -376,13 +430,6 @@ def new(
                 count = profile.get("count", 0)
                 formats = ", ".join(profile.get("formats", []))
                 print_success(f"{dtype.title()}: {count} files ({formats})")
-
-    # --- Set builder settings from earlier prompts ---
-    builder.privacy_mode = privacy_mode_val
-    builder.private_endpoint_url = private_endpoint_url
-    builder.private_endpoint_key_env = private_endpoint_key_env
-    builder.web_search = web_search
-    builder.use_venv = use_venv
 
     # Write project files first so knowledge can be ingested
     with Spinner("Writing project files"):
@@ -495,12 +542,6 @@ def new(
 
     registry = ProjectRegistry()
     registry.register(name, project_dir)
-
-    if json_output:
-        from urika.cli_helpers import output_json
-
-        output_json({"project": name, "path": str(project_dir)})
-        return
 
     print_success(f"Created project '{name}' at {project_dir}")
 
@@ -1413,7 +1454,8 @@ def run(
 
     # If no flags provided and not from REPL, show settings dialog
     if (
-        not os.environ.get("URIKA_REPL")
+        not json_output
+        and not os.environ.get("URIKA_REPL")
         and experiment_id is None
         and max_experiments is None
         and not auto
@@ -1446,7 +1488,7 @@ def run(
             )
 
     # Show header (skip if called from REPL — already has header)
-    if not os.environ.get("URIKA_REPL"):
+    if not json_output and not os.environ.get("URIKA_REPL"):
         print_header(
             project_name=project,
             agent="orchestrator",
@@ -1454,23 +1496,27 @@ def run(
         )
 
     # Create panel early so it's available during experiment selection
-    from urika.agents.config import load_runtime_config as _load_rc
+    if json_output:
+        panel = None
+    else:
+        from urika.agents.config import load_runtime_config as _load_rc
 
-    _rc = _load_rc(project_path)
-    _privacy_label = f" · {_rc.privacy_mode}" if _rc.privacy_mode != "open" else ""
+        _rc = _load_rc(project_path)
+        _privacy_label = f" · {_rc.privacy_mode}" if _rc.privacy_mode != "open" else ""
 
-    panel = ThinkingPanel()
-    panel.project = f"{project}{_privacy_label}"
-    panel.activity = thinking_phrase()
-    panel.activate()
-    panel.start_spinner()
+        panel = ThinkingPanel()
+        panel.project = f"{project}{_privacy_label}"
+        panel.activity = thinking_phrase()
+        panel.activate()
+        panel.start_spinner()
 
     # --- Meta-orchestrator path: --max-experiments delegates to run_project ---
     if max_experiments is not None:
-        print_step(
-            f"Meta-orchestrator: up to {max_experiments} experiments"
-            f" (max {max_turns} turns each)"
-        )
+        if not json_output:
+            print_step(
+                f"Meta-orchestrator: up to {max_experiments} experiments"
+                f" (max {max_turns} turns each)"
+            )
 
         # Determine mode: capped auto unless auto flag gives unlimited
         meta_mode = "unlimited" if auto else "capped"
@@ -1488,51 +1534,60 @@ def run(
         sdk_runner = get_runner()
 
         try:
+            if json_output:
 
-            def _on_progress(event: str, detail: str = "") -> None:
-                if event == "turn":
-                    print_step(detail)
-                    panel.update(turn=detail, activity=thinking_phrase())
-                elif event == "agent":
-                    agent_key = (
-                        detail.split("\u2014")[0].strip().lower().replace(" ", "_")
-                    )
-                    print_agent(agent_key)
-                    panel.update(agent=agent_key, activity=detail)
-                elif event == "result":
-                    print_success(detail)
-                elif event == "phase":
-                    print_step(detail)
-                    panel.update(activity=detail)
+                def _on_progress(event: str, detail: str = "") -> None:
+                    pass
 
-            def _on_message(msg: object) -> None:
-                model = getattr(msg, "model", None)
-                if model:
-                    panel.set_model(model)
-                content = getattr(msg, "content", None)
-                if content is None:
-                    return
-                for block in content:
-                    tool_name = getattr(block, "name", None) or getattr(
-                        block, "tool_name", None
-                    )
-                    if tool_name:
-                        detail = ""
-                        input_data = getattr(block, "input", None) or getattr(
-                            block, "tool_input", {}
+                def _on_message(msg: object) -> None:
+                    pass
+
+            else:
+
+                def _on_progress(event: str, detail: str = "") -> None:
+                    if event == "turn":
+                        print_step(detail)
+                        panel.update(turn=detail, activity=thinking_phrase())
+                    elif event == "agent":
+                        agent_key = (
+                            detail.split("\u2014")[0].strip().lower().replace(" ", "_")
                         )
-                        if isinstance(input_data, dict):
-                            if "command" in input_data:
-                                detail = input_data["command"]
-                            elif "file_path" in input_data:
-                                detail = input_data["file_path"]
-                            elif "pattern" in input_data:
-                                detail = input_data["pattern"]
-                        if not quiet:
-                            print_tool_use(tool_name, detail)
-                        panel.set_thinking(tool_name)
-                    else:
-                        panel.set_thinking("Thinking\u2026")
+                        print_agent(agent_key)
+                        panel.update(agent=agent_key, activity=detail)
+                    elif event == "result":
+                        print_success(detail)
+                    elif event == "phase":
+                        print_step(detail)
+                        panel.update(activity=detail)
+
+                def _on_message(msg: object) -> None:
+                    model = getattr(msg, "model", None)
+                    if model:
+                        panel.set_model(model)
+                    content = getattr(msg, "content", None)
+                    if content is None:
+                        return
+                    for block in content:
+                        tool_name = getattr(block, "name", None) or getattr(
+                            block, "tool_name", None
+                        )
+                        if tool_name:
+                            detail = ""
+                            input_data = getattr(block, "input", None) or getattr(
+                                block, "tool_input", {}
+                            )
+                            if isinstance(input_data, dict):
+                                if "command" in input_data:
+                                    detail = input_data["command"]
+                                elif "file_path" in input_data:
+                                    detail = input_data["file_path"]
+                                elif "pattern" in input_data:
+                                    detail = input_data["pattern"]
+                            if not quiet:
+                                print_tool_use(tool_name, detail)
+                            panel.set_thinking(tool_name)
+                        else:
+                            panel.set_thinking("Thinking\u2026")
 
             result = asyncio.run(
                 run_project(
@@ -1548,7 +1603,8 @@ def run(
             )
 
         finally:
-            panel.cleanup()
+            if panel is not None:
+                panel.cleanup()
             signal.signal(signal.SIGINT, original_handler)
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
@@ -1577,24 +1633,26 @@ def run(
         ]
         if pending:
             experiment_id = pending[-1].experiment_id
-            print_step(
-                f"Resuming pending experiment: {experiment_id}",
-                f"({len(pending)} pending)",
-            )
+            if not json_output:
+                print_step(
+                    f"Resuming pending experiment: {experiment_id}",
+                    f"({len(pending)} pending)",
+                )
         else:
             # No pending — determine next experiment from state
             experiment_id = _determine_next_experiment(
                 project_path,
                 project,
-                auto=auto,
+                auto=auto or json_output,
                 instructions=instructions,
                 panel=panel,
             )
             if experiment_id is not None:
-                print_step(
-                    f"Created new experiment: {experiment_id}",
-                    "based on advisor suggestions",
-                )
+                if not json_output:
+                    print_step(
+                        f"Created new experiment: {experiment_id}",
+                        "based on advisor suggestions",
+                    )
             elif experiment_id is None:
                 if not experiments:
                     raise click.ClickException(
@@ -1602,12 +1660,14 @@ def run(
                         f"  urika experiment create {project} <experiment-name>"
                     )
                 experiment_id = experiments[-1].experiment_id
-                print_step(f"All experiments completed. Re-running {experiment_id}")
+                if not json_output:
+                    print_step(f"All experiments completed. Re-running {experiment_id}")
 
-    if resume:
-        print_step(f"Resuming experiment {experiment_id}")
-    else:
-        print_step(f"Running experiment {experiment_id} (max {max_turns} turns)")
+    if not json_output:
+        if resume:
+            print_step(f"Resuming experiment {experiment_id}")
+        else:
+            print_step(f"Running experiment {experiment_id} (max {max_turns} turns)")
 
     # Register Ctrl+C handler to clean up lockfile
     def _cleanup_on_interrupt(signum: int, frame: object) -> None:
@@ -1632,55 +1692,64 @@ def run(
 
     # Panel already created and active from experiment selection above
     try:
+        if json_output:
 
-        def _on_progress(event: str, detail: str = "") -> None:
-            if event == "turn":
-                print_step(detail)
-                panel.update(turn=detail, activity=thinking_phrase())
-            elif event == "agent":
-                # Extract agent key from "Planning agent — designing method"
-                agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
-                print_agent(agent_key)
-                panel.update(agent=agent_key, activity=detail)
-            elif event == "result":
-                print_success(detail)
-            elif event == "phase":
-                print_step(detail)
-                panel.update(activity=detail)
+            def _on_progress(event: str, detail: str = "") -> None:
+                pass
 
-        def _on_message(msg: object) -> None:
-            """Handle streaming SDK messages for verbose output."""
-            # Capture model name from AssistantMessage
-            model = getattr(msg, "model", None)
-            if model:
-                panel.set_model(model)
+            def _on_message(msg: object) -> None:
+                pass
 
-            # Use getattr for safe access — SDK types may vary
-            content = getattr(msg, "content", None)
-            if content is None:
-                return
-            for block in content:
-                tool_name = getattr(block, "name", None) or getattr(
-                    block, "tool_name", None
-                )
-                if tool_name:
-                    detail = ""
-                    input_data = getattr(block, "input", None) or getattr(
-                        block, "tool_input", {}
+        else:
+
+            def _on_progress(event: str, detail: str = "") -> None:
+                if event == "turn":
+                    print_step(detail)
+                    panel.update(turn=detail, activity=thinking_phrase())
+                elif event == "agent":
+                    # Extract agent key from "Planning agent — designing method"
+                    agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+                    print_agent(agent_key)
+                    panel.update(agent=agent_key, activity=detail)
+                elif event == "result":
+                    print_success(detail)
+                elif event == "phase":
+                    print_step(detail)
+                    panel.update(activity=detail)
+
+            def _on_message(msg: object) -> None:
+                """Handle streaming SDK messages for verbose output."""
+                # Capture model name from AssistantMessage
+                model = getattr(msg, "model", None)
+                if model:
+                    panel.set_model(model)
+
+                # Use getattr for safe access — SDK types may vary
+                content = getattr(msg, "content", None)
+                if content is None:
+                    return
+                for block in content:
+                    tool_name = getattr(block, "name", None) or getattr(
+                        block, "tool_name", None
                     )
-                    if isinstance(input_data, dict):
-                        if "command" in input_data:
-                            detail = input_data["command"]
-                        elif "file_path" in input_data:
-                            detail = input_data["file_path"]
-                        elif "pattern" in input_data:
-                            detail = input_data["pattern"]
-                    if not quiet:
-                        print_tool_use(tool_name, detail)
-                    panel.set_thinking(tool_name)
-                else:
-                    # Text block — agent is thinking
-                    panel.set_thinking("Thinking\u2026")
+                    if tool_name:
+                        detail = ""
+                        input_data = getattr(block, "input", None) or getattr(
+                            block, "tool_input", {}
+                        )
+                        if isinstance(input_data, dict):
+                            if "command" in input_data:
+                                detail = input_data["command"]
+                            elif "file_path" in input_data:
+                                detail = input_data["file_path"]
+                            elif "pattern" in input_data:
+                                detail = input_data["pattern"]
+                        if not quiet:
+                            print_tool_use(tool_name, detail)
+                        panel.set_thinking(tool_name)
+                    else:
+                        # Text block — agent is thinking
+                        panel.set_thinking("Thinking\u2026")
 
         result = asyncio.run(
             run_experiment(
@@ -1696,7 +1765,8 @@ def run(
         )
 
     finally:
-        panel.cleanup()
+        if panel is not None:
+            panel.cleanup()
         # Restore original handler
         signal.signal(signal.SIGINT, original_handler)
 
@@ -1783,6 +1853,9 @@ def report(project: str, experiment_id: str | None, json_output: bool = False) -
         if not experiments:
             # No experiments — fall through to project-level reports
             experiment_id = "project"
+        elif json_output:
+            # JSON mode: default to most recent experiment
+            experiment_id = experiments[-1].experiment_id
         else:
             # Build numbered options — most recent first
             reversed_exps = list(reversed(experiments))
@@ -2401,54 +2474,22 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
-    panel = ThinkingPanel()
-    panel.project = project
-    panel.activity = "Finalizing..."
-    panel.activate()
-    panel.start_spinner()
-
     try:
         from urika.agents.runner import get_runner
         from urika.orchestrator.finalize import finalize_project
     except ImportError:
-        panel.cleanup()
         raise click.ClickException("Claude Agent SDK not installed.")
 
     runner = get_runner()
 
-    def _on_progress(event: str, detail: str = "") -> None:
-        if event == "agent":
-            agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
-            print_agent(agent_key)
-            panel.update(agent=agent_key, activity=detail)
-        elif event == "result":
-            print_success(detail)
+    if json_output:
 
-    def _on_message(msg: object) -> None:
-        try:
-            model = getattr(msg, "model", None)
-            if model:
-                panel.set_model(model)
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    tool_name = getattr(block, "name", None)
-                    if tool_name:
-                        inp = getattr(block, "input", {}) or {}
-                        detail = ""
-                        if isinstance(inp, dict):
-                            detail = (
-                                inp.get("command", "")
-                                or inp.get("file_path", "")
-                                or inp.get("pattern", "")
-                            )
-                        print_tool_use(tool_name, detail)
-                        panel.set_thinking(tool_name)
-                    else:
-                        panel.set_thinking("Thinking\u2026")
-        except Exception:
+        def _on_progress(event: str, detail: str = "") -> None:
             pass
 
-    try:
+        def _on_message(msg: object) -> None:
+            pass
+
         result = asyncio.run(
             finalize_project(
                 project_path,
@@ -2458,8 +2499,57 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
                 instructions=instructions,
             )
         )
-    finally:
-        panel.cleanup()
+    else:
+        panel = ThinkingPanel()
+        panel.project = project
+        panel.activity = "Finalizing..."
+        panel.activate()
+        panel.start_spinner()
+
+        def _on_progress(event: str, detail: str = "") -> None:
+            if event == "agent":
+                agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+                print_agent(agent_key)
+                panel.update(agent=agent_key, activity=detail)
+            elif event == "result":
+                print_success(detail)
+
+        def _on_message(msg: object) -> None:
+            try:
+                model = getattr(msg, "model", None)
+                if model:
+                    panel.set_model(model)
+                if hasattr(msg, "content"):
+                    for block in msg.content:
+                        tool_name = getattr(block, "name", None)
+                        if tool_name:
+                            inp = getattr(block, "input", {}) or {}
+                            detail = ""
+                            if isinstance(inp, dict):
+                                detail = (
+                                    inp.get("command", "")
+                                    or inp.get("file_path", "")
+                                    or inp.get("pattern", "")
+                                )
+                            print_tool_use(tool_name, detail)
+                            panel.set_thinking(tool_name)
+                        else:
+                            panel.set_thinking("Thinking\u2026")
+            except Exception:
+                pass
+
+        try:
+            result = asyncio.run(
+                finalize_project(
+                    project_path,
+                    runner,
+                    _on_progress,
+                    _on_message,
+                    instructions=instructions,
+                )
+            )
+        finally:
+            panel.cleanup()
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -2567,6 +2657,13 @@ def update_project(
             click.echo()
         return
 
+    # JSON mode requires --field and --value
+    if json_output and (field is None or value is None):
+        from urika.cli_helpers import output_json_error
+
+        output_json_error("--field and --value are required in --json mode")
+        raise SystemExit(1)
+
     # Interactive if no field specified
     if field is None:
         click.echo(f"\n  Current project config for {project}:\n")
@@ -2597,14 +2694,24 @@ def update_project(
             value = interactive_prompt(f"New {field}", required=True)
 
     if not value:
+        if json_output:
+            from urika.cli_helpers import output_json_error
+
+            output_json_error("No value provided.")
+            raise SystemExit(1)
         click.echo("  No change.")
         return
 
     if value == current:
+        if json_output:
+            from urika.cli_helpers import output_json
+
+            output_json({"unchanged": True, "field": field, "value": value})
+            return
         click.echo("  Value unchanged.")
         return
 
-    if not reason:
+    if not json_output and not reason:
         reason = interactive_prompt(
             "Reason for change (optional, Enter to skip)",
             default="",
@@ -2618,6 +2725,13 @@ def update_project(
         new_value=value,
         reason=reason,
     )
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json(rev)
+        return
+
     print_success(f"Updated {field} (revision #{rev['revision']})")
     print_step("Previous value preserved in revisions.json")
 
@@ -2705,19 +2819,6 @@ def present(project: str | None, json_output: bool) -> None:
     if not experiments:
         raise click.ClickException("No experiments.")
 
-    # Build options — most recent first, plus all/project choices
-    reversed_exps = list(reversed(experiments))
-    options = []
-    for exp in reversed_exps:
-        progress = load_progress(project_path, exp.experiment_id)
-        exp_status = progress.get("status", "pending")
-        runs = len(progress.get("runs", []))
-        options.append(f"{exp.experiment_id} [{exp_status}, {runs} runs]")
-    options.append("All experiments (generate for each)")
-    options.append("Project level (one overarching presentation)")
-
-    choice = _prompt_numbered("\n  Select:", options, default=1)
-
     try:
         from urika.agents.runner import get_runner
         from urika.orchestrator.loop import _generate_presentation, _noop_callback
@@ -2725,7 +2826,24 @@ def present(project: str | None, json_output: bool) -> None:
         raise click.ClickException("Claude Agent SDK not installed.")
 
     runner = get_runner()
-    on_msg = _make_on_message()
+    on_msg = (lambda m: None) if json_output else _make_on_message()
+
+    if json_output:
+        # JSON mode: default to most recent experiment, no interactive prompt
+        choice = f"{experiments[-1].experiment_id} [auto]"
+    else:
+        # Build options — most recent first, plus all/project choices
+        reversed_exps = list(reversed(experiments))
+        options = []
+        for exp in reversed_exps:
+            progress = load_progress(project_path, exp.experiment_id)
+            exp_status = progress.get("status", "pending")
+            runs = len(progress.get("runs", []))
+            options.append(f"{exp.experiment_id} [{exp_status}, {runs} runs]")
+        options.append("All experiments (generate for each)")
+        options.append("Project level (one overarching presentation)")
+
+        choice = _prompt_numbered("\n  Select:", options, default=1)
 
     if choice.startswith("All"):
         # Generate presentation for each experiment
