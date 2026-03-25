@@ -2320,7 +2320,7 @@ def update_project(
         f"Updated {field} (revision #{rev['revision']})"
     )
     print_step(
-        f"Previous value preserved in revisions.json"
+        "Previous value preserved in revisions.json"
     )
 
 

@@ -57,7 +57,7 @@ class LinearRegressionMethod(ITool):
                 error="No feature columns available",
             )
 
-        subset = numeric_df[[target, *feature_cols]].dropna()
+        subset = numeric_df[[target, *feature_cols]].dropna().reset_index(drop=True)
         if len(subset) < 2:
             return ToolResult(
                 outputs={},

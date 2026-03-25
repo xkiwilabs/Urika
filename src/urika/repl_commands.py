@@ -885,7 +885,7 @@ def cmd_update(session: ReplSession, args: str) -> None:
         if not revs:
             click.echo("  No revisions recorded.")
             return
-        click.echo(f"\n  Revision history:\n")
+        click.echo("\n  Revision history:\n")
         for r in revs:
             ts = r["timestamp"][:19].replace("T", " ")
             click.echo(

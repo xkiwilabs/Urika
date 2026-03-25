@@ -10,7 +10,7 @@
 | [06 Viewing Results](06-viewing-results.md) | Reports, presentations, leaderboard, usage stats |
 | [07 Finalizing Projects](07-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
 | [08 Agent System](08-agent-system.md) | All 11 agent roles, orchestrator, security boundaries |
-| [09 Built-in Tools](09-built-in-tools.md) | 16 analysis tools agents use |
+| [09 Built-in Tools](09-built-in-tools.md) | 18 analysis tools agents use |
 | [10 Knowledge Pipeline](10-knowledge-pipeline.md) | Ingesting papers and PDFs, searching |
 | [11 Models and Privacy](11-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
 | [12 Configuration](12-configuration.md) | urika.toml, criteria, environment variables |

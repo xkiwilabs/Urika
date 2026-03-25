@@ -56,7 +56,7 @@ class LogisticRegressionMethod(ITool):
                 error="No feature columns available",
             )
 
-        subset = df[[target, *feature_cols]].dropna()
+        subset = df[[target, *feature_cols]].dropna().reset_index(drop=True)
         if len(subset) < 2:
             return ToolResult(
                 outputs={},

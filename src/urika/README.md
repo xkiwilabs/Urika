@@ -10,7 +10,7 @@ Source code for the Urika platform.
 | `repl_commands.py` | REPL slash command handlers |
 | `repl_session.py` | REPL session state and usage tracking |
 | `core/` | Project lifecycle, experiments, progress, criteria, labbook, config |
-| `agents/` | Agent roles (10), registry, config, Claude SDK adapter |
+| `agents/` | Agent roles (11), registry, config, Claude SDK adapter |
 | `orchestrator/` | Experiment loop, autonomous mode, output parsing |
 | `evaluation/` | Leaderboard ranking, metrics (R2, RMSE, F1, etc.) |
 | `tools/` | 18 built-in analysis tools (regression, classification, stats, preprocessing) |

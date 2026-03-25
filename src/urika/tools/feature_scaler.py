@@ -57,6 +57,13 @@ class FeatureScalerTool(ITool):
             )
 
         subset = numeric_df[numeric_cols].dropna()
+        if len(subset) < 1:
+            return ToolResult(
+                outputs={},
+                metrics={},
+                valid=False,
+                error="No rows remaining after dropping NaN values",
+            )
 
         if method == "standard":
             scaler = StandardScaler()

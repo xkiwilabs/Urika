@@ -17,15 +17,15 @@ class RandomForestClassifierMethod(ITool):
     def name(self) -> str:
         return "random_forest_classifier"
 
+    def category(self) -> str:
+        return "classification"
+
     def description(self) -> str:
         return (
             "Random forest classification using scikit-learn. "
-            "Note: metrics are computed on the training set and may "
-            "overestimate performance on unseen data."
+            "Supports pre-split train/test indices for "
+            "unbiased evaluation."
         )
-
-    def category(self) -> str:
-        return "classification"
 
     def default_params(self) -> dict[str, Any]:
         return {
@@ -34,6 +34,8 @@ class RandomForestClassifierMethod(ITool):
             "n_estimators": 100,
             "max_depth": None,
             "random_state": 42,
+            "train_indices": None,
+            "test_indices": None,
         }
 
     def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
@@ -66,7 +68,7 @@ class RandomForestClassifierMethod(ITool):
                 error="No feature columns available",
             )
 
-        subset = df[[target, *feature_cols]].dropna()
+        subset = df[[target, *feature_cols]].dropna().reset_index(drop=True)
         if len(subset) < 2:
             return ToolResult(
                 outputs={},
@@ -87,21 +89,36 @@ class RandomForestClassifierMethod(ITool):
         X = subset[feature_cols].values  # noqa: N806
         y = subset[target].values
 
+        train_idx = params.get("train_indices")
+        test_idx = params.get("test_indices")
+        if train_idx is not None and test_idx is not None:
+            X_train, X_test = X[train_idx], X[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+            note = "Metrics computed on held-out test set."
+        else:
+            X_train, X_test = X, X
+            y_train, y_test = y, y
+            note = (
+                "Metrics are training-set only; use "
+                "cross_validation or train_val_test_split "
+                "for unbiased estimates."
+            )
+
         model = RandomForestClassifier(
             n_estimators=n_estimators,
             max_depth=max_depth,
             random_state=random_state,
         )
-        model.fit(X, y)
-        y_pred = model.predict(X)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
 
         avg = "binary" if classes == 2 else "weighted"
 
         return ToolResult(
-            outputs={"note": "Metrics are training-set only; use cross_validation or train_val_test_split for unbiased estimates."},
+            outputs={"note": note},
             metrics={
-                "accuracy": float(accuracy_score(y, y_pred)),
-                "f1": float(f1_score(y, y_pred, average=avg)),
+                "accuracy": float(accuracy_score(y_test, y_pred)),
+                "f1": float(f1_score(y_test, y_pred, average=avg)),
             },
         )
 

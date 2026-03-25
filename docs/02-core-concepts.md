@@ -213,7 +213,7 @@ Search the knowledge base:
 urika knowledge search my-study "regression diagnostics"
 ```
 
-Supported formats: PDF (requires `urika[knowledge]`), plain text, Markdown, HTML.
+Supported formats: PDF, plain text, Markdown, HTML.
 
 ---
 
