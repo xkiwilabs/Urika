@@ -143,11 +143,11 @@ class TestToolbarAgentRunning:
 class TestBackgroundCommands:
     """Tests for the background command set."""
 
-    def test_run_is_background(self) -> None:
-        assert "run" in _BACKGROUND_COMMANDS
-
-    def test_finalize_is_background(self) -> None:
-        assert "finalize" in _BACKGROUND_COMMANDS
+    def test_background_commands_disabled_for_phase_a(self) -> None:
+        # Background commands disabled in Phase A to avoid
+        # prompt conflicts with interactive settings dialogs.
+        # Will be re-enabled in Phase B (Textual).
+        assert len(_BACKGROUND_COMMANDS) == 0
 
     def test_help_is_not_background(self) -> None:
         assert "help" not in _BACKGROUND_COMMANDS

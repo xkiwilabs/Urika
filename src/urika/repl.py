@@ -46,7 +46,14 @@ from urika.repl_session import ReplSession
 
 # Commands that trigger long-running agent work.
 # These are run in a background thread so the prompt stays responsive.
-_BACKGROUND_COMMANDS = {"run", "finalize"}
+# Commands that run agents — dispatched to background AFTER any
+# interactive prompts complete. The command handlers themselves
+# are responsible for setting session.agent_running when the
+# actual agent work starts (not during settings dialogs).
+# For now, run these synchronously — the handler blocks the
+# input loop only during the agent execution, not during prompts.
+# TODO: Phase B will split interactive prompts from agent execution.
+_BACKGROUND_COMMANDS: set[str] = set()  # disabled for now
 
 
 class UrikaCompleter(Completer):
