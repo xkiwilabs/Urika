@@ -50,7 +50,7 @@ The `ToolRegistry` handles discovery and lookup:
 from urika.tools import ToolRegistry
 
 registry = ToolRegistry()
-registry.discover()           # Auto-discover all 16 built-in tools
+registry.discover()           # Auto-discover all 18 built-in tools
 registry.list_all()           # Sorted list of tool names
 registry.list_by_category("regression")  # Filter by category
 registry.get("linear_regression")        # Get a specific tool
@@ -61,7 +61,7 @@ Each tool module exports a `get_tool()` factory function that the registry calls
 
 ## Built-in Tools by Category
 
-Urika ships with 16 built-in tools organized into five categories.
+Urika ships with 18 built-in tools organized into five categories.
 
 ### Exploration
 
@@ -197,7 +197,19 @@ Mann-Whitney U test for comparing two independent samples when normality cannot 
 
 ### Preprocessing
 
-Tools for splitting data before model fitting.
+Tools for splitting and transforming data before model fitting.
+
+#### feature_scaler
+
+Scale numeric features using standard (z-score), min-max, or robust scaling. Supports selecting specific columns or scaling all numeric columns.
+
+| Property | Value |
+|----------|-------|
+| Category | `preprocessing` |
+| Params | `method` (default: `"standard"`, options: `"standard"`, `"minmax"`, `"robust"`), `columns` (list or None for all numeric) |
+| Outputs | `scaled_columns`, `scaler_type`, `statistics` (per-column mean/std, min/max, or center/scale depending on method) |
+
+---
 
 #### train_val_test_split
 
@@ -297,10 +309,23 @@ Logistic regression for binary and multiclass classification using scikit-learn.
 | Params | `target` (required), `features` (list or None for all numeric) |
 | Metrics | `accuracy`, `f1` |
 
+---
+
+#### random_forest_classifier
+
+Random forest classification using scikit-learn's `RandomForestClassifier`. Handles non-linear decision boundaries and feature interactions. Note: metrics are computed on the training set and may overestimate performance on unseen data.
+
+| Property | Value |
+|----------|-------|
+| Category | `classification` |
+| Params | `target` (required), `features`, `n_estimators` (default: 100), `max_depth` (default: None), `random_state` (default: 42) |
+| Metrics | `accuracy`, `f1` |
+| Outputs | `note` (recommendation to use cross-validation for unbiased estimates) |
+
 
 ## Project-Specific Tools
 
-Beyond the 16 built-in tools, the **tool builder** agent can create project-specific tools. There are two ways to trigger this:
+Beyond the 18 built-in tools, the **tool builder** agent can create project-specific tools. There are two ways to trigger this:
 
 ### 1. Automatically during experiments
 
@@ -394,7 +419,7 @@ Project tools appear alongside built-in tools in the registry and are available 
 
 ## Data Handling for Different Research Domains
 
-The 16 built-in tools focus on tabular data analysis (statistics, regression, classification, preprocessing). For non-tabular data — images, audio, time series, spatial/3D, neuroimaging — agents handle things differently:
+The 18 built-in tools focus on tabular data analysis (statistics, regression, classification, preprocessing). For non-tabular data — images, audio, time series, spatial/3D, neuroimaging — agents handle things differently:
 
 1. **Detection**: The source scanner recognises 40+ file extensions across all major research data types (CSV, HDF5, EDF, NIfTI, WAV, PNG, PLY, SPSS .sav, Stata .dta, and many more)
 2. **Profiling**: During project creation, Urika profiles what it can — image dimensions, audio duration/sample rate, HDF5 structure — giving agents context about the data
@@ -402,3 +427,7 @@ The 16 built-in tools focus on tabular data analysis (statistics, regression, cl
 4. **Library installation**: Agents can `pip install` domain-specific libraries as needed (e.g., `mne` for EEG, `librosa` for audio, `nibabel` for neuroimaging, `h5py` for HDF5, `Pillow` for images, `open3d` for point clouds)
 
 This means Urika works across scientific disciplines without shipping heavy domain dependencies. The agents adapt to whatever data you provide.
+
+---
+
+**Next:** [Knowledge Pipeline](10-knowledge-pipeline.md)

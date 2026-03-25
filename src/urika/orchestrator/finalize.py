@@ -13,6 +13,8 @@ async def finalize_project(
     runner: AgentRunner,
     on_progress: object = None,
     on_message: object = None,
+    *,
+    instructions: str = "",
 ) -> dict:
     """Run the finalization sequence: Finalizer -> Report -> Presentation -> README."""
     progress = on_progress or (lambda e, d="": None)
@@ -26,11 +28,16 @@ async def finalize_project(
         return {"error": "Finalizer agent not found"}
 
     config = finalizer_role.build_config(project_dir=project_dir)
-    result = await runner.run(
-        config,
+    prompt = (
         "Finalize this project. Read all experiments, select the best methods, "
         "write standalone production-ready code, generate findings.json, "
-        "requirements.txt, and reproduce scripts.",
+        "requirements.txt, and reproduce scripts."
+    )
+    if instructions:
+        prompt += f"\n\nUser instructions: {instructions}"
+    result = await runner.run(
+        config,
+        prompt,
         on_message=on_message,
     )
 
@@ -44,7 +51,7 @@ async def finalize_project(
         report_config = report_role.build_config(
             project_dir=project_dir, experiment_id=""
         )
-        await runner.run(
+        report_result = await runner.run(
             report_config,
             "Read projectbook/findings.json and write a comprehensive final report "
             "at projectbook/final-report.md. Include figures from projectbook/figures/. "
@@ -52,7 +59,10 @@ async def finalize_project(
             "Reproducibility, References.",
             on_message=on_message,
         )
-        progress("result", "Final report written")
+        if report_result.success:
+            progress("result", "Final report written")
+        else:
+            progress("result", "Final report generation failed")
 
     # Step 3: Presentation Agent — final presentation from findings.json
     progress("agent", "Presentation agent — creating final presentation")

@@ -845,7 +845,7 @@ class TestInspectCommand:
         # data/ directory exists from project creation but has no CSVs
         result = runner.invoke(cli, ["inspect", "test-proj"], env=urika_env)
         assert result.exit_code != 0
-        assert "No CSV files" in result.output or "No data/" in result.output
+        assert "No supported data files" in result.output or "No CSV files" in result.output or "No data/" in result.output
 
     def test_inspect_nonexistent_project(
         self, runner: CliRunner, urika_env: dict[str, str]

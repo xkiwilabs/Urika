@@ -82,6 +82,23 @@ def run_repl() -> None:
         f"{stats['methods']} methods · "
         f"{stats['sdk']}{_C.RESET}"
     )
+
+    # Check for updates (uses 24h cache, non-blocking 3s timeout)
+    try:
+        from urika.core.updates import (
+            check_for_updates,
+            format_update_message,
+        )
+
+        update_info = check_for_updates()
+        if update_info:
+            msg = format_update_message(update_info)
+            click.echo(
+                f"  {_C.YELLOW}↑ {msg}{_C.RESET}"
+            )
+    except Exception:
+        pass
+
     click.echo()
 
     # Projects available via /list

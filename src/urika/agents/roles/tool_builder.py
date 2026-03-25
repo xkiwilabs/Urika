@@ -13,6 +13,7 @@ from urika.agents.config import (
     load_runtime_config,
 )
 from urika.agents.prompt import load_prompt
+from urika.core.hardware import hardware_summary
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -35,6 +36,7 @@ def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
             variables={
                 "project_dir": str(project_dir),
                 "tools_dir": str(tools_dir),
+                "hardware_summary": hardware_summary(),
             },
         ),
         allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],

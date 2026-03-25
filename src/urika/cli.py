@@ -1769,11 +1769,14 @@ def inspect(project: str, data_file: str | None) -> None:
         data_dir = project_path / "data"
         if not data_dir.exists():
             raise click.ClickException("No data/ directory found.")
-        csv_files = list(data_dir.glob("*.csv"))
-        if not csv_files:
-            raise click.ClickException("No CSV files found in data/ directory.")
-        path = csv_files[0]
-        if len(csv_files) > 1:
+        _supported_exts = ("*.csv", "*.tsv", "*.xlsx", "*.xls", "*.parquet", "*.json", "*.jsonl")
+        data_files: list[Path] = []
+        for _ext in _supported_exts:
+            data_files.extend(data_dir.glob(_ext))
+        if not data_files:
+            raise click.ClickException("No supported data files found in data/ directory.")
+        path = data_files[0]
+        if len(data_files) > 1:
             click.echo(f"Multiple data files found. Using: {path.name}")
 
     try:
@@ -2082,7 +2085,11 @@ def plan(project: str | None, experiment_id: str | None) -> None:
 
 @cli.command()
 @click.argument("project", required=False, default=None)
-def finalize(project: str | None) -> None:
+@click.option(
+    "--instructions", default="",
+    help="Optional instructions for the finalizer agent.",
+)
+def finalize(project: str | None, instructions: str) -> None:
     """Finalize the project — produce polished methods, report, and presentation."""
     from urika.cli_display import (
         ThinkingPanel,
@@ -2144,7 +2151,10 @@ def finalize(project: str | None) -> None:
 
     try:
         result = asyncio.run(
-            finalize_project(project_path, runner, _on_progress, _on_message)
+            finalize_project(
+                project_path, runner, _on_progress, _on_message,
+                instructions=instructions,
+            )
         )
     finally:
         panel.cleanup()
@@ -2162,6 +2172,140 @@ def finalize(project: str | None) -> None:
         click.echo(f"  Reproduce:     {project_path / 'reproduce.sh'}")
     else:
         print_error(f"Finalization failed: {result.get('error', 'unknown')}")
+
+
+@cli.command("update")
+@click.argument("project", required=False, default=None)
+@click.option(
+    "--field",
+    type=click.Choice(
+        ["description", "question", "mode"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Field to update.",
+)
+@click.option("--value", default=None, help="New value.")
+@click.option(
+    "--reason", default="", help="Why this change was made.",
+)
+@click.option(
+    "--history", is_flag=True,
+    help="Show revision history.",
+)
+def update_project(
+    project: str | None,
+    field: str | None,
+    value: str | None,
+    reason: str,
+    history: bool,
+) -> None:
+    """Update project description, question, or mode.
+
+    Changes are versioned — previous values are preserved
+    with timestamps in revisions.json.
+
+    Examples:
+
+        urika update my-study --field question --value "Does X predict Y?"
+
+        urika update my-study --field description --reason "Added new variables"
+
+        urika update my-study --history
+    """
+    from urika.cli_display import (
+        print_step,
+        print_success,
+    )
+
+    project = _ensure_project(project)
+    project_path, config = _resolve_project(project)
+
+    # Show history
+    if history:
+        from urika.core.revisions import load_revisions
+
+        revs = load_revisions(project_path)
+        if not revs:
+            click.echo("  No revisions recorded.")
+            return
+        click.echo(f"\n  Revision history for {project}:\n")
+        for r in revs:
+            ts = r["timestamp"][:19].replace("T", " ")
+            click.echo(
+                f"  #{r['revision']}  {ts}  "
+                f"[{r['field']}]"
+            )
+            click.echo(
+                f"    Old: {r['old_value'][:80]}"
+                f"{'…' if len(r['old_value']) > 80 else ''}"
+            )
+            click.echo(
+                f"    New: {r['new_value'][:80]}"
+                f"{'…' if len(r['new_value']) > 80 else ''}"
+            )
+            if r.get("reason"):
+                click.echo(f"    Why: {r['reason']}")
+            click.echo()
+        return
+
+    # Interactive if no field specified
+    if field is None:
+        click.echo(f"\n  Current project config for {project}:\n")
+        click.echo(f"  Description: {config.description[:100]}")
+        click.echo(f"  Question:    {config.question[:100]}")
+        click.echo(f"  Mode:        {config.mode}")
+        click.echo()
+        field = click.prompt(
+            "  Field to update",
+            type=click.Choice(
+                ["description", "question", "mode"],
+            ),
+        )
+
+    # Show current value and get new value
+    current = getattr(config, field, "")
+    if value is None:
+        click.echo(f"\n  Current {field}:")
+        click.echo(f"  {current}\n")
+        if field == "mode":
+            from urika.core.models import VALID_MODES
+
+            value = click.prompt(
+                f"  New {field}",
+                type=click.Choice(sorted(VALID_MODES)),
+            )
+        else:
+            value = click.prompt(f"  New {field}").strip()
+
+    if not value:
+        click.echo("  No change.")
+        return
+
+    if value == current:
+        click.echo("  Value unchanged.")
+        return
+
+    if not reason:
+        reason = click.prompt(
+            "  Reason for change (optional, Enter to skip)",
+            default="",
+        ).strip()
+
+    from urika.core.revisions import update_project_field
+
+    rev = update_project_field(
+        project_path,
+        field=field,
+        new_value=value,
+        reason=reason,
+    )
+    print_success(
+        f"Updated {field} (revision #{rev['revision']})"
+    )
+    print_step(
+        f"Previous value preserved in revisions.json"
+    )
 
 
 @cli.command("build-tool")
@@ -2356,6 +2500,302 @@ def usage(project: str | None) -> None:
                     f"  {name}: {totals['sessions']} sessions · "
                     f"{tok_str} tokens · ~${totals['total_cost_usd']:.2f}"
                 )
+    click.echo()
+
+
+@cli.command("setup")
+def setup_command() -> None:
+    """Check installation and install optional packages."""
+    from urika.cli_display import (
+        print_error,
+        print_step,
+        print_success,
+        print_warning,
+    )
+
+    click.echo()
+    click.echo("  Urika Setup")
+    click.echo("  " + "─" * 40)
+    click.echo()
+
+    # Check core packages
+    core_packages = {
+        "numpy": "numpy",
+        "pandas": "pandas",
+        "scipy": "scipy",
+        "scikit-learn": "sklearn",
+        "statsmodels": "statsmodels",
+        "pingouin": "pingouin",
+        "click": "click",
+        "claude-agent-sdk": "claude_agent_sdk",
+    }
+    print_step("Core packages:")
+    all_core = True
+    for name, imp in core_packages.items():
+        try:
+            __import__(imp)
+            print_success(f"  {name}")
+        except ImportError:
+            print_error(f"  {name} — NOT INSTALLED")
+            all_core = False
+    if not all_core:
+        print_warning(
+            "Some core packages missing. "
+            "Run: pip install -e ."
+        )
+        click.echo()
+
+    # Check viz
+    print_step("Visualization:")
+    for name, imp in [
+        ("matplotlib", "matplotlib"),
+        ("seaborn", "seaborn"),
+    ]:
+        try:
+            __import__(imp)
+            print_success(f"  {name}")
+        except ImportError:
+            print_error(f"  {name} — NOT INSTALLED")
+
+    # Check ML
+    print_step("Machine Learning:")
+    for name, imp in [
+        ("xgboost", "xgboost"),
+        ("lightgbm", "lightgbm"),
+        ("optuna", "optuna"),
+        ("shap", "shap"),
+        ("imbalanced-learn", "imblearn"),
+    ]:
+        try:
+            __import__(imp)
+            print_success(f"  {name}")
+        except ImportError:
+            print_error(f"  {name} — NOT INSTALLED")
+
+    # Check knowledge
+    print_step("Knowledge pipeline:")
+    try:
+        __import__("pypdf")
+        print_success("  pypdf")
+    except ImportError:
+        print_error("  pypdf — NOT INSTALLED")
+
+    # Check DL
+    print_step("Deep Learning:")
+    dl_installed = True
+    for name, imp in [
+        ("torch", "torch"),
+        ("transformers", "transformers"),
+        ("torchvision", "torchvision"),
+        ("torchaudio", "torchaudio"),
+    ]:
+        try:
+            __import__(imp)
+            print_success(f"  {name}")
+        except ImportError:
+            print_error(f"  {name} — not installed")
+            dl_installed = False
+
+    # Check hardware
+    click.echo()
+    print_step("Hardware:")
+    try:
+        from urika.core.hardware import detect_hardware
+
+        hw = detect_hardware()
+        cpu = hw["cpu_count"]
+        ram = hw["ram_gb"]
+        print_success(f"  CPU: {cpu} cores")
+        if ram:
+            print_success(f"  RAM: {ram} GB")
+        if hw["gpu"]:
+            gpu = hw["gpu_name"]
+            vram = hw.get("gpu_vram", "")
+            label = f"  GPU: {gpu}"
+            if vram:
+                label += f" ({vram})"
+            print_success(label)
+        else:
+            print_step("  GPU: none detected")
+    except Exception:
+        print_step("  Could not detect hardware")
+
+    # Offer DL install
+    if not dl_installed:
+        click.echo()
+        click.echo("  " + "─" * 40)
+        click.echo()
+        print_step(
+            "Deep learning packages are not installed."
+        )
+        print_step(
+            "These are large (~2 GB) and only needed "
+            "for neural network experiments."
+        )
+        click.echo()
+        choice = click.prompt(
+            "  Install deep learning packages?",
+            type=click.Choice(
+                ["yes", "no", "gpu", "cpu"],
+                case_sensitive=False,
+            ),
+            default="no",
+        )
+        if choice == "no":
+            click.echo("  Skipped.")
+        else:
+            import subprocess
+            import sys
+
+            if choice == "gpu":
+                # Install PyTorch with CUDA
+                print_step("Installing PyTorch with GPU support…")
+                subprocess.run(
+                    [
+                        sys.executable, "-m", "pip",
+                        "install", "torch", "torchvision",
+                        "torchaudio",
+                        "--index-url",
+                        "https://download.pytorch.org/whl/cu121",
+                    ],
+                    check=False,
+                )
+                # Then the rest
+                print_step("Installing transformers…")
+                subprocess.run(
+                    [
+                        sys.executable, "-m", "pip",
+                        "install", "transformers>=4.30",
+                        "sentence-transformers>=2.2",
+                        "timm>=0.9",
+                    ],
+                    check=False,
+                )
+            elif choice == "cpu":
+                print_step(
+                    "Installing PyTorch (CPU only)…"
+                )
+                subprocess.run(
+                    [
+                        sys.executable, "-m", "pip",
+                        "install", "torch", "torchvision",
+                        "torchaudio",
+                        "--index-url",
+                        "https://download.pytorch.org/whl/cpu",
+                    ],
+                    check=False,
+                )
+                print_step("Installing transformers…")
+                subprocess.run(
+                    [
+                        sys.executable, "-m", "pip",
+                        "install", "transformers>=4.30",
+                        "sentence-transformers>=2.2",
+                        "timm>=0.9",
+                    ],
+                    check=False,
+                )
+            else:
+                # "yes" — auto-detect
+                try:
+                    from urika.core.hardware import (
+                        detect_hardware,
+                    )
+
+                    hw_info = detect_hardware()
+                    has_gpu = hw_info.get("gpu", False)
+                except Exception:
+                    has_gpu = False
+
+                if has_gpu:
+                    print_step(
+                        "GPU detected — installing "
+                        "with CUDA support…"
+                    )
+                    subprocess.run(
+                        [
+                            sys.executable, "-m", "pip",
+                            "install", "torch",
+                            "torchvision", "torchaudio",
+                            "--index-url",
+                            "https://download.pytorch.org"
+                            "/whl/cu121",
+                        ],
+                        check=False,
+                    )
+                else:
+                    print_step(
+                        "No GPU detected — installing "
+                        "CPU version…"
+                    )
+                    subprocess.run(
+                        [
+                            sys.executable, "-m", "pip",
+                            "install", "torch",
+                            "torchvision", "torchaudio",
+                            "--index-url",
+                            "https://download.pytorch.org"
+                            "/whl/cpu",
+                        ],
+                        check=False,
+                    )
+                print_step("Installing transformers…")
+                subprocess.run(
+                    [
+                        sys.executable, "-m", "pip",
+                        "install", "transformers>=4.30",
+                        "sentence-transformers>=2.2",
+                        "timm>=0.9",
+                    ],
+                    check=False,
+                )
+            print_success("Deep learning packages installed.")
+    else:
+        # Check GPU availability with torch
+        click.echo()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                dev = torch.cuda.get_device_name(0)
+                print_success(f"  PyTorch CUDA: {dev}")
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                print_success("  PyTorch MPS: available")
+            else:
+                print_step("  PyTorch: CPU only")
+        except Exception:
+            pass
+
+    click.echo()
+    print_step("Claude access:")
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        print_success("  ANTHROPIC_API_KEY is set")
+    else:
+        print_warning(
+            "  ANTHROPIC_API_KEY not set — "
+            "needed unless using Claude Max/Pro"
+        )
+
+    click.echo()
+    # Check for updates
+    print_step("Updates:")
+    try:
+        from urika.core.updates import (
+            check_for_updates,
+            format_update_message,
+        )
+
+        update_info = check_for_updates(force=True)
+        if update_info:
+            msg = format_update_message(update_info)
+            print_warning(f"  {msg}")
+        else:
+            print_success("  You are on the latest version")
+    except Exception:
+        print_step("  Could not check for updates")
+
+    click.echo()
+    print_success("Setup check complete.")
     click.echo()
 
 

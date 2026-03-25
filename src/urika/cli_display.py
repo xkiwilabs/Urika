@@ -82,6 +82,8 @@ _AGENT_COLORS: dict[str, str] = {
     "literature_agent": _C.BLUE + _C.DIM,
     "report_agent": _C.BLUE,
     "presentation_agent": _C.BLUE + _C.DIM,
+    "data_agent": _C.GREEN + _C.DIM,
+    "finalizer": _C.MAGENTA + _C.BOLD,
 }
 
 _AGENT_LABELS: dict[str, str] = {
@@ -94,6 +96,8 @@ _AGENT_LABELS: dict[str, str] = {
     "literature_agent": "Literature Agent",
     "report_agent": "Report Agent",
     "presentation_agent": "Presentation Agent",
+    "data_agent": "Data Agent",
+    "finalizer": "Finalizer",
 }
 
 
@@ -168,7 +172,12 @@ def print_header(
         info = info[: max_info - 1] + "…"
 
     w = content_width  # visible character width
-    ver = "Version: 0.1.0        Release: 2026-03-21"
+    try:
+        from importlib.metadata import version as _pkg_version
+        _ver = _pkg_version("urika")
+    except Exception:
+        _ver = "0.1.0"
+    ver = f"Version: {_ver}"
 
     def _pad(text: str, visible_len: int) -> str:
         """Pad to fill the box width, accounting for visible chars only."""
@@ -617,19 +626,17 @@ class Spinner:
     def update(self, message: str) -> None:
         """Update the spinner message."""
         if self._lock is not None:
-            self._lock.acquire()
-        self.message = message
-        if self._lock is not None:
-            self._lock.release()
+            with self._lock:
+                self.message = message
+        else:
+            self.message = message
 
     def update_session(self, **kwargs: object) -> None:
         """Update session info fields and re-render on the next tick.
 
         Accepted keyword arguments: ``model``, ``cost``, ``project``.
         """
-        if self._lock is not None:
-            self._lock.acquire()
-        try:
+        def _apply() -> None:
             if "model" in kwargs and kwargs["model"]:
                 raw = str(kwargs["model"])
                 if "/" in raw:
@@ -641,25 +648,30 @@ class Spinner:
                 self._cost = float(kwargs["cost"])  # type: ignore[arg-type]
             if "project" in kwargs and kwargs["project"]:
                 self._project = str(kwargs["project"])
-        finally:
-            if self._lock is not None:
-                self._lock.release()
+
+        if self._lock is not None:
+            with self._lock:
+                _apply()
+        else:
+            _apply()
 
     def print_above(self, text: str) -> None:
         """Print a line above the spinner, keeping the spinner on the last line."""
         if not _IS_TTY:
             print(text)
             return
+        def _write() -> None:
+            try:
+                sys.stdout.write(f"\r\033[K{text}\n")
+                sys.stdout.flush()
+            except (OSError, ValueError):
+                pass
+
         if self._lock is not None:
-            self._lock.acquire()
-        try:
-            sys.stdout.write(f"\r\033[K{text}\n")
-            sys.stdout.flush()
-        except (OSError, ValueError):
-            pass
-        finally:
-            if self._lock is not None:
-                self._lock.release()
+            with self._lock:
+                _write()
+        else:
+            _write()
 
     def _build_right_info(self) -> str:
         """Build the right-side session info string (plain text, no ANSI)."""
@@ -679,13 +691,16 @@ class Spinner:
         while self._active:
             ch = _SPINNER[idx % len(_SPINNER)]
             if self._lock is not None:
-                self._lock.acquire()
-            msg = self.message
-            right_info = (
-                self._build_right_info() if self._project or self._model else ""
-            )
-            if self._lock is not None:
-                self._lock.release()
+                with self._lock:
+                    msg = self.message
+                    right_info = (
+                        self._build_right_info() if self._project or self._model else ""
+                    )
+            else:
+                msg = self.message
+                right_info = (
+                    self._build_right_info() if self._project or self._model else ""
+                )
             try:
                 if right_info:
                     # Get terminal width for right-alignment

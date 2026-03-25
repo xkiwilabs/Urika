@@ -28,20 +28,16 @@ class DataProfilerTool(ITool):
 
     def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
         summary = profile_dataset(data.data)
-        if not summary.numeric_stats:
-            return ToolResult(
-                outputs={}, valid=False, error="No numeric columns in dataset"
-            )
-        return ToolResult(
-            outputs={
-                "n_rows": summary.n_rows,
-                "n_columns": summary.n_columns,
-                "columns": summary.columns,
-                "dtypes": summary.dtypes,
-                "missing_counts": summary.missing_counts,
-                "numeric_stats": summary.numeric_stats,
-            }
-        )
+        outputs: dict[str, Any] = {
+            "n_rows": summary.n_rows,
+            "n_columns": summary.n_columns,
+            "columns": summary.columns,
+            "dtypes": summary.dtypes,
+            "missing_counts": summary.missing_counts,
+        }
+        if summary.numeric_stats:
+            outputs["numeric_stats"] = summary.numeric_stats
+        return ToolResult(outputs=outputs)
 
 
 def get_tool() -> ITool:

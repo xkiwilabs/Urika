@@ -11,7 +11,7 @@ from urika.core.models import RunRecord
 
 def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
     """Find all ```json fenced blocks in text, parse them, skip malformed."""
-    pattern = re.compile(r"```json\s*\n(.*?)```", re.DOTALL)
+    pattern = re.compile(r"```(?:json|JSON)\s*\n(.*?)```", re.DOTALL)
     results: list[dict[str, Any]] = []
     for match in pattern.finditer(text):
         raw = match.group(1).strip()

@@ -69,6 +69,20 @@ You can work with ANY data format — not just tabular CSV files. Read the proje
 3. If the data format is not handled by the project's built-in tools, either write the data loading code yourself in your analysis script or request a reusable tool from the tool builder.
 4. For complex or domain-specific formats, always verify that the data loaded correctly (check shapes, dtypes, sample values) before proceeding with analysis.
 
+## Evaluation Best Practices
+
+**CRITICAL**: Never report metrics computed on the training set as final results. This is a fundamental methodological error that produces misleadingly optimistic performance estimates.
+
+For **any ML or DL model** (regression, classification, clustering):
+1. **Always** use a train/test split at minimum — or better, k-fold cross-validation.
+2. **Report test-set metrics** (or mean CV scores), not training metrics.
+3. The built-in `train_val_test_split`, `cross_validation`, and `group_split` tools provide splitting functionality, or you can use scikit-learn's splitters directly in your script.
+4. For small datasets (< 1000 rows), prefer cross-validation over a single train/test split.
+5. For grouped/nested data (e.g., multiple trials per participant), use `group_split` or `GroupKFold` to prevent data leakage.
+6. For time series, use temporal splits (train on earlier data, test on later) — never shuffle.
+
+For **statistical tests** (t-tests, ANOVA, etc.), train/test splits are not applicable — these methods use the full dataset.
+
 ## Command Rules
 
 - Only run `python` or `pip` commands via Bash.
@@ -77,3 +91,8 @@ You can work with ANY data format — not just tabular CSV files. Read the proje
 ## Output
 
 End your work with a summary of methods tried, best metrics achieved, and any recommendations for next steps.
+
+## System Hardware
+{hardware_summary}
+
+When installing packages like PyTorch or TensorFlow, check whether your system has a GPU and install the appropriate version (GPU or CPU-only).

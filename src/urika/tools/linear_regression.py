@@ -19,13 +19,16 @@ class LinearRegressionMethod(ITool):
         return "linear_regression"
 
     def description(self) -> str:
-        return "Ordinary least-squares linear regression using scikit-learn."
+        return (
+            "Ordinary least-squares linear regression using scikit-learn. "
+            "Supports pre-split train/test indices for unbiased evaluation."
+        )
 
     def category(self) -> str:
         return "regression"
 
     def default_params(self) -> dict[str, Any]:
-        return {"target": "", "features": None}
+        return {"target": "", "features": None, "train_indices": None, "test_indices": None}
 
     def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
         target = params.get("target", "")
@@ -66,16 +69,32 @@ class LinearRegressionMethod(ITool):
         X = subset[feature_cols].values
         y = subset[target].values
 
+        train_idx = params.get("train_indices")
+        test_idx = params.get("test_indices")
+
+        if train_idx is not None and test_idx is not None:
+            X_train, X_test = X[train_idx], X[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+        else:
+            # Fallback: train and evaluate on full data (training metrics only)
+            X_train, X_test = X, X
+            y_train, y_test = y, y
+
         model = LinearRegression()
-        model.fit(X, y)
-        y_pred = model.predict(X)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+        if train_idx is not None:
+            note = "Metrics computed on held-out test set."
+        else:
+            note = "Metrics are training-set only; use train_val_test_split for unbiased estimates."
 
         return ToolResult(
-            outputs={},
+            outputs={"note": note},
             metrics={
-                "r2": float(r2_score(y, y_pred)),
-                "rmse": float(np.sqrt(mean_squared_error(y, y_pred))),
-                "mae": float(mean_absolute_error(y, y_pred)),
+                "r2": float(r2_score(y_test, y_pred)),
+                "rmse": float(np.sqrt(mean_squared_error(y_test, y_pred))),
+                "mae": float(mean_absolute_error(y_test, y_pred)),
             },
         )
 

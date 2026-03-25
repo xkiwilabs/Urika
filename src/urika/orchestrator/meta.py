@@ -34,8 +34,11 @@ async def run_project(
     safety_cap = 50 if mode == "unlimited" else max_experiments
     results = []
 
+    progress = on_progress or (lambda e, d="": None)
+
     for exp_num in range(safety_cap):
         # Determine next experiment via advisor
+        progress("agent", "Advisor agent — proposing next experiment")
         next_exp = await _determine_next(project_dir, runner, instructions, on_message)
         if next_exp is None:
             print_step("Advisor: no further experiments to suggest.")
@@ -84,6 +87,7 @@ async def run_project(
         try:
             from urika.orchestrator.finalize import finalize_project
 
+            progress("phase", "Finalizing project")
             await finalize_project(project_dir, runner, on_progress, on_message)
         except Exception:
             pass  # Finalization is best-effort
@@ -124,18 +128,44 @@ async def _determine_next(
 
 
 def _criteria_fully_met(project_dir: Path) -> bool:
-    """Check if all criteria are satisfied."""
+    """Check if all criteria are satisfied across all experiments.
+
+    Loads the latest criteria and checks the best metrics from every
+    experiment's progress.json against those criteria.  Returns True
+    only when **all** threshold criteria pass for at least one run.
+    """
     from urika.core.criteria import load_criteria
+    from urika.evaluation.criteria import validate_criteria
 
     c = load_criteria(project_dir)
     if c is None:
         return False
     criteria = c.criteria
-    # Need threshold with primary met
+    # Only check entries that have min/max thresholds
     threshold = criteria.get("threshold", {})
-    primary = threshold.get("primary", {})
-    if not primary:
-        return False  # No threshold = exploratory, never "done"
-    # Would need to check actual metrics vs target
-    # For now, return False — let the advisor decide
+    if not threshold:
+        return False  # No threshold = exploratory, never auto-done
+
+    # Collect best metrics across all experiments
+    experiments_dir = project_dir / "experiments"
+    if not experiments_dir.is_dir():
+        return False
+
+    for exp_dir in sorted(experiments_dir.iterdir()):
+        progress_file = exp_dir / "progress.json"
+        if not progress_file.exists():
+            continue
+        try:
+            import json
+
+            data = json.loads(progress_file.read_text())
+            for run in data.get("runs", []):
+                metrics = run.get("metrics", {})
+                if not metrics:
+                    continue
+                passed, _failures = validate_criteria(metrics, threshold)
+                if passed:
+                    return True
+        except Exception:
+            continue
     return False

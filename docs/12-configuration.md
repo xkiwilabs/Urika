@@ -47,16 +47,16 @@ presentation_theme = "light"
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `max_turns_per_experiment` | integer | `5` | Maximum orchestrator turns per experiment run |
-| `auto_mode` | string | `"checkpoint"` | How the REPL runs experiments: `"checkpoint"` (pause for confirmation), `"full"` (run all turns), or `"capped"` (run up to max turns) |
+| `auto_mode` | string | `"checkpoint"` | How the REPL runs experiments: `"checkpoint"` (pause for confirmation), `"unlimited"` (run all turns), or `"capped"` (run up to max turns) |
 | `presentation_theme` | string | `"light"` | Reveal.js theme for generated presentations |
 
 These preferences can be overridden at runtime via CLI flags or REPL prompts.
 
 ### [runtime] and [privacy] sections
 
-The `[runtime]` section controls which AI model each agent uses, with a project-wide default and per-agent overrides. The `[privacy]` section defines named endpoints (cloud, local, trusted) and sets the privacy mode (`cloud`, `local`, or `hybrid`).
+The `[runtime]` section controls which AI model each agent uses, with a project-wide default and per-agent overrides. The `[privacy]` section defines named endpoints (open, private, trusted) and sets the privacy mode (`open`, `private`, or `hybrid`).
 
-These sections are covered in detail in [Models and Privacy](07-models-and-privacy.md).
+These sections are covered in detail in [Models and Privacy](11-models-and-privacy.md).
 
 ### [environment] section
 
@@ -260,3 +260,7 @@ Cost estimates use Claude API pricing (Sonnet by default; adjusts for Opus and H
 | `URIKA_REPL` | (unset) | Set internally when running inside the REPL. Used to prevent nested REPL sessions and adjust CLI behavior. |
 
 Colors are enabled by default when stdout is a TTY. Setting `NO_COLOR=1` disables them. When stdout is not a TTY (e.g., piped output), colors are automatically disabled.
+
+---
+
+**Next:** [Project Structure](13-project-structure.md)

@@ -109,7 +109,7 @@ Reports are written as versioned markdown files (previous versions are backed up
 | `final-report.md` | Comprehensive final report written by the Report Agent from the Finalizer's findings. Structured as Abstract, Introduction, Methods, Results, Discussion, Reproducibility, References. |
 | `final-presentation/` | Definitive reveal.js presentation created by the Presentation Agent from the Finalizer's findings. |
 
-See [Finalizing Projects](14-finalizing-projects.md) for the complete list of finalization outputs.
+See [Finalizing Projects](07-finalizing-projects.md) for the complete list of finalization outputs.
 
 
 ## Presentations
@@ -193,3 +193,7 @@ With a project argument, shows detailed session-level usage:
 ```
 
 Usage tracking records tokens (input and output), estimated cost (at API rates), agent calls, session duration, and experiments run. For subscription users, costs are estimates that do not apply to your plan.
+
+---
+
+**Next:** [Finalizing Projects](07-finalizing-projects.md)

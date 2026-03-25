@@ -4,69 +4,97 @@
 
 <p align="center">
   <a href="docs/01-getting-started.md">Getting Started</a> &middot;
-  <a href="docs/12-cli-reference.md">CLI Reference</a> &middot;
-  <a href="docs/13-interactive-repl.md">Interactive REPL</a> &middot;
-  <a href="docs/06-agent-system.md">Agent System</a>
+  <a href="docs/14-cli-reference.md">CLI Reference</a> &middot;
+  <a href="docs/15-interactive-repl.md">Interactive REPL</a> &middot;
+  <a href="docs/08-agent-system.md">Agent System</a>
 </p>
 
 ---
 
+> **Early Development** — Urika is under active development. Expect frequent updates, bug fixes, and new features. Check back regularly or run `urika setup` to see if a new version is available. Bug reports and feedback welcome at [GitHub Issues](https://github.com/xkiwilabs/Urika/issues).
+
 Urika uses multiple AI agents to autonomously explore analytical approaches for your dataset and research question. It creates experiments, tries different methods, evaluates results, and documents everything in a structured projectbook.
 
-Currently supports the **Claude Agent SDK** (Anthropic), including local models via Ollama. Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **Pi** are planned for upcoming releases.
+Currently supports the **Claude Agent SDK** (Anthropic), including local models via Ollama. Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **PI** are planned for upcoming releases.
 
 ## Installation
 
 ```bash
 git clone https://github.com/xkiwilabs/Urika.git
 cd Urika
-pip install -e .
+pip install -e .        # includes visualization, ML, and knowledge pipeline
+urika setup             # check installation, detect hardware, optionally install DL
 ```
+
+The default install includes everything except deep learning (torch, transformers, etc.). Run `urika setup` to verify your environment and optionally install DL packages with automatic GPU detection. For deep learning without the interactive prompt: `pip install -e ".[dl]"`.
 
 Requires Python >= 3.11 and Claude access via API key (`ANTHROPIC_API_KEY`) or Claude Max/Pro account.
 
-See [Getting Started](docs/01-getting-started.md) for full installation options.
+See [Getting Started](docs/01-getting-started.md) for full details.
 
 ## Quickstart
 
-See the [Getting Started](docs/01-getting-started.md) guide for a full walkthrough. In short:
-
 ```bash
-urika new my-study --data ./my_data.csv    # create a project
+# Install
+git clone https://github.com/xkiwilabs/Urika.git
+cd Urika
+pip install -e .                            # includes viz, ML, knowledge pipeline
+pip install -e ".[dl]"                      # optional: add deep learning (PyTorch, ~2GB)
+
+# Run
+urika new my-study --data ./my_data.csv    # create a project (interactive)
 urika run my-study                          # run experiments
 urika finalize my-study                     # produce final report
 urika                                       # or use the interactive REPL
 ```
 
+See the [Getting Started](docs/01-getting-started.md) guide for a full walkthrough.
+
 ## How It Works
 
 ```mermaid
 flowchart TD
-    A["urika new"] --> B["Project Builder\nscans data, profiles, ingests knowledge"]
-    B --> C["urika run"]
-    C --> D["Planning Agent\ndesigns analytical method"]
+    A["urika new\nProject Builder"] --> B["Scans data, profiles,\ningests knowledge"]
+    B --> C{"How to run?"}
 
-    D --> E["Task Agent\nwrites code, runs tools, records results"]
-    E --> F["Evaluator\nscores against criteria (read-only)"]
-    F --> G{Criteria met?}
+    C -- "Single experiment\n(guided)" --> D["urika run"]
+    C -- "Multiple experiments\n(autonomous)" --> META["urika run --max-experiments N\nAutonomous Mode"]
 
-    G -- Yes --> H["Generate Reports\nnarrative, projectbook, presentation"]
-    G -- No --> I["Advisor Agent\nanalyzes results, proposes next steps"]
-    I --> D
+    D --> LOOP
+    META --> LOOP
 
-    H --> J{More experiments?}
-    J -- Yes --> C
-    J -- No --> K["Done"]
+    subgraph LOOP ["Experiment Loop (per experiment)"]
+        direction TB
+        P["Planning Agent\ndesigns method"] --> TA["Task Agent\nwrites code, runs tools"]
+        TA --> EV["Evaluator\nscores against criteria"]
+        EV --> Q{Criteria met?}
+        Q -- No --> ADV["Advisor Agent\nanalyzes, proposes next"]
+        ADV --> P
+        Q -- Yes --> REPORT["Generate Reports"]
+    end
 
-    E -. "needs tool" .-> L["Tool Builder\ncreates new tools on demand"]
-    D -. "needs literature" .-> M["Literature Agent\nsearches papers"]
-    L -.-> E
-    M -.-> D
+    D -- "after experiment" --> REVIEW["User reviews results\ndecides next step"]
+    REVIEW -- "run again" --> D
+
+    META -- "advisor decides\nnext experiment" --> LOOP
+
+    REPORT --> FIN["urika finalize\nFinalizer Agent"]
+    FIN --> OUT["Standalone methods\nFinal report & presentation\nReproduce scripts"]
+
+    TA -. "needs tool" .-> TB["Tool Builder"]
+    P -. "needs literature" .-> LIT["Literature Agent"]
+    TB -.-> TA
+    LIT -.-> P
 ```
 
-Eleven agents work together in an orchestrated loop. The **Orchestrator** cycles through `planning -> task -> evaluator -> advisor` each turn. A **Meta-Orchestrator** manages experiment-to-experiment transitions. When experiments are complete, the **Finalizer** produces standalone deliverables.
+Eleven agents work together. Each experiment runs autonomously — agents plan, execute, evaluate, and iterate without intervention. You choose how to manage the *between-experiment* flow:
 
-See [Agent System](docs/06-agent-system.md) for details on each agent role.
+- **Guided** (`urika run`) — agents run one experiment autonomously, then you review results and decide what to try next. Best for exploratory work and complex domains where human judgment matters between experiments.
+- **Fully autonomous** (`urika run --max-experiments N`) — the system runs multiple experiments back-to-back, with the advisor agent deciding what to try next. Best when you've provided detailed context (see [Prompts and Context](docs/04-prompts-and-context.md)).
+
+Within each experiment, the orchestrator cycles through `planning -> task -> evaluator -> advisor` each turn. When all experiments are complete, the **Finalizer** produces standalone deliverables.
+
+See [Agent System](docs/08-agent-system.md) for details on each agent role.
 
 ## Privacy and Model Configuration
 
@@ -80,7 +108,7 @@ Per-agent model routing lets you optimize for cost (Haiku for simple tasks, Opus
 
 See above for supported and upcoming SDK adapters.
 
-See [Models and Privacy](docs/07-models-and-privacy.md) for configuration details.
+See [Models and Privacy](docs/11-models-and-privacy.md) for configuration details.
 
 ## Documentation
 
@@ -89,17 +117,18 @@ See [Models and Privacy](docs/07-models-and-privacy.md) for configuration detail
 | [Getting Started](docs/01-getting-started.md) | Installation, requirements, first project |
 | [Core Concepts](docs/02-core-concepts.md) | Projects, experiments, runs, methods, tools, agents |
 | [Creating Projects](docs/03-creating-projects.md) | `urika new`, data scanning, knowledge ingestion |
-| [Running Experiments](docs/04-running-experiments.md) | Orchestrator loop, turns, auto mode, resume |
-| [Viewing Results](docs/05-viewing-results.md) | Reports, presentations, methods, leaderboard |
-| [Agent System](docs/06-agent-system.md) | All 11 agent roles and how they interact |
-| [Models and Privacy](docs/07-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
-| [Built-in Tools](docs/08-built-in-tools.md) | 16 analysis tools agents use |
-| [Knowledge Pipeline](docs/09-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
-| [Configuration](docs/10-configuration.md) | urika.toml, criteria, preferences |
-| [Project Structure](docs/11-project-structure.md) | File layout and what each file does |
-| [CLI Reference](docs/12-cli-reference.md) | Every command with full options |
-| [Interactive REPL](docs/13-interactive-repl.md) | Slash commands, tab completion, conversation mode |
-| [Finalizing Projects](docs/14-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
+| [Prompts and Context](docs/04-prompts-and-context.md) | Writing effective descriptions, instructions, knowledge ingestion |
+| [Running Experiments](docs/05-running-experiments.md) | Orchestrator loop, turns, auto mode, resume |
+| [Viewing Results](docs/06-viewing-results.md) | Reports, presentations, methods, leaderboard |
+| [Finalizing Projects](docs/07-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
+| [Agent System](docs/08-agent-system.md) | All 11 agent roles and how they interact |
+| [Built-in Tools](docs/09-built-in-tools.md) | 18 analysis tools agents use |
+| [Knowledge Pipeline](docs/10-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
+| [Models and Privacy](docs/11-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
+| [Configuration](docs/12-configuration.md) | urika.toml, criteria, preferences |
+| [Project Structure](docs/13-project-structure.md) | File layout and what each file does |
+| [CLI Reference](docs/14-cli-reference.md) | Every command with full options |
+| [Interactive REPL](docs/15-interactive-repl.md) | Slash commands, tab completion, conversation mode |
 
 ## License
 

@@ -384,10 +384,13 @@ def cmd_results(session: ReplSession, args: str) -> None:
     from urika.core.experiment import list_experiments
     from urika.core.progress import load_progress
 
+    # Parse optional experiment filter from args
+    experiment_filter = args.strip() if args else ""
+
     leaderboard = load_leaderboard(session.project_path)
     ranking = leaderboard.get("ranking", [])
 
-    if ranking:
+    if ranking and not experiment_filter:
         click.echo(f"\n  {_C.BOLD}Leaderboard:{_C.RESET}")
         for entry in ranking:
             metrics_str = ", ".join(
@@ -397,13 +400,20 @@ def cmd_results(session: ReplSession, args: str) -> None:
         click.echo()
         return
 
-    # No leaderboard — show runs from the most recent experiment
+    # No leaderboard or specific experiment requested — show runs
     experiments = list_experiments(session.project_path)
     if not experiments:
         click.echo("  No results yet.")
         return
 
-    exp = experiments[-1]
+    if experiment_filter:
+        matched = [e for e in experiments if e.experiment_id == experiment_filter]
+        if not matched:
+            click.echo(f"  Experiment '{experiment_filter}' not found.")
+            return
+        exp = matched[0]
+    else:
+        exp = experiments[-1]
     progress = load_progress(session.project_path, exp.experiment_id)
     runs = progress.get("runs", [])
     if not runs:
@@ -845,12 +855,63 @@ def cmd_plan(session: ReplSession, args: str) -> None:
 def cmd_finalize(session: ReplSession, args: str) -> None:
     import os
 
+    instructions = args.strip()
     os.environ["URIKA_REPL"] = "1"
     try:
         from urika.cli import finalize as cli_finalize
 
         ctx = click.Context(cli_finalize)
-        ctx.invoke(cli_finalize, project=session.project_name)
+        ctx.invoke(
+            cli_finalize,
+            project=session.project_name,
+            instructions=instructions,
+        )
+    finally:
+        os.environ.pop("URIKA_REPL", None)
+
+
+@command(
+    "update",
+    requires_project=True,
+    description="Update project description, question, or mode",
+)
+def cmd_update(session: ReplSession, args: str) -> None:
+    parts = args.strip().split(None, 1) if args.strip() else []
+
+    if parts and parts[0] == "history":
+        from urika.core.revisions import load_revisions
+
+        revs = load_revisions(session.project_path)
+        if not revs:
+            click.echo("  No revisions recorded.")
+            return
+        click.echo(f"\n  Revision history:\n")
+        for r in revs:
+            ts = r["timestamp"][:19].replace("T", " ")
+            click.echo(
+                f"  #{r['revision']}  {ts}  "
+                f"[{r['field']}]"
+            )
+            old = r["old_value"][:60]
+            new = r["new_value"][:60]
+            click.echo(f"    Old: {old}")
+            click.echo(f"    New: {new}")
+            if r.get("reason"):
+                click.echo(f"    Why: {r['reason']}")
+            click.echo()
+        return
+
+    import os
+
+    os.environ["URIKA_REPL"] = "1"
+    try:
+        from urika.cli import update_project
+
+        ctx = click.Context(update_project)
+        ctx.invoke(
+            update_project,
+            project=session.project_name,
+        )
     finally:
         os.environ.pop("URIKA_REPL", None)
 

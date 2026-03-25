@@ -16,7 +16,61 @@ Build or improve ITool implementations in the project's tools directory.
 3. **Implement** the requested tool as a Python module in `{tools_dir}/`.
 4. **Test** your tool by running `pytest` to verify correctness.
 
-## Tool Structure
+## Tool Interface
+
+Every tool must implement the `ITool` abstract class and return a `ToolResult`:
+
+```python
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any
+
+from urika.data.models import DatasetView
+
+
+@dataclass
+class ToolResult:
+    """What a tool execution produced."""
+
+    outputs: dict[str, Any]
+    artifacts: list[str] = field(default_factory=list)
+    metrics: dict[str, float] = field(default_factory=dict)
+    valid: bool = True
+    error: str | None = None
+
+
+class ITool(ABC):
+    """Interface for all analysis tools."""
+
+    @abstractmethod
+    def name(self) -> str:
+        """Return the unique name of this tool."""
+        ...
+
+    @abstractmethod
+    def description(self) -> str:
+        """Return a human-readable description."""
+        ...
+
+    @abstractmethod
+    def category(self) -> str:
+        """Return the tool category (e.g. 'exploration', 'statistical_test', 'regression')."""
+        ...
+
+    @abstractmethod
+    def default_params(self) -> dict[str, Any]:
+        """Return default parameters for this tool."""
+        ...
+
+    @abstractmethod
+    def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
+        """Run the tool on data with given parameters."""
+        ...
+```
+
+Import `ITool` and `ToolResult` from `urika.tools.base`. Import `DatasetView` from `urika.data.models`.
 
 Each tool module must include a `get_tool()` factory function:
 
@@ -63,3 +117,8 @@ You may be asked to create tools that load, preprocess, or transform data in spe
 ## Output
 
 Report what tool you built, its interface, and test results.
+
+## System Hardware
+{hardware_summary}
+
+When installing packages like PyTorch or TensorFlow, check whether your system has a GPU and install the appropriate version (GPU or CPU-only).

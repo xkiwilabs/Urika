@@ -1,38 +1,36 @@
-"""Random forest regression tool using scikit-learn."""
+"""Random forest classification tool using scikit-learn."""
 
 from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, f1_score
 
 from urika.data.models import DatasetView
 from urika.tools.base import ITool, ToolResult
 
 
-class RandomForestMethod(ITool):
-    """Random forest regression using scikit-learn."""
+class RandomForestClassifierMethod(ITool):
+    """Random forest classification using scikit-learn."""
 
     def name(self) -> str:
-        return "random_forest"
+        return "random_forest_classifier"
 
     def description(self) -> str:
         return (
-            "Random forest regression using scikit-learn. "
-            "Supports pre-split train/test indices for unbiased evaluation."
+            "Random forest classification using scikit-learn. "
+            "Note: metrics are computed on the training set and may "
+            "overestimate performance on unseen data."
         )
 
     def category(self) -> str:
-        return "regression"
+        return "classification"
 
     def default_params(self) -> dict[str, Any]:
         return {
             "target": "",
             "features": None,
-            "train_indices": None,
-            "test_indices": None,
             "n_estimators": 100,
             "max_depth": None,
             "random_state": 42,
@@ -58,7 +56,7 @@ class RandomForestMethod(ITool):
         if features is None:
             feature_cols = [c for c in numeric_df.columns if c != target]
         else:
-            feature_cols = [c for c in features if c in df.columns]
+            feature_cols = [c for c in features if c in numeric_df.columns]
 
         if not feature_cols:
             return ToolResult(
@@ -68,7 +66,7 @@ class RandomForestMethod(ITool):
                 error="No feature columns available",
             )
 
-        subset = numeric_df[[target, *feature_cols]].dropna()
+        subset = df[[target, *feature_cols]].dropna()
         if len(subset) < 2:
             return ToolResult(
                 outputs={},
@@ -77,43 +75,37 @@ class RandomForestMethod(ITool):
                 error=f"Insufficient data: {len(subset)} rows after dropping NaN",
             )
 
-        X = subset[feature_cols].values
+        classes = subset[target].nunique()
+        if classes < 2:
+            return ToolResult(
+                outputs={},
+                metrics={},
+                valid=False,
+                error=f"Need at least 2 classes in target, found {classes}",
+            )
+
+        X = subset[feature_cols].values  # noqa: N806
         y = subset[target].values
 
-        train_idx = params.get("train_indices")
-        test_idx = params.get("test_indices")
-
-        if train_idx is not None and test_idx is not None:
-            X_train, X_test = X[train_idx], X[test_idx]
-            y_train, y_test = y[train_idx], y[test_idx]
-        else:
-            # Fallback: train and evaluate on full data (training metrics only)
-            X_train, X_test = X, X
-            y_train, y_test = y, y
-
-        model = RandomForestRegressor(
+        model = RandomForestClassifier(
             n_estimators=n_estimators,
             max_depth=max_depth,
             random_state=random_state,
         )
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
+        model.fit(X, y)
+        y_pred = model.predict(X)
 
-        if train_idx is not None:
-            note = "Metrics computed on held-out test set."
-        else:
-            note = "Metrics are training-set only; use train_val_test_split for unbiased estimates."
+        avg = "binary" if classes == 2 else "weighted"
 
         return ToolResult(
-            outputs={"note": note},
+            outputs={"note": "Metrics are training-set only; use cross_validation or train_val_test_split for unbiased estimates."},
             metrics={
-                "r2": float(r2_score(y_test, y_pred)),
-                "rmse": float(np.sqrt(mean_squared_error(y_test, y_pred))),
-                "mae": float(mean_absolute_error(y_test, y_pred)),
+                "accuracy": float(accuracy_score(y, y_pred)),
+                "f1": float(f1_score(y, y_pred, average=avg)),
             },
         )
 
 
 def get_tool() -> ITool:
     """Factory function for registry auto-discovery."""
-    return RandomForestMethod()
+    return RandomForestClassifierMethod()

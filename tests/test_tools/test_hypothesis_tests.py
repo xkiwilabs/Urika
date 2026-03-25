@@ -35,7 +35,7 @@ class TestHypothesisTestsTool:
         from urika.tools.hypothesis_tests import HypothesisTestsTool
 
         tool = HypothesisTestsTool()
-        assert tool.category() == "statistics"
+        assert tool.category() == "statistical_test"
 
     def test_default_params(self) -> None:
         from urika.tools.hypothesis_tests import HypothesisTestsTool

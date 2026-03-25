@@ -25,10 +25,18 @@ def get_role() -> AgentRole:
     )
 
 
-def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
+def build_config(
+    project_dir: Path, *, experiment_id: str = "", **kwargs: object
+) -> AgentConfig:
     runtime_config = load_runtime_config(project_dir)
     data_dir = project_dir / "data"
-    experiments_dir = project_dir / "experiments"
+
+    # Scope writable dirs to specific experiment when provided
+    if experiment_id:
+        experiment_dir = project_dir / "experiments" / experiment_id
+        writable = [experiment_dir, data_dir]
+    else:
+        writable = [project_dir / "experiments", data_dir]
 
     return AgentConfig(
         name="data_agent",
@@ -42,7 +50,7 @@ def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
         allowed_tools=["Read", "Bash", "Glob", "Grep", "Write"],
         disallowed_tools=[],
         security=SecurityPolicy(
-            writable_dirs=[experiments_dir, data_dir],
+            writable_dirs=writable,
             readable_dirs=[project_dir],
             allowed_bash_prefixes=["python ", "pip "],
             blocked_bash_patterns=["rm -rf", "git push", "git reset"],

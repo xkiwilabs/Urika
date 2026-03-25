@@ -162,3 +162,7 @@ results = store.search("regression")  # Returns list[KnowledgeEntry]
 all_entries = store.list_all()
 entry = store.get("k-001")
 ```
+
+---
+
+**Next:** [Models and Privacy](11-models-and-privacy.md)

@@ -7,6 +7,11 @@ Urika uses a multi-agent architecture where specialized agents collaborate throu
 
 The system follows a **research team model**: agents take on roles analogous to members of a research group. A deterministic orchestrator drives the experiment loop, calling agents in sequence and using structured JSON parsing to pass information between them.
 
+Two execution modes:
+
+- **Guided** (`urika run`) — each experiment runs autonomously (agents plan, execute, evaluate, iterate). You review results and steer what to try next *between* experiments.
+- **Fully autonomous** (`urika run --max-experiments N`) — the system runs multiple experiments back-to-back. The advisor agent also decides what to try next between experiments. The quality of your initial project setup (description, criteria, knowledge) determines how well agents navigate on their own. See [Prompts and Context](04-prompts-and-context.md).
+
 Key design principles:
 
 - **Separation of concerns** -- each agent has one job (planning, execution, evaluation, advising)
@@ -121,9 +126,9 @@ Or provide a list of tools you know you'll need in the project description durin
 
 Searches the project's knowledge base for domain-relevant information. When the planning agent flags that a method requires literature context (e.g., a specific algorithm or domain knowledge), the literature agent searches ingested documents and returns relevant excerpts.
 
-The literature agent can also search the web for relevant papers and methods when web search is enabled (see [Configuration](10-configuration.md)). This allows it to find whether a proposed method has been used in similar research before, or discover methods that might be useful for your specific problem.
+The literature agent can also search the web for relevant papers and methods when web search is enabled (see [Configuration](12-configuration.md)). This allows it to find whether a proposed method has been used in similar research before, or discover methods that might be useful for your specific problem.
 
-Adding even 1-2 relevant papers to your project's `knowledge/papers/` directory significantly improves the quality of the agents' work. See [Knowledge Pipeline](09-knowledge-pipeline.md) for details.
+Adding even 1-2 relevant papers to your project's `knowledge/papers/` directory significantly improves the quality of the agents' work. See [Knowledge Pipeline](10-knowledge-pipeline.md) for details.
 
 | Property | Value |
 |----------|-------|
@@ -229,9 +234,9 @@ Before the first turn, a **knowledge scan** checks for ingested documents and pr
 
 The loop runs for up to `max_turns` turns (configurable per experiment or in `urika.toml`). If criteria are never met, the experiment is still marked completed after the final turn.
 
-### Meta-Orchestrator
+### Autonomous Mode
 
-The outer loop (`run_project`) manages experiment-to-experiment flow:
+When running multiple experiments, the outer loop (`run_project`) manages experiment-to-experiment flow:
 
 - Calls the advisor agent to propose the next experiment
 - Creates the experiment
@@ -312,3 +317,7 @@ Each agent's behavior is configured through:
 - **Working directory** -- set to the project directory
 
 The Claude Agent SDK adapter (`ClaudeSDKRunner`) translates these configurations into SDK-compatible parameters and handles execution, streaming, and result parsing.
+
+---
+
+**Next:** [Built-in Tools](09-built-in-tools.md)

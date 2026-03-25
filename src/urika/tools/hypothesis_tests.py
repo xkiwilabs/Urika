@@ -18,7 +18,7 @@ class HypothesisTestsTool(ITool):
         return "Run statistical hypothesis tests: t-test, chi-squared, and normality."
 
     def category(self) -> str:
-        return "statistics"
+        return "statistical_test"
 
     def default_params(self) -> dict[str, Any]:
         return {

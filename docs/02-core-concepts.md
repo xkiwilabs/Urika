@@ -46,26 +46,28 @@ This means every method is tailored to your specific dataset and research questi
 
 ## Tools
 
-Tools are built-in analysis building blocks that agents can use when constructing methods. Urika ships with **16 built-in tools**:
+Tools are built-in analysis building blocks that agents can use when constructing methods. Urika ships with **18 built-in tools**:
 
 | Tool | Category | Description |
 |------|----------|-------------|
-| `correlation_analysis` | statistics | Correlation matrices and pairwise analysis |
-| `cross_validation` | evaluation | K-fold cross-validation |
-| `data_profiler` | data | Dataset profiling and summary statistics |
+| `correlation_analysis` | exploration | Correlation matrices and pairwise analysis |
+| `cross_validation` | preprocessing | K-fold cross-validation |
+| `data_profiler` | exploration | Dataset profiling and summary statistics |
 | `descriptive_stats` | statistics | Descriptive statistics (mean, median, std, etc.) |
-| `group_split` | data | Split data by group membership |
-| `hypothesis_tests` | statistics | Statistical hypothesis testing |
-| `linear_regression` | modelling | Linear regression fitting and diagnostics |
-| `logistic_regression` | modelling | Logistic regression for classification |
-| `mann_whitney_u` | statistics | Mann-Whitney U non-parametric test |
-| `one_way_anova` | statistics | One-way ANOVA |
-| `outlier_detection` | data | Detect and flag outliers |
-| `paired_t_test` | statistics | Paired t-test |
-| `random_forest` | modelling | Random forest classifier/regressor |
-| `train_val_test_split` | data | Train/validation/test data splitting |
-| `visualization` | visualization | Chart and plot generation |
-| `xgboost_regression` | modelling | XGBoost gradient boosting |
+| `feature_scaler` | preprocessing | Scale numeric features (standard, minmax, robust) |
+| `gradient_boosting` | regression | Gradient boosting regression |
+| `group_split` | preprocessing | Split data by group membership |
+| `hypothesis_tests` | statistical_test | Statistical hypothesis testing |
+| `linear_regression` | regression | Linear regression fitting and diagnostics |
+| `logistic_regression` | classification | Logistic regression for classification |
+| `mann_whitney_u` | statistical_test | Mann-Whitney U non-parametric test |
+| `one_way_anova` | statistical_test | One-way ANOVA |
+| `outlier_detection` | exploration | Detect and flag outliers |
+| `paired_t_test` | statistical_test | Paired t-test |
+| `random_forest` | regression | Random forest regression |
+| `random_forest_classifier` | classification | Random forest classification |
+| `train_val_test_split` | preprocessing | Train/validation/test data splitting |
+| `visualization` | exploration | Chart and plot generation |
 
 The **tool builder** agent can also create project-specific tools at runtime when the planning agent identifies a capability gap.
 
@@ -79,7 +81,7 @@ urika tools --project my-study    # includes project-specific tools
 
 ## Agents
 
-Urika uses nine specialized agent roles, each with a distinct responsibility. All agents run on the Claude Agent SDK.
+Urika uses eleven specialized agent roles, each with a distinct responsibility. All agents run on the Claude Agent SDK.
 
 ### Project Builder
 
@@ -148,11 +150,11 @@ Within a turn:
 
 When criteria are met or max turns are reached, the orchestrator generates reports (labbook notes, narrative, README, presentation) and marks the experiment as completed.
 
-## The meta-orchestrator
+## Autonomous mode (multiple experiments)
 
-The meta-orchestrator manages **experiment-to-experiment** flow. After one experiment completes, the advisor agent proposes the next experiment based on what has been learned across all prior experiments.
+Autonomous mode manages **experiment-to-experiment** flow. After one experiment completes, the advisor agent proposes the next experiment based on what has been learned across all prior experiments.
 
-The meta-orchestrator supports three modes:
+Autonomous mode supports three modes:
 
 - **checkpoint** (default) -- pauses between experiments for user confirmation
 - **capped** -- runs up to a specified number of experiments without pausing
@@ -212,3 +214,7 @@ urika knowledge search my-study "regression diagnostics"
 ```
 
 Supported formats: PDF (requires `urika[knowledge]`), plain text, Markdown, HTML.
+
+---
+
+**Next:** [Creating Projects](03-creating-projects.md)

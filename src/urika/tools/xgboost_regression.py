@@ -16,10 +16,14 @@ class XGBoostRegressionMethod(ITool):
     """Gradient boosting regression using scikit-learn."""
 
     def name(self) -> str:
-        return "xgboost_regression"
+        return "gradient_boosting"
 
     def description(self) -> str:
-        return "Gradient boosting regression using scikit-learn."
+        return (
+            "Gradient boosting regression using scikit-learn's "
+            "GradientBoostingRegressor. Supports pre-split train/test "
+            "indices for unbiased evaluation."
+        )
 
     def category(self) -> str:
         return "regression"
@@ -28,6 +32,8 @@ class XGBoostRegressionMethod(ITool):
         return {
             "target": "",
             "features": None,
+            "train_indices": None,
+            "test_indices": None,
             "n_estimators": 100,
             "max_depth": 3,
             "learning_rate": 0.1,
@@ -75,21 +81,37 @@ class XGBoostRegressionMethod(ITool):
         X = subset[feature_cols].values  # noqa: N806
         y = subset[target].values
 
+        train_idx = params.get("train_indices")
+        test_idx = params.get("test_indices")
+
+        if train_idx is not None and test_idx is not None:
+            X_train, X_test = X[train_idx], X[test_idx]  # noqa: N806
+            y_train, y_test = y[train_idx], y[test_idx]
+        else:
+            # Fallback: train and evaluate on full data (training metrics only)
+            X_train, X_test = X, X  # noqa: N806
+            y_train, y_test = y, y
+
         model = GradientBoostingRegressor(
             n_estimators=n_estimators,
             max_depth=max_depth,
             learning_rate=learning_rate,
             random_state=42,
         )
-        model.fit(X, y)
-        y_pred = model.predict(X)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+        if train_idx is not None:
+            note = "Metrics computed on held-out test set."
+        else:
+            note = "Metrics are training-set only; use train_val_test_split for unbiased estimates."
 
         return ToolResult(
-            outputs={},
+            outputs={"note": note},
             metrics={
-                "r2": float(r2_score(y, y_pred)),
-                "rmse": float(np.sqrt(mean_squared_error(y, y_pred))),
-                "mae": float(mean_absolute_error(y, y_pred)),
+                "r2": float(r2_score(y_test, y_pred)),
+                "rmse": float(np.sqrt(mean_squared_error(y_test, y_pred))),
+                "mae": float(mean_absolute_error(y_test, y_pred)),
             },
         )
 

@@ -54,16 +54,16 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/core/report_writer.py` — Versioned file writer (timestamped backups)
 - `src/urika/core/presentation.py` — Render slide JSON into reveal.js HTML presentations
 - `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent, presentation_agent, report_agent, project_builder, data_agent, finalizer), registry, config, Claude SDK adapter
-- `src/urika/orchestrator/` — Experiment loop (planning→task→evaluator→advisor), meta-orchestrator (experiment-to-experiment), finalize sequence (finalizer→report→presentation→README), output parsing, knowledge integration
+- `src/urika/orchestrator/` — Experiment loop (planning→task→evaluator→advisor), autonomous mode (experiment-to-experiment), finalize sequence (finalizer→report→presentation→README), output parsing, knowledge integration
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
 - `src/urika/methods/` — Agent-created analytical pipelines (IMethod ABC, MethodRegistry), zero built-ins — agents create methods at runtime
-- `src/urika/tools/` — Built-in tools (16: correlation_analysis, cross_validation, data_profiler, descriptive_stats, group_split, hypothesis_tests, linear_regression, logistic_regression, mann_whitney_u, one_way_anova, outlier_detection, paired_t_test, random_forest, train_val_test_split, visualization, xgboost_regression), tool registry
+- `src/urika/tools/` — Built-in tools (18: correlation_analysis, cross_validation, data_profiler, descriptive_stats, feature_scaler, gradient_boosting, group_split, hypothesis_tests, linear_regression, logistic_regression, mann_whitney_u, one_way_anova, outlier_detection, paired_t_test, random_forest, random_forest_classifier, train_val_test_split, visualization), tool registry
 - `src/urika/knowledge/` — Knowledge pipeline: extractors (PDF, text, URL), KnowledgeStore, keyword search
 - `src/urika/templates/presentation/` — Bundled reveal.js + CSS for slide decks
 
 ## Project Status
 
-882+ tests. Foundation, agents (11 roles), orchestrator (experiment + meta + finalize), evaluation, methods (agent-created), tools (16 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 15+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
+882+ tests. Foundation, agents (11 roles), orchestrator (experiment + meta + finalize), evaluation, methods (agent-created), tools (18 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 15+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
 
 ## Development
 

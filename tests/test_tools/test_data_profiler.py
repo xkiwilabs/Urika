@@ -70,15 +70,20 @@ class TestDataProfilerTool:
         assert result.outputs["missing_counts"]["x"] == 1
         assert result.outputs["missing_counts"]["y"] == 2
 
-    def test_no_numeric_columns_returns_invalid(self) -> None:
+    def test_no_numeric_columns_returns_valid_with_profile(self) -> None:
         from urika.tools.data_profiler import DataProfilerTool
 
         df = pd.DataFrame({"name": ["Alice", "Bob"], "city": ["London", "Paris"]})
         view = _make_view(df)
         tool = DataProfilerTool()
         result = tool.run(view, {})
-        assert result.valid is False
-        assert result.error is not None
+        assert result.valid is True
+        assert result.outputs["n_rows"] == 2
+        assert result.outputs["n_columns"] == 2
+        assert result.outputs["columns"] == ["name", "city"]
+        assert "name" in result.outputs["dtypes"]
+        assert "name" in result.outputs["missing_counts"]
+        assert "numeric_stats" not in result.outputs
 
     def test_result_type(self) -> None:
         from urika.tools.data_profiler import DataProfilerTool

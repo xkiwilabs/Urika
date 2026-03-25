@@ -181,6 +181,19 @@ def build_agent_env_for_endpoint(
 
     if endpoint_name != "open":
         endpoint = runtime_config.endpoints.get(endpoint_name)
+        if endpoint is None:
+            import warnings
+
+            warnings.warn(
+                f"Privacy mode '{runtime_config.privacy_mode}' "
+                f"requires endpoint '{endpoint_name}' but it "
+                f"is not defined in [privacy.endpoints."
+                f"{endpoint_name}] in urika.toml. Agent "
+                f"'{agent_name}' will use the default open "
+                f"endpoint. Define the endpoint or change "
+                f"the privacy mode to avoid this.",
+                stacklevel=2,
+            )
         if endpoint:
             if env is None:
                 env = dict(os.environ)

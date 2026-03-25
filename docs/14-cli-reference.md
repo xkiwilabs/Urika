@@ -2,7 +2,7 @@
 
 Complete reference for all Urika CLI commands. Run `urika --help` for a summary, or `urika <command> --help` for any individual command.
 
-Running `urika` with no subcommand launches the interactive REPL (see [Interactive REPL](13-interactive-repl.md)).
+Running `urika` with no subcommand launches the interactive REPL (see [Interactive REPL](15-interactive-repl.md)).
 
 
 ## Project Management
@@ -124,6 +124,54 @@ Preview (first 5 rows):
 ```
 
 
+### `urika update`
+
+Update a project's description, research question, or mode. Changes are versioned -- previous values are preserved with timestamps in `revisions.json`.
+
+```
+urika update [PROJECT] [OPTIONS]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--field [description\|question\|mode]` | Field to update (prompted interactively if omitted) |
+| `--value TEXT` | New value (prompted if omitted) |
+| `--reason TEXT` | Why this change was made (prompted if omitted) |
+| `--history` | Show revision history instead of updating |
+
+When called with no `--field`, shows the current config and prompts you to choose which field to update, enter a new value, and optionally record a reason.
+
+**Examples:**
+
+```bash
+# Interactive update (prompts for field, value, reason)
+urika update my-study
+
+# Direct update with all options
+urika update my-study --field question --value "Does X predict Y?"
+
+# Update with a reason
+urika update my-study --field description --reason "Added new variables"
+
+# View revision history
+urika update my-study --history
+```
+
+**Example history output:**
+
+```
+  Revision history for my-study:
+
+  #1  2026-03-20 14:32  [question]
+    Old: Which factors predict target selection?
+    New: Does X predict Y?
+    Why: Refined after initial exploration
+```
+
+---
+
 ## Experiments
 
 ### `urika experiment create`
@@ -189,7 +237,7 @@ urika run [PROJECT] [OPTIONS]
 |--------|-------------|
 | `--experiment ID` | Specific experiment ID to run (auto-selected if omitted) |
 | `--max-turns N` | Maximum orchestrator turns (default: from `urika.toml`, or 5) |
-| `--max-experiments N` | Run multiple experiments via meta-orchestrator |
+| `--max-experiments N` | Run multiple experiments (autonomous mode) |
 | `--continue` | Resume a paused or failed experiment |
 | `-q`, `--quiet` | Suppress verbose tool-use streaming output |
 | `--auto` | Fully autonomous mode -- no confirmation prompts |
@@ -200,7 +248,7 @@ urika run [PROJECT] [OPTIONS]
 ```
 Proceed?
   1. Run with defaults
-  2. Run multiple experiments (meta-orchestrator)
+  2. Run multiple experiments (autonomous)
   3. Custom max turns
   4. Skip
 ```
@@ -299,7 +347,7 @@ urika report [PROJECT] [--experiment ID]
 
 When no experiment is specified, you are prompted to choose: a specific experiment, all experiments, or project-level reports.
 
-See [Viewing Results](05-viewing-results.md) for details on report types.
+See [Viewing Results](06-viewing-results.md) for details on report types.
 
 ---
 
@@ -399,7 +447,7 @@ urika plan [PROJECT] [EXPERIMENT_ID]
 Run the finalization sequence on a project: Finalizer Agent (selects best methods, writes standalone scripts, findings, and reproducibility artifacts), Report Agent (final report), Presentation Agent (final presentation), and README update.
 
 ```
-urika finalize [PROJECT]
+urika finalize [PROJECT] [OPTIONS]
 ```
 
 **Arguments:**
@@ -408,13 +456,20 @@ urika finalize [PROJECT]
 |----------|-------------|
 | `PROJECT` | Project name (prompted if omitted) |
 
-**Example:**
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--instructions TEXT` | Optional instructions for the finalizer agent (e.g., "focus on the random forest method") |
+
+**Examples:**
 
 ```bash
 urika finalize my-project
+urika finalize my-project --instructions "emphasize the ensemble methods"
 ```
 
-See [Finalizing Projects](14-finalizing-projects.md) for details on what is produced.
+See [Finalizing Projects](07-finalizing-projects.md) for details on what is produced.
 
 ---
 
@@ -546,6 +601,43 @@ Packages: 47 installed (12 project-specific)
 
 ## System
 
+### `urika setup`
+
+Check installation status and optionally install missing packages. Useful after first install or when upgrading.
+
+```
+urika setup
+```
+
+**What it does:**
+
+1. **Package check** -- Shows installed vs missing packages for each category: core, visualization, ML, deep learning, and knowledge pipeline.
+2. **Hardware detection** -- Reports CPU cores, available RAM, and GPU presence (NVIDIA via `nvidia-smi`).
+3. **Deep learning install** -- If DL packages are missing, offers to install them. Detects whether you have an NVIDIA GPU and chooses the appropriate CPU or CUDA variant automatically.
+4. **API key check** -- Verifies that `ANTHROPIC_API_KEY` is set in the environment.
+
+**Example output:**
+
+```
+Core packages:        all installed
+Visualization:        all installed
+Machine learning:     all installed
+Knowledge pipeline:   all installed
+Deep learning:        not installed
+
+Hardware:
+  CPU: 8 cores
+  RAM: 32 GB
+  GPU: NVIDIA RTX 4090 (24 GB VRAM)
+
+ANTHROPIC_API_KEY: set
+
+Install deep learning packages? [Y/n]
+  Detected NVIDIA GPU -- installing CUDA variant...
+```
+
+---
+
 ### `urika tools`
 
 List all available analysis tools (built-in and project-specific).
@@ -564,10 +656,10 @@ urika tools [--category CATEGORY] [--project NAME]
 **Example output:**
 
 ```
-  correlation_analysis  [statistics]   Compute correlation matrices
-  cross_validation      [validation]   K-fold cross-validation
-  linear_regression     [modelling]    Fit linear regression models
-  visualization         [plotting]     Generate plots and figures
+  correlation_analysis  [exploration]       Compute correlation matrices
+  cross_validation      [preprocessing]     K-fold cross-validation
+  linear_regression     [regression]        Fit linear regression models
+  visualization         [exploration]       Generate plots and figures
   ...
 ```
 
@@ -585,7 +677,7 @@ urika --version
 | Variable | Description |
 |----------|-------------|
 | `URIKA_PROJECTS_DIR` | Override the default projects directory (default: `~/urika-projects`) |
-| `URIKA_COLOR` | Set to `1` to enable colored terminal output (disabled by default) |
+| `NO_COLOR` | Set to disable colored terminal output (colors are on by default for TTYs) |
 
 
 ## Global Behaviors
@@ -593,3 +685,7 @@ urika --version
 - **Project argument**: Most commands accept an optional `PROJECT` argument. If omitted and only one project exists, it is used automatically. If multiple projects exist, you are prompted to select one.
 - **Versioned files**: Reports, presentations, and other generated files use versioned writing -- previous versions are backed up with timestamps before overwriting.
 - **Ctrl+C handling**: During `urika run`, pressing Ctrl+C cleanly pauses the experiment and removes the lock file. Resume with `urika run --continue`.
+
+---
+
+**Next:** [Interactive REPL](15-interactive-repl.md)

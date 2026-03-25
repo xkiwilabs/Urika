@@ -17,6 +17,8 @@ from urika.core.session import (
     start_session,
     update_turn,
 )
+from urika.evaluation.leaderboard import update_leaderboard
+from urika.orchestrator.context import summarize_task_output
 from urika.orchestrator.knowledge import build_knowledge_summary
 from urika.orchestrator.parsing import (
     parse_evaluation,
@@ -24,6 +26,36 @@ from urika.orchestrator.parsing import (
     parse_run_records,
     parse_suggestions,
 )
+
+
+# Metrics where lower values are better (errors, losses, p-values)
+_LOWER_IS_BETTER = {"rmse", "mae", "mse", "loss", "error", "p_value", "aic", "bic"}
+
+
+def _detect_primary_metric(
+    metrics: dict[str, float],
+) -> tuple[str, str]:
+    """Detect the primary metric and its direction from a metrics dict.
+
+    Returns (metric_name, direction) where direction is
+    'higher_is_better' or 'lower_is_better'. Prefers common metrics
+    in this order: r2, accuracy, f1, rmse, mae, then the first numeric key.
+    """
+    preferred = ["r2", "accuracy", "f1", "rmse", "mae", "mse", "loss"]
+    for name in preferred:
+        if name in metrics and isinstance(metrics[name], (int, float)):
+            direction = (
+                "lower_is_better" if name in _LOWER_IS_BETTER else "higher_is_better"
+            )
+            return name, direction
+    # Fallback: first numeric metric
+    for name, val in metrics.items():
+        if isinstance(val, (int, float)):
+            direction = (
+                "lower_is_better" if name in _LOWER_IS_BETTER else "higher_is_better"
+            )
+            return name, direction
+    return "", "higher_is_better"
 
 
 def _noop_callback(event: str, detail: str = "") -> None:
@@ -230,14 +262,15 @@ async def _async_generate_summary(
     runner: AgentRunner,
     on_message: object = None,
 ) -> str:
-    """Call evaluator agent to write a short project status summary."""
+    """Call report agent to write a short project status summary."""
     import json as _json
 
     registry = AgentRegistry()
     registry.discover()
 
-    eval_role = registry.get("evaluator")
-    if eval_role is None:
+    # Use report_agent (not evaluator) — this is a writing task, not evaluation
+    report_role = registry.get("report_agent")
+    if report_role is None:
         return ""
 
     # Build context from methods.json and progress
@@ -250,12 +283,11 @@ async def _async_generate_summary(
             methods_info = f"{len(mlist)} methods tried.\n"
             for m in mlist[-5:]:  # last 5 methods
                 metrics = m.get("metrics", {})
-                acc = metrics.get(
-                    "top1_accuracy",
-                    metrics.get("accuracy", ""),
-                )
-                if acc:
-                    methods_info += f"  {m['name']}: {acc}\n"
+                # Show first numeric metric
+                for k, v in metrics.items():
+                    if isinstance(v, (int, float)):
+                        methods_info += f"  {m['name']}: {k}={v}\n"
+                        break
         except Exception:
             pass
 
@@ -274,19 +306,18 @@ async def _async_generate_summary(
         f"Latest observation: {last_obs}\n"
     )
 
-    config = eval_role.build_config(
+    config = report_role.build_config(
         project_dir=project_dir, experiment_id=experiment_id
     )
     config.max_turns = 3  # Keep it short
 
     result = await runner.run(config, prompt, on_message=on_message)
     if result.success and result.text_output:
-        # Strip any JSON blocks, just get the text
         text = result.text_output.strip()
-        # Remove JSON blocks if agent included them
+        # Remove any JSON blocks if agent included them
         import re
 
-        text = re.sub(r"```json.*?```", "", text, flags=re.DOTALL).strip()
+        text = re.sub(r"```(?:json|JSON).*?```", "", text, flags=re.DOTALL).strip()
         # Take first paragraph
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         if paragraphs:
@@ -309,18 +340,27 @@ def _print_run_summary(project_dir: Path, experiment_id: str, progress: object) 
         methods = [r["method"] for r in runs]
         progress("result", f"{len(runs)} runs across {len(set(methods))} methods")
 
-        # Best metrics — find the first numeric metric across all runs
+        # Best metrics — find the first numeric metric, respecting direction
         best_val = None
         best_method = None
         best_metric_name = None
+        lower_is_better = False
         for r in runs:
             for key, val in r.get("metrics", {}).items():
                 if isinstance(val, (int, float)):
                     if best_metric_name is None:
                         best_metric_name = key
-                    if key == best_metric_name and (best_val is None or val > best_val):
-                        best_val = val
-                        best_method = r["method"]
+                        lower_is_better = key in _LOWER_IS_BETTER
+                    if key == best_metric_name:
+                        if best_val is None:
+                            best_val = val
+                            best_method = r["method"]
+                        elif lower_is_better and val < best_val:
+                            best_val = val
+                            best_method = r["method"]
+                        elif not lower_is_better and val > best_val:
+                            best_val = val
+                            best_method = r["method"]
 
         if best_val is not None:
             label = best_metric_name.replace("_", " ")
@@ -412,23 +452,29 @@ async def run_experiment(
     if instructions:
         task_prompt = f"User instructions: {instructions}\n\n{task_prompt}"
 
+    # Cache runtime config for the entire experiment (doesn't change mid-run)
+    runtime_config = load_runtime_config(project_dir)
+
     # --- Pre-loop: knowledge scan ---
     progress("phase", "Scanning knowledge base")
+    knowledge_summary = ""
     try:
-        knowledge_summary = build_knowledge_summary(project_dir)
+        knowledge_summary = build_knowledge_summary(project_dir) or ""
         if knowledge_summary:
             lit_role = registry.get("literature_agent")
             if lit_role is not None:
                 lit_config = lit_role.build_config(project_dir=project_dir)
-                await runner.run(
+                lit_result = await runner.run(
                     lit_config,
                     "Scan the knowledge directory and summarize available knowledge.",
                     on_message=on_message,
                 )
+                # Use the literature agent's output if available
+                if lit_result.success and lit_result.text_output:
+                    knowledge_summary = lit_result.text_output
             task_prompt = knowledge_summary + "\n\n" + task_prompt
-    except Exception as exc:
-        fail_session(project_dir, experiment_id, error=str(exc))
-        return {"status": "failed", "error": str(exc), "turns": 0}
+    except Exception:
+        pass  # Knowledge is supplementary, don't fail the experiment
 
     for turn in range(start_turn, max_turns + 1):
         progress("turn", f"Turn {turn}/{max_turns}")
@@ -498,7 +544,6 @@ async def run_experiment(
                 task_input = task_prompt
 
             # --- data_agent (hybrid mode only) ---
-            runtime_config = load_runtime_config(project_dir)
             if runtime_config.privacy_mode == "hybrid":
                 data_role = registry.get("data_agent")
                 if data_role is not None:
@@ -551,7 +596,7 @@ async def run_experiment(
             if runs:
                 progress("result", f"Recorded {len(runs)} run(s)")
 
-            # Register methods in project registry
+            # Register methods in project registry and update leaderboard
             from urika.core.method_registry import register_method
 
             for run in runs:
@@ -565,6 +610,24 @@ async def run_experiment(
                     metrics=run.metrics,
                 )
                 progress("result", f"Registered method: {run.method}")
+
+                # Update leaderboard — determine primary metric and direction
+                if run.metrics:
+                    primary_metric, direction = _detect_primary_metric(run.metrics)
+                    if primary_metric:
+                        try:
+                            update_leaderboard(
+                                project_dir,
+                                method=run.method,
+                                metrics=run.metrics,
+                                run_id=run.run_id,
+                                params=run.params,
+                                primary_metric=primary_metric,
+                                direction=direction,
+                                experiment_id=experiment_id,
+                            )
+                        except Exception:
+                            pass  # Leaderboard is best-effort
 
             # --- evaluator ---
             progress("agent", "Evaluator — scoring results")
@@ -582,8 +645,9 @@ async def run_experiment(
             eval_config = eval_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
             )
+            eval_input = summarize_task_output(task_result.text_output)
             eval_result = await runner.run(
-                eval_config, task_result.text_output, on_message=on_message
+                eval_config, eval_input, on_message=on_message
             )
 
             if not eval_result.success:
@@ -676,11 +740,14 @@ async def run_experiment(
                 json.dumps(suggestion_data, indent=2) + "\n"
             )
 
-            # Build next task prompt from suggestions
+            # Build next task prompt from suggestions, preserving knowledge context
             if suggestions:
                 task_prompt = json.dumps(suggestions)
             else:
                 task_prompt = "Continue the experiment with a different approach."
+            # Re-inject knowledge context so it persists across turns
+            if knowledge_summary:
+                task_prompt = knowledge_summary + "\n\n" + task_prompt
 
             update_turn(project_dir, experiment_id)
 

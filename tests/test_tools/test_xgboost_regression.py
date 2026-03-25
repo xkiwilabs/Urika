@@ -22,7 +22,7 @@ def _make_view(df: pd.DataFrame) -> DatasetView:
 class TestXGBoostRegressionMethod:
     def test_name(self) -> None:
         method = XGBoostRegressionMethod()
-        assert method.name() == "xgboost_regression"
+        assert method.name() == "gradient_boosting"
 
     def test_description(self) -> None:
         method = XGBoostRegressionMethod()

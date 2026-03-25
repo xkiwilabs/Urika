@@ -2,6 +2,48 @@
 
 This document covers the `urika run` command, how the orchestrator loop works in detail, turn limits, auto mode, and what happens when experiments complete.
 
+
+## Two paths: guided vs autonomous
+
+When you run experiments, you have two paths:
+
+In both paths, each experiment runs **autonomously** — agents plan methods, write code, evaluate results, and iterate across multiple turns without intervention. The difference is what happens *between* experiments.
+
+### Path 1: Guided (`urika run`)
+
+```bash
+urika run my-study
+```
+
+Agents run one experiment autonomously. When it finishes, you review results, refine your approach, and decide what to try next. You are the decision-maker *between* experiments; agents handle everything *within* each one.
+
+Best for: learning the system, exploratory analysis, complex domains where human judgment matters between experiments.
+
+### Path 2: Fully autonomous (`urika run --max-experiments N`)
+
+```bash
+urika run my-study --max-experiments 5
+```
+
+The system runs multiple experiments back-to-back. Each experiment runs autonomously (same as guided), but the advisor agent also decides what to try next between experiments. You can step away and come back to finished results.
+
+Best for: well-defined problems, established methodologies, overnight runs, or when you've provided detailed context and trust the agents to explore effectively.
+
+### Context quality determines success
+
+Both paths depend on what you provide during `urika new`:
+
+- **Project description** — tells agents what domain they're working in
+- **Research question** — focuses analysis on the right outcome
+- **Criteria** — defines what "good enough" looks like
+- **Knowledge** — ingested papers and notes give agents domain expertise
+- **Instructions** — steer each experiment or the whole run
+
+For the guided path, you can correct course between experiments. For the autonomous path, the agents must make good decisions on their own — **the quality of your initial setup directly determines success**. A detailed description with clear aims, proper criteria, and relevant papers ingested into the knowledge base will produce far better results than a vague one-liner.
+
+See [Prompts and Context](04-prompts-and-context.md) for detailed guidance on writing effective descriptions and instructions.
+
+
 ## The `urika run` command
 
 ```
@@ -39,12 +81,12 @@ Run settings for my-study:
 
 Proceed?
   1. Run with defaults (default)
-  2. Run multiple experiments (meta-orchestrator)
+  2. Run multiple experiments (autonomous)
   3. Custom max turns
   4. Skip
 ```
 
-Option 2 asks how many experiments and launches the meta-orchestrator, which runs multiple experiments in sequence. Option 3 lets you override the turn limit for this run.
+Option 2 asks how many experiments and launches autonomous mode, which runs multiple experiments in sequence. Option 3 lets you override the turn limit for this run.
 
 If you provide any flag, the dialog is skipped and Urika runs directly:
 
@@ -111,6 +153,20 @@ flowchart TD
     P -. "needs literature" .-> LA["Literature Agent"]
     TB -.-> TA
     LA -.-> P
+```
+
+**In the guided path**, the experiment completes and you review results before deciding what to do next.
+
+**In the autonomous path**, after each experiment completes the advisor proposes the next experiment and the loop restarts automatically:
+
+```mermaid
+flowchart TD
+    START["Autonomous Mode\n(--max-experiments N)"] --> ADV["Advisor\nproposes next experiment"]
+    ADV --> EXP["Run Experiment\n(loop above)"]
+    EXP --> CHECK{All criteria met?}
+    CHECK -- No --> ADV
+    CHECK -- Yes --> FIN["Finalize Project"]
+    EXP -- "max experiments\nreached" --> FIN
 ```
 
 ### Pre-loop: Knowledge scan
@@ -204,7 +260,7 @@ When resuming:
 
 In interactive mode, the orchestrator pauses at key decision points:
 - Before creating a new experiment (shows the proposal, asks to confirm or modify)
-- The meta-orchestrator pauses between experiments in checkpoint mode
+- Autonomous mode pauses between experiments in checkpoint mode
 
 This is the default and is recommended when you want to guide the research direction.
 
@@ -302,7 +358,7 @@ urika finalize my-study
 
 Finalization runs the Finalizer Agent (which selects the best methods and writes standalone scripts, findings, and reproducibility artifacts), followed by the Report Agent (final report) and Presentation Agent (final presentation). The outputs are standalone -- they work without Urika installed.
 
-See [Finalizing Projects](14-finalizing-projects.md) for full details.
+See [Finalizing Projects](07-finalizing-projects.md) for full details.
 
 
 ## Related commands
@@ -318,3 +374,7 @@ See [Finalizing Projects](14-finalizing-projects.md) for full details.
 | `urika advisor [PROJECT] [TEXT]` | Ask the advisor agent a question |
 | `urika criteria [PROJECT]` | Show current project criteria |
 | `urika usage [PROJECT]` | Show API usage stats and cost |
+
+---
+
+**Next:** [Viewing Results](06-viewing-results.md)

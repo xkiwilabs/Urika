@@ -43,7 +43,9 @@ def build_config(
             writable_dirs=[
                 project_dir / "methods",
                 project_dir / "projectbook",
-                project_dir,  # for requirements.txt, reproduce.sh, reproduce.bat
+                project_dir / "requirements.txt",
+                project_dir / "reproduce.sh",
+                project_dir / "reproduce.bat",
             ],
             readable_dirs=[project_dir],
             allowed_bash_prefixes=["python ", "pip "],

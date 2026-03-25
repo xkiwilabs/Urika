@@ -22,7 +22,7 @@ Finalize when you are satisfied with the experimental results and want to produc
 - You need to share results with colleagues or include them in a publication
 - You want standalone, reproducible scripts that work without Urika
 
-The meta-orchestrator can also trigger finalization automatically when all experiments complete and criteria are fully satisfied.
+Autonomous mode can also trigger finalization automatically when all experiments complete and criteria are fully satisfied.
 
 
 ## How to trigger finalization
@@ -141,3 +141,7 @@ This means anyone with Python installed can reproduce the analysis, regardless o
 | `projectbook/final-report.md` | Comprehensive final report (markdown) |
 | `projectbook/final-presentation/` | Final reveal.js presentation |
 | `README.md` | Updated project README with findings |
+
+---
+
+**Next:** [Agent System](08-agent-system.md)

@@ -267,7 +267,11 @@ How would you like to proceed?
 ```
 
 - **Option 1** creates the experiment and runs the orchestrator for one experiment.
-- **Option 2** asks how many experiments, then runs the meta-orchestrator with pauses between each for review.
-- **Option 3** runs fully autonomous — the meta-orchestrator keeps creating and running experiments until criteria are met or a safety cap is reached.
+- **Option 2** asks how many experiments, then runs autonomous mode with pauses between each for review.
+- **Option 3** runs fully autonomous — the system keeps creating and running experiments until criteria are met or a safety cap is reached.
 - **Option 4** lets you describe a custom experiment instead of using the plan.
 - **Option 5** exits — you can run later with `urika run`.
+
+---
+
+**Next:** [Prompts and Context](04-prompts-and-context.md)

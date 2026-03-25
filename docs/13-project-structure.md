@@ -22,6 +22,7 @@ my-project/
       labbook/                  # Auto-generated documentation
         notes.md                # Experiment notes and observations
         narrative.md            # Agent-written narrative summary
+        summary.md              # Concise experiment summary
       artifacts/                # Plots, saved models, intermediate outputs
       suggestions/              # Advisor suggestions for next steps
       presentation/             # Experiment-level slide deck (if generated)
@@ -47,19 +48,19 @@ my-project/
 
 ### urika.toml
 
-The project configuration file. Contains the project name, research question, mode, data paths, and optional preferences. Created by `urika new` and not modified during experiments. See [Configuration](10-configuration.md) for full details.
+The project configuration file. Contains the project name, research question, mode, data paths, and optional preferences. Created by `urika new` and not modified during experiments. See [Configuration](12-configuration.md) for full details.
 
 ### criteria.json
 
-Versioned success criteria. The project builder sets initial criteria; the advisor agent evolves them as experiments progress. Each version is appended, preserving the full history. See [Configuration](10-configuration.md#criteriajson).
+Versioned success criteria. The project builder sets initial criteria; the advisor agent evolves them as experiments progress. Each version is appended, preserving the full history. See [Configuration](12-configuration.md#criteriajson).
 
 ### methods.json
 
-Registry of all analytical methods created by agents. Each entry tracks the method name, description, script path, originating experiment, metrics, and status (active or superseded). See [Configuration](10-configuration.md#methodsjson).
+Registry of all analytical methods created by agents. Each entry tracks the method name, description, script path, originating experiment, metrics, and status (active or superseded). See [Configuration](12-configuration.md#methodsjson).
 
 ### usage.json
 
-Cumulative session usage data: tokens consumed, estimated cost, duration, agent calls, and experiments run. Updated after each session. See [Configuration](10-configuration.md#usagejson).
+Cumulative session usage data: tokens consumed, estimated cost, duration, agent calls, and experiments run. Updated after each session. See [Configuration](12-configuration.md#usagejson).
 
 ### README.md
 
@@ -78,7 +79,7 @@ Contains all experiments for the project. Each experiment gets its own subdirect
 
 ### knowledge/
 
-Stores ingested domain knowledge. The `index.json` file holds all entry metadata and extracted content. The `papers/` and `notes/` subdirectories are organizational conventions for source files. See [Knowledge Pipeline](09-knowledge-pipeline.md).
+Stores ingested domain knowledge. The `index.json` file holds all entry metadata and extracted content. The `papers/` and `notes/` subdirectories are organizational conventions for source files. See [Knowledge Pipeline](10-knowledge-pipeline.md).
 
 ### methods/
 
@@ -86,7 +87,7 @@ Project-level directory for method scripts. Methods created by the task agent du
 
 ### tools/
 
-Project-specific tools created by the tool_builder agent. Each `.py` file must implement the `ITool` interface and export a `get_tool()` factory function. The tool registry discovers these automatically via `discover_project()`. See [Built-in Tools](08-built-in-tools.md#project-specific-tools).
+Project-specific tools created by the tool_builder agent. Each `.py` file must implement the `ITool` interface and export a `get_tool()` factory function. The tool registry discovers these automatically via `discover_project()`. See [Built-in Tools](09-built-in-tools.md#project-specific-tools).
 
 ### suggestions/
 
@@ -224,3 +225,7 @@ Commands that interact with the registry:
 | `urika new` | Adds an entry |
 | `urika list` | Lists all entries |
 | `urika status <project>` | Looks up path by name |
+
+---
+
+**Next:** [CLI Reference](14-cli-reference.md)

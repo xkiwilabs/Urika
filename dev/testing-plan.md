@@ -103,7 +103,7 @@
   - [ ] `/help` shows all commands
   - [ ] `/project stroop-study` loads project
   - [ ] `/status` shows project info
-  - [ ] `/tools` lists 16 built-in tools
+  - [ ] `/tools` lists 18 built-in tools
   - [ ] Tab completion works for commands and project names
 - [ ] `/run`
   - [ ] Settings review shows max_turns from urika.toml

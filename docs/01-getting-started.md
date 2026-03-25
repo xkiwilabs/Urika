@@ -25,7 +25,7 @@ Your hardware needs depend on what kind of analysis you plan to do:
 
 **Cloud-only mode (default):** All the heavy computation happens on your machine (Python code the agents write), but the AI reasoning happens via the Claude API. Your CPU and RAM matter for data processing; GPU only matters if agents build neural network models.
 
-**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `gpt-oss:20b` need ~16 GB RAM. Larger models like `gpt-oss:120b` need a GPU with 80 GB VRAM or equivalent shared memory (e.g., Apple Silicon with unified memory). See [Models and Privacy](07-models-and-privacy.md) for configuration details.
+**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `gpt-oss:20b` need ~16 GB RAM. Larger models like `gpt-oss:120b` need a GPU with 80 GB VRAM or equivalent shared memory (e.g., Apple Silicon with unified memory). See [Models and Privacy](11-models-and-privacy.md) for configuration details.
 
 **Shared memory systems (Apple Silicon, etc.):** Macs with M-series chips share memory between CPU and GPU. A MacBook Pro with 64 GB unified memory can run models that would require a dedicated GPU on other systems. Ollama handles this automatically.
 
@@ -39,7 +39,7 @@ cd Urika
 pip install -e .
 ```
 
-This installs the core platform with everything you need to get started:
+This installs everything you need for statistical analysis, machine learning, visualization, and knowledge ingestion:
 
 | Package | What it provides |
 |---------|-----------------|
@@ -49,26 +49,38 @@ This installs the core platform with everything you need to get started:
 | scikit-learn | ML basics: SVM, classification, clustering, regression, cross-validation, PCA, preprocessing, pipelines |
 | statsmodels | Advanced statistics: GLM, mixed effects, multilevel models, ARIMA, time series |
 | pingouin | Effect sizes, Bayesian tests, ICC, partial correlations |
+| matplotlib, seaborn | Charts, plots, heatmaps |
+| xgboost, lightgbm | Gradient boosting |
+| optuna | Hyperparameter tuning |
+| shap | Model explainability |
+| imbalanced-learn | Class imbalance handling |
+| pypdf | PDF paper ingestion into the knowledge base |
 
-### Optional install groups
+### Check your installation
+
+After installing, run `urika setup` to verify everything is working:
 
 ```bash
-pip install -e ".[viz]"          # + visualization
-pip install -e ".[ml]"           # + machine learning
-pip install -e ".[dl]"           # + deep learning
-pip install -e ".[knowledge]"    # + PDF ingestion
-pip install -e ".[all]"          # everything
+urika setup
+```
+
+This checks installed packages by category, detects your hardware (CPU cores, RAM, GPU), and verifies your `ANTHROPIC_API_KEY` is set. If deep learning packages are missing, it offers to install them with automatic GPU detection.
+
+### Optional: deep learning
+
+The only optional install group is `[dl]` for deep learning (~2 GB download):
+
+```bash
+pip install -e ".[dl]"           # + deep learning (torch, transformers, etc.)
+pip install -e ".[all]"          # same as core + dl
 ```
 
 | Group | Packages | What it adds |
 |-------|----------|-------------|
-| `[viz]` | matplotlib, seaborn | Charts, plots, heatmaps |
-| `[ml]` | xgboost, lightgbm, optuna, shap, imbalanced-learn | Gradient boosting, hyperparameter tuning, model explainability, class imbalance handling |
 | `[dl]` | torch, transformers, sentence-transformers, torchvision, torchaudio, timm | Neural networks, LLM fine-tuning, text embeddings, image/audio models |
-| `[knowledge]` | pypdf | PDF paper ingestion into the knowledge base |
-| `[all]` | All of the above | Everything in one install |
+| `[all]` | Core + dl | Everything in one install |
 
-You can combine groups: `pip install -e ".[ml,viz,knowledge]"`
+You can also install deep learning packages interactively via `urika setup`, which detects whether you have an NVIDIA GPU and installs the appropriate CPU or CUDA variant.
 
 ### Agents install packages automatically
 
@@ -122,7 +134,7 @@ Urika has two interfaces that share the same commands and produce identical resu
 
 If you're new to Urika, **start with the REPL** — you can discover all commands with tab completion and `/help`, and ask the advisor agent questions in plain text without needing to know any commands at all.
 
-See [CLI Reference](12-cli-reference.md) and [Interactive REPL](13-interactive-repl.md) for full details on each interface.
+See [CLI Reference](14-cli-reference.md) and [Interactive REPL](15-interactive-repl.md) for full details on each interface.
 
 ## Quickstart
 
@@ -174,8 +186,12 @@ By default, projects are created under `~/urika-projects/`. Override this with t
 export URIKA_PROJECTS_DIR="/path/to/my/projects"
 ```
 
+---
+
+**Next:** [Core Concepts](02-core-concepts.md)
+
 ## Further reading
 
 - [Core Concepts](02-core-concepts.md) -- hierarchy, agents, tools, orchestrator loop
 - [Creating Projects](03-creating-projects.md) -- detailed guide to `urika new`
-- [Running Experiments](04-running-experiments.md) -- orchestrator, turns, auto mode
+- [Running Experiments](05-running-experiments.md) -- orchestrator, turns, auto mode
