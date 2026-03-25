@@ -140,25 +140,20 @@ def _test_endpoint(url: str) -> bool:
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:
     """Prompt user with numbered options. Returns the selected option text."""
-    click.echo(prompt_text)
-    for i, opt in enumerate(options, 1):
-        marker = " (default, press enter)" if i == default else ""
-        click.echo(f"  {i}. {opt}{marker}")
-    while True:
-        raw = click.prompt("Choice", default=str(default)).strip()
-        try:
-            idx = int(raw)
-            if 1 <= idx <= len(options):
-                return options[idx - 1]
-        except ValueError:
-            pass
-        click.echo(f"Please enter a number between 1 and {len(options)}.")
+    from urika.cli_helpers import interactive_numbered
+
+    return interactive_numbered(prompt_text, options, default=default)
 
 
 def _prompt_path(prompt_text: str, must_exist: bool = True) -> str | None:
     """Prompt for a path, re-asking if it doesn't exist. Empty = skip."""
+    from urika.cli_helpers import interactive_prompt
+
     while True:
-        raw = click.prompt(prompt_text, default="").strip()
+        try:
+            raw = interactive_prompt(prompt_text).strip()
+        except click.Abort:
+            return None
         if not raw:
             return None
         resolved = Path(raw).resolve()
