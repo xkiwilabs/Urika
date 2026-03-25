@@ -1505,7 +1505,7 @@ def run(
             mode=_config.mode,
         )
 
-    # Create panel early so it's available during experiment selection
+    # Create panel early so it's available during experiment selection.
     if json_output:
         panel = None
     else:
