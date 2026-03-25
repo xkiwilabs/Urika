@@ -74,21 +74,9 @@ def _ensure_project(project: str | None) -> str:
     names = list(projects.keys())
     if len(names) == 1:
         return names[0]
-    click.echo("\n  Select project:")
-    for i, name in enumerate(names, 1):
-        marker = " (default)" if i == 1 else ""
-        click.echo(f"    {i}. {name}{marker}")
-    while True:
-        raw = click.prompt("  Choice", default="1").strip()
-        try:
-            idx = int(raw)
-            if 1 <= idx <= len(names):
-                return names[idx - 1]
-        except ValueError:
-            # Try as project name
-            if raw in names:
-                return raw
-        click.echo(f"  Please enter 1-{len(names)} or a project name.")
+    from urika.cli_helpers import interactive_numbered
+
+    return interactive_numbered("\n  Select project:", names, default=1)
 
 
 @click.group(invoke_without_command=True)
@@ -201,8 +189,10 @@ def new(
         print_header()
 
     # Prompt for missing required fields
+    from urika.cli_helpers import interactive_prompt, interactive_confirm
+
     if name is None:
-        name = click.prompt("Project name").strip()
+        name = interactive_prompt("Project name", required=True)
 
     # Load saved defaults from ~/.urika/settings.toml
     from urika.core.settings import get_default_privacy
@@ -228,9 +218,7 @@ def new(
         default=_mode_default,
     )
     _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
-    privacy_mode_val = _privacy_map.get(
-        privacy_choice.split(" —")[0].strip(), "open"
-    )
+    privacy_mode_val = _privacy_map.get(privacy_choice.split(" —")[0].strip(), "open")
 
     private_endpoint_url = ""
     private_endpoint_key_env = ""
@@ -238,12 +226,8 @@ def new(
         _url_default = _saved_url or "http://localhost:11434"
         _key_default = _saved_key_env or ""
         if _saved_url:
-            click.echo(
-                f"\n  Using saved endpoint: {_saved_url}"
-            )
-            click.echo(
-                "  Press Enter to keep, or type a new URL."
-            )
+            click.echo(f"\n  Using saved endpoint: {_saved_url}")
+            click.echo("  Press Enter to keep, or type a new URL.")
         else:
             click.echo(
                 "\n  Configure the private endpoint.\n"
@@ -251,14 +235,14 @@ def new(
                 "a secure institutional server."
             )
         while True:
-            private_endpoint_url = click.prompt(
-                "  Private endpoint URL",
+            private_endpoint_url = interactive_prompt(
+                "Private endpoint URL",
                 default=_url_default,
-            ).strip()
-            private_endpoint_key_env = click.prompt(
-                "  API key env var (empty for Ollama)",
+            )
+            private_endpoint_key_env = interactive_prompt(
+                "API key env var (empty for Ollama)",
                 default=_key_default,
-            ).strip()
+            )
             # Validate the endpoint is reachable
             print_step("Testing endpoint connection…")
             if _test_endpoint(private_endpoint_url):
@@ -294,12 +278,12 @@ def new(
         data_path = _prompt_path("Path to data (file or directory)")
 
     if description is None:
-        description = click.prompt(
+        description = interactive_prompt(
             "Describe the project — what are you trying to analyse or predict",
             default="",
-        ).strip()
+        )
     if question is None:
-        question = click.prompt("Research question").strip()
+        question = interactive_prompt("Research question", required=True)
     if mode is None:
         mode = _prompt_numbered(
             "Investigation mode:",
@@ -307,8 +291,8 @@ def new(
             default=1,
         )
 
-    web_search = click.confirm(
-        "\nAllow agents to search the web for relevant papers?",
+    web_search = interactive_confirm(
+        "Allow agents to search the web for relevant papers?",
         default=False,
     )
 
@@ -318,7 +302,7 @@ def new(
         "  mne, transformers) or if you run multiple projects with different\n"
         "  library versions."
     )
-    use_venv = click.confirm(
+    use_venv = interactive_confirm(
         "Create isolated environment for this project?",
         default=False,
     )
@@ -349,7 +333,7 @@ def new(
             shutil.rmtree(project_dir)
             break
         # New name
-        name = click.prompt("New project name").strip()
+        name = interactive_prompt("New project name", required=True)
         builder.name = name
         project_dir = _projects_dir() / name
 
@@ -410,8 +394,8 @@ def new(
             f"\n  Found {n_docs} documentation file(s) and {n_papers} paper(s)"
             " in the data path."
         )
-        ingest = click.confirm(
-            "  Ingest into the knowledge base?",
+        ingest = interactive_confirm(
+            "Ingest into the knowledge base?",
             default=True,
         )
         if ingest:
@@ -428,9 +412,7 @@ def new(
 
         tips = []
         if not has_readme:
-            tips.append(
-                "a description of the data collection methods and procedures"
-            )
+            tips.append("a description of the data collection methods and procedures")
         if n_papers == 0:
             tips.append("1-2 relevant research papers from your domain")
 
@@ -454,7 +436,11 @@ def new(
                 ingested = 0
                 for f in sorted(extra.rglob("*")):
                     if f.is_file() and f.suffix.lower() in (
-                        ".pdf", ".md", ".txt", ".rst", ".html",
+                        ".pdf",
+                        ".md",
+                        ".txt",
+                        ".rst",
+                        ".html",
                     ):
                         try:
                             store.ingest(str(f))
@@ -474,9 +460,7 @@ def new(
     elif not data_path:
         pass  # No data path — skip knowledge entirely
     else:
-        click.echo(
-            "\n  No documentation or papers found in the data path."
-        )
+        click.echo("\n  No documentation or papers found in the data path.")
         extra_path = _prompt_path(
             "  Path to knowledge to ingest (paper, doc, or folder)"
             " — press Enter to skip"
@@ -528,9 +512,7 @@ def new(
             pass
 
     if first_name:
-        short_desc = (
-            first_desc[:120] + "..." if len(first_desc) > 120 else first_desc
-        )
+        short_desc = first_desc[:120] + "..." if len(first_desc) > 120 else first_desc
         click.echo(f"\n  The plan proposes starting with: {first_name}")
         if short_desc:
             click.echo(f"    {short_desc}")
@@ -556,10 +538,8 @@ def new(
     if choice.startswith("Skip"):
         pass
     elif choice.startswith("Different"):
-        custom = click.prompt("  Describe the experiment").strip()
-        custom_name = click.prompt(
-            "  Experiment name", default="custom-experiment"
-        ).strip()
+        custom = interactive_prompt("Describe the experiment", required=True)
+        custom_name = interactive_prompt("Experiment name", default="custom-experiment")
         exp = create_experiment(
             project_dir,
             name=custom_name,
@@ -577,16 +557,14 @@ def new(
             max_experiments=None,
         )
     elif choice.startswith("Run multiple"):
-        max_exp = int(click.prompt("  How many experiments?", default="3"))
+        max_exp = int(interactive_prompt("How many experiments?", default="3"))
         exp = create_experiment(
             project_dir,
             name=exp_name_default,
             hypothesis=exp_hypothesis,
         )
         click.echo(f"\n  Created experiment: {exp.experiment_id}")
-        click.echo(
-            f"  Starting meta-orchestrator ({max_exp} experiments)...\n"
-        )
+        click.echo(f"  Starting meta-orchestrator ({max_exp} experiments)...\n")
         ctx = click.get_current_context()
         ctx.invoke(
             run,
@@ -657,6 +635,7 @@ def _run_builder_agent_loop(
         print_tool_use,
         thinking_phrase,
     )
+    from urika.cli_helpers import interactive_prompt
     from urika.core.builder_prompts import (
         build_planning_prompt,
         build_scoping_prompt,
@@ -682,7 +661,9 @@ def _run_builder_agent_loop(
         return
 
     # Resolve the actual project directory (where urika.toml lives)
-    project_dir = getattr(builder, "projects_dir", Path.home() / "urika-projects") / getattr(builder, "name", "")
+    project_dir = getattr(
+        builder, "projects_dir", Path.home() / "urika-projects"
+    ) / getattr(builder, "name", "")
 
     # Create persistent footer panel for the entire builder loop
     panel = ThinkingPanel()
@@ -735,9 +716,7 @@ def _run_builder_agent_loop(
             config = builder_role.build_config(project_dir=project_dir)
 
             panel.update(agent="project_builder", activity=thinking_phrase())
-            result = asyncio.run(
-                runner.run(config, prompt, on_message=_on_builder_msg)
-            )
+            result = asyncio.run(runner.run(config, prompt, on_message=_on_builder_msg))
 
             if not result.success:
                 print_error(f"Agent error: {result.error}")
@@ -765,7 +744,7 @@ def _run_builder_agent_loop(
                     break
                 click.echo(f"\n{question_text}")
 
-            answer = click.prompt("\nYour answer (or 'done' to move on)").strip()
+            answer = interactive_prompt("Your answer (or 'done' to move on)")
             if answer.lower() == "done":
                 break
 
@@ -811,9 +790,7 @@ def _run_builder_agent_loop(
         plan_prompt = build_planning_prompt(
             suggestions or {}, description, data_summary
         )
-        plan_config = plan_role.build_config(
-            project_dir=project_dir, experiment_id=""
-        )
+        plan_config = plan_role.build_config(project_dir=project_dir, experiment_id="")
 
         panel.update(
             agent="planning_agent",
@@ -846,7 +823,7 @@ def _run_builder_agent_loop(
             raise click.ClickException("Aborted.")
         if choice.startswith("Looks good"):
             break
-        refinement = click.prompt("Your suggestions").strip()
+        refinement = interactive_prompt("Your suggestions")
         if not refinement:
             continue
 
@@ -1073,6 +1050,7 @@ def _determine_next_experiment(
     import json
 
     from urika.cli_display import print_step, print_success
+    from urika.cli_helpers import interactive_prompt
 
     # Gather project state
     existing_experiments = list_experiments(project_path)
@@ -1249,7 +1227,7 @@ def _determine_next_experiment(
             return None
 
         if choice.startswith("Different"):
-            instructions = click.prompt("  Your instructions").strip()
+            instructions = interactive_prompt("Your instructions")
             if instructions:
                 description = f"{instructions}\n\n{description}"
 
@@ -1333,6 +1311,7 @@ def run(
     from urika.orchestrator import run_experiment, run_project
 
     from urika.cli_display import thinking_phrase
+    from urika.cli_helpers import interactive_prompt
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -1381,11 +1360,11 @@ def run(
             return
         elif choice.startswith("Run multiple"):
             max_experiments = int(
-                click.prompt("  How many experiments?", default="3")
+                interactive_prompt("How many experiments?", default="3")
             )
         elif choice.startswith("Custom"):
             max_turns = int(
-                click.prompt("  Max turns per experiment", default=str(max_turns))
+                interactive_prompt("Max turns per experiment", default=str(max_turns))
             )
 
     # Show header (skip if called from REPL — already has header)
@@ -1856,12 +1835,22 @@ def inspect(project: str, data_file: str | None) -> None:
         data_dir = project_path / "data"
         if not data_dir.exists():
             raise click.ClickException("No data/ directory found.")
-        _supported_exts = ("*.csv", "*.tsv", "*.xlsx", "*.xls", "*.parquet", "*.json", "*.jsonl")
+        _supported_exts = (
+            "*.csv",
+            "*.tsv",
+            "*.xlsx",
+            "*.xls",
+            "*.parquet",
+            "*.json",
+            "*.jsonl",
+        )
         data_files: list[Path] = []
         for _ext in _supported_exts:
             data_files.extend(data_dir.glob(_ext))
         if not data_files:
-            raise click.ClickException("No supported data files found in data/ directory.")
+            raise click.ClickException(
+                "No supported data files found in data/ directory."
+            )
         path = data_files[0]
         if len(data_files) > 1:
             click.echo(f"Multiple data files found. Using: {path.name}")
@@ -2023,11 +2012,13 @@ def advisor(project: str | None, text: str | None) -> None:
 
     from urika.cli_display import Spinner, print_agent
 
+    from urika.cli_helpers import interactive_prompt
+
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
     if text is None:
-        text = click.prompt("Question or instructions").strip()
+        text = interactive_prompt("Question or instructions", required=True)
 
     try:
         from urika.agents.runner import get_runner
@@ -2173,7 +2164,8 @@ def plan(project: str | None, experiment_id: str | None) -> None:
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option(
-    "--instructions", default="",
+    "--instructions",
+    default="",
     help="Optional instructions for the finalizer agent.",
 )
 def finalize(project: str | None, instructions: str) -> None:
@@ -2239,7 +2231,10 @@ def finalize(project: str | None, instructions: str) -> None:
     try:
         result = asyncio.run(
             finalize_project(
-                project_path, runner, _on_progress, _on_message,
+                project_path,
+                runner,
+                _on_progress,
+                _on_message,
                 instructions=instructions,
             )
         )
@@ -2274,10 +2269,13 @@ def finalize(project: str | None, instructions: str) -> None:
 )
 @click.option("--value", default=None, help="New value.")
 @click.option(
-    "--reason", default="", help="Why this change was made.",
+    "--reason",
+    default="",
+    help="Why this change was made.",
 )
 @click.option(
-    "--history", is_flag=True,
+    "--history",
+    is_flag=True,
     help="Show revision history.",
 )
 def update_project(
@@ -2304,6 +2302,7 @@ def update_project(
         print_step,
         print_success,
     )
+    from urika.cli_helpers import interactive_numbered, interactive_prompt
 
     project = _ensure_project(project)
     project_path, config = _resolve_project(project)
@@ -2319,10 +2318,7 @@ def update_project(
         click.echo(f"\n  Revision history for {project}:\n")
         for r in revs:
             ts = r["timestamp"][:19].replace("T", " ")
-            click.echo(
-                f"  #{r['revision']}  {ts}  "
-                f"[{r['field']}]"
-            )
+            click.echo(f"  #{r['revision']}  {ts}  [{r['field']}]")
             click.echo(
                 f"    Old: {r['old_value'][:80]}"
                 f"{'…' if len(r['old_value']) > 80 else ''}"
@@ -2343,11 +2339,10 @@ def update_project(
         click.echo(f"  Question:    {config.question[:100]}")
         click.echo(f"  Mode:        {config.mode}")
         click.echo()
-        field = click.prompt(
-            "  Field to update",
-            type=click.Choice(
-                ["description", "question", "mode"],
-            ),
+        field = interactive_numbered(
+            "  Field to update:",
+            ["description", "question", "mode"],
+            default=1,
         )
 
     # Show current value and get new value
@@ -2358,12 +2353,13 @@ def update_project(
         if field == "mode":
             from urika.core.models import VALID_MODES
 
-            value = click.prompt(
-                f"  New {field}",
-                type=click.Choice(sorted(VALID_MODES)),
+            value = interactive_numbered(
+                f"  New {field}:",
+                sorted(VALID_MODES),
+                default=1,
             )
         else:
-            value = click.prompt(f"  New {field}").strip()
+            value = interactive_prompt(f"New {field}", required=True)
 
     if not value:
         click.echo("  No change.")
@@ -2374,10 +2370,10 @@ def update_project(
         return
 
     if not reason:
-        reason = click.prompt(
-            "  Reason for change (optional, Enter to skip)",
+        reason = interactive_prompt(
+            "Reason for change (optional, Enter to skip)",
             default="",
-        ).strip()
+        )
 
     from urika.core.revisions import update_project_field
 
@@ -2387,12 +2383,8 @@ def update_project(
         new_value=value,
         reason=reason,
     )
-    print_success(
-        f"Updated {field} (revision #{rev['revision']})"
-    )
-    print_step(
-        "Previous value preserved in revisions.json"
-    )
+    print_success(f"Updated {field} (revision #{rev['revision']})")
+    print_step("Previous value preserved in revisions.json")
 
 
 @cli.command("build-tool")
@@ -2412,14 +2404,16 @@ def build_tool(project: str | None, instructions: str | None) -> None:
     import asyncio
 
     from urika.cli_display import Spinner, print_agent
+    from urika.cli_helpers import interactive_prompt
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
     if instructions is None:
-        instructions = click.prompt(
-            "Describe the tool to build (e.g., 'create a correlation heatmap tool using seaborn')"
-        ).strip()
+        instructions = interactive_prompt(
+            "Describe the tool to build (e.g., 'create a correlation heatmap tool using seaborn')",
+            required=True,
+        )
 
     try:
         from urika.agents.runner import get_runner
@@ -2695,9 +2689,7 @@ def config_command(
 
     if changed:
         save_settings(settings)
-        print_step(
-            f"Saved to {_settings_path()}"
-        )
+        print_step(f"Saved to {_settings_path()}")
 
 
 @cli.command("setup")
@@ -2736,10 +2728,7 @@ def setup_command() -> None:
             print_error(f"  {name} — NOT INSTALLED")
             all_core = False
     if not all_core:
-        print_warning(
-            "Some core packages missing. "
-            "Run: pip install -e ."
-        )
+        print_warning("Some core packages missing. Run: pip install -e .")
         click.echo()
 
     # Check viz
@@ -2822,12 +2811,9 @@ def setup_command() -> None:
         click.echo()
         click.echo("  " + "─" * 40)
         click.echo()
+        print_step("Deep learning packages are not installed.")
         print_step(
-            "Deep learning packages are not installed."
-        )
-        print_step(
-            "These are large (~2 GB) and only needed "
-            "for neural network experiments."
+            "These are large (~2 GB) and only needed for neural network experiments."
         )
         click.echo()
         choice = click.prompt(
@@ -2849,8 +2835,12 @@ def setup_command() -> None:
                 print_step("Installing PyTorch with GPU support…")
                 subprocess.run(
                     [
-                        sys.executable, "-m", "pip",
-                        "install", "torch", "torchvision",
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "torch",
+                        "torchvision",
                         "torchaudio",
                         "--index-url",
                         "https://download.pytorch.org/whl/cu121",
@@ -2861,21 +2851,26 @@ def setup_command() -> None:
                 print_step("Installing transformers…")
                 subprocess.run(
                     [
-                        sys.executable, "-m", "pip",
-                        "install", "transformers>=4.30",
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "transformers>=4.30",
                         "sentence-transformers>=2.2",
                         "timm>=0.9",
                     ],
                     check=False,
                 )
             elif choice == "cpu":
-                print_step(
-                    "Installing PyTorch (CPU only)…"
-                )
+                print_step("Installing PyTorch (CPU only)…")
                 subprocess.run(
                     [
-                        sys.executable, "-m", "pip",
-                        "install", "torch", "torchvision",
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "torch",
+                        "torchvision",
                         "torchaudio",
                         "--index-url",
                         "https://download.pytorch.org/whl/cpu",
@@ -2885,8 +2880,11 @@ def setup_command() -> None:
                 print_step("Installing transformers…")
                 subprocess.run(
                     [
-                        sys.executable, "-m", "pip",
-                        "install", "transformers>=4.30",
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "transformers>=4.30",
                         "sentence-transformers>=2.2",
                         "timm>=0.9",
                     ],
@@ -2905,42 +2903,45 @@ def setup_command() -> None:
                     has_gpu = False
 
                 if has_gpu:
-                    print_step(
-                        "GPU detected — installing "
-                        "with CUDA support…"
-                    )
+                    print_step("GPU detected — installing with CUDA support…")
                     subprocess.run(
                         [
-                            sys.executable, "-m", "pip",
-                            "install", "torch",
-                            "torchvision", "torchaudio",
+                            sys.executable,
+                            "-m",
+                            "pip",
+                            "install",
+                            "torch",
+                            "torchvision",
+                            "torchaudio",
                             "--index-url",
-                            "https://download.pytorch.org"
-                            "/whl/cu121",
+                            "https://download.pytorch.org/whl/cu121",
                         ],
                         check=False,
                     )
                 else:
-                    print_step(
-                        "No GPU detected — installing "
-                        "CPU version…"
-                    )
+                    print_step("No GPU detected — installing CPU version…")
                     subprocess.run(
                         [
-                            sys.executable, "-m", "pip",
-                            "install", "torch",
-                            "torchvision", "torchaudio",
+                            sys.executable,
+                            "-m",
+                            "pip",
+                            "install",
+                            "torch",
+                            "torchvision",
+                            "torchaudio",
                             "--index-url",
-                            "https://download.pytorch.org"
-                            "/whl/cpu",
+                            "https://download.pytorch.org/whl/cpu",
                         ],
                         check=False,
                     )
                 print_step("Installing transformers…")
                 subprocess.run(
                     [
-                        sys.executable, "-m", "pip",
-                        "install", "transformers>=4.30",
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "transformers>=4.30",
                         "sentence-transformers>=2.2",
                         "timm>=0.9",
                     ],
@@ -2969,8 +2970,7 @@ def setup_command() -> None:
         print_success("  ANTHROPIC_API_KEY is set")
     else:
         print_warning(
-            "  ANTHROPIC_API_KEY not set — "
-            "needed unless using Claude Max/Pro"
+            "  ANTHROPIC_API_KEY not set — needed unless using Claude Max/Pro"
         )
 
     click.echo()

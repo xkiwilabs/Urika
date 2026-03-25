@@ -35,7 +35,15 @@ def is_scripted(*, json_flag: bool = False) -> bool:
 
 
 def _pt_prompt(message: str, **kwargs: Any) -> str:
-    """Thin wrapper around prompt_toolkit's prompt() for mocking."""
+    """Thin wrapper around prompt_toolkit's prompt() for mocking.
+
+    Falls back to built-in input() when stdin is not a TTY
+    (e.g. inside Click's CliRunner during tests, or piped input).
+    """
+    if not sys.stdin.isatty():
+        # prompt_toolkit doesn't work with non-TTY stdin
+        return input(message)
+
     from prompt_toolkit import prompt as pt_prompt
     from prompt_toolkit.history import InMemoryHistory
 
@@ -60,7 +68,7 @@ def interactive_prompt(
 
     Supports arrow keys, history, multi-line paste.
     Falls back to *default* on empty input.
-    Raises ``click.Abort`` on Ctrl+C when no default.
+    Raises ``click.Abort`` on Ctrl+C/EOF only when *required* and no default.
     """
     suffix = f" [{default}]" if default else ""
     display = f"  {message}{suffix}: "
@@ -71,11 +79,12 @@ def interactive_prompt(
             return default
         if not result and required:
             click.echo("  Value required.")
-            return interactive_prompt(
-                message, default=default, required=required
-            )
+            return interactive_prompt(message, default=default, required=required)
         return result
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
+        # EOF (piped stdin / CliRunner) — return default silently
+        return default
+    except KeyboardInterrupt:
         if default:
             return default
         raise click.Abort()
@@ -127,6 +136,4 @@ def interactive_numbered(
                 return options[idx - 1]
         except ValueError:
             pass
-        click.echo(
-            f"  Enter a number between 1 and {len(options)}."
-        )
+        click.echo(f"  Enter a number between 1 and {len(options)}.")
