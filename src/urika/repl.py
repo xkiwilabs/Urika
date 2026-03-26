@@ -229,12 +229,13 @@ _BLOCKING_COMMANDS = {
 }
 
 
-class _SilentInputCapture:
-    """Captures keystrokes silently during agent execution.
+class _InputCapture:
+    """Captures input during agent execution without echoing mid-stream.
 
-    Puts the terminal in raw mode so typed characters don't echo.
-    Collects them into lines and queues them on the session.
-    Shows queued input after the agent finishes.
+    Terminal is put in cbreak mode so individual keystrokes don't echo
+    inline with agent output. But when the user presses Enter, the
+    completed line is printed with a clear [queued] label so they can
+    see what they typed and that it was received.
     """
 
     def __init__(self, session: ReplSession) -> None:
@@ -274,24 +275,14 @@ class _SilentInputCapture:
             except (termios.error, OSError):
                 pass
             self._old_settings = None
-        # Show queued input
-        if self._session.has_queued_input:
-            queued = self._session.pop_queued_input()
-            from urika.cli_display import _C
-
-            click.echo(
-                f"\n  {_C.DIM}[queued for next agent]{_C.RESET}"
-                f" {queued}"
-            )
 
     def _capture_loop(self) -> None:
-        """Read characters silently, build lines."""
+        """Read characters, show completed lines with [queued] label."""
+        import select
+
         buf = ""
         while not self._stop.is_set():
             try:
-                # Non-blocking read with short timeout
-                import select
-
                 ready, _, _ = select.select(
                     [sys.stdin], [], [], 0.1
                 )
@@ -303,17 +294,46 @@ class _SilentInputCapture:
                 if ch == "\n" or ch == "\r":
                     if buf.strip():
                         self._session.queue_input(buf.strip())
+                        # Replace typing line with queued confirmation
+                        sys.stdout.write(
+                            f"\r\033[K  {_C.DIM}\u203a "
+                            f"{buf.strip()}"
+                            f"  [{_C.YELLOW}queued"
+                            f"{_C.DIM}]{_C.RESET}\n"
+                        )
+                        sys.stdout.flush()
+                    else:
+                        sys.stdout.write("\r\033[K")
+                        sys.stdout.flush()
                     buf = ""
                 elif ch == "\x7f" or ch == "\x08":
-                    # Backspace
                     buf = buf[:-1]
+                    # Redraw typing line
+                    sys.stdout.write(
+                        f"\r\033[K  {_C.DIM}\u203a {_C.RESET}"
+                        f"{buf}"
+                    )
+                    sys.stdout.flush()
                 elif ch >= " ":
                     buf += ch
+                    # Show character as typed
+                    sys.stdout.write(
+                        f"\r\033[K  {_C.DIM}\u203a {_C.RESET}"
+                        f"{buf}"
+                    )
+                    sys.stdout.flush()
             except (OSError, ValueError):
                 break
-        # Flush remaining
+        # Flush remaining buffer
         if buf.strip():
             self._session.queue_input(buf.strip())
+            sys.stdout.write(
+                f"\r\033[K  {_C.DIM}\u203a "
+                f"{buf.strip()}"
+                f"  [{_C.YELLOW}queued"
+                f"{_C.DIM}]{_C.RESET}\n"
+            )
+            sys.stdout.flush()
 
 
 def _handle_command(session: ReplSession, text: str) -> None:
@@ -339,7 +359,7 @@ def _handle_command(session: ReplSession, text: str) -> None:
 
     if cmd_name in _BLOCKING_COMMANDS:
         # Capture input silently during agent execution
-        capture = _SilentInputCapture(session)
+        capture = _InputCapture(session)
         capture.start()
         try:
             handler(session, args)
