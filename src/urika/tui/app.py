@@ -18,7 +18,6 @@ class UrikaApp(App):
 
     TITLE = "Urika"
     SUB_TITLE = "Multi-agent scientific analysis"
-    CSS_PATH = "urika.tcss"
 
     BINDINGS = [
         ("ctrl+c", "cancel_agent", "Cancel"),
