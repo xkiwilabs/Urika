@@ -1,8 +1,8 @@
 """Interactive REPL shell for Urika.
 
 Provides a prompt_toolkit-based shell with tab completion,
-command history, and a status toolbar. Agent commands block
-the input loop during execution (Phase B will add async input).
+command history, and a status toolbar. During agent execution,
+keystrokes are captured silently and queued for the next agent.
 """
 
 from __future__ import annotations
@@ -10,6 +10,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
+import termios
+import threading
+import tty
 
 import click
 from prompt_toolkit import PromptSession
@@ -218,6 +222,100 @@ def run_repl() -> None:
             break
 
 
+# Commands that invoke agents (long-running)
+_BLOCKING_COMMANDS = {
+    "run", "finalize", "evaluate", "plan", "advisor",
+    "present", "report", "build-tool", "new",
+}
+
+
+class _SilentInputCapture:
+    """Captures keystrokes silently during agent execution.
+
+    Puts the terminal in raw mode so typed characters don't echo.
+    Collects them into lines and queues them on the session.
+    Shows queued input after the agent finishes.
+    """
+
+    def __init__(self, session: ReplSession) -> None:
+        self._session = session
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._old_settings: list | None = None
+
+    def start(self) -> None:
+        """Start capturing stdin in a background thread."""
+        if not sys.stdin.isatty():
+            return
+        try:
+            self._old_settings = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
+            self._stop.clear()
+            self._thread = threading.Thread(
+                target=self._capture_loop, daemon=True
+            )
+            self._thread.start()
+        except (termios.error, OSError):
+            self._old_settings = None
+
+    def stop(self) -> None:
+        """Stop capturing and restore terminal."""
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1)
+            self._thread = None
+        if self._old_settings is not None:
+            try:
+                termios.tcsetattr(
+                    sys.stdin,
+                    termios.TCSADRAIN,
+                    self._old_settings,
+                )
+            except (termios.error, OSError):
+                pass
+            self._old_settings = None
+        # Show queued input
+        if self._session.has_queued_input:
+            queued = self._session.pop_queued_input()
+            from urika.cli_display import _C
+
+            click.echo(
+                f"\n  {_C.DIM}[queued for next agent]{_C.RESET}"
+                f" {queued}"
+            )
+
+    def _capture_loop(self) -> None:
+        """Read characters silently, build lines."""
+        buf = ""
+        while not self._stop.is_set():
+            try:
+                # Non-blocking read with short timeout
+                import select
+
+                ready, _, _ = select.select(
+                    [sys.stdin], [], [], 0.1
+                )
+                if not ready:
+                    continue
+                ch = sys.stdin.read(1)
+                if not ch:
+                    continue
+                if ch == "\n" or ch == "\r":
+                    if buf.strip():
+                        self._session.queue_input(buf.strip())
+                    buf = ""
+                elif ch == "\x7f" or ch == "\x08":
+                    # Backspace
+                    buf = buf[:-1]
+                elif ch >= " ":
+                    buf += ch
+            except (OSError, ValueError):
+                break
+        # Flush remaining
+        if buf.strip():
+            self._session.queue_input(buf.strip())
+
+
 def _handle_command(session: ReplSession, text: str) -> None:
     """Parse and execute a slash command."""
     parts = text[1:].split(" ", 1)
@@ -238,10 +336,22 @@ def _handle_command(session: ReplSession, text: str) -> None:
         return
 
     handler = all_cmds[cmd_name]["func"]
-    try:
-        handler(session, args)
-    except Exception as exc:
-        print_error(f"Error: {exc}")
+
+    if cmd_name in _BLOCKING_COMMANDS:
+        # Capture input silently during agent execution
+        capture = _SilentInputCapture(session)
+        capture.start()
+        try:
+            handler(session, args)
+        except Exception as exc:
+            print_error(f"Error: {exc}")
+        finally:
+            capture.stop()
+    else:
+        try:
+            handler(session, args)
+        except Exception as exc:
+            print_error(f"Error: {exc}")
 
 
 def _handle_free_text(
