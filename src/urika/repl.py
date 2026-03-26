@@ -173,7 +173,14 @@ def run_repl() -> None:
                     f" \033[32m\u00b7"
                     f" ~${session.total_cost_usd:.2f}\033[0m"
                 )
-        return ANSI("".join(parts))
+        try:
+            import os as _os
+            cols = _os.get_terminal_size().columns
+        except OSError:
+            cols = 80
+        line = "\u2500" * cols
+        info = "".join(parts)
+        return ANSI(f"{info}\n\033[2m{line}\033[0m")
 
     from prompt_toolkit.styles import Style
 
@@ -187,6 +194,7 @@ def run_repl() -> None:
         complete_while_typing=True,
         bottom_toolbar=_bottom_toolbar,
         style=custom_style,
+        multiline=False,
     )
 
     # ── Main loop ────────────────────────────────────────
