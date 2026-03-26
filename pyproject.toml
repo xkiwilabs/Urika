@@ -42,6 +42,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+tui = [
+    "textual>=0.90",
+]
 dl = [
     "torch>=2.0",
     "transformers>=4.30",
@@ -52,11 +55,13 @@ dl = [
 ]
 all = [
     "urika[dl]",
+    "urika[tui]",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.1",
+    "urika[tui]",
 ]
 
 [project.scripts]
