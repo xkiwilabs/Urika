@@ -1,22 +1,22 @@
 """Interactive REPL shell for Urika.
 
 Provides a prompt_toolkit-based shell with tab completion,
-command history, and a status toolbar. Agent commands run in
-a background thread while the prompt stays active for input
-queuing (Phase B async input via patch_stdout).
+command history, and a status toolbar. Agent commands block
+the input loop during execution (Phase B will add async input).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import threading
+import os
 
 import click
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.styles import Style
 
 from urika.cli_display import (
     _C,
@@ -33,12 +33,6 @@ from urika.repl_commands import (
     get_project_names,
 )
 from urika.repl_session import ReplSession
-
-# Commands that invoke agents and should run in the background
-_BLOCKING_COMMANDS = {
-    "run", "finalize", "evaluate", "plan", "advisor",
-    "present", "report", "build-tool", "new",
-}
 
 
 class UrikaCompleter(Completer):
@@ -119,7 +113,7 @@ def run_repl() -> None:
 
     click.echo()
 
-    # ── Footer: separator + input + separator + info ──
+    # ── Toolbar ──────────────────────────────────────────
     _privacy_cache: dict[str, str] = {}
 
     def _get_privacy(project_path) -> str:
@@ -135,16 +129,15 @@ def run_repl() -> None:
         return _privacy_cache[key]
 
     def _bottom_toolbar():
-        """Info line below the input, with separator above it."""
-        import os as _os
-
         try:
-            cols = _os.get_terminal_size().columns
+            cols = os.get_terminal_size().columns
         except OSError:
             cols = 80
-        sep = "\u2500" * cols
 
         parts = []
+        parts.append(
+            "\033[2m" + "\u2500" * cols + "\033[0m\n"
+        )
         parts.append(" \033[34;1murika\033[0m")
         if session.has_project:
             parts.append(
@@ -180,23 +173,7 @@ def run_repl() -> None:
                     f" \033[32m\u00b7"
                     f" ~${session.total_cost_usd:.2f}\033[0m"
                 )
-
-        info = "".join(parts)
-        return ANSI(f"\033[2m{sep}\033[0m\n{info}")
-
-    def _prompt_message():
-        """Separator line above input."""
-        import os as _os
-
-        try:
-            cols = _os.get_terminal_size().columns
-        except OSError:
-            cols = 80
-        sep = "\u2500" * cols
-        return ANSI(f"\033[2m{sep}\033[0m\n\u203a ")
-
-    from prompt_toolkit.patch_stdout import patch_stdout
-    from prompt_toolkit.styles import Style
+        return ANSI("".join(parts))
 
     custom_style = Style.from_dict(
         {"bottom-toolbar": "noreverse"}
@@ -211,50 +188,38 @@ def run_repl() -> None:
     )
 
     # ── Main loop ────────────────────────────────────────
-    # patch_stdout pins the input+toolbar as a footer at the
-    # terminal bottom. Output scrolls above. The footer is:
-    #   ──────────── separator
-    #   › input      (grows with multi-line)
-    #   ──────────── separator
-    #   urika · info
-    with patch_stdout():
-        while True:
-            try:
-                user_input = prompt_session.prompt(
-                    _prompt_message
-                ).strip()
+    while True:
+        try:
+            if session.has_project:
+                prompt_text = (
+                    f"urika:{session.project_name}> "
+                )
+            else:
+                prompt_text = "urika> "
 
-                if not user_input:
-                    continue
+            user_input = prompt_session.prompt(
+                prompt_text
+            ).strip()
 
-                if user_input.startswith("/"):
-                    _handle_command(
-                        session, user_input, prompt_session
-                    )
-                else:
-                    _handle_free_text_async(
-                        session, user_input, prompt_session
-                    )
+            if not user_input:
+                continue
 
-            except (EOFError, KeyboardInterrupt):
-                session.save_usage()
-                click.echo("\n  Goodbye.")
-                break
-            except SystemExit:
-                session.save_usage()
-                break
+            if user_input.startswith("/"):
+                _handle_command(session, user_input)
+            else:
+                _handle_free_text(session, user_input)
+
+        except (EOFError, KeyboardInterrupt):
+            session.save_usage()
+            click.echo("\n  Goodbye.")
+            break
+        except SystemExit:
+            session.save_usage()
+            break
 
 
-def _handle_command(
-    session: ReplSession,
-    text: str,
-    prompt_session: PromptSession | None = None,
-) -> None:
-    """Parse and execute a slash command.
-
-    Blocking commands (agent-invoking) run in a background thread
-    so the prompt stays active for input queuing.
-    """
+def _handle_command(session: ReplSession, text: str) -> None:
+    """Parse and execute a slash command."""
     parts = text[1:].split(" ", 1)
     cmd_name = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
@@ -273,108 +238,10 @@ def _handle_command(
         return
 
     handler = all_cmds[cmd_name]["func"]
-
-    if cmd_name in _BLOCKING_COMMANDS and prompt_session is not None:
-        _run_in_background(session, handler, args, prompt_session)
-    else:
-        try:
-            handler(session, args)
-        except Exception as exc:
-            print_error(f"Error: {exc}")
-
-
-def _run_in_background(
-    session: ReplSession,
-    handler: object,
-    args: str,
-    prompt_session: PromptSession,
-) -> None:
-    """Run a command handler in a background thread.
-
-    While the handler runs, the prompt stays active. Any input
-    the user types is queued via session.queue_input() and will
-    be injected into the next agent call by the orchestrator.
-    """
-    done = threading.Event()
-
-    def _worker() -> None:
-        try:
-            handler(session, args)
-        except SystemExit:
-            pass
-        except Exception as exc:
-            print_error(f"Error: {exc}")
-        finally:
-            session.set_agent_idle()
-            done.set()
-
-    session.set_agent_running(agent_name="working")
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
-
-    # Keep prompting while agent runs — input goes to queue
-    while not done.is_set():
-        try:
-            user_input = prompt_session.prompt(
-                "\u203a "
-            ).strip()
-
-            if not user_input:
-                continue
-
-            if user_input.startswith("/"):
-                # Allow non-blocking commands while agent runs
-                parts = user_input[1:].split(" ", 1)
-                cmd = parts[0].lower()
-                if cmd == "quit":
-                    session.save_usage()
-                    raise SystemExit(0)
-                if cmd not in _BLOCKING_COMMANDS:
-                    _handle_command(session, user_input)
-                else:
-                    click.echo(
-                        f"  {_C.DIM}[queued] "
-                        f"{user_input}{_C.RESET}"
-                    )
-                    session.queue_input(user_input)
-            else:
-                click.echo(
-                    f"  {_C.DIM}[queued] "
-                    f"{user_input}{_C.RESET}"
-                )
-                session.queue_input(user_input)
-
-        except (EOFError, KeyboardInterrupt):
-            # Ctrl+C while agent is running — wait for it
-            if not done.is_set():
-                click.echo(
-                    f"\n  {_C.DIM}Agent still running... "
-                    f"waiting{_C.RESET}"
-                )
-                done.wait(timeout=2)
-            break
-
-    t.join(timeout=5)
-
-
-def _handle_free_text_async(
-    session: ReplSession,
-    text: str,
-    prompt_session: PromptSession,
-) -> None:
-    """Send free text to advisor, running in background."""
-    if not session.has_project:
-        click.echo(
-            "  Load a project first: /project <name>"
-        )
-        return
-
-    def _advisor_handler(_session, _args):
-        _handle_free_text(_session, _args)
-
-    _run_in_background(
-        session, _advisor_handler, text, prompt_session
-    )
+    try:
+        handler(session, args)
+    except Exception as exc:
+        print_error(f"Error: {exc}")
 
 
 def _handle_free_text(
