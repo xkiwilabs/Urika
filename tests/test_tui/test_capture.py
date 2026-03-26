@@ -43,7 +43,7 @@ class TestStdoutCapture:
         import sys
 
         app = UrikaApp()
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             original = sys.stdout
             from urika.tui.capture import OutputCapture
 

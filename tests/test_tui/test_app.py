@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from urika.repl_session import ReplSession
@@ -16,13 +14,13 @@ class TestUrikaAppMount:
     @pytest.mark.asyncio
     async def test_app_mounts(self) -> None:
         app = UrikaApp()
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             assert app.title == "Urika"
 
     @pytest.mark.asyncio
     async def test_three_zones_present(self) -> None:
         app = UrikaApp()
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             assert app.query_one("OutputPanel") is not None
             assert app.query_one("InputBar") is not None
             assert app.query_one("StatusBar") is not None
@@ -87,11 +85,11 @@ class TestSessionIntegration:
     async def test_session_persists(self) -> None:
         session = ReplSession()
         app = UrikaApp(session=session)
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             assert app.session is session
 
     @pytest.mark.asyncio
     async def test_usage_tracked(self) -> None:
         app = UrikaApp()
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             assert app.session.elapsed_ms > 0

@@ -13,13 +13,13 @@ class TestWelcomeScreen:
     @pytest.mark.asyncio
     async def test_shows_welcome_content(self) -> None:
         app = UrikaApp()
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             panel = app.query_one("OutputPanel")
             assert panel.line_count > 0
 
     @pytest.mark.asyncio
     async def test_shows_help_hint(self) -> None:
         app = UrikaApp()
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             panel = app.query_one("OutputPanel")
             assert panel.line_count > 0

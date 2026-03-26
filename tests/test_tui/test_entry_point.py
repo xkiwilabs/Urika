@@ -25,4 +25,4 @@ class TestEntryPoint:
                     del sys.modules["urika.tui"]
                 if "urika.tui.app" in sys.modules:
                     del sys.modules["urika.tui.app"]
-                from urika.tui.app import UrikaApp
+                from urika.tui.app import UrikaApp  # noqa: F401

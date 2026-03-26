@@ -16,7 +16,7 @@ class TestStatusBar:
     @pytest.mark.asyncio
     async def test_shows_urika_label(self) -> None:
         app = UrikaApp()
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             bar = app.query_one("StatusBar")
             text = bar.render_line1()
             assert "urika" in text.lower()
@@ -26,7 +26,7 @@ class TestStatusBar:
         session = ReplSession()
         session.load_project(path=Path("/tmp/test"), name="my-study")
         app = UrikaApp(session=session)
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             bar = app.query_one("StatusBar")
             text = bar.render_line1()
             assert "my-study" in text
@@ -34,7 +34,7 @@ class TestStatusBar:
     @pytest.mark.asyncio
     async def test_shows_elapsed_time(self) -> None:
         app = UrikaApp()
-        async with app.run_test() as pilot:
+        async with app.run_test() as _pilot:
             bar = app.query_one("StatusBar")
             text = bar.render_line2()
             assert "s" in text or "ms" in text

@@ -55,7 +55,9 @@ class UrikaApp(App):
             pass
 
         panel.write_line("")
-        panel.write_line("  Type /help for commands, or just type to talk to the advisor.")
+        panel.write_line(
+            "  Type /help for commands, or just type to talk to the advisor."
+        )
         panel.write_line("")
 
     @on(InputBar.CommandSubmitted)
@@ -101,8 +103,15 @@ class UrikaApp(App):
 
         # Agent-invoking commands run in background workers
         _BLOCKING_COMMANDS = {
-            "run", "finalize", "evaluate", "plan", "advisor",
-            "present", "report", "build-tool", "new",
+            "run",
+            "finalize",
+            "evaluate",
+            "plan",
+            "advisor",
+            "present",
+            "report",
+            "build-tool",
+            "new",
         }
         if cmd_name in _BLOCKING_COMMANDS:
             from urika.tui.agent_worker import run_command_in_worker
