@@ -2039,14 +2039,8 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
             else project_path / data_file
         )
     else:
-        # Look for data files in project's data/ directory
-        data_dir = project_path / "data"
-        if not data_dir.exists():
-            if json_output:
-                from urika.cli_helpers import output_json_error
-                output_json_error("No data/ directory found.")
-                raise SystemExit(1)
-            raise click.ClickException("No data/ directory found.")
+        # Collect candidate directories: project data/ first, then
+        # external paths from config.data_paths and [data].source.
         _supported_exts = (
             "*.csv",
             "*.tsv",
@@ -2056,22 +2050,70 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
             "*.json",
             "*.jsonl",
         )
+        candidate_dirs: list[Path] = []
+        data_dir = project_path / "data"
+        if data_dir.exists():
+            candidate_dirs.append(data_dir)
+        # Fall back to configured external data paths
+        for dp in config.data_paths:
+            p = Path(dp)
+            if p.exists() and p not in candidate_dirs:
+                candidate_dirs.append(p)
+        # Also check [data].source from urika.toml
+        try:
+            import tomllib
+
+            toml_path = project_path / "urika.toml"
+            if toml_path.exists():
+                with open(toml_path, "rb") as _f:
+                    _toml = tomllib.load(_f)
+                _src = _toml.get("data", {}).get("source", "")
+                if _src:
+                    _src_path = Path(_src)
+                    if _src_path.exists() and _src_path not in candidate_dirs:
+                        candidate_dirs.append(_src_path)
+        except Exception:
+            pass
+
+        if not candidate_dirs:
+            if json_output:
+                from urika.cli_helpers import output_json_error
+                output_json_error("No data directory or configured data paths found.")
+                raise SystemExit(1)
+            raise click.ClickException("No data directory or configured data paths found.")
+
         data_files: list[Path] = []
-        for _ext in _supported_exts:
-            data_files.extend(data_dir.glob(_ext))
+        for cdir in candidate_dirs:
+            if cdir.is_file():
+                data_files.append(cdir)
+            else:
+                for _ext in _supported_exts:
+                    data_files.extend(cdir.glob(_ext))
+                    # Also search subdirectories for the pattern
+                    data_files.extend(cdir.glob(f"**/{_ext}"))
+        # Deduplicate while preserving order
+        seen: set[Path] = set()
+        unique_files: list[Path] = []
+        for f in data_files:
+            resolved = f.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                unique_files.append(f)
+        data_files = unique_files
+
         if not data_files:
             if json_output:
                 from urika.cli_helpers import output_json_error
                 output_json_error(
-                    "No supported data files in data/ directory."
+                    "No supported data files found in data paths."
                 )
                 raise SystemExit(1)
             raise click.ClickException(
-                "No supported data files found in data/ directory."
+                "No supported data files found in data paths."
             )
         path = data_files[0]
         if len(data_files) > 1 and not json_output:
-            click.echo(f"Multiple data files found. Using: {path.name}")
+            click.echo(f"Multiple data files found ({len(data_files)}). Using: {path.name}")
 
     try:
         view = load_dataset(path)
