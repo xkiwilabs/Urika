@@ -179,7 +179,7 @@ def run_repl() -> None:
             cols = 80
         line = "\u2500" * cols
         info = "".join(parts)
-        return ANSI(f"{info}\n\033[2m{line}\033[0m")
+        return ANSI(f"\033[2m{line}\033[0m\n{info}")
 
     from prompt_toolkit.styles import Style
 
