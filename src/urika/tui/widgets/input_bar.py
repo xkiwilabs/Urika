@@ -16,12 +16,7 @@ class InputBar(Input):
     Emits CommandSubmitted when the user presses Enter.
     """
 
-    DEFAULT_CSS = """
-    InputBar {
-        dock: bottom;
-        margin-bottom: 0;
-    }
-    """
+    DEFAULT_CSS = ""
 
     class CommandSubmitted(Message):
         """Fired when user submits input."""

@@ -2,26 +2,24 @@
 
 Screen {
     background: $background;
+    layout: vertical;
 }
 
 OutputPanel {
     height: 1fr;
-    border-bottom: solid $accent;
-    scrollbar-size: 1 1;
+    min-height: 5;
 }
 
 InputBar {
-    dock: bottom;
-    height: 1;
-    margin: 0;
+    height: 3;
     border-top: solid $accent;
+    border-bottom: solid $accent;
+    padding: 0 1;
 }
 
 StatusBar {
-    height: 2;
-    dock: bottom;
+    height: 3;
     background: $surface;
-    color: $text-muted;
     padding: 0 1;
 }
 

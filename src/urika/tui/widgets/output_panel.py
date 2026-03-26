@@ -13,12 +13,7 @@ class OutputPanel(RichLog):
     content unless the user has scrolled up manually.
     """
 
-    DEFAULT_CSS = """
-    OutputPanel {
-        height: 1fr;
-        border-bottom: solid $accent;
-    }
-    """
+    DEFAULT_CSS = ""
 
     @property
     def line_count(self) -> int:

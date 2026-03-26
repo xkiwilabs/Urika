@@ -17,15 +17,7 @@ class StatusBar(Static):
     Line 2: model · tokens · cost · elapsed
     """
 
-    DEFAULT_CSS = """
-    StatusBar {
-        height: 2;
-        dock: bottom;
-        background: $surface;
-        color: $text-muted;
-        padding: 0 1;
-    }
-    """
+    DEFAULT_CSS = ""
 
     tick = reactive(0)
 
