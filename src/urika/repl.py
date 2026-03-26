@@ -119,7 +119,7 @@ def run_repl() -> None:
 
     click.echo()
 
-    # ── Toolbar (renders below prompt, like Claude Code) ──
+    # ── Footer: separator + input + separator + info ──
     _privacy_cache: dict[str, str] = {}
 
     def _get_privacy(project_path) -> str:
@@ -135,7 +135,15 @@ def run_repl() -> None:
         return _privacy_cache[key]
 
     def _bottom_toolbar():
-        """Build info line shown below the prompt."""
+        """Info line below the input, with separator above it."""
+        import os as _os
+
+        try:
+            cols = _os.get_terminal_size().columns
+        except OSError:
+            cols = 80
+        sep = "\u2500" * cols
+
         parts = []
         parts.append(" \033[34;1murika\033[0m")
         if session.has_project:
@@ -172,15 +180,22 @@ def run_repl() -> None:
                     f" \033[32m\u00b7"
                     f" ~${session.total_cost_usd:.2f}\033[0m"
                 )
+
+        info = "".join(parts)
+        return ANSI(f"\033[2m{sep}\033[0m\n{info}")
+
+    def _prompt_message():
+        """Separator line above input."""
+        import os as _os
+
         try:
-            import os as _os
             cols = _os.get_terminal_size().columns
         except OSError:
             cols = 80
-        line = "\u2500" * cols
-        info = "".join(parts)
-        return ANSI(f"\033[2m{line}\033[0m\n{info}")
+        sep = "\u2500" * cols
+        return ANSI(f"\033[2m{sep}\033[0m\n\u203a ")
 
+    from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.styles import Style
 
     custom_style = Style.from_dict(
@@ -193,45 +208,41 @@ def run_repl() -> None:
         complete_while_typing=True,
         bottom_toolbar=_bottom_toolbar,
         style=custom_style,
-        multiline=False,
     )
 
     # ── Main loop ────────────────────────────────────────
-    def _prompt_message():
-        """Build prompt with separator line above."""
-        try:
-            import os as _os
-            cols = _os.get_terminal_size().columns
-        except OSError:
-            cols = 80
-        line = "\u2500" * cols
-        return ANSI(f"\033[2m{line}\033[0m\n\u203a ")
+    # patch_stdout pins the input+toolbar as a footer at the
+    # terminal bottom. Output scrolls above. The footer is:
+    #   ──────────── separator
+    #   › input      (grows with multi-line)
+    #   ──────────── separator
+    #   urika · info
+    with patch_stdout():
+        while True:
+            try:
+                user_input = prompt_session.prompt(
+                    _prompt_message
+                ).strip()
 
-    while True:
-        try:
-            user_input = prompt_session.prompt(
-                _prompt_message
-            ).strip()
+                if not user_input:
+                    continue
 
-            if not user_input:
-                continue
+                if user_input.startswith("/"):
+                    _handle_command(
+                        session, user_input, prompt_session
+                    )
+                else:
+                    _handle_free_text_async(
+                        session, user_input, prompt_session
+                    )
 
-            if user_input.startswith("/"):
-                _handle_command(
-                    session, user_input, prompt_session
-                )
-            else:
-                _handle_free_text_async(
-                    session, user_input, prompt_session
-                )
-
-        except (EOFError, KeyboardInterrupt):
-            session.save_usage()
-            click.echo("\n  Goodbye.")
-            break
-        except SystemExit:
-            session.save_usage()
-            break
+            except (EOFError, KeyboardInterrupt):
+                session.save_usage()
+                click.echo("\n  Goodbye.")
+                break
+            except SystemExit:
+                session.save_usage()
+                break
 
 
 def _handle_command(
