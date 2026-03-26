@@ -81,9 +81,8 @@ def _ensure_project(project: str | None) -> str:
 
 @click.group(invoke_without_command=True)
 @click.version_option(package_name="urika")
-@click.option("--classic", is_flag=True, hidden=True, help="Use classic prompt_toolkit REPL")
 @click.pass_context
-def cli(ctx, classic: bool) -> None:
+def cli(ctx) -> None:
     """Urika: Agentic scientific analysis platform."""
     # Check for updates on every CLI invocation (cached, non-blocking)
     try:
@@ -102,19 +101,9 @@ def cli(ctx, classic: bool) -> None:
         pass
 
     if ctx.invoked_subcommand is None:
-        if classic:
-            from urika.repl import run_repl
+        from urika.repl import run_repl
 
-            run_repl()
-        else:
-            try:
-                from urika.tui import run_tui
-
-                run_tui()
-            except ImportError:
-                from urika.repl import run_repl
-
-                run_repl()
+        run_repl()
 
 
 def _test_endpoint(url: str) -> bool:
