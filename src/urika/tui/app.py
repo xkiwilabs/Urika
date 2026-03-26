@@ -75,32 +75,42 @@ class UrikaApp(App):
             return
 
         handler = all_cmds[cmd_name]["func"]
-        with self._capture:
-            try:
-                handler(self.session, args)
-            except SystemExit:
-                self.session.save_usage()
-                self.exit()
-            except Exception as exc:
-                from urika.cli_display import print_error
 
-                print_error(f"Error: {exc}")
+        # Agent-invoking commands run in background workers
+        _BLOCKING_COMMANDS = {
+            "run", "finalize", "evaluate", "plan", "advisor",
+            "present", "report", "build-tool", "new",
+        }
+        if cmd_name in _BLOCKING_COMMANDS:
+            from urika.tui.agent_worker import run_command_in_worker
 
-        # Refresh input prompt after potential project change
-        input_bar = self.query_one(InputBar)
-        input_bar.refresh_prompt()
+            run_command_in_worker(self, handler, args)
+        else:
+            with self._capture:
+                try:
+                    handler(self.session, args)
+                except SystemExit:
+                    self.session.save_usage()
+                    self.exit()
+                except Exception as exc:
+                    print_error(f"Error: {exc}")
+            input_bar = self.query_one(InputBar)
+            input_bar.refresh_prompt()
 
     def _dispatch_free_text(self, text: str) -> None:
-        """Send free text to the advisor agent."""
+        """Send free text to the advisor agent (runs in worker)."""
         if not self.session.has_project:
             panel = self.query_one(OutputPanel)
             panel.write_line("  Load a project first: /project <name>")
             return
-        # For now, run synchronously — Task 8 adds background workers
-        from urika.repl import _handle_free_text
 
-        with self._capture:
-            _handle_free_text(self.session, text)
+        from urika.repl import _handle_free_text
+        from urika.tui.agent_worker import run_command_in_worker
+
+        def _advisor_handler(session, args):
+            _handle_free_text(session, args)
+
+        run_command_in_worker(self, _advisor_handler, text)
 
     def action_cancel_agent(self) -> None:
         """Cancel running agent on Ctrl+C."""
