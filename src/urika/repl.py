@@ -10,13 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import threading
 
 import click
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit import print_formatted_text
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -122,7 +120,7 @@ def run_repl() -> None:
 
     click.echo()
 
-    # ── Status line (printed before prompt, not a footer) ──
+    # ── Toolbar (renders below prompt, like Claude Code) ──
     _privacy_cache: dict[str, str] = {}
 
     def _get_privacy(project_path) -> str:
@@ -137,18 +135,8 @@ def run_repl() -> None:
                 _privacy_cache[key] = "open"
         return _privacy_cache[key]
 
-    def _print_status_line():
-        """Print status info right before the prompt.
-
-        Uses print_formatted_text(ANSI(...)) which works correctly
-        inside patch_stdout — regular print/click.echo corrupts
-        ANSI escape sequences in that context.
-        """
-        try:
-            cols = os.get_terminal_size().columns
-        except OSError:
-            cols = 80
-
+    def _bottom_toolbar():
+        """Build info line shown below the prompt."""
         parts = []
         parts.append(" \033[34;1murika\033[0m")
         if session.has_project:
@@ -185,29 +173,41 @@ def run_repl() -> None:
                     f" \033[32m\u00b7"
                     f" ~${session.total_cost_usd:.2f}\033[0m"
                 )
+        return ANSI("".join(parts))
 
-        line = "\u2500" * cols
-        sep = f"\033[2m{line}\033[0m"
-        print_formatted_text(ANSI(sep))
-        print_formatted_text(ANSI("".join(parts)))
+    from prompt_toolkit.styles import Style
+
+    custom_style = Style.from_dict(
+        {"bottom-toolbar": "noreverse"}
+    )
 
     prompt_session = PromptSession(
         history=history,
         completer=completer,
         complete_while_typing=True,
+        bottom_toolbar=_bottom_toolbar,
+        style=custom_style,
     )
 
     # ── Main loop ────────────────────────────────────────
     # patch_stdout ensures that print() output from background
     # threads appears cleanly above the prompt, without ANSI
     # conflicts. This is how Claude Code-style flowing input works.
+    def _prompt_message():
+        """Build prompt with separator line above."""
+        try:
+            import os as _os
+            cols = _os.get_terminal_size().columns
+        except OSError:
+            cols = 80
+        line = "\u2500" * cols
+        return ANSI(f"\033[2m{line}\033[0m\n\u203a ")
+
     with patch_stdout():
         while True:
             try:
-                _print_status_line()
-
                 user_input = prompt_session.prompt(
-                    "\u203a "
+                    _prompt_message
                 ).strip()
 
                 if not user_input:
