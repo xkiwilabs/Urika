@@ -1,0 +1,30 @@
+/* Urika TUI theme */
+
+Screen {
+    background: $background;
+}
+
+OutputPanel {
+    height: 1fr;
+    border-bottom: solid $accent;
+    scrollbar-size: 1 1;
+}
+
+InputBar {
+    dock: bottom;
+    height: 1;
+    margin: 0;
+    border-top: solid $accent;
+}
+
+StatusBar {
+    height: 2;
+    dock: bottom;
+    background: $surface;
+    color: $text-muted;
+    padding: 0 1;
+}
+
+Footer {
+    display: none;
+}

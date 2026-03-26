@@ -18,6 +18,7 @@ class UrikaApp(App):
 
     TITLE = "Urika"
     SUB_TITLE = "Multi-agent scientific analysis"
+    CSS_PATH = "urika.tcss"
 
     BINDINGS = [
         ("ctrl+c", "cancel_agent", "Cancel"),
@@ -34,6 +35,29 @@ class UrikaApp(App):
         yield InputBar(self.session)
         yield StatusBar(self.session)
         yield Footer()
+
+    def on_mount(self) -> None:
+        """Show welcome info on startup."""
+        panel = self.query_one(OutputPanel)
+        panel.write_line("  Urika — Multi-agent scientific analysis platform")
+        panel.write_line("")
+
+        try:
+            from urika.repl_commands import get_global_stats
+
+            stats = get_global_stats()
+            panel.write_line(
+                f"  {stats['projects']} projects · "
+                f"{stats['experiments']} experiments · "
+                f"{stats['methods']} methods · "
+                f"{stats['sdk']}"
+            )
+        except Exception:
+            pass
+
+        panel.write_line("")
+        panel.write_line("  Type /help for commands, or just type to talk to the advisor.")
+        panel.write_line("")
 
     @on(InputBar.CommandSubmitted)
     def _on_command(self, event: InputBar.CommandSubmitted) -> None:
