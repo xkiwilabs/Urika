@@ -35,13 +35,6 @@ See [Getting Started](docs/01-getting-started.md) for full details.
 ## Quickstart
 
 ```bash
-# Install
-git clone https://github.com/xkiwilabs/Urika.git
-cd Urika
-pip install -e .                            # includes viz, ML, knowledge pipeline
-pip install -e ".[dl]"                      # optional: add deep learning (PyTorch, ~2GB)
-
-# Run
 urika new my-study --data ./my_data.csv    # create a project (interactive)
 urika run my-study                          # run experiments
 urika finalize my-study                     # produce final report
