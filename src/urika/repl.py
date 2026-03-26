@@ -17,7 +17,6 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.patch_stdout import patch_stdout
 
 from urika.cli_display import (
     _C,
@@ -198,9 +197,6 @@ def run_repl() -> None:
     )
 
     # ── Main loop ────────────────────────────────────────
-    # patch_stdout ensures that print() output from background
-    # threads appears cleanly above the prompt, without ANSI
-    # conflicts. This is how Claude Code-style flowing input works.
     def _prompt_message():
         """Build prompt with separator line above."""
         try:
@@ -211,32 +207,31 @@ def run_repl() -> None:
         line = "\u2500" * cols
         return ANSI(f"\033[2m{line}\033[0m\n\u203a ")
 
-    with patch_stdout():
-        while True:
-            try:
-                user_input = prompt_session.prompt(
-                    _prompt_message
-                ).strip()
+    while True:
+        try:
+            user_input = prompt_session.prompt(
+                _prompt_message
+            ).strip()
 
-                if not user_input:
-                    continue
+            if not user_input:
+                continue
 
-                if user_input.startswith("/"):
-                    _handle_command(
-                        session, user_input, prompt_session
-                    )
-                else:
-                    _handle_free_text_async(
-                        session, user_input, prompt_session
-                    )
+            if user_input.startswith("/"):
+                _handle_command(
+                    session, user_input, prompt_session
+                )
+            else:
+                _handle_free_text_async(
+                    session, user_input, prompt_session
+                )
 
-            except (EOFError, KeyboardInterrupt):
-                session.save_usage()
-                click.echo("\n  Goodbye.")
-                break
-            except SystemExit:
-                session.save_usage()
-                break
+        except (EOFError, KeyboardInterrupt):
+            session.save_usage()
+            click.echo("\n  Goodbye.")
+            break
+        except SystemExit:
+            session.save_usage()
+            break
 
 
 def _handle_command(
