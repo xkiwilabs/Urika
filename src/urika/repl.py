@@ -16,10 +16,8 @@ import threading
 import click
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
-from prompt_toolkit.styles import Style
 
 from urika.cli_display import (
     _C,
@@ -122,7 +120,7 @@ def run_repl() -> None:
 
     click.echo()
 
-    # ── Toolbar ──────────────────────────────────────────
+    # ── Status line (printed before prompt, not a footer) ──
     _privacy_cache: dict[str, str] = {}
 
     def _get_privacy(project_path) -> str:
@@ -137,32 +135,31 @@ def run_repl() -> None:
                 _privacy_cache[key] = "open"
         return _privacy_cache[key]
 
-    def _bottom_toolbar():
+    def _print_status_line():
+        """Print status info right before the prompt."""
         try:
             cols = os.get_terminal_size().columns
         except OSError:
             cols = 80
 
         parts = []
-        parts.append(
-            "\033[2m" + "\u2500" * cols + "\033[0m\n"
-        )
-        parts.append(" \033[34;1murika\033[0m")
+        parts.append(f" {_C.BLUE}{_C.BOLD}urika{_C.RESET}")
         if session.has_project:
             parts.append(
-                f" \033[2m\u00b7 {session.project_name}\033[0m"
+                f" {_C.DIM}\u00b7 {session.project_name}"
+                f"{_C.RESET}"
             )
             privacy = _get_privacy(session.project_path)
             if privacy != "open":
                 parts.append(
-                    f" \033[33m\u00b7 {privacy}\033[0m"
+                    f" {_C.YELLOW}\u00b7 {privacy}{_C.RESET}"
                 )
         if session.model:
             parts.append(
-                f" \033[36m\u00b7 {session.model}\033[0m"
+                f" {_C.CYAN}\u00b7 {session.model}{_C.RESET}"
             )
         elapsed = _format_duration(session.elapsed_ms)
-        parts.append(f" \033[31m\u00b7 {elapsed}\033[0m")
+        parts.append(f" {_C.RED}\u00b7 {elapsed}{_C.RESET}")
         if session.agent_calls > 0:
             tokens = (
                 session.total_tokens_in
@@ -174,26 +171,25 @@ def run_repl() -> None:
                 else str(tokens)
             )
             parts.append(
-                f" \033[2m\u00b7 {tok_str} tokens"
-                f" \u00b7 {session.agent_calls} calls\033[0m"
+                f" {_C.DIM}\u00b7 {tok_str} tokens"
+                f" \u00b7 {session.agent_calls} calls"
+                f"{_C.RESET}"
             )
             if session.total_cost_usd > 0:
                 parts.append(
-                    f" \033[32m\u00b7"
-                    f" ~${session.total_cost_usd:.2f}\033[0m"
+                    f" {_C.GREEN}\u00b7"
+                    f" ~${session.total_cost_usd:.2f}"
+                    f"{_C.RESET}"
                 )
-        return ANSI("".join(parts))
 
-    custom_style = Style.from_dict(
-        {"bottom-toolbar": "noreverse"}
-    )
+        sep = f"{_C.DIM}\u2500{_C.RESET}" * cols
+        click.echo(sep)
+        click.echo("".join(parts))
 
     prompt_session = PromptSession(
         history=history,
         completer=completer,
         complete_while_typing=True,
-        bottom_toolbar=_bottom_toolbar,
-        style=custom_style,
     )
 
     # ── Main loop ────────────────────────────────────────
@@ -203,15 +199,10 @@ def run_repl() -> None:
     with patch_stdout():
         while True:
             try:
-                if session.has_project:
-                    prompt_text = (
-                        f"urika:{session.project_name}> "
-                    )
-                else:
-                    prompt_text = "urika> "
+                _print_status_line()
 
                 user_input = prompt_session.prompt(
-                    prompt_text
+                    "\u203a "
                 ).strip()
 
                 if not user_input:
@@ -305,15 +296,8 @@ def _run_in_background(
     # Keep prompting while agent runs — input goes to queue
     while not done.is_set():
         try:
-            if session.has_project:
-                prompt_text = (
-                    f"urika:{session.project_name}> "
-                )
-            else:
-                prompt_text = "urika> "
-
             user_input = prompt_session.prompt(
-                prompt_text
+                "\u203a "
             ).strip()
 
             if not user_input:
