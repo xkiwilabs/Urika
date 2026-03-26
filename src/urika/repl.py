@@ -16,6 +16,8 @@ import threading
 import click
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit import print_formatted_text
+from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
@@ -136,30 +138,34 @@ def run_repl() -> None:
         return _privacy_cache[key]
 
     def _print_status_line():
-        """Print status info right before the prompt."""
+        """Print status info right before the prompt.
+
+        Uses print_formatted_text(ANSI(...)) which works correctly
+        inside patch_stdout — regular print/click.echo corrupts
+        ANSI escape sequences in that context.
+        """
         try:
             cols = os.get_terminal_size().columns
         except OSError:
             cols = 80
 
         parts = []
-        parts.append(f" {_C.BLUE}{_C.BOLD}urika{_C.RESET}")
+        parts.append(" \033[34;1murika\033[0m")
         if session.has_project:
             parts.append(
-                f" {_C.DIM}\u00b7 {session.project_name}"
-                f"{_C.RESET}"
+                f" \033[2m\u00b7 {session.project_name}\033[0m"
             )
             privacy = _get_privacy(session.project_path)
             if privacy != "open":
                 parts.append(
-                    f" {_C.YELLOW}\u00b7 {privacy}{_C.RESET}"
+                    f" \033[33m\u00b7 {privacy}\033[0m"
                 )
         if session.model:
             parts.append(
-                f" {_C.CYAN}\u00b7 {session.model}{_C.RESET}"
+                f" \033[36m\u00b7 {session.model}\033[0m"
             )
         elapsed = _format_duration(session.elapsed_ms)
-        parts.append(f" {_C.RED}\u00b7 {elapsed}{_C.RESET}")
+        parts.append(f" \033[31m\u00b7 {elapsed}\033[0m")
         if session.agent_calls > 0:
             tokens = (
                 session.total_tokens_in
@@ -171,20 +177,19 @@ def run_repl() -> None:
                 else str(tokens)
             )
             parts.append(
-                f" {_C.DIM}\u00b7 {tok_str} tokens"
-                f" \u00b7 {session.agent_calls} calls"
-                f"{_C.RESET}"
+                f" \033[2m\u00b7 {tok_str} tokens"
+                f" \u00b7 {session.agent_calls} calls\033[0m"
             )
             if session.total_cost_usd > 0:
                 parts.append(
-                    f" {_C.GREEN}\u00b7"
-                    f" ~${session.total_cost_usd:.2f}"
-                    f"{_C.RESET}"
+                    f" \033[32m\u00b7"
+                    f" ~${session.total_cost_usd:.2f}\033[0m"
                 )
 
-        sep = f"{_C.DIM}\u2500{_C.RESET}" * cols
-        click.echo(sep)
-        click.echo("".join(parts))
+        line = "\u2500" * cols
+        sep = f"\033[2m{line}\033[0m"
+        print_formatted_text(ANSI(sep))
+        print_formatted_text(ANSI("".join(parts)))
 
     prompt_session = PromptSession(
         history=history,
