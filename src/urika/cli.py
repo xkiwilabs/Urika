@@ -1549,6 +1549,24 @@ def run(
         # Determine mode: capped auto unless auto flag gives unlimited
         meta_mode = "unlimited" if auto else "capped"
 
+        # Create pause controller and key listener for ESC-to-pause
+        from urika.orchestrator.pause import KeyListener, PauseController
+
+        pause_ctrl = PauseController()
+        key_listener: KeyListener | None = None
+        if not json_output:
+
+            def _on_pause_esc_meta() -> None:
+                print_warning(
+                    "\n\u23f8 Pause requested — will pause after current turn"
+                    " completes..."
+                )
+
+            key_listener = KeyListener(
+                pause_ctrl, on_pause_requested=_on_pause_esc_meta
+            )
+            key_listener.start()
+
         original_handler = signal.getsignal(signal.SIGINT)
 
         def _cleanup_meta(signum: int, frame: object) -> None:
@@ -1629,10 +1647,13 @@ def run(
                     on_progress=_on_progress,
                     on_message=_on_message,
                     get_user_input=_get_user_input,
+                    pause_controller=pause_ctrl,
                 )
             )
 
         finally:
+            if key_listener is not None:
+                key_listener.stop()
             if panel is not None:
                 panel.cleanup()
             signal.signal(signal.SIGINT, original_handler)
@@ -1645,6 +1666,17 @@ def run(
 
             result["duration_ms"] = elapsed_ms
             output_json(result)
+            return
+
+        # Check if paused (autonomous_state present means mid-run pause)
+        auto_state = result.get("autonomous_state")
+        if auto_state:
+            n_done = auto_state.get("experiments_completed", 0)
+            print_step(
+                f"\u23f8 Paused after {n_done} experiment(s). Resume with:"
+                " urika run --resume"
+            )
+            print_footer(duration_ms=elapsed_ms, turns=n_done, status="paused")
             return
 
         print_success(f"Meta-orchestrator completed: {n_exp} experiment(s) run.")
@@ -1712,6 +1744,21 @@ def run(
             print_step(f"Resuming experiment {experiment_id}")
         else:
             print_step(f"Running experiment {experiment_id} (max {max_turns} turns)")
+
+    # Create pause controller and key listener for ESC-to-pause
+    from urika.orchestrator.pause import KeyListener, PauseController
+
+    pause_ctrl = PauseController()
+    key_listener: KeyListener | None = None
+    if not json_output:
+
+        def _on_pause_esc() -> None:
+            print_warning(
+                "\n\u23f8 Pause requested — will pause after current turn completes..."
+            )
+
+        key_listener = KeyListener(pause_ctrl, on_pause_requested=_on_pause_esc)
+        key_listener.start()
 
     # Register Ctrl+C handler to clean up lockfile
     def _cleanup_on_interrupt(signum: int, frame: object) -> None:
@@ -1809,10 +1856,13 @@ def run(
                 on_message=_on_message,
                 instructions=instructions,
                 get_user_input=_get_user_input,
+                pause_controller=pause_ctrl,
             )
         )
 
     finally:
+        if key_listener is not None:
+            key_listener.stop()
         if panel is not None:
             panel.cleanup()
         # Restore original handler
@@ -1830,7 +1880,12 @@ def run(
         output_json(result)
         return
 
-    if run_status == "completed":
+    if run_status == "paused":
+        print_step(
+            f"\u23f8 Paused at turn {turns}/{max_turns}. Resume with:"
+            " urika run --resume"
+        )
+    elif run_status == "completed":
         print_success(f"Experiment completed after {turns} turns.")
     elif run_status == "failed":
         print_error(f"Experiment failed after {turns} turns: {error}")
