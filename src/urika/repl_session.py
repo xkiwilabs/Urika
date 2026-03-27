@@ -20,6 +20,9 @@ class ReplSession:
     # Input queue — lets users type while agents run
     _input_queue: list[str] = field(default_factory=list)
 
+    # Advisor suggestions — parsed from advisor output, used by /run
+    pending_suggestions: list[dict] = field(default_factory=list)
+
     # Usage tracking
     session_start: float = field(default_factory=time.monotonic)
     session_start_iso: str = field(
@@ -71,6 +74,7 @@ class ReplSession:
         self.project_path = path
         self.project_name = name
         self.conversation = []
+        self.pending_suggestions = []
         # Reset usage for new project
         self.session_start = time.monotonic()
         self.session_start_iso = datetime.now(timezone.utc).isoformat()

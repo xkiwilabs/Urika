@@ -58,7 +58,8 @@ class ProjectBuilder:
 
         if self._scan_result is None:
             self.scan()
-        assert self._scan_result is not None
+        if self._scan_result is None:
+            raise RuntimeError("scan() must be called before profiling")
 
         files = self._scan_result.data_files[:sample_limit]
         if not files:
@@ -174,7 +175,8 @@ class ProjectBuilder:
             suggestions_dir = project_dir / "suggestions"
             suggestions_dir.mkdir(exist_ok=True)
             (suggestions_dir / "initial.json").write_text(
-                json.dumps(self._suggestions, indent=2) + "\n"
+                json.dumps(self._suggestions, indent=2) + "\n",
+                encoding="utf-8",
             )
 
         # Write initial tasks if any
@@ -182,7 +184,8 @@ class ProjectBuilder:
             tasks_dir = project_dir / "tasks"
             tasks_dir.mkdir(exist_ok=True)
             (tasks_dir / "initial.json").write_text(
-                json.dumps(self._tasks, indent=2) + "\n"
+                json.dumps(self._tasks, indent=2) + "\n",
+                encoding="utf-8",
             )
 
         # Seed initial criteria

@@ -2,7 +2,7 @@
 
 Complete reference for all Urika CLI commands. Run `urika --help` for a summary, or `urika <command> --help` for any individual command.
 
-Running `urika` with no subcommand launches the interactive REPL (see [Interactive REPL](15-interactive-repl.md)).
+Running `urika` with no subcommand launches the interactive REPL (see [Interactive REPL](16-interactive-repl.md)).
 
 
 ## Project Management
@@ -348,7 +348,7 @@ urika report [PROJECT] [--experiment ID]
 
 When no experiment is specified, you are prompted to choose: a specific experiment, all experiments, or project-level reports.
 
-See [Viewing Results](06-viewing-results.md) for details on report types.
+See [Viewing Results](07-viewing-results.md) for details on report types.
 
 ---
 
@@ -407,6 +407,8 @@ urika advisor [PROJECT] [TEXT]
 ```bash
 urika advisor my-project "What methods should I try next?"
 ```
+
+After the advisor responds with experiment suggestions, you are offered the option to run them immediately. See [Advisor Chat and Instructions](06-advisor-and-instructions.md) for the full guide on advisor conversations, the suggestion-to-run flow, and how to steer agents with instructions.
 
 ---
 
@@ -470,7 +472,7 @@ urika finalize my-project
 urika finalize my-project --instructions "emphasize the ensemble methods"
 ```
 
-See [Finalizing Projects](07-finalizing-projects.md) for details on what is produced.
+See [Finalizing Projects](08-finalizing-projects.md) for details on what is produced.
 
 ---
 
@@ -638,7 +640,7 @@ urika config my-project          # reconfigure a project
 urika config my-project --show   # show project settings
 ```
 
-For per-agent model overrides beyond what the interactive setup provides, edit `urika.toml` directly — see [Configuration](12-configuration.md).
+For per-agent model overrides beyond what the interactive setup provides, edit `urika.toml` directly — see [Configuration](13-configuration.md).
 
 
 ## System
@@ -730,4 +732,4 @@ urika --version
 
 ---
 
-**Next:** [Interactive REPL](15-interactive-repl.md)
+**Next:** [Interactive REPL](16-interactive-repl.md)

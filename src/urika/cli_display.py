@@ -389,28 +389,29 @@ class ThinkingPanel:
             sys.stdout.write(f"\033[1;{self._rows - 3}r\033[{self._rows - 4};1H")
             sys.stdout.flush()
             atexit.register(self.cleanup)
-            # Handle terminal resize
+            # Handle terminal resize (SIGWINCH is Unix-only)
             import signal
 
-            self._prev_winch = signal.getsignal(signal.SIGWINCH)
+            if hasattr(signal, "SIGWINCH"):
+                self._prev_winch = signal.getsignal(signal.SIGWINCH)
 
-            def _on_resize(signum: int, frame: object) -> None:
-                try:
-                    size = os.get_terminal_size()
-                    with self._lock:
-                        self._rows = size.lines
-                        self._cols = size.columns
-                        if self._rows >= 10:
-                            sys.stdout.write(
-                                f"\033[1;{self._rows - 3}r"
-                                f"\033[{self._rows - 4};1H"
-                            )
-                            sys.stdout.flush()
-                            self._render()
-                except (OSError, ValueError):
-                    pass
+                def _on_resize(signum: int, frame: object) -> None:
+                    try:
+                        size = os.get_terminal_size()
+                        with self._lock:
+                            self._rows = size.lines
+                            self._cols = size.columns
+                            if self._rows >= 10:
+                                sys.stdout.write(
+                                    f"\033[1;{self._rows - 3}r"
+                                    f"\033[{self._rows - 4};1H"
+                                )
+                                sys.stdout.flush()
+                                self._render()
+                    except (OSError, ValueError):
+                        pass
 
-            signal.signal(signal.SIGWINCH, _on_resize)
+                signal.signal(signal.SIGWINCH, _on_resize)
         except (OSError, ValueError):
             self._active = False
 
@@ -541,10 +542,10 @@ class ThinkingPanel:
             return
         self._active = False
         try:
-            # Restore SIGWINCH handler
+            # Restore SIGWINCH handler (Unix-only)
             import signal
 
-            if hasattr(self, "_prev_winch"):
+            if hasattr(signal, "SIGWINCH") and hasattr(self, "_prev_winch"):
                 signal.signal(signal.SIGWINCH, self._prev_winch)
         except (OSError, ValueError):
             pass
@@ -750,6 +751,108 @@ def thinking_phrase() -> str:
     import random
 
     return random.choice(_THINKING_PHRASES)
+
+
+def format_agent_output(text: str) -> str:
+    """Format agent output for terminal display.
+
+    Finds JSON code blocks (```json ... ```) in the text, replaces them
+    with a human-readable summary, and preserves all surrounding prose.
+    """
+    import json as _json
+    import re
+
+    if not text:
+        return ""
+
+    text = text.strip()
+
+    def _format_json_block(match: re.Match) -> str:  # type: ignore[type-arg]
+        raw = match.group(1).strip()
+        try:
+            data = _json.loads(raw)
+        except (ValueError, TypeError):
+            return ""  # unparseable — drop silently
+
+        if not isinstance(data, dict):
+            return ""
+
+        # -- Advisor suggestions --
+        if "suggestions" in data:
+            lines = [f"\n  {_C.BOLD}Suggested experiments:{_C.RESET}"]
+            for i, s in enumerate(data["suggestions"], 1):
+                name = s.get("name", f"exp-{i:03d}")
+                method = s.get("method", s.get("description", ""))
+                # Truncate long method descriptions to first sentence
+                if method and len(method) > 120:
+                    first_sentence = method.split(". ")[0].rstrip(".")
+                    method = first_sentence[:120] + "…"
+                lines.append(
+                    f"    {_C.CYAN}{i}.{_C.RESET} {_C.BOLD}{name}{_C.RESET}"
+                    f" {_C.DIM}— {method}{_C.RESET}"
+                )
+            cu = data.get("criteria_update")
+            if cu and isinstance(cu, dict):
+                rationale = cu.get("rationale", "")
+                first_sentence = rationale.split(".")[0].strip() + "." if rationale else ""
+                if first_sentence and first_sentence != ".":
+                    lines.append(
+                        f"  {_C.YELLOW}Criteria update proposed:{_C.RESET} {first_sentence}"
+                    )
+            return "\n".join(lines)
+
+        # -- Method plan --
+        if "method_name" in data and "steps" in data:
+            name = data["method_name"]
+            lines = [f"\n  {_C.BOLD}Method:{_C.RESET} {_C.CYAN}{name}{_C.RESET}"]
+            lines.append(f"  {_C.BOLD}Steps:{_C.RESET}")
+            for i, step in enumerate(data["steps"], 1):
+                desc = step if isinstance(step, str) else step.get("action", step.get("description", str(step)))
+                if len(desc) > 100:
+                    desc = desc[:100] + "…"
+                lines.append(f"    {_C.GREEN}{i}.{_C.RESET} {desc}")
+            evaluation = data.get("evaluation", {})
+            if evaluation:
+                if isinstance(evaluation, dict):
+                    strategy = evaluation.get("strategy", "")
+                    metrics = evaluation.get("metrics", "")
+                    if strategy or metrics:
+                        parts = [p for p in [strategy, metrics] if p]
+                        lines.append(
+                            f"  {_C.BOLD}Evaluation:{_C.RESET} {' — '.join(parts)}"
+                        )
+                elif isinstance(evaluation, str):
+                    lines.append(f"  {_C.BOLD}Evaluation:{_C.RESET} {evaluation}")
+            return "\n".join(lines)
+
+        # -- Evaluation result --
+        if "criteria_met" in data:
+            met = data["criteria_met"]
+            met_str = f"{_C.GREEN}Yes{_C.RESET}" if met else f"{_C.YELLOW}No{_C.RESET}"
+            lines = [f"\n  {_C.BOLD}Criteria met:{_C.RESET} {met_str}"]
+            summary = data.get("summary", "")
+            if summary:
+                lines.append(f"  {_C.BOLD}Summary:{_C.RESET} {summary}")
+            recs = data.get("recommendations", [])
+            if recs:
+                lines.append(f"  {_C.BOLD}Recommendations:{_C.RESET}")
+                for r in recs:
+                    lines.append(f"    {_C.DIM}\u2022{_C.RESET} {r}")
+            return "\n".join(lines)
+
+        # -- Unknown structure — drop the JSON block --
+        return ""
+
+    result = re.sub(
+        r"```json\s*\n(.*?)\n\s*```",
+        _format_json_block,
+        text,
+        flags=re.DOTALL,
+    )
+
+    # Clean up excessive blank lines left by removed blocks
+    result = re.sub(r"\n{3,}", "\n\n", result).strip()
+    return f"\n{result}\n" if result else ""
 
 
 def format_model_source(

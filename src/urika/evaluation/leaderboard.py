@@ -18,7 +18,7 @@ def load_leaderboard(project_dir: Path) -> dict[str, Any]:
     if not lb_path.exists():
         return {"ranking": []}
 
-    data = json.loads(lb_path.read_text())
+    data = json.loads(lb_path.read_text(encoding="utf-8"))
 
     # Legacy format migration: rename "entries" -> "ranking"
     if "ranking" not in data and "entries" in data:
@@ -85,7 +85,8 @@ def update_leaderboard(
 
     # Sort by primary metric (respecting direction)
     reverse = direction == "higher_is_better"
-    ranking.sort(key=lambda e: e["metrics"].get(primary_metric, 0), reverse=reverse)
+    missing = float("-inf") if reverse else float("inf")
+    ranking.sort(key=lambda e: e["metrics"].get(primary_metric, missing), reverse=reverse)
 
     # Renumber ranks 1, 2, 3...
     for i, entry in enumerate(ranking):
@@ -97,4 +98,4 @@ def update_leaderboard(
     data["direction"] = direction
 
     lb_path = project_dir / "leaderboard.json"
-    lb_path.write_text(json.dumps(data, indent=2) + "\n")
+    lb_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

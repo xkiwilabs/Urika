@@ -91,6 +91,8 @@ Conversation history is cleared when you load a different project.
 
 The conversation context is also available to the `/run` command -- if you have been discussing strategy with the advisor, those instructions are automatically passed to the orchestrator when you start a run.
 
+For a detailed guide on advisor conversations, the suggestion-to-run flow, and how to use instructions to steer agents, see [Advisor Chat and Instructions](06-advisor-and-instructions.md).
+
 
 ## Slash Commands
 

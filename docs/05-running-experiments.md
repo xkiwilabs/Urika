@@ -41,7 +41,7 @@ Both paths depend on what you provide during `urika new`:
 
 For the guided path, you can correct course between experiments. For the autonomous path, the agents must make good decisions on their own — **the quality of your initial setup directly determines success**. A detailed description with clear aims, proper criteria, and relevant papers ingested into the knowledge base will produce far better results than a vague one-liner.
 
-See [Prompts and Context](04-prompts-and-context.md) for detailed guidance on writing effective descriptions and instructions.
+See [Prompts and Context](04-prompts-and-context.md) for detailed guidance on writing effective descriptions and instructions. See [Advisor Chat and Instructions](06-advisor-and-instructions.md) for how to use the advisor as a conversational research partner between runs.
 
 
 ## The `urika run` command
@@ -370,6 +370,8 @@ urika run my-study --instructions "investigate interaction effects between age a
 
 Instructions are also used when the advisor proposes a new experiment -- they are incorporated into the experiment description and influence the planning agent's method design.
 
+For a full guide on instructions, conversation-as-context, and steering agents at every stage, see [Advisor Chat and Instructions](06-advisor-and-instructions.md).
+
 ## Finalizing a project
 
 After experiments are complete and you are satisfied with results, finalize the project to produce polished deliverables:
@@ -380,7 +382,7 @@ urika finalize my-study
 
 Finalization runs the Finalizer Agent (which selects the best methods and writes standalone scripts, findings, and reproducibility artifacts), followed by the Report Agent (final report) and Presentation Agent (final presentation). The outputs are standalone -- they work without Urika installed.
 
-See [Finalizing Projects](07-finalizing-projects.md) for full details.
+See [Finalizing Projects](08-finalizing-projects.md) for full details.
 
 
 ## Related commands
@@ -399,4 +401,4 @@ See [Finalizing Projects](07-finalizing-projects.md) for full details.
 
 ---
 
-**Next:** [Viewing Results](06-viewing-results.md)
+**Next:** [Advisor Chat and Instructions](06-advisor-and-instructions.md)

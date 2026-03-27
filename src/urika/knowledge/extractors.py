@@ -16,7 +16,7 @@ def extract_text(path: Path) -> str:
     """Extract content from a text or markdown file."""
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     if not content.strip():
         raise ValueError(f"File is empty: {path}")
     return content

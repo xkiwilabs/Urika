@@ -162,7 +162,7 @@ def _criteria_fully_met(project_dir: Path) -> bool:
         try:
             import json
 
-            data = json.loads(progress_file.read_text())
+            data = json.loads(progress_file.read_text(encoding="utf-8"))
             for run in data.get("runs", []):
                 metrics = run.get("metrics", {})
                 if not metrics:

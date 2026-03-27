@@ -21,6 +21,7 @@ from prompt_toolkit.styles import Style
 from urika.cli_display import (
     _C,
     _format_duration,
+    format_agent_output,
     print_agent,
     print_error,
     print_header,
@@ -287,7 +288,7 @@ def _handle_free_text(
         methods_path = session.project_path / "methods.json"
         if methods_path.exists():
             try:
-                mdata = json.loads(methods_path.read_text())
+                mdata = json.loads(methods_path.read_text(encoding="utf-8"))
                 mlist = mdata.get("methods", [])
                 context += f"\n{len(mlist)} methods tried.\n"
             except Exception:
@@ -330,11 +331,14 @@ def _handle_free_text(
         )
 
         if result.success and result.text_output:
-            click.echo(f"\n{result.text_output.strip()}\n")
+            click.echo(format_agent_output(result.text_output))
             session.add_message("user", text)
             session.add_message(
                 "advisor", result.text_output.strip()
             )
+
+            # Parse suggestions and offer to run them
+            _offer_to_run_suggestions(session, result.text_output)
         else:
             print_error(f"Advisor error: {result.error}")
 
@@ -344,3 +348,47 @@ def _handle_free_text(
         )
     except Exception as exc:
         print_error(f"Error: {exc}")
+
+
+def _offer_to_run_suggestions(
+    session: ReplSession, advisor_output: str
+) -> None:
+    """Parse advisor suggestions and offer to start a run."""
+    from urika.orchestrator.parsing import parse_suggestions
+
+    parsed = parse_suggestions(advisor_output)
+    if not parsed or not parsed.get("suggestions"):
+        return
+
+    suggestions = parsed["suggestions"]
+    session.pending_suggestions = suggestions
+
+    # Show what was suggested
+    from urika.cli_display import _C
+
+    click.echo(
+        f"  {_C.BOLD}The advisor suggested "
+        f"{len(suggestions)} experiment(s):{_C.RESET}"
+    )
+    for i, s in enumerate(suggestions, 1):
+        name = s.get("name", f"experiment-{i}")
+        click.echo(f"    {i}. {name}")
+    click.echo()
+
+    try:
+        from urika.repl_commands import _prompt_numbered
+
+        choice = _prompt_numbered(
+            "  Run these experiments?",
+            [
+                "Yes \u2014 start running now",
+                "No \u2014 I'll run later with /run",
+            ],
+            default=1,
+        )
+        if choice.startswith("Yes"):
+            from urika.repl_commands import cmd_run
+
+            cmd_run(session, "")
+    except click.Abort:
+        pass

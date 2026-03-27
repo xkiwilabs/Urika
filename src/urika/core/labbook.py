@@ -69,7 +69,7 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
 
     notes_path = project_dir / "experiments" / experiment_id / "labbook" / "notes.md"
     notes_path.parent.mkdir(parents=True, exist_ok=True)
-    notes_path.write_text("\n".join(lines) + "\n")
+    notes_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def generate_experiment_summary(project_dir: Path, experiment_id: str) -> None:
@@ -129,7 +129,7 @@ def generate_experiment_summary(project_dir: Path, experiment_id: str) -> None:
         project_dir / "experiments" / experiment_id / "labbook" / "summary.md"
     )
     summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text("\n".join(lines) + "\n")
+    summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def generate_results_summary(project_dir: Path) -> None:
@@ -164,7 +164,7 @@ def generate_results_summary(project_dir: Path) -> None:
 
     path = project_dir / "projectbook" / "results-summary.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def generate_key_findings(project_dir: Path) -> None:
@@ -211,7 +211,7 @@ def generate_key_findings(project_dir: Path) -> None:
     methods_path = project_dir / "methods.json"
     if methods_path.exists():
         try:
-            mdata = json.loads(methods_path.read_text())
+            mdata = json.loads(methods_path.read_text(encoding="utf-8"))
             mlist = mdata.get("methods", [])
             if mlist:
                 lines.append("## Methods Tried")
@@ -235,7 +235,7 @@ def generate_key_findings(project_dir: Path) -> None:
     criteria_path = project_dir / "criteria.json"
     if criteria_path.exists():
         try:
-            cdata = json.loads(criteria_path.read_text())
+            cdata = json.loads(criteria_path.read_text(encoding="utf-8"))
             versions = cdata.get("versions", [])
             if versions:
                 latest = versions[-1]
@@ -307,7 +307,7 @@ def generate_key_findings(project_dir: Path) -> None:
 
     path = project_dir / "projectbook" / "key-findings.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from urika.core.filelock import locked_json_update
+
+logger = logging.getLogger(__name__)
 
 
 def _criteria_path(project_dir: Path) -> Path:
@@ -47,7 +52,11 @@ def load_criteria(project_dir: Path) -> CriteriaVersion | None:
     path = _criteria_path(project_dir)
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, KeyError) as exc:
+        logger.warning("Corrupt JSON in %s: %s", path, exc)
+        return None
     versions = data.get("versions", [])
     if not versions:
         return None
@@ -59,7 +68,11 @@ def load_criteria_history(project_dir: Path) -> list[CriteriaVersion]:
     path = _criteria_path(project_dir)
     if not path.exists():
         return []
-    data = json.loads(path.read_text())
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, KeyError) as exc:
+        logger.warning("Corrupt JSON in %s: %s", path, exc)
+        return []
     return [CriteriaVersion.from_dict(v) for v in data.get("versions", [])]
 
 
@@ -73,22 +86,27 @@ def append_criteria(
 ) -> CriteriaVersion:
     """Append a new criteria version. Creates the file if it doesn't exist."""
     path = _criteria_path(project_dir)
-    if path.exists():
-        data = json.loads(path.read_text())
-    else:
-        data = {"versions": []}
+    with locked_json_update(path):
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, KeyError) as exc:
+                logger.warning("Corrupt JSON in %s: %s", path, exc)
+                data = {"versions": []}
+        else:
+            data = {"versions": []}
 
-    versions = data.get("versions", [])
-    next_version = len(versions) + 1
+        versions = data.get("versions", [])
+        next_version = len(versions) + 1
 
-    entry = CriteriaVersion(
-        version=next_version,
-        set_by=set_by,
-        turn=turn,
-        rationale=rationale,
-        criteria=criteria,
-    )
-    versions.append(entry.to_dict())
-    data["versions"] = versions
-    path.write_text(json.dumps(data, indent=2) + "\n")
+        entry = CriteriaVersion(
+            version=next_version,
+            set_by=set_by,
+            turn=turn,
+            rationale=rationale,
+            criteria=criteria,
+        )
+        versions.append(entry.to_dict())
+        data["versions"] = versions
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return entry

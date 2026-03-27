@@ -26,11 +26,11 @@ class ProjectRegistry:
 
     def _load(self) -> dict[str, str]:
         if self._path.exists():
-            return json.loads(self._path.read_text())
+            return json.loads(self._path.read_text(encoding="utf-8"))
         return {}
 
     def _save(self) -> None:
-        self._path.write_text(json.dumps(self._data, indent=2) + "\n")
+        self._path.write_text(json.dumps(self._data, indent=2) + "\n", encoding="utf-8")
 
     def register(self, name: str, path: Path) -> None:
         """Register a project by name and path."""

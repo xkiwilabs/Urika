@@ -126,7 +126,7 @@ def write_readme(project_dir: Path, summary: str = "") -> Path:
     """Generate and write README.md to the project directory."""
     content = generate_readme(project_dir, summary)
     readme_path = project_dir / "README.md"
-    readme_path.write_text(content)
+    readme_path.write_text(content, encoding="utf-8")
     return readme_path
 
 
@@ -136,7 +136,7 @@ def _load_methods(project_dir: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         return data.get("methods", [])
     except (json.JSONDecodeError, KeyError):
         return []
@@ -148,7 +148,7 @@ def _load_criteria(project_dir: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         versions = data.get("versions", [])
         return versions[-1] if versions else None
     except (json.JSONDecodeError, KeyError, IndexError):

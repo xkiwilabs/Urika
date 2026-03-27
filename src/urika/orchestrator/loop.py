@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,8 @@ from urika.orchestrator.parsing import (
     parse_run_records,
     parse_suggestions,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # Metrics where lower values are better (errors, losses, p-values)
@@ -83,8 +86,8 @@ async def _generate_reports(
         generate_experiment_summary(project_dir, experiment_id)
         generate_results_summary(project_dir)
         generate_key_findings(project_dir)
-    except Exception:
-        pass  # Reports are best-effort, don't fail the experiment
+    except Exception as exc:
+        logger.warning("Labbook generation failed: %s", exc)
 
     # Update project README.md with agent-written summary
     try:
@@ -96,12 +99,12 @@ async def _generate_reports(
                 summary = await _async_generate_summary(
                     project_dir, experiment_id, runner, on_message
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("README summary generation failed: %s", exc)
         write_readme(project_dir, summary=summary)
         progress("result", "README.md updated")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("README update failed: %s", exc)
 
     # Generate agent-written experiment narrative
     if runner is not None:
@@ -132,8 +135,8 @@ async def _generate_reports(
                     narrative_path.parent.mkdir(parents=True, exist_ok=True)
                     write_versioned(narrative_path, result.text_output.strip() + "\n")
                     progress("result", "Experiment narrative written")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Experiment narrative generation failed: %s", exc)
 
     # Generate project-level narrative
     if runner is not None:
@@ -158,8 +161,8 @@ async def _generate_reports(
                     narrative_path.parent.mkdir(parents=True, exist_ok=True)
                     write_versioned(narrative_path, result.text_output.strip() + "\n")
                     progress("result", "Project narrative written")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Project narrative generation failed: %s", exc)
 
     # Generate presentation slide deck
     if runner is not None:
@@ -167,8 +170,8 @@ async def _generate_reports(
             await _generate_presentation(
                 project_dir, experiment_id, runner, progress, on_message
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Presentation generation failed: %s", exc)
 
 
 async def _generate_presentation(
@@ -216,8 +219,8 @@ async def _generate_presentation(
             with open(toml_path, "rb") as f:
                 tdata = tomllib.load(f)
             theme = tdata.get("preferences", {}).get("presentation_theme", "light")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Presentation theme loading failed: %s", exc)
 
     if experiment_id:
         experiment_dir = project_dir / "experiments" / experiment_id
@@ -278,7 +281,7 @@ async def _async_generate_summary(
     methods_info = ""
     if methods_path.exists():
         try:
-            mdata = _json.loads(methods_path.read_text())
+            mdata = _json.loads(methods_path.read_text(encoding="utf-8"))
             mlist = mdata.get("methods", [])
             methods_info = f"{len(mlist)} methods tried.\n"
             for m in mlist[-5:]:  # last 5 methods
@@ -288,8 +291,8 @@ async def _async_generate_summary(
                     if isinstance(v, (int, float)):
                         methods_info += f"  {m['name']}: {k}={v}\n"
                         break
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Methods info loading failed: %s", exc)
 
     exp_progress = load_progress(project_dir, experiment_id)
     runs = exp_progress.get("runs", [])
@@ -385,8 +388,8 @@ def _print_run_summary(project_dir: Path, experiment_id: str, progress: object) 
             progress("phase", f"Next: {ns}")
 
         progress("phase", "")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Run summary generation failed: %s", exc)
 
 
 async def run_experiment(
@@ -479,8 +482,8 @@ async def run_experiment(
                 if lit_result.success and lit_result.text_output:
                     knowledge_summary = lit_result.text_output
             task_prompt = knowledge_summary + "\n\n" + task_prompt
-    except Exception:
-        pass  # Knowledge is supplementary, don't fail the experiment
+    except Exception as exc:
+        logger.warning("Knowledge scan failed: %s", exc)
 
     for turn in range(start_turn, max_turns + 1):
         progress("turn", f"Turn {turn}/{max_turns}")
@@ -632,8 +635,8 @@ async def run_experiment(
                                 direction=direction,
                                 experiment_id=experiment_id,
                             )
-                        except Exception:
-                            pass  # Leaderboard is best-effort
+                        except Exception as exc:
+                            logger.warning("Leaderboard update failed: %s", exc)
 
             # --- evaluator ---
             progress("agent", "Evaluator — scoring results")
@@ -758,8 +761,8 @@ async def run_experiment(
             if get_user_input is not None:
                 try:
                     user_inject = get_user_input()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("User input retrieval failed: %s", exc)
 
             # Pass evaluator output + any user input to advisor
             advisor_prompt = eval_result.text_output
@@ -814,7 +817,8 @@ async def run_experiment(
                 "parsed": suggestions,
             }
             (suggestions_dir / f"turn-{turn}.json").write_text(
-                json.dumps(suggestion_data, indent=2) + "\n"
+                json.dumps(suggestion_data, indent=2) + "\n",
+                encoding="utf-8",
             )
 
             # Build next task prompt from suggestions, preserving knowledge context

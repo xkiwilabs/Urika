@@ -28,7 +28,7 @@ Produce a single JSON block with your suggestions:
 {{
   "suggestions": [
     {{
-      "name": "experiment_name",
+      "name": "descriptive-slug-without-exp-number",
       "method": "description of the analytical method",
       "rationale": "why this is worth trying",
       "params": {{}}

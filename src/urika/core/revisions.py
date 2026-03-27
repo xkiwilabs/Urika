@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from urika.core.filelock import locked_json_update
+
 
 def _revisions_path(project_dir: Path) -> Path:
     return project_dir / "revisions.json"
@@ -18,7 +20,7 @@ def load_revisions(project_dir: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         return data.get("revisions", [])
     except Exception:
         return []
@@ -36,19 +38,22 @@ def record_revision(
 
     Returns the revision entry.
     """
-    revisions = load_revisions(project_dir)
-    entry = {
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-        "field": field,
-        "old_value": old_value,
-        "new_value": new_value,
-        "reason": reason,
-        "revision": len(revisions) + 1,
-    }
-    revisions.append(entry)
-    _revisions_path(project_dir).write_text(
-        json.dumps({"revisions": revisions}, indent=2) + "\n"
-    )
+    path = _revisions_path(project_dir)
+    with locked_json_update(path):
+        revisions = load_revisions(project_dir)
+        entry = {
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "field": field,
+            "old_value": old_value,
+            "new_value": new_value,
+            "reason": reason,
+            "revision": len(revisions) + 1,
+        }
+        revisions.append(entry)
+        path.write_text(
+            json.dumps({"revisions": revisions}, indent=2) + "\n",
+            encoding="utf-8",
+        )
     return entry
 
 

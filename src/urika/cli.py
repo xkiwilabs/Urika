@@ -311,7 +311,7 @@ def new(
 
         if description is None:
             description = interactive_prompt(
-                "Describe the project — what are you trying to analyse or predict",
+                "Describe the project — what are you trying to analyze or predict",
                 default="",
             )
         if question is None:
@@ -323,10 +323,13 @@ def new(
                 default=1,
             )
 
-        web_search = interactive_confirm(
-            "Allow agents to search the web for relevant papers?",
-            default=False,
-        )
+        if privacy_mode_val == "private":
+            web_search = False
+        else:
+            web_search = interactive_confirm(
+                "Allow agents to search the web for relevant papers?",
+                default=False,
+            )
 
         click.echo(
             "\n  Isolated environments prevent package conflicts between projects.\n"
@@ -553,7 +556,7 @@ def new(
     first_desc = ""
     if suggestions_path.exists():
         try:
-            sdata = json.loads(suggestions_path.read_text())
+            sdata = json.loads(suggestions_path.read_text(encoding="utf-8"))
             first = (sdata.get("suggestions") or [{}])[0]
             first_name = first.get("name", "")
             first_desc = first.get("method", first.get("description", ""))
@@ -678,6 +681,7 @@ def _run_builder_agent_loop(
         Spinner,
         ThinkingPanel,
         _AGENT_ACTIVITY,
+        format_agent_output,
         print_agent,
         print_error,
         print_step,
@@ -825,7 +829,7 @@ def _run_builder_agent_loop(
             return
 
         suggestions = parse_suggestions(suggest_result.text_output)
-        click.echo(suggest_result.text_output.strip())
+        click.echo(format_agent_output(suggest_result.text_output))
 
         # --- Phase 3: Planning agent ---
         print_agent("planning_agent")
@@ -855,7 +859,7 @@ def _run_builder_agent_loop(
                 builder.set_initial_suggestions(suggestions)
             return
 
-        click.echo(plan_result.text_output.strip())
+        click.echo(format_agent_output(plan_result.text_output))
 
     finally:
         panel.cleanup()
@@ -893,7 +897,7 @@ def _run_builder_agent_loop(
                     runner.run(plan_config, plan_prompt, on_message=_on_builder_msg)
                 )
             if plan_result.success:
-                click.echo(plan_result.text_output.strip())
+                click.echo(format_agent_output(plan_result.text_output))
 
     # Store final suggestions
     if suggestions:
@@ -1182,7 +1186,7 @@ def _determine_next_experiment(
     methods_summary = ""
     if methods_path.exists():
         try:
-            mdata = json.loads(methods_path.read_text())
+            mdata = json.loads(methods_path.read_text(encoding="utf-8"))
             mlist = mdata.get("methods", [])
             if mlist:
                 methods_summary = f"{len(mlist)} methods tried. Best: "
@@ -1210,7 +1214,7 @@ def _determine_next_experiment(
     criteria_path = project_path / "criteria.json"
     if criteria_path.exists():
         try:
-            cdata = json.loads(criteria_path.read_text())
+            cdata = json.loads(criteria_path.read_text(encoding="utf-8"))
             versions = cdata.get("versions", [])
             if versions:
                 latest = versions[-1]
@@ -1229,7 +1233,7 @@ def _determine_next_experiment(
         suggestions_path = project_path / "suggestions" / "initial.json"
         if suggestions_path.exists():
             try:
-                data = json.loads(suggestions_path.read_text())
+                data = json.loads(suggestions_path.read_text(encoding="utf-8"))
                 suggestions = data.get("suggestions", [])
                 if suggestions:
                     next_suggestion = suggestions[0]
@@ -1264,6 +1268,7 @@ def _determine_next_experiment(
                 )
 
                 from urika.cli_display import (
+                    format_agent_output,
                     print_agent,
                     print_tool_use,
                 )
@@ -1307,7 +1312,7 @@ def _determine_next_experiment(
                     parsed = parse_suggestions(result.text_output)
                     if parsed and parsed.get("suggestions"):
                         next_suggestion = parsed["suggestions"][0]
-                        click.echo(result.text_output.strip())
+                        click.echo(format_agent_output(result.text_output))
         except Exception:
             pass
 
@@ -2343,7 +2348,7 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     """Ask the advisor agent a question about the project."""
     import asyncio
 
-    from urika.cli_display import Spinner, print_agent
+    from urika.cli_display import Spinner, format_agent_output, print_agent
 
     from urika.cli_helpers import interactive_prompt
 
@@ -2380,7 +2385,7 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     methods_path = project_path / "methods.json"
     if methods_path.exists():
         try:
-            mdata = _json.loads(methods_path.read_text())
+            mdata = _json.loads(methods_path.read_text(encoding="utf-8"))
             mlist = mdata.get("methods", [])
             context += f"\n{len(mlist)} methods tried.\n"
         except Exception:
@@ -2402,9 +2407,87 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         return
 
     if result.success and result.text_output:
-        click.echo(f"\n{result.text_output.strip()}\n")
+        click.echo(format_agent_output(result.text_output))
+        _offer_to_run_advisor_suggestions(
+            result.text_output, project, project_path
+        )
     else:
         click.echo(f"Error: {result.error}")
+
+
+def _offer_to_run_advisor_suggestions(
+    advisor_output: str, project_name: str, project_path: Path
+) -> None:
+    """Parse advisor suggestions and offer to run them via the CLI."""
+    from urika.orchestrator.parsing import parse_suggestions
+
+    parsed = parse_suggestions(advisor_output)
+    if not parsed or not parsed.get("suggestions"):
+        return
+
+    suggestions = parsed["suggestions"]
+
+    from urika.cli_display import _C
+
+    click.echo(
+        f"  {_C.BOLD}The advisor suggested "
+        f"{len(suggestions)} experiment(s):{_C.RESET}"
+    )
+    for i, s in enumerate(suggestions, 1):
+        name = s.get("name", f"experiment-{i}")
+        click.echo(f"    {i}. {name}")
+    click.echo()
+
+    try:
+        choice = _prompt_numbered(
+            "  Run these experiments?",
+            [
+                "Yes \u2014 start running now",
+                "No \u2014 I'll run later with urika run",
+            ],
+            default=1,
+        )
+    except (click.Abort, click.exceptions.Abort):
+        return
+
+    if not choice.startswith("Yes"):
+        return
+
+    # Create experiment from first suggestion and run it
+    suggestion = suggestions[0]
+    exp_name = (
+        suggestion.get("name", "advisor-experiment")
+        .replace(" ", "-")
+        .lower()
+    )
+    description = suggestion.get(
+        "method", suggestion.get("description", "")
+    )
+
+    from urika.core.experiment import create_experiment
+    from urika.cli_display import print_success
+
+    exp = create_experiment(
+        project_path,
+        name=exp_name,
+        hypothesis=description[:500] if description else "",
+    )
+    print_success(f"Created experiment: {exp.experiment_id}")
+
+    ctx = click.Context(run)
+    ctx.invoke(
+        run,
+        project=project_name,
+        experiment_id=exp.experiment_id,
+        max_turns=None,
+        resume=False,
+        quiet=False,
+        auto=False,
+        instructions=description,
+        max_experiments=None,
+        review_criteria=False,
+        json_output=False,
+    )
 
 
 @cli.command()
@@ -2415,7 +2498,7 @@ def evaluate(project: str | None, experiment_id: str | None, json_output: bool) 
     """Run the evaluator agent on an experiment."""
     import asyncio
 
-    from urika.cli_display import Spinner, print_agent
+    from urika.cli_display import Spinner, format_agent_output, print_agent
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -2461,7 +2544,7 @@ def evaluate(project: str | None, experiment_id: str | None, json_output: bool) 
         return
 
     if result.success and result.text_output:
-        click.echo(f"\n{result.text_output.strip()}\n")
+        click.echo(format_agent_output(result.text_output))
     else:
         click.echo(f"Error: {result.error}")
 
@@ -2474,7 +2557,7 @@ def plan(project: str | None, experiment_id: str | None, json_output: bool) -> N
     """Run the planning agent to design the next method."""
     import asyncio
 
-    from urika.cli_display import Spinner, print_agent
+    from urika.cli_display import Spinner, format_agent_output, print_agent
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -2520,7 +2603,7 @@ def plan(project: str | None, experiment_id: str | None, json_output: bool) -> N
         return
 
     if result.success and result.text_output:
-        click.echo(f"\n{result.text_output.strip()}\n")
+        click.echo(format_agent_output(result.text_output))
     else:
         click.echo(f"Error: {result.error}")
 
@@ -2830,7 +2913,7 @@ def build_tool(project: str | None, instructions: str | None, json_output: bool)
     """
     import asyncio
 
-    from urika.cli_display import Spinner, print_agent
+    from urika.cli_display import Spinner, format_agent_output, print_agent
     from urika.cli_helpers import interactive_prompt
 
     project = _ensure_project(project)
@@ -2875,7 +2958,7 @@ def build_tool(project: str | None, instructions: str | None, json_output: bool)
         return
 
     if result.success and result.text_output:
-        click.echo(f"\n{result.text_output.strip()}\n")
+        click.echo(format_agent_output(result.text_output))
     else:
         click.echo(f"Error: {result.error}")
 

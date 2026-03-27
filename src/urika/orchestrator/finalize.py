@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from urika.agents.registry import AgentRegistry
 from urika.agents.runner import AgentRunner
+
+logger = logging.getLogger(__name__)
 
 
 async def finalize_project(
@@ -95,8 +98,8 @@ async def finalize_project(
                         theme = tdata.get("preferences", {}).get(
                             "presentation_theme", "light"
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("Presentation theme loading failed: %s", exc)
                 output_dir = project_dir / "projectbook" / "final-presentation"
                 render_presentation(slide_data, output_dir, theme=theme)
 
@@ -125,13 +128,13 @@ async def finalize_project(
         summary = ""
         if findings_path.exists():
             try:
-                findings = json.loads(findings_path.read_text())
+                findings = json.loads(findings_path.read_text(encoding="utf-8"))
                 summary = findings.get("answer", "")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Findings JSON parsing failed: %s", exc)
         write_readme(project_dir, summary=summary)
         progress("result", "README updated with final findings")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("README update failed: %s", exc)
 
     return {"success": True}

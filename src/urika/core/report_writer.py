@@ -25,5 +25,5 @@ def write_versioned(path: Path, content: str) -> Path:
             counter += 1
         shutil.copy2(path, versioned)
 
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
     return path
