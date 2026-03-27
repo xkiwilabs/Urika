@@ -1,8 +1,8 @@
 """Interactive REPL shell for Urika.
 
 Provides a prompt_toolkit-based shell with tab completion,
-command history, and a status toolbar. During agent execution,
-keystrokes are captured silently and queued for the next agent.
+command history, and a status toolbar. Agent commands block
+the input loop during execution (Phase B will add async input).
 """
 
 from __future__ import annotations
@@ -10,10 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
-import termios
-import threading
-import tty
 
 import click
 from prompt_toolkit import PromptSession
@@ -227,120 +223,6 @@ def run_repl() -> None:
             break
 
 
-# Commands that invoke agents (long-running)
-_BLOCKING_COMMANDS = {
-    "run", "finalize", "evaluate", "plan", "advisor",
-    "present", "report", "build-tool", "new",
-}
-
-
-class _InputCapture:
-    """Captures input during agent execution without echoing mid-stream.
-
-    Terminal is put in cbreak mode so individual keystrokes don't echo
-    inline with agent output. But when the user presses Enter, the
-    completed line is printed with a clear [queued] label so they can
-    see what they typed and that it was received.
-    """
-
-    def __init__(self, session: ReplSession) -> None:
-        self._session = session
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._old_settings: list | None = None
-
-    def start(self) -> None:
-        """Start capturing stdin in a background thread."""
-        if not sys.stdin.isatty():
-            return
-        try:
-            self._old_settings = termios.tcgetattr(sys.stdin)
-            tty.setcbreak(sys.stdin.fileno())
-            self._stop.clear()
-            self._thread = threading.Thread(
-                target=self._capture_loop, daemon=True
-            )
-            self._thread.start()
-        except (termios.error, OSError):
-            self._old_settings = None
-
-    def stop(self) -> None:
-        """Stop capturing and restore terminal."""
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1)
-            self._thread = None
-        if self._old_settings is not None:
-            try:
-                termios.tcsetattr(
-                    sys.stdin,
-                    termios.TCSADRAIN,
-                    self._old_settings,
-                )
-            except (termios.error, OSError):
-                pass
-            self._old_settings = None
-
-    def _capture_loop(self) -> None:
-        """Read characters, show completed lines with [queued] label."""
-        import select
-
-        buf = ""
-        while not self._stop.is_set():
-            try:
-                ready, _, _ = select.select(
-                    [sys.stdin], [], [], 0.1
-                )
-                if not ready:
-                    continue
-                ch = sys.stdin.read(1)
-                if not ch:
-                    continue
-                if ch == "\n" or ch == "\r":
-                    if buf.strip():
-                        self._session.queue_input(buf.strip())
-                        # Replace typing line with queued confirmation
-                        sys.stdout.write(
-                            f"\r\033[K  {_C.DIM}\u203a "
-                            f"{buf.strip()}"
-                            f"  [{_C.YELLOW}queued for advisor"
-                            f"{_C.DIM}]{_C.RESET}\n"
-                        )
-                        sys.stdout.flush()
-                    else:
-                        sys.stdout.write("\r\033[K")
-                        sys.stdout.flush()
-                    buf = ""
-                elif ch == "\x7f" or ch == "\x08":
-                    buf = buf[:-1]
-                    # Redraw typing line
-                    sys.stdout.write(
-                        f"\r\033[K  {_C.DIM}\u203a {_C.RESET}"
-                        f"{buf}"
-                    )
-                    sys.stdout.flush()
-                elif ch >= " ":
-                    buf += ch
-                    # Show character as typed
-                    sys.stdout.write(
-                        f"\r\033[K  {_C.DIM}\u203a {_C.RESET}"
-                        f"{buf}"
-                    )
-                    sys.stdout.flush()
-            except (OSError, ValueError):
-                break
-        # Flush remaining buffer
-        if buf.strip():
-            self._session.queue_input(buf.strip())
-            sys.stdout.write(
-                f"\r\033[K  {_C.DIM}\u203a "
-                f"{buf.strip()}"
-                f"  [{_C.YELLOW}queued"
-                f"{_C.DIM}]{_C.RESET}\n"
-            )
-            sys.stdout.flush()
-
-
 def _handle_command(session: ReplSession, text: str) -> None:
     """Parse and execute a slash command."""
     parts = text[1:].split(" ", 1)
@@ -361,22 +243,10 @@ def _handle_command(session: ReplSession, text: str) -> None:
         return
 
     handler = all_cmds[cmd_name]["func"]
-
-    if cmd_name in _BLOCKING_COMMANDS:
-        # Capture input silently during agent execution
-        capture = _InputCapture(session)
-        capture.start()
-        try:
-            handler(session, args)
-        except Exception as exc:
-            print_error(f"Error: {exc}")
-        finally:
-            capture.stop()
-    else:
-        try:
-            handler(session, args)
-        except Exception as exc:
-            print_error(f"Error: {exc}")
+    try:
+        handler(session, args)
+    except Exception as exc:
+        print_error(f"Error: {exc}")
 
 
 def _handle_free_text(
