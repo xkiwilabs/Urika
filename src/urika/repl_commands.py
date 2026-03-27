@@ -299,6 +299,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
     auto_mode = defaults["auto_mode"]
     max_experiments = None
     run_instructions = ""
+    review_criteria = False
 
     if choice == "Custom settings":
         max_turns = int(
@@ -328,6 +329,15 @@ def cmd_run(session: ReplSession, args: str) -> None:
         run_instructions = _click.prompt(
             "  Instructions (optional, enter to skip)", default=""
         )
+        rc_choice = _prompt_numbered(
+            "\n  Re-evaluate criteria if met?",
+            [
+                "No — complete when criteria met (default)",
+                "Yes — advisor reviews criteria, may raise the bar",
+            ],
+            default=1,
+        )
+        review_criteria = rc_choice.startswith("Yes")
 
     # Use conversation context as instructions if none provided
     if not run_instructions and session.conversation:
@@ -357,6 +367,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
             auto=(auto_mode != "checkpoint"),
             instructions=run_instructions,
             max_experiments=max_experiments,
+            review_criteria=review_criteria,
         )
         session.experiments_run += 1
     finally:

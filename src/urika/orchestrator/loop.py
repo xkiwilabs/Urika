@@ -395,6 +395,7 @@ async def run_experiment(
     runner: AgentRunner,
     *,
     max_turns: int = 50,
+    review_criteria: bool = False,
     resume: bool = False,
     on_progress: object = None,
     on_message: object = None,
@@ -670,6 +671,62 @@ async def run_experiment(
             evaluation = parse_evaluation(eval_result.text_output)
             if evaluation and evaluation.get("criteria_met"):
                 progress("result", "Criteria met!")
+
+                # Optionally ask advisor to review criteria before completing
+                if review_criteria:
+                    progress(
+                        "agent",
+                        "Advisor agent — reviewing criteria",
+                    )
+                    review_role = registry.get("advisor_agent")
+                    if review_role is not None:
+                        review_prompt = (
+                            "The evaluator says criteria are met. "
+                            "Review the current criteria and results. "
+                            "Should the criteria be updated to be more "
+                            "ambitious, or are they appropriate? If you "
+                            "recommend updating criteria, include a "
+                            "criteria_update in your response. If the "
+                            "criteria are appropriate, confirm completion."
+                        )
+                        review_config = review_role.build_config(
+                            project_dir=project_dir,
+                            experiment_id=experiment_id,
+                        )
+                        review_result = await runner.run(
+                            review_config,
+                            f"{eval_result.text_output}\n\n"
+                            f"{review_prompt}",
+                            on_message=on_message,
+                        )
+                        if review_result.success:
+                            review_suggestions = parse_suggestions(
+                                review_result.text_output
+                            )
+                            if review_suggestions and review_suggestions.get(
+                                "criteria_update"
+                            ):
+                                from urika.core.criteria import (
+                                    append_criteria,
+                                )
+
+                                update = review_suggestions[
+                                    "criteria_update"
+                                ]
+                                append_criteria(
+                                    project_dir,
+                                    update.get("criteria", {}),
+                                    set_by="advisor_agent",
+                                    turn=turn,
+                                    rationale=update.get("rationale", ""),
+                                )
+                                progress(
+                                    "result",
+                                    "Criteria updated — continuing",
+                                )
+                                # Don't complete — continue the loop
+                                continue
+
                 complete_session(project_dir, experiment_id)
                 await _generate_reports(
                     project_dir,
