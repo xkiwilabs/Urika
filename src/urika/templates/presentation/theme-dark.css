@@ -1,0 +1,37 @@
+/* Urika Dark Theme — minimal overrides, template.html handles typography */
+:root {
+    --r-background-color: #0f172a;
+    --r-main-font-size: 18px;
+    --r-main-color: #e2e8f0;
+    --r-heading-color: #60a5fa;
+    --r-link-color: #93c5fd;
+    --r-link-color-hover: #bfdbfe;
+    --r-selection-background-color: #3b82f6;
+    --r-selection-color: #fff;
+}
+.reveal-viewport {
+    background: #0f172a;
+}
+.reveal {
+    color: #e2e8f0;
+}
+.reveal .slides > section {
+    background: #1e293b;
+    border-radius: 8px;
+}
+.reveal h1, .reveal h2 {
+    color: #60a5fa;
+}
+.reveal section h2 {
+    border-bottom-color: #334155;
+}
+.slide-footer {
+    color: #475569 !important;
+    border-top-color: #334155 !important;
+}
+.slide-stat .big-number {
+    background: linear-gradient(135deg, #60a5fa, #93c5fd) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
+}

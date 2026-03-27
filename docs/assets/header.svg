@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="580" height="210" viewBox="0 0 580 210">
+  <rect width="580" height="210" rx="8" fill="#0d1117"/>
+  <text font-family="monospace" font-size="17" font-weight="bold" fill="#3b82f6" text-anchor="middle">
+    <tspan x="290" y="40">██╗   ██╗██████╗ ██╗██╗  ██╗ █████╗</tspan>
+    <tspan x="290" y="60">██║   ██║██╔══██╗██║██║ ██╔╝██╔══██╗</tspan>
+    <tspan x="290" y="80">██║   ██║██████╔╝██║█████╔╝ ███████║</tspan>
+    <tspan x="290" y="100">██║   ██║██╔══██╗██║██╔═██╗ ██╔══██║</tspan>
+    <tspan x="290" y="120">╚██████╔╝██║  ██║██║██║  ██╗██║  ██║</tspan>
+    <tspan x="290" y="140"> ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═╝</tspan>
+  </text>
+  <text font-family="sans-serif" font-weight="bold" font-size="14" fill="#e5e7eb" text-anchor="middle" x="290" y="170">Multi-agent scientific analysis platform</text>
+  <text font-family="sans-serif" font-size="12" fill="#6b7280" text-anchor="middle" x="290" y="192">Autonomous exploration · analysis · modelling · evaluation</text>
+</svg>

@@ -1,0 +1,34 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.ruff_cache/
+*.so
+.venv/
+venv/
+env/
+.env
+*.db
+.worktrees/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Urika project data (not part of the repo)
+urika-projects/
+
+# Test dataset downloads (configs and knowledge ARE tracked)
+dev/test-datasets/*/data/
