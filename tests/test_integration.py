@@ -289,7 +289,7 @@ def test_cli_smoke_test(tmp_path: Path) -> None:
     ).read_text()
     assert "random_forest" in summary
 
-    # 9. urika run --continue (mocked)
+    # 9. urika run --resume (mocked)
     from urika.core.session import pause_session, start_session
 
     start_session(project_dir, exp_id, max_turns=10)
@@ -300,7 +300,7 @@ def test_cli_smoke_test(tmp_path: Path) -> None:
         patch("urika.orchestrator.run_experiment", new_callable=AsyncMock) as mock_run,
     ):
         mock_run.return_value = {"status": "completed", "turns": 7, "error": None}
-        result = runner.invoke(cli, ["run", "smoke-test", "--continue"], env=env)
+        result = runner.invoke(cli, ["run", "smoke-test", "--resume"], env=env)
     assert result.exit_code == 0, result.output
     assert "Resuming" in result.output
 

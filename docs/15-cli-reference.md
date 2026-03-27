@@ -238,7 +238,7 @@ urika run [PROJECT] [OPTIONS]
 | `--experiment ID` | Specific experiment ID to run (auto-selected if omitted) |
 | `--max-turns N` | Maximum orchestrator turns (default: from `urika.toml`, or 5) |
 | `--max-experiments N` | Run multiple experiments (autonomous mode) |
-| `--continue` | Resume a paused or failed experiment |
+| `--resume` | Resume a paused or failed experiment |
 | `-q`, `--quiet` | Suppress verbose tool-use streaming output |
 | `--auto` | Fully autonomous mode -- no confirmation prompts |
 | `--instructions TEXT` | Guide the next experiment (e.g., "focus on tree-based models") |
@@ -277,7 +277,7 @@ urika run my-project --experiment exp-002 --max-turns 10
 urika run my-project --auto --instructions "try ensemble methods"
 
 # Resume after interruption
-urika run my-project --continue
+urika run my-project --resume
 ```
 
 The `max_turns` default can be set in `urika.toml`:
@@ -728,7 +728,7 @@ urika --version
 
 - **Project argument**: Most commands accept an optional `PROJECT` argument. If omitted and only one project exists, it is used automatically. If multiple projects exist, you are prompted to select one.
 - **Versioned files**: Reports, presentations, and other generated files use versioned writing -- previous versions are backed up with timestamps before overwriting.
-- **Ctrl+C handling**: During `urika run`, pressing Ctrl+C cleanly pauses the experiment and removes the lock file. Resume with `urika run --continue`.
+- **Ctrl+C handling**: During `urika run`, pressing Ctrl+C cleanly pauses the experiment and removes the lock file. Resume with `urika run --resume`.
 
 ---
 

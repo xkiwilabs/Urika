@@ -62,7 +62,7 @@ urika run [PROJECT] [OPTIONS]
 |--------|-------------|
 | `--experiment ID` | Run a specific experiment by its ID (e.g., `exp-001-baseline`). If omitted, Urika auto-selects (see below). |
 | `--max-turns N` | Maximum number of orchestrator turns. Overrides the project's `urika.toml` setting. |
-| `--continue` | Resume a paused or failed experiment from where it left off. |
+| `--resume` | Resume a paused or failed experiment from where it left off. |
 | `--auto` | Fully autonomous mode -- no confirmation prompts between experiment selection and execution. |
 | `--instructions TEXT` | Guide the next experiment with free-text instructions (e.g., `"focus on tree-based models"`). |
 | `-q, --quiet` | Suppress verbose tool-use streaming output. The orchestrator still runs; you just see less intermediate detail. |
@@ -99,7 +99,7 @@ urika run my-study --experiment exp-002-ensemble --max-turns 10
 Resume a paused experiment:
 
 ```bash
-urika run my-study --continue
+urika run my-study --resume
 ```
 
 Fully autonomous with guidance:
@@ -245,7 +245,7 @@ Experiments can be paused in two ways:
 To resume:
 
 ```bash
-urika run my-study --continue
+urika run my-study --resume
 ```
 
 When resuming:
@@ -338,7 +338,7 @@ Pressing **Ctrl+C** during an experiment triggers a clean shutdown:
 1. A warning is printed: "Interrupted -- cleaning up..."
 2. The session is marked as failed with the reason "Interrupted by user"
 3. The experiment lockfile (`.lock` in the experiment directory) is removed
-4. A message indicates how to resume: `urika run --continue`
+4. A message indicates how to resume: `urika run --resume`
 
 Lockfiles prevent concurrent execution of the same experiment. If a lockfile is left behind due to a crash (no clean Ctrl+C), you may need to delete it manually:
 

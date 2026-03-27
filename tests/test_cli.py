@@ -551,7 +551,7 @@ class TestRunContinueFlag:
         ):
             mock_run.return_value = {"status": "completed", "turns": 3, "error": None}
             result = runner.invoke(
-                cli, ["run", "test-proj", "--continue"], env=urika_env
+                cli, ["run", "test-proj", "--resume"], env=urika_env
             )
         assert result.exit_code == 0, result.output
         assert mock_run.call_args.kwargs["resume"] is True
@@ -601,7 +601,7 @@ class TestRunContinueFlag:
                     "test-proj",
                     "--experiment",
                     "exp-001-baseline",
-                    "--continue",
+                    "--resume",
                 ],
                 env=urika_env,
             )
