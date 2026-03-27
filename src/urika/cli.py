@@ -250,7 +250,9 @@ def new(
             default=_mode_default,
         )
         _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
-        privacy_mode_val = _privacy_map.get(privacy_choice.split(" —")[0].strip(), "open")
+        privacy_mode_val = _privacy_map.get(
+            privacy_choice.split(" —")[0].strip(), "open"
+        )
 
         private_endpoint_url = ""
         private_endpoint_key_env = ""
@@ -964,19 +966,23 @@ def status(name: str | None, json_output: bool) -> None:
         exps_data = []
         for exp in experiments:
             progress = load_progress(project_path, exp.experiment_id)
-            exps_data.append({
-                "experiment_id": exp.experiment_id,
-                "name": exp.name,
-                "status": progress.get("status", "unknown"),
-                "runs": len(progress.get("runs", [])),
-            })
-        output_json({
-            "project": config.name,
-            "question": config.question,
-            "mode": config.mode,
-            "path": str(project_path),
-            "experiments": exps_data,
-        })
+            exps_data.append(
+                {
+                    "experiment_id": exp.experiment_id,
+                    "name": exp.name,
+                    "status": progress.get("status", "unknown"),
+                    "runs": len(progress.get("runs", [])),
+                }
+            )
+        output_json(
+            {
+                "project": config.name,
+                "question": config.question,
+                "mode": config.mode,
+                "path": str(project_path),
+                "experiments": exps_data,
+            }
+        )
         return
 
     click.echo(f"Project: {config.name}")
@@ -1136,11 +1142,13 @@ def tools(category: str | None, project: str | None, json_output: bool) -> None:
         for name in names:
             tool = registry.get(name)
             if tool is not None:
-                tools_data.append({
-                    "name": tool.name(),
-                    "category": tool.category(),
-                    "description": tool.description(),
-                })
+                tools_data.append(
+                    {
+                        "name": tool.name(),
+                        "category": tool.category(),
+                        "description": tool.description(),
+                    }
+                )
         output_json({"tools": tools_data})
         return
 
@@ -1709,14 +1717,14 @@ def run(
     def _cleanup_on_interrupt(signum: int, frame: object) -> None:
         print_warning("\nInterrupted — cleaning up...")
         try:
-            from urika.core.session import fail_session
+            from urika.core.session import stop_session
 
-            fail_session(project_path, experiment_id, error="Interrupted by user")
+            stop_session(project_path, experiment_id, reason="Stopped by user")
         except Exception:
-            # Force remove lockfile if fail_session fails
+            # Force remove lockfile if stop_session fails
             lock = project_path / "experiments" / experiment_id / ".lock"
             lock.unlink(missing_ok=True)
-        print_step("Experiment paused. Resume with: urika run --resume")
+        print_step("Experiment stopped. Resume with: urika run --resume")
         raise SystemExit(1)
 
     original_handler = signal.getsignal(signal.SIGINT)
@@ -1744,7 +1752,9 @@ def run(
                     panel.update(turn=detail, activity=thinking_phrase())
                 elif event == "agent":
                     # Extract agent key from "Planning agent — designing method"
-                    agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+                    agent_key = (
+                        detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+                    )
                     print_agent(agent_key)
                     panel.update(agent=agent_key, activity=detail)
                 elif event == "result":
@@ -1992,10 +2002,12 @@ def report(project: str, experiment_id: str | None, json_output: bool = False) -
         if json_output:
             from urika.cli_helpers import output_json
 
-            output_json({
-                "output": "Project-level reports generated.",
-                "path": str(results_path),
-            })
+            output_json(
+                {
+                    "output": "Project-level reports generated.",
+                    "path": str(results_path),
+                }
+            )
             return
 
         click.echo(f"Generated: {results_path}")
@@ -2032,10 +2044,12 @@ def report(project: str, experiment_id: str | None, json_output: bool = False) -
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({
-            "output": f"Report generated for {experiment_id}.",
-            "path": str(summary),
-        })
+        output_json(
+            {
+                "output": f"Report generated for {experiment_id}.",
+                "path": str(summary),
+            }
+        )
         return
 
     click.echo(f"Updated: {notes}")
@@ -2104,9 +2118,12 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
         if not candidate_dirs:
             if json_output:
                 from urika.cli_helpers import output_json_error
+
                 output_json_error("No data directory or configured data paths found.")
                 raise SystemExit(1)
-            raise click.ClickException("No data directory or configured data paths found.")
+            raise click.ClickException(
+                "No data directory or configured data paths found."
+            )
 
         data_files: list[Path] = []
         for cdir in candidate_dirs:
@@ -2130,16 +2147,15 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
         if not data_files:
             if json_output:
                 from urika.cli_helpers import output_json_error
-                output_json_error(
-                    "No supported data files found in data paths."
-                )
+
+                output_json_error("No supported data files found in data paths.")
                 raise SystemExit(1)
-            raise click.ClickException(
-                "No supported data files found in data paths."
-            )
+            raise click.ClickException("No supported data files found in data paths.")
         path = data_files[0]
         if len(data_files) > 1 and not json_output:
-            click.echo(f"Multiple data files found ({len(data_files)}). Using: {path.name}")
+            click.echo(
+                f"Multiple data files found ({len(data_files)}). Using: {path.name}"
+            )
 
     try:
         view = load_dataset(path)
@@ -2151,16 +2167,20 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
 
         columns_data = []
         for col in view.summary.columns:
-            columns_data.append({
-                "name": col,
-                "dtype": view.summary.dtypes.get(col, "unknown"),
-                "missing": view.summary.missing_counts.get(col, 0),
-            })
-        output_json({
-            "dataset": path.name,
-            "rows": view.summary.n_rows,
-            "columns": columns_data,
-        })
+            columns_data.append(
+                {
+                    "name": col,
+                    "dtype": view.summary.dtypes.get(col, "unknown"),
+                    "missing": view.summary.missing_counts.get(col, 0),
+                }
+            )
+        output_json(
+            {
+                "dataset": path.name,
+                "rows": view.summary.n_rows,
+                "columns": columns_data,
+            }
+        )
         return
 
     click.echo(f"Dataset: {path.name}")
@@ -2287,7 +2307,9 @@ def knowledge_ingest(project: str, source: str, json_output: bool) -> None:
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"id": entry.id, "title": entry.title, "source_type": entry.source_type})
+        output_json(
+            {"id": entry.id, "title": entry.title, "source_type": entry.source_type}
+        )
         return
 
     click.echo(f'Ingested: {entry.id} "{entry.title}" ({entry.source_type})')
@@ -2309,10 +2331,19 @@ def knowledge_search(project: str, query: str, json_output: bool) -> None:
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"results": [
-            {"id": e.id, "title": e.title, "source_type": e.source_type, "snippet": e.content[:200]}
-            for e in results_list
-        ]})
+        output_json(
+            {
+                "results": [
+                    {
+                        "id": e.id,
+                        "title": e.title,
+                        "source_type": e.source_type,
+                        "snippet": e.content[:200],
+                    }
+                    for e in results_list
+                ]
+            }
+        )
         return
 
     if not results_list:
@@ -2339,10 +2370,14 @@ def knowledge_list(project: str, json_output: bool) -> None:
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"entries": [
-            {"id": e.id, "title": e.title, "source_type": e.source_type}
-            for e in entries
-        ]})
+        output_json(
+            {
+                "entries": [
+                    {"id": e.id, "title": e.title, "source_type": e.source_type}
+                    for e in entries
+                ]
+            }
+        )
         return
 
     if not entries:
@@ -2416,14 +2451,14 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"output": result.text_output.strip() if result.success else result.error})
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
         return
 
     if result.success and result.text_output:
         click.echo(format_agent_output(result.text_output))
-        _offer_to_run_advisor_suggestions(
-            result.text_output, project, project_path
-        )
+        _offer_to_run_advisor_suggestions(result.text_output, project, project_path)
     else:
         click.echo(f"Error: {result.error}")
 
@@ -2443,8 +2478,7 @@ def _offer_to_run_advisor_suggestions(
     from urika.cli_display import _C
 
     click.echo(
-        f"  {_C.BOLD}The advisor suggested "
-        f"{len(suggestions)} experiment(s):{_C.RESET}"
+        f"  {_C.BOLD}The advisor suggested {len(suggestions)} experiment(s):{_C.RESET}"
     )
     for i, s in enumerate(suggestions, 1):
         name = s.get("name", f"experiment-{i}")
@@ -2468,14 +2502,8 @@ def _offer_to_run_advisor_suggestions(
 
     # Create experiment from first suggestion and run it
     suggestion = suggestions[0]
-    exp_name = (
-        suggestion.get("name", "advisor-experiment")
-        .replace(" ", "-")
-        .lower()
-    )
-    description = suggestion.get(
-        "method", suggestion.get("description", "")
-    )
+    exp_name = suggestion.get("name", "advisor-experiment").replace(" ", "-").lower()
+    description = suggestion.get("method", suggestion.get("description", ""))
 
     from urika.core.experiment import create_experiment
     from urika.cli_display import print_success
@@ -2553,7 +2581,9 @@ def evaluate(project: str | None, experiment_id: str | None, json_output: bool) 
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"output": result.text_output.strip() if result.success else result.error})
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
         return
 
     if result.success and result.text_output:
@@ -2612,7 +2642,9 @@ def plan(project: str | None, experiment_id: str | None, json_output: bool) -> N
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"output": result.text_output.strip() if result.success else result.error})
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
         return
 
     if result.success and result.text_output:
@@ -2913,7 +2945,9 @@ def update_project(
 @click.argument("project", required=False, default=None)
 @click.argument("instructions", required=False, default=None)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def build_tool(project: str | None, instructions: str | None, json_output: bool) -> None:
+def build_tool(
+    project: str | None, instructions: str | None, json_output: bool
+) -> None:
     """Build a custom tool for the project.
 
     Give the tool builder agent instructions to create a specific tool,
@@ -2967,7 +3001,9 @@ def build_tool(project: str | None, instructions: str | None, json_output: bool)
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"output": result.text_output.strip() if result.success else result.error})
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
         return
 
     if result.success and result.text_output:
@@ -3104,11 +3140,15 @@ def criteria(project: str | None, json_output: bool) -> None:
         if c is None:
             output_json({"criteria": None})
         else:
-            output_json({"criteria": {
-                "version": c.version,
-                "set_by": c.set_by,
-                **c.criteria,
-            }})
+            output_json(
+                {
+                    "criteria": {
+                        "version": c.version,
+                        "set_by": c.set_by,
+                        **c.criteria,
+                    }
+                }
+            )
         return
 
     if c is None:
@@ -3266,8 +3306,12 @@ def config_command(
     click.echo(f"\n  Current privacy mode: {current_mode}\n")
 
     try:
-        _config_interactive(session=settings, current_mode=current_mode,
-                           is_project=is_project, project_path=project_path)
+        _config_interactive(
+            session=settings,
+            current_mode=current_mode,
+            is_project=is_project,
+            project_path=project_path,
+        )
     except UserCancelled:
         click.echo("\n  Cancelled.")
         return
@@ -3305,8 +3349,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
     # Warn if changing from private/hybrid to less private
     if current_mode == "private" and mode in ("open", "hybrid"):
         print_warning(
-            f"Changing from private to {mode} — "
-            f"agents will send data to cloud APIs."
+            f"Changing from private to {mode} — agents will send data to cloud APIs."
         )
         if not interactive_confirm("  Continue?", default=False):
             click.echo("  Cancelled.")
@@ -3480,9 +3523,6 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
     click.echo()
 
 
-
-
-
 @cli.command("setup")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def setup_command(json_output: bool) -> None:
@@ -3536,11 +3576,13 @@ def setup_command(json_output: bool) -> None:
 
         from urika.cli_helpers import output_json
 
-        output_json({
-            "packages": pkg_status,
-            "hardware": hw_data,
-            "anthropic_api_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
-        })
+        output_json(
+            {
+                "packages": pkg_status,
+                "hardware": hw_data,
+                "anthropic_api_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+            }
+        )
         return
 
     click.echo()

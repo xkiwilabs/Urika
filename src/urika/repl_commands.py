@@ -147,8 +147,6 @@ def cmd_quit(session: ReplSession, args: str) -> None:
     raise SystemExit(0)
 
 
-
-
 @command("config", description="Configure privacy mode and models")
 def cmd_config(session: ReplSession, args: str) -> None:
     from urika.cli import config_command
@@ -187,6 +185,7 @@ def cmd_config(session: ReplSession, args: str) -> None:
             show=False,
             json_output=False,
         )
+
 
 @command("usage", description="Show usage stats")
 def cmd_usage(session: ReplSession, args: str) -> None:
@@ -303,12 +302,12 @@ def cmd_run(session: ReplSession, args: str) -> None:
                 return
             # Stop it
             try:
-                from urika.core.session import fail_session
+                from urika.core.session import stop_session
 
-                fail_session(
+                stop_session(
                     session.project_path,
                     exp.experiment_id,
-                    error="Stopped by user from REPL",
+                    reason="Stopped by user from REPL",
                 )
                 click.echo(f"  Stopped {exp.experiment_id}")
             except Exception:
@@ -390,13 +389,9 @@ def cmd_run(session: ReplSession, args: str) -> None:
     if session.pending_suggestions:
         suggestion = session.pending_suggestions[0]
         exp_name = (
-            suggestion.get("name", "advisor-experiment")
-            .replace(" ", "-")
-            .lower()
+            suggestion.get("name", "advisor-experiment").replace(" ", "-").lower()
         )
-        description = suggestion.get(
-            "method", suggestion.get("description", "")
-        )
+        description = suggestion.get("method", suggestion.get("description", ""))
         if run_instructions and description:
             description = f"{run_instructions}\n\n{description}"
         elif run_instructions:
@@ -412,8 +407,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
             )
             use_experiment_id = exp.experiment_id
             click.echo(
-                f"  Created experiment from advisor suggestion: "
-                f"{use_experiment_id}"
+                f"  Created experiment from advisor suggestion: {use_experiment_id}"
             )
             # Use description as instructions for the experiment run
             if description:
@@ -567,7 +561,9 @@ def cmd_tools(session: ReplSession, args: str) -> None:
 
 
 @command(
-    "resume", requires_project=True, description="Resume a paused/failed experiment"
+    "resume",
+    requires_project=True,
+    description="Resume a paused/stopped/failed experiment",
 )
 def cmd_resume(session: ReplSession, args: str) -> None:
     from urika.core.experiment import list_experiments
@@ -578,11 +574,11 @@ def cmd_resume(session: ReplSession, args: str) -> None:
     for exp in experiments:
         progress = load_progress(session.project_path, exp.experiment_id)
         status = progress.get("status", "pending")
-        if status in ("paused", "failed"):
+        if status in ("paused", "stopped", "failed"):
             resumable.append((exp, status))
 
     if not resumable:
-        click.echo("  No paused or failed experiments to resume.")
+        click.echo("  No paused, stopped, or failed experiments to resume.")
         return
 
     # If multiple, let user pick; if one, use it directly
@@ -869,7 +865,9 @@ def cmd_logs(session: ReplSession, args: str) -> None:
     )
 
 
-@command("knowledge", requires_project=True, description="Search, list, or ingest knowledge")
+@command(
+    "knowledge", requires_project=True, description="Search, list, or ingest knowledge"
+)
 def cmd_knowledge(session: ReplSession, args: str) -> None:
     from urika.knowledge import KnowledgeStore
 
@@ -1003,10 +1001,7 @@ def cmd_update(session: ReplSession, args: str) -> None:
         click.echo("\n  Revision history:\n")
         for r in revs:
             ts = r["timestamp"][:19].replace("T", " ")
-            click.echo(
-                f"  #{r['revision']}  {ts}  "
-                f"[{r['field']}]"
-            )
+            click.echo(f"  #{r['revision']}  {ts}  [{r['field']}]")
             old = r["old_value"][:60]
             new = r["new_value"][:60]
             click.echo(f"    Old: {old}")
@@ -1059,7 +1054,12 @@ def _run_single_agent(
         from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
         from urika.cli import _make_on_message
-        from urika.cli_display import Spinner, format_agent_output, print_agent, print_error
+        from urika.cli_display import (
+            Spinner,
+            format_agent_output,
+            print_agent,
+            print_error,
+        )
 
         runner = get_runner()
         registry = AgentRegistry()

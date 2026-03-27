@@ -139,7 +139,7 @@ class RunRecord:
         )
 
 
-VALID_SESSION_STATUSES = {"running", "paused", "completed", "failed"}
+VALID_SESSION_STATUSES = {"running", "paused", "stopped", "completed", "failed"}
 
 
 @dataclass
