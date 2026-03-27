@@ -13,8 +13,15 @@ logger = logging.getLogger(__name__)
 
 
 def _slugify(text: str) -> str:
-    """Convert text to a URL-friendly slug."""
+    """Convert text to a URL-friendly slug.
+
+    Strips any leading ``exp-NNN-`` prefix so that advisor-suggested names
+    like ``exp-007-switch-policy`` don't produce doubled IDs such as
+    ``exp-009-exp-007-switch-policy``.
+    """
     slug = text.lower().strip()
+    # Strip leading exp-NNN prefix (advisor often includes one)
+    slug = re.sub(r"^exp-\d+-", "", slug)
     slug = re.sub(r"[^\w\s-]", "", slug)
     slug = re.sub(r"[\s_]+", "-", slug)
     slug = re.sub(r"-+", "-", slug)
