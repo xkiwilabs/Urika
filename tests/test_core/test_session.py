@@ -275,7 +275,7 @@ class TestResumeSession:
         self, project_dir: Path, experiment_id: str
     ) -> None:
         start_session(project_dir, experiment_id)
-        with pytest.raises(RuntimeError, match="Cannot resume"):
+        with pytest.raises(RuntimeError, match="already running"):
             resume_session(project_dir, experiment_id)
 
     def test_resume_raises_if_no_session(

@@ -36,7 +36,7 @@ def create_project_workspace(project_dir: Path, config: ProjectConfig) -> None:
     _write_toml(project_dir / "urika.toml", config.to_toml_dict())
 
     # Append privacy section comment for discoverability (opt-in)
-    with open(project_dir / "urika.toml", "a") as f:
+    with open(project_dir / "urika.toml", "a", encoding="utf-8") as f:
         f.write(
             "# [privacy]\n"
             '# mode = "open"  # open | private | hybrid\n'
@@ -47,15 +47,18 @@ def create_project_workspace(project_dir: Path, config: ProjectConfig) -> None:
         )
 
     (project_dir / "projectbook" / "key-findings.md").write_text(
-        f"# Key Findings: {config.name}\n\nNo findings yet.\n"
+        f"# Key Findings: {config.name}\n\nNo findings yet.\n",
+        encoding="utf-8",
     )
     (project_dir / "projectbook" / "results-summary.md").write_text(
-        f"# Results Summary: {config.name}\n\nNo experiments completed yet.\n"
+        f"# Results Summary: {config.name}\n\nNo experiments completed yet.\n",
+        encoding="utf-8",
     )
     (project_dir / "projectbook" / "progress-overview.md").write_text(
         f"# Progress Overview: {config.name}\n\n"
         f"**Question**: {config.question}\n\n"
-        f"**Mode**: {config.mode}\n\nProject created. No experiments run yet.\n"
+        f"**Mode**: {config.mode}\n\nProject created. No experiments run yet.\n",
+        encoding="utf-8",
     )
 
 
@@ -83,7 +86,7 @@ def _write_toml(path: Path, data: dict) -> None:
             for key, val in values.items():
                 lines.append(f"{key} = {_toml_value(val)}")
         lines.append("")
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _toml_value(val: object) -> str:

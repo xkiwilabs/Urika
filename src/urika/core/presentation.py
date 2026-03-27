@@ -70,7 +70,7 @@ def render_presentation(
     # Read template and fill
     template_path = template_dir / "template.html"
     if template_path.exists():
-        html = template_path.read_text()
+        html = template_path.read_text(encoding="utf-8")
     else:
         html = _fallback_template()
 

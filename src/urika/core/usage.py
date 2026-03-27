@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from urika.core.filelock import locked_json_update
+
 
 def _usage_path(project_dir: Path) -> Path:
     return project_dir / "usage.json"
@@ -17,7 +19,7 @@ def load_usage(project_dir: Path) -> dict[str, Any]:
     if not path.exists():
         return {"sessions": [], "totals": _empty_totals()}
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, KeyError):
         return {"sessions": [], "totals": _empty_totals()}
 
@@ -35,33 +37,34 @@ def record_session(
     experiments_run: int = 0,
 ) -> None:
     """Append a session record and update totals."""
-    data = load_usage(project_dir)
-
-    session = {
-        "started": started,
-        "ended": ended,
-        "duration_ms": duration_ms,
-        "tokens_in": tokens_in,
-        "tokens_out": tokens_out,
-        "cost_usd": round(cost_usd, 4),
-        "agent_calls": agent_calls,
-        "experiments_run": experiments_run,
-    }
-    data["sessions"].append(session)
-
-    # Update totals
-    totals = data.get("totals", _empty_totals())
-    totals["sessions"] = len(data["sessions"])
-    totals["total_duration_ms"] += duration_ms
-    totals["total_tokens_in"] += tokens_in
-    totals["total_tokens_out"] += tokens_out
-    totals["total_cost_usd"] = round(totals["total_cost_usd"] + cost_usd, 4)
-    totals["total_agent_calls"] += agent_calls
-    totals["total_experiments"] += experiments_run
-    data["totals"] = totals
-
     path = _usage_path(project_dir)
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    with locked_json_update(path):
+        data = load_usage(project_dir)
+
+        session = {
+            "started": started,
+            "ended": ended,
+            "duration_ms": duration_ms,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": round(cost_usd, 4),
+            "agent_calls": agent_calls,
+            "experiments_run": experiments_run,
+        }
+        data["sessions"].append(session)
+
+        # Update totals
+        totals = data.get("totals", _empty_totals())
+        totals["sessions"] = len(data["sessions"])
+        totals["total_duration_ms"] += duration_ms
+        totals["total_tokens_in"] += tokens_in
+        totals["total_tokens_out"] += tokens_out
+        totals["total_cost_usd"] = round(totals["total_cost_usd"] + cost_usd, 4)
+        totals["total_agent_calls"] += agent_calls
+        totals["total_experiments"] += experiments_run
+        data["totals"] = totals
+
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def get_last_session(project_dir: Path) -> dict[str, Any] | None:

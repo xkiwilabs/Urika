@@ -39,7 +39,7 @@ def _load_cache() -> dict:
     """Load cached update check result."""
     try:
         if _CACHE_FILE.exists():
-            return json.loads(_CACHE_FILE.read_text())
+            return json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
     except Exception:
         pass
     return {}
@@ -49,7 +49,7 @@ def _save_cache(data: dict) -> None:
     """Save update check result to cache."""
     try:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _CACHE_FILE.write_text(json.dumps(data))
+        _CACHE_FILE.write_text(json.dumps(data), encoding="utf-8")
     except Exception:
         pass
 

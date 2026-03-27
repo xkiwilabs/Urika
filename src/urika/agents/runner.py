@@ -17,8 +17,8 @@ class AgentResult:
     messages: list[dict[str, Any]]
     text_output: str
     session_id: str
-    num_turns: int
-    duration_ms: int
+    num_turns: int = -1
+    duration_ms: int = -1
     cost_usd: float | None = None
     error: str | None = None
     tokens_in: int = 0

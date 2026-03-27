@@ -42,7 +42,11 @@ def get_role() -> AgentRole:
 def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
     runtime_config = load_runtime_config(project_dir)
     knowledge_dir = project_dir / "knowledge"
-    web_search_enabled = _is_web_search_enabled(project_dir)
+    # Web search requires cloud access — disable for private projects
+    web_search_enabled = (
+        _is_web_search_enabled(project_dir)
+        and runtime_config.privacy_mode != "private"
+    )
 
     allowed_tools = ["Read", "Write", "Bash", "Glob", "Grep"]
     if web_search_enabled:

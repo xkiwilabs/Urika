@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 
 from urika.core.models import ExperimentConfig
+
+logger = logging.getLogger(__name__)
 
 
 def _slugify(text: str) -> str:
@@ -60,22 +63,23 @@ def create_experiment(
     )
 
     exp_dir = project_dir / "experiments" / experiment_id
-    exp_dir.mkdir(parents=True)
-    (exp_dir / "methods").mkdir()
-    (exp_dir / "labbook").mkdir()
-    (exp_dir / "artifacts").mkdir()
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / "methods").mkdir(exist_ok=True)
+    (exp_dir / "labbook").mkdir(exist_ok=True)
+    (exp_dir / "artifacts").mkdir(exist_ok=True)
 
-    (exp_dir / "experiment.json").write_text(config.to_json() + "\n")
+    (exp_dir / "experiment.json").write_text(config.to_json() + "\n", encoding="utf-8")
 
     progress = {
         "experiment_id": experiment_id,
         "status": "pending",
         "runs": [],
     }
-    (exp_dir / "progress.json").write_text(json.dumps(progress, indent=2) + "\n")
+    (exp_dir / "progress.json").write_text(json.dumps(progress, indent=2) + "\n", encoding="utf-8")
 
     (exp_dir / "labbook" / "notes.md").write_text(
-        f"# Experiment: {name}\n\n**Hypothesis**: {hypothesis}\n\n"
+        f"# Experiment: {name}\n\n**Hypothesis**: {hypothesis}\n\n",
+        encoding="utf-8",
     )
 
     return config
@@ -91,7 +95,11 @@ def list_experiments(project_dir: Path) -> list[ExperimentConfig]:
     for exp_dir in sorted(experiments_dir.iterdir()):
         json_path = exp_dir / "experiment.json"
         if json_path.exists():
-            data = json.loads(json_path.read_text())
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, KeyError) as exc:
+                logger.warning("Corrupt JSON in %s: %s", json_path, exc)
+                continue
             configs.append(ExperimentConfig.from_dict(data))
     return configs
 
@@ -107,5 +115,10 @@ def load_experiment(project_dir: Path, experiment_id: str) -> ExperimentConfig:
         msg = f"Experiment {experiment_id} not found at {exp_dir}"
         raise FileNotFoundError(msg)
 
-    data = json.loads(json_path.read_text())
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, KeyError) as exc:
+        logger.warning("Corrupt JSON in %s: %s", json_path, exc)
+        msg = f"Corrupt experiment config at {json_path}"
+        raise FileNotFoundError(msg) from exc
     return ExperimentConfig.from_dict(data)

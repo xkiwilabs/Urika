@@ -66,8 +66,10 @@ def detect_hardware() -> dict[str, object]:
             with open("/proc/meminfo") as f:
                 for line in f:
                     if line.startswith("MemTotal:"):
-                        kb = int(line.split()[1])
-                        info["ram_gb"] = round(kb / (1024 * 1024), 1)
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            kb = int(parts[1])
+                            info["ram_gb"] = round(kb / (1024 * 1024), 1)
                         break
         elif platform.system() == "Darwin":
             result = subprocess.run(

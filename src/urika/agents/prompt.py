@@ -20,7 +20,7 @@ def load_prompt(
         msg = f"Prompt file not found: {path}"
         raise FileNotFoundError(msg)
 
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
 
     if variables:
         text = text.format_map(_SafeDict(variables))

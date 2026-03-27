@@ -48,9 +48,9 @@ def get_venv_env(project_dir: Path) -> dict[str, str] | None:
     if not venv_path.exists():
         return None
 
-    venv_bin = venv_path / "bin"
+    venv_bin = venv_path / ("Scripts" if sys.platform == "win32" else "bin")
     env = dict(os.environ)
-    env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+    env["PATH"] = str(venv_bin) + os.pathsep + env.get("PATH", "")
     env["VIRTUAL_ENV"] = str(venv_path)
     # Remove PYTHONHOME if set — interferes with venvs
     env.pop("PYTHONHOME", None)

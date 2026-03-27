@@ -28,7 +28,7 @@ class KnowledgeStore:
 
     def _load(self) -> None:
         if self._index_path.exists():
-            data = json.loads(self._index_path.read_text())
+            data = json.loads(self._index_path.read_text(encoding="utf-8"))
             self._entries = [
                 KnowledgeEntry.from_dict(e) for e in data.get("entries", [])
             ]
@@ -36,7 +36,7 @@ class KnowledgeStore:
     def _save(self) -> None:
         self._index_path.parent.mkdir(parents=True, exist_ok=True)
         data = {"entries": [e.to_dict() for e in self._entries]}
-        self._index_path.write_text(json.dumps(data, indent=2) + "\n")
+        self._index_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     def _next_id(self) -> str:
         if not self._entries:

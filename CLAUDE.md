@@ -21,6 +21,9 @@ Urika is a multi-agent scientific analysis and modelling platform. Users create 
 - **Advisor Agent**: Analyzes results, proposes next experiments
 - **Tool Builder**: Creates project-specific tools and skills
 - **Literature Agent**: Searches papers, builds knowledge base
+- **Data Agent**: Extracts and prepares features in hybrid privacy mode (local data access)
+- **Report Agent**: Writes experiment narratives, project summaries, README content
+- **Presentation Agent**: Creates reveal.js slide decks from experiment results
 - **Finalizer**: Selects best methods, writes standalone code, produces findings.json, requirements.txt, reproduce scripts
 - **Orchestrator**: Hybrid deterministic loop (planning→task→evaluator→advisor) + LLM at strategic decision points; finalize sequence (finalizer→report→presentation→README)
 
@@ -58,12 +61,13 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
 - `src/urika/methods/` — Agent-created analytical pipelines (IMethod ABC, MethodRegistry), zero built-ins — agents create methods at runtime
 - `src/urika/tools/` — Built-in tools (18: correlation_analysis, cross_validation, data_profiler, descriptive_stats, feature_scaler, gradient_boosting, group_split, hypothesis_tests, linear_regression, logistic_regression, mann_whitney_u, one_way_anova, outlier_detection, paired_t_test, random_forest, random_forest_classifier, train_val_test_split, visualization), tool registry
+- `src/urika/data/` — Data loading and profiling: multi-format loader, data models, profiler, pluggable readers (CSV, with registry for extensions)
 - `src/urika/knowledge/` — Knowledge pipeline: extractors (PDF, text, URL), KnowledgeStore, keyword search
 - `src/urika/templates/presentation/` — Bundled reveal.js + CSS for slide decks
 
 ## Project Status
 
-882+ tests. Foundation, agents (11 roles), orchestrator (experiment + meta + finalize), evaluation, methods (agent-created), tools (18 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 15+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
+960+ tests. Foundation, agents (11 roles + orchestrator), orchestrator (experiment + meta + finalize), evaluation, methods (agent-created), tools (18 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 25+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
 
 ## Development
 

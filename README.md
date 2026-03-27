@@ -17,6 +17,8 @@ Urika uses multiple AI agents to autonomously explore analytical approaches for 
 
 Currently supports the **Claude Agent SDK** (Anthropic), including local models via Ollama. Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **PI** are planned for upcoming releases.
 
+**Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/11-models-and-privacy.md).
+
 ## Installation
 
 ### Prerequisites

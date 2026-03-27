@@ -384,6 +384,46 @@ def cmd_run(session: ReplSession, args: str) -> None:
     if not run_instructions and session.conversation:
         run_instructions = session.get_conversation_context()
 
+    # If we have pending suggestions from advisor, create the experiment
+    # directly instead of having cli_run call the advisor again from scratch
+    use_experiment_id = None
+    if session.pending_suggestions:
+        suggestion = session.pending_suggestions[0]
+        exp_name = (
+            suggestion.get("name", "advisor-experiment")
+            .replace(" ", "-")
+            .lower()
+        )
+        description = suggestion.get(
+            "method", suggestion.get("description", "")
+        )
+        if run_instructions and description:
+            description = f"{run_instructions}\n\n{description}"
+        elif run_instructions:
+            description = run_instructions
+
+        try:
+            from urika.core.experiment import create_experiment
+
+            exp = create_experiment(
+                session.project_path,
+                name=exp_name,
+                hypothesis=description[:500] if description else "",
+            )
+            use_experiment_id = exp.experiment_id
+            click.echo(
+                f"  Created experiment from advisor suggestion: "
+                f"{use_experiment_id}"
+            )
+            # Use description as instructions for the experiment run
+            if description:
+                run_instructions = description
+            # Pop the used suggestion, keep the rest for subsequent runs
+            session.pending_suggestions = session.pending_suggestions[1:]
+        except Exception as exc:
+            click.echo(f"  Could not create experiment: {exc}")
+            # Fall through to normal flow
+
     # Run directly without going through CLI (avoids duplicate header)
     import os
 
@@ -401,7 +441,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
         ctx.invoke(
             cli_run,
             project=session.project_name,
-            experiment_id=None,
+            experiment_id=use_experiment_id,
             max_turns=max_turns,
             resume=False,
             quiet=False,
@@ -1019,7 +1059,7 @@ def _run_single_agent(
         from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
         from urika.cli import _make_on_message
-        from urika.cli_display import Spinner, print_agent, print_error
+        from urika.cli_display import Spinner, format_agent_output, print_agent, print_error
 
         runner = get_runner()
         registry = AgentRegistry()
@@ -1065,7 +1105,7 @@ def _run_single_agent(
         )
 
         if result.success and result.text_output:
-            click.echo(f"\n{result.text_output.strip()}\n")
+            click.echo(format_agent_output(result.text_output))
             return result.text_output.strip()
         else:
             print_error(f"Error: {result.error}")
@@ -1106,7 +1146,7 @@ def get_global_stats() -> dict:
 
             methods_path = path / "methods.json"
             if methods_path.exists():
-                mdata = json.loads(methods_path.read_text())
+                mdata = json.loads(methods_path.read_text(encoding="utf-8"))
                 stats["methods"] += len(mdata.get("methods", []))
         except Exception:
             pass
