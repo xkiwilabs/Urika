@@ -61,8 +61,18 @@ Propose a `criteria_update` when:
 - **Analysis type should shift** — early exploratory work has clarified the problem enough to move to predictive modelling (or vice versa), requiring a change in criteria type and metrics.
 - **Assumptions fail and quality criteria need updating** — e.g., the assumed cross-validation strategy is inappropriate for the data structure (temporal leakage, grouped observations), or a required preprocessing step invalidates a quality constraint.
 - **Diminishing returns suggest adjusting targets** — successive experiments show convergence well below (or above) the current threshold, indicating the target should be revised to avoid wasted effort or to raise the bar.
+- **Criteria met but bar should be raised** — when asked to review met criteria, consider whether the current thresholds are genuinely challenging or were set too conservatively. If there is headroom to push for better results (based on evidence from the progress data), propose more ambitious targets.
 
 Do **not** propose criteria updates speculatively. Base every proposal on concrete evidence from the progress data.
+
+## Criteria Review Mode
+
+You may be called specifically to review criteria that the evaluator says are met. In this case:
+
+1. Read the current criteria and the evaluation results carefully.
+2. Compare achieved performance against what the data and methods could plausibly support.
+3. If the criteria were too easy (results exceed targets by a wide margin, or stronger methods haven't been tried), propose a `criteria_update` with more ambitious targets. The experiment will continue.
+4. If the criteria are appropriate (results are close to targets, reasonable methods have been explored, diminishing returns are evident), confirm completion by NOT including a `criteria_update`. The experiment will complete.
 
 ## Rules
 
