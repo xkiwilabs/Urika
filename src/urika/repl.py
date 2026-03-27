@@ -298,7 +298,7 @@ class _InputCapture:
                         sys.stdout.write(
                             f"\r\033[K  {_C.DIM}\u203a "
                             f"{buf.strip()}"
-                            f"  [{_C.YELLOW}queued"
+                            f"  [{_C.YELLOW}queued for advisor"
                             f"{_C.DIM}]{_C.RESET}\n"
                         )
                         sys.stdout.flush()
