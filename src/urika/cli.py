@@ -1909,7 +1909,9 @@ def run(
     print_footer(duration_ms=elapsed_ms, turns=turns, status=run_status)
 
 
-def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> str:
+def _run_report_agent(
+    project_path: Path, experiment_id: str, prompt: str, instructions: str = ""
+) -> str:
     """Run the report agent and return its text output."""
     try:
         from urika.agents.runner import get_runner
@@ -1928,6 +1930,9 @@ def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> st
         config = role.build_config(
             project_dir=project_path, experiment_id=experiment_id
         )
+
+        if instructions:
+            prompt = f"User instructions: {instructions}\n\n{prompt}"
 
         with Spinner("Writing narrative"):
             result = asyncio.run(
@@ -1951,8 +1956,18 @@ def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> st
     default=None,
     help="Generate report for a specific experiment.",
 )
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide the report (e.g. 'focus on feature importance findings').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def report(project: str, experiment_id: str | None, json_output: bool = False) -> None:
+def report(
+    project: str,
+    experiment_id: str | None,
+    instructions: str,
+    json_output: bool = False,
+) -> None:
     """Generate labbook reports."""
     from urika.core.labbook import (
         generate_experiment_summary,
@@ -1996,75 +2011,127 @@ def report(project: str, experiment_id: str | None, json_output: bool = False) -
             else:
                 experiment_id = choice.split(" [")[0]
 
-    if experiment_id == "all":
-        # Generate reports for each experiment
-        for exp in list_experiments(project_path):
-            click.echo(f"Processing {exp.experiment_id}...")
+    try:
+        if experiment_id == "all":
+            # Generate reports for each experiment
+            for exp in list_experiments(project_path):
+                click.echo(f"Processing {exp.experiment_id}...")
+                try:
+                    update_experiment_notes(project_path, exp.experiment_id)
+                    generate_experiment_summary(project_path, exp.experiment_id)
+                except FileNotFoundError:
+                    pass
+                narrative = _run_report_agent(
+                    project_path,
+                    exp.experiment_id,
+                    f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                    instructions=instructions,
+                )
+                if narrative:
+                    from urika.core.report_writer import write_versioned
+
+                    narrative_path = (
+                        project_path
+                        / "experiments"
+                        / exp.experiment_id
+                        / "labbook"
+                        / "narrative.md"
+                    )
+                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                    write_versioned(narrative_path, narrative + "\n")
+                    if not json_output:
+                        click.echo(f"Generated: {narrative_path}")
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json({"output": "All experiment reports generated."})
+                return
+            click.echo("All experiment reports generated.")
+            return
+
+        if experiment_id == "project":
+            # Project-level reports
+            from urika.core.readme_generator import write_readme
+
             try:
-                update_experiment_notes(project_path, exp.experiment_id)
-                generate_experiment_summary(project_path, exp.experiment_id)
-            except FileNotFoundError:
-                pass
+                generate_results_summary(project_path)
+                generate_key_findings(project_path)
+                write_readme(project_path)
+            except FileNotFoundError as exc:
+                raise click.ClickException(str(exc))
+
+            # Also refresh notes for all experiments
+            for exp in list_experiments(project_path):
+                try:
+                    update_experiment_notes(project_path, exp.experiment_id)
+                except FileNotFoundError:
+                    pass
+
+            results_path = project_path / "projectbook" / "results-summary.md"
+            findings_path = project_path / "projectbook" / "key-findings.md"
+            readme_path = project_path / "README.md"
+
+            # Call report agent for project-level narrative
             narrative = _run_report_agent(
                 project_path,
-                exp.experiment_id,
-                f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                "",
+                "Write a project-level narrative report covering all experiments "
+                "and the research progression.",
+                instructions=instructions,
             )
             if narrative:
                 from urika.core.report_writer import write_versioned
 
-                narrative_path = (
-                    project_path
-                    / "experiments"
-                    / exp.experiment_id
-                    / "labbook"
-                    / "narrative.md"
-                )
+                narrative_path = project_path / "projectbook" / "narrative.md"
                 narrative_path.parent.mkdir(parents=True, exist_ok=True)
                 write_versioned(narrative_path, narrative + "\n")
-                if not json_output:
-                    click.echo(f"Generated: {narrative_path}")
-        if json_output:
-            from urika.cli_helpers import output_json
 
-            output_json({"output": "All experiment reports generated."})
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json(
+                    {
+                        "output": "Project-level reports generated.",
+                        "path": str(results_path),
+                    }
+                )
+                return
+
+            click.echo(f"Generated: {results_path}")
+            click.echo(f"Generated: {findings_path}")
+            click.echo(f"Generated: {readme_path}")
+            if narrative:
+                click.echo(f"Generated: {narrative_path}")
             return
-        click.echo("All experiment reports generated.")
-        return
 
-    if experiment_id == "project":
-        # Project-level reports
-        from urika.core.readme_generator import write_readme
-
+        # Single experiment report
         try:
-            generate_results_summary(project_path)
-            generate_key_findings(project_path)
-            write_readme(project_path)
-        except FileNotFoundError as exc:
-            raise click.ClickException(str(exc))
+            update_experiment_notes(project_path, experiment_id)
+            generate_experiment_summary(project_path, experiment_id)
+        except FileNotFoundError:
+            raise click.ClickException(f"Experiment '{experiment_id}' not found.")
+        notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
+        summary = (
+            project_path / "experiments" / experiment_id / "labbook" / "summary.md"
+        )
 
-        # Also refresh notes for all experiments
-        for exp in list_experiments(project_path):
-            try:
-                update_experiment_notes(project_path, exp.experiment_id)
-            except FileNotFoundError:
-                pass
-
-        results_path = project_path / "projectbook" / "results-summary.md"
-        findings_path = project_path / "projectbook" / "key-findings.md"
-        readme_path = project_path / "README.md"
-
-        # Call report agent for project-level narrative
+        # Call report agent to write narrative (like REPL)
         narrative = _run_report_agent(
             project_path,
-            "",
-            "Write a project-level narrative report covering all experiments "
-            "and the research progression.",
+            experiment_id,
+            f"Write a detailed narrative report for experiment {experiment_id}.",
+            instructions=instructions,
         )
         if narrative:
             from urika.core.report_writer import write_versioned
 
-            narrative_path = project_path / "projectbook" / "narrative.md"
+            narrative_path = (
+                project_path
+                / "experiments"
+                / experiment_id
+                / "labbook"
+                / "narrative.md"
+            )
             narrative_path.parent.mkdir(parents=True, exist_ok=True)
             write_versioned(narrative_path, narrative + "\n")
 
@@ -2073,58 +2140,19 @@ def report(project: str, experiment_id: str | None, json_output: bool = False) -
 
             output_json(
                 {
-                    "output": "Project-level reports generated.",
-                    "path": str(results_path),
+                    "output": f"Report generated for {experiment_id}.",
+                    "path": str(summary),
                 }
             )
             return
 
-        click.echo(f"Generated: {results_path}")
-        click.echo(f"Generated: {findings_path}")
-        click.echo(f"Generated: {readme_path}")
+        click.echo(f"Updated: {notes}")
+        click.echo(f"Generated: {summary}")
         if narrative:
             click.echo(f"Generated: {narrative_path}")
-        return
-
-    # Single experiment report
-    try:
-        update_experiment_notes(project_path, experiment_id)
-        generate_experiment_summary(project_path, experiment_id)
-    except FileNotFoundError:
-        raise click.ClickException(f"Experiment '{experiment_id}' not found.")
-    notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
-    summary = project_path / "experiments" / experiment_id / "labbook" / "summary.md"
-
-    # Call report agent to write narrative (like REPL)
-    narrative = _run_report_agent(
-        project_path,
-        experiment_id,
-        f"Write a detailed narrative report for experiment {experiment_id}.",
-    )
-    if narrative:
-        from urika.core.report_writer import write_versioned
-
-        narrative_path = (
-            project_path / "experiments" / experiment_id / "labbook" / "narrative.md"
-        )
-        narrative_path.parent.mkdir(parents=True, exist_ok=True)
-        write_versioned(narrative_path, narrative + "\n")
-
-    if json_output:
-        from urika.cli_helpers import output_json
-
-        output_json(
-            {
-                "output": f"Report generated for {experiment_id}.",
-                "path": str(summary),
-            }
-        )
-        return
-
-    click.echo(f"Updated: {notes}")
-    click.echo(f"Generated: {summary}")
-    if narrative:
-        click.echo(f"Generated: {narrative_path}")
+    except KeyboardInterrupt:
+        click.echo("\n  Report generation stopped.")
+        click.echo("  Re-run with: urika report [--instructions '...']")
 
 
 @cli.command()
@@ -2508,14 +2536,20 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         except Exception:
             pass
 
-    with Spinner("Thinking"):
-        result = asyncio.run(
-            runner.run(
-                config,
-                context,
-                on_message=_make_on_message() if not json_output else lambda m: None,
+    try:
+        with Spinner("Thinking"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    context,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
             )
-        )
+    except KeyboardInterrupt:
+        click.echo("\n  Advisor stopped.")
+        return
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -2603,8 +2637,15 @@ def _offer_to_run_advisor_suggestions(
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("experiment_id", required=False, default=None)
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide evaluation (e.g. 'check for overfitting').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def evaluate(project: str | None, experiment_id: str | None, json_output: bool) -> None:
+def evaluate(
+    project: str | None, experiment_id: str | None, instructions: str, json_output: bool
+) -> None:
     """Run the evaluator agent on an experiment."""
     import asyncio
 
@@ -2636,16 +2677,27 @@ def evaluate(project: str | None, experiment_id: str | None, json_output: bool) 
         print_agent("evaluator")
     config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
 
+    prompt = f"Evaluate experiment {experiment_id}."
+    if instructions:
+        prompt = f"User instructions: {instructions}\n\n{prompt}"
+
     if not json_output:
         click.echo(f"  Evaluating {experiment_id}...")
-    with Spinner("Working"):
-        result = asyncio.run(
-            runner.run(
-                config,
-                f"Evaluate experiment {experiment_id}.",
-                on_message=_make_on_message() if not json_output else lambda m: None,
+    try:
+        with Spinner("Working"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    prompt,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
             )
-        )
+    except KeyboardInterrupt:
+        click.echo("\n  Evaluation stopped.")
+        click.echo("  Re-run with: urika evaluate [--instructions '...']")
+        return
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -2664,8 +2716,15 @@ def evaluate(project: str | None, experiment_id: str | None, json_output: bool) 
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("experiment_id", required=False, default=None)
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide the plan (e.g. 'consider Bayesian approaches').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def plan(project: str | None, experiment_id: str | None, json_output: bool) -> None:
+def plan(
+    project: str | None, experiment_id: str | None, instructions: str, json_output: bool
+) -> None:
     """Run the planning agent to design the next method."""
     import asyncio
 
@@ -2697,16 +2756,27 @@ def plan(project: str | None, experiment_id: str | None, json_output: bool) -> N
         print_agent("planning_agent")
     config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
 
+    prompt = "Design the next method based on current results."
+    if instructions:
+        prompt = f"User instructions: {instructions}\n\n{prompt}"
+
     if not json_output:
         click.echo(f"  Planning for {experiment_id}...")
-    with Spinner("Designing method"):
-        result = asyncio.run(
-            runner.run(
-                config,
-                "Design the next method based on current results.",
-                on_message=_make_on_message() if not json_output else lambda m: None,
+    try:
+        with Spinner("Designing method"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    prompt,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
             )
-        )
+    except KeyboardInterrupt:
+        click.echo("\n  Planning stopped.")
+        click.echo("  Re-run with: urika plan [--instructions '...']")
+        return
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -2763,15 +2833,21 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
         def _on_message(msg: object) -> None:
             pass
 
-        result = asyncio.run(
-            finalize_project(
-                project_path,
-                runner,
-                _on_progress,
-                _on_message,
-                instructions=instructions,
+        try:
+            result = asyncio.run(
+                finalize_project(
+                    project_path,
+                    runner,
+                    _on_progress,
+                    _on_message,
+                    instructions=instructions,
+                )
             )
-        )
+        except KeyboardInterrupt:
+            click.echo("\n  Finalize stopped.")
+            if instructions:
+                click.echo("  Re-run with: urika finalize --instructions '...'")
+            return
     else:
         panel = ThinkingPanel()
         panel.project = f"{project} · {_rc.privacy_mode}"
@@ -2822,6 +2898,11 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
                     instructions=instructions,
                 )
             )
+        except KeyboardInterrupt:
+            panel.cleanup()
+            click.echo("\n  Finalize stopped.")
+            click.echo("  Re-run with: urika finalize [--instructions '...']")
+            return
         finally:
             panel.cleanup()
 
@@ -3058,14 +3139,20 @@ def build_tool(
         print_agent("tool_builder")
     config = role.build_config(project_dir=project_path)
 
-    with Spinner("Building tool"):
-        result = asyncio.run(
-            runner.run(
-                config,
-                instructions,
-                on_message=_make_on_message() if not json_output else lambda m: None,
+    try:
+        with Spinner("Building tool"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    instructions,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
             )
-        )
+    except KeyboardInterrupt:
+        click.echo("\n  Tool build stopped.")
+        return
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -3083,8 +3170,13 @@ def build_tool(
 
 @cli.command()
 @click.argument("project", required=False, default=None)
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide the presentation (e.g. 'emphasize ensemble results').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def present(project: str | None, json_output: bool) -> None:
+def present(project: str | None, instructions: str, json_output: bool) -> None:
     """Generate a presentation for an experiment."""
     import asyncio
 
@@ -3123,72 +3215,83 @@ def present(project: str | None, json_output: bool) -> None:
 
         choice = _prompt_numbered("\n  Select:", options, default=1)
 
-    if choice.startswith("All"):
-        # Generate presentation for each experiment
-        for exp in experiments:
+    try:
+        if choice.startswith("All"):
+            # Generate presentation for each experiment
+            for exp in experiments:
+                if not json_output:
+                    print_agent("presentation_agent")
+                with Spinner("Creating slides"):
+                    asyncio.run(
+                        _generate_presentation(
+                            project_path,
+                            exp.experiment_id,
+                            runner,
+                            _noop_callback,
+                            on_message=on_msg,
+                            instructions=instructions,
+                        )
+                    )
+                if not json_output:
+                    print_success(
+                        f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
+                    )
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json({"path": str(project_path / "experiments")})
+                return
+            print_success("All presentations generated")
+        elif choice.startswith("Project"):
+            # Project-level presentation
             if not json_output:
                 print_agent("presentation_agent")
             with Spinner("Creating slides"):
                 asyncio.run(
                     _generate_presentation(
                         project_path,
-                        exp.experiment_id,
+                        "",
                         runner,
                         _noop_callback,
                         on_message=on_msg,
+                        instructions=instructions,
                     )
                 )
+            pres_path = project_path / "projectbook" / "presentation" / "index.html"
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json({"path": str(pres_path)})
+                return
+            print_success("Saved to projectbook/presentation/index.html")
+        else:
+            # Single experiment
+            exp_id = choice.split(" [")[0]
             if not json_output:
-                print_success(
-                    f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
+                print_agent("presentation_agent")
+            with Spinner("Creating slides"):
+                asyncio.run(
+                    _generate_presentation(
+                        project_path,
+                        exp_id,
+                        runner,
+                        _noop_callback,
+                        on_message=on_msg,
+                        instructions=instructions,
+                    )
                 )
-        if json_output:
-            from urika.cli_helpers import output_json
-
-            output_json({"path": str(project_path / "experiments")})
-            return
-        print_success("All presentations generated")
-    elif choice.startswith("Project"):
-        # Project-level presentation
-        if not json_output:
-            print_agent("presentation_agent")
-        with Spinner("Creating slides"):
-            asyncio.run(
-                _generate_presentation(
-                    project_path, "", runner, _noop_callback, on_message=on_msg
-                )
+            pres_path = (
+                project_path / "experiments" / exp_id / "presentation" / "index.html"
             )
-        pres_path = project_path / "projectbook" / "presentation" / "index.html"
-        if json_output:
-            from urika.cli_helpers import output_json
+            if json_output:
+                from urika.cli_helpers import output_json
 
-            output_json({"path": str(pres_path)})
-            return
-        print_success("Saved to projectbook/presentation/index.html")
-    else:
-        # Single experiment
-        exp_id = choice.split(" [")[0]
-        if not json_output:
-            print_agent("presentation_agent")
-        with Spinner("Creating slides"):
-            asyncio.run(
-                _generate_presentation(
-                    project_path,
-                    exp_id,
-                    runner,
-                    _noop_callback,
-                    on_message=on_msg,
-                )
-            )
-        pres_path = (
-            project_path / "experiments" / exp_id / "presentation" / "index.html"
-        )
-        if json_output:
-            from urika.cli_helpers import output_json
-
-            output_json({"path": str(pres_path)})
-            return
-        print_success(f"Saved to experiments/{exp_id}/presentation/index.html")
+                output_json({"path": str(pres_path)})
+                return
+            print_success(f"Saved to experiments/{exp_id}/presentation/index.html")
+    except KeyboardInterrupt:
+        click.echo("\n  Presentation stopped.")
+        click.echo("  Re-run with: urika present [--instructions '...']")
 
 
 @cli.command()

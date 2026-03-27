@@ -181,6 +181,7 @@ async def _generate_presentation(
     runner: AgentRunner,
     progress: object,
     on_message: object = None,
+    instructions: str = "",
 ) -> None:
     """Generate a reveal.js presentation from experiment results."""
     import tomllib
@@ -199,9 +200,12 @@ async def _generate_presentation(
     config = pres_role.build_config(
         project_dir=project_dir, experiment_id=experiment_id
     )
+    prompt = f"Create a presentation for experiment {experiment_id}."
+    if instructions:
+        prompt = f"User instructions: {instructions}\n\n{prompt}"
     result = await runner.run(
         config,
-        f"Create a presentation for experiment {experiment_id}.",
+        prompt,
         on_message=on_message,
     )
 
