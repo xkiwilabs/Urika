@@ -1369,8 +1369,7 @@ def _determine_next_experiment(
 )
 @click.option("--max-turns", default=None, type=int, help="Maximum orchestrator turns.")
 @click.option(
-    "--continue",
-    "resume",
+    "--resume",
     is_flag=True,
     default=False,
     help="Resume a paused or failed experiment.",
@@ -1655,11 +1654,25 @@ def run(
             not in ("completed",)
         ]
         if pending:
-            experiment_id = pending[-1].experiment_id
+            if resume and len(pending) > 1 and not json_output:
+                # Multiple resumable — let the user pick
+                from urika.cli_helpers import interactive_numbered
+
+                options = []
+                for e in pending:
+                    p = load_progress(project_path, e.experiment_id)
+                    status = p.get("status", "pending")
+                    options.append(f"{e.experiment_id} [{status}]")
+                choice = interactive_numbered(
+                    "\n  Multiple experiments can be resumed:", options
+                )
+                experiment_id = choice.split(" [")[0]
+            else:
+                experiment_id = pending[-1].experiment_id
             if not json_output:
                 print_step(
                     f"Resuming pending experiment: {experiment_id}",
-                    f"({len(pending)} pending)",
+                    f"({len(pending)} pending)" if len(pending) > 1 else "",
                 )
         else:
             # No pending — determine next experiment from state
@@ -1703,7 +1716,7 @@ def run(
             # Force remove lockfile if fail_session fails
             lock = project_path / "experiments" / experiment_id / ".lock"
             lock.unlink(missing_ok=True)
-        print_step("Experiment paused. Resume with: urika run --continue")
+        print_step("Experiment paused. Resume with: urika run --resume")
         raise SystemExit(1)
 
     original_handler = signal.getsignal(signal.SIGINT)
