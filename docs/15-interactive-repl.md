@@ -159,6 +159,7 @@ Choosing **Custom settings** lets you configure:
   - **Capped** -- run up to N experiments with no pauses
   - **Unlimited** -- run until criteria are met or the advisor says done
 - **Instructions** -- custom guidance for the experiment
+- **Re-evaluate criteria if met** -- advisor reviews criteria when met, may raise the bar
 
 
 ## Session Usage Tracking

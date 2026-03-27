@@ -225,7 +225,7 @@ Each turn:
 4. **Task Agent** implements and runs the method, recording results
 5. Run records are parsed and appended to `progress.json`; methods are registered in `methods.json`
 6. **Evaluator** scores results against criteria
-7. If criteria are met, the experiment is marked complete and reports are generated
+7. If criteria are met, the experiment is marked complete and reports are generated. With `--review-criteria`, the advisor first reviews whether the bar should be raised — if so, criteria are updated and the loop continues
 8. **Advisor Agent** reviews everything and proposes next steps
 9. Suggestions are saved to `experiments/<id>/suggestions/turn-N.json`
 10. The advisor's suggestions become the task prompt for the next turn

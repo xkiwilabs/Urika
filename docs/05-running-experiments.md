@@ -292,6 +292,28 @@ When the evaluator determines that criteria are met:
 3. A run summary is printed showing methods tried, best results, and latest observations
 4. The experiment loop exits
 
+### Re-evaluating criteria when met
+
+By default, meeting criteria ends the experiment immediately. But sometimes criteria were set conservatively and there's headroom to push for better results. The `--review-criteria` flag asks the advisor agent to review the criteria before completing:
+
+```bash
+urika run my-study --review-criteria
+```
+
+When enabled:
+1. Evaluator says criteria are met
+2. Advisor reviews the criteria and achieved results
+3. If the advisor decides the bar should be raised (e.g., results far exceed targets, stronger methods haven't been tried), it updates the criteria and the experiment **continues**
+4. If the advisor confirms the criteria are appropriate, the experiment **completes** normally
+
+In the REPL, this option appears under custom settings when running `/run`:
+
+```
+Re-evaluate criteria if met?
+  1. No — complete when criteria met (default)
+  2. Yes — advisor reviews criteria, may raise the bar
+```
+
 ## Reports generated at experiment completion
 
 At the end of every experiment (whether criteria were met or max turns were reached), the orchestrator generates:

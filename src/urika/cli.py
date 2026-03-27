@@ -1394,6 +1394,12 @@ def _determine_next_experiment(
     type=int,
     help="Run multiple experiments via meta-orchestrator (capped mode).",
 )
+@click.option(
+    "--review-criteria",
+    is_flag=True,
+    default=False,
+    help="Ask advisor to review criteria when met (may raise the bar).",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def run(
     project: str,
@@ -1404,6 +1410,7 @@ def run(
     auto: bool,
     instructions: str,
     max_experiments: int | None,
+    review_criteria: bool,
     json_output: bool = False,
 ) -> None:
     """Run an experiment using the orchestrator."""
@@ -1607,6 +1614,7 @@ def run(
                     max_experiments=max_experiments,
                     max_turns=max_turns,
                     instructions=instructions,
+                    review_criteria=review_criteria,
                     on_progress=_on_progress,
                     on_message=_on_message,
                     get_user_input=_get_user_input,
@@ -1769,6 +1777,7 @@ def run(
                 sdk_runner,
                 max_turns=max_turns,
                 resume=resume,
+                review_criteria=review_criteria,
                 on_progress=_on_progress,
                 on_message=_on_message,
                 instructions=instructions,

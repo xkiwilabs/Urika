@@ -145,7 +145,7 @@ Within a turn:
 
 1. The **planning agent** reads the current state and outputs a method plan. If the plan requires a new tool or literature search, those agents run first.
 2. The **task agent** receives the plan, writes code, runs it, and produces run records.
-3. The **evaluator** scores the results against the project criteria. If criteria are met, the experiment completes immediately.
+3. The **evaluator** scores the results against the project criteria. If criteria are met, the experiment completes immediately (unless `--review-criteria` is set, in which case the advisor reviews whether the bar should be raised).
 4. The **advisor agent** analyzes what happened and produces suggestions for the next turn. It can also update the project criteria.
 
 When criteria are met or max turns are reached, the orchestrator generates reports (labbook notes, narrative, README, presentation) and marks the experiment as completed.
