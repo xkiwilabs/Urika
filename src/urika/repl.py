@@ -246,7 +246,11 @@ def _handle_command(session: ReplSession, text: str) -> None:
     handler = all_cmds[cmd_name]["func"]
     try:
         handler(session, args)
-    except (click.Abort, SystemExit):
+    except SystemExit as exc:
+        if exc.code == 0:
+            raise  # Clean quit — let it propagate
+        click.echo("\n  Cancelled.")
+    except click.Abort:
         click.echo("\n  Cancelled.")
     except Exception as exc:
         print_error(f"Error: {exc}")
