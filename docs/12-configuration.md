@@ -56,7 +56,41 @@ These preferences can be overridden at runtime via CLI flags or REPL prompts.
 
 The `[runtime]` section controls which AI model each agent uses, with a project-wide default and per-agent overrides. The `[privacy]` section defines named endpoints (open, private, trusted) and sets the privacy mode (`open`, `private`, or `hybrid`).
 
-These sections are covered in detail in [Models and Privacy](11-models-and-privacy.md).
+Use `urika config` for interactive setup, or `urika config my-project` to reconfigure an existing project. For advanced per-agent model assignment, edit `urika.toml` directly:
+
+```toml
+# Default model for all agents
+[runtime]
+model = "claude-sonnet-4-5"
+
+# Override specific agents with different models
+[runtime.models.task_agent]
+model = "claude-opus-4-6"
+endpoint = "open"
+
+[runtime.models.evaluator]
+model = "claude-haiku-4-5"
+endpoint = "open"
+
+# In hybrid mode: data_agent must use a private endpoint
+[runtime.models.data_agent]
+model = "qwen3:14b"
+endpoint = "private"
+
+[runtime.models.tool_builder]
+model = "qwen3:14b"
+endpoint = "private"
+```
+
+**Privacy mode rules:**
+
+| Mode | data_agent | Other agents | Mixing allowed? |
+|------|-----------|-------------|----------------|
+| **open** | Cloud only | Cloud only | Different cloud models per agent |
+| **private** | Private only | Private only | Different private endpoints/models per agent |
+| **hybrid** | **Must be private** | Cloud or private | Full mix per agent |
+
+See [Models and Privacy](11-models-and-privacy.md) for endpoint configuration details.
 
 ### [environment] section
 

@@ -3084,120 +3084,272 @@ def usage(project: str | None, json_output: bool) -> None:
 
 
 @cli.command("config")
-@click.option(
-    "--privacy",
-    type=click.Choice(["open", "private", "hybrid"]),
-    default=None,
-    help="Set default privacy mode for new projects.",
-)
-@click.option("--endpoint-url", default=None, help="Private endpoint URL.")
-@click.option("--endpoint-key-env", default=None, help="API key env var.")
-@click.option("--model", default=None, help="Default model.")
+@click.argument("project", required=False, default=None)
 @click.option("--show", is_flag=True, help="Show current settings.")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def config_command(
-    privacy: str | None,
-    endpoint_url: str | None,
-    endpoint_key_env: str | None,
-    model: str | None,
+    project: str | None,
     show: bool,
     json_output: bool,
 ) -> None:
-    """View or set global defaults for new projects.
+    """View or configure privacy mode and models.
 
-    Settings are stored in ~/.urika/settings.toml and used as
-    defaults when creating new projects with `urika new`.
+    Without PROJECT, configures global defaults (~/.urika/settings.toml).
+    With PROJECT, configures that project's urika.toml.
 
     Examples:
 
-        urika config --show
-
-        urika config --privacy private --endpoint-url http://localhost:11434
-
-        urika config --model qwen3-coder
+        urika config --show              # show global defaults
+        urika config                     # interactive setup (global)
+        urika config my-project --show   # show project settings
+        urika config my-project          # interactive setup (project)
     """
-    from urika.cli_display import print_step, print_success
-    from urika.core.settings import (
-        _settings_path,
-        load_settings,
-        save_settings,
-    )
+    from urika.cli_display import print_step, print_success, print_warning
+    from urika.cli_helpers import interactive_confirm, interactive_numbered
 
-    if show or (
-        privacy is None
-        and endpoint_url is None
-        and endpoint_key_env is None
-        and model is None
-    ):
+    # Cloud models
+    _CLOUD_MODELS = [
+        ("claude-sonnet-4-5", "Best balance of speed and quality (recommended)"),
+        ("claude-opus-4-6", "Most capable, slower, higher cost"),
+        ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
+    ]
+
+    # ── Determine target: global or project ──
+    is_project = False
+    project_path = None
+    if project is not None:
+        is_project = True
+        try:
+            project_path, _config = _resolve_project(project)
+        except click.ClickException:
+            raise
+
+    # ── Load current settings ──
+    if is_project:
+        import tomllib
+
+        toml_path = project_path / "urika.toml"
+        with open(toml_path, "rb") as f:
+            settings = tomllib.load(f)
+    else:
+        from urika.core.settings import load_settings
+
         settings = load_settings()
-        path = _settings_path()
 
+    # ── Show mode ──
+    if show:
         if json_output:
             from urika.cli_helpers import output_json
 
             output_json(settings)
             return
 
-        click.echo(f"\n  Global settings: {path}\n")
-        if not settings:
-            click.echo("  No settings configured. Using defaults.")
-            click.echo(
-                "  Run `urika config --privacy private "
-                "--endpoint-url http://localhost:11434`"
-                " to set up local models.\n"
-            )
-            return
+        label = f"Project: {project}" if is_project else "Global defaults"
+        click.echo(f"\n  {label}\n")
         p = settings.get("privacy", {})
         r = settings.get("runtime", {})
-        pref = settings.get("preferences", {})
-        print_step(f"Privacy mode: {p.get('mode', 'open')}")
+        mode = p.get("mode", "open")
+        print_step(f"Privacy mode: {mode}")
         eps = p.get("endpoints", {})
         for ep_name, ep in eps.items():
-            url = ep.get("base_url", "")
-            key = ep.get("api_key_env", "")
-            label = f"  {ep_name}: {url}"
-            if key:
-                label += f" (key: ${key})"
-            print_step(label)
+            if isinstance(ep, dict):
+                url = ep.get("base_url", "")
+                key = ep.get("api_key_env", "")
+                label_ep = f"  {ep_name}: {url}"
+                if key:
+                    label_ep += f" (key: ${key})"
+                print_step(label_ep)
         if r.get("model"):
             print_step(f"Default model: {r['model']}")
-        if r.get("backend") and r["backend"] != "claude":
-            print_step(f"Backend: {r['backend']}")
-        for k, v in pref.items():
-            print_step(f"Preference: {k} = {v}")
+        models = r.get("models", {})
+        for agent_name, agent_cfg in models.items():
+            if isinstance(agent_cfg, dict):
+                m = agent_cfg.get("model", "")
+                ep = agent_cfg.get("endpoint", "open")
+                print_step(f"  {agent_name}: {m} (endpoint: {ep})")
+            elif isinstance(agent_cfg, str):
+                print_step(f"  {agent_name}: {agent_cfg}")
         click.echo()
         return
 
-    settings = load_settings()
-    changed = False
+    # ── Interactive setup ──
+    current_mode = settings.get("privacy", {}).get("mode", "open")
+    click.echo(f"\n  Current privacy mode: {current_mode}\n")
 
-    if privacy is not None:
-        settings.setdefault("privacy", {})["mode"] = privacy
-        print_success(f"Default privacy: {privacy}")
-        changed = True
+    mode = interactive_numbered(
+        "  Privacy mode:",
+        [
+            "open — all agents use Claude API (cloud models only)",
+            "private — all agents use local/server models (nothing leaves your network)",
+            "hybrid — most agents use Claude API, data agents use local models",
+        ],
+        default={"open": 1, "private": 2, "hybrid": 3}.get(current_mode, 1),
+    )
+    mode = mode.split(" —")[0].strip()
 
-    if endpoint_url is not None:
+    # Warn if changing from private/hybrid to less private
+    if current_mode == "private" and mode in ("open", "hybrid"):
+        print_warning(
+            f"Changing from private to {mode} — "
+            f"agents will send data to cloud APIs."
+        )
+        if not interactive_confirm("  Continue?", default=False):
+            click.echo("  Cancelled.")
+            return
+    elif current_mode == "hybrid" and mode == "open":
+        print_warning(
+            "Changing from hybrid to open — "
+            "ALL agents (including data agent) will use cloud APIs."
+        )
+        if not interactive_confirm("  Continue?", default=False):
+            click.echo("  Cancelled.")
+            return
+
+    settings.setdefault("privacy", {})["mode"] = mode
+
+    # ── Open mode: pick cloud model ──
+    if mode == "open":
+        click.echo()
+        options = [f"{m} — {desc}" for m, desc in _CLOUD_MODELS]
+        choice = interactive_numbered(
+            "  Default model for all agents:",
+            options,
+            default=1,
+        )
+        model_name = choice.split(" —")[0].strip()
+        settings.setdefault("runtime", {})["model"] = model_name
+        # Clear any private endpoints
+        settings.get("privacy", {}).pop("endpoints", None)
+        print_success(f"Mode: open · Model: {model_name}")
+
+    # ── Private mode: configure endpoint + model ──
+    elif mode == "private":
+        click.echo()
+        ep_type = interactive_numbered(
+            "  Private endpoint type:",
+            [
+                "Ollama (localhost:11434)",
+                "LM Studio (localhost:1234)",
+                "Custom server URL",
+            ],
+            default=1,
+        )
+        if ep_type.startswith("Ollama"):
+            ep_url = "http://localhost:11434"
+        elif ep_type.startswith("LM Studio"):
+            ep_url = "http://localhost:1234"
+        else:
+            from urika.cli_helpers import interactive_prompt
+
+            ep_url = interactive_prompt("  Server URL")
+
         p = settings.setdefault("privacy", {})
         ep = p.setdefault("endpoints", {}).setdefault("private", {})
-        ep["base_url"] = endpoint_url
-        print_success(f"Private endpoint: {endpoint_url}")
-        changed = True
+        ep["base_url"] = ep_url
 
-    if endpoint_key_env is not None:
+        # API key for remote servers
+        if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
+            from urika.cli_helpers import interactive_prompt
+
+            key_env = interactive_prompt(
+                "  API key environment variable name (e.g. SERVER_API_KEY)",
+                default="",
+            )
+            if key_env:
+                ep["api_key_env"] = key_env
+
+        from urika.cli_helpers import interactive_prompt
+
+        model_name = interactive_prompt(
+            "  Model name (e.g. qwen3:14b, mistral:7b)",
+        )
+        settings.setdefault("runtime", {})["model"] = model_name
+        print_success(f"Mode: private · Endpoint: {ep_url} · Model: {model_name}")
+
+    # ── Hybrid mode: cloud model + private endpoint for data agents ──
+    elif mode == "hybrid":
+        # Cloud model for most agents
+        click.echo()
+        options = [f"{m} — {desc}" for m, desc in _CLOUD_MODELS]
+        choice = interactive_numbered(
+            "  Cloud model for most agents:",
+            options,
+            default=1,
+        )
+        cloud_model = choice.split(" —")[0].strip()
+        settings.setdefault("runtime", {})["model"] = cloud_model
+
+        # Private endpoint for data agents
+        click.echo()
+        click.echo("  Data Agent and Tool Builder must use a private model.")
+        ep_type = interactive_numbered(
+            "  Private endpoint type:",
+            [
+                "Ollama (localhost:11434)",
+                "LM Studio (localhost:1234)",
+                "Custom server URL",
+            ],
+            default=1,
+        )
+        if ep_type.startswith("Ollama"):
+            ep_url = "http://localhost:11434"
+        elif ep_type.startswith("LM Studio"):
+            ep_url = "http://localhost:1234"
+        else:
+            from urika.cli_helpers import interactive_prompt
+
+            ep_url = interactive_prompt("  Server URL")
+
         p = settings.setdefault("privacy", {})
         ep = p.setdefault("endpoints", {}).setdefault("private", {})
-        ep["api_key_env"] = endpoint_key_env
-        print_success(f"Endpoint key env: {endpoint_key_env}")
-        changed = True
+        ep["base_url"] = ep_url
 
-    if model is not None:
-        settings.setdefault("runtime", {})["model"] = model
-        print_success(f"Default model: {model}")
-        changed = True
+        if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
+            from urika.cli_helpers import interactive_prompt
 
-    if changed:
+            key_env = interactive_prompt(
+                "  API key environment variable name",
+                default="",
+            )
+            if key_env:
+                ep["api_key_env"] = key_env
+
+        from urika.cli_helpers import interactive_prompt
+
+        private_model = interactive_prompt(
+            "  Private model for data agents (e.g. qwen3:14b)",
+        )
+
+        # Set per-agent overrides
+        models = settings.setdefault("runtime", {}).setdefault("models", {})
+        models["data_agent"] = {"model": private_model, "endpoint": "private"}
+        models["tool_builder"] = {"model": private_model, "endpoint": "private"}
+
+        print_success(
+            f"Mode: hybrid · Cloud: {cloud_model} · "
+            f"Data agents: {private_model} via {ep_url}"
+        )
+
+    # ── Save ──
+    if is_project:
+        from urika.core.workspace import _write_toml
+
+        _write_toml(project_path / "urika.toml", settings)
+        print_step(f"Saved to {project_path / 'urika.toml'}")
+    else:
+        from urika.core.settings import save_settings
+
         save_settings(settings)
+        from urika.core.settings import _settings_path
+
         print_step(f"Saved to {_settings_path()}")
+
+    click.echo()
+    click.echo(
+        "  Tip: for per-agent model overrides, edit the [runtime.models] "
+        "section in urika.toml directly."
+    )
+    click.echo()
 
 
 @cli.command("setup")
