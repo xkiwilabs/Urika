@@ -4,9 +4,9 @@
 
 <p align="center">
   <a href="docs/01-getting-started.md">Getting Started</a> &middot;
-  <a href="docs/14-cli-reference.md">CLI Reference</a> &middot;
-  <a href="docs/15-interactive-repl.md">Interactive REPL</a> &middot;
-  <a href="docs/08-agent-system.md">Agent System</a>
+  <a href="docs/15-cli-reference.md">CLI Reference</a> &middot;
+  <a href="docs/16-interactive-repl.md">Interactive REPL</a> &middot;
+  <a href="docs/09-agent-system.md">Agent System</a>
 </p>
 
 ---
@@ -17,7 +17,7 @@ Urika uses multiple AI agents to autonomously explore analytical approaches for 
 
 Currently supports the **Claude Agent SDK** (Anthropic), including local models via Ollama. Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **PI** are planned for upcoming releases.
 
-**Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/11-models-and-privacy.md).
+**Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/12-models-and-privacy.md).
 
 ## Installation
 
@@ -103,7 +103,7 @@ Eleven agents work together. Each experiment runs autonomously — agents plan, 
 
 Within each experiment, the orchestrator cycles through `planning -> task -> evaluator -> advisor` each turn. When all experiments are complete, the **Finalizer** produces standalone deliverables.
 
-See [Agent System](docs/08-agent-system.md) for details on each agent role.
+See [Agent System](docs/09-agent-system.md) for details on each agent role.
 
 ## Privacy and Model Configuration
 
@@ -117,7 +117,7 @@ Per-agent model routing lets you optimize for cost (Haiku for simple tasks, Opus
 
 See above for supported and upcoming SDK adapters.
 
-See [Models and Privacy](docs/11-models-and-privacy.md) for configuration details.
+See [Models and Privacy](docs/12-models-and-privacy.md) for configuration details.
 
 ## Documentation
 
@@ -128,16 +128,17 @@ See [Models and Privacy](docs/11-models-and-privacy.md) for configuration detail
 | [Creating Projects](docs/03-creating-projects.md) | `urika new`, data scanning, knowledge ingestion |
 | [Prompts and Context](docs/04-prompts-and-context.md) | Writing effective descriptions, instructions, knowledge ingestion |
 | [Running Experiments](docs/05-running-experiments.md) | Orchestrator loop, turns, auto mode, resume |
-| [Viewing Results](docs/06-viewing-results.md) | Reports, presentations, methods, leaderboard |
-| [Finalizing Projects](docs/07-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
-| [Agent System](docs/08-agent-system.md) | All 11 agent roles and how they interact |
-| [Built-in Tools](docs/09-built-in-tools.md) | 18 analysis tools agents use |
-| [Knowledge Pipeline](docs/10-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
-| [Models and Privacy](docs/11-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
-| [Configuration](docs/12-configuration.md) | urika.toml, criteria, preferences |
-| [Project Structure](docs/13-project-structure.md) | File layout and what each file does |
-| [CLI Reference](docs/14-cli-reference.md) | Every command with full options |
-| [Interactive REPL](docs/15-interactive-repl.md) | Slash commands, tab completion, conversation mode |
+| [Advisor Chat and Instructions](docs/06-advisor-and-instructions.md) | Standalone advisor conversations, steering agents, suggestion-to-run flow |
+| [Viewing Results](docs/07-viewing-results.md) | Reports, presentations, methods, leaderboard |
+| [Finalizing Projects](docs/08-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
+| [Agent System](docs/09-agent-system.md) | All 11 agent roles and how they interact |
+| [Built-in Tools](docs/10-built-in-tools.md) | 18 analysis tools agents use |
+| [Knowledge Pipeline](docs/11-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
+| [Models and Privacy](docs/12-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
+| [Configuration](docs/13-configuration.md) | urika.toml, criteria, preferences |
+| [Project Structure](docs/14-project-structure.md) | File layout and what each file does |
+| [CLI Reference](docs/15-cli-reference.md) | Every command with full options |
+| [Interactive REPL](docs/16-interactive-repl.md) | Slash commands, tab completion, conversation mode |
 
 ## License
 

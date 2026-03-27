@@ -92,7 +92,7 @@ endpoint = "private"
 | **private** | Private only | Private only | Different private endpoints/models per agent |
 | **hybrid** | **Must be private** (reads raw data) | Cloud or private | Full mix per agent |
 
-See [Models and Privacy](11-models-and-privacy.md) for endpoint configuration details.
+See [Models and Privacy](12-models-and-privacy.md) for endpoint configuration details.
 
 ### [environment] section
 
@@ -299,4 +299,4 @@ Colors are enabled by default when stdout is a TTY. Setting `NO_COLOR=1` disable
 
 ---
 
-**Next:** [Project Structure](13-project-structure.md)
+**Next:** [Project Structure](14-project-structure.md)

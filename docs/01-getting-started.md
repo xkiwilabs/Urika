@@ -26,7 +26,7 @@ Your hardware needs depend on what kind of analysis you plan to do:
 
 **Cloud-only mode (default):** All the heavy computation happens on your machine (Python code the agents write), but the AI reasoning happens via the Claude API. Your CPU and RAM matter for data processing; GPU only matters if agents build neural network models.
 
-**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](11-models-and-privacy.md) for configuration details.
+**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](12-models-and-privacy.md) for configuration details.
 
 **Shared memory systems (Apple Silicon, etc.):** Macs with M-series chips share memory between CPU and GPU. A MacBook Pro with 64 GB unified memory can run models that would require a dedicated GPU on other systems. Ollama handles this automatically.
 
@@ -151,7 +151,7 @@ Urika has two interfaces that share the same commands and produce identical resu
 
 If you're new to Urika, **start with the REPL** — you can discover all commands with tab completion and `/help`, and ask the advisor agent questions in plain text without needing to know any commands at all.
 
-See [CLI Reference](14-cli-reference.md) and [Interactive REPL](15-interactive-repl.md) for full details on each interface.
+See [CLI Reference](15-cli-reference.md) and [Interactive REPL](16-interactive-repl.md) for full details on each interface.
 
 ## Quickstart
 
