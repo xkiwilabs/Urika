@@ -1570,8 +1570,15 @@ def run(
         original_handler = signal.getsignal(signal.SIGINT)
 
         def _cleanup_meta(signum: int, frame: object) -> None:
-            print_warning("\nInterrupted — stopping meta-orchestrator...")
-            print_step("Run stopped. Resume with: urika run")
+            if key_listener is not None:
+                key_listener.stop()
+            print_warning("\n  Autonomous run stopped")
+            print_step("  Options:")
+            print_step(
+                "    urika run --resume              Resume from where you left off"
+            )
+            print_step("    urika advisor <project> <text>   Chat with advisor first")
+            print_step("    urika run --instructions '...'   Run with new instructions")
             raise SystemExit(1)
 
         signal.signal(signal.SIGINT, _cleanup_meta)
@@ -1672,10 +1679,11 @@ def run(
         auto_state = result.get("autonomous_state")
         if auto_state:
             n_done = auto_state.get("experiments_completed", 0)
-            print_step(
-                f"\u23f8 Paused after {n_done} experiment(s). Resume with:"
-                " urika run --resume"
-            )
+            print_step(f"\u23f8 Autonomous run paused after {n_done} experiment(s)")
+            print_step("  Options:")
+            print_step("    urika run --resume              Continue autonomous run")
+            print_step("    urika advisor <project> <text>   Chat with advisor first")
+            print_step("    urika run --instructions '...'   Resume with new guidance")
             print_footer(duration_ms=elapsed_ms, turns=n_done, status="paused")
             return
 
@@ -1762,7 +1770,9 @@ def run(
 
     # Register Ctrl+C handler to clean up lockfile
     def _cleanup_on_interrupt(signum: int, frame: object) -> None:
-        print_warning("\nInterrupted — cleaning up...")
+        if key_listener is not None:
+            key_listener.stop()
+        print_warning(f"\n  Experiment run stopped ({experiment_id})")
         try:
             from urika.core.session import stop_session
 
@@ -1771,7 +1781,10 @@ def run(
             # Force remove lockfile if stop_session fails
             lock = project_path / "experiments" / experiment_id / ".lock"
             lock.unlink(missing_ok=True)
-        print_step("Experiment stopped. Resume with: urika run --resume")
+        print_step("  Options:")
+        print_step("    urika run --resume              Resume from next turn")
+        print_step("    urika advisor <project> <text>   Chat with advisor first")
+        print_step("    urika run --instructions '...'   Run with new instructions")
         raise SystemExit(1)
 
     original_handler = signal.getsignal(signal.SIGINT)
@@ -1881,10 +1894,11 @@ def run(
         return
 
     if run_status == "paused":
-        print_step(
-            f"\u23f8 Paused at turn {turns}/{max_turns}. Resume with:"
-            " urika run --resume"
-        )
+        print_step(f"\u23f8 Paused after turn {turns}/{max_turns} ({experiment_id})")
+        print_step("  Options:")
+        print_step("    urika run --resume              Pick up at next turn")
+        print_step("    urika advisor <project> <text>   Chat with advisor first")
+        print_step("    urika run --instructions '...'   Resume with new guidance")
     elif run_status == "completed":
         print_success(f"Experiment completed after {turns} turns.")
     elif run_status == "failed":

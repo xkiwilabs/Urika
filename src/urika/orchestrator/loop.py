@@ -499,7 +499,7 @@ async def run_experiment(
         # Check for pause request before starting this turn
         if pause_controller is not None and pause_controller.is_pause_requested():
             pause_session(project_dir, experiment_id)
-            progress("phase", "Paused by user")
+            progress("phase", f"Paused after turn {turn - 1}")
             return {"status": "paused", "turns": turn - 1}
 
         progress("turn", f"Turn {turn}/{max_turns}")
