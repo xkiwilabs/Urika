@@ -74,6 +74,9 @@ flowchart TD
         EV --> Q{Criteria met?}
         Q -- No --> ADV["Advisor Agent\nanalyzes, proposes next"]
         ADV --> P
+        Q -- "Yes\n(--review-criteria)" --> RC["Advisor reviews\ncriteria"]
+        RC -- "raises bar" --> P
+        RC -- "confirms" --> REPORT
         Q -- Yes --> REPORT["Generate Reports"]
     end
 

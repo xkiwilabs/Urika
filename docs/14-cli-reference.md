@@ -242,6 +242,7 @@ urika run [PROJECT] [OPTIONS]
 | `-q`, `--quiet` | Suppress verbose tool-use streaming output |
 | `--auto` | Fully autonomous mode -- no confirmation prompts |
 | `--instructions TEXT` | Guide the next experiment (e.g., "focus on tree-based models") |
+| `--review-criteria` | Ask advisor to review criteria when met (may raise the bar) |
 
 **Interactive settings:** When called with no flags, shows a settings dialog:
 
