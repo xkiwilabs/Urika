@@ -365,6 +365,7 @@ class ThinkingPanel:
         self._lock = threading.Lock()
         self._spin_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._project_dir: object = None  # set via update()
 
     def activate(self) -> None:
         """Set up scroll region, reserving 3 bottom lines.
@@ -491,6 +492,7 @@ class ThinkingPanel:
         turn: str = "",
         project: str = "",
         model: str = "",
+        project_dir: object = None,
     ) -> None:
         """Update panel fields and re-render.
 
@@ -505,8 +507,12 @@ class ThinkingPanel:
                 self.turn = turn
             if project:
                 self.project = project
+            if project_dir is not None:
+                self._project_dir = project_dir
             if model:
-                self.model = model
+                self.model = format_model_source(
+                    model, project_dir=self._project_dir
+                )
             self._spin_idx = 0
             self._render()
 
@@ -520,13 +526,9 @@ class ThinkingPanel:
     def set_model(self, model: str) -> None:
         """Update the model name (e.g. from AssistantMessage.model)."""
         with self._lock:
-            # Shorten model name
-            short = model
-            if "/" in short:
-                short = short.split("/")[-1]
-            if len(short) > 25:
-                short = short[:22] + "…"
-            self.model = short
+            self.model = format_model_source(
+                model, project_dir=self._project_dir
+            )
             self._render()
 
     def cleanup(self) -> None:
@@ -748,3 +750,67 @@ def thinking_phrase() -> str:
     import random
 
     return random.choice(_THINKING_PHRASES)
+
+
+def format_model_source(
+    model: str,
+    project_dir: object = None,
+    agent_name: str = "",
+) -> str:
+    """Format model name with its endpoint source for display.
+
+    Returns strings like:
+        claude-sonnet-4-5           (open/default)
+        ollama · qwen3:14b          (local Ollama)
+        lm-studio · mistral-7b      (local LM Studio)
+        institutional · claude-sonnet  (custom server endpoint)
+    """
+    if not model:
+        return ""
+
+    # Shorten model name
+    short = model
+    if "/" in short:
+        short = short.split("/")[-1]
+    if len(short) > 25:
+        short = short[:22] + "\u2026"
+
+    if project_dir is None:
+        return short
+
+    try:
+        from pathlib import Path
+
+        from urika.agents.config import load_runtime_config
+
+        rc = load_runtime_config(Path(str(project_dir)))
+
+        # Find which endpoint this agent/model uses
+        endpoint_name = "open"
+        if agent_name and agent_name in rc.model_overrides:
+            endpoint_name = rc.model_overrides[agent_name].endpoint
+        elif rc.privacy_mode == "private":
+            endpoint_name = "private"
+        elif rc.privacy_mode == "hybrid":
+            _PRIVATE_AGENTS = {"data_agent", "tool_builder"}
+            if agent_name in _PRIVATE_AGENTS:
+                endpoint_name = "private"
+
+        if endpoint_name == "open":
+            return short
+
+        endpoint = rc.endpoints.get(endpoint_name)
+        if endpoint is None:
+            return short
+
+        url = endpoint.base_url.lower()
+        if ":11434" in url:
+            return f"ollama \u00b7 {short}"
+        if ":1234" in url:
+            return f"lm-studio \u00b7 {short}"
+        if "localhost" in url or "127.0.0.1" in url:
+            return f"local \u00b7 {short}"
+        # Remote custom endpoint
+        return f"private-server \u00b7 {short}"
+    except Exception:
+        return short

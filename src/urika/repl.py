@@ -148,13 +148,18 @@ def run_repl() -> None:
                 f" \033[2m\u00b7 {session.project_name}\033[0m"
             )
             privacy = _get_privacy(session.project_path)
-            if privacy != "open":
-                parts.append(
-                    f" \033[33m\u00b7 {privacy}\033[0m"
-                )
-        if session.model:
             parts.append(
-                f" \033[36m\u00b7 {session.model}\033[0m"
+                f" \033[33m\u00b7 {privacy}\033[0m"
+            )
+        if session.model:
+            from urika.cli_display import format_model_source
+
+            model_display = format_model_source(
+                session.model,
+                project_dir=session.project_path,
+            )
+            parts.append(
+                f" \033[36m\u00b7 {model_display}\033[0m"
             )
         elapsed = _format_duration(session.elapsed_ms)
         parts.append(f" \033[31m\u00b7 {elapsed}\033[0m")

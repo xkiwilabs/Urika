@@ -1519,10 +1519,9 @@ def run(
         from urika.agents.config import load_runtime_config as _load_rc
 
         _rc = _load_rc(project_path)
-        _privacy_label = f" · {_rc.privacy_mode}" if _rc.privacy_mode != "open" else ""
-
         panel = ThinkingPanel()
-        panel.project = f"{project}{_privacy_label}"
+        panel.project = f"{project} · {_rc.privacy_mode}"
+        panel._project_dir = project_path
         panel.activity = thinking_phrase()
         panel.activate()
         panel.start_spinner()
@@ -2547,6 +2546,10 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
+    from urika.agents.config import load_runtime_config
+
+    _rc = load_runtime_config(project_path)
+
     try:
         from urika.agents.runner import get_runner
         from urika.orchestrator.finalize import finalize_project
@@ -2574,7 +2577,8 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
         )
     else:
         panel = ThinkingPanel()
-        panel.project = project
+        panel.project = f"{project} · {_rc.privacy_mode}"
+        panel._project_dir = project_path
         panel.activity = "Finalizing..."
         panel.activate()
         panel.start_spinner()
