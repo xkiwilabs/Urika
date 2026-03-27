@@ -19,16 +19,27 @@ Currently supports the **Claude Agent SDK** (Anthropic), including local models 
 
 ## Installation
 
+### Prerequisites
+
+1. Python >= 3.11
+2. Claude Pro or Max account (recommended) — or an Anthropic API key
+3. Claude Code CLI — install and log in first:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude login                    # opens browser to authenticate
+```
+
+### Install Urika
+
 ```bash
 git clone https://github.com/xkiwilabs/Urika.git
 cd Urika
-pip install -e .        # includes visualization, ML, and knowledge pipeline
-urika setup             # check installation, detect hardware, optionally install DL
+pip install -e .                # includes visualization, ML, and knowledge pipeline
+urika setup                     # check installation, detect hardware, optionally install DL
 ```
 
-The default install includes everything except deep learning (torch, transformers, etc.). Run `urika setup` to verify your environment and optionally install DL packages with automatic GPU detection. For deep learning without the interactive prompt: `pip install -e ".[dl]"`.
-
-Requires Python >= 3.11 and Claude access via API key (`ANTHROPIC_API_KEY`) or Claude Max/Pro account.
+The default install includes everything except deep learning (torch, transformers, etc.). For deep learning: `pip install -e ".[dl]"`.
 
 See [Getting Started](docs/01-getting-started.md) for full details.
 

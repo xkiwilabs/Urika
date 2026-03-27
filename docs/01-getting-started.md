@@ -7,7 +7,8 @@ Urika works with data from any scientific discipline — tabular data (CSV, Exce
 ## Requirements
 
 - **Python 3.11 or later** (3.12 also supported)
-- **Claude access** via Anthropic API key or Claude Max/Pro account
+- **Claude Pro or Max account** (recommended), or an Anthropic API key
+- **Claude Code CLI** — required for authentication and as the agent runtime
 
 ### Hardware requirements by use case
 
@@ -18,20 +19,56 @@ Your hardware needs depend on what kind of analysis you plan to do:
 | **Statistical analysis** | Any modern CPU | 4 GB+ | Not needed | Minimal | T-tests, ANOVA, regression on survey data |
 | **Machine learning** | Multi-core recommended | 8 GB+ | Not needed | 1-2 GB for packages | Random forest, XGBoost on tabular data |
 | **Deep learning** | Multi-core | 16 GB+ | Recommended (NVIDIA, 8GB+ VRAM) | 5-10 GB for PyTorch | LSTM, Transformers for forecasting or NLP |
-| **Local LLMs (private mode)** | Multi-core | 32 GB+ | Required (24GB+ VRAM) or shared memory | 50-100 GB for model weights | Running gpt-oss:120b or similar locally via Ollama |
+| **Local LLMs (private mode)** | Multi-core | 32 GB+ | Required (24GB+ VRAM) or shared memory | 50-100 GB for model weights | Running qwen3:14b or similar locally via Ollama |
 | **Hybrid mode** | Multi-core | 16 GB+ | Depends on local model size | 10-50 GB | Data Agent on local model, thinking on cloud |
 
 **Most users start with statistical analysis or machine learning** — no GPU required, works on any laptop. Deep learning and local LLMs are opt-in when you need them.
 
 **Cloud-only mode (default):** All the heavy computation happens on your machine (Python code the agents write), but the AI reasoning happens via the Claude API. Your CPU and RAM matter for data processing; GPU only matters if agents build neural network models.
 
-**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `gpt-oss:20b` need ~16 GB RAM. Larger models like `gpt-oss:120b` need a GPU with 80 GB VRAM or equivalent shared memory (e.g., Apple Silicon with unified memory). See [Models and Privacy](11-models-and-privacy.md) for configuration details.
+**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](11-models-and-privacy.md) for configuration details.
 
 **Shared memory systems (Apple Silicon, etc.):** Macs with M-series chips share memory between CPU and GPU. A MacBook Pro with 64 GB unified memory can run models that would require a dedicated GPU on other systems. Ollama handles this automatically.
 
-## Installation
+## Step 1: Install Claude Code CLI
 
-### Clone and install
+Urika uses the Claude Agent SDK, which requires the Claude Code CLI for authentication and as the agent runtime. Install it first:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+> **Note:** You need Node.js 18+ installed. If you don't have it: `sudo apt install nodejs npm` (Linux) or `brew install node` (macOS).
+
+### Log in to Claude
+
+```bash
+claude login
+```
+
+This opens a browser window to authenticate with your Anthropic account. You need at least a **Claude Pro** account ($20/month). **Claude Max** ($100/month or $200/month) is recommended for heavy use as it provides higher rate limits.
+
+> **Why Pro or Max?** Urika's agents make many API calls during experiments — planning, coding, evaluating, advising. A free account's rate limits are too restrictive for multi-agent workflows. Pro gives you enough headroom for most projects. Max is better if you run multiple experiments or large projects.
+
+### Verify login
+
+```bash
+claude --version
+```
+
+If you see a version number, you're authenticated and ready.
+
+### Alternative: API key
+
+If you prefer to use an API key instead of a Pro/Max account:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it across sessions. Note that API key usage is billed per token, which can be more expensive than a Pro/Max subscription for heavy use.
+
+## Step 2: Install Urika
 
 ```bash
 git clone https://github.com/xkiwilabs/Urika.git
@@ -56,15 +93,13 @@ This installs everything you need for statistical analysis, machine learning, vi
 | imbalanced-learn | Class imbalance handling |
 | pypdf | PDF paper ingestion into the knowledge base |
 
-### Check your installation
-
-After installing, run `urika setup` to verify everything is working:
+## Step 3: Verify installation
 
 ```bash
 urika setup
 ```
 
-This checks installed packages by category, detects your hardware (CPU cores, RAM, GPU), and verifies your `ANTHROPIC_API_KEY` is set. If deep learning packages are missing, it offers to install them with automatic GPU detection.
+This checks installed packages by category, detects your hardware (CPU cores, RAM, GPU), and verifies your Claude authentication. If deep learning packages are missing, it offers to install them with automatic GPU detection.
 
 ### Optional: deep learning
 
@@ -106,24 +141,6 @@ urika build-tool my-project "install lifelines and build a survival analysis too
 ```
 
 The tool builder installs the package, creates a reusable tool that wraps it, and registers it so all agents can use it in subsequent experiments. If you have a project venv enabled, packages install into the project's isolated environment rather than the global one.
-
-## Authentication
-
-Urika's agents need access to Claude. Two options:
-
-### Option 1: API key
-
-Set your Anthropic API key as an environment variable:
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it across sessions.
-
-### Option 2: Claude Max/Pro account
-
-If you have a Claude Max or Pro subscription, the Claude Agent SDK can authenticate through your account login. No API key needed — just ensure you're logged in via Claude Code.
 
 ## Two ways to use Urika
 
