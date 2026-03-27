@@ -14,6 +14,7 @@ from urika.core.progress import append_run, load_progress
 from urika.core.session import (
     complete_session,
     fail_session,
+    pause_session,
     resume_session,
     start_session,
     update_turn,
@@ -252,7 +253,11 @@ async def _generate_presentation(
                 if artifacts.is_dir():
                     for fig in artifacts.iterdir():
                         if fig.is_file() and fig.suffix.lower() in (
-                            ".png", ".jpg", ".jpeg", ".svg", ".gif",
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                            ".svg",
+                            ".gif",
                         ):
                             shutil.copy2(fig, pres_figures / fig.name)
 
@@ -404,6 +409,7 @@ async def run_experiment(
     on_message: object = None,
     instructions: str = "",
     get_user_input: object = None,
+    pause_controller: object = None,
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
@@ -424,6 +430,10 @@ async def run_experiment(
     *get_user_input* is an optional callable ``() -> str`` that returns
     queued user text (or ``""``).  When non-empty the text is prepended to
     the advisor prompt so users can steer experiments mid-run.
+
+    *pause_controller* is an optional ``PauseController`` instance.  When
+    provided, the loop checks ``is_pause_requested()`` before each turn and
+    gracefully pauses the session if the flag is set.
     """
     progress = on_progress or _noop_callback
     registry = AgentRegistry()
@@ -486,6 +496,12 @@ async def run_experiment(
         logger.warning("Knowledge scan failed: %s", exc)
 
     for turn in range(start_turn, max_turns + 1):
+        # Check for pause request before starting this turn
+        if pause_controller is not None and pause_controller.is_pause_requested():
+            pause_session(project_dir, experiment_id)
+            progress("phase", "Paused by user")
+            return {"status": "paused", "turns": turn - 1}
+
         progress("turn", f"Turn {turn}/{max_turns}")
         try:
             # --- planning_agent (optional) ---
@@ -698,8 +714,7 @@ async def run_experiment(
                         )
                         review_result = await runner.run(
                             review_config,
-                            f"{eval_result.text_output}\n\n"
-                            f"{review_prompt}",
+                            f"{eval_result.text_output}\n\n{review_prompt}",
                             on_message=on_message,
                         )
                         if review_result.success:
@@ -713,9 +728,7 @@ async def run_experiment(
                                     append_criteria,
                                 )
 
-                                update = review_suggestions[
-                                    "criteria_update"
-                                ]
+                                update = review_suggestions["criteria_update"]
                                 append_criteria(
                                     project_dir,
                                     update.get("criteria", {}),
@@ -767,9 +780,7 @@ async def run_experiment(
             # Pass evaluator output + any user input to advisor
             advisor_prompt = eval_result.text_output
             if user_inject:
-                advisor_prompt = (
-                    f"User instruction: {user_inject}\n\n{advisor_prompt}"
-                )
+                advisor_prompt = f"User instruction: {user_inject}\n\n{advisor_prompt}"
 
             suggest_config = suggest_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
