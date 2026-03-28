@@ -4210,7 +4210,6 @@ def _send_test_notification(notif: dict) -> None:
 
 def _notifications_interactive(*, settings, is_project, project_path):
     """Interactive notification setup. Raises UserCancelled on cancel/ESC."""
-    import getpass
 
     import click
     from urika.cli_display import print_success
@@ -4302,11 +4301,11 @@ def _notifications_interactive(*, settings, is_project, project_path):
             )
             to_addrs = [a.strip() for a in to_raw.split(",") if a.strip()]
 
-            # Password via getpass (hidden)
-            try:
-                password = getpass.getpass("  Password: ")
-            except (EOFError, KeyboardInterrupt):
-                password = ""
+            # App password / SMTP password (shown — these are generated tokens, not personal passwords)
+            password = interactive_prompt(
+                "App password (e.g. Gmail app password)",
+                default="",
+            )
 
             if password:
                 save_secret("URIKA_EMAIL_PASSWORD", password)
@@ -4341,22 +4340,18 @@ def _notifications_interactive(*, settings, is_project, project_path):
                 default=slack_cfg.get("channel", ""),
             )
 
-            # Bot token via getpass
-            try:
-                bot_token = getpass.getpass("  Bot token: ")
-            except (EOFError, KeyboardInterrupt):
-                bot_token = ""
+            bot_token = interactive_prompt(
+                "Bot token (from Slack app settings)",
+                default="",
+            )
 
             if bot_token:
                 save_secret("SLACK_BOT_TOKEN", bot_token)
 
-            # App token (optional)
-            try:
-                app_token = getpass.getpass(
-                    "  App token (for interactive buttons, optional): "
-                )
-            except (EOFError, KeyboardInterrupt):
-                app_token = ""
+            app_token = interactive_prompt(
+                "App token (for interactive buttons, optional)",
+                default="",
+            )
 
             if app_token:
                 save_secret("SLACK_APP_TOKEN", app_token)
@@ -4394,11 +4389,10 @@ def _notifications_interactive(*, settings, is_project, project_path):
                 default=str(telegram_cfg.get("chat_id", "")),
             )
 
-            # Bot token via getpass
-            try:
-                bot_token = getpass.getpass("  Bot token: ")
-            except (EOFError, KeyboardInterrupt):
-                bot_token = ""
+            bot_token = interactive_prompt(
+                "Bot token (from @BotFather)",
+                default="",
+            )
 
             if bot_token:
                 save_secret("TELEGRAM_BOT_TOKEN", bot_token)

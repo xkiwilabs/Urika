@@ -8,13 +8,21 @@ from urika.notifications import _load_notification_config, build_bus
 
 
 class TestLoadConfig:
-    def test_no_config(self, tmp_path):
-        """No urika.toml -> empty dict."""
+    def test_no_config(self, tmp_path, monkeypatch):
+        """No urika.toml and no global config -> empty dict."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        (fake_home / ".urika").mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
         config = _load_notification_config(tmp_path)
         assert config == {}
 
-    def test_project_config(self, tmp_path):
+    def test_project_config(self, tmp_path, monkeypatch):
         """urika.toml with [notifications] section."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        (fake_home / ".urika").mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
         toml_content = """\
 [notifications]
 enabled = true
@@ -31,8 +39,12 @@ from_addr = "urika@example.com"
         assert config["email"]["to"] == ["test@example.com"]
         assert config["email"]["smtp_server"] == "smtp.example.com"
 
-    def test_build_bus_returns_none_when_disabled(self, tmp_path):
+    def test_build_bus_returns_none_when_disabled(self, tmp_path, monkeypatch):
         """enabled = false -> None."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        (fake_home / ".urika").mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
         toml_content = """\
 [notifications]
 enabled = false
@@ -46,8 +58,12 @@ from_addr = "urika@example.com"
         result = build_bus(tmp_path)
         assert result is None
 
-    def test_build_bus_returns_none_when_no_channels(self, tmp_path):
+    def test_build_bus_returns_none_when_no_channels(self, tmp_path, monkeypatch):
         """enabled = true but no channel config -> None."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        (fake_home / ".urika").mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
         toml_content = """\
 [notifications]
 enabled = true
@@ -56,8 +72,12 @@ enabled = true
         result = build_bus(tmp_path)
         assert result is None
 
-    def test_build_bus_with_email(self, tmp_path):
+    def test_build_bus_with_email(self, tmp_path, monkeypatch):
         """Configure email channel -> bus with 1 channel."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        (fake_home / ".urika").mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
         toml_content = """\
 [notifications]
 enabled = true
@@ -76,8 +96,12 @@ from_addr = "urika@example.com"
 
         assert isinstance(bus.channels[0], EmailChannel)
 
-    def test_build_bus_returns_none_when_no_config(self, tmp_path):
+    def test_build_bus_returns_none_when_no_config(self, tmp_path, monkeypatch):
         """No config file at all -> None."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        (fake_home / ".urika").mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
         result = build_bus(tmp_path)
         assert result is None
 
