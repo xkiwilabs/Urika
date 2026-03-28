@@ -5,21 +5,9 @@ Urika can send notifications to email, Slack, and Telegram when experiments star
 
 ## Quick Setup
 
-Add a `[notifications]` section to your project's `urika.toml` (or to `~/.urika/settings.toml` for global defaults):
+Add a `[notifications]` section to your project's `urika.toml` (or to `~/.urika/settings.toml` for global defaults) and configure at least one channel. See the channel sections below for full configuration options.
 
-```toml
-[notifications]
-enabled = true
-
-[notifications.email]
-to = ["you@lab.edu", "team@lab.edu"]
-smtp_server = "smtp.gmail.com"
-smtp_port = 587
-from_addr = "urika-bot@lab.edu"
-password_env = "URIKA_EMAIL_PASSWORD"
-```
-
-That's it. The next time you run `urika run`, you'll receive email updates at key points.
+The next time you run `urika run`, you'll receive notifications at key points. If no `[notifications]` section exists, notifications are off by default.
 
 
 ## Channels
