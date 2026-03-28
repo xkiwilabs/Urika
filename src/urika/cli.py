@@ -74,12 +74,30 @@ def _ensure_project(project: str | None) -> str:
     names = list(projects.keys())
     if len(names) == 1:
         return names[0]
-    from urika.cli_helpers import interactive_numbered
+    from urika.cli_helpers import UserCancelled, interactive_numbered
 
-    return interactive_numbered("\n  Select project:", names, default=1)
+    try:
+        return interactive_numbered("\n  Select project:", names, default=1)
+    except UserCancelled:
+        raise SystemExit(0)
 
 
-@click.group(invoke_without_command=True)
+class _UrikaCLI(click.Group):
+    """Custom CLI group that catches UserCancelled globally."""
+
+    def invoke(self, ctx: click.Context) -> object:
+        try:
+            return super().invoke(ctx)
+        except SystemExit:
+            raise  # Let clean exits through
+        except Exception as exc:
+            # Catch UserCancelled from any command — exit cleanly
+            if type(exc).__name__ == "UserCancelled":
+                raise SystemExit(0)
+            raise
+
+
+@click.group(cls=_UrikaCLI, invoke_without_command=True)
 @click.version_option(package_name="urika")
 @click.pass_context
 def cli(ctx) -> None:
@@ -127,10 +145,16 @@ def _test_endpoint(url: str) -> bool:
 
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:
-    """Prompt user with numbered options. Returns the selected option text."""
-    from urika.cli_helpers import interactive_numbered
+    """Prompt user with numbered options. Returns the selected option text.
 
-    return interactive_numbered(prompt_text, options, default=default)
+    Exits cleanly (SystemExit 0) if the user cancels.
+    """
+    from urika.cli_helpers import UserCancelled, interactive_numbered
+
+    try:
+        return interactive_numbered(prompt_text, options, default=default)
+    except UserCancelled:
+        raise SystemExit(0)
 
 
 def _prompt_path(prompt_text: str, must_exist: bool = True) -> str | None:
@@ -3735,7 +3759,7 @@ def setup_command(json_output: bool) -> None:
             try:
                 __import__(imp)
                 pkg_status[name] = True
-            except ImportError:
+            except Exception:
                 pkg_status[name] = False
 
         hw_data: dict = {}
@@ -3836,6 +3860,11 @@ def setup_command(json_output: bool) -> None:
         except ImportError:
             print_error(f"  {name} — not installed")
             dl_installed = False
+        except Exception as exc:
+            # RuntimeError from CUDA version mismatches, etc.
+            short = str(exc).split(".")[0]
+            print_error(f"  {name} — {short}")
+            dl_installed = False
 
     # Check hardware
     click.echo()
@@ -3885,23 +3914,105 @@ def setup_command(json_output: bool) -> None:
             import subprocess
             import sys
 
-            if choice == "gpu":
-                # Install PyTorch with CUDA
-                print_step("Installing PyTorch with GPU support…")
-                subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "pip",
-                        "install",
-                        "torch",
-                        "torchvision",
-                        "torchaudio",
-                        "--index-url",
-                        "https://download.pytorch.org/whl/cu121",
-                    ],
-                    check=False,
+            def _torch_install_args(*, want_gpu: bool = True) -> tuple[list[str], str]:
+                """Build pip install args for PyTorch based on platform.
+
+                Returns (args_list, description_string).
+
+                - macOS: default PyPI (includes MPS for Apple Silicon)
+                - ARM (any OS without NVIDIA): default PyPI
+                - x86 + NVIDIA: detect CUDA version, use matching wheel
+                - No GPU / want_gpu=False: CPU-only wheels (x86) or default (ARM)
+                """
+                import platform
+
+                base = [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "torch",
+                    "torchvision",
+                    "torchaudio",
+                ]
+                arch = platform.machine().lower()
+                is_arm = arch in ("arm64", "aarch64", "armv8l")
+
+                # macOS — default PyPI includes MPS for Apple Silicon
+                if sys.platform == "darwin":
+                    desc = "MPS" if is_arm else "CPU"
+                    return base, desc
+
+                # ARM Linux/Windows — no CUDA index, default PyPI
+                if is_arm:
+                    cuda_tag = _detect_cuda_tag() if want_gpu else None
+                    if cuda_tag:
+                        # ARM + NVIDIA (Jetson) — use default pip, torch auto-detects
+                        return base, f"ARM + CUDA ({cuda_tag})"
+                    return base, "ARM CPU"
+
+                # x86 Linux/Windows
+                if want_gpu:
+                    cuda_tag = _detect_cuda_tag()
+                    if cuda_tag:
+                        return (
+                            base
+                            + [
+                                "--index-url",
+                                f"https://download.pytorch.org/whl/{cuda_tag}",
+                            ],
+                            f"CUDA {cuda_tag}",
+                        )
+                return (
+                    base + ["--index-url", "https://download.pytorch.org/whl/cpu"],
+                    "CPU",
                 )
+
+            def _detect_cuda_tag() -> str | None:
+                """Detect CUDA version, return wheel tag (e.g. 'cu124') or None."""
+                # 1. Check existing torch installation
+                try:
+                    import torch
+
+                    cv = torch.version.cuda
+                    if cv:
+                        parts = cv.split(".")
+                        return f"cu{parts[0]}{parts[1]}"
+                except Exception:
+                    pass
+                # 2. Check nvcc
+                try:
+                    import re
+
+                    r = subprocess.run(
+                        ["nvcc", "--version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if r.returncode == 0:
+                        m = re.search(r"release (\d+)\.(\d+)", r.stdout)
+                        if m:
+                            return f"cu{m.group(1)}{m.group(2)}"
+                except Exception:
+                    pass
+                # 3. Check nvidia-smi exists (GPU present but no toolkit)
+                try:
+                    r = subprocess.run(
+                        ["nvidia-smi"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    if r.returncode == 0:
+                        return "cu124"  # Default to latest stable
+                except Exception:
+                    pass
+                return None
+
+            if choice == "gpu":
+                args, desc = _torch_install_args(want_gpu=True)
+                print_step(f"Installing PyTorch ({desc})…")
+                subprocess.run(args, check=False)
                 # Then the rest
                 print_step("Installing transformers…")
                 subprocess.run(
@@ -3917,21 +4028,9 @@ def setup_command(json_output: bool) -> None:
                     check=False,
                 )
             elif choice == "cpu":
-                print_step("Installing PyTorch (CPU only)…")
-                subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "pip",
-                        "install",
-                        "torch",
-                        "torchvision",
-                        "torchaudio",
-                        "--index-url",
-                        "https://download.pytorch.org/whl/cpu",
-                    ],
-                    check=False,
-                )
+                args, desc = _torch_install_args(want_gpu=False)
+                print_step(f"Installing PyTorch ({desc})…")
+                subprocess.run(args, check=False)
                 print_step("Installing transformers…")
                 subprocess.run(
                     [
@@ -3957,38 +4056,9 @@ def setup_command(json_output: bool) -> None:
                 except Exception:
                     has_gpu = False
 
-                if has_gpu:
-                    print_step("GPU detected — installing with CUDA support…")
-                    subprocess.run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "pip",
-                            "install",
-                            "torch",
-                            "torchvision",
-                            "torchaudio",
-                            "--index-url",
-                            "https://download.pytorch.org/whl/cu121",
-                        ],
-                        check=False,
-                    )
-                else:
-                    print_step("No GPU detected — installing CPU version…")
-                    subprocess.run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "pip",
-                            "install",
-                            "torch",
-                            "torchvision",
-                            "torchaudio",
-                            "--index-url",
-                            "https://download.pytorch.org/whl/cpu",
-                        ],
-                        check=False,
-                    )
+                args, desc = _torch_install_args(want_gpu=has_gpu)
+                print_step(f"Installing PyTorch ({desc})…")
+                subprocess.run(args, check=False)
                 print_step("Installing transformers…")
                 subprocess.run(
                     [
