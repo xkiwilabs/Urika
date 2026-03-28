@@ -39,6 +39,9 @@ dependencies = [
     "optuna>=3.0",
     "shap>=0.42",
     "imbalanced-learn>=0.11",
+    # Notifications (email is stdlib, these are for Slack and Telegram)
+    "slack-sdk>=3.0",
+    "python-telegram-bot>=20.0",
 ]
 
 [project.optional-dependencies]
@@ -50,20 +53,13 @@ dl = [
     "torchaudio>=2.0",
     "timm>=0.9",
 ]
-notifications = [
-    "slack-sdk>=3.0",
-    "python-telegram-bot>=20.0",
-]
 all = [
     "urika[dl]",
-    "urika[notifications]",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.1",
-    "slack-sdk>=3.0",
-    "python-telegram-bot>=20.0",
 ]
 
 [project.scripts]
