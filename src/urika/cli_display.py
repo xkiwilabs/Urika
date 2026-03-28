@@ -475,9 +475,9 @@ class ThinkingPanel:
             # Always show something — fallback to activity summary
             if not info_parts:
                 info_parts.append(f"{_C.DIM}{self.activity}{_C.RESET}")
-            slow_ch = _SPINNER_SLOW[self._spin_slow_idx]
+            slow_ch = _SPINNER[self._spin_slow_idx % len(_SPINNER)]
             sep_dot = f" {_C.DIM}\u00b7{_C.RESET} "
-            info_line = f"  {_C.DIM}{slow_ch}{_C.RESET} {sep_dot.join(info_parts)}"
+            info_line = f"  {_C.YELLOW}{slow_ch}{_C.RESET} {sep_dot.join(info_parts)}"
 
             # ── Line 3: spinner + agent + activity ──
             ch = _SPINNER[self._spin_idx]
