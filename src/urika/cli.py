@@ -1685,6 +1685,9 @@ def run(
                     elif event == "phase":
                         print_step(detail)
                         panel.update(activity=detail)
+                    # Show pause in footer if requested (from any source)
+                    if pause_ctrl.is_pause_requested():
+                        panel.update(pause_requested=True)
                     # Dispatch to notification bus
                     if notif_bus is not None:
                         notif_bus.on_progress(event, detail)
@@ -1976,6 +1979,9 @@ def run(
                 elif event == "phase":
                     print_step(detail)
                     panel.update(activity=detail)
+                # Show pause in footer if requested (from any source)
+                if pause_ctrl.is_pause_requested():
+                    panel.update(pause_requested=True)
                 # Dispatch to notification bus
                 if notif_bus is not None:
                     notif_bus.on_progress(event, detail)

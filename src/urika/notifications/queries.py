@@ -51,15 +51,17 @@ def get_results_text(project_path: Path) -> str:
     except Exception:
         return "Error reading results."
 
-    entries = data.get("entries", [])
+    entries = data.get("ranking", data.get("entries", []))
     if not entries:
         return "No results yet."
 
-    lines = ["Leaderboard:"]
-    for i, entry in enumerate(entries[:10], 1):
+    primary = data.get("primary_metric", "")
+    lines = [f"Leaderboard ({primary}):" if primary else "Leaderboard:"]
+    for entry in entries[:10]:
+        rank = entry.get("rank", "")
         method = entry.get("method", "?")
         metrics = entry.get("metrics", {})
         metric_str = ", ".join(f"{k}={v}" for k, v in list(metrics.items())[:3])
-        lines.append(f"  {i}. {method} -- {metric_str}")
+        lines.append(f"  {rank}. {method} -- {metric_str}")
 
     return "\n".join(lines)
