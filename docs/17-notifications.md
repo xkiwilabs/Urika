@@ -88,17 +88,19 @@ export SLACK_APP_TOKEN="xapp-your-app-token"   # Only needed for Pause/Stop butt
 
 **Interactive controls:**
 
-If you configured `app_token_env`, messages during active runs include Pause and Stop buttons. Clicking them:
+If you configured `app_token_env`, messages include interactive buttons:
 
 - **Pause** -- pauses the experiment after the current turn completes (same as pressing ESC locally)
 - **Stop** -- stops the experiment immediately (same as Ctrl+C locally)
+- **Status** -- shows project status (experiments, runs, completion state). Available any time.
+- **Results** -- shows the leaderboard (top methods and metrics). Available any time.
 
-The bot confirms the action in the channel.
+The bot confirms each action in the channel.
 
 
 ### Telegram
 
-Telegram sends formatted messages with inline keyboard buttons for Pause/Stop control.
+Telegram sends formatted messages with inline keyboard buttons for control and queries.
 
 **Prerequisites:**
 
@@ -129,15 +131,17 @@ export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
 **What you see in Telegram:**
 
 - Formatted messages with emoji indicators for different event types
-- Inline keyboard with Pause and Stop buttons during active runs
-- `/pause` and `/stop` commands also work as text commands in the chat
+- Inline keyboard with Pause, Stop, Status, and Results buttons
+- Slash commands also work as text commands in the chat
 
 **Interactive controls:**
 
 Both inline buttons and slash commands work:
 
-- Tap **Pause** button or type `/pause` -- pauses after current turn
-- Tap **Stop** button or type `/stop` -- stops immediately
+- **Pause** button or `/pause` -- pauses after current turn
+- **Stop** button or `/stop` -- stops immediately
+- **Status** button or `/status` -- shows project status. Available any time.
+- **Results** button or `/results` -- shows leaderboard. Available any time.
 
 
 ## What Gets Notified
