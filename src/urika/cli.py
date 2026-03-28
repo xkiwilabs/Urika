@@ -4068,7 +4068,7 @@ def notifications_command(
 
     # ── Test mode ──
     if send_test:
-        _send_test_notification(notif)
+        _send_test_notification(notif, project_path=project_path)
         return
 
     # ── Interactive setup ──
@@ -4137,15 +4137,35 @@ def _show_notification_config(notif: dict) -> None:
     click.echo()
 
 
-def _send_test_notification(notif: dict) -> None:
+def _send_test_notification(notif: dict, project_path: Path | None = None) -> None:
     """Send a test notification through all configured channels."""
     from urika.cli_display import print_error, print_success, print_warning
     from urika.notifications.events import NotificationEvent
 
-    if not notif.get("enabled"):
-        print_warning("Notifications are not enabled.")
+    # Use build_bus for proper global+project config resolution
+    if project_path is not None:
+        from urika.notifications import build_bus
+
+        bus = build_bus(project_path)
+        if bus is None:
+            print_warning("No notification channels enabled for this project.")
+            return
+
+        event = NotificationEvent(
+            event_type="test",
+            project_name=project_path.name,
+            summary="Test notification from Urika",
+            priority="medium",
+        )
+        for ch in bus.channels:
+            try:
+                ch.send(event)
+                print_success(f"Test sent via {type(ch).__name__}")
+            except Exception as exc:
+                print_error(f"{type(ch).__name__} failed: {exc}")
         return
 
+    # Global test (no project) — test each channel from raw config
     event = NotificationEvent(
         event_type="test",
         project_name="test",
