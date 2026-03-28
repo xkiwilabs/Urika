@@ -21,6 +21,7 @@ async def run_project(
     on_progress: object = None,
     on_message: object = None,
     get_user_input: object = None,
+    pause_controller: object = None,
 ) -> dict[str, Any]:
     """Run experiments until criteria met or limits reached.
 
@@ -66,8 +67,15 @@ async def run_project(
             on_message=on_message,
             instructions=instructions,
             get_user_input=get_user_input,
+            pause_controller=pause_controller,
         )
         results.append(result)
+
+        # Check if experiment was paused or pause was requested
+        if result.get("status") == "paused":
+            break
+        if pause_controller is not None and pause_controller.is_pause_requested():
+            break
 
         # Checkpoint
         if mode == "checkpoint":
@@ -86,8 +94,9 @@ async def run_project(
             print_success("All criteria met.")
             break
 
-    # Finalize after all experiments complete
-    if results:
+    # Finalize after all experiments complete (skip if paused)
+    paused = pause_controller is not None and pause_controller.is_pause_requested()
+    if results and not paused:
         try:
             from urika.orchestrator.finalize import finalize_project
 
@@ -96,7 +105,18 @@ async def run_project(
         except Exception:
             pass  # Finalization is best-effort
 
-    return {"experiments_run": len(results), "results": results}
+    return {
+        "experiments_run": len(results),
+        "results": results,
+        "autonomous_state": {
+            "mode": mode,
+            "instructions": instructions,
+            "max_experiments": max_experiments,
+            "experiments_completed": len(results),
+        }
+        if pause_controller and pause_controller.is_pause_requested()
+        else None,
+    }
 
 
 async def _determine_next(

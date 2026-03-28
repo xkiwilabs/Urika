@@ -110,8 +110,10 @@ def resume_session(project_dir: Path, experiment_id: str) -> SessionState:
             msg = f"No session found for experiment {experiment_id}"
             raise FileNotFoundError(msg)
 
-        if state.status not in ("paused", "failed"):
-            msg = f"Cannot resume experiment {experiment_id}: status is '{state.status}'"
+        if state.status not in ("paused", "stopped", "failed"):
+            msg = (
+                f"Cannot resume experiment {experiment_id}: status is '{state.status}'"
+            )
             raise RuntimeError(msg)
 
         state.status = "running"
@@ -163,6 +165,30 @@ def fail_session(
         update_experiment_status(project_dir, experiment_id, "failed")
     except Exception as exc:
         logger.warning("Progress status update failed for failed session: %s", exc)
+    return state
+
+
+def stop_session(
+    project_dir: Path, experiment_id: str, reason: str | None = None
+) -> SessionState:
+    """Mark session as stopped (deliberate user interruption). Removes lockfile."""
+    from urika.core.progress import update_experiment_status
+
+    state = load_session(project_dir, experiment_id)
+    if state is None:
+        msg = f"No session found for experiment {experiment_id}"
+        raise FileNotFoundError(msg)
+
+    state.status = "stopped"
+    state.completed_at = _now_iso()
+    if reason is not None:
+        state.checkpoint["reason"] = reason
+    save_session(project_dir, experiment_id, state)
+    release_lock(project_dir, experiment_id)
+    try:
+        update_experiment_status(project_dir, experiment_id, "stopped")
+    except Exception as exc:
+        logger.warning("Progress status update failed for stopped session: %s", exc)
     return state
 
 

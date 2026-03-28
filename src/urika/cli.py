@@ -74,12 +74,30 @@ def _ensure_project(project: str | None) -> str:
     names = list(projects.keys())
     if len(names) == 1:
         return names[0]
-    from urika.cli_helpers import interactive_numbered
+    from urika.cli_helpers import UserCancelled, interactive_numbered
 
-    return interactive_numbered("\n  Select project:", names, default=1)
+    try:
+        return interactive_numbered("\n  Select project:", names, default=1)
+    except UserCancelled:
+        raise SystemExit(0)
 
 
-@click.group(invoke_without_command=True)
+class _UrikaCLI(click.Group):
+    """Custom CLI group that catches UserCancelled globally."""
+
+    def invoke(self, ctx: click.Context) -> object:
+        try:
+            return super().invoke(ctx)
+        except SystemExit:
+            raise  # Let clean exits through
+        except Exception as exc:
+            # Catch UserCancelled from any command — exit cleanly
+            if type(exc).__name__ == "UserCancelled":
+                raise SystemExit(0)
+            raise
+
+
+@click.group(cls=_UrikaCLI, invoke_without_command=True)
 @click.version_option(package_name="urika")
 @click.pass_context
 def cli(ctx) -> None:
@@ -127,10 +145,16 @@ def _test_endpoint(url: str) -> bool:
 
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:
-    """Prompt user with numbered options. Returns the selected option text."""
-    from urika.cli_helpers import interactive_numbered
+    """Prompt user with numbered options. Returns the selected option text.
 
-    return interactive_numbered(prompt_text, options, default=default)
+    Exits cleanly (SystemExit 0) if the user cancels.
+    """
+    from urika.cli_helpers import UserCancelled, interactive_numbered
+
+    try:
+        return interactive_numbered(prompt_text, options, default=default)
+    except UserCancelled:
+        raise SystemExit(0)
 
 
 def _prompt_path(prompt_text: str, must_exist: bool = True) -> str | None:
@@ -250,7 +274,9 @@ def new(
             default=_mode_default,
         )
         _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
-        privacy_mode_val = _privacy_map.get(privacy_choice.split(" —")[0].strip(), "open")
+        privacy_mode_val = _privacy_map.get(
+            privacy_choice.split(" —")[0].strip(), "open"
+        )
 
         private_endpoint_url = ""
         private_endpoint_key_env = ""
@@ -964,19 +990,23 @@ def status(name: str | None, json_output: bool) -> None:
         exps_data = []
         for exp in experiments:
             progress = load_progress(project_path, exp.experiment_id)
-            exps_data.append({
-                "experiment_id": exp.experiment_id,
-                "name": exp.name,
-                "status": progress.get("status", "unknown"),
-                "runs": len(progress.get("runs", [])),
-            })
-        output_json({
-            "project": config.name,
-            "question": config.question,
-            "mode": config.mode,
-            "path": str(project_path),
-            "experiments": exps_data,
-        })
+            exps_data.append(
+                {
+                    "experiment_id": exp.experiment_id,
+                    "name": exp.name,
+                    "status": progress.get("status", "unknown"),
+                    "runs": len(progress.get("runs", [])),
+                }
+            )
+        output_json(
+            {
+                "project": config.name,
+                "question": config.question,
+                "mode": config.mode,
+                "path": str(project_path),
+                "experiments": exps_data,
+            }
+        )
         return
 
     click.echo(f"Project: {config.name}")
@@ -1136,11 +1166,13 @@ def tools(category: str | None, project: str | None, json_output: bool) -> None:
         for name in names:
             tool = registry.get(name)
             if tool is not None:
-                tools_data.append({
-                    "name": tool.name(),
-                    "category": tool.category(),
-                    "description": tool.description(),
-                })
+                tools_data.append(
+                    {
+                        "name": tool.name(),
+                        "category": tool.category(),
+                        "description": tool.description(),
+                    }
+                )
         output_json({"tools": tools_data})
         return
 
@@ -1541,11 +1573,36 @@ def run(
         # Determine mode: capped auto unless auto flag gives unlimited
         meta_mode = "unlimited" if auto else "capped"
 
+        # Create pause controller and key listener for ESC-to-pause
+        from urika.orchestrator.pause import KeyListener, PauseController
+
+        pause_ctrl = PauseController()
+        key_listener: KeyListener | None = None
+        if not json_output:
+
+            def _on_pause_esc_meta() -> None:
+                print_warning(
+                    "\n\u23f8 Pause requested — will pause after current turn"
+                    " completes..."
+                )
+
+            key_listener = KeyListener(
+                pause_ctrl, on_pause_requested=_on_pause_esc_meta
+            )
+            key_listener.start()
+
         original_handler = signal.getsignal(signal.SIGINT)
 
         def _cleanup_meta(signum: int, frame: object) -> None:
-            print_warning("\nInterrupted — stopping meta-orchestrator...")
-            print_step("Run stopped. Resume with: urika run")
+            if key_listener is not None:
+                key_listener.stop()
+            print_warning("\n  Autonomous run stopped")
+            print_step("  Options:")
+            print_step(
+                "    urika run --resume              Resume from where you left off"
+            )
+            print_step("    urika advisor <project> <text>   Chat with advisor first")
+            print_step("    urika run --instructions '...'   Run with new instructions")
             raise SystemExit(1)
 
         signal.signal(signal.SIGINT, _cleanup_meta)
@@ -1621,10 +1678,13 @@ def run(
                     on_progress=_on_progress,
                     on_message=_on_message,
                     get_user_input=_get_user_input,
+                    pause_controller=pause_ctrl,
                 )
             )
 
         finally:
+            if key_listener is not None:
+                key_listener.stop()
             if panel is not None:
                 panel.cleanup()
             signal.signal(signal.SIGINT, original_handler)
@@ -1637,6 +1697,18 @@ def run(
 
             result["duration_ms"] = elapsed_ms
             output_json(result)
+            return
+
+        # Check if paused (autonomous_state present means mid-run pause)
+        auto_state = result.get("autonomous_state")
+        if auto_state:
+            n_done = auto_state.get("experiments_completed", 0)
+            print_step(f"\u23f8 Autonomous run paused after {n_done} experiment(s)")
+            print_step("  Options:")
+            print_step("    urika run --resume              Continue autonomous run")
+            print_step("    urika advisor <project> <text>   Chat with advisor first")
+            print_step("    urika run --instructions '...'   Resume with new guidance")
+            print_footer(duration_ms=elapsed_ms, turns=n_done, status="paused")
             return
 
         print_success(f"Meta-orchestrator completed: {n_exp} experiment(s) run.")
@@ -1705,18 +1777,38 @@ def run(
         else:
             print_step(f"Running experiment {experiment_id} (max {max_turns} turns)")
 
+    # Create pause controller and key listener for ESC-to-pause
+    from urika.orchestrator.pause import KeyListener, PauseController
+
+    pause_ctrl = PauseController()
+    key_listener: KeyListener | None = None
+    if not json_output:
+
+        def _on_pause_esc() -> None:
+            print_warning(
+                "\n\u23f8 Pause requested — will pause after current turn completes..."
+            )
+
+        key_listener = KeyListener(pause_ctrl, on_pause_requested=_on_pause_esc)
+        key_listener.start()
+
     # Register Ctrl+C handler to clean up lockfile
     def _cleanup_on_interrupt(signum: int, frame: object) -> None:
-        print_warning("\nInterrupted — cleaning up...")
+        if key_listener is not None:
+            key_listener.stop()
+        print_warning(f"\n  Experiment run stopped ({experiment_id})")
         try:
-            from urika.core.session import fail_session
+            from urika.core.session import stop_session
 
-            fail_session(project_path, experiment_id, error="Interrupted by user")
+            stop_session(project_path, experiment_id, reason="Stopped by user")
         except Exception:
-            # Force remove lockfile if fail_session fails
+            # Force remove lockfile if stop_session fails
             lock = project_path / "experiments" / experiment_id / ".lock"
             lock.unlink(missing_ok=True)
-        print_step("Experiment paused. Resume with: urika run --resume")
+        print_step("  Options:")
+        print_step("    urika run --resume              Resume from next turn")
+        print_step("    urika advisor <project> <text>   Chat with advisor first")
+        print_step("    urika run --instructions '...'   Run with new instructions")
         raise SystemExit(1)
 
     original_handler = signal.getsignal(signal.SIGINT)
@@ -1744,7 +1836,9 @@ def run(
                     panel.update(turn=detail, activity=thinking_phrase())
                 elif event == "agent":
                     # Extract agent key from "Planning agent — designing method"
-                    agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+                    agent_key = (
+                        detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+                    )
                     print_agent(agent_key)
                     panel.update(agent=agent_key, activity=detail)
                 elif event == "result":
@@ -1799,10 +1893,13 @@ def run(
                 on_message=_on_message,
                 instructions=instructions,
                 get_user_input=_get_user_input,
+                pause_controller=pause_ctrl,
             )
         )
 
     finally:
+        if key_listener is not None:
+            key_listener.stop()
         if panel is not None:
             panel.cleanup()
         # Restore original handler
@@ -1820,7 +1917,13 @@ def run(
         output_json(result)
         return
 
-    if run_status == "completed":
+    if run_status == "paused":
+        print_step(f"\u23f8 Paused after turn {turns}/{max_turns} ({experiment_id})")
+        print_step("  Options:")
+        print_step("    urika run --resume              Pick up at next turn")
+        print_step("    urika advisor <project> <text>   Chat with advisor first")
+        print_step("    urika run --instructions '...'   Resume with new guidance")
+    elif run_status == "completed":
         print_success(f"Experiment completed after {turns} turns.")
     elif run_status == "failed":
         print_error(f"Experiment failed after {turns} turns: {error}")
@@ -1830,7 +1933,9 @@ def run(
     print_footer(duration_ms=elapsed_ms, turns=turns, status=run_status)
 
 
-def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> str:
+def _run_report_agent(
+    project_path: Path, experiment_id: str, prompt: str, instructions: str = ""
+) -> str:
     """Run the report agent and return its text output."""
     try:
         from urika.agents.runner import get_runner
@@ -1849,6 +1954,9 @@ def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> st
         config = role.build_config(
             project_dir=project_path, experiment_id=experiment_id
         )
+
+        if instructions:
+            prompt = f"User instructions: {instructions}\n\n{prompt}"
 
         with Spinner("Writing narrative"):
             result = asyncio.run(
@@ -1872,8 +1980,18 @@ def _run_report_agent(project_path: Path, experiment_id: str, prompt: str) -> st
     default=None,
     help="Generate report for a specific experiment.",
 )
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide the report (e.g. 'focus on feature importance findings').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def report(project: str, experiment_id: str | None, json_output: bool = False) -> None:
+def report(
+    project: str,
+    experiment_id: str | None,
+    instructions: str,
+    json_output: bool = False,
+) -> None:
     """Generate labbook reports."""
     from urika.core.labbook import (
         generate_experiment_summary,
@@ -1917,131 +2035,148 @@ def report(project: str, experiment_id: str | None, json_output: bool = False) -
             else:
                 experiment_id = choice.split(" [")[0]
 
-    if experiment_id == "all":
-        # Generate reports for each experiment
-        for exp in list_experiments(project_path):
-            click.echo(f"Processing {exp.experiment_id}...")
+    try:
+        if experiment_id == "all":
+            # Generate reports for each experiment
+            for exp in list_experiments(project_path):
+                click.echo(f"Processing {exp.experiment_id}...")
+                try:
+                    update_experiment_notes(project_path, exp.experiment_id)
+                    generate_experiment_summary(project_path, exp.experiment_id)
+                except FileNotFoundError:
+                    pass
+                narrative = _run_report_agent(
+                    project_path,
+                    exp.experiment_id,
+                    f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                    instructions=instructions,
+                )
+                if narrative:
+                    from urika.core.report_writer import write_versioned
+
+                    narrative_path = (
+                        project_path
+                        / "experiments"
+                        / exp.experiment_id
+                        / "labbook"
+                        / "narrative.md"
+                    )
+                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                    write_versioned(narrative_path, narrative + "\n")
+                    if not json_output:
+                        click.echo(f"Generated: {narrative_path}")
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json({"output": "All experiment reports generated."})
+                return
+            click.echo("All experiment reports generated.")
+            return
+
+        if experiment_id == "project":
+            # Project-level reports
+            from urika.core.readme_generator import write_readme
+
             try:
-                update_experiment_notes(project_path, exp.experiment_id)
-                generate_experiment_summary(project_path, exp.experiment_id)
-            except FileNotFoundError:
-                pass
+                generate_results_summary(project_path)
+                generate_key_findings(project_path)
+                write_readme(project_path)
+            except FileNotFoundError as exc:
+                raise click.ClickException(str(exc))
+
+            # Also refresh notes for all experiments
+            for exp in list_experiments(project_path):
+                try:
+                    update_experiment_notes(project_path, exp.experiment_id)
+                except FileNotFoundError:
+                    pass
+
+            results_path = project_path / "projectbook" / "results-summary.md"
+            findings_path = project_path / "projectbook" / "key-findings.md"
+            readme_path = project_path / "README.md"
+
+            # Call report agent for project-level narrative
             narrative = _run_report_agent(
                 project_path,
-                exp.experiment_id,
-                f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                "",
+                "Write a project-level narrative report covering all experiments "
+                "and the research progression.",
+                instructions=instructions,
             )
             if narrative:
                 from urika.core.report_writer import write_versioned
 
-                narrative_path = (
-                    project_path
-                    / "experiments"
-                    / exp.experiment_id
-                    / "labbook"
-                    / "narrative.md"
-                )
+                narrative_path = project_path / "projectbook" / "narrative.md"
                 narrative_path.parent.mkdir(parents=True, exist_ok=True)
                 write_versioned(narrative_path, narrative + "\n")
-                if not json_output:
-                    click.echo(f"Generated: {narrative_path}")
-        if json_output:
-            from urika.cli_helpers import output_json
 
-            output_json({"output": "All experiment reports generated."})
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json(
+                    {
+                        "output": "Project-level reports generated.",
+                        "path": str(results_path),
+                    }
+                )
+                return
+
+            click.echo(f"Generated: {results_path}")
+            click.echo(f"Generated: {findings_path}")
+            click.echo(f"Generated: {readme_path}")
+            if narrative:
+                click.echo(f"Generated: {narrative_path}")
             return
-        click.echo("All experiment reports generated.")
-        return
 
-    if experiment_id == "project":
-        # Project-level reports
-        from urika.core.readme_generator import write_readme
-
+        # Single experiment report
         try:
-            generate_results_summary(project_path)
-            generate_key_findings(project_path)
-            write_readme(project_path)
-        except FileNotFoundError as exc:
-            raise click.ClickException(str(exc))
+            update_experiment_notes(project_path, experiment_id)
+            generate_experiment_summary(project_path, experiment_id)
+        except FileNotFoundError:
+            raise click.ClickException(f"Experiment '{experiment_id}' not found.")
+        notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
+        summary = (
+            project_path / "experiments" / experiment_id / "labbook" / "summary.md"
+        )
 
-        # Also refresh notes for all experiments
-        for exp in list_experiments(project_path):
-            try:
-                update_experiment_notes(project_path, exp.experiment_id)
-            except FileNotFoundError:
-                pass
-
-        results_path = project_path / "projectbook" / "results-summary.md"
-        findings_path = project_path / "projectbook" / "key-findings.md"
-        readme_path = project_path / "README.md"
-
-        # Call report agent for project-level narrative
+        # Call report agent to write narrative (like REPL)
         narrative = _run_report_agent(
             project_path,
-            "",
-            "Write a project-level narrative report covering all experiments "
-            "and the research progression.",
+            experiment_id,
+            f"Write a detailed narrative report for experiment {experiment_id}.",
+            instructions=instructions,
         )
         if narrative:
             from urika.core.report_writer import write_versioned
 
-            narrative_path = project_path / "projectbook" / "narrative.md"
+            narrative_path = (
+                project_path
+                / "experiments"
+                / experiment_id
+                / "labbook"
+                / "narrative.md"
+            )
             narrative_path.parent.mkdir(parents=True, exist_ok=True)
             write_versioned(narrative_path, narrative + "\n")
 
         if json_output:
             from urika.cli_helpers import output_json
 
-            output_json({
-                "output": "Project-level reports generated.",
-                "path": str(results_path),
-            })
+            output_json(
+                {
+                    "output": f"Report generated for {experiment_id}.",
+                    "path": str(summary),
+                }
+            )
             return
 
-        click.echo(f"Generated: {results_path}")
-        click.echo(f"Generated: {findings_path}")
-        click.echo(f"Generated: {readme_path}")
+        click.echo(f"Updated: {notes}")
+        click.echo(f"Generated: {summary}")
         if narrative:
             click.echo(f"Generated: {narrative_path}")
-        return
-
-    # Single experiment report
-    try:
-        update_experiment_notes(project_path, experiment_id)
-        generate_experiment_summary(project_path, experiment_id)
-    except FileNotFoundError:
-        raise click.ClickException(f"Experiment '{experiment_id}' not found.")
-    notes = project_path / "experiments" / experiment_id / "labbook" / "notes.md"
-    summary = project_path / "experiments" / experiment_id / "labbook" / "summary.md"
-
-    # Call report agent to write narrative (like REPL)
-    narrative = _run_report_agent(
-        project_path,
-        experiment_id,
-        f"Write a detailed narrative report for experiment {experiment_id}.",
-    )
-    if narrative:
-        from urika.core.report_writer import write_versioned
-
-        narrative_path = (
-            project_path / "experiments" / experiment_id / "labbook" / "narrative.md"
-        )
-        narrative_path.parent.mkdir(parents=True, exist_ok=True)
-        write_versioned(narrative_path, narrative + "\n")
-
-    if json_output:
-        from urika.cli_helpers import output_json
-
-        output_json({
-            "output": f"Report generated for {experiment_id}.",
-            "path": str(summary),
-        })
-        return
-
-    click.echo(f"Updated: {notes}")
-    click.echo(f"Generated: {summary}")
-    if narrative:
-        click.echo(f"Generated: {narrative_path}")
+    except KeyboardInterrupt:
+        click.echo("\n  Report generation stopped.")
+        click.echo("  Re-run with: urika report [--instructions '...']")
 
 
 @cli.command()
@@ -2104,9 +2239,12 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
         if not candidate_dirs:
             if json_output:
                 from urika.cli_helpers import output_json_error
+
                 output_json_error("No data directory or configured data paths found.")
                 raise SystemExit(1)
-            raise click.ClickException("No data directory or configured data paths found.")
+            raise click.ClickException(
+                "No data directory or configured data paths found."
+            )
 
         data_files: list[Path] = []
         for cdir in candidate_dirs:
@@ -2130,16 +2268,15 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
         if not data_files:
             if json_output:
                 from urika.cli_helpers import output_json_error
-                output_json_error(
-                    "No supported data files found in data paths."
-                )
+
+                output_json_error("No supported data files found in data paths.")
                 raise SystemExit(1)
-            raise click.ClickException(
-                "No supported data files found in data paths."
-            )
+            raise click.ClickException("No supported data files found in data paths.")
         path = data_files[0]
         if len(data_files) > 1 and not json_output:
-            click.echo(f"Multiple data files found ({len(data_files)}). Using: {path.name}")
+            click.echo(
+                f"Multiple data files found ({len(data_files)}). Using: {path.name}"
+            )
 
     try:
         view = load_dataset(path)
@@ -2151,16 +2288,20 @@ def inspect(project: str, data_file: str | None, json_output: bool) -> None:
 
         columns_data = []
         for col in view.summary.columns:
-            columns_data.append({
-                "name": col,
-                "dtype": view.summary.dtypes.get(col, "unknown"),
-                "missing": view.summary.missing_counts.get(col, 0),
-            })
-        output_json({
-            "dataset": path.name,
-            "rows": view.summary.n_rows,
-            "columns": columns_data,
-        })
+            columns_data.append(
+                {
+                    "name": col,
+                    "dtype": view.summary.dtypes.get(col, "unknown"),
+                    "missing": view.summary.missing_counts.get(col, 0),
+                }
+            )
+        output_json(
+            {
+                "dataset": path.name,
+                "rows": view.summary.n_rows,
+                "columns": columns_data,
+            }
+        )
         return
 
     click.echo(f"Dataset: {path.name}")
@@ -2287,7 +2428,9 @@ def knowledge_ingest(project: str, source: str, json_output: bool) -> None:
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"id": entry.id, "title": entry.title, "source_type": entry.source_type})
+        output_json(
+            {"id": entry.id, "title": entry.title, "source_type": entry.source_type}
+        )
         return
 
     click.echo(f'Ingested: {entry.id} "{entry.title}" ({entry.source_type})')
@@ -2309,10 +2452,19 @@ def knowledge_search(project: str, query: str, json_output: bool) -> None:
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"results": [
-            {"id": e.id, "title": e.title, "source_type": e.source_type, "snippet": e.content[:200]}
-            for e in results_list
-        ]})
+        output_json(
+            {
+                "results": [
+                    {
+                        "id": e.id,
+                        "title": e.title,
+                        "source_type": e.source_type,
+                        "snippet": e.content[:200],
+                    }
+                    for e in results_list
+                ]
+            }
+        )
         return
 
     if not results_list:
@@ -2339,10 +2491,14 @@ def knowledge_list(project: str, json_output: bool) -> None:
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"entries": [
-            {"id": e.id, "title": e.title, "source_type": e.source_type}
-            for e in entries
-        ]})
+        output_json(
+            {
+                "entries": [
+                    {"id": e.id, "title": e.title, "source_type": e.source_type}
+                    for e in entries
+                ]
+            }
+        )
         return
 
     if not entries:
@@ -2404,26 +2560,32 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         except Exception:
             pass
 
-    with Spinner("Thinking"):
-        result = asyncio.run(
-            runner.run(
-                config,
-                context,
-                on_message=_make_on_message() if not json_output else lambda m: None,
+    try:
+        with Spinner("Thinking"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    context,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
             )
-        )
+    except KeyboardInterrupt:
+        click.echo("\n  Advisor stopped.")
+        return
 
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"output": result.text_output.strip() if result.success else result.error})
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
         return
 
     if result.success and result.text_output:
         click.echo(format_agent_output(result.text_output))
-        _offer_to_run_advisor_suggestions(
-            result.text_output, project, project_path
-        )
+        _offer_to_run_advisor_suggestions(result.text_output, project, project_path)
     else:
         click.echo(f"Error: {result.error}")
 
@@ -2443,8 +2605,7 @@ def _offer_to_run_advisor_suggestions(
     from urika.cli_display import _C
 
     click.echo(
-        f"  {_C.BOLD}The advisor suggested "
-        f"{len(suggestions)} experiment(s):{_C.RESET}"
+        f"  {_C.BOLD}The advisor suggested {len(suggestions)} experiment(s):{_C.RESET}"
     )
     for i, s in enumerate(suggestions, 1):
         name = s.get("name", f"experiment-{i}")
@@ -2468,14 +2629,8 @@ def _offer_to_run_advisor_suggestions(
 
     # Create experiment from first suggestion and run it
     suggestion = suggestions[0]
-    exp_name = (
-        suggestion.get("name", "advisor-experiment")
-        .replace(" ", "-")
-        .lower()
-    )
-    description = suggestion.get(
-        "method", suggestion.get("description", "")
-    )
+    exp_name = suggestion.get("name", "advisor-experiment").replace(" ", "-").lower()
+    description = suggestion.get("method", suggestion.get("description", ""))
 
     from urika.core.experiment import create_experiment
     from urika.cli_display import print_success
@@ -2506,8 +2661,15 @@ def _offer_to_run_advisor_suggestions(
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("experiment_id", required=False, default=None)
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide evaluation (e.g. 'check for overfitting').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def evaluate(project: str | None, experiment_id: str | None, json_output: bool) -> None:
+def evaluate(
+    project: str | None, experiment_id: str | None, instructions: str, json_output: bool
+) -> None:
     """Run the evaluator agent on an experiment."""
     import asyncio
 
@@ -2539,21 +2701,34 @@ def evaluate(project: str | None, experiment_id: str | None, json_output: bool) 
         print_agent("evaluator")
     config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
 
+    prompt = f"Evaluate experiment {experiment_id}."
+    if instructions:
+        prompt = f"User instructions: {instructions}\n\n{prompt}"
+
     if not json_output:
         click.echo(f"  Evaluating {experiment_id}...")
-    with Spinner("Working"):
-        result = asyncio.run(
-            runner.run(
-                config,
-                f"Evaluate experiment {experiment_id}.",
-                on_message=_make_on_message() if not json_output else lambda m: None,
+    try:
+        with Spinner("Working"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    prompt,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
             )
-        )
+    except KeyboardInterrupt:
+        click.echo("\n  Evaluation stopped.")
+        click.echo("  Re-run with: urika evaluate [--instructions '...']")
+        return
 
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"output": result.text_output.strip() if result.success else result.error})
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
         return
 
     if result.success and result.text_output:
@@ -2565,8 +2740,15 @@ def evaluate(project: str | None, experiment_id: str | None, json_output: bool) 
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("experiment_id", required=False, default=None)
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide the plan (e.g. 'consider Bayesian approaches').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def plan(project: str | None, experiment_id: str | None, json_output: bool) -> None:
+def plan(
+    project: str | None, experiment_id: str | None, instructions: str, json_output: bool
+) -> None:
     """Run the planning agent to design the next method."""
     import asyncio
 
@@ -2598,21 +2780,34 @@ def plan(project: str | None, experiment_id: str | None, json_output: bool) -> N
         print_agent("planning_agent")
     config = role.build_config(project_dir=project_path, experiment_id=experiment_id)
 
+    prompt = "Design the next method based on current results."
+    if instructions:
+        prompt = f"User instructions: {instructions}\n\n{prompt}"
+
     if not json_output:
         click.echo(f"  Planning for {experiment_id}...")
-    with Spinner("Designing method"):
-        result = asyncio.run(
-            runner.run(
-                config,
-                "Design the next method based on current results.",
-                on_message=_make_on_message() if not json_output else lambda m: None,
+    try:
+        with Spinner("Designing method"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    prompt,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
             )
-        )
+    except KeyboardInterrupt:
+        click.echo("\n  Planning stopped.")
+        click.echo("  Re-run with: urika plan [--instructions '...']")
+        return
 
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"output": result.text_output.strip() if result.success else result.error})
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
         return
 
     if result.success and result.text_output:
@@ -2662,15 +2857,21 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
         def _on_message(msg: object) -> None:
             pass
 
-        result = asyncio.run(
-            finalize_project(
-                project_path,
-                runner,
-                _on_progress,
-                _on_message,
-                instructions=instructions,
+        try:
+            result = asyncio.run(
+                finalize_project(
+                    project_path,
+                    runner,
+                    _on_progress,
+                    _on_message,
+                    instructions=instructions,
+                )
             )
-        )
+        except KeyboardInterrupt:
+            click.echo("\n  Finalize stopped.")
+            if instructions:
+                click.echo("  Re-run with: urika finalize --instructions '...'")
+            return
     else:
         panel = ThinkingPanel()
         panel.project = f"{project} · {_rc.privacy_mode}"
@@ -2721,6 +2922,11 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
                     instructions=instructions,
                 )
             )
+        except KeyboardInterrupt:
+            panel.cleanup()
+            click.echo("\n  Finalize stopped.")
+            click.echo("  Re-run with: urika finalize [--instructions '...']")
+            return
         finally:
             panel.cleanup()
 
@@ -2913,7 +3119,9 @@ def update_project(
 @click.argument("project", required=False, default=None)
 @click.argument("instructions", required=False, default=None)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def build_tool(project: str | None, instructions: str | None, json_output: bool) -> None:
+def build_tool(
+    project: str | None, instructions: str | None, json_output: bool
+) -> None:
     """Build a custom tool for the project.
 
     Give the tool builder agent instructions to create a specific tool,
@@ -2955,19 +3163,27 @@ def build_tool(project: str | None, instructions: str | None, json_output: bool)
         print_agent("tool_builder")
     config = role.build_config(project_dir=project_path)
 
-    with Spinner("Building tool"):
-        result = asyncio.run(
-            runner.run(
-                config,
-                instructions,
-                on_message=_make_on_message() if not json_output else lambda m: None,
+    try:
+        with Spinner("Building tool"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    instructions,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
             )
-        )
+    except KeyboardInterrupt:
+        click.echo("\n  Tool build stopped.")
+        return
 
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"output": result.text_output.strip() if result.success else result.error})
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
         return
 
     if result.success and result.text_output:
@@ -2978,8 +3194,13 @@ def build_tool(project: str | None, instructions: str | None, json_output: bool)
 
 @cli.command()
 @click.argument("project", required=False, default=None)
+@click.option(
+    "--instructions",
+    default="",
+    help="Guide the presentation (e.g. 'emphasize ensemble results').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def present(project: str | None, json_output: bool) -> None:
+def present(project: str | None, instructions: str, json_output: bool) -> None:
     """Generate a presentation for an experiment."""
     import asyncio
 
@@ -3018,72 +3239,83 @@ def present(project: str | None, json_output: bool) -> None:
 
         choice = _prompt_numbered("\n  Select:", options, default=1)
 
-    if choice.startswith("All"):
-        # Generate presentation for each experiment
-        for exp in experiments:
+    try:
+        if choice.startswith("All"):
+            # Generate presentation for each experiment
+            for exp in experiments:
+                if not json_output:
+                    print_agent("presentation_agent")
+                with Spinner("Creating slides"):
+                    asyncio.run(
+                        _generate_presentation(
+                            project_path,
+                            exp.experiment_id,
+                            runner,
+                            _noop_callback,
+                            on_message=on_msg,
+                            instructions=instructions,
+                        )
+                    )
+                if not json_output:
+                    print_success(
+                        f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
+                    )
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json({"path": str(project_path / "experiments")})
+                return
+            print_success("All presentations generated")
+        elif choice.startswith("Project"):
+            # Project-level presentation
             if not json_output:
                 print_agent("presentation_agent")
             with Spinner("Creating slides"):
                 asyncio.run(
                     _generate_presentation(
                         project_path,
-                        exp.experiment_id,
+                        "",
                         runner,
                         _noop_callback,
                         on_message=on_msg,
+                        instructions=instructions,
                     )
                 )
+            pres_path = project_path / "projectbook" / "presentation" / "index.html"
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json({"path": str(pres_path)})
+                return
+            print_success("Saved to projectbook/presentation/index.html")
+        else:
+            # Single experiment
+            exp_id = choice.split(" [")[0]
             if not json_output:
-                print_success(
-                    f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
+                print_agent("presentation_agent")
+            with Spinner("Creating slides"):
+                asyncio.run(
+                    _generate_presentation(
+                        project_path,
+                        exp_id,
+                        runner,
+                        _noop_callback,
+                        on_message=on_msg,
+                        instructions=instructions,
+                    )
                 )
-        if json_output:
-            from urika.cli_helpers import output_json
-
-            output_json({"path": str(project_path / "experiments")})
-            return
-        print_success("All presentations generated")
-    elif choice.startswith("Project"):
-        # Project-level presentation
-        if not json_output:
-            print_agent("presentation_agent")
-        with Spinner("Creating slides"):
-            asyncio.run(
-                _generate_presentation(
-                    project_path, "", runner, _noop_callback, on_message=on_msg
-                )
+            pres_path = (
+                project_path / "experiments" / exp_id / "presentation" / "index.html"
             )
-        pres_path = project_path / "projectbook" / "presentation" / "index.html"
-        if json_output:
-            from urika.cli_helpers import output_json
+            if json_output:
+                from urika.cli_helpers import output_json
 
-            output_json({"path": str(pres_path)})
-            return
-        print_success("Saved to projectbook/presentation/index.html")
-    else:
-        # Single experiment
-        exp_id = choice.split(" [")[0]
-        if not json_output:
-            print_agent("presentation_agent")
-        with Spinner("Creating slides"):
-            asyncio.run(
-                _generate_presentation(
-                    project_path,
-                    exp_id,
-                    runner,
-                    _noop_callback,
-                    on_message=on_msg,
-                )
-            )
-        pres_path = (
-            project_path / "experiments" / exp_id / "presentation" / "index.html"
-        )
-        if json_output:
-            from urika.cli_helpers import output_json
-
-            output_json({"path": str(pres_path)})
-            return
-        print_success(f"Saved to experiments/{exp_id}/presentation/index.html")
+                output_json({"path": str(pres_path)})
+                return
+            print_success(f"Saved to experiments/{exp_id}/presentation/index.html")
+    except KeyboardInterrupt:
+        click.echo("\n  Presentation stopped.")
+        click.echo("  Re-run with: urika present [--instructions '...']")
 
 
 @cli.command()
@@ -3104,11 +3336,15 @@ def criteria(project: str | None, json_output: bool) -> None:
         if c is None:
             output_json({"criteria": None})
         else:
-            output_json({"criteria": {
-                "version": c.version,
-                "set_by": c.set_by,
-                **c.criteria,
-            }})
+            output_json(
+                {
+                    "criteria": {
+                        "version": c.version,
+                        "set_by": c.set_by,
+                        **c.criteria,
+                    }
+                }
+            )
         return
 
     if c is None:
@@ -3266,8 +3502,12 @@ def config_command(
     click.echo(f"\n  Current privacy mode: {current_mode}\n")
 
     try:
-        _config_interactive(session=settings, current_mode=current_mode,
-                           is_project=is_project, project_path=project_path)
+        _config_interactive(
+            session=settings,
+            current_mode=current_mode,
+            is_project=is_project,
+            project_path=project_path,
+        )
     except UserCancelled:
         click.echo("\n  Cancelled.")
         return
@@ -3305,8 +3545,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
     # Warn if changing from private/hybrid to less private
     if current_mode == "private" and mode in ("open", "hybrid"):
         print_warning(
-            f"Changing from private to {mode} — "
-            f"agents will send data to cloud APIs."
+            f"Changing from private to {mode} — agents will send data to cloud APIs."
         )
         if not interactive_confirm("  Continue?", default=False):
             click.echo("  Cancelled.")
@@ -3480,9 +3719,6 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
     click.echo()
 
 
-
-
-
 @cli.command("setup")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def setup_command(json_output: bool) -> None:
@@ -3523,7 +3759,7 @@ def setup_command(json_output: bool) -> None:
             try:
                 __import__(imp)
                 pkg_status[name] = True
-            except ImportError:
+            except Exception:
                 pkg_status[name] = False
 
         hw_data: dict = {}
@@ -3536,11 +3772,13 @@ def setup_command(json_output: bool) -> None:
 
         from urika.cli_helpers import output_json
 
-        output_json({
-            "packages": pkg_status,
-            "hardware": hw_data,
-            "anthropic_api_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
-        })
+        output_json(
+            {
+                "packages": pkg_status,
+                "hardware": hw_data,
+                "anthropic_api_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+            }
+        )
         return
 
     click.echo()
@@ -3622,6 +3860,11 @@ def setup_command(json_output: bool) -> None:
         except ImportError:
             print_error(f"  {name} — not installed")
             dl_installed = False
+        except Exception as exc:
+            # RuntimeError from CUDA version mismatches, etc.
+            short = str(exc).split(".")[0]
+            print_error(f"  {name} — {short}")
+            dl_installed = False
 
     # Check hardware
     click.echo()
@@ -3671,23 +3914,120 @@ def setup_command(json_output: bool) -> None:
             import subprocess
             import sys
 
-            if choice == "gpu":
-                # Install PyTorch with CUDA
-                print_step("Installing PyTorch with GPU support…")
-                subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "pip",
-                        "install",
-                        "torch",
-                        "torchvision",
-                        "torchaudio",
-                        "--index-url",
-                        "https://download.pytorch.org/whl/cu121",
-                    ],
-                    check=False,
+            def _torch_install_args(*, want_gpu: bool = True) -> tuple[list[str], str]:
+                """Build pip install args for PyTorch based on platform.
+
+                Returns (args_list, description_string).
+
+                - macOS: default PyPI (includes MPS for Apple Silicon)
+                - ARM (any OS without NVIDIA): default PyPI
+                - x86 + NVIDIA: detect CUDA version, use matching wheel
+                - No GPU / want_gpu=False: CPU-only wheels (x86) or default (ARM)
+                """
+                import platform
+
+                # Use --force-reinstall if torchaudio has a CUDA mismatch
+                force = False
+                try:
+                    r = subprocess.run(
+                        [sys.executable, "-c", "import torchaudio"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    if r.returncode != 0 and "CUDA version" in r.stderr:
+                        force = True
+                except Exception:
+                    pass
+
+                base = [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    *(["--force-reinstall"] if force else []),
+                    "torch",
+                    "torchvision",
+                    "torchaudio",
+                ]
+                arch = platform.machine().lower()
+                is_arm = arch in ("arm64", "aarch64", "armv8l")
+
+                # macOS — default PyPI includes MPS for Apple Silicon
+                if sys.platform == "darwin":
+                    desc = "MPS" if is_arm else "CPU"
+                    return base, desc
+
+                # ARM Linux/Windows — no CUDA index, default PyPI
+                if is_arm:
+                    cuda_tag = _detect_cuda_tag() if want_gpu else None
+                    if cuda_tag:
+                        # ARM + NVIDIA (Jetson) — use default pip, torch auto-detects
+                        return base, f"ARM + CUDA ({cuda_tag})"
+                    return base, "ARM CPU"
+
+                # x86 Linux/Windows
+                if want_gpu:
+                    cuda_tag = _detect_cuda_tag()
+                    if cuda_tag:
+                        return (
+                            base
+                            + [
+                                "--index-url",
+                                f"https://download.pytorch.org/whl/{cuda_tag}",
+                            ],
+                            f"CUDA {cuda_tag}",
+                        )
+                return (
+                    base + ["--index-url", "https://download.pytorch.org/whl/cpu"],
+                    "CPU",
                 )
+
+            def _detect_cuda_tag() -> str | None:
+                """Detect CUDA version, return wheel tag (e.g. 'cu124') or None."""
+                # 1. Check existing torch installation
+                try:
+                    import torch
+
+                    cv = torch.version.cuda
+                    if cv:
+                        parts = cv.split(".")
+                        return f"cu{parts[0]}{parts[1]}"
+                except Exception:
+                    pass
+                # 2. Check nvcc
+                try:
+                    import re
+
+                    r = subprocess.run(
+                        ["nvcc", "--version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if r.returncode == 0:
+                        m = re.search(r"release (\d+)\.(\d+)", r.stdout)
+                        if m:
+                            return f"cu{m.group(1)}{m.group(2)}"
+                except Exception:
+                    pass
+                # 3. Check nvidia-smi exists (GPU present but no toolkit)
+                try:
+                    r = subprocess.run(
+                        ["nvidia-smi"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    if r.returncode == 0:
+                        return "cu124"  # Default to latest stable
+                except Exception:
+                    pass
+                return None
+
+            if choice == "gpu":
+                args, desc = _torch_install_args(want_gpu=True)
+                print_step(f"Installing PyTorch ({desc})…")
+                subprocess.run(args, check=False)
                 # Then the rest
                 print_step("Installing transformers…")
                 subprocess.run(
@@ -3703,21 +4043,9 @@ def setup_command(json_output: bool) -> None:
                     check=False,
                 )
             elif choice == "cpu":
-                print_step("Installing PyTorch (CPU only)…")
-                subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "pip",
-                        "install",
-                        "torch",
-                        "torchvision",
-                        "torchaudio",
-                        "--index-url",
-                        "https://download.pytorch.org/whl/cpu",
-                    ],
-                    check=False,
-                )
+                args, desc = _torch_install_args(want_gpu=False)
+                print_step(f"Installing PyTorch ({desc})…")
+                subprocess.run(args, check=False)
                 print_step("Installing transformers…")
                 subprocess.run(
                     [
@@ -3743,38 +4071,9 @@ def setup_command(json_output: bool) -> None:
                 except Exception:
                     has_gpu = False
 
-                if has_gpu:
-                    print_step("GPU detected — installing with CUDA support…")
-                    subprocess.run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "pip",
-                            "install",
-                            "torch",
-                            "torchvision",
-                            "torchaudio",
-                            "--index-url",
-                            "https://download.pytorch.org/whl/cu121",
-                        ],
-                        check=False,
-                    )
-                else:
-                    print_step("No GPU detected — installing CPU version…")
-                    subprocess.run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "pip",
-                            "install",
-                            "torch",
-                            "torchvision",
-                            "torchaudio",
-                            "--index-url",
-                            "https://download.pytorch.org/whl/cpu",
-                        ],
-                        check=False,
-                    )
+                args, desc = _torch_install_args(want_gpu=has_gpu)
+                print_step(f"Installing PyTorch ({desc})…")
+                subprocess.run(args, check=False)
                 print_step("Installing transformers…")
                 subprocess.run(
                     [
