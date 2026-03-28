@@ -3254,16 +3254,15 @@ def config_command(
         ep = p.setdefault("endpoints", {}).setdefault("private", {})
         ep["base_url"] = ep_url
 
-        # API key for remote servers
-        if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
-            from urika.cli_helpers import interactive_prompt
+        # API key (optional for local servers, required for remote)
+        from urika.cli_helpers import interactive_prompt
 
-            key_env = interactive_prompt(
-                "  API key environment variable name (e.g. SERVER_API_KEY)",
-                default="",
-            )
-            if key_env:
-                ep["api_key_env"] = key_env
+        key_env = interactive_prompt(
+            "  API key env var name (e.g. VLLM_API_KEY, leave empty if none)",
+            default="",
+        )
+        if key_env:
+            ep["api_key_env"] = key_env
 
         from urika.cli_helpers import interactive_prompt
 
