@@ -329,7 +329,72 @@ LM Studio 0.4.1+ provides an Anthropic-compatible endpoint on port 1234.
    model = "your-loaded-model-name"
    ```
 
-### Option 3: LiteLLM Proxy (advanced)
+### Option 3: vLLM / LiteLLM Server (network)
+
+For teams running shared GPU workstations, a vLLM or LiteLLM server provides a single OpenAI-compatible API endpoint that multiple users and projects can share. This is ideal for labs and institutions with dedicated hardware.
+
+1. **Set up the server** on your workstation (see your server documentation, e.g. [inference-hub](https://github.com/xkiwilabs/inference-hub))
+
+2. **Set the API key** on your local machine:
+   ```bash
+   export VLLM_API_KEY="your-api-key"
+   ```
+   Add to your shell profile (`~/.bashrc`, `~/.zshrc`) to persist.
+
+3. **Configure via interactive setup:**
+   ```bash
+   urika config my-project
+   # Pick: private (or hybrid)
+   # Pick: vLLM / LiteLLM server (network)
+   # Enter: http://192.168.1.100:4200/v1
+   # API key env var: VLLM_API_KEY
+   # Model: small (or large)
+   ```
+
+4. **Or configure manually** in `urika.toml`:
+   ```toml
+   [privacy]
+   mode = "private"
+
+   [privacy.endpoints.private]
+   base_url = "http://192.168.1.100:4200/v1"
+   api_key_env = "VLLM_API_KEY"
+
+   [runtime]
+   model = "small"
+   ```
+
+#### Multiple workstations
+
+You can define separate endpoints for different servers and route agents to specific machines:
+
+```toml
+[privacy]
+mode = "private"
+
+[privacy.endpoints.workstation1]
+base_url = "http://192.168.1.100:4200/v1"
+api_key_env = "VLLM_API_KEY"
+
+[privacy.endpoints.workstation2]
+base_url = "http://192.168.1.101:4200/v1"
+api_key_env = "VLLM_API_KEY"
+
+[runtime]
+model = "small"
+
+[runtime.models.task_agent]
+model = "large"
+endpoint = "workstation1"
+
+[runtime.models.planning_agent]
+model = "small"
+endpoint = "workstation2"
+```
+
+This is particularly useful when you have workstations with different GPU configurations — route compute-heavy agents (task agent, finalizer) to the machine with more VRAM, and lighter agents (evaluator, planning) to smaller machines.
+
+### Option 4: LiteLLM Proxy (advanced)
 
 For maximum flexibility — mix local and cloud models, add load balancing, or use providers without native Anthropic compatibility:
 
