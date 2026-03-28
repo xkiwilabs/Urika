@@ -3926,11 +3926,21 @@ def setup_command(json_output: bool) -> None:
                 """
                 import platform
 
+                # Use --force-reinstall if torchaudio has a CUDA mismatch
+                force = False
+                try:
+                    import torchaudio  # noqa: F401
+                except RuntimeError:
+                    force = True  # CUDA version mismatch
+                except ImportError:
+                    pass
+
                 base = [
                     sys.executable,
                     "-m",
                     "pip",
                     "install",
+                    *(["--force-reinstall"] if force else []),
                     "torch",
                     "torchvision",
                     "torchaudio",
