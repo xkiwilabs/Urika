@@ -105,8 +105,7 @@ _AGENT_LABELS: dict[str, str] = {
 
 # ── Spinner frames ───────────────────────────────────────────────
 
-_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"  # braille dots (fast)
-_SPINNER_SLOW = "\u25dc\u25dd\u25de\u25df"  # arc quarters (slow, for info row)
+_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"  # braille dots
 
 _THINKING_PHRASES = [
     "Thinking\u2026",
@@ -442,8 +441,8 @@ class ThinkingPanel:
                     self._spin_slow_counter += 1
                     if self._spin_slow_counter >= 5:  # ~600ms per frame
                         self._spin_slow_counter = 0
-                        self._spin_slow_idx = (self._spin_slow_idx + 1) % len(
-                            _SPINNER_SLOW
+                        self._spin_slow_idx = (
+                            (self._spin_slow_idx + 1) % len(_SPINNER)
                         )
                     self._render()
 
