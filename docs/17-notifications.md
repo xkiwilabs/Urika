@@ -182,6 +182,54 @@ bot_token_env = "TELEGRAM_BOT_TOKEN"
 This is useful for teams: Slack for real-time monitoring, email for the PI who wants a summary, Telegram for mobile alerts.
 
 
+## Remote Commands (REPL only)
+
+Slack and Telegram channels support inbound commands -- you can query project state, control runs, and launch agents without touching the terminal. Remote commands only work when the REPL is running with a project loaded. The CLI (`urika run`, etc.) only sends outbound notifications; it does not accept remote commands.
+
+### Available Commands
+
+| Category | Command | Description |
+|----------|---------|-------------|
+| **Read-only** | `/status` | Project overview (experiments, runs, completion) |
+| | `/results` | Leaderboard -- top methods and metrics |
+| | `/methods` | Registered methods |
+| | `/criteria` | Success criteria |
+| | `/experiments` | List experiments |
+| | `/logs` | Recent log entries |
+| | `/usage` | Token and cost summary |
+| | `/help` | List available commands |
+| **Run control** | `/pause` | Pause after the current turn completes |
+| | `/stop` | Stop immediately and clear the command queue |
+| | `/resume` | Resume a paused run |
+| **Agent** | `/run` | Start an experiment run |
+| | `/advisor <text>` | Ask the advisor a question |
+| | `/evaluate` | Run the evaluator |
+| | `/plan` | Run the planning agent |
+| | `/report` | Generate a report |
+| | `/present` | Generate a presentation |
+| | `/finalize` | Run the finalizer |
+| | `/build-tool <text>` | Create a new tool |
+
+**Read-only** commands return an instant text response. They never modify project state.
+
+**Run control** commands interact with the PauseController -- the same mechanism used by the local ESC key. `/stop` also clears any queued commands.
+
+**Agent** commands launch agent workflows. If an agent is already running, the command is queued and executes automatically when the current agent finishes (FIFO order). You cannot start a second `/run` while one is in progress -- stop the current run first.
+
+### Queue Behavior
+
+- Agent commands are queued in FIFO order when an agent is busy.
+- `/stop` clears the entire queue in addition to stopping the active agent.
+- Loading a new project clears the queue.
+- Read-only and run-control commands are never queued -- they execute immediately.
+
+### When the Bot Is Offline
+
+If no REPL session is running, the Telegram/Slack bot is not listening. Commands sent while the REPL is offline are not stored -- they are simply lost. The bot comes online when you start the REPL with a project loaded and goes offline when the REPL exits.
+
+Commands that modify global settings or require interactive input (`/config`, `/new`, `/project`, `/quit`, `/inspect`, `/notifications`, `/update`) are rejected with a message directing you to the terminal.
+
+
 ## Global vs Project Config
 
 Notification settings can be configured at two levels:
