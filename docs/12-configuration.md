@@ -77,9 +77,11 @@ endpoint = "open"
 model = "qwen3:14b"
 endpoint = "private"
 
-[runtime.models.tool_builder]
-model = "qwen3:14b"
-endpoint = "private"
+# tool_builder uses cloud by default in hybrid (doesn't touch raw data)
+# override if needed:
+# [runtime.models.tool_builder]
+# model = "qwen3:14b"
+# endpoint = "private"
 ```
 
 **Privacy mode rules:**
@@ -88,7 +90,7 @@ endpoint = "private"
 |------|-----------|-------------|----------------|
 | **open** | Cloud only | Cloud only | Different cloud models per agent |
 | **private** | Private only | Private only | Different private endpoints/models per agent |
-| **hybrid** | **Must be private** | Cloud or private | Full mix per agent |
+| **hybrid** | **Must be private** (reads raw data) | Cloud or private | Full mix per agent |
 
 See [Models and Privacy](11-models-and-privacy.md) for endpoint configuration details.
 

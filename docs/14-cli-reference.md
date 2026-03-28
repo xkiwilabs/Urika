@@ -600,6 +600,47 @@ Packages: 47 installed (12 project-specific)
 ```
 
 
+### `urika config`
+
+Configure privacy mode, models, and endpoints. Works globally or per-project.
+
+```
+urika config [PROJECT] [--show] [--json]
+```
+
+**Without PROJECT:** Configures global defaults in `~/.urika/settings.toml` (used for new projects).
+
+**With PROJECT:** Configures that project's `urika.toml`.
+
+**Interactive setup** guides you through:
+
+- **Privacy mode** — open, private, or hybrid
+- **Open:** Choose a cloud model (Sonnet, Opus, Haiku) for all agents
+- **Private:** Configure endpoint (Ollama, LM Studio, or custom server) and model for all agents
+- **Hybrid:** Choose cloud model for most agents + private endpoint and model for the data agent
+
+**Warnings:** Switching from private/hybrid to a less private mode triggers a confirmation prompt.
+
+**Privacy mode rules:**
+
+| Mode | data_agent | Other agents |
+|------|-----------|-------------|
+| **open** | Cloud only | Cloud only (different models allowed per agent) |
+| **private** | Private only | Private only (different endpoints/models allowed) |
+| **hybrid** | Must be private | Cloud or private (user's choice per agent) |
+
+**Examples:**
+
+```bash
+urika config                     # interactive global setup
+urika config --show              # show global defaults
+urika config my-project          # reconfigure a project
+urika config my-project --show   # show project settings
+```
+
+For per-agent model overrides beyond what the interactive setup provides, edit `urika.toml` directly — see [Configuration](12-configuration.md).
+
+
 ## System
 
 ### `urika setup`
