@@ -169,6 +169,17 @@ def run_repl() -> None:
         style=custom_style,
     )
 
+    def _drain_remote_queue(session: ReplSession) -> None:
+        """Execute any queued remote commands from Telegram/Slack."""
+        while session.has_remote_command:
+            item = session.pop_remote_command()
+            if item is None:
+                break
+            cmd, args = item
+            cmd_text = f"/{cmd} {args}".strip()
+            click.echo(f"\n  [Remote] {cmd_text}")
+            _handle_command(session, cmd_text)
+
     # ── Main loop ────────────────────────────────────────
     while True:
         try:
@@ -176,6 +187,8 @@ def run_repl() -> None:
                 prompt_text = f"urika:{session.project_name}> "
             else:
                 prompt_text = "urika> "
+
+            _drain_remote_queue(session)
 
             user_input = prompt_session.prompt(prompt_text).strip()
 
@@ -186,6 +199,8 @@ def run_repl() -> None:
                 _handle_command(session, user_input)
             else:
                 _handle_free_text(session, user_input)
+
+            _drain_remote_queue(session)
 
         except (EOFError, KeyboardInterrupt):
             if session.notification_bus is not None:
