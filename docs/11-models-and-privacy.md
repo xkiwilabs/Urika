@@ -357,8 +357,8 @@ For teams running shared GPU workstations, a vLLM or LiteLLM server provides a s
    mode = "private"
 
    [privacy.endpoints.private]
-   base_url = "http://192.168.1.100:4200/v1"
-   api_key_env = "VLLM_API_KEY"
+   base_url = "http://192.168.1.100:4200"
+   api_key_env = "INFERENCE_HUB_KEY"
 
    [runtime]
    model = "small"
@@ -373,12 +373,12 @@ You can define separate endpoints for different servers and route agents to spec
 mode = "private"
 
 [privacy.endpoints.workstation1]
-base_url = "http://192.168.1.100:4200/v1"
-api_key_env = "VLLM_API_KEY"
+base_url = "http://192.168.1.100:4200"
+api_key_env = "INFERENCE_HUB_KEY"
 
 [privacy.endpoints.workstation2]
 base_url = "http://192.168.1.101:4200/v1"
-api_key_env = "VLLM_API_KEY"
+api_key_env = "INFERENCE_HUB_KEY"
 
 [runtime]
 model = "small"
