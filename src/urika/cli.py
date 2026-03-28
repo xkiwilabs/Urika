@@ -132,6 +132,11 @@ class _UrikaCLI(click.Group):
 @click.pass_context
 def cli(ctx) -> None:
     """Urika: Agentic scientific analysis platform."""
+    # Load credentials from ~/.urika/secrets.env
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
     # Check for updates on every CLI invocation (cached, non-blocking)
     try:
         from urika.core.updates import (
@@ -3998,6 +4003,431 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         "section in urika.toml directly."
     )
     click.echo()
+
+
+@cli.command("notifications")
+@click.option("--show", is_flag=True, help="Show current notification config.")
+@click.option("--test", "send_test", is_flag=True, help="Send a test notification.")
+@click.option("--disable", is_flag=True, help="Disable all notifications.")
+@click.option("--project", default=None, help="Configure for a specific project.")
+def notifications_command(
+    show: bool,
+    send_test: bool,
+    disable: bool,
+    project: str | None,
+) -> None:
+    """Configure notification channels (email, Slack, Telegram).
+
+    Examples:
+
+        urika notifications              # interactive setup (global)
+        urika notifications --show       # show current config
+        urika notifications --test       # send test notification
+        urika notifications --disable    # disable notifications
+        urika notifications --project X  # configure for project X
+    """
+    from urika.cli_display import print_success
+    from urika.cli_helpers import UserCancelled
+
+    # ── Determine target: global or project ──
+    is_project = False
+    project_path = None
+    if project is not None:
+        is_project = True
+        try:
+            project_path, _config = _resolve_project(project)
+        except click.ClickException:
+            raise
+
+    # ── Load current settings ──
+    if is_project:
+        import tomllib
+
+        toml_path = project_path / "urika.toml"
+        with open(toml_path, "rb") as f:
+            settings = tomllib.load(f)
+    else:
+        from urika.core.settings import load_settings
+
+        settings = load_settings()
+
+    notif = settings.get("notifications", {})
+
+    # ── Disable mode ──
+    if disable:
+        settings.setdefault("notifications", {})["enabled"] = False
+        _save_notification_settings(settings, is_project, project_path)
+        print_success("Notifications disabled.")
+        return
+
+    # ── Show mode ──
+    if show:
+        _show_notification_config(notif)
+        return
+
+    # ── Test mode ──
+    if send_test:
+        _send_test_notification(notif)
+        return
+
+    # ── Interactive setup ──
+    try:
+        _notifications_interactive(
+            settings=settings,
+            is_project=is_project,
+            project_path=project_path,
+        )
+    except UserCancelled:
+        click.echo("\n  Cancelled.")
+
+
+def _show_notification_config(notif: dict) -> None:
+    """Display current notification config with masked credentials."""
+    from urika.cli_display import print_step
+    from urika.core.secrets import list_secrets
+
+    enabled = notif.get("enabled", False)
+    click.echo(f"\n  Notifications: {'enabled' if enabled else 'disabled'}\n")
+
+    # Email
+    email = notif.get("email", {})
+    if email.get("to"):
+        to_addrs = email["to"] if isinstance(email["to"], list) else [email["to"]]
+        from_addr = email.get("from_addr", "")
+        server = email.get("smtp_server", "smtp.gmail.com")
+        port = email.get("smtp_port", 587)
+        print_step(f"Email: {from_addr} -> {', '.join(to_addrs)} (via {server}:{port})")
+    else:
+        print_step("Email: not configured")
+
+    # Slack
+    slack = notif.get("slack", {})
+    if slack.get("channel"):
+        print_step(f"Slack: {slack['channel']} (configured)")
+    else:
+        print_step("Slack: not configured")
+
+    # Telegram
+    telegram = notif.get("telegram", {})
+    if telegram.get("chat_id"):
+        print_step(f"Telegram: chat {telegram['chat_id']} (configured)")
+    else:
+        print_step("Telegram: not configured")
+
+    # Show stored secrets (masked)
+    secrets = list_secrets()
+    notif_keys = [
+        k
+        for k in secrets
+        if k
+        in (
+            "URIKA_EMAIL_PASSWORD",
+            "SLACK_BOT_TOKEN",
+            "SLACK_APP_TOKEN",
+            "TELEGRAM_BOT_TOKEN",
+        )
+    ]
+    if notif_keys:
+        click.echo()
+        print_step("Stored credentials:")
+        for k in notif_keys:
+            print_step(f"  {k}: ****")
+
+    click.echo()
+
+
+def _send_test_notification(notif: dict) -> None:
+    """Send a test notification through all configured channels."""
+    from urika.cli_display import print_error, print_success, print_warning
+    from urika.notifications.events import NotificationEvent
+
+    if not notif.get("enabled"):
+        print_warning("Notifications are not enabled.")
+        return
+
+    event = NotificationEvent(
+        event_type="test",
+        project_name="test",
+        summary="Test notification from Urika",
+        priority="medium",
+    )
+
+    sent = False
+
+    # Test email
+    email_cfg = notif.get("email", {})
+    if email_cfg.get("to"):
+        try:
+            from urika.notifications.email_channel import EmailChannel
+
+            ch = EmailChannel(email_cfg)
+            ch.send(event)
+            to_addrs = email_cfg["to"]
+            if isinstance(to_addrs, list):
+                to_addrs = ", ".join(to_addrs)
+            print_success(f"Test email sent to {to_addrs}")
+            sent = True
+        except Exception as exc:
+            print_error(f"Email failed: {exc}")
+
+    # Test Slack
+    slack_cfg = notif.get("slack", {})
+    if slack_cfg.get("channel"):
+        try:
+            from urika.notifications.slack_channel import SlackChannel
+
+            ch = SlackChannel(slack_cfg)
+            ch.send(event)
+            print_success(f"Test Slack message sent to {slack_cfg['channel']}")
+            sent = True
+        except ImportError:
+            print_warning("slack-sdk not installed: pip install slack-sdk")
+        except Exception as exc:
+            print_error(f"Slack failed: {exc}")
+
+    # Test Telegram
+    telegram_cfg = notif.get("telegram", {})
+    if telegram_cfg.get("chat_id"):
+        try:
+            from urika.notifications.telegram_channel import TelegramChannel
+
+            ch = TelegramChannel(telegram_cfg)
+            ch.send(event)
+            print_success(
+                f"Test Telegram message sent to chat {telegram_cfg['chat_id']}"
+            )
+            sent = True
+        except ImportError:
+            print_warning(
+                "python-telegram-bot not installed: pip install python-telegram-bot"
+            )
+        except Exception as exc:
+            print_error(f"Telegram failed: {exc}")
+
+    if not sent:
+        print_warning("No channels configured. Run: urika notifications")
+
+
+def _notifications_interactive(*, settings, is_project, project_path):
+    """Interactive notification setup. Raises UserCancelled on cancel/ESC."""
+    import getpass
+
+    import click
+    from urika.cli_display import print_success
+    from urika.cli_helpers import (
+        interactive_confirm,
+        interactive_numbered,
+        interactive_prompt,
+    )
+    from urika.core.secrets import save_secret
+
+    notif = settings.get("notifications", {})
+
+    click.echo("\n  Notification setup\n")
+
+    # Show current state
+    email_cfg = notif.get("email", {})
+    slack_cfg = notif.get("slack", {})
+    telegram_cfg = notif.get("telegram", {})
+
+    click.echo("  Current channels:")
+    if email_cfg.get("to"):
+        to_list = email_cfg["to"]
+        if isinstance(to_list, list):
+            to_list = ", ".join(to_list)
+        click.echo(
+            f"    Email:    {email_cfg.get('from_addr', '?')} -> {to_list} (configured)"
+        )
+    else:
+        click.echo("    Email:    not configured")
+
+    if slack_cfg.get("channel"):
+        click.echo(f"    Slack:    {slack_cfg['channel']} (configured)")
+    else:
+        click.echo("    Slack:    not configured")
+
+    if telegram_cfg.get("chat_id"):
+        click.echo(f"    Telegram: chat {telegram_cfg['chat_id']} (configured)")
+    else:
+        click.echo("    Telegram: not configured")
+
+    click.echo()
+
+    while True:
+        choice = interactive_numbered(
+            "  Configure:",
+            [
+                "Email",
+                "Slack",
+                "Telegram",
+                "Send test notification",
+                "Disable all",
+                "Done",
+            ],
+            default=6,
+            allow_cancel=False,
+        )
+
+        if choice == "Done":
+            break
+
+        if choice == "Disable all":
+            settings.setdefault("notifications", {})["enabled"] = False
+            _save_notification_settings(settings, is_project, project_path)
+            print_success("Notifications disabled.")
+            break
+
+        if choice == "Send test notification":
+            _send_test_notification(settings.get("notifications", {}))
+            continue
+
+        if choice == "Email":
+            click.echo("\n  Email setup\n")
+
+            smtp_server = interactive_prompt(
+                "SMTP server",
+                default=email_cfg.get("smtp_server", "smtp.gmail.com"),
+            )
+            smtp_port = interactive_prompt(
+                "SMTP port",
+                default=str(email_cfg.get("smtp_port", 587)),
+            )
+            from_addr = interactive_prompt(
+                "From address",
+                default=email_cfg.get("from_addr", ""),
+            )
+            to_raw = interactive_prompt(
+                "To addresses (comma-separated)",
+                default=", ".join(email_cfg.get("to", [])),
+            )
+            to_addrs = [a.strip() for a in to_raw.split(",") if a.strip()]
+
+            # Password via getpass (hidden)
+            try:
+                password = getpass.getpass("  Password: ")
+            except (EOFError, KeyboardInterrupt):
+                password = ""
+
+            if password:
+                save_secret("URIKA_EMAIL_PASSWORD", password)
+                click.echo("  Saved! Password stored in ~/.urika/secrets.env")
+
+            notif.setdefault("email", {}).update(
+                {
+                    "smtp_server": smtp_server,
+                    "smtp_port": int(smtp_port),
+                    "from_addr": from_addr,
+                    "username": from_addr,
+                    "to": to_addrs,
+                    "password_env": "URIKA_EMAIL_PASSWORD",
+                }
+            )
+            settings["notifications"] = notif
+            settings["notifications"]["enabled"] = True
+            _save_notification_settings(settings, is_project, project_path)
+            print_success("Email configured.")
+
+            if interactive_confirm("Send test email?", default=True):
+                _send_test_notification(settings.get("notifications", {}))
+
+            click.echo()
+            continue
+
+        if choice == "Slack":
+            click.echo("\n  Slack setup\n")
+
+            channel = interactive_prompt(
+                "Channel (e.g. #urika-results)",
+                default=slack_cfg.get("channel", ""),
+            )
+
+            # Bot token via getpass
+            try:
+                bot_token = getpass.getpass("  Bot token: ")
+            except (EOFError, KeyboardInterrupt):
+                bot_token = ""
+
+            if bot_token:
+                save_secret("SLACK_BOT_TOKEN", bot_token)
+
+            # App token (optional)
+            try:
+                app_token = getpass.getpass(
+                    "  App token (for interactive buttons, optional): "
+                )
+            except (EOFError, KeyboardInterrupt):
+                app_token = ""
+
+            if app_token:
+                save_secret("SLACK_APP_TOKEN", app_token)
+
+            notif.setdefault("slack", {}).update(
+                {
+                    "channel": channel,
+                    "bot_token_env": "SLACK_BOT_TOKEN",
+                    "app_token_env": "SLACK_APP_TOKEN" if app_token else "",
+                }
+            )
+            settings["notifications"] = notif
+            settings["notifications"]["enabled"] = True
+            _save_notification_settings(settings, is_project, project_path)
+
+            tokens_saved = []
+            if bot_token:
+                tokens_saved.append("bot token")
+            if app_token:
+                tokens_saved.append("app token")
+            if tokens_saved:
+                click.echo(
+                    f"  Saved! {', '.join(tokens_saved).capitalize()}"
+                    " stored in ~/.urika/secrets.env"
+                )
+            print_success("Slack configured.")
+            click.echo()
+            continue
+
+        if choice == "Telegram":
+            click.echo("\n  Telegram setup\n")
+
+            chat_id = interactive_prompt(
+                "Chat ID (e.g. -100123456789)",
+                default=str(telegram_cfg.get("chat_id", "")),
+            )
+
+            # Bot token via getpass
+            try:
+                bot_token = getpass.getpass("  Bot token: ")
+            except (EOFError, KeyboardInterrupt):
+                bot_token = ""
+
+            if bot_token:
+                save_secret("TELEGRAM_BOT_TOKEN", bot_token)
+                click.echo("  Saved! Token stored in ~/.urika/secrets.env")
+
+            notif.setdefault("telegram", {}).update(
+                {
+                    "chat_id": chat_id,
+                    "bot_token_env": "TELEGRAM_BOT_TOKEN",
+                }
+            )
+            settings["notifications"] = notif
+            settings["notifications"]["enabled"] = True
+            _save_notification_settings(settings, is_project, project_path)
+            print_success("Telegram configured.")
+            click.echo()
+            continue
+
+
+def _save_notification_settings(settings, is_project, project_path):
+    """Save settings back to the appropriate TOML file."""
+    if is_project:
+        from urika.core.workspace import _write_toml
+
+        _write_toml(project_path / "urika.toml", settings)
+    else:
+        from urika.core.settings import save_settings
+
+        save_settings(settings)
 
 
 @cli.command("setup")

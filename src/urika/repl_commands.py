@@ -187,6 +187,47 @@ def cmd_config(session: ReplSession, args: str) -> None:
         )
 
 
+@command("notifications", description="Configure notification channels")
+def cmd_notifications(session: ReplSession, args: str) -> None:
+    from urika.cli import notifications_command
+
+    arg = args.strip()
+    ctx = click.Context(notifications_command)
+
+    if arg == "show":
+        ctx.invoke(
+            notifications_command,
+            show=True,
+            send_test=False,
+            disable=False,
+            project=session.project_name if session.has_project else None,
+        )
+    elif arg == "test":
+        ctx.invoke(
+            notifications_command,
+            show=False,
+            send_test=True,
+            disable=False,
+            project=session.project_name if session.has_project else None,
+        )
+    elif arg == "disable":
+        ctx.invoke(
+            notifications_command,
+            show=False,
+            send_test=False,
+            disable=True,
+            project=session.project_name if session.has_project else None,
+        )
+    else:
+        ctx.invoke(
+            notifications_command,
+            show=False,
+            send_test=False,
+            disable=False,
+            project=session.project_name if session.has_project else None,
+        )
+
+
 @command("usage", description="Show usage stats")
 def cmd_usage(session: ReplSession, args: str) -> None:
     from urika.cli_display import _format_duration
