@@ -4417,7 +4417,6 @@ def _notifications_global_setup(*, settings, project_path):
                 }
             )
             settings["notifications"] = notif
-            settings["notifications"]["enabled"] = True
             _save_notification_settings(settings, False, project_path)
             print_success("Email configured.")
 
@@ -4459,7 +4458,6 @@ def _notifications_global_setup(*, settings, project_path):
                 }
             )
             settings["notifications"] = notif
-            settings["notifications"]["enabled"] = True
             _save_notification_settings(settings, False, project_path)
 
             tokens_saved = []
@@ -4500,7 +4498,6 @@ def _notifications_global_setup(*, settings, project_path):
                 }
             )
             settings["notifications"] = notif
-            settings["notifications"]["enabled"] = True
             _save_notification_settings(settings, False, project_path)
             print_success("Telegram configured.")
             click.echo()
