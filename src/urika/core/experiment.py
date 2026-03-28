@@ -82,7 +82,9 @@ def create_experiment(
         "status": "pending",
         "runs": [],
     }
-    (exp_dir / "progress.json").write_text(json.dumps(progress, indent=2) + "\n", encoding="utf-8")
+    (exp_dir / "progress.json").write_text(
+        json.dumps(progress, indent=2) + "\n", encoding="utf-8"
+    )
 
     (exp_dir / "labbook" / "notes.md").write_text(
         f"# Experiment: {name}\n\n**Hypothesis**: {hypothesis}\n\n",

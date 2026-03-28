@@ -66,6 +66,8 @@ def save_secret(key: str, value: str) -> None:
 
     _SECRETS_PATH.write_text("\n".join(lines) + "\n")
     _SECRETS_PATH.chmod(0o600)
+    # Also update os.environ so the value is immediately available
+    os.environ[key] = value
 
 
 def get_secret(key: str) -> str:
