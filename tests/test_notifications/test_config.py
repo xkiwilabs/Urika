@@ -46,26 +46,28 @@ bot_token_env = "TG_TOKEN"
 
 class TestLoadConfig:
     def test_no_config_anywhere(self, tmp_path, monkeypatch):
-        """No global and no project config -> no channels."""
+        """No global and no project config -> empty dict."""
         _fake_home(tmp_path, monkeypatch)
-        _global, enabled, _extra = _load_notification_config(tmp_path)
-        assert enabled == set()
+        result = _load_notification_config(tmp_path)
+        assert result == {}
 
     def test_global_only_no_project(self, tmp_path, monkeypatch):
-        """Global config but project has no [notifications] -> no channels."""
+        """Global config but project has no [notifications] -> empty."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
         (tmp_path / "urika.toml").write_text("[project]\nname = 'test'\n")
-        _global, enabled, _extra = _load_notification_config(tmp_path)
-        assert enabled == set()
+        result = _load_notification_config(tmp_path)
+        assert result == {}
 
     def test_project_enables_email(self, tmp_path, monkeypatch):
-        """Project channels = ["email"] -> email enabled."""
+        """Project channels = ["email"] -> email config from global."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
         (tmp_path / "urika.toml").write_text(
             '[notifications]\nchannels = ["email"]\n'
         )
-        _global, enabled, _extra = _load_notification_config(tmp_path)
-        assert enabled == {"email"}
+        result = _load_notification_config(tmp_path)
+        assert "email" in result
+        assert result["email"]["smtp_server"] == "smtp.example.com"
+        assert result["email"]["to"] == ["global@example.com"]
 
     def test_project_enables_subset(self, tmp_path, monkeypatch):
         """Project picks email + telegram, skips slack."""
@@ -73,12 +75,13 @@ class TestLoadConfig:
         (tmp_path / "urika.toml").write_text(
             '[notifications]\nchannels = ["email", "telegram"]\n'
         )
-        _global, enabled, _extra = _load_notification_config(tmp_path)
-        assert enabled == {"email", "telegram"}
-        assert "slack" not in enabled
+        result = _load_notification_config(tmp_path)
+        assert "email" in result
+        assert "telegram" in result
+        assert "slack" not in result
 
-    def test_project_adds_extra_recipients(self, tmp_path, monkeypatch):
-        """Project adds extra to emails."""
+    def test_project_adds_extra_email_recipients(self, tmp_path, monkeypatch):
+        """Project adds extra to emails merged with global."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
         (tmp_path / "urika.toml").write_text("""\
 [notifications]
@@ -87,12 +90,12 @@ channels = ["email"]
 [notifications.email]
 to = ["project@example.com"]
 """)
-        _global, enabled, extra = _load_notification_config(tmp_path)
-        assert "email" in enabled
-        assert "project@example.com" in extra
+        result = _load_notification_config(tmp_path)
+        assert "global@example.com" in result["email"]["to"]
+        assert "project@example.com" in result["email"]["to"]
 
-    def test_no_duplicate_recipients(self, tmp_path, monkeypatch):
-        """build_bus merges without duplicating addresses."""
+    def test_no_duplicate_email_recipients(self, tmp_path, monkeypatch):
+        """Same address in global and project -> no duplicates."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
         (tmp_path / "urika.toml").write_text("""\
 [notifications]
@@ -101,23 +104,47 @@ channels = ["email"]
 [notifications.email]
 to = ["global@example.com", "extra@example.com"]
 """)
-        bus = build_bus(tmp_path)
-        assert bus is not None
-        from urika.notifications.email_channel import EmailChannel
+        result = _load_notification_config(tmp_path)
+        assert result["email"]["to"].count("global@example.com") == 1
+        assert "extra@example.com" in result["email"]["to"]
 
-        email_ch = bus.channels[0]
-        assert isinstance(email_ch, EmailChannel)
-        assert email_ch._to.count("global@example.com") == 1
-        assert "extra@example.com" in email_ch._to
+    def test_project_overrides_telegram_chat_id(self, tmp_path, monkeypatch):
+        """Project can override telegram chat_id for project-specific group."""
+        _fake_home(tmp_path, monkeypatch, _GLOBAL_ALL)
+        (tmp_path / "urika.toml").write_text("""\
+[notifications]
+channels = ["telegram"]
+
+[notifications.telegram]
+chat_id = "-100999"
+""")
+        result = _load_notification_config(tmp_path)
+        assert result["telegram"]["chat_id"] == "-100999"
+        # Bot token still comes from global
+        assert result["telegram"]["bot_token_env"] == "TG_TOKEN"
+
+    def test_project_overrides_slack_channel(self, tmp_path, monkeypatch):
+        """Project can override slack channel."""
+        _fake_home(tmp_path, monkeypatch, _GLOBAL_ALL)
+        (tmp_path / "urika.toml").write_text("""\
+[notifications]
+channels = ["slack"]
+
+[notifications.slack]
+channel = "#project-specific"
+""")
+        result = _load_notification_config(tmp_path)
+        assert result["slack"]["channel"] == "#project-specific"
+        assert result["slack"]["bot_token_env"] == "SLACK_TOKEN"
 
     def test_project_no_channels(self, tmp_path, monkeypatch):
-        """Project with empty channels list -> no channels."""
+        """Empty channels list -> empty."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
         (tmp_path / "urika.toml").write_text(
             "[notifications]\nchannels = []\n"
         )
-        _global, enabled, _extra = _load_notification_config(tmp_path)
-        assert enabled == set()
+        result = _load_notification_config(tmp_path)
+        assert result == {}
 
     def test_legacy_enabled_true(self, tmp_path, monkeypatch):
         """Legacy enabled = true turns on all globally configured channels."""
@@ -125,14 +152,15 @@ to = ["global@example.com", "extra@example.com"]
         (tmp_path / "urika.toml").write_text(
             "[notifications]\nenabled = true\n"
         )
-        _global, enabled, _extra = _load_notification_config(tmp_path)
-        assert enabled == {"email", "slack", "telegram"}
+        result = _load_notification_config(tmp_path)
+        assert "email" in result
+        assert "slack" in result
+        assert "telegram" in result
 
     def test_build_bus_returns_none_no_project(self, tmp_path, monkeypatch):
         """No project notifications -> None."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
-        result = build_bus(tmp_path)
-        assert result is None
+        assert build_bus(tmp_path) is None
 
     def test_build_bus_with_email(self, tmp_path, monkeypatch):
         """Project enables email -> bus with 1 channel."""
@@ -149,11 +177,26 @@ to = ["global@example.com", "extra@example.com"]
 
     def test_build_bus_warns_if_not_configured(self, tmp_path, monkeypatch, caplog):
         """Email enabled but no global config -> warning, no bus."""
-        _fake_home(tmp_path, monkeypatch)  # No global config
+        _fake_home(tmp_path, monkeypatch)
         (tmp_path / "urika.toml").write_text(
             '[notifications]\nchannels = ["email"]\n'
         )
         with caplog.at_level(logging.WARNING):
             bus = build_bus(tmp_path)
         assert bus is None
-        assert "not configured globally" in caplog.text
+        assert "no recipients configured" in caplog.text
+
+    def test_build_bus_with_project_telegram_override(self, tmp_path, monkeypatch):
+        """Project overrides telegram chat_id -> bus uses project's ID."""
+        _fake_home(tmp_path, monkeypatch, _GLOBAL_ALL)
+        (tmp_path / "urika.toml").write_text("""\
+[notifications]
+channels = ["telegram"]
+
+[notifications.telegram]
+chat_id = "-100999"
+""")
+        bus = build_bus(tmp_path)
+        assert bus is not None
+        assert len(bus.channels) == 1
+        assert bus.channels[0]._chat_id == "-100999"
