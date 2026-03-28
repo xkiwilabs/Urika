@@ -1607,6 +1607,14 @@ def run(
         from urika.orchestrator.pause import KeyListener, PauseController
 
         pause_ctrl = PauseController()
+
+        # Start notification bus if configured
+        from urika.notifications import build_bus
+
+        notif_bus = build_bus(project_path)
+        if notif_bus is not None:
+            notif_bus.start(controller=pause_ctrl)
+
         key_listener: KeyListener | None = None
         if not json_output:
 
@@ -1649,7 +1657,8 @@ def run(
             if json_output:
 
                 def _on_progress(event: str, detail: str = "") -> None:
-                    pass
+                    if notif_bus is not None:
+                        notif_bus.on_progress(event, detail)
 
                 def _on_message(msg: object) -> None:
                     pass
@@ -1671,6 +1680,9 @@ def run(
                     elif event == "phase":
                         print_step(detail)
                         panel.update(activity=detail)
+                    # Dispatch to notification bus
+                    if notif_bus is not None:
+                        notif_bus.on_progress(event, detail)
 
                 def _on_message(msg: object) -> None:
                     model = getattr(msg, "model", None)
@@ -1718,6 +1730,8 @@ def run(
             )
 
         finally:
+            if notif_bus is not None:
+                notif_bus.stop()
             if key_listener is not None:
                 key_listener.stop()
             if panel is not None:
@@ -1726,6 +1740,34 @@ def run(
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
         n_exp = result.get("experiments_run", 0)
+
+        # Send completion notification
+        if notif_bus is not None:
+            from urika.notifications.events import NotificationEvent
+
+            auto_state = result.get("autonomous_state")
+            if auto_state:
+                notif_bus.notify(
+                    NotificationEvent(
+                        event_type="meta_paused",
+                        project_name=project,
+                        summary=(
+                            f"Autonomous run paused after"
+                            f" {auto_state.get('experiments_completed', 0)}"
+                            " experiment(s)"
+                        ),
+                        priority="medium",
+                    )
+                )
+            else:
+                notif_bus.notify(
+                    NotificationEvent(
+                        event_type="meta_completed",
+                        project_name=project,
+                        summary=f"Meta-orchestrator completed: {n_exp} experiment(s)",
+                        priority="high",
+                    )
+                )
 
         # Aggregate usage from all experiment results
         _meta_tokens_in = 0
@@ -1849,6 +1891,15 @@ def run(
     from urika.orchestrator.pause import KeyListener, PauseController
 
     pause_ctrl = PauseController()
+
+    # Start notification bus if configured
+    from urika.notifications import build_bus as _build_bus
+
+    notif_bus = _build_bus(project_path)
+    if notif_bus is not None:
+        notif_bus.set_experiment(experiment_id)
+        notif_bus.start(controller=pause_ctrl)
+
     key_listener: KeyListener | None = None
     if not json_output:
 
@@ -1896,7 +1947,8 @@ def run(
         if json_output:
 
             def _on_progress(event: str, detail: str = "") -> None:
-                pass
+                if notif_bus is not None:
+                    notif_bus.on_progress(event, detail)
 
             def _on_message(msg: object) -> None:
                 pass
@@ -1919,6 +1971,9 @@ def run(
                 elif event == "phase":
                     print_step(detail)
                     panel.update(activity=detail)
+                # Dispatch to notification bus
+                if notif_bus is not None:
+                    notif_bus.on_progress(event, detail)
 
             def _on_message(msg: object) -> None:
                 """Handle streaming SDK messages for verbose output."""
@@ -1971,6 +2026,8 @@ def run(
         )
 
     finally:
+        if notif_bus is not None:
+            notif_bus.stop()
         if key_listener is not None:
             key_listener.stop()
         if panel is not None:
@@ -1982,6 +2039,41 @@ def run(
     run_status = result.get("status", "unknown")
     turns = result.get("turns", 0)
     error = result.get("error")
+
+    # Send completion/failure notification
+    if notif_bus is not None:
+        from urika.notifications.events import NotificationEvent as _NE
+
+        if run_status == "completed":
+            notif_bus.notify(
+                _NE(
+                    event_type="experiment_completed",
+                    project_name=project,
+                    experiment_id=experiment_id,
+                    summary=f"Experiment completed after {turns} turns",
+                    priority="high",
+                )
+            )
+        elif run_status == "failed":
+            notif_bus.notify(
+                _NE(
+                    event_type="experiment_failed",
+                    project_name=project,
+                    experiment_id=experiment_id,
+                    summary=f"Experiment failed: {error}",
+                    priority="high",
+                )
+            )
+        elif run_status == "paused":
+            notif_bus.notify(
+                _NE(
+                    event_type="experiment_paused",
+                    project_name=project,
+                    experiment_id=experiment_id,
+                    summary=f"Experiment paused after {turns} turns",
+                    priority="medium",
+                )
+            )
 
     # Record usage for this CLI session
     try:
