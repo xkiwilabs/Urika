@@ -1611,8 +1611,10 @@ def run(
         if not json_output:
 
             def _on_pause_esc_meta() -> None:
+                if panel is not None:
+                    panel.update(pause_requested=True)
                 print_warning(
-                    "\n\u23f8 Pause requested — will pause after current turn"
+                    "\n\u23f8 Pause requested \u2014 will pause after current turn"
                     " completes..."
                 )
 
@@ -1839,6 +1841,10 @@ def run(
         else:
             print_step(f"Running experiment {experiment_id} (max {max_turns} turns)")
 
+    # Set experiment ID on panel
+    if panel is not None:
+        panel.update(experiment_id=experiment_id)
+
     # Create pause controller and key listener for ESC-to-pause
     from urika.orchestrator.pause import KeyListener, PauseController
 
@@ -1847,8 +1853,10 @@ def run(
     if not json_output:
 
         def _on_pause_esc() -> None:
+            if panel is not None:
+                panel.update(pause_requested=True)
             print_warning(
-                "\n\u23f8 Pause requested — will pause after current turn completes..."
+                "\n\u23f8 Pause requested \u2014 will pause after current turn completes..."
             )
 
         key_listener = KeyListener(pause_ctrl, on_pause_requested=_on_pause_esc)
