@@ -3323,7 +3323,7 @@ def config_command(
         # Set per-agent overrides
         models = settings.setdefault("runtime", {}).setdefault("models", {})
         models["data_agent"] = {"model": private_model, "endpoint": "private"}
-        models["tool_builder"] = {"model": private_model, "endpoint": "private"}
+        # tool_builder uses cloud by default in hybrid (doesn't touch raw data)
 
         print_success(
             f"Mode: hybrid · Cloud: {cloud_model} · "

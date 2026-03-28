@@ -133,6 +133,10 @@ These require a project to be loaded first. Running them without a project shows
 | `/resume` | Resume a paused or failed experiment. Lists resumable experiments and lets you pick which to continue. |
 | `/update` | Update the project description, question, or mode interactively. Shows current values, prompts for field, new value, and optional reason. Changes are versioned in `revisions.json`. |
 | `/update history` | Show the revision history for the loaded project: all previous changes with timestamps, old/new values, and reasons. |
+| `/config` | Configure privacy mode and models for the current project (or global defaults if no project loaded). Interactive guided setup for open, private, or hybrid mode. |
+| `/config show` | Show current configuration (project or global). |
+| `/config global` | Configure global defaults (used for new projects). |
+| `/config global show` | Show global defaults. |
 
 
 ## Run Settings
