@@ -564,6 +564,7 @@ async def run_experiment(
         if knowledge_summary:
             lit_role = registry.get("literature_agent")
             if lit_role is not None:
+                progress("agent", "Literature agent \u2014 scanning knowledge base")
                 lit_config = lit_role.build_config(project_dir=project_dir)
                 lit_result = await runner.run(
                     lit_config,
