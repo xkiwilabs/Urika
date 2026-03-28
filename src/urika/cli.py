@@ -3104,15 +3104,8 @@ def config_command(
         urika config my-project --show   # show project settings
         urika config my-project          # interactive setup (project)
     """
-    from urika.cli_display import print_step, print_success, print_warning
-    from urika.cli_helpers import interactive_confirm, interactive_numbered
-
-    # Cloud models
-    _CLOUD_MODELS = [
-        ("claude-sonnet-4-5", "Best balance of speed and quality (recommended)"),
-        ("claude-opus-4-6", "Most capable, slower, higher cost"),
-        ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
-    ]
+    from urika.cli_display import print_step
+    from urika.cli_helpers import UserCancelled
 
     # ── Determine target: global or project ──
     is_project = False
@@ -3175,6 +3168,32 @@ def config_command(
     # ── Interactive setup ──
     current_mode = settings.get("privacy", {}).get("mode", "open")
     click.echo(f"\n  Current privacy mode: {current_mode}\n")
+
+    try:
+        _config_interactive(session=settings, current_mode=current_mode,
+                           is_project=is_project, project_path=project_path)
+    except UserCancelled:
+        click.echo("\n  Cancelled.")
+        return
+
+
+def _config_interactive(*, session, current_mode, is_project, project_path):
+    """Interactive config setup. Raises UserCancelled on cancel/ESC."""
+    import click
+    from urika.cli_display import print_step, print_success, print_warning
+    from urika.cli_helpers import (
+        interactive_confirm,
+        interactive_numbered,
+        interactive_prompt,
+    )
+
+    _CLOUD_MODELS = [
+        ("claude-sonnet-4-5", "Best balance of speed and quality (recommended)"),
+        ("claude-opus-4-6", "Most capable, slower, higher cost"),
+        ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
+    ]
+
+    settings = session
 
     mode = interactive_numbered(
         "  Privacy mode:",
@@ -3363,6 +3382,9 @@ def config_command(
         "section in urika.toml directly."
     )
     click.echo()
+
+
+
 
 
 @cli.command("setup")

@@ -1140,18 +1140,24 @@ def _load_run_defaults(session: ReplSession) -> dict:
 
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:
-    """Prompt with numbered options."""
+    """Prompt with numbered options. Includes Cancel option.
+
+    Raises click.Abort on cancel or Ctrl+C.
+    """
+    display = list(options) + ["Cancel"]
     click.echo(prompt_text)
-    for i, opt in enumerate(options, 1):
+    for i, opt in enumerate(display, 1):
         marker = " (default)" if i == default else ""
         click.echo(f"    {i}. {opt}{marker}")
     while True:
         try:
             raw = click.prompt("  Choice", default=str(default)).strip()
         except (EOFError, KeyboardInterrupt):
-            return options[default - 1]
+            raise click.Abort()
         try:
             idx = int(raw)
+            if idx == len(display):
+                raise click.Abort()
             if 1 <= idx <= len(options):
                 return options[idx - 1]
         except ValueError:

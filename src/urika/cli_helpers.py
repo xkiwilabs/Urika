@@ -87,7 +87,7 @@ def interactive_prompt(
     except KeyboardInterrupt:
         if default:
             return default
-        raise click.Abort()
+        raise UserCancelled()
 
 
 def interactive_confirm(
@@ -108,32 +108,48 @@ def interactive_confirm(
         return default
 
 
+class UserCancelled(Exception):
+    """Raised when user cancels an interactive prompt."""
+
+    pass
+
+
 def interactive_numbered(
     prompt_text: str,
     options: list[str],
     *,
     default: int = 1,
+    allow_cancel: bool = True,
 ) -> str:
     """Prompt with numbered options using prompt_toolkit.
 
     Returns the selected option text.
+    Raises UserCancelled on Ctrl+C, ESC, or if user picks Cancel.
     """
+    display_options = list(options)
+    if allow_cancel:
+        display_options.append("Cancel")
+
     click.echo(prompt_text)
-    for i, opt in enumerate(options, 1):
+    for i, opt in enumerate(display_options, 1):
         marker = " (default)" if i == default else ""
         click.echo(f"    {i}. {opt}{marker}")
 
     while True:
         try:
             raw = _pt_prompt(f"  Choice [{default}]: ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             return options[default - 1]
+        except KeyboardInterrupt:
+            raise UserCancelled()
         if not raw:
             return options[default - 1]
         try:
             idx = int(raw)
+            if allow_cancel and idx == len(display_options):
+                raise UserCancelled()
             if 1 <= idx <= len(options):
                 return options[idx - 1]
         except ValueError:
             pass
-        click.echo(f"  Enter a number between 1 and {len(options)}.")
+        click.echo(f"  Enter a number between 1 and {len(display_options)}.")
