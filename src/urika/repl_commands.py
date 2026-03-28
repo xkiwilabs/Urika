@@ -81,6 +81,14 @@ def cmd_project(session: ReplSession, args: str) -> None:
     if session.has_project:
         session.save_usage()
 
+    # Stop old notification bus if switching projects
+    if session.notification_bus is not None:
+        try:
+            session.notification_bus.stop()
+        except Exception:
+            pass
+        session.notification_bus = None
+
     try:
         config = load_project_config(path)
     except FileNotFoundError:
@@ -88,6 +96,17 @@ def cmd_project(session: ReplSession, args: str) -> None:
         return
 
     session.load_project(path, name)
+
+    # Start notification bus for this project
+    try:
+        from urika.notifications import build_bus
+
+        bus = build_bus(path)
+        if bus is not None:
+            bus.start()
+            session.notification_bus = bus
+    except Exception:
+        pass  # Notifications are best-effort
 
     experiments = list_experiments(path)
     completed = sum(

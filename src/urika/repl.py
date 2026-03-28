@@ -58,9 +58,7 @@ class UrikaCompleter(Completer):
                     arg = parts[1] if len(parts) > 1 else ""
                     for name in get_project_names():
                         if name.startswith(arg):
-                            yield Completion(
-                                name, start_position=-len(arg)
-                            )
+                            yield Completion(name, start_position=-len(arg))
                 elif cmd in (
                     "present",
                     "logs",
@@ -73,9 +71,7 @@ class UrikaCompleter(Completer):
                     arg = parts[1] if len(parts) > 1 else ""
                     for eid in get_experiment_ids(self.session):
                         if eid.startswith(arg):
-                            yield Completion(
-                                eid, start_position=-len(arg)
-                            )
+                            yield Completion(eid, start_position=-len(arg))
 
 
 def run_repl() -> None:
@@ -136,18 +132,12 @@ def run_repl() -> None:
             cols = 80
 
         parts = []
-        parts.append(
-            "\033[2m" + "\u2500" * cols + "\033[0m\n"
-        )
+        parts.append("\033[2m" + "\u2500" * cols + "\033[0m\n")
         parts.append(" \033[34;1murika\033[0m")
         if session.has_project:
-            parts.append(
-                f" \033[2m\u00b7 {session.project_name}\033[0m"
-            )
+            parts.append(f" \033[2m\u00b7 {session.project_name}\033[0m")
             privacy = _get_privacy(session.project_path)
-            parts.append(
-                f" \033[33m\u00b7 {privacy}\033[0m"
-            )
+            parts.append(f" \033[33m\u00b7 {privacy}\033[0m")
         if session.model:
             from urika.cli_display import format_model_source
 
@@ -155,35 +145,21 @@ def run_repl() -> None:
                 session.model,
                 project_dir=session.project_path,
             )
-            parts.append(
-                f" \033[36m\u00b7 {model_display}\033[0m"
-            )
+            parts.append(f" \033[36m\u00b7 {model_display}\033[0m")
         elapsed = _format_duration(session.elapsed_ms)
         parts.append(f" \033[31m\u00b7 {elapsed}\033[0m")
         if session.agent_calls > 0:
-            tokens = (
-                session.total_tokens_in
-                + session.total_tokens_out
-            )
-            tok_str = (
-                f"{tokens / 1000:.0f}K"
-                if tokens >= 1000
-                else str(tokens)
-            )
+            tokens = session.total_tokens_in + session.total_tokens_out
+            tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
             parts.append(
                 f" \033[2m\u00b7 {tok_str} tokens"
                 f" \u00b7 {session.agent_calls} calls\033[0m"
             )
             if session.total_cost_usd > 0:
-                parts.append(
-                    f" \033[32m\u00b7"
-                    f" ~${session.total_cost_usd:.2f}\033[0m"
-                )
+                parts.append(f" \033[32m\u00b7 ~${session.total_cost_usd:.2f}\033[0m")
         return ANSI("".join(parts))
 
-    custom_style = Style.from_dict(
-        {"bottom-toolbar": "noreverse"}
-    )
+    custom_style = Style.from_dict({"bottom-toolbar": "noreverse"})
 
     prompt_session = PromptSession(
         history=history,
@@ -197,15 +173,11 @@ def run_repl() -> None:
     while True:
         try:
             if session.has_project:
-                prompt_text = (
-                    f"urika:{session.project_name}> "
-                )
+                prompt_text = f"urika:{session.project_name}> "
             else:
                 prompt_text = "urika> "
 
-            user_input = prompt_session.prompt(
-                prompt_text
-            ).strip()
+            user_input = prompt_session.prompt(prompt_text).strip()
 
             if not user_input:
                 continue
@@ -216,10 +188,20 @@ def run_repl() -> None:
                 _handle_free_text(session, user_input)
 
         except (EOFError, KeyboardInterrupt):
+            if session.notification_bus is not None:
+                try:
+                    session.notification_bus.stop()
+                except Exception:
+                    pass
             session.save_usage()
             click.echo("\n  Goodbye.")
             break
         except SystemExit:
+            if session.notification_bus is not None:
+                try:
+                    session.notification_bus.stop()
+                except Exception:
+                    pass
             session.save_usage()
             break
 
@@ -233,14 +215,9 @@ def _handle_command(session: ReplSession, text: str) -> None:
     all_cmds = get_all_commands(session)
     if cmd_name not in all_cmds:
         if cmd_name in PROJECT_COMMANDS and not session.has_project:
-            print_error(
-                "Load a project first: /project <name>"
-            )
+            print_error("Load a project first: /project <name>")
         else:
-            print_error(
-                f"Unknown command: /{cmd_name}. "
-                f"Type /help for commands."
-            )
+            print_error(f"Unknown command: /{cmd_name}. Type /help for commands.")
         return
 
     handler = all_cmds[cmd_name]["func"]
@@ -256,14 +233,10 @@ def _handle_command(session: ReplSession, text: str) -> None:
         print_error(f"Error: {exc}")
 
 
-def _handle_free_text(
-    session: ReplSession, text: str
-) -> None:
+def _handle_free_text(session: ReplSession, text: str) -> None:
     """Send free text to the advisor agent."""
     if not session.has_project:
-        click.echo(
-            "  Load a project first: /project <name>"
-        )
+        click.echo("  Load a project first: /project <name>")
         return
 
     try:
@@ -338,9 +311,7 @@ def _handle_free_text(
         if result.success and result.text_output:
             click.echo(format_agent_output(result.text_output))
             session.add_message("user", text)
-            session.add_message(
-                "advisor", result.text_output.strip()
-            )
+            session.add_message("advisor", result.text_output.strip())
 
             # Parse suggestions and offer to run them
             _offer_to_run_suggestions(session, result.text_output)
@@ -348,16 +319,12 @@ def _handle_free_text(
             print_error(f"Advisor error: {result.error}")
 
     except ImportError:
-        print_error(
-            "Claude Agent SDK not installed."
-        )
+        print_error("Claude Agent SDK not installed.")
     except Exception as exc:
         print_error(f"Error: {exc}")
 
 
-def _offer_to_run_suggestions(
-    session: ReplSession, advisor_output: str
-) -> None:
+def _offer_to_run_suggestions(session: ReplSession, advisor_output: str) -> None:
     """Parse advisor suggestions and offer to start a run."""
     from urika.orchestrator.parsing import parse_suggestions
 
@@ -372,8 +339,7 @@ def _offer_to_run_suggestions(
     from urika.cli_display import _C
 
     click.echo(
-        f"  {_C.BOLD}The advisor suggested "
-        f"{len(suggestions)} experiment(s):{_C.RESET}"
+        f"  {_C.BOLD}The advisor suggested {len(suggestions)} experiment(s):{_C.RESET}"
     )
     for i, s in enumerate(suggestions, 1):
         name = s.get("name", f"experiment-{i}")
