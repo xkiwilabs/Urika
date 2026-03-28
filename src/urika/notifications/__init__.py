@@ -12,42 +12,80 @@ if TYPE_CHECKING:
 def build_bus(project_path: Path) -> NotificationBus | None:
     """Build a NotificationBus from project and global notification config.
 
-    Returns None if no notifications are configured or enabled.
+    Returns None if no channels are enabled for this project.
     """
+    import logging
+
     from urika.notifications.bus import NotificationBus
 
-    config = _load_notification_config(project_path)
-    if not config or not config.get("enabled", False):
+    global_cfg, enabled_channels, extra_email_to = _load_notification_config(
+        project_path
+    )
+    if not enabled_channels:
         return None
 
     bus = NotificationBus(project_name=project_path.name, project_path=project_path)
 
-    # Add email channel if configured
-    email_cfg = config.get("email")
-    if email_cfg and email_cfg.get("to"):
-        from urika.notifications.email_channel import EmailChannel
+    # Add email channel if enabled and configured globally
+    if "email" in enabled_channels:
+        email_cfg = global_cfg.get("email")
+        if email_cfg and email_cfg.get("to"):
+            from urika.notifications.email_channel import EmailChannel
 
-        bus.add_channel(EmailChannel(email_cfg))
+            # Merge extra project recipients
+            if extra_email_to:
+                to_list = list(email_cfg.get("to", []))
+                for addr in extra_email_to:
+                    if addr not in to_list:
+                        to_list.append(addr)
+                email_cfg = {**email_cfg, "to": to_list}
+            bus.add_channel(EmailChannel(email_cfg))
+        else:
+            logging.getLogger(__name__).warning(
+                "Email enabled for %s but not configured globally. "
+                "Run 'urika notifications' to set up email.",
+                project_path.name,
+            )
 
-    # Add Slack channel if configured
-    slack_cfg = config.get("slack")
-    if slack_cfg and slack_cfg.get("channel"):
-        try:
-            from urika.notifications.slack_channel import SlackChannel
+    # Add Slack channel if enabled and configured globally
+    if "slack" in enabled_channels:
+        slack_cfg = global_cfg.get("slack")
+        if slack_cfg and slack_cfg.get("channel"):
+            try:
+                from urika.notifications.slack_channel import SlackChannel
 
-            bus.add_channel(SlackChannel(slack_cfg))
-        except ImportError:
-            pass  # slack-sdk not installed
+                bus.add_channel(SlackChannel(slack_cfg))
+            except ImportError:
+                logging.getLogger(__name__).warning(
+                    "Slack enabled but slack-sdk not installed. "
+                    "Run: pip install urika[notifications]"
+                )
+        else:
+            logging.getLogger(__name__).warning(
+                "Slack enabled for %s but not configured globally. "
+                "Run 'urika notifications' to set up Slack.",
+                project_path.name,
+            )
 
-    # Add Telegram channel if configured
-    telegram_cfg = config.get("telegram")
-    if telegram_cfg and telegram_cfg.get("chat_id"):
-        try:
-            from urika.notifications.telegram_channel import TelegramChannel
+    # Add Telegram channel if enabled and configured globally
+    if "telegram" in enabled_channels:
+        telegram_cfg = global_cfg.get("telegram")
+        if telegram_cfg and telegram_cfg.get("chat_id"):
+            try:
+                from urika.notifications.telegram_channel import TelegramChannel
 
-            bus.add_channel(TelegramChannel(telegram_cfg))
-        except ImportError:
-            pass  # python-telegram-bot not installed
+                bus.add_channel(TelegramChannel(telegram_cfg))
+            except ImportError:
+                logging.getLogger(__name__).warning(
+                    "Telegram enabled but python-telegram-bot not installed. "
+                    "Run: pip install urika[notifications]"
+                )
+        else:
+            logging.getLogger(__name__).warning(
+                "Telegram enabled for %s but not configured globally. "
+                "Run 'urika notifications' to set up Telegram.",
+                project_path.name,
+            )
 
     if not bus.channels:
         return None
@@ -55,17 +93,27 @@ def build_bus(project_path: Path) -> NotificationBus | None:
     return bus
 
 
-def _load_notification_config(project_path: Path) -> dict[str, Any]:
-    """Load notification config: global channels + project opt-in.
+def _load_notification_config(
+    project_path: Path,
+) -> tuple[dict[str, Any], set[str], list[str]]:
+    """Load notification config: global channels + per-project channel selection.
 
     Global ``~/.urika/settings.toml`` provides all channel settings
     (SMTP server, tokens, default ``to`` emails, etc.).
 
-    Project ``urika.toml`` controls only:
-    - ``[notifications] enabled = true/false`` (default **false**)
-    - Extra ``to`` emails that are **added** to global recipients
+    Project ``urika.toml`` selects which channels to use::
 
-    A project must have ``enabled = true`` to receive notifications.
+        [notifications]
+        channels = ["email", "telegram"]  # which channels to enable
+
+        [notifications.email]
+        to = ["extra@lab.edu"]  # additional recipients for this project
+
+    Returns:
+        (global_config, enabled_channels, extra_email_to)
+        - global_config: the full global [notifications] dict
+        - enabled_channels: set of channel names enabled for this project
+        - extra_email_to: list of extra email recipients from project config
     """
     import copy
     import tomllib
@@ -81,7 +129,7 @@ def _load_notification_config(project_path: Path) -> dict[str, Any]:
         except Exception:
             pass
 
-    # ── Check project opt-in ──
+    # ── Load project channel selection ──
     project_toml = project_path / "urika.toml"
     project_notif: dict[str, Any] = {}
     if project_toml.exists():
@@ -92,28 +140,26 @@ def _load_notification_config(project_path: Path) -> dict[str, Any]:
         except Exception:
             pass
 
-    # Project must explicitly enable (default is off)
-    if not project_notif.get("enabled", False):
-        return {}
+    # Determine which channels are enabled via "channels" list
+    # e.g. channels = ["email", "telegram"]
+    channels_list = project_notif.get("channels", [])
+    if isinstance(channels_list, str):
+        channels_list = [channels_list]
+    enabled: set[str] = {c for c in channels_list if c in ("email", "slack", "telegram")}
 
-    # Start from global config
-    config = global_config
-    config["enabled"] = True
+    # Also support legacy "enabled = true" (turns on all globally configured channels)
+    if not enabled and project_notif.get("enabled", False):
+        for channel in ("email", "slack", "telegram"):
+            if channel in global_config and isinstance(global_config[channel], dict):
+                enabled.add(channel)
 
-    # Add project-specific extra email recipients (merged, not replaced)
+    # Extract extra email recipients from project
+    extra_email_to: list[str] = []
     project_email = project_notif.get("email", {})
-    extra_to = project_email.get("to", [])
-    if extra_to:
-        if isinstance(extra_to, str):
-            extra_to = [extra_to]
-        global_to = config.get("email", {}).get("to", [])
-        if isinstance(global_to, str):
-            global_to = [global_to]
-        # Merge without duplicates, preserving order
-        merged = list(global_to)
-        for addr in extra_to:
-            if addr not in merged:
-                merged.append(addr)
-        config.setdefault("email", {})["to"] = merged
+    if isinstance(project_email, dict):
+        extra = project_email.get("to", [])
+        if isinstance(extra, str):
+            extra = [extra]
+        extra_email_to = extra
 
-    return config
+    return global_config, enabled, extra_email_to
