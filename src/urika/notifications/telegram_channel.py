@@ -1,4 +1,8 @@
-"""Telegram notification channel using python-telegram-bot."""
+"""Telegram notification channel using python-telegram-bot.
+
+Supports inbound /pause, /stop, /status, and /results commands as well as
+inline keyboard buttons for the same actions.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ import asyncio
 import logging
 import os
 import threading
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -45,6 +50,7 @@ class TelegramChannel(NotificationChannel):
         token_env: str = config.get("bot_token_env", "")
         self._token: str = os.environ.get(token_env, "") if token_env else ""
         self._controller: PauseController | None = None
+        self._project_path: Path | None = None
         self._listener_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
@@ -76,12 +82,15 @@ class TelegramChannel(NotificationChannel):
         except Exception as exc:
             logger.warning("Telegram send failed: %s", exc)
 
-    def start_listener(self, controller: PauseController) -> None:
-        """Start polling for /pause and /stop commands in a background thread."""
+    def start_listener(
+        self, controller: PauseController, project_path: Path | None = None
+    ) -> None:
+        """Start polling for inbound commands in a background thread."""
         if not self._token:
             logger.debug("No Telegram bot token — listener disabled")
             return
         self._controller = controller
+        self._project_path = project_path
         self._stop_event.clear()
         self._listener_thread = threading.Thread(
             target=self._poll_loop,
@@ -110,7 +119,7 @@ class TelegramChannel(NotificationChannel):
 
     @staticmethod
     def _build_keyboard(event: NotificationEvent) -> Any | None:
-        """Return an InlineKeyboardMarkup with Pause/Stop for active-run events."""
+        """Return an InlineKeyboardMarkup with Pause/Stop/Status/Results for active-run events."""
         if event.event_type not in _ACTIVE_RUN_EVENTS:
             return None
 
@@ -121,11 +130,47 @@ class TelegramChannel(NotificationChannel):
                 [
                     InlineKeyboardButton("\u23f8 Pause", callback_data="urika_pause"),
                     InlineKeyboardButton("\u23f9 Stop", callback_data="urika_stop"),
-                ]
+                ],
+                [
+                    InlineKeyboardButton(
+                        "\U0001f4ca Status", callback_data="urika_status"
+                    ),
+                    InlineKeyboardButton(
+                        "\U0001f3c6 Results", callback_data="urika_results"
+                    ),
+                ],
             ]
             return InlineKeyboardMarkup(keyboard)
         except Exception:
             return None
+
+    # ------------------------------------------------------------------
+    # Project queries
+    # ------------------------------------------------------------------
+
+    def _query_status(self) -> str:
+        """Return project status text, or a fallback if unavailable."""
+        if self._project_path is None:
+            return "No project loaded."
+        try:
+            from urika.notifications.queries import get_status_text
+
+            return get_status_text(self._project_path)
+        except Exception as exc:
+            logger.debug("Status query failed: %s", exc)
+            return f"Status query failed: {exc}"
+
+    def _query_results(self) -> str:
+        """Return project results text, or a fallback if unavailable."""
+        if self._project_path is None:
+            return "No project loaded."
+        try:
+            from urika.notifications.queries import get_results_text
+
+            return get_results_text(self._project_path)
+        except Exception as exc:
+            logger.debug("Results query failed: %s", exc)
+            return f"Results query failed: {exc}"
 
     # ------------------------------------------------------------------
     # Inbound polling
@@ -169,6 +214,8 @@ class TelegramChannel(NotificationChannel):
 
         app.add_handler(CommandHandler("pause", self._handle_pause_command))
         app.add_handler(CommandHandler("stop", self._handle_stop_command))
+        app.add_handler(CommandHandler("status", self._handle_status_command))
+        app.add_handler(CommandHandler("results", self._handle_results_command))
         app.add_handler(CallbackQueryHandler(self._handle_callback))
 
         await app.initialize()
@@ -199,8 +246,38 @@ class TelegramChannel(NotificationChannel):
         if update.message:
             await update.message.reply_text("Stop requested \u23f9")
 
+    async def _handle_status_command(self, update: Any, context: Any) -> None:
+        """Handle /status from a Telegram user."""
+        if self._project_path is None:
+            text = "No project loaded."
+        else:
+            try:
+                from urika.notifications.queries import get_status_text
+
+                text = get_status_text(self._project_path)
+            except Exception as exc:
+                logger.debug("Status query failed: %s", exc)
+                text = f"Status query failed: {exc}"
+        if update.message:
+            await update.message.reply_text(text)
+
+    async def _handle_results_command(self, update: Any, context: Any) -> None:
+        """Handle /results from a Telegram user."""
+        if self._project_path is None:
+            text = "No project loaded."
+        else:
+            try:
+                from urika.notifications.queries import get_results_text
+
+                text = get_results_text(self._project_path)
+            except Exception as exc:
+                logger.debug("Results query failed: %s", exc)
+                text = f"Results query failed: {exc}"
+        if update.message:
+            await update.message.reply_text(text)
+
     async def _handle_callback(self, update: Any, context: Any) -> None:
-        """Handle inline keyboard button presses (Pause / Stop)."""
+        """Handle inline keyboard button presses (Pause / Stop / Status / Results)."""
         query = update.callback_query
         if query is None:
             return
@@ -214,6 +291,30 @@ class TelegramChannel(NotificationChannel):
             self._controller.request_stop()
             await query.edit_message_reply_markup(reply_markup=None)
             logger.info("Stop requested via Telegram inline button")
+        elif query.data == "urika_status":
+            text = self._query_status()
+            try:
+                import telegram
+
+                bot = telegram.Bot(token=self._token)
+                await bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=text,
+                )
+            except Exception as exc:
+                logger.debug("Status callback reply failed: %s", exc)
+        elif query.data == "urika_results":
+            text = self._query_results()
+            try:
+                import telegram
+
+                bot = telegram.Bot(token=self._token)
+                await bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=text,
+                )
+            except Exception as exc:
+                logger.debug("Results callback reply failed: %s", exc)
 
 
 # ----------------------------------------------------------------------

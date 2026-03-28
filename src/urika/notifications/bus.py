@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,8 +20,11 @@ logger = logging.getLogger(__name__)
 class NotificationBus:
     """Dispatches notification events to configured channels via a background thread."""
 
-    def __init__(self, project_name: str = "") -> None:
+    def __init__(
+        self, project_name: str = "", project_path: Path | None = None
+    ) -> None:
         self.project_name = project_name
+        self._project_path = project_path
         self.channels: list[NotificationChannel] = []
         self._queue: queue.Queue[NotificationEvent | None] = queue.Queue()
         self._thread: threading.Thread | None = None
@@ -41,7 +45,7 @@ class NotificationBus:
         for ch in self.channels:
             try:
                 if controller is not None:
-                    ch.start_listener(controller)
+                    ch.start_listener(controller, project_path=self._project_path)
             except Exception as exc:
                 logger.warning(
                     "Failed to start listener for %s: %s", type(ch).__name__, exc

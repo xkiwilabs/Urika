@@ -20,7 +20,7 @@ def build_bus(project_path: Path) -> NotificationBus | None:
     if not config or not config.get("enabled", False):
         return None
 
-    bus = NotificationBus(project_name=project_path.name)
+    bus = NotificationBus(project_name=project_path.name, project_path=project_path)
 
     # Add email channel if configured
     email_cfg = config.get("email")
