@@ -454,15 +454,20 @@ class ThinkingPanel:
             # ── Line 2: experiment + turn info ──
             info_parts = []
             if self.experiment_id:
-                info_parts.append(f"{_C.DIM}{self.experiment_id}{_C.RESET}")
+                info_parts.append(
+                    f"{_C.CYAN}Experiment:{_C.RESET} {self.experiment_id}"
+                )
             if self.turn:
-                info_parts.append(f"{_C.BOLD}{self.turn}{_C.RESET}")
+                info_parts.append(f"{_C.CYAN}{self.turn}{_C.RESET}")
             if self.pause_requested:
                 info_parts.append(
                     f"{_C.YELLOW}\u23f8 Pausing after this turn\u2026{_C.RESET}"
                 )
+            # Always show something — fallback to activity summary
+            if not info_parts:
+                info_parts.append(f"{_C.DIM}{self.activity}{_C.RESET}")
             sep_dot = f" {_C.DIM}\u00b7{_C.RESET} "
-            info_line = f"  {sep_dot.join(info_parts)}" if info_parts else ""
+            info_line = f"  {sep_dot.join(info_parts)}"
 
             # ── Line 3: spinner + agent + activity ──
             ch = _SPINNER[self._spin_idx]

@@ -1586,9 +1586,9 @@ def run(
 
         _rc = _load_rc(project_path)
         panel = ThinkingPanel()
-        panel.project = f"{project} · {_rc.privacy_mode}"
+        panel.project = f"{project} \u00b7 {_rc.privacy_mode}"
         panel._project_dir = project_path
-        panel.activity = thinking_phrase()
+        panel.activity = "Determining next experiment\u2026"
         panel.activate()
         panel.start_spinner()
 
