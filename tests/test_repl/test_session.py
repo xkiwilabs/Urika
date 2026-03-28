@@ -123,3 +123,68 @@ class TestReplSession:
         session = ReplSession()
         session.set_agent_running(agent_name="task_agent")
         assert session.agent_activity == "Working\u2026"
+
+    # ── Notification bus ──────────────────────────────────────
+
+    def test_notification_bus_default_none(self) -> None:
+        session = ReplSession()
+        assert session.notification_bus is None
+
+    # ── Agent active (command-level tracking) ─────────────────
+
+    def test_agent_active_default_false(self) -> None:
+        session = ReplSession()
+        assert session.agent_active is False
+        assert session.active_command == ""
+
+    def test_set_agent_active(self) -> None:
+        session = ReplSession()
+        session.set_agent_active("run")
+        assert session.agent_active is True
+        assert session.active_command == "run"
+
+    def test_set_agent_idle_clears_active(self) -> None:
+        session = ReplSession()
+        session.set_agent_active("run")
+        session.set_agent_idle()
+        assert session.agent_active is False
+        assert session.active_command == ""
+
+    # ── Remote command queue ──────────────────────────────────
+
+    def test_remote_command_queue_empty(self) -> None:
+        session = ReplSession()
+        assert session.has_remote_command is False
+        assert session.pop_remote_command() is None
+
+    def test_queue_remote_command(self) -> None:
+        session = ReplSession()
+        session.queue_remote_command("run", "experiment-1")
+        assert session.has_remote_command is True
+        cmd = session.pop_remote_command()
+        assert cmd == ("run", "experiment-1")
+
+    def test_queue_multiple_remote_commands(self) -> None:
+        session = ReplSession()
+        session.queue_remote_command("run", "exp-1")
+        session.queue_remote_command("status", "")
+        first = session.pop_remote_command()
+        assert first == ("run", "exp-1")
+        second = session.pop_remote_command()
+        assert second == ("status", "")
+        assert session.has_remote_command is False
+
+    def test_clear_remote_queue(self) -> None:
+        session = ReplSession()
+        session.queue_remote_command("run", "exp-1")
+        session.queue_remote_command("status", "")
+        session.clear_remote_queue()
+        assert session.has_remote_command is False
+
+    def test_load_project_clears_remote_queue(self, tmp_path: Path) -> None:
+        session = ReplSession()
+        session.queue_remote_command("run", "exp-1")
+        session.load_project(tmp_path, "new-project")
+        assert session.has_remote_command is False
+        assert session.agent_active is False
+        assert session.active_command == ""

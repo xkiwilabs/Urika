@@ -23,6 +23,17 @@ class ReplSession:
     # Advisor suggestions — parsed from advisor output, used by /run
     pending_suggestions: list[dict] = field(default_factory=list)
 
+    # Notification bus — persistent, lives across runs
+    notification_bus: object = None  # NotificationBus | None (avoid circular import)
+
+    # Agent activity — tracks if any command is running
+    agent_active: bool = False
+    active_command: str = ""
+
+    # Remote command queue — commands from Telegram/Slack
+    _remote_queue: list[tuple[str, str]] = field(default_factory=list)
+    _remote_lock: threading.Lock = field(default_factory=threading.Lock)
+
     # Usage tracking
     session_start: float = field(default_factory=time.monotonic)
     session_start_iso: str = field(
@@ -83,6 +94,10 @@ class ReplSession:
         self.total_cost_usd = 0.0
         self.agent_calls = 0
         self.experiments_run = 0
+        # Reset command activity and remote queue
+        self._remote_queue = []
+        self.agent_active = False
+        self.active_command = ""
 
     def clear_project(self) -> None:
         self.project_path = None
@@ -128,6 +143,11 @@ class ReplSession:
             self.agent_turn = ""
             self.agent_error = ""
 
+    def set_agent_active(self, command: str) -> None:
+        """Mark an agent command as active."""
+        self.agent_active = True
+        self.active_command = command
+
     def set_agent_idle(self, error: str = "") -> None:
         """Mark the agent as finished (called from background thread)."""
         with self._agent_lock:
@@ -136,6 +156,8 @@ class ReplSession:
             self.agent_activity = ""
             self.agent_turn = ""
             self.agent_error = error
+            self.agent_active = False
+            self.active_command = ""
 
     def update_agent_activity(
         self,
@@ -151,6 +173,31 @@ class ReplSession:
                 self.agent_turn = turn
             if model:
                 self.model = model
+
+    # ── Remote command queue ────────────────────────────────────
+
+    @property
+    def has_remote_command(self) -> bool:
+        """Check if there are queued remote commands."""
+        with self._remote_lock:
+            return len(self._remote_queue) > 0
+
+    def queue_remote_command(self, command: str, args: str) -> None:
+        """Queue a command from Telegram/Slack for REPL execution."""
+        with self._remote_lock:
+            self._remote_queue.append((command, args))
+
+    def pop_remote_command(self) -> tuple[str, str] | None:
+        """Pop the next remote command, or None if empty."""
+        with self._remote_lock:
+            if self._remote_queue:
+                return self._remote_queue.pop(0)
+            return None
+
+    def clear_remote_queue(self) -> None:
+        """Clear all queued remote commands."""
+        with self._remote_lock:
+            self._remote_queue.clear()
 
     def save_usage(self) -> None:
         """Save session usage to project's usage.json."""
