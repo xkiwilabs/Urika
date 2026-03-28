@@ -3929,10 +3929,15 @@ def setup_command(json_output: bool) -> None:
                 # Use --force-reinstall if torchaudio has a CUDA mismatch
                 force = False
                 try:
-                    import torchaudio  # noqa: F401
-                except RuntimeError:
-                    force = True  # CUDA version mismatch
-                except ImportError:
+                    r = subprocess.run(
+                        [sys.executable, "-c", "import torchaudio"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    if r.returncode != 0 and "CUDA version" in r.stderr:
+                        force = True
+                except Exception:
                     pass
 
                 base = [
