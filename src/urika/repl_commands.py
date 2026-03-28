@@ -113,7 +113,7 @@ def cmd_project(session: ReplSession, args: str) -> None:
 
         bus = build_bus(path)
         if bus is not None:
-            bus.start()
+            bus.start(session=session)
             session.notification_bus = bus
     except Exception:
         pass  # Notifications are best-effort

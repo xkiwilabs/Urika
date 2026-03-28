@@ -375,3 +375,103 @@ class TestHandleRemoteCommand:
         bus = NotificationBus()
         # Should not raise
         bus.handle_remote_command("config")
+
+
+class TestRemoteCommandQueue:
+    """Tests for remote command queue edge cases using real ReplSession."""
+
+    def test_stop_clears_queue(self):
+        """Stop clears queued commands and reports it."""
+        from urika.repl_session import ReplSession
+
+        session = ReplSession()
+        session.queue_remote_command("advisor", "what next?")
+
+        bus = NotificationBus(project_name="test")
+        bus._session = session
+        bus._controller = type(
+            "C",
+            (),
+            {
+                "request_stop": lambda self: None,
+                "is_pause_requested": lambda self: False,
+                "is_stop_requested": lambda self: False,
+            },
+        )()
+
+        # Simulate agent active
+        session.set_agent_active("run")
+
+        responses: list[str] = []
+        bus._execute_run_control("stop", responses.append)
+
+        assert not session.has_remote_command
+        assert "cleared" in responses[0].lower() or "stop" in responses[0].lower()
+
+    def test_run_while_run_active(self):
+        """Run command rejected when a run is already active."""
+        from urika.repl_session import ReplSession
+
+        session = ReplSession()
+        session.set_agent_active("run")
+
+        bus = NotificationBus(project_name="test")
+        bus._session = session
+
+        responses: list[str] = []
+        bus._queue_agent_command("run", "", responses.append)
+
+        assert "stop first" in responses[0].lower()
+        assert not session.has_remote_command  # not queued
+
+    def test_resume_queues_run_resume(self):
+        """Resume queues a run --resume command."""
+        from urika.repl_session import ReplSession
+
+        session = ReplSession()
+        # Agent is not active — resume should work
+        bus = NotificationBus(project_name="test")
+        bus._session = session
+
+        responses: list[str] = []
+        bus._execute_run_control("resume", responses.append)
+
+        assert session.has_remote_command
+        cmd = session.pop_remote_command()
+        assert cmd == ("run", "--resume")
+
+    def test_agent_queued_while_busy_real_session(self):
+        """Agent command queued when another agent is running."""
+        from urika.repl_session import ReplSession
+
+        session = ReplSession()
+        session.set_agent_active("evaluate")
+
+        bus = NotificationBus(project_name="test")
+        bus._session = session
+
+        responses: list[str] = []
+        bus._queue_agent_command("advisor", "try PCA?", responses.append)
+
+        assert session.has_remote_command
+        assert "queued" in responses[0].lower()
+        cmd = session.pop_remote_command()
+        assert cmd == ("advisor", "try PCA?")
+
+    def test_agent_queued_while_idle_real_session(self):
+        """Agent command queued when REPL is idle."""
+        from urika.repl_session import ReplSession
+
+        session = ReplSession()
+        # Not setting agent_active — idle state
+
+        bus = NotificationBus(project_name="test")
+        bus._session = session
+
+        responses: list[str] = []
+        bus._queue_agent_command("plan", "", responses.append)
+
+        assert session.has_remote_command
+        assert "queued" in responses[0].lower()
+        cmd = session.pop_remote_command()
+        assert cmd == ("plan", "")
