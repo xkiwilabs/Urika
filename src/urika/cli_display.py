@@ -41,6 +41,7 @@ class _C:
     YELLOW = "\033[33m"  # evaluator, warnings
     MAGENTA = "\033[35m"  # advisor_agent
     RED = "\033[31m"  # errors
+    ORANGE = "\033[38;5;208m"  # 256-color orange for experiment info
     # Modifiers
     BOLD = "\033[1m"
     DIM = "\033[2m"
@@ -54,6 +55,7 @@ class _C:
             "CYAN",
             "DIM",
             "GREEN",
+            "ORANGE",
             "RED",
             "YELLOW",
             "BOLD",
@@ -78,11 +80,11 @@ _AGENT_COLORS: dict[str, str] = {
     "task_agent": _C.GREEN,
     "evaluator": _C.YELLOW,
     "advisor_agent": _C.MAGENTA,
-    "tool_builder": _C.CYAN + _C.DIM,
-    "literature_agent": _C.BLUE + _C.DIM,
-    "report_agent": _C.BLUE,
-    "presentation_agent": _C.BLUE + _C.DIM,
-    "data_agent": _C.GREEN + _C.DIM,
+    "tool_builder": _C.ORANGE,
+    "literature_agent": _C.BLUE + _C.BOLD,
+    "report_agent": _C.WHITE,
+    "presentation_agent": _C.GREEN + _C.BOLD,
+    "data_agent": _C.CYAN + _C.BOLD,
     "finalizer": _C.MAGENTA + _C.BOLD,
 }
 
@@ -103,8 +105,7 @@ _AGENT_LABELS: dict[str, str] = {
 
 # ── Spinner frames ───────────────────────────────────────────────
 
-_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"  # braille dots (fast)
-_SPINNER_SLOW = "\u25dc\u25dd\u25de\u25df"  # arc quarters (slow, for info row)
+_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"  # braille dots
 
 _THINKING_PHRASES = [
     "Thinking\u2026",
@@ -440,8 +441,8 @@ class ThinkingPanel:
                     self._spin_slow_counter += 1
                     if self._spin_slow_counter >= 5:  # ~600ms per frame
                         self._spin_slow_counter = 0
-                        self._spin_slow_idx = (self._spin_slow_idx + 1) % len(
-                            _SPINNER_SLOW
+                        self._spin_slow_idx = (
+                            (self._spin_slow_idx + 1) % len(_SPINNER)
                         )
                     self._render()
 
@@ -464,10 +465,10 @@ class ThinkingPanel:
             info_parts = []
             if self.experiment_id:
                 info_parts.append(
-                    f"{_C.CYAN}Experiment:{_C.RESET} {self.experiment_id}"
+                    f"{_C.ORANGE}Experiment:{_C.RESET} {self.experiment_id}"
                 )
             if self.turn:
-                info_parts.append(f"{_C.CYAN}{self.turn}{_C.RESET}")
+                info_parts.append(f"{_C.ORANGE}{self.turn}{_C.RESET}")
             if self.pause_requested:
                 info_parts.append(
                     f"{_C.YELLOW}\u23f8 Pausing after this turn\u2026{_C.RESET}"
@@ -477,7 +478,7 @@ class ThinkingPanel:
                 info_parts.append(f"{_C.DIM}{self.activity}{_C.RESET}")
             slow_ch = _SPINNER[self._spin_slow_idx % len(_SPINNER)]
             sep_dot = f" {_C.DIM}\u00b7{_C.RESET} "
-            info_line = f"  {_C.YELLOW}{slow_ch}{_C.RESET} {sep_dot.join(info_parts)}"
+            info_line = f"  {_C.ORANGE}{slow_ch}{_C.RESET} {sep_dot.join(info_parts)}"
 
             # ── Line 3: spinner + agent + activity ──
             ch = _SPINNER[self._spin_idx]
