@@ -301,6 +301,7 @@ def _handle_free_text(
         config = advisor.build_config(
             project_dir=session.project_path, experiment_id=""
         )
+        config.max_turns = 25  # Standalone chat needs more turns than in-loop advisor
 
         _on_msg = _make_on_message()
 

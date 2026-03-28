@@ -2736,6 +2736,7 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     if not json_output:
         print_agent("advisor_agent")
     config = role.build_config(project_dir=project_path, experiment_id="")
+    config.max_turns = 25  # Standalone chat needs more turns than in-loop advisor
 
     # Build richer context (like REPL's _handle_free_text)
     import json as _json
