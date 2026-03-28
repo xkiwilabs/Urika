@@ -16,6 +16,16 @@ PROJECT_COMMANDS = {}
 # Set before invoking the CLI run command from the REPL, cleared after.
 _user_input_callback = None
 
+# Module-level ref to the REPL session so cli.py can access the persistent bus.
+_repl_session_ref: ReplSession | None = None
+
+
+def _get_repl_bus():
+    """Return the REPL session's notification bus, or None."""
+    if _repl_session_ref is not None:
+        return _repl_session_ref.notification_bus
+    return None
+
 
 def command(name: str, requires_project: bool = False, description: str = ""):
     """Decorator to register a REPL command."""
@@ -481,13 +491,14 @@ def cmd_run(session: ReplSession, args: str) -> None:
     # Run directly without going through CLI (avoids duplicate header)
     import os
 
-    global _user_input_callback  # noqa: PLW0603
+    global _user_input_callback, _repl_session_ref  # noqa: PLW0603
 
     def _get_user_input() -> str:
         return session.pop_queued_input()
 
     os.environ["URIKA_REPL"] = "1"
     _user_input_callback = _get_user_input
+    _repl_session_ref = session
     session.set_agent_active("run")
     try:
         from urika.cli import run as cli_run
@@ -509,6 +520,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
     finally:
         session.set_agent_idle()
         _user_input_callback = None
+        _repl_session_ref = None
         os.environ.pop("URIKA_REPL", None)
 
 
@@ -659,7 +671,10 @@ def cmd_resume(session: ReplSession, args: str) -> None:
 
     import os
 
+    global _repl_session_ref  # noqa: PLW0603
+
     os.environ["URIKA_REPL"] = "1"
+    _repl_session_ref = session
     session.set_agent_active("run")
     try:
         from urika.cli import run as cli_run
@@ -679,6 +694,7 @@ def cmd_resume(session: ReplSession, args: str) -> None:
         )
     finally:
         session.set_agent_idle()
+        _repl_session_ref = None
         os.environ.pop("URIKA_REPL", None)
 
 

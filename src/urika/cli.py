@@ -1613,12 +1613,27 @@ def run(
 
         pause_ctrl = PauseController()
 
-        # Start notification bus if configured
-        from urika.notifications import build_bus
+        # Start notification bus — reuse REPL's persistent bus if available
+        notif_bus = None
+        _owns_bus_meta = False
+        if os.environ.get("URIKA_REPL"):
+            try:
+                from urika.repl_commands import _get_repl_bus
 
-        notif_bus = build_bus(project_path)
-        if notif_bus is not None:
-            notif_bus.start(controller=pause_ctrl)
+                notif_bus = _get_repl_bus()
+            except Exception:
+                pass
+
+        if notif_bus is None:
+            from urika.notifications import build_bus
+
+            notif_bus = build_bus(project_path)
+            if notif_bus is not None:
+                notif_bus.start(controller=pause_ctrl)
+            _owns_bus_meta = True
+        else:
+            # Update the persistent bus with this run's controller
+            notif_bus._controller = pause_ctrl
 
         key_listener: KeyListener | None = None
         if not json_output:
@@ -1738,8 +1753,10 @@ def run(
             )
 
         finally:
-            if notif_bus is not None:
+            if _owns_bus_meta and notif_bus is not None:
                 notif_bus.stop()
+            elif not _owns_bus_meta and notif_bus is not None:
+                notif_bus._controller = None
             if key_listener is not None:
                 key_listener.stop()
             if panel is not None:
@@ -1900,13 +1917,30 @@ def run(
 
     pause_ctrl = PauseController()
 
-    # Start notification bus if configured
-    from urika.notifications import build_bus as _build_bus
+    # Start notification bus if configured — reuse REPL's persistent bus if available
+    notif_bus = None
+    _owns_bus = False
+    if os.environ.get("URIKA_REPL"):
+        try:
+            from urika.repl_commands import _get_repl_bus
 
-    notif_bus = _build_bus(project_path)
+            notif_bus = _get_repl_bus()
+        except Exception:
+            pass
+
+    if notif_bus is None:
+        from urika.notifications import build_bus as _build_bus
+
+        notif_bus = _build_bus(project_path)
+        if notif_bus is not None:
+            notif_bus.start(controller=pause_ctrl)
+        _owns_bus = True
+    else:
+        # Update the persistent bus with this run's controller
+        notif_bus._controller = pause_ctrl
+
     if notif_bus is not None:
         notif_bus.set_experiment(experiment_id)
-        notif_bus.start(controller=pause_ctrl)
 
     key_listener: KeyListener | None = None
     if not json_output:
@@ -2037,8 +2071,10 @@ def run(
         )
 
     finally:
-        if notif_bus is not None:
+        if _owns_bus and notif_bus is not None:
             notif_bus.stop()
+        elif not _owns_bus and notif_bus is not None:
+            notif_bus._controller = None
         if key_listener is not None:
             key_listener.stop()
         if panel is not None:
