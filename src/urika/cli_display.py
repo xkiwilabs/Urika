@@ -41,6 +41,7 @@ class _C:
     YELLOW = "\033[33m"  # evaluator, warnings
     MAGENTA = "\033[35m"  # advisor_agent
     RED = "\033[31m"  # errors
+    ORANGE = "\033[38;5;208m"  # 256-color orange for experiment info
     # Modifiers
     BOLD = "\033[1m"
     DIM = "\033[2m"
@@ -54,6 +55,7 @@ class _C:
             "CYAN",
             "DIM",
             "GREEN",
+            "ORANGE",
             "RED",
             "YELLOW",
             "BOLD",
@@ -78,11 +80,11 @@ _AGENT_COLORS: dict[str, str] = {
     "task_agent": _C.GREEN,
     "evaluator": _C.YELLOW,
     "advisor_agent": _C.MAGENTA,
-    "tool_builder": _C.CYAN + _C.DIM,
-    "literature_agent": _C.BLUE + _C.DIM,
-    "report_agent": _C.BLUE,
-    "presentation_agent": _C.BLUE + _C.DIM,
-    "data_agent": _C.GREEN + _C.DIM,
+    "tool_builder": _C.ORANGE,
+    "literature_agent": _C.BLUE + _C.BOLD,
+    "report_agent": _C.WHITE,
+    "presentation_agent": _C.GREEN + _C.BOLD,
+    "data_agent": _C.CYAN + _C.BOLD,
     "finalizer": _C.MAGENTA + _C.BOLD,
 }
 
@@ -464,10 +466,10 @@ class ThinkingPanel:
             info_parts = []
             if self.experiment_id:
                 info_parts.append(
-                    f"{_C.CYAN}Experiment:{_C.RESET} {self.experiment_id}"
+                    f"{_C.ORANGE}Experiment:{_C.RESET} {self.experiment_id}"
                 )
             if self.turn:
-                info_parts.append(f"{_C.CYAN}{self.turn}{_C.RESET}")
+                info_parts.append(f"{_C.ORANGE}{self.turn}{_C.RESET}")
             if self.pause_requested:
                 info_parts.append(
                     f"{_C.YELLOW}\u23f8 Pausing after this turn\u2026{_C.RESET}"
@@ -477,7 +479,7 @@ class ThinkingPanel:
                 info_parts.append(f"{_C.DIM}{self.activity}{_C.RESET}")
             slow_ch = _SPINNER[self._spin_slow_idx % len(_SPINNER)]
             sep_dot = f" {_C.DIM}\u00b7{_C.RESET} "
-            info_line = f"  {_C.YELLOW}{slow_ch}{_C.RESET} {sep_dot.join(info_parts)}"
+            info_line = f"  {_C.ORANGE}{slow_ch}{_C.RESET} {sep_dot.join(info_parts)}"
 
             # ── Line 3: spinner + agent + activity ──
             ch = _SPINNER[self._spin_idx]
