@@ -106,7 +106,8 @@ def test_interactive_prompt_keyboard_interrupt_no_default():
     with patch(
         "urika.cli_helpers._pt_prompt", side_effect=KeyboardInterrupt
     ):
-        with pytest.raises(click.Abort):
+        from urika.cli_helpers import UserCancelled
+        with pytest.raises(UserCancelled):
             interactive_prompt("Enter")
 
 

@@ -39,7 +39,8 @@ class ClaudeSDKRunner(AgentRunner):
         model_name = ""
         is_error = False
 
-        async for msg in query(prompt=prompt, options=options):
+        try:
+          async for msg in query(prompt=prompt, options=options):
             if on_message is not None:
                 try:
                     on_message(msg)
@@ -60,9 +61,30 @@ class ClaudeSDKRunner(AgentRunner):
                 duration_ms = msg.duration_ms
                 cost_usd = msg.total_cost_usd
                 is_error = msg.is_error
+                # Capture the actual error/result text
+                result_text = getattr(msg, "result", "") or ""
                 # Populate token counts if available from SDK
                 tokens_in = getattr(msg, "total_input_tokens", 0) or 0
                 tokens_out = getattr(msg, "total_output_tokens", 0) or 0
+
+        except Exception as exc:
+            # Extract the actual error from the SDK exception
+            error_detail = str(exc)
+            return AgentResult(
+                success=False,
+                messages=messages,
+                text_output="\n".join(text_parts),
+                session_id=session_id,
+                error=error_detail,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                model=model_name,
+            )
+
+        # Build error message with actual details
+        error_msg = None
+        if is_error:
+            error_msg = result_text or "Agent reported error (no details)"
 
         return AgentResult(
             success=not is_error,
@@ -72,7 +94,7 @@ class ClaudeSDKRunner(AgentRunner):
             num_turns=num_turns,
             duration_ms=duration_ms,
             cost_usd=cost_usd,
-            error="Agent reported error" if is_error else None,
+            error=error_msg,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             model=model_name,
