@@ -42,6 +42,36 @@ def _make_on_message() -> object:
     return _on_msg
 
 
+def _record_agent_usage(
+    project_path: Path,
+    result: object,
+    start_iso: str,
+    start_ms: int,
+) -> None:
+    """Record usage from a single agent call in the CLI."""
+    import time
+
+    from datetime import datetime, timezone
+
+    try:
+        from urika.core.usage import record_session
+
+        elapsed_ms = int(time.monotonic() * 1000) - start_ms
+        record_session(
+            project_path,
+            started=start_iso,
+            ended=datetime.now(timezone.utc).isoformat(),
+            duration_ms=elapsed_ms,
+            tokens_in=getattr(result, "tokens_in", 0),
+            tokens_out=getattr(result, "tokens_out", 0),
+            cost_usd=getattr(result, "cost_usd", 0.0) or 0.0,
+            agent_calls=1,
+            experiments_run=0,
+        )
+    except Exception:
+        pass
+
+
 def _projects_dir() -> Path:
     """Default directory for new projects."""
     env = os.environ.get("URIKA_PROJECTS_DIR")
@@ -1556,9 +1586,9 @@ def run(
 
         _rc = _load_rc(project_path)
         panel = ThinkingPanel()
-        panel.project = f"{project} · {_rc.privacy_mode}"
+        panel.project = f"{project} \u00b7 {_rc.privacy_mode}"
         panel._project_dir = project_path
-        panel.activity = thinking_phrase()
+        panel.activity = "Determining next experiment\u2026"
         panel.activate()
         panel.start_spinner()
 
@@ -1581,8 +1611,10 @@ def run(
         if not json_output:
 
             def _on_pause_esc_meta() -> None:
+                if panel is not None:
+                    panel.update(pause_requested=True)
                 print_warning(
-                    "\n\u23f8 Pause requested — will pause after current turn"
+                    "\n\u23f8 Pause requested \u2014 will pause after current turn"
                     " completes..."
                 )
 
@@ -1607,7 +1639,10 @@ def run(
 
         signal.signal(signal.SIGINT, _cleanup_meta)
 
+        from datetime import datetime, timezone
+
         start_ms = int(time.monotonic() * 1000)
+        start_iso = datetime.now(timezone.utc).isoformat()
         sdk_runner = get_runner()
 
         try:
@@ -1691,6 +1726,35 @@ def run(
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
         n_exp = result.get("experiments_run", 0)
+
+        # Aggregate usage from all experiment results
+        _meta_tokens_in = 0
+        _meta_tokens_out = 0
+        _meta_cost_usd = 0.0
+        _meta_agent_calls = 0
+        for exp_result in result.get("results", []):
+            _meta_tokens_in += exp_result.get("tokens_in", 0)
+            _meta_tokens_out += exp_result.get("tokens_out", 0)
+            _meta_cost_usd += exp_result.get("cost_usd", 0.0)
+            _meta_agent_calls += exp_result.get("agent_calls", 0)
+
+        # Record usage for this CLI session
+        try:
+            from urika.core.usage import record_session
+
+            record_session(
+                project_path,
+                started=start_iso,
+                ended=datetime.now(timezone.utc).isoformat(),
+                duration_ms=elapsed_ms,
+                tokens_in=_meta_tokens_in,
+                tokens_out=_meta_tokens_out,
+                cost_usd=_meta_cost_usd,
+                agent_calls=_meta_agent_calls,
+                experiments_run=n_exp,
+            )
+        except Exception:
+            pass
 
         if json_output:
             from urika.cli_helpers import output_json
@@ -1777,6 +1841,10 @@ def run(
         else:
             print_step(f"Running experiment {experiment_id} (max {max_turns} turns)")
 
+    # Set experiment ID on panel
+    if panel is not None:
+        panel.update(experiment_id=experiment_id)
+
     # Create pause controller and key listener for ESC-to-pause
     from urika.orchestrator.pause import KeyListener, PauseController
 
@@ -1785,8 +1853,10 @@ def run(
     if not json_output:
 
         def _on_pause_esc() -> None:
+            if panel is not None:
+                panel.update(pause_requested=True)
             print_warning(
-                "\n\u23f8 Pause requested — will pause after current turn completes..."
+                "\n\u23f8 Pause requested \u2014 will pause after current turn completes..."
             )
 
         key_listener = KeyListener(pause_ctrl, on_pause_requested=_on_pause_esc)
@@ -1814,7 +1884,10 @@ def run(
     original_handler = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, _cleanup_on_interrupt)
 
+    from datetime import datetime, timezone
+
     start_ms = int(time.monotonic() * 1000)
+    start_iso = datetime.now(timezone.utc).isoformat()
 
     sdk_runner = get_runner()
 
@@ -1909,6 +1982,24 @@ def run(
     run_status = result.get("status", "unknown")
     turns = result.get("turns", 0)
     error = result.get("error")
+
+    # Record usage for this CLI session
+    try:
+        from urika.core.usage import record_session
+
+        record_session(
+            project_path,
+            started=start_iso,
+            ended=datetime.now(timezone.utc).isoformat(),
+            duration_ms=elapsed_ms,
+            tokens_in=result.get("tokens_in", 0),
+            tokens_out=result.get("tokens_out", 0),
+            cost_usd=result.get("cost_usd", 0.0),
+            agent_calls=result.get("agent_calls", 0),
+            experiments_run=1,
+        )
+    except Exception:
+        pass
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -2516,6 +2607,9 @@ def knowledge_list(project: str, json_output: bool) -> None:
 def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     """Ask the advisor agent a question about the project."""
     import asyncio
+    import time
+
+    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -2560,6 +2654,9 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         except Exception:
             pass
 
+    _start_ms = int(time.monotonic() * 1000)
+    _start_iso = datetime.now(timezone.utc).isoformat()
+
     try:
         with Spinner("Thinking"):
             result = asyncio.run(
@@ -2574,6 +2671,8 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     except KeyboardInterrupt:
         click.echo("\n  Advisor stopped.")
         return
+
+    _record_agent_usage(project_path, result, _start_iso, _start_ms)
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -2672,6 +2771,9 @@ def evaluate(
 ) -> None:
     """Run the evaluator agent on an experiment."""
     import asyncio
+    import time
+
+    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -2705,6 +2807,9 @@ def evaluate(
     if instructions:
         prompt = f"User instructions: {instructions}\n\n{prompt}"
 
+    _start_ms = int(time.monotonic() * 1000)
+    _start_iso = datetime.now(timezone.utc).isoformat()
+
     if not json_output:
         click.echo(f"  Evaluating {experiment_id}...")
     try:
@@ -2722,6 +2827,8 @@ def evaluate(
         click.echo("\n  Evaluation stopped.")
         click.echo("  Re-run with: urika evaluate [--instructions '...']")
         return
+
+    _record_agent_usage(project_path, result, _start_iso, _start_ms)
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -2751,6 +2858,9 @@ def plan(
 ) -> None:
     """Run the planning agent to design the next method."""
     import asyncio
+    import time
+
+    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -2784,6 +2894,9 @@ def plan(
     if instructions:
         prompt = f"User instructions: {instructions}\n\n{prompt}"
 
+    _start_ms = int(time.monotonic() * 1000)
+    _start_iso = datetime.now(timezone.utc).isoformat()
+
     if not json_output:
         click.echo(f"  Planning for {experiment_id}...")
     try:
@@ -2801,6 +2914,8 @@ def plan(
         click.echo("\n  Planning stopped.")
         click.echo("  Re-run with: urika plan [--instructions '...']")
         return
+
+    _record_agent_usage(project_path, result, _start_iso, _start_ms)
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -2826,6 +2941,10 @@ def plan(
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def finalize(project: str | None, instructions: str, json_output: bool) -> None:
     """Finalize the project — produce polished methods, report, and presentation."""
+    import time
+
+    from datetime import datetime, timezone
+
     from urika.cli_display import (
         ThinkingPanel,
         print_agent,
@@ -2848,6 +2967,8 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
         raise click.ClickException("Claude Agent SDK not installed.")
 
     runner = get_runner()
+    _start_ms = int(time.monotonic() * 1000)
+    _start_iso = datetime.now(timezone.utc).isoformat()
 
     if json_output:
 
@@ -2929,6 +3050,25 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
             return
         finally:
             panel.cleanup()
+
+    # Record finalize usage
+    try:
+        from urika.core.usage import record_session
+
+        _elapsed_ms = int(time.monotonic() * 1000) - _start_ms
+        record_session(
+            project_path,
+            started=_start_iso,
+            ended=datetime.now(timezone.utc).isoformat(),
+            duration_ms=_elapsed_ms,
+            tokens_in=result.get("tokens_in", 0),
+            tokens_out=result.get("tokens_out", 0),
+            cost_usd=result.get("cost_usd", 0.0),
+            agent_calls=result.get("agent_calls", 0),
+            experiments_run=0,
+        )
+    except Exception:
+        pass
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -3133,6 +3273,9 @@ def build_tool(
       urika build-tool my-project "install librosa and create an audio feature extractor"
     """
     import asyncio
+    import time
+
+    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
     from urika.cli_helpers import interactive_prompt
@@ -3163,6 +3306,9 @@ def build_tool(
         print_agent("tool_builder")
     config = role.build_config(project_dir=project_path)
 
+    _start_ms = int(time.monotonic() * 1000)
+    _start_iso = datetime.now(timezone.utc).isoformat()
+
     try:
         with Spinner("Building tool"):
             result = asyncio.run(
@@ -3177,6 +3323,8 @@ def build_tool(
     except KeyboardInterrupt:
         click.echo("\n  Tool build stopped.")
         return
+
+    _record_agent_usage(project_path, result, _start_iso, _start_ms)
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -3203,6 +3351,9 @@ def build_tool(
 def present(project: str | None, instructions: str, json_output: bool) -> None:
     """Generate a presentation for an experiment."""
     import asyncio
+    import time
+
+    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, print_agent, print_success
 
@@ -3239,6 +3390,13 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
 
         choice = _prompt_numbered("\n  Select:", options, default=1)
 
+    _start_ms = int(time.monotonic() * 1000)
+    _start_iso = datetime.now(timezone.utc).isoformat()
+    _pres_tokens_in = 0
+    _pres_tokens_out = 0
+    _pres_cost = 0.0
+    _pres_calls = 0
+
     try:
         if choice.startswith("All"):
             # Generate presentation for each experiment
@@ -3246,7 +3404,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                 if not json_output:
                     print_agent("presentation_agent")
                 with Spinner("Creating slides"):
-                    asyncio.run(
+                    _pu = asyncio.run(
                         _generate_presentation(
                             project_path,
                             exp.experiment_id,
@@ -3256,6 +3414,10 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                             instructions=instructions,
                         )
                     )
+                    _pres_tokens_in += _pu.get("tokens_in", 0)
+                    _pres_tokens_out += _pu.get("tokens_out", 0)
+                    _pres_cost += _pu.get("cost_usd", 0.0)
+                    _pres_calls += _pu.get("agent_calls", 0)
                 if not json_output:
                     print_success(
                         f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
@@ -3271,7 +3433,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
             if not json_output:
                 print_agent("presentation_agent")
             with Spinner("Creating slides"):
-                asyncio.run(
+                _pu = asyncio.run(
                     _generate_presentation(
                         project_path,
                         "",
@@ -3281,6 +3443,10 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                         instructions=instructions,
                     )
                 )
+                _pres_tokens_in += _pu.get("tokens_in", 0)
+                _pres_tokens_out += _pu.get("tokens_out", 0)
+                _pres_cost += _pu.get("cost_usd", 0.0)
+                _pres_calls += _pu.get("agent_calls", 0)
             pres_path = project_path / "projectbook" / "presentation" / "index.html"
             if json_output:
                 from urika.cli_helpers import output_json
@@ -3294,7 +3460,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
             if not json_output:
                 print_agent("presentation_agent")
             with Spinner("Creating slides"):
-                asyncio.run(
+                _pu = asyncio.run(
                     _generate_presentation(
                         project_path,
                         exp_id,
@@ -3304,6 +3470,10 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                         instructions=instructions,
                     )
                 )
+                _pres_tokens_in += _pu.get("tokens_in", 0)
+                _pres_tokens_out += _pu.get("tokens_out", 0)
+                _pres_cost += _pu.get("cost_usd", 0.0)
+                _pres_calls += _pu.get("agent_calls", 0)
             pres_path = (
                 project_path / "experiments" / exp_id / "presentation" / "index.html"
             )
@@ -3316,6 +3486,25 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
     except KeyboardInterrupt:
         click.echo("\n  Presentation stopped.")
         click.echo("  Re-run with: urika present [--instructions '...']")
+
+    # Record presentation usage
+    try:
+        from urika.core.usage import record_session
+
+        _elapsed_ms = int(time.monotonic() * 1000) - _start_ms
+        record_session(
+            project_path,
+            started=_start_iso,
+            ended=datetime.now(timezone.utc).isoformat(),
+            duration_ms=_elapsed_ms,
+            tokens_in=_pres_tokens_in,
+            tokens_out=_pres_tokens_out,
+            cost_usd=_pres_cost,
+            agent_calls=_pres_calls,
+            experiments_run=0,
+        )
+    except Exception:
+        pass
 
 
 @cli.command()

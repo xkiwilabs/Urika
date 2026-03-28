@@ -72,8 +72,24 @@ async def _generate_reports(
     progress: object,
     runner: AgentRunner | None = None,
     on_message: object = None,
-) -> None:
-    """Generate labbook reports and update README after experiment completion."""
+) -> dict[str, int | float]:
+    """Generate labbook reports and update README after experiment completion.
+
+    Returns a dict with usage totals: tokens_in, tokens_out, cost_usd, agent_calls.
+    """
+    _usage: dict[str, int | float] = {
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "agent_calls": 0,
+    }
+
+    def _track(result: object) -> None:
+        _usage["tokens_in"] += result.tokens_in
+        _usage["tokens_out"] += result.tokens_out
+        _usage["cost_usd"] += result.cost_usd or 0.0
+        _usage["agent_calls"] += 1
+
     try:
         from urika.core.labbook import (
             generate_experiment_summary,
@@ -97,9 +113,13 @@ async def _generate_reports(
         summary = ""
         if runner is not None:
             try:
-                summary = await _async_generate_summary(
+                summary, summary_usage = await _async_generate_summary(
                     project_dir, experiment_id, runner, on_message
                 )
+                _usage["tokens_in"] += summary_usage.get("tokens_in", 0)
+                _usage["tokens_out"] += summary_usage.get("tokens_out", 0)
+                _usage["cost_usd"] += summary_usage.get("cost_usd", 0.0)
+                _usage["agent_calls"] += summary_usage.get("agent_calls", 0)
             except Exception as exc:
                 logger.warning("README summary generation failed: %s", exc)
         write_readme(project_dir, summary=summary)
@@ -123,6 +143,7 @@ async def _generate_reports(
                     f"Write a detailed narrative report for experiment {experiment_id}.",
                     on_message=on_message,
                 )
+                _track(result)
                 if result.success and result.text_output:
                     from urika.core.report_writer import write_versioned
 
@@ -155,6 +176,7 @@ async def _generate_reports(
                     "Write a project-level narrative report covering all experiments and the research progression.",
                     on_message=on_message,
                 )
+                _track(result)
                 if result.success and result.text_output:
                     from urika.core.report_writer import write_versioned
 
@@ -168,11 +190,17 @@ async def _generate_reports(
     # Generate presentation slide deck
     if runner is not None:
         try:
-            await _generate_presentation(
+            pres_usage = await _generate_presentation(
                 project_dir, experiment_id, runner, progress, on_message
             )
+            _usage["tokens_in"] += pres_usage.get("tokens_in", 0)
+            _usage["tokens_out"] += pres_usage.get("tokens_out", 0)
+            _usage["cost_usd"] += pres_usage.get("cost_usd", 0.0)
+            _usage["agent_calls"] += pres_usage.get("agent_calls", 0)
         except Exception as exc:
             logger.warning("Presentation generation failed: %s", exc)
+
+    return _usage
 
 
 async def _generate_presentation(
@@ -182,8 +210,11 @@ async def _generate_presentation(
     progress: object,
     on_message: object = None,
     instructions: str = "",
-) -> None:
-    """Generate a reveal.js presentation from experiment results."""
+) -> dict[str, int | float]:
+    """Generate a reveal.js presentation from experiment results.
+
+    Returns a dict with usage totals: tokens_in, tokens_out, cost_usd, agent_calls.
+    """
     import tomllib
 
     from urika.core.presentation import parse_slide_json, render_presentation
@@ -191,9 +222,16 @@ async def _generate_presentation(
     registry = AgentRegistry()
     registry.discover()
 
+    _empty_usage: dict[str, int | float] = {
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "agent_calls": 0,
+    }
+
     pres_role = registry.get("presentation_agent")
     if pres_role is None:
-        return
+        return _empty_usage
 
     progress("agent", "Presentation agent — creating slide deck")
 
@@ -208,13 +246,19 @@ async def _generate_presentation(
         prompt,
         on_message=on_message,
     )
+    _pres_usage: dict[str, int | float] = {
+        "tokens_in": result.tokens_in,
+        "tokens_out": result.tokens_out,
+        "cost_usd": result.cost_usd or 0.0,
+        "agent_calls": 1,
+    }
 
     if not result.success:
-        return
+        return _pres_usage
 
     slide_data = parse_slide_json(result.text_output)
     if slide_data is None:
-        return
+        return _pres_usage
 
     # Read theme preference
     theme = "light"
@@ -266,6 +310,7 @@ async def _generate_presentation(
                             shutil.copy2(fig, pres_figures / fig.name)
 
     progress("result", f"Presentation saved to {output_dir}/index.html")
+    return _pres_usage
 
 
 async def _async_generate_summary(
@@ -273,9 +318,19 @@ async def _async_generate_summary(
     experiment_id: str,
     runner: AgentRunner,
     on_message: object = None,
-) -> str:
-    """Call report agent to write a short project status summary."""
+) -> tuple[str, dict[str, int | float]]:
+    """Call report agent to write a short project status summary.
+
+    Returns (summary_text, usage_dict).
+    """
     import json as _json
+
+    _empty_usage: dict[str, int | float] = {
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "agent_calls": 0,
+    }
 
     registry = AgentRegistry()
     registry.discover()
@@ -283,7 +338,7 @@ async def _async_generate_summary(
     # Use report_agent (not evaluator) — this is a writing task, not evaluation
     report_role = registry.get("report_agent")
     if report_role is None:
-        return ""
+        return "", _empty_usage
 
     # Build context from methods.json and progress
     methods_path = project_dir / "methods.json"
@@ -324,6 +379,12 @@ async def _async_generate_summary(
     config.max_turns = 3  # Keep it short
 
     result = await runner.run(config, prompt, on_message=on_message)
+    _result_usage: dict[str, int | float] = {
+        "tokens_in": result.tokens_in,
+        "tokens_out": result.tokens_out,
+        "cost_usd": result.cost_usd or 0.0,
+        "agent_calls": 1,
+    }
     if result.success and result.text_output:
         text = result.text_output.strip()
         # Remove any JSON blocks if agent included them
@@ -333,8 +394,8 @@ async def _async_generate_summary(
         # Take first paragraph
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         if paragraphs:
-            return paragraphs[0]
-    return ""
+            return paragraphs[0], _result_usage
+    return "", _result_usage
 
 
 def _print_run_summary(project_dir: Path, experiment_id: str, progress: object) -> None:
@@ -443,6 +504,23 @@ async def run_experiment(
     registry = AgentRegistry()
     registry.discover()
 
+    # Usage accumulators — aggregate across all agent calls
+    _total_tokens_in = 0
+    _total_tokens_out = 0
+    _total_cost_usd = 0.0
+    _total_agent_calls = 0
+
+    def _usage_dict(status: str, turns: int, **extra: Any) -> dict[str, Any]:
+        return {
+            "status": status,
+            "turns": turns,
+            "tokens_in": _total_tokens_in,
+            "tokens_out": _total_tokens_out,
+            "cost_usd": _total_cost_usd,
+            "agent_calls": _total_agent_calls,
+            **extra,
+        }
+
     if resume:
         try:
             state = resume_session(project_dir, experiment_id)
@@ -450,7 +528,7 @@ async def run_experiment(
             if state.max_turns is not None:
                 max_turns = state.max_turns
         except Exception as exc:
-            return {"status": "failed", "error": str(exc), "turns": 0}
+            return _usage_dict("failed", 0, error=str(exc))
 
         # Use the last run's next_step as the initial task prompt, if available
         task_prompt = "Continue the experiment with a different approach."
@@ -467,7 +545,7 @@ async def run_experiment(
         try:
             start_session(project_dir, experiment_id, max_turns=max_turns)
         except Exception as exc:
-            return {"status": "failed", "error": str(exc), "turns": 0}
+            return _usage_dict("failed", 0, error=str(exc))
         start_turn = 1
         task_prompt = "Begin the experiment. Try an initial approach."
 
@@ -486,12 +564,17 @@ async def run_experiment(
         if knowledge_summary:
             lit_role = registry.get("literature_agent")
             if lit_role is not None:
+                progress("agent", "Literature agent \u2014 scanning knowledge base")
                 lit_config = lit_role.build_config(project_dir=project_dir)
                 lit_result = await runner.run(
                     lit_config,
                     "Scan the knowledge directory and summarize available knowledge.",
                     on_message=on_message,
                 )
+                _total_tokens_in += lit_result.tokens_in
+                _total_tokens_out += lit_result.tokens_out
+                _total_cost_usd += lit_result.cost_usd or 0.0
+                _total_agent_calls += 1
                 # Use the literature agent's output if available
                 if lit_result.success and lit_result.text_output:
                     knowledge_summary = lit_result.text_output
@@ -504,7 +587,7 @@ async def run_experiment(
         if pause_controller is not None and pause_controller.is_pause_requested():
             pause_session(project_dir, experiment_id)
             progress("phase", f"Paused after turn {turn - 1}")
-            return {"status": "paused", "turns": turn - 1}
+            return _usage_dict("paused", turn - 1)
 
         progress("turn", f"Turn {turn}/{max_turns}")
         try:
@@ -518,6 +601,10 @@ async def run_experiment(
                 plan_result = await runner.run(
                     plan_config, task_prompt, on_message=on_message
                 )
+                _total_tokens_in += plan_result.tokens_in
+                _total_tokens_out += plan_result.tokens_out
+                _total_cost_usd += plan_result.cost_usd or 0.0
+                _total_agent_calls += 1
 
                 if not plan_result.success:
                     fail_session(
@@ -525,11 +612,11 @@ async def run_experiment(
                         experiment_id,
                         error=plan_result.error or "planning_agent failed",
                     )
-                    return {
-                        "status": "failed",
-                        "error": plan_result.error or "planning_agent failed",
-                        "turns": turn,
-                    }
+                    return _usage_dict(
+                        "failed",
+                        turn,
+                        error=plan_result.error or "planning_agent failed",
+                    )
 
                 method_plan = parse_method_plan(plan_result.text_output)
 
@@ -539,11 +626,15 @@ async def run_experiment(
                     tool_role = registry.get("tool_builder")
                     if tool_role is not None:
                         tool_config = tool_role.build_config(project_dir=project_dir)
-                        await runner.run(
+                        _tool_result = await runner.run(
                             tool_config,
                             json.dumps(method_plan),
                             on_message=on_message,
                         )
+                        _total_tokens_in += _tool_result.tokens_in
+                        _total_tokens_out += _tool_result.tokens_out
+                        _total_cost_usd += _tool_result.cost_usd or 0.0
+                        _total_agent_calls += 1
 
                 if method_plan and method_plan.get("needs_literature"):
                     progress("agent", "Literature agent — searching knowledge")
@@ -557,6 +648,10 @@ async def run_experiment(
                             ),
                             on_message=on_message,
                         )
+                        _total_tokens_in += lit_result.tokens_in
+                        _total_tokens_out += lit_result.tokens_out
+                        _total_cost_usd += lit_result.cost_usd or 0.0
+                        _total_agent_calls += 1
                         if lit_result.success and lit_result.text_output:
                             task_input = (
                                 lit_result.text_output
@@ -583,6 +678,10 @@ async def run_experiment(
                     data_result = await runner.run(
                         data_config, task_input, on_message=on_message
                     )
+                    _total_tokens_in += data_result.tokens_in
+                    _total_tokens_out += data_result.tokens_out
+                    _total_cost_usd += data_result.cost_usd or 0.0
+                    _total_agent_calls += 1
                     if data_result.success and data_result.text_output:
                         task_input = data_result.text_output + "\n\n" + task_input
 
@@ -593,11 +692,11 @@ async def run_experiment(
                 fail_session(
                     project_dir, experiment_id, error="task_agent role not found"
                 )
-                return {
-                    "status": "failed",
-                    "error": "task_agent role not found",
-                    "turns": turn,
-                }
+                return _usage_dict(
+                    "failed",
+                    turn,
+                    error="task_agent role not found",
+                )
 
             task_config = task_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
@@ -605,6 +704,10 @@ async def run_experiment(
             task_result = await runner.run(
                 task_config, task_input, on_message=on_message
             )
+            _total_tokens_in += task_result.tokens_in
+            _total_tokens_out += task_result.tokens_out
+            _total_cost_usd += task_result.cost_usd or 0.0
+            _total_agent_calls += 1
 
             if not task_result.success:
                 fail_session(
@@ -612,11 +715,11 @@ async def run_experiment(
                     experiment_id,
                     error=task_result.error or "task_agent failed",
                 )
-                return {
-                    "status": "failed",
-                    "error": task_result.error or "task_agent failed",
-                    "turns": turn,
-                }
+                return _usage_dict(
+                    "failed",
+                    turn,
+                    error=task_result.error or "task_agent failed",
+                )
 
             # Parse and record runs
             runs = parse_run_records(task_result.text_output)
@@ -665,11 +768,11 @@ async def run_experiment(
                 fail_session(
                     project_dir, experiment_id, error="evaluator role not found"
                 )
-                return {
-                    "status": "failed",
-                    "error": "evaluator role not found",
-                    "turns": turn,
-                }
+                return _usage_dict(
+                    "failed",
+                    turn,
+                    error="evaluator role not found",
+                )
 
             eval_config = eval_role.build_config(
                 project_dir=project_dir, experiment_id=experiment_id
@@ -678,6 +781,10 @@ async def run_experiment(
             eval_result = await runner.run(
                 eval_config, eval_input, on_message=on_message
             )
+            _total_tokens_in += eval_result.tokens_in
+            _total_tokens_out += eval_result.tokens_out
+            _total_cost_usd += eval_result.cost_usd or 0.0
+            _total_agent_calls += 1
 
             if not eval_result.success:
                 fail_session(
@@ -685,11 +792,11 @@ async def run_experiment(
                     experiment_id,
                     error=eval_result.error or "evaluator failed",
                 )
-                return {
-                    "status": "failed",
-                    "error": eval_result.error or "evaluator failed",
-                    "turns": turn,
-                }
+                return _usage_dict(
+                    "failed",
+                    turn,
+                    error=eval_result.error or "evaluator failed",
+                )
 
             evaluation = parse_evaluation(eval_result.text_output)
             if evaluation and evaluation.get("criteria_met"):
@@ -721,6 +828,10 @@ async def run_experiment(
                             f"{eval_result.text_output}\n\n{review_prompt}",
                             on_message=on_message,
                         )
+                        _total_tokens_in += review_result.tokens_in
+                        _total_tokens_out += review_result.tokens_out
+                        _total_cost_usd += review_result.cost_usd or 0.0
+                        _total_agent_calls += 1
                         if review_result.success:
                             review_suggestions = parse_suggestions(
                                 review_result.text_output
@@ -748,15 +859,19 @@ async def run_experiment(
                                 continue
 
                 complete_session(project_dir, experiment_id)
-                await _generate_reports(
+                report_usage = await _generate_reports(
                     project_dir,
                     experiment_id,
                     progress,
                     runner=runner,
                     on_message=on_message,
                 )
+                _total_tokens_in += report_usage.get("tokens_in", 0)
+                _total_tokens_out += report_usage.get("tokens_out", 0)
+                _total_cost_usd += report_usage.get("cost_usd", 0.0)
+                _total_agent_calls += report_usage.get("agent_calls", 0)
                 _print_run_summary(project_dir, experiment_id, progress)
-                return {"status": "completed", "turns": turn}
+                return _usage_dict("completed", turn)
 
             # --- advisor_agent ---
             progress("agent", "Advisor agent — proposing next steps")
@@ -767,11 +882,11 @@ async def run_experiment(
                     experiment_id,
                     error="advisor_agent role not found",
                 )
-                return {
-                    "status": "failed",
-                    "error": "advisor_agent role not found",
-                    "turns": turn,
-                }
+                return _usage_dict(
+                    "failed",
+                    turn,
+                    error="advisor_agent role not found",
+                )
 
             # Check for queued user input
             user_inject = ""
@@ -792,6 +907,10 @@ async def run_experiment(
             suggest_result = await runner.run(
                 suggest_config, advisor_prompt, on_message=on_message
             )
+            _total_tokens_in += suggest_result.tokens_in
+            _total_tokens_out += suggest_result.tokens_out
+            _total_cost_usd += suggest_result.cost_usd or 0.0
+            _total_agent_calls += 1
 
             if not suggest_result.success:
                 fail_session(
@@ -799,11 +918,11 @@ async def run_experiment(
                     experiment_id,
                     error=suggest_result.error or "advisor_agent failed",
                 )
-                return {
-                    "status": "failed",
-                    "error": suggest_result.error or "advisor_agent failed",
-                    "turns": turn,
-                }
+                return _usage_dict(
+                    "failed",
+                    turn,
+                    error=suggest_result.error or "advisor_agent failed",
+                )
 
             suggestions = parse_suggestions(suggest_result.text_output)
 
@@ -849,12 +968,16 @@ async def run_experiment(
 
         except Exception as exc:
             fail_session(project_dir, experiment_id, error=str(exc))
-            return {"status": "failed", "error": str(exc), "turns": turn}
+            return _usage_dict("failed", turn, error=str(exc))
 
     # Reached max_turns without criteria being met
     complete_session(project_dir, experiment_id)
-    await _generate_reports(
+    report_usage = await _generate_reports(
         project_dir, experiment_id, progress, runner=runner, on_message=on_message
     )
+    _total_tokens_in += report_usage.get("tokens_in", 0)
+    _total_tokens_out += report_usage.get("tokens_out", 0)
+    _total_cost_usd += report_usage.get("cost_usd", 0.0)
+    _total_agent_calls += report_usage.get("agent_calls", 0)
     _print_run_summary(project_dir, experiment_id, progress)
-    return {"status": "completed", "turns": max_turns}
+    return _usage_dict("completed", max_turns)

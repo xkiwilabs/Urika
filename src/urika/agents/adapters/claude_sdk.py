@@ -63,9 +63,10 @@ class ClaudeSDKRunner(AgentRunner):
                 is_error = msg.is_error
                 # Capture the actual error/result text
                 result_text = getattr(msg, "result", "") or ""
-                # Populate token counts if available from SDK
-                tokens_in = getattr(msg, "total_input_tokens", 0) or 0
-                tokens_out = getattr(msg, "total_output_tokens", 0) or 0
+                # Populate token counts from usage dict
+                usage = getattr(msg, "usage", None) or {}
+                tokens_in = usage.get("input_tokens", 0) or 0
+                tokens_out = usage.get("output_tokens", 0) or 0
 
         except Exception as exc:
             # Extract the actual error from the SDK exception

@@ -103,7 +103,8 @@ _AGENT_LABELS: dict[str, str] = {
 
 # ── Spinner frames ───────────────────────────────────────────────
 
-_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
+_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"  # braille dots (fast)
+_SPINNER_SLOW = "\u25dc\u25dd\u25de\u25df"  # arc quarters (slow, for info row)
 
 _THINKING_PHRASES = [
     "Thinking\u2026",
@@ -174,6 +175,7 @@ def print_header(
     w = content_width  # visible character width
     try:
         from importlib.metadata import version as _pkg_version
+
         _ver = _pkg_version("urika")
     except Exception:
         _ver = "0.1.0"
@@ -357,18 +359,22 @@ class ThinkingPanel:
         self.agent = ""
         self.model = ""
         self.turn = ""
-        self.activity = "Thinking…"
+        self.experiment_id = ""
+        self.pause_requested = False
+        self.activity = "Thinking\u2026"
         self._active = False
         self._rows = 0
         self._cols = 0
         self._spin_idx = 0
+        self._spin_slow_counter = 0
+        self._spin_slow_idx = 0
         self._lock = threading.Lock()
         self._spin_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._project_dir: object = None  # set via update()
 
     def activate(self) -> None:
-        """Set up scroll region, reserving 3 bottom lines.
+        """Set up scroll region, reserving 4 bottom lines.
 
         Call BEFORE any print() output. Becomes a no-op if terminal is
         too small (< 10 rows) or not a TTY.
@@ -386,7 +392,7 @@ class ThinkingPanel:
         try:
             self._active = True
             # Set scroll region without clearing screen (preserves scroll history)
-            sys.stdout.write(f"\033[1;{self._rows - 3}r\033[{self._rows - 4};1H")
+            sys.stdout.write(f"\033[1;{self._rows - 4}r\033[{self._rows - 5};1H")
             sys.stdout.flush()
             atexit.register(self.cleanup)
             # Handle terminal resize (SIGWINCH is Unix-only)
@@ -403,8 +409,7 @@ class ThinkingPanel:
                             self._cols = size.columns
                             if self._rows >= 10:
                                 sys.stdout.write(
-                                    f"\033[1;{self._rows - 3}r"
-                                    f"\033[{self._rows - 4};1H"
+                                    f"\033[1;{self._rows - 4}r\033[{self._rows - 5};1H"
                                 )
                                 sys.stdout.flush()
                                 self._render()
@@ -432,13 +437,21 @@ class ThinkingPanel:
             with self._lock:
                 if self._active:
                     self._spin_idx = (self._spin_idx + 1) % len(_SPINNER)
+                    self._spin_slow_counter += 1
+                    if self._spin_slow_counter >= 5:  # ~600ms per frame
+                        self._spin_slow_counter = 0
+                        self._spin_slow_idx = (self._spin_slow_idx + 1) % len(
+                            _SPINNER_SLOW
+                        )
                     self._render()
 
     def _render(self) -> None:
         """Draw the 2 reserved rows below the scroll region.
 
-        Line 1: empty padding
-        Line 2: spinner + agent + verb ... project + model + elapsed
+        Line 1: separator
+        Line 2: experiment + turn (+ pause warning if requested)
+        Line 3: spinner + agent + verb ... project + model + elapsed
+        Line 4: empty padding
 
         Must be called with self._lock held or from a safe context.
         """
@@ -447,14 +460,33 @@ class ThinkingPanel:
         try:
             elapsed = _format_duration(int((time.monotonic() - self.start) * 1000))
 
-            # Left side: spinner + agent + activity verb (blue)
+            # ── Line 2: experiment + turn info ──
+            info_parts = []
+            if self.experiment_id:
+                info_parts.append(
+                    f"{_C.CYAN}Experiment:{_C.RESET} {self.experiment_id}"
+                )
+            if self.turn:
+                info_parts.append(f"{_C.CYAN}{self.turn}{_C.RESET}")
+            if self.pause_requested:
+                info_parts.append(
+                    f"{_C.YELLOW}\u23f8 Pausing after this turn\u2026{_C.RESET}"
+                )
+            # Always show something — fallback to activity summary
+            if not info_parts:
+                info_parts.append(f"{_C.DIM}{self.activity}{_C.RESET}")
+            slow_ch = _SPINNER[self._spin_slow_idx % len(_SPINNER)]
+            sep_dot = f" {_C.DIM}\u00b7{_C.RESET} "
+            info_line = f"  {_C.YELLOW}{slow_ch}{_C.RESET} {sep_dot.join(info_parts)}"
+
+            # ── Line 3: spinner + agent + activity ──
             ch = _SPINNER[self._spin_idx]
             agent_color = _AGENT_COLORS.get(self.agent, _C.BLUE)
             agent_label = _AGENT_LABELS.get(self.agent, self.agent)
             left = (
                 f"  {_C.BLUE}{ch}{_C.RESET}"
                 f" {agent_color}{agent_label}{_C.RESET}"
-                f" {_C.BLUE}· {self.activity}{_C.RESET}"
+                f" {_C.BLUE}\u00b7 {self.activity}{_C.RESET}"
             )
 
             # Right side: project (dim) + model (cyan) + elapsed (red)
@@ -464,15 +496,17 @@ class ThinkingPanel:
             if self.model:
                 right_parts.append(f"{_C.CYAN}{self.model}{_C.RESET}")
             right_parts.append(f"{_C.RED}{elapsed}{_C.RESET}")
-            right = f" {_C.DIM}·{_C.RESET} ".join(right_parts)
+            right = f" {_C.DIM}\u00b7{_C.RESET} ".join(right_parts)
 
             sep = "\u2500" * self._cols
             buf = "\0337"  # save cursor
             # Line 1: separator
-            buf += f"\033[{self._rows - 2};1H\033[K{_C.DIM}{sep}{_C.RESET}"
-            # Line 2: status line
+            buf += f"\033[{self._rows - 3};1H\033[K{_C.DIM}{sep}{_C.RESET}"
+            # Line 2: experiment + turn info
+            buf += f"\033[{self._rows - 2};1H\033[K{info_line}"
+            # Line 3: agent status line
             buf += f"\033[{self._rows - 1};1H\033[K{left}  {right}"
-            # Line 3: empty padding
+            # Line 4: empty padding
             buf += f"\033[{self._rows};1H\033[K"
             buf += "\0338"  # restore cursor
             sys.stdout.write(buf)
@@ -494,6 +528,8 @@ class ThinkingPanel:
         project: str = "",
         model: str = "",
         project_dir: object = None,
+        experiment_id: str = "",
+        pause_requested: bool | None = None,
     ) -> None:
         """Update panel fields and re-render.
 
@@ -510,10 +546,12 @@ class ThinkingPanel:
                 self.project = project
             if project_dir is not None:
                 self._project_dir = project_dir
+            if experiment_id:
+                self.experiment_id = experiment_id
+            if pause_requested is not None:
+                self.pause_requested = pause_requested
             if model:
-                self.model = format_model_source(
-                    model, project_dir=self._project_dir
-                )
+                self.model = format_model_source(model, project_dir=self._project_dir)
             self._spin_idx = 0
             self._render()
 
@@ -527,9 +565,7 @@ class ThinkingPanel:
     def set_model(self, model: str) -> None:
         """Update the model name (e.g. from AssistantMessage.model)."""
         with self._lock:
-            self.model = format_model_source(
-                model, project_dir=self._project_dir
-            )
+            self.model = format_model_source(model, project_dir=self._project_dir)
             self._render()
 
     def cleanup(self) -> None:
@@ -550,12 +586,13 @@ class ThinkingPanel:
         except (OSError, ValueError):
             pass
         try:
-            # Clear the 3 reserved lines
+            # Clear the 4 reserved lines
+            sys.stdout.write(f"\033[{self._rows - 3};1H\033[K")
             sys.stdout.write(f"\033[{self._rows - 2};1H\033[K")
             sys.stdout.write(f"\033[{self._rows - 1};1H\033[K")
             sys.stdout.write(f"\033[{self._rows};1H\033[K")
             # Restore full scroll region and position cursor
-            sys.stdout.write(f"\033[r\033[{self._rows - 3};1H")
+            sys.stdout.write(f"\033[r\033[{self._rows - 4};1H")
             sys.stdout.flush()
         except (OSError, ValueError):
             pass
@@ -639,6 +676,7 @@ class Spinner:
 
         Accepted keyword arguments: ``model``, ``cost``, ``project``.
         """
+
         def _apply() -> None:
             if "model" in kwargs and kwargs["model"]:
                 raw = str(kwargs["model"])
@@ -663,6 +701,7 @@ class Spinner:
         if not _IS_TTY:
             print(text)
             return
+
         def _write() -> None:
             try:
                 sys.stdout.write(f"\r\033[K{text}\n")
@@ -794,7 +833,9 @@ def format_agent_output(text: str) -> str:
             cu = data.get("criteria_update")
             if cu and isinstance(cu, dict):
                 rationale = cu.get("rationale", "")
-                first_sentence = rationale.split(".")[0].strip() + "." if rationale else ""
+                first_sentence = (
+                    rationale.split(".")[0].strip() + "." if rationale else ""
+                )
                 if first_sentence and first_sentence != ".":
                     lines.append(
                         f"  {_C.YELLOW}Criteria update proposed:{_C.RESET} {first_sentence}"
@@ -807,7 +848,11 @@ def format_agent_output(text: str) -> str:
             lines = [f"\n  {_C.BOLD}Method:{_C.RESET} {_C.CYAN}{name}{_C.RESET}"]
             lines.append(f"  {_C.BOLD}Steps:{_C.RESET}")
             for i, step in enumerate(data["steps"], 1):
-                desc = step if isinstance(step, str) else step.get("action", step.get("description", str(step)))
+                desc = (
+                    step
+                    if isinstance(step, str)
+                    else step.get("action", step.get("description", str(step)))
+                )
                 if len(desc) > 100:
                     desc = desc[:100] + "…"
                 lines.append(f"    {_C.GREEN}{i}.{_C.RESET} {desc}")
