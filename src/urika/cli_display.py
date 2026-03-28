@@ -808,6 +808,8 @@ def format_model_source(
             return f"ollama \u00b7 {short}"
         if ":1234" in url:
             return f"lm-studio \u00b7 {short}"
+        if ":4200" in url:
+            return f"vllm \u00b7 {short}"
         if "localhost" in url or "127.0.0.1" in url:
             return f"local \u00b7 {short}"
         # Remote custom endpoint

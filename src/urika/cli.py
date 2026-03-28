@@ -3230,6 +3230,7 @@ def config_command(
             [
                 "Ollama (localhost:11434)",
                 "LM Studio (localhost:1234)",
+                "vLLM / LiteLLM server (network)",
                 "Custom server URL",
             ],
             default=1,
@@ -3238,6 +3239,12 @@ def config_command(
             ep_url = "http://localhost:11434"
         elif ep_type.startswith("LM Studio"):
             ep_url = "http://localhost:1234"
+        elif ep_type.startswith("vLLM"):
+            from urika.cli_helpers import interactive_prompt
+
+            ep_url = interactive_prompt(
+                "  Server URL (e.g. http://192.168.1.100:4200/v1)"
+            )
         else:
             from urika.cli_helpers import interactive_prompt
 
@@ -3287,6 +3294,7 @@ def config_command(
             [
                 "Ollama (localhost:11434)",
                 "LM Studio (localhost:1234)",
+                "vLLM / LiteLLM server (network)",
                 "Custom server URL",
             ],
             default=1,
@@ -3295,6 +3303,12 @@ def config_command(
             ep_url = "http://localhost:11434"
         elif ep_type.startswith("LM Studio"):
             ep_url = "http://localhost:1234"
+        elif ep_type.startswith("vLLM"):
+            from urika.cli_helpers import interactive_prompt
+
+            ep_url = interactive_prompt(
+                "  Server URL (e.g. http://192.168.1.100:4200/v1)"
+            )
         else:
             from urika.cli_helpers import interactive_prompt
 
