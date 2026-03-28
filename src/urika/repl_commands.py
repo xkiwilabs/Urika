@@ -147,6 +147,47 @@ def cmd_quit(session: ReplSession, args: str) -> None:
     raise SystemExit(0)
 
 
+
+
+@command("config", description="Configure privacy mode and models")
+def cmd_config(session: ReplSession, args: str) -> None:
+    from urika.cli import config_command
+
+    arg = args.strip()
+    ctx = click.Context(config_command)
+
+    if arg == "show":
+        # Show project config if project loaded, else global
+        ctx.invoke(
+            config_command,
+            project=session.project_name if session.has_project else None,
+            show=True,
+            json_output=False,
+        )
+    elif arg == "global":
+        # Force global config
+        ctx.invoke(
+            config_command,
+            project=None,
+            show=False,
+            json_output=False,
+        )
+    elif arg == "global show":
+        ctx.invoke(
+            config_command,
+            project=None,
+            show=True,
+            json_output=False,
+        )
+    else:
+        # Default: configure current project if loaded, else global
+        ctx.invoke(
+            config_command,
+            project=session.project_name if session.has_project else None,
+            show=False,
+            json_output=False,
+        )
+
 @command("usage", description="Show usage stats")
 def cmd_usage(session: ReplSession, args: str) -> None:
     from urika.cli_display import _format_duration
