@@ -103,7 +103,8 @@ _AGENT_LABELS: dict[str, str] = {
 
 # ── Spinner frames ───────────────────────────────────────────────
 
-_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
+_SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"  # braille dots (fast)
+_SPINNER_SLOW = "\u25dc\u25dd\u25de\u25df"  # arc quarters (slow, for info row)
 
 _THINKING_PHRASES = [
     "Thinking\u2026",
@@ -365,6 +366,8 @@ class ThinkingPanel:
         self._rows = 0
         self._cols = 0
         self._spin_idx = 0
+        self._spin_slow_counter = 0
+        self._spin_slow_idx = 0
         self._lock = threading.Lock()
         self._spin_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -434,6 +437,12 @@ class ThinkingPanel:
             with self._lock:
                 if self._active:
                     self._spin_idx = (self._spin_idx + 1) % len(_SPINNER)
+                    self._spin_slow_counter += 1
+                    if self._spin_slow_counter >= 5:  # ~600ms per frame
+                        self._spin_slow_counter = 0
+                        self._spin_slow_idx = (self._spin_slow_idx + 1) % len(
+                            _SPINNER_SLOW
+                        )
                     self._render()
 
     def _render(self) -> None:
@@ -466,8 +475,9 @@ class ThinkingPanel:
             # Always show something — fallback to activity summary
             if not info_parts:
                 info_parts.append(f"{_C.DIM}{self.activity}{_C.RESET}")
+            slow_ch = _SPINNER_SLOW[self._spin_slow_idx]
             sep_dot = f" {_C.DIM}\u00b7{_C.RESET} "
-            info_line = f"  {sep_dot.join(info_parts)}"
+            info_line = f"  {_C.DIM}{slow_ch}{_C.RESET} {sep_dot.join(info_parts)}"
 
             # ── Line 3: spinner + agent + activity ──
             ch = _SPINNER[self._spin_idx]
