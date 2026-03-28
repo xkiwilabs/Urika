@@ -3243,7 +3243,7 @@ def config_command(
             from urika.cli_helpers import interactive_prompt
 
             ep_url = interactive_prompt(
-                "  Server URL (e.g. http://192.168.1.100:4200/v1)"
+                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)"
             )
         else:
             from urika.cli_helpers import interactive_prompt
@@ -3258,7 +3258,7 @@ def config_command(
         from urika.cli_helpers import interactive_prompt
 
         key_env = interactive_prompt(
-            "  API key env var name (e.g. VLLM_API_KEY, leave empty if none)",
+            "  API key env var NAME, not the key itself (e.g. INFERENCE_HUB_KEY)",
             default="",
         )
         if key_env:
@@ -3306,7 +3306,7 @@ def config_command(
             from urika.cli_helpers import interactive_prompt
 
             ep_url = interactive_prompt(
-                "  Server URL (e.g. http://192.168.1.100:4200/v1)"
+                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)"
             )
         else:
             from urika.cli_helpers import interactive_prompt
