@@ -1,7 +1,7 @@
 """Telegram notification channel using python-telegram-bot.
 
-Supports inbound /pause, /stop, /status, and /results commands as well as
-inline keyboard buttons for the same actions.
+Supports inbound commands routed through the NotificationBus remote command
+handler, plus inline keyboard buttons for the same actions.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ class TelegramChannel(NotificationChannel):
         token_env: str = config.get("bot_token_env", "")
         self._token: str = os.environ.get(token_env, "") if token_env else ""
         self._controller: PauseController | None = None
+        self._bus: object = None  # NotificationBus reference
         self._project_path: Path | None = None
         self._listener_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -83,13 +84,17 @@ class TelegramChannel(NotificationChannel):
             logger.warning("Telegram send failed: %s", exc)
 
     def start_listener(
-        self, controller: PauseController, project_path: Path | None = None
+        self,
+        controller: PauseController,
+        project_path: Path | None = None,
+        bus: object = None,
     ) -> None:
         """Start polling for inbound commands in a background thread."""
         if not self._token:
             logger.debug("No Telegram bot token — listener disabled")
             return
         self._controller = controller
+        self._bus = bus
         self._project_path = project_path
         self._stop_event.clear()
         self._listener_thread = threading.Thread(
@@ -145,34 +150,6 @@ class TelegramChannel(NotificationChannel):
             return None
 
     # ------------------------------------------------------------------
-    # Project queries
-    # ------------------------------------------------------------------
-
-    def _query_status(self) -> str:
-        """Return project status text, or a fallback if unavailable."""
-        if self._project_path is None:
-            return "No project loaded."
-        try:
-            from urika.notifications.queries import get_status_text
-
-            return get_status_text(self._project_path)
-        except Exception as exc:
-            logger.debug("Status query failed: %s", exc)
-            return f"Status query failed: {exc}"
-
-    def _query_results(self) -> str:
-        """Return project results text, or a fallback if unavailable."""
-        if self._project_path is None:
-            return "No project loaded."
-        try:
-            from urika.notifications.queries import get_results_text
-
-            return get_results_text(self._project_path)
-        except Exception as exc:
-            logger.debug("Results query failed: %s", exc)
-            return f"Results query failed: {exc}"
-
-    # ------------------------------------------------------------------
     # Inbound polling
     # ------------------------------------------------------------------
 
@@ -182,7 +159,8 @@ class TelegramChannel(NotificationChannel):
             from telegram.ext import (
                 ApplicationBuilder,
                 CallbackQueryHandler,
-                CommandHandler,
+                MessageHandler,
+                filters,
             )
         except Exception as exc:
             logger.warning("Cannot start Telegram listener: %s", exc)
@@ -193,8 +171,9 @@ class TelegramChannel(NotificationChannel):
             loop.run_until_complete(
                 self._run_polling(
                     ApplicationBuilder,
-                    CommandHandler,
+                    MessageHandler,
                     CallbackQueryHandler,
+                    filters,
                 )
             )
         except Exception as exc:
@@ -206,16 +185,16 @@ class TelegramChannel(NotificationChannel):
     async def _run_polling(
         self,
         ApplicationBuilder: Any,
-        CommandHandler: Any,
+        MessageHandler: Any,
         CallbackQueryHandler: Any,
+        filters: Any,
     ) -> None:
         """Build the Application, register handlers, and poll until stopped."""
         app = ApplicationBuilder().token(self._token).build()
 
-        app.add_handler(CommandHandler("pause", self._handle_pause_command))
-        app.add_handler(CommandHandler("stop", self._handle_stop_command))
-        app.add_handler(CommandHandler("status", self._handle_status_command))
-        app.add_handler(CommandHandler("results", self._handle_results_command))
+        # Single handler for all /commands — routed through the bus
+        app.add_handler(MessageHandler(filters.COMMAND, self._handle_command))
+        # Callback queries (inline buttons)
         app.add_handler(CallbackQueryHandler(self._handle_callback))
 
         await app.initialize()
@@ -230,91 +209,74 @@ class TelegramChannel(NotificationChannel):
         await app.stop()
         await app.shutdown()
 
-    async def _handle_pause_command(self, update: Any, context: Any) -> None:
-        """Handle /pause from a Telegram user."""
-        if self._controller is not None:
-            self._controller.request_pause()
-            logger.info("Pause requested via Telegram /pause command")
-        if update.message:
-            await update.message.reply_text("Pause requested \u23f8")
+    async def _handle_command(self, update: Any, context: Any) -> None:
+        """Route any /command through the bus."""
+        if not update.message or not update.message.text:
+            return
+        text = update.message.text.strip()
+        if not text.startswith("/"):
+            return
 
-    async def _handle_stop_command(self, update: Any, context: Any) -> None:
-        """Handle /stop from a Telegram user."""
-        if self._controller is not None:
-            self._controller.request_stop()
-            logger.info("Stop requested via Telegram /stop command")
-        if update.message:
-            await update.message.reply_text("Stop requested \u23f9")
+        parts = text[1:].split(None, 1)  # Remove / and split command from args
+        command = parts[0].lower()
+        args = parts[1] if len(parts) > 1 else ""
 
-    async def _handle_status_command(self, update: Any, context: Any) -> None:
-        """Handle /status from a Telegram user."""
-        if self._project_path is None:
-            text = "No project loaded."
-        else:
-            try:
-                from urika.notifications.queries import get_status_text
+        if self._bus is not None:
+            response_text: list[str] = []
 
-                text = get_status_text(self._project_path)
-            except Exception as exc:
-                logger.debug("Status query failed: %s", exc)
-                text = f"Status query failed: {exc}"
-        if update.message:
-            await update.message.reply_text(text)
+            def sync_respond(resp: str) -> None:
+                response_text.append(resp)
 
-    async def _handle_results_command(self, update: Any, context: Any) -> None:
-        """Handle /results from a Telegram user."""
-        if self._project_path is None:
-            text = "No project loaded."
-        else:
-            try:
-                from urika.notifications.queries import get_results_text
+            self._bus.handle_remote_command(command, args, respond=sync_respond)
 
-                text = get_results_text(self._project_path)
-            except Exception as exc:
-                logger.debug("Results query failed: %s", exc)
-                text = f"Results query failed: {exc}"
-        if update.message:
-            await update.message.reply_text(text)
+            for resp in response_text:
+                try:
+                    await update.message.reply_text(resp)
+                except Exception:
+                    pass
+        elif self._controller is not None:
+            # Fallback: direct control if no bus (shouldn't happen)
+            if command == "pause":
+                self._controller.request_pause()
+                await update.message.reply_text("Pause requested \u23f8")
+            elif command == "stop":
+                self._controller.request_stop()
+                await update.message.reply_text("Stop requested \u23f9")
 
     async def _handle_callback(self, update: Any, context: Any) -> None:
-        """Handle inline keyboard button presses (Pause / Stop / Status / Results)."""
+        """Handle inline keyboard button presses — route through the bus."""
         query = update.callback_query
         if query is None:
             return
         await query.answer()
 
-        if query.data == "urika_pause" and self._controller is not None:
-            self._controller.request_pause()
-            await query.edit_message_reply_markup(reply_markup=None)
-            logger.info("Pause requested via Telegram inline button")
-        elif query.data == "urika_stop" and self._controller is not None:
-            self._controller.request_stop()
-            await query.edit_message_reply_markup(reply_markup=None)
-            logger.info("Stop requested via Telegram inline button")
-        elif query.data == "urika_status":
-            text = self._query_status()
-            try:
-                import telegram
+        # Map callback data to commands
+        data = query.data or ""
+        command_map = {
+            "urika_pause": ("pause", ""),
+            "urika_stop": ("stop", ""),
+            "urika_status": ("status", ""),
+            "urika_results": ("results", ""),
+        }
 
-                bot = telegram.Bot(token=self._token)
-                await bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=text,
-                )
-            except Exception as exc:
-                logger.debug("Status callback reply failed: %s", exc)
-        elif query.data == "urika_results":
-            text = self._query_results()
-            try:
-                import telegram
+        if data in command_map and self._bus is not None:
+            cmd, args = command_map[data]
+            response_text: list[str] = []
 
-                bot = telegram.Bot(token=self._token)
-                await bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=text,
-                )
-            except Exception as exc:
-                logger.debug("Results callback reply failed: %s", exc)
+            def sync_respond(resp: str) -> None:
+                response_text.append(resp)
+
+            self._bus.handle_remote_command(cmd, args, respond=sync_respond)
+            for resp in response_text:
+                try:
+                    await query.message.reply_text(resp)
+                except Exception:
+                    pass
+            # Remove buttons after click
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
 
 
 # ----------------------------------------------------------------------

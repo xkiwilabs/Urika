@@ -56,6 +56,7 @@ class SlackChannel(NotificationChannel):
         token = os.environ.get(token_env, "")
         self._client = WebClient(token=token)
         self._app_token_env: str = config.get("app_token_env", "")
+        self._bus: object = None  # NotificationBus reference
         self._project_path: Path | None = None
         self._listener_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -85,13 +86,17 @@ class SlackChannel(NotificationChannel):
     # ------------------------------------------------------------------
 
     def start_listener(
-        self, controller: PauseController, project_path: Path | None = None
+        self,
+        controller: PauseController,
+        project_path: Path | None = None,
+        bus: object = None,
     ) -> None:
         """Start a Socket Mode listener in a background thread.
 
         If ``app_token_env`` was not configured or the env var is empty, this
         is a no-op.
         """
+        self._bus = bus
         self._project_path = project_path
         if not self._app_token_env:
             return
@@ -157,21 +162,36 @@ class SlackChannel(NotificationChannel):
                     actions = payload.get("actions", [])
                     for action in actions:
                         action_id = action.get("action_id", "")
-                        if action_id == "pause":
-                            controller.request_pause()
-                            _ack_action(client, req, "Pause requested.")
+                        command_map = {
+                            "pause": ("pause", ""),
+                            "stop": ("stop", ""),
+                            "status": ("status", ""),
+                            "results": ("results", ""),
+                        }
+                        if action_id in command_map and self._bus is not None:
+                            cmd, args = command_map[action_id]
+                            response_text: list[str] = []
+
+                            def sync_respond(text: str) -> None:
+                                response_text.append(text)
+
+                            self._bus.handle_remote_command(
+                                cmd, args, respond=sync_respond
+                            )
+                            _ack_action(
+                                client,
+                                req,
+                                response_text[0] if response_text else "Done",
+                            )
                             return
-                        if action_id == "stop":
-                            controller.request_stop()
-                            _ack_action(client, req, "Stop requested.")
-                            return
-                        if action_id == "status":
-                            text = self._query_status()
-                            _ack_action(client, req, text)
-                            return
-                        if action_id == "results":
-                            text = self._query_results()
-                            _ack_action(client, req, text)
+                        elif action_id in command_map:
+                            # Fallback: direct control if no bus
+                            if action_id == "pause":
+                                controller.request_pause()
+                                _ack_action(client, req, "Pause requested.")
+                            elif action_id == "stop":
+                                controller.request_stop()
+                                _ack_action(client, req, "Stop requested.")
                             return
                 # Acknowledge anything we don't handle to avoid Slack retries
                 client.send_socket_mode_response(
@@ -204,34 +224,6 @@ class SlackChannel(NotificationChannel):
             self._stop_event.wait()
         except Exception as exc:
             logger.warning("Slack Socket Mode listener failed: %s", exc)
-
-    # ------------------------------------------------------------------
-    # Project queries
-    # ------------------------------------------------------------------
-
-    def _query_status(self) -> str:
-        """Return project status text, or a fallback if unavailable."""
-        if self._project_path is None:
-            return "Project path not available."
-        try:
-            from urika.notifications.queries import get_status_text
-
-            return get_status_text(self._project_path)
-        except Exception as exc:
-            logger.debug("Status query failed: %s", exc)
-            return f"Status query failed: {exc}"
-
-    def _query_results(self) -> str:
-        """Return project results text, or a fallback if unavailable."""
-        if self._project_path is None:
-            return "Project path not available."
-        try:
-            from urika.notifications.queries import get_results_text
-
-            return get_results_text(self._project_path)
-        except Exception as exc:
-            logger.debug("Results query failed: %s", exc)
-            return f"Results query failed: {exc}"
 
     # ------------------------------------------------------------------
     # Block Kit builder
