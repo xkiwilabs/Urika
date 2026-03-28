@@ -488,6 +488,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
 
     os.environ["URIKA_REPL"] = "1"
     _user_input_callback = _get_user_input
+    session.set_agent_active("run")
     try:
         from urika.cli import run as cli_run
 
@@ -506,6 +507,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
         )
         session.experiments_run += 1
     finally:
+        session.set_agent_idle()
         _user_input_callback = None
         os.environ.pop("URIKA_REPL", None)
 
@@ -658,6 +660,7 @@ def cmd_resume(session: ReplSession, args: str) -> None:
     import os
 
     os.environ["URIKA_REPL"] = "1"
+    session.set_agent_active("run")
     try:
         from urika.cli import run as cli_run
 
@@ -675,6 +678,7 @@ def cmd_resume(session: ReplSession, args: str) -> None:
             max_experiments=None,
         )
     finally:
+        session.set_agent_idle()
         os.environ.pop("URIKA_REPL", None)
 
 
@@ -746,47 +750,51 @@ def cmd_present(session: ReplSession, args: str) -> None:
     if exp_choice is None:
         return
 
-    if exp_choice == "all":
-        # Generate presentation for each experiment
-        from urika.core.experiment import list_experiments
+    session.set_agent_active("present")
+    try:
+        if exp_choice == "all":
+            # Generate presentation for each experiment
+            from urika.core.experiment import list_experiments
 
-        experiments = list_experiments(session.project_path)
-        for exp in experiments:
-            click.echo(
-                f"  {_C.BLUE}Generating presentation for {exp.experiment_id}...{_C.RESET}"
-            )
+            experiments = list_experiments(session.project_path)
+            for exp in experiments:
+                click.echo(
+                    f"  {_C.BLUE}Generating presentation for {exp.experiment_id}...{_C.RESET}"
+                )
+                text = _run_single_agent(
+                    session,
+                    "presentation_agent",
+                    exp.experiment_id,
+                    f"Create a presentation for experiment {exp.experiment_id}.",
+                )
+                if text:
+                    _save_presentation(session, text, exp.experiment_id)
+            click.echo("  \u2713 All presentations generated")
+        elif exp_choice == "project":
+            # One project-level presentation covering everything
+            click.echo(f"  {_C.BLUE}Generating project-level presentation...{_C.RESET}")
             text = _run_single_agent(
                 session,
                 "presentation_agent",
-                exp.experiment_id,
-                f"Create a presentation for experiment {exp.experiment_id}.",
+                "",
+                "Create a project-level presentation covering ALL experiments, "
+                "the research progression, key findings across the entire project, "
+                "and next steps. This is an overview presentation, not per-experiment.",
             )
             if text:
-                _save_presentation(session, text, exp.experiment_id)
-        click.echo("  \u2713 All presentations generated")
-    elif exp_choice == "project":
-        # One project-level presentation covering everything
-        click.echo(f"  {_C.BLUE}Generating project-level presentation...{_C.RESET}")
-        text = _run_single_agent(
-            session,
-            "presentation_agent",
-            "",
-            "Create a project-level presentation covering ALL experiments, "
-            "the research progression, key findings across the entire project, "
-            "and next steps. This is an overview presentation, not per-experiment.",
-        )
-        if text:
-            _save_presentation(session, text, None)
-    else:
-        # Single experiment presentation
-        text = _run_single_agent(
-            session,
-            "presentation_agent",
-            exp_choice,
-            f"Create a presentation for experiment {exp_choice}.",
-        )
-        if text:
-            _save_presentation(session, text, exp_choice)
+                _save_presentation(session, text, None)
+        else:
+            # Single experiment presentation
+            text = _run_single_agent(
+                session,
+                "presentation_agent",
+                exp_choice,
+                f"Create a presentation for experiment {exp_choice}.",
+            )
+            if text:
+                _save_presentation(session, text, exp_choice)
+    finally:
+        session.set_agent_idle()
 
 
 @command("report", requires_project=True, description="Generate reports")
@@ -803,23 +811,94 @@ def cmd_report(session: ReplSession, args: str) -> None:
     )
     from urika.core.readme_generator import write_readme
 
-    if exp_choice == "all":
-        # Generate reports for each experiment
-        click.echo(f"  {_C.BLUE}Generating reports for all experiments...{_C.RESET}")
-        from urika.core.experiment import list_experiments
+    session.set_agent_active("report")
+    try:
+        if exp_choice == "all":
+            # Generate reports for each experiment
+            click.echo(
+                f"  {_C.BLUE}Generating reports for all experiments...{_C.RESET}"
+            )
+            from urika.core.experiment import list_experiments
 
-        for exp in list_experiments(session.project_path):
-            click.echo(f"  {_C.BLUE}Processing {exp.experiment_id}...{_C.RESET}")
+            for exp in list_experiments(session.project_path):
+                click.echo(f"  {_C.BLUE}Processing {exp.experiment_id}...{_C.RESET}")
+                try:
+                    update_experiment_notes(session.project_path, exp.experiment_id)
+                    generate_experiment_summary(session.project_path, exp.experiment_id)
+                except Exception:
+                    pass
+                text = _run_single_agent(
+                    session,
+                    "report_agent",
+                    exp.experiment_id,
+                    f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                )
+                if text:
+                    from urika.core.report_writer import write_versioned
+
+                    narrative_path = (
+                        session.project_path
+                        / "experiments"
+                        / exp.experiment_id
+                        / "labbook"
+                        / "narrative.md"
+                    )
+                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                    write_versioned(narrative_path, text + "\n")
+            click.echo("  \u2713 All experiment reports updated")
+        elif exp_choice == "project":
+            # Project-level reports
+            click.echo(f"  {_C.BLUE}Generating project-level reports...{_C.RESET}")
             try:
-                update_experiment_notes(session.project_path, exp.experiment_id)
-                generate_experiment_summary(session.project_path, exp.experiment_id)
+                generate_results_summary(session.project_path)
+                generate_key_findings(session.project_path)
+                write_readme(session.project_path)
             except Exception:
                 pass
+
             text = _run_single_agent(
                 session,
                 "report_agent",
-                exp.experiment_id,
-                f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                "",
+                "Write a project-level narrative report covering all experiments and the research progression.",
+            )
+            if text:
+                from urika.core.report_writer import write_versioned
+
+                narrative_path = session.project_path / "projectbook" / "narrative.md"
+                narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                write_versioned(narrative_path, text + "\n")
+                link = _file_link(narrative_path, "projectbook/narrative.md")
+                click.echo(f"  \u2713 Project narrative: {link}")
+                readme_link = _file_link(
+                    session.project_path / "README.md", "README.md"
+                )
+                click.echo(f"  \u2713 README: {readme_link}")
+        else:
+            click.echo(f"  {_C.BLUE}Generating report for {exp_choice}...{_C.RESET}")
+            try:
+                update_experiment_notes(session.project_path, exp_choice)
+                generate_experiment_summary(session.project_path, exp_choice)
+                summary_path = (
+                    session.project_path
+                    / "experiments"
+                    / exp_choice
+                    / "labbook"
+                    / "summary.md"
+                )
+                link = _file_link(
+                    summary_path, f"experiments/{exp_choice}/labbook/summary.md"
+                )
+                click.echo(f"  \u2713 Report: {link}")
+            except Exception as exc:
+                click.echo(f"  \u2717 Error: {exc}")
+
+            # Generate experiment narrative via report agent
+            text = _run_single_agent(
+                session,
+                "report_agent",
+                exp_choice,
+                f"Write a detailed narrative report for experiment {exp_choice}.",
             )
             if text:
                 from urika.core.report_writer import write_versioned
@@ -827,82 +906,19 @@ def cmd_report(session: ReplSession, args: str) -> None:
                 narrative_path = (
                     session.project_path
                     / "experiments"
-                    / exp.experiment_id
+                    / exp_choice
                     / "labbook"
                     / "narrative.md"
                 )
                 narrative_path.parent.mkdir(parents=True, exist_ok=True)
                 write_versioned(narrative_path, text + "\n")
-        click.echo("  \u2713 All experiment reports updated")
-    elif exp_choice == "project":
-        # Project-level reports
-        click.echo(f"  {_C.BLUE}Generating project-level reports...{_C.RESET}")
-        try:
-            generate_results_summary(session.project_path)
-            generate_key_findings(session.project_path)
-            write_readme(session.project_path)
-        except Exception:
-            pass
-
-        text = _run_single_agent(
-            session,
-            "report_agent",
-            "",
-            "Write a project-level narrative report covering all experiments and the research progression.",
-        )
-        if text:
-            from urika.core.report_writer import write_versioned
-
-            narrative_path = session.project_path / "projectbook" / "narrative.md"
-            narrative_path.parent.mkdir(parents=True, exist_ok=True)
-            write_versioned(narrative_path, text + "\n")
-            link = _file_link(narrative_path, "projectbook/narrative.md")
-            click.echo(f"  \u2713 Project narrative: {link}")
-            readme_link = _file_link(session.project_path / "README.md", "README.md")
-            click.echo(f"  \u2713 README: {readme_link}")
-    else:
-        click.echo(f"  {_C.BLUE}Generating report for {exp_choice}...{_C.RESET}")
-        try:
-            update_experiment_notes(session.project_path, exp_choice)
-            generate_experiment_summary(session.project_path, exp_choice)
-            summary_path = (
-                session.project_path
-                / "experiments"
-                / exp_choice
-                / "labbook"
-                / "summary.md"
-            )
-            link = _file_link(
-                summary_path, f"experiments/{exp_choice}/labbook/summary.md"
-            )
-            click.echo(f"  \u2713 Report: {link}")
-        except Exception as exc:
-            click.echo(f"  \u2717 Error: {exc}")
-
-        # Generate experiment narrative via report agent
-        text = _run_single_agent(
-            session,
-            "report_agent",
-            exp_choice,
-            f"Write a detailed narrative report for experiment {exp_choice}.",
-        )
-        if text:
-            from urika.core.report_writer import write_versioned
-
-            narrative_path = (
-                session.project_path
-                / "experiments"
-                / exp_choice
-                / "labbook"
-                / "narrative.md"
-            )
-            narrative_path.parent.mkdir(parents=True, exist_ok=True)
-            write_versioned(narrative_path, text + "\n")
-            link = _file_link(
-                narrative_path,
-                f"experiments/{exp_choice}/labbook/narrative.md",
-            )
-            click.echo(f"  \u2713 Narrative: {link}")
+                link = _file_link(
+                    narrative_path,
+                    f"experiments/{exp_choice}/labbook/narrative.md",
+                )
+                click.echo(f"  \u2713 Narrative: {link}")
+    finally:
+        session.set_agent_idle()
 
 
 @command("inspect", requires_project=True, description="Inspect dataset")
@@ -995,7 +1011,13 @@ def cmd_evaluate(session: ReplSession, args: str) -> None:
         exp_id = experiments[-1].experiment_id
 
     click.echo(f"  Running evaluator on {exp_id}...")
-    _run_single_agent(session, "evaluator", exp_id, f"Evaluate experiment {exp_id}.")
+    session.set_agent_active("evaluate")
+    try:
+        _run_single_agent(
+            session, "evaluator", exp_id, f"Evaluate experiment {exp_id}."
+        )
+    finally:
+        session.set_agent_idle()
 
 
 @command(
@@ -1017,7 +1039,11 @@ def cmd_plan(session: ReplSession, args: str) -> None:
         context = session.get_conversation_context() + "\n\n" + context
 
     click.echo(f"  Running planning agent for {exp_id}...")
-    _run_single_agent(session, "planning_agent", exp_id, context)
+    session.set_agent_active("plan")
+    try:
+        _run_single_agent(session, "planning_agent", exp_id, context)
+    finally:
+        session.set_agent_idle()
 
 
 @command(
@@ -1030,6 +1056,7 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
 
     instructions = args.strip()
     os.environ["URIKA_REPL"] = "1"
+    session.set_agent_active("finalize")
     try:
         from urika.cli import finalize as cli_finalize
 
@@ -1040,6 +1067,7 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
             instructions=instructions,
         )
     finally:
+        session.set_agent_idle()
         os.environ.pop("URIKA_REPL", None)
 
 
@@ -1103,7 +1131,11 @@ def cmd_build_tool(session: ReplSession, args: str) -> None:
         )
         return
 
-    _run_single_agent(session, "tool_builder", "", instructions)
+    session.set_agent_active("build-tool")
+    try:
+        _run_single_agent(session, "tool_builder", "", instructions)
+    finally:
+        session.set_agent_idle()
 
 
 def _run_single_agent(

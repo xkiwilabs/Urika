@@ -294,26 +294,30 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         _on_msg = _make_on_message()
 
         print_agent("advisor_agent")
-        session_info = {
-            "project": session.project_name or "",
-            "model": session.model or "",
-            "cost": session.total_cost_usd,
-        }
-        with Spinner("Thinking", session_info=session_info) as sp:
+        session.set_agent_active("advisor")
+        try:
+            session_info = {
+                "project": session.project_name or "",
+                "model": session.model or "",
+                "cost": session.total_cost_usd,
+            }
+            with Spinner("Thinking", session_info=session_info) as sp:
 
-            def _on_msg_with_footer(msg):
-                _on_msg(msg)
-                model = getattr(msg, "model", None)
-                if model:
-                    sp.update_session(model=model)
+                def _on_msg_with_footer(msg):
+                    _on_msg(msg)
+                    model = getattr(msg, "model", None)
+                    if model:
+                        sp.update_session(model=model)
 
-            result = asyncio.run(
-                runner.run(
-                    config,
-                    context,
-                    on_message=_on_msg_with_footer,
+                result = asyncio.run(
+                    runner.run(
+                        config,
+                        context,
+                        on_message=_on_msg_with_footer,
+                    )
                 )
-            )
+        finally:
+            session.set_agent_idle()
 
         # Track usage
         session.record_agent_call(
