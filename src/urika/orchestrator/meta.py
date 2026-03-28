@@ -71,10 +71,13 @@ async def run_project(
         )
         results.append(result)
 
-        # Check if experiment was paused or pause was requested
-        if result.get("status") == "paused":
+        # Check if experiment was paused, stopped, or request pending
+        if result.get("status") in ("paused", "stopped"):
             break
-        if pause_controller is not None and pause_controller.is_pause_requested():
+        if pause_controller is not None and (
+            pause_controller.is_pause_requested()
+            or pause_controller.is_stop_requested()
+        ):
             break
 
         # Checkpoint

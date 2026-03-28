@@ -2117,6 +2117,12 @@ def run(
         print_step("    urika run --resume              Pick up at next turn")
         print_step("    urika advisor <project> <text>   Chat with advisor first")
         print_step("    urika run --instructions '...'   Resume with new guidance")
+    elif run_status == "stopped":
+        print_warning(f"  Experiment stopped after turn {turns} ({experiment_id})")
+        print_step("  Options:")
+        print_step("    urika run --resume              Resume from next turn")
+        print_step("    urika advisor <project> <text>   Chat with advisor first")
+        print_step("    urika run --instructions '...'   Run with new instructions")
     elif run_status == "completed":
         print_success(f"Experiment completed after {turns} turns.")
     elif run_status == "failed":
