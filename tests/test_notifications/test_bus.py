@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 
 from urika.notifications.base import NotificationChannel
 from urika.notifications.bus import NotificationBus
@@ -179,3 +180,198 @@ class TestNotificationBus:
         summaries = [e.summary for e in fake.events]
         for i in range(5):
             assert f"drain-{i}" in summaries
+
+
+class TestClassifyRemoteCommand:
+    def test_read_only(self):
+        from urika.notifications.bus import classify_remote_command
+
+        assert classify_remote_command("status") == "read_only"
+        assert classify_remote_command("results") == "read_only"
+        assert classify_remote_command("methods") == "read_only"
+        assert classify_remote_command("help") == "read_only"
+
+    def test_run_control(self):
+        from urika.notifications.bus import classify_remote_command
+
+        assert classify_remote_command("pause") == "run_control"
+        assert classify_remote_command("stop") == "run_control"
+        assert classify_remote_command("resume") == "run_control"
+
+    def test_agent(self):
+        from urika.notifications.bus import classify_remote_command
+
+        assert classify_remote_command("run") == "agent"
+        assert classify_remote_command("advisor") == "agent"
+        assert classify_remote_command("evaluate") == "agent"
+        assert classify_remote_command("finalize") == "agent"
+
+    def test_rejected(self):
+        from urika.notifications.bus import classify_remote_command
+
+        assert classify_remote_command("config") == "rejected"
+        assert classify_remote_command("new") == "rejected"
+        assert classify_remote_command("quit") == "rejected"
+
+    def test_strips_slash_and_whitespace(self):
+        from urika.notifications.bus import classify_remote_command
+
+        assert classify_remote_command("/status") == "read_only"
+        assert classify_remote_command("  pause  ") == "run_control"
+        assert classify_remote_command("/run") == "agent"
+
+
+class TestHandleRemoteCommand:
+    """Tests for the handle_remote_command method on NotificationBus."""
+
+    def test_rejected_command(self):
+        bus = NotificationBus()
+        responses = []
+        bus.handle_remote_command("config", respond=responses.append)
+        assert len(responses) == 1
+        assert "not available remotely" in responses[0]
+
+    def test_read_only_no_project(self):
+        bus = NotificationBus()
+        responses = []
+        bus.handle_remote_command("status", respond=responses.append)
+        assert responses == ["No project loaded."]
+
+    def test_read_only_help(self):
+        bus = NotificationBus(project_path=Path("/tmp/fake"))
+        responses = []
+        bus.handle_remote_command("help", respond=responses.append)
+        assert len(responses) == 1
+        assert "/status" in responses[0]
+        assert "/pause" in responses[0]
+        assert "/run" in responses[0]
+
+    def test_run_control_pause_no_session(self):
+        bus = NotificationBus()
+        responses = []
+        bus.handle_remote_command("pause", respond=responses.append)
+        assert "No active run" in responses[0]
+
+    def test_run_control_pause_with_active_session(self):
+        bus = NotificationBus()
+
+        class FakeController:
+            paused = False
+
+            def request_pause(self):
+                self.paused = True
+
+        class FakeSession:
+            agent_active = True
+
+        bus._controller = FakeController()
+        bus._session = FakeSession()
+        responses = []
+        bus.handle_remote_command("pause", respond=responses.append)
+        assert bus._controller.paused
+        assert "Pause requested" in responses[0]
+
+    def test_run_control_stop_clears_queue(self):
+        bus = NotificationBus()
+
+        class FakeController:
+            stopped = False
+
+            def request_stop(self):
+                self.stopped = True
+
+        class FakeSession:
+            agent_active = True
+            cleared = False
+
+            def clear_remote_queue(self):
+                self.cleared = True
+
+        bus._controller = FakeController()
+        bus._session = FakeSession()
+        responses = []
+        bus.handle_remote_command("stop", respond=responses.append)
+        assert bus._controller.stopped
+        assert bus._session.cleared
+        assert "Stopped" in responses[0]
+
+    def test_agent_no_session(self):
+        bus = NotificationBus()
+        responses = []
+        bus.handle_remote_command("run", respond=responses.append)
+        assert "No active REPL session" in responses[0]
+
+    def test_agent_queued_while_busy(self):
+        bus = NotificationBus()
+
+        class FakeSession:
+            agent_active = True
+            active_command = "evaluate"
+            queued = []
+
+            def queue_remote_command(self, cmd, args):
+                self.queued.append((cmd, args))
+
+        bus._session = FakeSession()
+        responses = []
+        bus.handle_remote_command("advisor", args="try PCA?", respond=responses.append)
+        assert len(bus._session.queued) == 1
+        assert bus._session.queued[0] == ("advisor", "try PCA?")
+        assert "queued" in responses[0]
+        assert "evaluate" in responses[0]
+
+    def test_agent_run_blocked_during_run(self):
+        bus = NotificationBus()
+
+        class FakeSession:
+            agent_active = True
+            active_command = "run"
+            queued = []
+
+            def queue_remote_command(self, cmd, args):
+                self.queued.append((cmd, args))
+
+        bus._session = FakeSession()
+        responses = []
+        bus.handle_remote_command("run", respond=responses.append)
+        assert len(bus._session.queued) == 0
+        assert "Run in progress" in responses[0]
+
+    def test_agent_queued_when_idle(self):
+        bus = NotificationBus()
+
+        class FakeSession:
+            agent_active = False
+            active_command = ""
+            queued = []
+
+            def queue_remote_command(self, cmd, args):
+                self.queued.append((cmd, args))
+
+        bus._session = FakeSession()
+        responses = []
+        bus.handle_remote_command("plan", respond=responses.append)
+        assert bus._session.queued == [("plan", "")]
+        assert "/plan queued." in responses[0]
+
+    def test_resume_when_idle(self):
+        bus = NotificationBus()
+
+        class FakeSession:
+            agent_active = False
+            queued = []
+
+            def queue_remote_command(self, cmd, args):
+                self.queued.append((cmd, args))
+
+        bus._session = FakeSession()
+        responses = []
+        bus.handle_remote_command("resume", respond=responses.append)
+        assert ("run", "--resume") in bus._session.queued
+        assert "Resume queued" in responses[0]
+
+    def test_no_respond_callable(self):
+        """handle_remote_command works even if respond is None."""
+        bus = NotificationBus()
+        # Should not raise
+        bus.handle_remote_command("config")

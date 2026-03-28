@@ -16,6 +16,35 @@ from urika.notifications.events import NotificationEvent
 
 logger = logging.getLogger(__name__)
 
+_READ_ONLY_COMMANDS = frozenset(
+    {"status", "results", "methods", "criteria", "experiments", "logs", "usage", "help"}
+)
+_RUN_CONTROL_COMMANDS = frozenset({"pause", "stop", "resume"})
+_AGENT_COMMANDS = frozenset(
+    {
+        "run",
+        "advisor",
+        "evaluate",
+        "plan",
+        "report",
+        "present",
+        "finalize",
+        "build-tool",
+    }
+)
+
+
+def classify_remote_command(command: str) -> str:
+    """Classify a remote command: read_only, run_control, agent, or rejected."""
+    cmd = command.lower().strip().replace("/", "")
+    if cmd in _READ_ONLY_COMMANDS:
+        return "read_only"
+    if cmd in _RUN_CONTROL_COMMANDS:
+        return "run_control"
+    if cmd in _AGENT_COMMANDS:
+        return "agent"
+    return "rejected"
+
 
 class NotificationBus:
     """Dispatches notification events to configured channels via a background thread."""
@@ -30,14 +59,22 @@ class NotificationBus:
         self._thread: threading.Thread | None = None
         self._experiment_id = ""
         self._turn = ""
+        self._controller: PauseController | None = None
+        self._session: object = None  # ReplSession (avoid circular import)
 
     def add_channel(self, channel: NotificationChannel) -> NotificationBus:
         """Add a channel. Returns self for chaining."""
         self.channels.append(channel)
         return self
 
-    def start(self, controller: PauseController | None = None) -> None:
+    def start(
+        self,
+        controller: PauseController | None = None,
+        session: object = None,
+    ) -> None:
         """Start the dispatch thread and channel listeners."""
+        self._controller = controller
+        self._session = session
         self._thread = threading.Thread(
             target=self._dispatch_loop, name="urika-notifications", daemon=True
         )
@@ -45,7 +82,9 @@ class NotificationBus:
         for ch in self.channels:
             try:
                 if controller is not None:
-                    ch.start_listener(controller, project_path=self._project_path)
+                    ch.start_listener(
+                        controller, project_path=self._project_path, bus=self
+                    )
             except Exception as exc:
                 logger.warning(
                     "Failed to start listener for %s: %s", type(ch).__name__, exc
@@ -161,3 +200,124 @@ class NotificationBus:
                 logger.warning(
                     "Notification send failed for %s: %s", type(ch).__name__, exc
                 )
+
+    # ------------------------------------------------------------------
+    # Remote command handling
+    # ------------------------------------------------------------------
+
+    def handle_remote_command(
+        self, command: str, args: str = "", respond: object = None
+    ) -> None:
+        """Handle an inbound command from Telegram/Slack.
+
+        Args:
+            command: the command name (e.g. "status", "run", "pause")
+            args: command arguments (e.g. "what should I try next?")
+            respond: callable(text) to send response back to the channel
+        """
+        _respond = respond or (lambda t: None)
+        category = classify_remote_command(command)
+
+        if category == "rejected":
+            _respond(f"/{command} is not available remotely. Use the terminal.")
+            return
+
+        if category == "read_only":
+            text = self._execute_read_only(command, args)
+            _respond(text)
+            return
+
+        if category == "run_control":
+            self._execute_run_control(command, _respond)
+            return
+
+        if category == "agent":
+            self._queue_agent_command(command, args, _respond)
+            return
+
+    def _execute_read_only(self, command: str, args: str) -> str:
+        """Execute a read-only query and return the text result."""
+        if self._project_path is None:
+            return "No project loaded."
+
+        from urika.notifications.queries import (
+            get_criteria_text,
+            get_experiments_text,
+            get_logs_text,
+            get_methods_text,
+            get_results_text,
+            get_status_text,
+            get_usage_text,
+        )
+
+        cmd = command.lower().strip()
+        if cmd == "status":
+            return get_status_text(self._project_path)
+        if cmd == "results":
+            return get_results_text(self._project_path)
+        if cmd == "methods":
+            return get_methods_text(self._project_path)
+        if cmd == "criteria":
+            return get_criteria_text(self._project_path)
+        if cmd == "experiments":
+            return get_experiments_text(self._project_path)
+        if cmd == "usage":
+            return get_usage_text(self._project_path)
+        if cmd == "logs":
+            return get_logs_text(self._project_path, args.strip())
+        if cmd == "help":
+            return (
+                "Available commands:\n"
+                "  /status /results /methods /criteria /experiments /logs /usage\n"
+                "  /pause /stop /resume\n"
+                "  /run /advisor <question> /evaluate /plan /report"
+                " /present /finalize /build-tool <text>"
+            )
+        return f"Unknown command: /{command}"
+
+    def _execute_run_control(self, command: str, respond) -> None:
+        """Execute a run control command."""
+        if command == "pause":
+            if self._controller and self._session and self._session.agent_active:
+                self._controller.request_pause()
+                respond("Pause requested \u23f8")
+            else:
+                respond("No active run to pause.")
+        elif command == "stop":
+            if self._controller and self._session and self._session.agent_active:
+                self._controller.request_stop()
+                if self._session:
+                    self._session.clear_remote_queue()
+                respond("Stopped. Queued commands cleared.")
+            else:
+                respond("No active run to stop.")
+        elif command == "resume":
+            if self._session and not self._session.agent_active:
+                self._session.queue_remote_command("run", "--resume")
+                respond("Resume queued.")
+            else:
+                respond("Cannot resume right now.")
+
+    def _queue_agent_command(self, command: str, args: str, respond) -> None:
+        """Queue an agent command for REPL execution."""
+        if self._session is None:
+            respond("No active REPL session.")
+            return
+
+        if (
+            command == "run"
+            and self._session.agent_active
+            and self._session.active_command == "run"
+        ):
+            respond("Run in progress. Stop first to start a new run.")
+            return
+
+        if self._session.agent_active:
+            self._session.queue_remote_command(command, args)
+            respond(
+                f"/{command} queued — will run after"
+                f" {self._session.active_command} finishes."
+            )
+        else:
+            self._session.queue_remote_command(command, args)
+            respond(f"/{command} queued.")

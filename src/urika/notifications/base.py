@@ -20,7 +20,10 @@ class NotificationChannel(ABC):
         ...
 
     def start_listener(
-        self, controller: PauseController, project_path: Path | None = None
+        self,
+        controller: PauseController,
+        project_path: Path | None = None,
+        bus: object = None,
     ) -> None:
         """Start listening for inbound commands (optional, for bidirectional channels)."""
 
