@@ -4211,6 +4211,100 @@ def _send_test_notification(notif: dict) -> None:
 
 def _notifications_interactive(*, settings, is_project, project_path):
     """Interactive notification setup. Raises UserCancelled on cancel/ESC."""
+    if is_project:
+        _notifications_project_setup(settings=settings, project_path=project_path)
+        return
+
+    _notifications_global_setup(settings=settings, project_path=project_path)
+
+
+def _notifications_project_setup(*, settings, project_path):
+    """Project-level notification setup — select channels + extra recipients."""
+    import click
+    import tomllib
+    from urika.cli_display import print_step, print_success, print_warning
+    from urika.cli_helpers import interactive_confirm, interactive_prompt
+
+    # Load global config to show what's available
+    global_notif: dict = {}
+    global_path = Path.home() / ".urika" / "settings.toml"
+    if global_path.exists():
+        try:
+            with open(global_path, "rb") as f:
+                data = tomllib.load(f)
+            global_notif = data.get("notifications", {})
+        except Exception:
+            pass
+
+    # Check what's configured globally
+    has_email = bool(global_notif.get("email", {}).get("to"))
+    has_slack = bool(global_notif.get("slack", {}).get("channel"))
+    has_telegram = bool(global_notif.get("telegram", {}).get("chat_id"))
+
+    if not has_email and not has_slack and not has_telegram:
+        print_warning(
+            "No notification channels configured globally.\n"
+            "  Run 'urika notifications' (without --project) to set up channels first."
+        )
+        return
+
+    click.echo("\n  Project notification setup\n")
+
+    # Show available global channels
+    click.echo("  Available channels (from global settings):")
+    if has_email:
+        to = global_notif["email"]["to"]
+        if isinstance(to, list):
+            to = ", ".join(to)
+        click.echo(
+            f"    Email:    {global_notif['email'].get('from_addr', '?')} -> {to}"
+        )
+    if has_slack:
+        click.echo(f"    Slack:    {global_notif['slack']['channel']}")
+    if has_telegram:
+        click.echo(f"    Telegram: chat {global_notif['telegram']['chat_id']}")
+    click.echo()
+
+    # Ask which channels to enable
+    channels = []
+    if has_email and interactive_confirm("Enable email notifications?", default=True):
+        channels.append("email")
+    if has_slack and interactive_confirm("Enable Slack notifications?", default=True):
+        channels.append("slack")
+    if has_telegram and interactive_confirm(
+        "Enable Telegram notifications?", default=True
+    ):
+        channels.append("telegram")
+
+    if not channels:
+        print_step("No channels enabled.")
+        return
+
+    # Ask for extra email recipients
+    extra_to: list[str] = []
+    if "email" in channels:
+        extra_raw = interactive_prompt(
+            "Extra email recipients for this project (comma-separated, or blank)",
+            default="",
+        )
+        if extra_raw.strip():
+            extra_to = [a.strip() for a in extra_raw.split(",") if a.strip()]
+
+    # Save to project urika.toml
+    notif: dict = {"channels": channels}
+    if extra_to:
+        notif["email"] = {"to": extra_to}
+    settings["notifications"] = notif
+    _save_notification_settings(settings, is_project=True, project_path=project_path)
+
+    print_success(f"Notifications enabled: {', '.join(channels)}")
+    if extra_to:
+        click.echo(f"  Extra recipients: {', '.join(extra_to)}")
+    click.echo()
+
+
+def _notifications_global_setup(*, settings, project_path):
+    """Global notification setup — configure channel settings."""
 
     import click
     from urika.cli_display import print_success
@@ -4273,7 +4367,7 @@ def _notifications_interactive(*, settings, is_project, project_path):
 
         if choice == "Disable all":
             settings.setdefault("notifications", {})["enabled"] = False
-            _save_notification_settings(settings, is_project, project_path)
+            _save_notification_settings(settings, False, project_path)
             print_success("Notifications disabled.")
             break
 
@@ -4324,7 +4418,7 @@ def _notifications_interactive(*, settings, is_project, project_path):
             )
             settings["notifications"] = notif
             settings["notifications"]["enabled"] = True
-            _save_notification_settings(settings, is_project, project_path)
+            _save_notification_settings(settings, False, project_path)
             print_success("Email configured.")
 
             if interactive_confirm("Send test email?", default=True):
@@ -4366,7 +4460,7 @@ def _notifications_interactive(*, settings, is_project, project_path):
             )
             settings["notifications"] = notif
             settings["notifications"]["enabled"] = True
-            _save_notification_settings(settings, is_project, project_path)
+            _save_notification_settings(settings, False, project_path)
 
             tokens_saved = []
             if bot_token:
@@ -4407,7 +4501,7 @@ def _notifications_interactive(*, settings, is_project, project_path):
             )
             settings["notifications"] = notif
             settings["notifications"]["enabled"] = True
-            _save_notification_settings(settings, is_project, project_path)
+            _save_notification_settings(settings, False, project_path)
             print_success("Telegram configured.")
             click.echo()
             continue
