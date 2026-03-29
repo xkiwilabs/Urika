@@ -225,20 +225,23 @@ class TelegramChannel(NotificationChannel):
             chat_id = update.message.chat_id
 
             def _send_reply(resp: str) -> None:
-                """Send a reply — works from any thread."""
+                """Send a reply via HTTP API — works from any thread, no event loop needed."""
                 try:
-                    import asyncio as _aio
+                    import urllib.request
+                    import urllib.parse
+                    import json as _json
 
-                    loop = _aio.new_event_loop()
-                    try:
-                        import telegram as _tg
-
-                        bot = _tg.Bot(token=self._token)
-                        loop.run_until_complete(
-                            bot.send_message(chat_id=chat_id, text=resp)
-                        )
-                    finally:
-                        loop.close()
+                    url = f"https://api.telegram.org/bot{self._token}/sendMessage"
+                    payload = _json.dumps({
+                        "chat_id": chat_id,
+                        "text": resp,
+                    }).encode("utf-8")
+                    req = urllib.request.Request(
+                        url,
+                        data=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    urllib.request.urlopen(req, timeout=10)
                 except Exception as exc:
                     logger.warning("Telegram reply failed: %s", exc)
 
