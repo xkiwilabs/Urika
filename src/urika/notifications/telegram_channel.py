@@ -222,18 +222,27 @@ class TelegramChannel(NotificationChannel):
         args = parts[1] if len(parts) > 1 else ""
 
         if self._bus is not None:
-            response_text: list[str] = []
+            chat_id = update.message.chat_id
 
-            def sync_respond(resp: str) -> None:
-                response_text.append(resp)
-
-            self._bus.handle_remote_command(command, args, respond=sync_respond)
-
-            for resp in response_text:
+            def _send_reply(resp: str) -> None:
+                """Send a reply — works from any thread."""
                 try:
-                    await update.message.reply_text(resp)
-                except Exception:
-                    pass
+                    import asyncio as _aio
+
+                    loop = _aio.new_event_loop()
+                    try:
+                        import telegram as _tg
+
+                        bot = _tg.Bot(token=self._token)
+                        loop.run_until_complete(
+                            bot.send_message(chat_id=chat_id, text=resp)
+                        )
+                    finally:
+                        loop.close()
+                except Exception as exc:
+                    logger.warning("Telegram reply failed: %s", exc)
+
+            self._bus.handle_remote_command(command, args, respond=_send_reply)
         elif self._controller is not None:
             # Fallback: direct control if no bus (shouldn't happen)
             if command == "pause":
