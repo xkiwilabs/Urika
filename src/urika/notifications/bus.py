@@ -93,6 +93,31 @@ _COMMAND_HELP: dict[str, str] = {
 }
 
 
+def _split_message(text: str, max_len: int = 4000) -> list[str]:
+    """Split long text into chunks that fit chat platform limits.
+
+    Splits on newlines when possible to avoid breaking mid-sentence.
+    """
+    if len(text) <= max_len:
+        return [text]
+
+    chunks: list[str] = []
+    while text:
+        if len(text) <= max_len:
+            chunks.append(text)
+            break
+        # Find a newline near the limit to split cleanly
+        split_at = text.rfind("\n", 0, max_len)
+        if split_at < max_len // 2:
+            # No good newline — split at limit
+            split_at = max_len
+        chunk = text[:split_at].rstrip()
+        chunks.append(chunk)
+        text = text[split_at:].lstrip("\n")
+
+    return chunks
+
+
 def _help_text(topic: str = "") -> str:
     """Return help text — general or for a specific command."""
     if topic and topic.lstrip("/") in _COMMAND_HELP:
@@ -326,9 +351,8 @@ class NotificationBus:
 
         if category == "read_only":
             text = self._execute_read_only(command, args)
-            if len(text) > 3500:
-                text = text[:3500] + "\n\n[Truncated — use terminal for full output]"
-            _respond(text)
+            for chunk in _split_message(text, max_len=4000):
+                _respond(chunk)
             return
 
         if category == "run_control":
@@ -466,7 +490,9 @@ class NotificationBus:
 
             if command == "advisor":
                 text = self._run_remote_advisor(args)
-                respond(text)
+                # Split long responses into multiple messages
+                for chunk in _split_message(text, max_len=4000):
+                    respond(chunk)
                 return
 
             # For run, evaluate, plan, report, present, finalize, build-tool:
@@ -510,10 +536,7 @@ class NotificationBus:
                 loop.close()
 
             if result.success and result.text_output:
-                text = result.text_output.strip()
-                if len(text) > 3500:
-                    text = text[:3500] + "\n\n[Truncated]"
-                return text
+                return result.text_output.strip()
             return f"Advisor error: {result.error or 'no response'}"
         except Exception as exc:
             return f"Advisor error: {exc}"
