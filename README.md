@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="docs/01-getting-started.md">Getting Started</a> &middot;
-  <a href="docs/05-running-experiments.md">Running Experiments</a> &middot;
   <a href="docs/09-agent-system.md">Agent System</a> &middot;
   <a href="docs/12-models-and-privacy.md">Models &amp; Privacy</a> &middot;
   <a href="docs/17-notifications.md">Notifications</a> &middot;
