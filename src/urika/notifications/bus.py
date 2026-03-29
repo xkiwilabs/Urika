@@ -21,11 +21,14 @@ from urika.notifications.events import NotificationEvent
 _COMMAND_HELP: dict[str, str] = {
     "run": (
         "/run [options]\n"
-        "  Start an experiment run.\n\n"
-        "  /run              single experiment, default turns\n"
-        "  /run 3            single experiment, 3 turns max\n"
-        "  /run --multi 5    5 experiments autonomously\n"
-        "  /run --resume     resume paused/stopped experiment\n\n"
+        "  Start an experiment run (always auto, no prompts).\n\n"
+        "  /run                  single experiment, default turns\n"
+        "  /run 3                single experiment, 3 turns max\n"
+        "  /run --multi 5        5 experiments autonomously\n"
+        "  /run --resume         resume paused/stopped experiment\n"
+        "  /run try tree models  single experiment with instructions\n"
+        "  /run --multi 3 focus on feature selection\n"
+        "                        3 experiments with instructions\n\n"
         "  Stop with /stop. Pause with /pause."
     ),
     "advisor": (
@@ -490,13 +493,25 @@ class NotificationBus:
 
             if command == "advisor":
                 text = self._run_remote_advisor(args)
-                # Split long responses into multiple messages
                 for chunk in _split_message(text, max_len=4000):
                     respond(chunk)
                 return
 
-            # For run, evaluate, plan, report, present, finalize, build-tool:
-            # Queue for REPL — these need the full CLI machinery
+            if command == "run":
+                self._run_remote_experiment(args, respond)
+                return
+
+            # Commands that can run via subprocess with --json or default args
+            if command in ("evaluate", "plan", "finalize", "build-tool"):
+                self._run_remote_cli_command(command, args, respond)
+                return
+
+            if command in ("report", "present"):
+                # These prompt for experiment — pass most recent via --json
+                self._run_remote_cli_command(command, args, respond)
+                return
+
+            # Fallback: queue for REPL
             self._session.queue_remote_command(command, args)
             respond(
                 f"/{command} needs the REPL terminal to run. "
@@ -571,3 +586,169 @@ class NotificationBus:
             return f"Advisor error: {result.error or 'no response'}"
         except Exception as exc:
             return f"Advisor error: {exc}"
+
+    def _run_remote_experiment(self, args: str, respond) -> None:
+        """Run an experiment via subprocess with --auto (no interactive prompts).
+
+        Sends progress updates back to the channel.
+        """
+        import subprocess
+        import sys
+
+        if self._project_path is None:
+            respond("No project loaded.")
+            return
+
+        project_name = self._project_path.name
+
+        # Parse args: /run, /run 3, /run --multi 5, /run --resume, /run focus on trees
+        cmd = [sys.executable, "-m", "urika", "run", project_name, "--auto"]
+
+        args_stripped = args.strip()
+        if args_stripped:
+            parts = args_stripped.split()
+            if parts[0] == "--resume":
+                cmd.append("--resume")
+            elif parts[0] == "--multi" and len(parts) > 1:
+                try:
+                    n = int(parts[1])
+                    cmd.extend(["--max-experiments", str(n)])
+                    if len(parts) > 2:
+                        cmd.extend(["--instructions", " ".join(parts[2:])])
+                except ValueError:
+                    cmd.extend(["--instructions", args_stripped])
+            else:
+                try:
+                    max_turns = int(parts[0])
+                    cmd.extend(["--max-turns", str(max_turns)])
+                    if len(parts) > 1:
+                        cmd.extend(["--instructions", " ".join(parts[1:])])
+                except ValueError:
+                    cmd.extend(["--instructions", args_stripped])
+
+        desc_parts = [f"Starting experiment on {project_name}"]
+        if "--max-experiments" in cmd:
+            idx = cmd.index("--max-experiments")
+            desc_parts.append(f"({cmd[idx + 1]} experiments)")
+        if "--max-turns" in cmd:
+            idx = cmd.index("--max-turns")
+            desc_parts.append(f"(max {cmd[idx + 1]} turns)")
+        if "--resume" in cmd:
+            desc_parts = [f"Resuming experiment on {project_name}"]
+        respond(" ".join(desc_parts) + "...")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=3600,  # 1 hour max
+                env={**__import__("os").environ, "URIKA_REMOTE_RUN": "1"},
+            )
+
+            # Send last part of output as response
+            output = result.stdout.strip()
+            if result.returncode == 0:
+                # Extract the summary from the end of output
+                lines = output.split("\n")
+                summary_lines = [
+                    line
+                    for line in lines[-20:]
+                    if line.strip() and not line.strip().startswith("\x1b")
+                ]
+                summary = (
+                    "\n".join(summary_lines[-10:])
+                    if summary_lines
+                    else "Run completed."
+                )
+                respond(f"Experiment finished:\n{summary}")
+            else:
+                error = (
+                    result.stderr.strip() or output[-500:]
+                    if output
+                    else "Unknown error"
+                )
+                respond(f"Run failed:\n{error[:2000]}")
+        except subprocess.TimeoutExpired:
+            respond("Run timed out after 1 hour.")
+        except Exception as exc:
+            respond(f"Run error: {exc}")
+
+    def _run_remote_cli_command(self, command: str, args: str, respond) -> None:
+        """Run a CLI command via subprocess with --json to avoid interactive prompts."""
+        import subprocess
+        import sys
+        import json as _json
+
+        if self._project_path is None:
+            respond("No project loaded.")
+            return
+
+        project_name = self._project_path.name
+
+        # Build command
+        cmd_map = {
+            "evaluate": ["evaluate", project_name],
+            "plan": ["plan", project_name],
+            "finalize": ["finalize", project_name],
+            "report": ["report", project_name],
+            "present": ["present", project_name],
+            "build-tool": ["build-tool", project_name],
+        }
+
+        base = cmd_map.get(command)
+        if base is None:
+            respond(f"Unknown command: /{command}")
+            return
+
+        cmd = [sys.executable, "-m", "urika"] + base + ["--json"]
+
+        # Add args as experiment ID or instructions
+        args_stripped = args.strip()
+        if args_stripped:
+            if command in ("evaluate", "plan", "report", "present"):
+                # Could be experiment ID (exp-NNN) or instructions
+                if args_stripped.startswith("exp-"):
+                    cmd.extend(["--experiment", args_stripped])
+                else:
+                    cmd.extend(["--instructions", args_stripped])
+            elif command == "finalize":
+                cmd.extend(["--instructions", args_stripped])
+            elif command == "build-tool":
+                # build-tool takes instructions as positional arg
+                # Remove --json, add instructions before it
+                cmd = [
+                    sys.executable,
+                    "-m",
+                    "urika",
+                    "build-tool",
+                    project_name,
+                    args_stripped,
+                    "--json",
+                ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 min max for single agent commands
+                env={**__import__("os").environ, "URIKA_REMOTE_RUN": "1"},
+            )
+
+            if result.returncode == 0:
+                # Try to parse JSON output
+                output = result.stdout.strip()
+                try:
+                    data = _json.loads(output)
+                    text = data.get("output", data.get("path", str(data)))
+                    respond(f"/{command} completed:\n{text[:3000]}")
+                except _json.JSONDecodeError:
+                    respond(f"/{command} completed:\n{output[-1000:]}")
+            else:
+                error = result.stderr.strip() or result.stdout.strip()
+                respond(f"/{command} failed:\n{error[:1000]}")
+        except subprocess.TimeoutExpired:
+            respond(f"/{command} timed out.")
+        except Exception as exc:
+            respond(f"/{command} error: {exc}")
