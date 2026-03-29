@@ -351,8 +351,8 @@ class TestHandleRemoteCommand:
         bus._session = FakeSession()
         responses = []
         bus.handle_remote_command("plan", respond=responses.append)
-        assert bus._session.queued == [("plan", "")]
-        assert "/plan queued." in responses[0]
+        # When idle, agent commands execute in background (not queued)
+        assert "Running /plan" in responses[0]
 
     def test_resume_when_idle(self):
         bus = NotificationBus()
@@ -458,8 +458,8 @@ class TestRemoteCommandQueue:
         cmd = session.pop_remote_command()
         assert cmd == ("advisor", "try PCA?")
 
-    def test_agent_queued_while_idle_real_session(self):
-        """Agent command queued when REPL is idle."""
+    def test_agent_runs_while_idle_real_session(self):
+        """Agent command executes in background when REPL is idle."""
         from urika.repl_session import ReplSession
 
         session = ReplSession()
@@ -471,7 +471,5 @@ class TestRemoteCommandQueue:
         responses: list[str] = []
         bus._queue_agent_command("plan", "", responses.append)
 
-        assert session.has_remote_command
-        assert "queued" in responses[0].lower()
-        cmd = session.pop_remote_command()
-        assert cmd == ("plan", "")
+        # When idle, responds "Running" instead of "queued"
+        assert "running" in responses[0].lower()

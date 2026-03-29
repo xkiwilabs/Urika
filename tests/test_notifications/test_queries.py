@@ -59,7 +59,7 @@ class TestQueries:
         }
         (tmp_path / "methods.json").write_text(json.dumps(data), encoding="utf-8")
         text = get_methods_text(tmp_path)
-        assert "Methods (2):" in text
+        assert "Methods (2 total" in text
         assert "linear_reg [active]" in text
         assert "r2=0.85" in text
         assert "random_forest [superseded]" in text
@@ -101,7 +101,7 @@ class TestQueries:
         }
         (exp_dir / "progress.json").write_text(json.dumps(progress), encoding="utf-8")
         text = get_experiments_text(tmp_path)
-        assert "Experiments (1):" in text
+        assert "Experiments (1 total" in text
         assert "exp-001-baseline" in text
         assert "Baseline models" in text
         assert "running" in text

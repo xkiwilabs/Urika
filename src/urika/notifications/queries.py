@@ -75,8 +75,9 @@ def get_methods_text(project_path: Path) -> str:
     if not methods:
         return "No methods yet."
 
-    lines = [f"Methods ({len(methods)}):"]
-    for m in methods:
+    shown = methods[-10:]
+    lines = [f"Methods ({len(methods)} total, last {len(shown)}):"]
+    for m in shown:
         name = m.get("name", "?")
         status = m.get("status", "?")
         metrics = m.get("metrics", {})
@@ -115,8 +116,9 @@ def get_experiments_text(project_path: Path) -> str:
     if not experiments:
         return "Experiments: 0"
 
-    lines = [f"Experiments ({len(experiments)}):"]
-    for exp in experiments:
+    shown = experiments[-10:]
+    lines = [f"Experiments ({len(experiments)} total, last {len(shown)}):"]
+    for exp in shown:
         progress = load_progress(project_path, exp.experiment_id)
         status = progress.get("status", "pending")
         runs = len(progress.get("runs", []))

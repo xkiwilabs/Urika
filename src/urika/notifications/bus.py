@@ -14,6 +14,104 @@ if TYPE_CHECKING:
 
 from urika.notifications.events import NotificationEvent
 
+# ---------------------------------------------------------------------------
+# Per-command help text
+# ---------------------------------------------------------------------------
+
+_COMMAND_HELP: dict[str, str] = {
+    "run": (
+        "/run [options]\n"
+        "  Start an experiment run.\n\n"
+        "  /run              single experiment, default turns\n"
+        "  /run 3            single experiment, 3 turns max\n"
+        "  /run --multi 5    5 experiments autonomously\n"
+        "  /run --resume     resume paused/stopped experiment\n\n"
+        "  Stop with /stop. Pause with /pause."
+    ),
+    "advisor": (
+        "/advisor <question>\n"
+        "  Ask the advisor agent about the project.\n"
+        "  Only works when no agent is running.\n\n"
+        "  /advisor what should I try next?\n"
+        "  /advisor should I use non-parametric tests?"
+    ),
+    "evaluate": (
+        "/evaluate [experiment_id]\n"
+        "  Run the evaluator on an experiment.\n"
+        "  Default: most recent experiment.\n\n"
+        "  /evaluate\n"
+        "  /evaluate exp-003"
+    ),
+    "plan": (
+        "/plan [experiment_id]\n"
+        "  Run the planning agent.\n"
+        "  Default: most recent experiment.\n\n"
+        "  /plan\n"
+        "  /plan exp-003"
+    ),
+    "report": (
+        "/report [experiment_id]\n"
+        "  Generate a labbook report.\n"
+        "  Default: most recent experiment.\n\n"
+        "  /report\n"
+        "  /report exp-003"
+    ),
+    "present": (
+        "/present [experiment_id]\n"
+        "  Generate a reveal.js presentation.\n"
+        "  Default: most recent experiment.\n\n"
+        "  /present\n"
+        "  /present exp-003"
+    ),
+    "finalize": (
+        "/finalize [instructions]\n"
+        "  Run the finalizer — standalone methods, findings, report.\n\n"
+        "  /finalize\n"
+        "  /finalize focus on the ensemble methods"
+    ),
+    "build-tool": (
+        "/build-tool <description>\n"
+        "  Create a custom analysis tool.\n\n"
+        "  /build-tool create an ICC tool using pingouin\n"
+        "  /build-tool install mne and add an EEG epoch extractor"
+    ),
+    "status": "/status\n  Project overview: experiments, runs, completion state.",
+    "results": "/results\n  Leaderboard — top methods ranked by primary metric.",
+    "methods": "/methods\n  Last 10 registered methods with status and metrics.",
+    "criteria": "/criteria\n  Current success criteria and version.",
+    "experiments": "/experiments\n  Last 10 experiments with status and run counts.",
+    "logs": (
+        "/logs [experiment_id]\n"
+        "  Last 5 run logs. Default: most recent experiment.\n\n"
+        "  /logs\n"
+        "  /logs exp-003"
+    ),
+    "usage": "/usage\n  Token counts, cost, agent calls, session stats.",
+    "pause": "/pause\n  Pause the active run after the current turn completes.",
+    "stop": "/stop\n  Stop the active run immediately. Clears queued commands.",
+    "resume": "/resume\n  Resume a paused or stopped experiment.",
+}
+
+
+def _help_text(topic: str = "") -> str:
+    """Return help text — general or for a specific command."""
+    if topic and topic.lstrip("/") in _COMMAND_HELP:
+        return _COMMAND_HELP[topic.lstrip("/")]
+
+    return (
+        "Available remote commands:\n\n"
+        "Read-only:\n"
+        "  /status /results /methods /criteria\n"
+        "  /experiments /logs /usage\n\n"
+        "Run control:\n"
+        "  /pause /stop /resume\n\n"
+        "Agent commands:\n"
+        "  /run /advisor /evaluate /plan\n"
+        "  /report /present /finalize /build-tool\n\n"
+        "Type /help <command> for details."
+    )
+
+
 logger = logging.getLogger(__name__)
 
 _READ_ONLY_COMMANDS = frozenset(
@@ -81,9 +179,7 @@ class NotificationBus:
         self._thread.start()
         for ch in self.channels:
             try:
-                ch.start_listener(
-                    controller, project_path=self._project_path, bus=self
-                )
+                ch.start_listener(controller, project_path=self._project_path, bus=self)
             except Exception as exc:
                 logger.warning(
                     "Failed to start listener for %s: %s", type(ch).__name__, exc
@@ -223,6 +319,8 @@ class NotificationBus:
 
         if category == "read_only":
             text = self._execute_read_only(command, args)
+            if len(text) > 3500:
+                text = text[:3500] + "\n\n[Truncated — use terminal for full output]"
             _respond(text)
             return
 
@@ -265,31 +363,7 @@ class NotificationBus:
         if cmd == "logs":
             return get_logs_text(self._project_path, args.strip())
         if cmd == "help":
-            return (
-                "Available remote commands:\n\n"
-                "Read-only (instant response):\n"
-                "  /status      — project overview\n"
-                "  /results     — leaderboard / top methods\n"
-                "  /methods     — registered methods\n"
-                "  /criteria    — success criteria\n"
-                "  /experiments — list experiments\n"
-                "  /logs        — recent log entries\n"
-                "  /usage       — token/cost summary\n"
-                "  /help        — this message\n\n"
-                "Run control:\n"
-                "  /pause  — pause after current turn\n"
-                "  /stop   — stop immediately, clear queue\n"
-                "  /resume — resume a paused run\n\n"
-                "Agent commands (queued if busy):\n"
-                "  /run              — start experiment\n"
-                "  /advisor <text>   — ask the advisor\n"
-                "  /evaluate         — run evaluator\n"
-                "  /plan             — run planning agent\n"
-                "  /report           — generate report\n"
-                "  /present          — generate presentation\n"
-                "  /finalize         — run finalizer\n"
-                "  /build-tool <text> — create a tool"
-            )
+            return _help_text(args.strip())
         return f"Unknown command: /{command}"
 
     def _execute_run_control(self, command: str, respond) -> None:
@@ -316,7 +390,11 @@ class NotificationBus:
                 respond("Cannot resume right now.")
 
     def _queue_agent_command(self, command: str, args: str, respond) -> None:
-        """Queue an agent command for REPL execution."""
+        """Queue or execute an agent command.
+
+        If idle: execute in a background thread and send result back.
+        If busy: queue for REPL to drain after current command finishes.
+        """
         if self._session is None:
             respond("No active REPL session.")
             return
@@ -332,9 +410,92 @@ class NotificationBus:
         if self._session.agent_active:
             self._session.queue_remote_command(command, args)
             respond(
-                f"/{command} queued — will run after"
+                f"/{command} queued \u2014 will run after"
                 f" {self._session.active_command} finishes."
             )
         else:
+            # Idle: execute immediately in background thread
+            respond(f"Running /{command}...")
+            thread = threading.Thread(
+                target=self._run_agent_in_background,
+                args=(command, args, respond),
+                name=f"urika-remote-{command}",
+                daemon=True,
+            )
+            thread.start()
+
+    def _run_agent_in_background(self, command: str, args: str, respond) -> None:
+        """Execute an agent command in a background thread."""
+        if self._session is None or self._project_path is None:
+            respond("No active session.")
+            return
+
+        self._session.set_agent_active(command)
+        try:
+            if command in (
+                "status",
+                "results",
+                "methods",
+                "criteria",
+                "experiments",
+                "logs",
+                "usage",
+            ):
+                # These are read-only — shouldn't reach here but handle gracefully
+                text = self._execute_read_only(command, args)
+                respond(text)
+                return
+
+            if command == "advisor":
+                text = self._run_remote_advisor(args)
+                respond(text)
+                return
+
+            # For run, evaluate, plan, report, present, finalize, build-tool:
+            # Queue for REPL — these need the full CLI machinery
             self._session.queue_remote_command(command, args)
-            respond(f"/{command} queued.")
+            respond(
+                f"/{command} requires the terminal. "
+                f"Queued \u2014 press Enter in the REPL to execute."
+            )
+        except Exception as exc:
+            logger.warning("Remote %s failed: %s", command, exc)
+            respond(f"Error: {exc}")
+        finally:
+            self._session.set_agent_idle()
+
+    def _run_remote_advisor(self, question: str) -> str:
+        """Run the advisor agent and return its text response."""
+        import asyncio
+
+        try:
+            from urika.agents.registry import AgentRegistry
+            from urika.agents.runner import get_runner
+        except ImportError:
+            return "Agent SDK not available."
+
+        runner = get_runner()
+        registry = AgentRegistry()
+        registry.discover()
+        advisor = registry.get("advisor_agent")
+        if advisor is None:
+            return "Advisor agent not found."
+
+        config = advisor.build_config(project_dir=self._project_path, experiment_id="")
+        config.max_turns = 25
+
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                result = loop.run_until_complete(runner.run(config, question))
+            finally:
+                loop.close()
+
+            if result.success and result.text_output:
+                text = result.text_output.strip()
+                if len(text) > 3500:
+                    text = text[:3500] + "\n\n[Truncated]"
+                return text
+            return f"Advisor error: {result.error or 'no response'}"
+        except Exception as exc:
+            return f"Advisor error: {exc}"
