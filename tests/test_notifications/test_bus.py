@@ -106,8 +106,8 @@ class TestNotificationBus:
         finally:
             bus.stop()
 
-    def test_on_progress_turn(self):
-        """on_progress('turn', ...) creates a turn_started event."""
+    def test_on_progress_turn_silent(self):
+        """on_progress('turn', ...) does NOT generate a notification."""
         bus = NotificationBus(project_name="proj")
         fake = FakeChannel()
         bus.add_channel(fake)
@@ -115,10 +115,7 @@ class TestNotificationBus:
         try:
             bus.on_progress("turn", "Turn 1/5")
             time.sleep(0.5)
-            assert len(fake.events) == 1
-            assert fake.events[0].event_type == "turn_started"
-            assert fake.events[0].summary == "Turn 1/5"
-            assert fake.events[0].priority == "low"
+            assert len(fake.events) == 0
         finally:
             bus.stop()
 
@@ -158,7 +155,7 @@ class TestNotificationBus:
         bus.start()
         try:
             bus.set_experiment("exp-001")
-            bus.on_progress("turn", "Turn 1/3")
+            bus.on_progress("result", "Criteria met! r2=0.9")
             time.sleep(0.5)
             assert len(fake.events) == 1
             assert fake.events[0].experiment_id == "exp-001"

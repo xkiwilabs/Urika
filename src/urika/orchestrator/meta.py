@@ -63,6 +63,13 @@ async def run_project(
         )
         print_step(f"Experiment {exp_num + 1}: {exp.experiment_id}")
 
+        # Notify: new experiment starting
+        progress(
+            "phase",
+            f"Starting experiment {exp_num + 1}: {exp.experiment_id}"
+            + (f" — {description[:100]}" if description else ""),
+        )
+
         # Run it
         result = await run_experiment(
             project_dir,
