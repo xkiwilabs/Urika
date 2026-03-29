@@ -422,7 +422,18 @@ class NotificationBus:
             )
         else:
             # Idle: execute immediately in background thread
-            respond(f"Running /{command}...")
+            _agent_hints = {
+                "advisor": "thinking — may take a few minutes",
+                "run": "starting experiment — this will take a while",
+                "evaluate": "evaluating — may take a minute",
+                "plan": "designing method — may take a minute",
+                "report": "writing report — may take a few minutes",
+                "present": "creating presentation — may take a few minutes",
+                "finalize": "finalizing project — this will take a while",
+                "build-tool": "building tool — may take a few minutes",
+            }
+            hint = _agent_hints.get(command, "working")
+            respond(f"Running /{command} ({hint})...")
             thread = threading.Thread(
                 target=self._run_agent_in_background,
                 args=(command, args, respond),
