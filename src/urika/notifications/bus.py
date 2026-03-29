@@ -499,8 +499,8 @@ class NotificationBus:
             # Queue for REPL — these need the full CLI machinery
             self._session.queue_remote_command(command, args)
             respond(
-                f"/{command} requires the terminal. "
-                f"Queued \u2014 press Enter in the REPL to execute."
+                f"/{command} needs the REPL terminal to run. "
+                f"It's queued and will execute when you interact with the REPL."
             )
         except Exception as exc:
             logger.warning("Remote %s failed: %s", command, exc)

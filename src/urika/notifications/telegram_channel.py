@@ -146,7 +146,8 @@ class TelegramChannel(NotificationChannel):
                 ],
             ]
             return InlineKeyboardMarkup(keyboard)
-        except Exception:
+        except Exception as exc:
+            logger.debug("Keyboard build failed: %s", exc)
             return None
 
     # ------------------------------------------------------------------
@@ -232,10 +233,12 @@ class TelegramChannel(NotificationChannel):
                     import json as _json
 
                     url = f"https://api.telegram.org/bot{self._token}/sendMessage"
-                    payload = _json.dumps({
-                        "chat_id": chat_id,
-                        "text": resp,
-                    }).encode("utf-8")
+                    payload = _json.dumps(
+                        {
+                            "chat_id": chat_id,
+                            "text": resp,
+                        }
+                    ).encode("utf-8")
                     req = urllib.request.Request(
                         url,
                         data=payload,

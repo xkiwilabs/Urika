@@ -27,14 +27,13 @@ def build_bus(project_path: Path) -> NotificationBus | None:
 
     if "email" in channels:
         cfg = channels["email"]
-        if cfg.get("to"):
+        if cfg.get("to") and cfg.get("smtp_server") and cfg.get("from_addr"):
             from urika.notifications.email_channel import EmailChannel
 
             bus.add_channel(EmailChannel(cfg))
         else:
             log.warning(
-                "Email enabled for %s but no recipients configured.",
-                project_path.name,
+                "Email enabled but missing required fields (to, smtp_server, or from_addr)."
             )
 
     if "slack" in channels:
@@ -44,9 +43,7 @@ def build_bus(project_path: Path) -> NotificationBus | None:
 
             bus.add_channel(SlackChannel(cfg))
         else:
-            log.warning(
-                "Slack enabled for %s but not configured.", project_path.name
-            )
+            log.warning("Slack enabled for %s but not configured.", project_path.name)
 
     if "telegram" in channels:
         cfg = channels["telegram"]
@@ -100,8 +97,12 @@ def _load_notification_config(project_path: Path) -> dict[str, dict[str, Any]]:
             with open(global_path, "rb") as f:
                 data = tomllib.load(f)
             global_config = copy.deepcopy(data.get("notifications", {}))
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Failed to parse global notification config %s: %s", global_path, exc
+            )
 
     # ── Load project config ──
     project_toml = project_path / "urika.toml"
@@ -111,8 +112,12 @@ def _load_notification_config(project_path: Path) -> dict[str, dict[str, Any]]:
             with open(project_toml, "rb") as f:
                 data = tomllib.load(f)
             project_notif = data.get("notifications", {})
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Failed to parse project notification config %s: %s", project_toml, exc
+            )
 
     # Determine which channels are enabled
     channels_list = project_notif.get("channels", [])

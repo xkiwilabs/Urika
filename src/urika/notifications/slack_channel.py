@@ -155,11 +155,10 @@ class SlackChannel(NotificationChannel):
             def _handle_interaction(
                 client: SocketModeClient, req: SocketModeRequest
             ) -> None:
-                if req.type != "interactive_message" and req.type != "slash_commands":
-                    # Block Kit button clicks arrive as block_actions inside
-                    # interactive payloads.
-                    payload = req.payload or {}
-                    actions = payload.get("actions", [])
+                # Block Kit button clicks arrive as events with actions in the payload
+                payload = req.payload or {}
+                actions = payload.get("actions", [])
+                if actions:
                     for action in actions:
                         action_id = action.get("action_id", "")
                         command_map = {

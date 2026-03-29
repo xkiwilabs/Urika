@@ -145,8 +145,9 @@ class ReplSession:
 
     def set_agent_active(self, command: str) -> None:
         """Mark an agent command as active."""
-        self.agent_active = True
-        self.active_command = command
+        with self._agent_lock:
+            self.agent_active = True
+            self.active_command = command
 
     def set_agent_idle(self, error: str = "") -> None:
         """Mark the agent as finished (called from background thread)."""

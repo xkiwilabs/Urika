@@ -184,7 +184,7 @@ channel = "#project-specific"
         with caplog.at_level(logging.WARNING):
             bus = build_bus(tmp_path)
         assert bus is None
-        assert "no recipients configured" in caplog.text
+        assert "missing required fields" in caplog.text
 
     def test_build_bus_with_project_telegram_override(self, tmp_path, monkeypatch):
         """Project overrides telegram chat_id -> bus uses project's ID."""
