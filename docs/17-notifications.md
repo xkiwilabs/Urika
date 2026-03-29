@@ -302,14 +302,16 @@ All remote commands are shown in the REPL terminal with a `[Remote]` tag so you 
 
 ## What Gets Notified
 
-| Event | When | Priority | Email | Slack/Telegram |
-|-------|------|----------|-------|----------------|
-| Turn started | Beginning of each turn | Low | Batched | Message + buttons |
-| Run recorded | Method results saved | Low | Batched | Message |
-| Criteria met | Evaluator says done | High | Immediate | Rich message |
-| Experiment completed | After reports generated | High | Immediate | Rich message |
-| Experiment failed | Agent error | High | Immediate | Error message |
-| Paused | User or remote pause | Medium | Immediate | Status message |
+Notifications are experiment-level only -- no per-turn noise. You get notified at key milestones:
+
+| Event | When | What you see |
+|-------|------|-------------|
+| Experiment started | New experiment created (autonomous mode) | Name and description |
+| Criteria met | Evaluator says success criteria satisfied | Criteria met message |
+| Experiment completed | After reports generated | Runs, methods, best result (e.g. "5 runs, 3 methods. Best: random_forest r2=82.3%") |
+| Experiment failed | Agent error | Error details |
+| Paused | ESC or remote `/pause` | Turn count and current results |
+| Stopped | Ctrl+C or remote `/stop` | Turn count and current results |
 
 
 ## Credentials and Security
