@@ -125,9 +125,28 @@ def cmd_project(session: ReplSession, args: str) -> None:
         if load_progress(path, e.experiment_id).get("status") == "completed"
     )
 
+    # Show privacy mode and notifications
+    import tomllib
+
+    toml_path = path / "urika.toml"
+    if toml_path.exists():
+        try:
+            with open(toml_path, "rb") as f:
+                tdata = tomllib.load(f)
+            privacy = tdata.get("privacy", {}).get("mode", "open")
+            notif_channels = tdata.get("notifications", {}).get("channels", [])
+            notif_str = ", ".join(notif_channels) if notif_channels else "off"
+        except Exception:
+            privacy = "open"
+            notif_str = "off"
+    else:
+        privacy = "open"
+        notif_str = "off"
+
     click.echo()
     print_success(f"Project: {name} \u00b7 {config.mode}")
     click.echo(f"    {len(experiments)} experiments \u00b7 {completed} completed")
+    click.echo(f"    Privacy: {privacy} \u00b7 Notifications: {notif_str}")
     click.echo()
 
 
@@ -448,6 +467,26 @@ def cmd_run(session: ReplSession, args: str) -> None:
             default=1,
         )
         review_criteria = rc_choice.startswith("Yes")
+
+    # Show settings summary
+    click.echo()
+    click.echo("  Run settings:")
+    click.echo(f"    Max turns:    {max_turns}")
+    if max_experiments:
+        click.echo(f"    Experiments:  up to {max_experiments}")
+        click.echo(f"    Auto mode:    {auto_mode}")
+    else:
+        click.echo("    Auto mode:    single experiment")
+    if run_instructions:
+        instr_preview = (
+            run_instructions[:80] + "..."
+            if len(run_instructions) > 80
+            else run_instructions
+        )
+        click.echo(f"    Instructions: {instr_preview}")
+    if review_criteria:
+        click.echo("    Review criteria: yes")
+    click.echo()
 
     # Use conversation context as instructions if none provided
     if not run_instructions and session.conversation:
