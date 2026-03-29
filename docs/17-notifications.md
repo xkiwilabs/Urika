@@ -1,278 +1,375 @@
 # Notifications
 
-Urika can send notifications to email, Slack, and Telegram when experiments start, complete, fail, or hit key milestones. Slack and Telegram also support inbound commands -- you can pause or stop a running experiment from your phone or desktop without touching the terminal.
+Urika can send notifications to email, Slack, and Telegram when experiments start, complete, fail, or hit key milestones. Slack and Telegram also support remote commands -- you can check project status, ask the advisor questions, pause or stop runs, and more, all from your phone without touching the terminal.
 
 
-## Quick Setup
+## How It Works
 
-Add a `[notifications]` section to your project's `urika.toml` (or to `~/.urika/settings.toml` for global defaults) and configure at least one channel. See the channel sections below for full configuration options.
+Notifications have two parts:
 
-The next time you run `urika run`, you'll receive notifications at key points. If no `[notifications]` section exists, notifications are off by default.
+1. **Global channel setup** (`~/.urika/settings.toml`) -- configure your email server, Slack bot, or Telegram bot once. These settings apply across all projects.
+
+2. **Per-project opt-in** (each project's `urika.toml`) -- choose which channels to enable for each project. Notifications are **off by default** -- you must explicitly enable them per project.
+
+Run `urika notifications` to set up channels interactively, or edit the config files directly.
 
 
-## Channels
+## Setting Up Channels
 
 ### Email
 
-Email uses Python's built-in `smtplib` -- no extra packages needed. It sends HTML emails with experiment summaries, metrics, and status.
+Email uses Python's built-in SMTP library -- no extra packages needed. It sends HTML emails with experiment summaries, metrics, and status.
 
-**Configuration:**
-
-```toml
-[notifications.email]
-to = ["you@lab.edu"]          # List of recipient addresses
-smtp_server = "smtp.gmail.com" # SMTP server hostname
-smtp_port = 587                # SMTP port (default: 587 for STARTTLS)
-from_addr = "urika@lab.edu"   # Sender address
-password_env = "URIKA_EMAIL_PASSWORD"  # Environment variable containing the password
-username = "urika@lab.edu"    # Optional — defaults to from_addr
-```
-
-**How it works:**
-
-- High-priority events (criteria met, experiment failed, experiment completed) are sent immediately
-- Low-priority events (turn started, run recorded) are batched and sent together when a higher-priority event occurs or when the run finishes
-- This means you typically get 1-2 emails per experiment, not one per turn
-
-**Gmail setup:**
-
-If using Gmail, you'll need an [App Password](https://support.google.com/accounts/answer/185833) (not your regular password). Set it as an environment variable:
+#### Step 1: Run the setup command
 
 ```bash
-export URIKA_EMAIL_PASSWORD="your-app-password"
+urika notifications
 ```
 
-For institutional SMTP servers that don't require authentication, omit `password_env` -- Urika will connect without login.
+Choose **Email** and enter:
+- **SMTP server** -- your email provider's SMTP server (e.g., `smtp.gmail.com` for Gmail, `smtp.office365.com` for Microsoft 365)
+- **SMTP port** -- usually `587` for STARTTLS (the default)
+- **From address** -- the email account sending notifications
+- **To addresses** -- who receives them (comma-separated for multiple recipients)
+- **App password** -- an app-specific password (NOT your regular login password)
+
+The password is saved to `~/.urika/secrets.env` (owner-read-only, never in config files).
+
+#### Step 2: Get an app password
+
+Most email providers require an app password when using SMTP:
+
+**Gmail:**
+1. Go to https://myaccount.google.com/security
+2. Enable **2-Step Verification** if not already on
+3. Go to https://myaccount.google.com/apppasswords
+4. Create an app password named "Urika"
+5. Copy the 16-character code -- this is your app password
+
+**Microsoft 365 / Outlook:**
+1. Go to https://mysignins.microsoft.com/security-info
+2. Add sign-in method -> **App password**
+3. If "App password" is not available, your organization has disabled it -- use a Gmail account instead
+
+**Institutional SMTP servers** that don't require authentication: leave the app password blank during setup.
+
+#### Step 3: Enable for a project
+
+```bash
+urika notifications --project my-study
+```
+
+Select email when prompted. Your project's `urika.toml` will get:
+
+```toml
+[notifications]
+channels = ["email"]
+```
+
+That's it. The next time you run an experiment on this project, you'll receive emails.
+
+#### How email batching works
+
+- **High-priority events** (criteria met, experiment completed, experiment failed) are sent **immediately**
+- **Low-priority events** (turn started, run recorded) are **batched** -- held in memory until a high-priority event triggers a send
+- This means you typically get **1-2 emails per experiment**, not one per turn
+- When a run finishes (or is paused/stopped), any remaining batched events are flushed
 
 
 ### Slack
 
-Slack sends rich Block Kit messages with formatted metrics, status indicators, and interactive Pause/Stop buttons.
+Slack sends rich messages with formatted metrics, status indicators, and interactive buttons.
 
-**Prerequisites:**
+#### Step 1: Create a Slack app
 
-```bash
-pip install "urika[notifications]"   # or: pip install slack-sdk
-```
+1. Go to [api.slack.com/apps](https://api.slack.com/apps)
+2. Click **Create New App** -> **From scratch**
+3. Name it "Urika" (or anything you like), pick your workspace
+4. Click **Create App**
 
-**Create a Slack Bot:**
+#### Step 2: Add permissions
 
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app
-2. Under **OAuth & Permissions**, add these bot token scopes:
+1. In the left sidebar, click **OAuth & Permissions**
+2. Scroll to **Scopes** -> **Bot Token Scopes**
+3. Add these scopes:
    - `chat:write` -- send messages
-   - `chat:write.public` -- post to channels the bot hasn't been invited to
-3. Install the app to your workspace and copy the **Bot User OAuth Token**
-4. For interactive buttons (Pause/Stop), also enable **Socket Mode** and generate an **App-Level Token** with `connections:write` scope
+   - `chat:write.public` -- post to any public channel
 
-**Configuration:**
+#### Step 3: Install to workspace
 
-```toml
-[notifications.slack]
-channel = "#urika-results"       # Channel to post to
-bot_token_env = "SLACK_BOT_TOKEN"  # Env var with bot token
-app_token_env = "SLACK_APP_TOKEN"  # Optional — env var with app token for Socket Mode
-```
+1. Scroll back to **OAuth Tokens** at the top
+2. Click **Install to Workspace** -> Authorize
+3. Copy the **Bot User OAuth Token** (starts with `xoxb-`)
+
+#### Step 4: Configure in Urika
 
 ```bash
-export SLACK_BOT_TOKEN="xoxb-your-bot-token"
-export SLACK_APP_TOKEN="xapp-your-app-token"   # Only needed for Pause/Stop buttons
+urika notifications
 ```
 
-**What you see in Slack:**
+Choose **Slack** and enter:
+- **Channel** -- e.g., `#urika-results` (create the channel in Slack first)
+- **Bot token** -- paste the `xoxb-...` token
 
-- Experiment started: compact context message
-- Turn completed with metrics: context message with Pause/Stop buttons
-- Criteria met: rich message with header, metrics fields, and success indicator
-- Experiment failed: error message with details
-- Paused: status message
+#### Step 5 (optional): Enable interactive buttons
 
-**Interactive controls:**
+For Pause/Stop/Status/Results buttons in Slack messages:
 
-If you configured `app_token_env`, messages include interactive buttons:
+1. In your Slack app settings, click **Socket Mode** in the sidebar -> **Enable**
+2. Click **Generate Token**, name it "Urika", give it `connections:write` scope
+3. Copy the **App-Level Token** (starts with `xapp-`)
+4. Go to **Interactivity & Shortcuts** -> turn **On**
+5. In Urika setup, enter the app token when prompted
 
-- **Pause** -- pauses the experiment after the current turn completes (same as pressing ESC locally)
-- **Stop** -- stops the experiment immediately (same as Ctrl+C locally)
-- **Status** -- shows project status (experiments, runs, completion state). Available any time.
-- **Results** -- shows the leaderboard (top methods and metrics). Available any time.
+Without this step, you still get all notification messages -- you just won't have clickable buttons.
 
-The bot confirms each action in the channel.
+#### Step 6: Enable for a project
+
+```bash
+urika notifications --project my-study
+```
+
+Select Slack when prompted.
 
 
 ### Telegram
 
-Telegram sends formatted messages with inline keyboard buttons for control and queries.
+Telegram sends formatted messages with inline keyboard buttons. You can also type commands directly in the chat.
 
-**Prerequisites:**
+#### Step 1: Install Telegram
+
+Download the Telegram app on your phone or desktop and create an account (free, requires a phone number).
+
+#### Step 2: Create a bot
+
+1. Open Telegram and search for **@BotFather** (it's Telegram's official bot-creation tool, with a blue checkmark)
+2. Tap on it and send `/start`
+3. Send `/newbot`
+4. Enter a name for your bot (e.g., "Urika Notifications")
+5. Enter a username (must end in `bot`, e.g., `urika_lab_bot`)
+6. BotFather replies with a **token** -- copy it (looks like `123456789:ABCdefGHI-jklMNO`)
+
+#### Step 3: Get your chat ID
+
+For **personal notifications** (just you):
+1. Search for your bot's username in Telegram (e.g., `@urika_lab_bot`)
+2. Tap **Start**, then send any message (e.g., "hi")
+3. Open this URL in a browser (replace `<TOKEN>` with your bot token):
+   ```
+   https://api.telegram.org/bot<TOKEN>/getUpdates
+   ```
+   Make sure there's no space between `bot` and the token.
+4. Look for `"chat":{"id":` in the JSON response -- the number after it is your chat ID (a positive number for direct messages)
+
+For **team notifications** (a group):
+1. Create a group in Telegram and add your bot to it
+2. Send a message in the group
+3. Visit the same `getUpdates` URL
+4. The chat ID for groups is a **negative number** (e.g., `-100123456789`)
+
+If `getUpdates` returns `{"ok":true,"result":[]}`, send another message to the bot and reload the URL.
+
+#### Step 4: Configure in Urika
 
 ```bash
-pip install "urika[notifications]"   # or: pip install python-telegram-bot
+urika notifications
 ```
 
-**Create a Telegram Bot:**
+Choose **Telegram** and enter:
+- **Chat ID** -- the number from step 3
+- **Bot token** -- the token from BotFather
 
-1. Message [@BotFather](https://t.me/BotFather) on Telegram
-2. Send `/newbot` and follow the prompts to create a bot
-3. Copy the **bot token**
-4. Create a group chat and add your bot to it
-5. To get the **chat ID**, add the bot to the group, send a message, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` and look for the `chat.id` field (it's a negative number for groups)
+#### Step 5: Enable for a project
 
-**Configuration:**
+```bash
+urika notifications --project my-study
+```
+
+Select Telegram when prompted.
+
+
+## Enabling Notifications for a Project
+
+Global setup configures the channels. Each project decides which channels to use:
+
+```bash
+urika notifications --project my-study
+```
+
+This adds to the project's `urika.toml`:
 
 ```toml
+[notifications]
+channels = ["email", "telegram"]
+```
+
+You can enable any combination: just email, just Telegram, all three, etc.
+
+### Adding extra recipients per project
+
+A project can add email recipients beyond the global defaults:
+
+```toml
+[notifications]
+channels = ["email"]
+
+[notifications.email]
+to = ["collaborator@university.edu"]
+```
+
+These are **added to** the global recipients, not replacing them.
+
+### Per-project Telegram groups
+
+Each project can send to a different Telegram group:
+
+```toml
+[notifications]
+channels = ["telegram"]
+
 [notifications.telegram]
-chat_id = "-100123456789"           # Group chat ID (negative number)
-bot_token_env = "TELEGRAM_BOT_TOKEN"  # Env var with bot token
+chat_id = "-100999888"
 ```
 
-```bash
-export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
-```
+This overrides the global chat ID for this project only. The bot token still comes from global settings.
 
-**What you see in Telegram:**
 
-- Formatted messages with emoji indicators for different event types
-- Inline keyboard with Pause, Stop, Status, and Results buttons
-- Slash commands also work as text commands in the chat
+## Remote Commands
 
-**Interactive controls:**
+When the REPL is running with a project loaded, Slack and Telegram become interactive -- you can send commands and get responses.
 
-Both inline buttons and slash commands work:
+### How it works
 
-- **Pause** button or `/pause` -- pauses after current turn
-- **Stop** button or `/stop` -- stops immediately
-- **Status** button or `/status` -- shows project status. Available any time.
-- **Results** button or `/results` -- shows leaderboard. Available any time.
+1. Start the REPL: `urika`
+2. Load a project: `/project my-study`
+3. The bot starts listening
+4. Send commands from Telegram/Slack
+5. Bot responds with results
+6. Bot stops when you exit the REPL or switch projects
+
+### Available commands
+
+Type `/help` in Telegram/Slack to see all commands. Type `/help <command>` for details on a specific command.
+
+**Always available (instant response):**
+
+| Command | Description |
+|---------|-------------|
+| `/status` | Project overview -- experiments, runs, completion state |
+| `/results` | Leaderboard -- top methods ranked by primary metric |
+| `/methods` | Last 10 registered methods with status and metrics |
+| `/criteria` | Current success criteria |
+| `/experiments` | Last 10 experiments with status and run counts |
+| `/logs` | Last 5 run logs from the most recent experiment |
+| `/usage` | Token counts, cost, agent calls |
+| `/help` | List all commands (or `/help run` for details on a specific command) |
+
+**Run control (during active run):**
+
+| Command | Description |
+|---------|-------------|
+| `/pause` | Pause after the current turn completes |
+| `/stop` | Stop immediately and clear queued commands |
+| `/resume` | Resume a paused or stopped experiment |
+
+**Agent commands (run when idle, queued when busy):**
+
+| Command | Description |
+|---------|-------------|
+| `/run` | Start an experiment (default settings) |
+| `/advisor <question>` | Ask the advisor a question |
+| `/evaluate` | Run the evaluator on the most recent experiment |
+| `/plan` | Run the planning agent |
+| `/report` | Generate a report |
+| `/present` | Generate a presentation |
+| `/finalize` | Run the finalizer |
+| `/build-tool <description>` | Create a custom tool |
+
+Agent commands take time to complete (seconds to minutes). You'll get a message like "Running /advisor (thinking -- may take a few minutes)..." followed by the result when it's ready.
+
+If an agent is already running, your command is queued and runs automatically when the current one finishes. `/stop` clears the queue.
+
+### Commands not available remotely
+
+These require interactive terminal input: `/new`, `/project`, `/config`, `/notifications`, `/update`, `/inspect`, `/knowledge`, `/quit`.
+
+### When the bot is offline
+
+The bot only listens when the REPL is running with a project loaded. If you send a command while the REPL is closed, the bot won't respond. Start the REPL and load the project to bring the bot online.
+
+All remote commands are shown in the REPL terminal with a `[Remote]` tag so you can see what's happening.
 
 
 ## What Gets Notified
 
-| Event | When | Priority | Email | Slack | Telegram |
-|-------|------|----------|-------|-------|----------|
-| Turn started | Beginning of each turn | Low | Batched | Context msg + buttons | Message + buttons |
-| Run recorded | Method results saved | Low | Batched | Context msg | Message |
-| Criteria met | Evaluator says done | High | Immediate | Rich message | Bold message |
-| Experiment completed | After reports generated | High | Immediate | Rich message | Bold message |
-| Experiment failed | Agent error | High | Immediate | Error message | Error message |
-| Paused | User or remote pause | Medium | Immediate | Status message | Status message |
-| Experiment starting | Advisor proposes next | Low | Batched | Context msg | Message |
+| Event | When | Priority | Email | Slack/Telegram |
+|-------|------|----------|-------|----------------|
+| Turn started | Beginning of each turn | Low | Batched | Message + buttons |
+| Run recorded | Method results saved | Low | Batched | Message |
+| Criteria met | Evaluator says done | High | Immediate | Rich message |
+| Experiment completed | After reports generated | High | Immediate | Rich message |
+| Experiment failed | Agent error | High | Immediate | Error message |
+| Paused | User or remote pause | Medium | Immediate | Status message |
 
 
-## Multiple Channels
+## Credentials and Security
 
-You can configure multiple channels simultaneously. All configured channels receive all notifications:
+- **All tokens and passwords are stored in `~/.urika/secrets.env`** (file permissions: owner-read-only). They are never written to config files.
+- You can also set credentials as regular environment variables -- these take precedence over `secrets.env`.
+- **Remote commands use the same PauseController as the local ESC key** -- they don't bypass any security boundaries.
+- **Notification failures never block experiments.** If email/Slack/Telegram is down, the experiment continues normally. Errors are logged.
+
+
+## Configuration Reference
+
+### Global settings (`~/.urika/settings.toml`)
+
+Channel configuration -- shared across all projects:
 
 ```toml
-[notifications]
-enabled = true
-
 [notifications.email]
-to = ["pi@lab.edu"]
-smtp_server = "smtp.institution.edu"
-from_addr = "urika@institution.edu"
+smtp_server = "smtp.gmail.com"
+smtp_port = 587
+from_addr = "you@gmail.com"
+username = "you@gmail.com"
+to = ["you@gmail.com", "team@lab.edu"]
+password_env = "URIKA_EMAIL_PASSWORD"
 
 [notifications.slack]
-channel = "#urika-team"
+channel = "#urika-results"
 bot_token_env = "SLACK_BOT_TOKEN"
+app_token_env = "SLACK_APP_TOKEN"
 
 [notifications.telegram]
-chat_id = "-100123456789"
+chat_id = "123456789"
 bot_token_env = "TELEGRAM_BOT_TOKEN"
 ```
 
-This is useful for teams: Slack for real-time monitoring, email for the PI who wants a summary, Telegram for mobile alerts.
+### Project settings (`urika.toml`)
 
-
-## Remote Commands (REPL only)
-
-Slack and Telegram channels support inbound commands -- you can query project state, control runs, and launch agents without touching the terminal. Remote commands only work when the REPL is running with a project loaded. The CLI (`urika run`, etc.) only sends outbound notifications; it does not accept remote commands.
-
-### Available Commands
-
-| Category | Command | Description |
-|----------|---------|-------------|
-| **Read-only** | `/status` | Project overview (experiments, runs, completion) |
-| | `/results` | Leaderboard -- top methods and metrics |
-| | `/methods` | Registered methods |
-| | `/criteria` | Success criteria |
-| | `/experiments` | List experiments |
-| | `/logs` | Recent log entries |
-| | `/usage` | Token and cost summary |
-| | `/help` | List available commands |
-| **Run control** | `/pause` | Pause after the current turn completes |
-| | `/stop` | Stop immediately and clear the command queue |
-| | `/resume` | Resume a paused run |
-| **Agent** | `/run` | Start an experiment run |
-| | `/advisor <text>` | Ask the advisor a question |
-| | `/evaluate` | Run the evaluator |
-| | `/plan` | Run the planning agent |
-| | `/report` | Generate a report |
-| | `/present` | Generate a presentation |
-| | `/finalize` | Run the finalizer |
-| | `/build-tool <text>` | Create a new tool |
-
-**Read-only** commands return an instant text response. They never modify project state.
-
-**Run control** commands interact with the PauseController -- the same mechanism used by the local ESC key. `/stop` also clears any queued commands.
-
-**Agent** commands launch agent workflows. If an agent is already running, the command is queued and executes automatically when the current agent finishes (FIFO order). You cannot start a second `/run` while one is in progress -- stop the current run first.
-
-### Queue Behavior
-
-- Agent commands are queued in FIFO order when an agent is busy.
-- `/stop` clears the entire queue in addition to stopping the active agent.
-- Loading a new project clears the queue.
-- Read-only and run-control commands are never queued -- they execute immediately.
-
-### When the Bot Is Offline
-
-If no REPL session is running, the Telegram/Slack bot is not listening. Commands sent while the REPL is offline are not stored -- they are simply lost. The bot comes online when you start the REPL with a project loaded and goes offline when the REPL exits.
-
-Commands that modify global settings or require interactive input (`/config`, `/new`, `/project`, `/quit`, `/inspect`, `/notifications`, `/update`) are rejected with a message directing you to the terminal.
-
-
-## Global vs Project Config
-
-Notification settings can be configured at two levels:
-
-- **Global defaults** (`~/.urika/settings.toml`) -- apply to all projects unless overridden
-- **Project settings** (`urika.toml`) -- override global defaults for this project
-
-Project settings take precedence. This lets you have a default Slack channel for all projects but send specific project notifications to a dedicated channel:
-
-```toml
-# ~/.urika/settings.toml (global)
-[notifications]
-enabled = true
-[notifications.slack]
-channel = "#urika-general"
-bot_token_env = "SLACK_BOT_TOKEN"
-
-# ~/urika-projects/important-study/urika.toml (project)
-[notifications]
-enabled = true
-[notifications.slack]
-channel = "#important-study-results"
-bot_token_env = "SLACK_BOT_TOKEN"
-```
-
-
-## Disabling Notifications
-
-To disable notifications for a specific project without removing the config:
+Select which channels to enable and optional overrides:
 
 ```toml
 [notifications]
-enabled = false
+channels = ["email", "telegram"]
+
+# Optional: extra email recipients for this project
+[notifications.email]
+to = ["collaborator@university.edu"]
+
+# Optional: different Telegram group for this project
+[notifications.telegram]
+chat_id = "-100999888"
 ```
 
-To disable globally, set the same in `~/.urika/settings.toml`. If the `[notifications]` section is absent entirely, notifications are off by default.
+### Credential store (`~/.urika/secrets.env`)
 
-
-## Security
-
-- **Tokens and passwords are never stored in config files.** All credentials are read from environment variables at runtime.
-- **Inbound commands (Pause/Stop) work through the same PauseController as the local ESC key** -- they don't bypass any security boundaries or inject instructions into running agents.
-- **Notification failures are logged but never block experiments.** If Slack is down or your email server rejects a message, the experiment continues normally.
+```
+URIKA_EMAIL_PASSWORD=xxxx xxxx xxxx xxxx
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_APP_TOKEN=xapp-...
+TELEGRAM_BOT_TOKEN=123456789:ABC...
+```
 
 ---
 
