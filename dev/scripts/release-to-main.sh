@@ -43,6 +43,7 @@ git checkout dev -- .gitignore
 
 # Remove dev-only files that came along with docs/
 git rm -rq docs/tutorials/ 2>/dev/null || true
+git rm -rq docs/plans/ 2>/dev/null || true
 
 # Stage everything
 git add -A
