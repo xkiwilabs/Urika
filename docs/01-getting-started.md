@@ -147,7 +147,7 @@ The tool builder installs the package, creates a reusable tool that wraps it, an
 Urika has two interfaces that share the same commands and produce identical results:
 
 - **Interactive REPL** — Run `urika` with no arguments. Gives you a prompt with tab completion, `/help`, conversation history, and a bottom status bar. Best for learning the system and exploratory work.
-- **CLI commands** — Run `urika <command>` directly from your shell. Best for scripting, automation, and when you know exactly what you want to run.
+- **CLI commands** — Run `urika <command>` directly from your shell. Every command is fully scriptable with `--json` output for custom tooling. Best for scripting, automation, batch processing, and building custom workflows on top of Urika.
 
 If you're new to Urika, **start with the REPL** — you can discover all commands with tab completion and `/help`, and ask the advisor agent questions in plain text without needing to know any commands at all.
 

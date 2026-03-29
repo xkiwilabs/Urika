@@ -5,6 +5,28 @@ Complete reference for all Urika CLI commands. Run `urika --help` for a summary,
 Running `urika` with no subcommand launches the interactive REPL (see [Interactive REPL](16-interactive-repl.md)).
 
 
+## Scriptable by Design
+
+Every command is fully scriptable. When you provide arguments and flags, no interactive prompts are shown -- commands run non-interactively and exit. Add `--json` to any read command for structured output that can be piped to `jq`, parsed in Python, or fed into other tools.
+
+```bash
+# Non-interactive: all args on the command line
+urika run my-study --max-turns 5 --instructions "try ensemble methods" --auto
+
+# JSON output for custom tooling
+urika status my-study --json | jq '.experiments'
+urika results my-study --json | python3 process_results.py
+
+# Batch script example
+for project in study-a study-b study-c; do
+  urika run "$project" --max-experiments 3 --auto
+  urika finalize "$project"
+done
+```
+
+This makes Urika suitable for automated pipelines, batch processing, CI/CD integration, and building custom research tools on top of the platform.
+
+
 ## Project Management
 
 ### `urika new`
