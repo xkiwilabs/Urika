@@ -108,6 +108,28 @@ Within each experiment, the orchestrator cycles through `planning -> task -> eva
 
 See [Agent System](docs/09-agent-system.md) for details on each agent role.
 
+## Scriptable CLI
+
+Every Urika command is fully scriptable -- pass arguments and flags directly, get structured JSON output with `--json`, and chain commands in shell scripts. No interactive prompts when flags are provided.
+
+```bash
+# Create and run a project in one script
+urika new my-study --data ~/data/scores.csv --question "What predicts outcome?" --mode exploratory
+urika run my-study --max-turns 5 --instructions "focus on tree-based models"
+urika run my-study --max-experiments 3 --auto
+urika finalize my-study --instructions "emphasize the best model"
+
+# Get structured output for custom tooling
+urika status my-study --json
+urika results my-study --json
+urika methods my-study --json
+
+# Remote control via Telegram/Slack while experiments run
+# See Notifications docs for setup
+```
+
+This makes it straightforward to build custom workflows, batch processing scripts, CI pipelines, or wrap Urika in your own research tools. See [CLI Reference](docs/15-cli-reference.md) for the full command list.
+
 ## Privacy and Model Configuration
 
 Each project can configure which models and endpoints its agents use. Three privacy modes:
