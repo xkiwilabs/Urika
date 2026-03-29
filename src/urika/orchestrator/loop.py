@@ -808,8 +808,27 @@ async def run_experiment(
             if evaluation and evaluation.get("criteria_met"):
                 progress("result", "Criteria met!")
 
+                # Determine if criteria should be reviewed before completing
+                should_review = review_criteria
+                # In exploratory mode, always review — advisor decides if
+                # the bar should be raised
+                try:
+                    import tomllib as _tomllib
+
+                    _toml = project_dir / "urika.toml"
+                    if _toml.exists():
+                        with open(_toml, "rb") as _f:
+                            _tdata = _tomllib.load(_f)
+                        if (
+                            _tdata.get("project", {}).get("mode", "exploratory")
+                            == "exploratory"
+                        ):
+                            should_review = True
+                except Exception:
+                    pass
+
                 # Optionally ask advisor to review criteria before completing
-                if review_criteria:
+                if should_review:
                     progress(
                         "agent",
                         "Advisor agent — reviewing criteria",
