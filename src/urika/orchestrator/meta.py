@@ -42,9 +42,16 @@ async def run_project(
     for exp_num in range(safety_cap):
         # Determine next experiment via advisor
         progress("agent", "Advisor agent — proposing next experiment")
-        next_exp = await _determine_next(project_dir, runner, instructions, on_message)
+        next_exp, advisor_text = await _determine_next(
+            project_dir, runner, instructions, on_message
+        )
         if next_exp is None:
             print_step("Advisor: no further experiments to suggest.")
+            if advisor_text:
+                preview = advisor_text[:500].strip()
+                if len(advisor_text) > 500:
+                    preview += "..."
+                click.echo(f"\n  {preview}\n")
             break
 
         exp_name = next_exp.get("name", f"auto-{exp_num + 1}").replace(" ", "-").lower()
@@ -55,6 +62,13 @@ async def run_project(
             project_dir, name=exp_name, hypothesis=description[:500]
         )
         print_step(f"Experiment {exp_num + 1}: {exp.experiment_id}")
+
+        # Notify: new experiment starting
+        progress(
+            "phase",
+            f"Starting experiment {exp_num + 1}: {exp.experiment_id}"
+            + (f" — {description[:100]}" if description else ""),
+        )
 
         # Run it
         result = await run_experiment(
@@ -122,7 +136,7 @@ async def _determine_next(
     runner: AgentRunner,
     instructions: str,
     on_message: object,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, str]:
     """Call advisor to propose next experiment."""
     from urika.agents.registry import AgentRegistry
     from urika.orchestrator.parsing import parse_suggestions
@@ -131,7 +145,7 @@ async def _determine_next(
     registry.discover()
     advisor = registry.get("advisor_agent")
     if advisor is None:
-        return None
+        return None, ""
 
     import json as _json
     import tomllib
@@ -209,12 +223,12 @@ async def _determine_next(
     result = await runner.run(config, context, on_message=on_message)
 
     if not result.success:
-        return None
+        return None, result.error or ""
 
     parsed = parse_suggestions(result.text_output)
     if parsed and parsed.get("suggestions"):
-        return parsed["suggestions"][0]
-    return None
+        return parsed["suggestions"][0], result.text_output or ""
+    return None, result.text_output or ""
 
 
 def _criteria_fully_met(project_dir: Path) -> bool:

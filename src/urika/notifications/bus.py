@@ -249,15 +249,18 @@ class NotificationBus:
         self._experiment_id = experiment_id
 
     def _map_progress_event(self, event: str, detail: str) -> NotificationEvent | None:
-        """Map an on_progress event to a NotificationEvent, or None to skip."""
+        """Map an on_progress event to a NotificationEvent, or None to skip.
+
+        Only experiment-level events generate notifications — no per-turn
+        or per-run noise. Users get notified when experiments start, complete,
+        fail, or are paused.
+        """
+        # Track turn for context but don't notify
         if event == "turn":
-            return NotificationEvent(
-                event_type="turn_started",
-                project_name=self.project_name,
-                experiment_id=self._experiment_id,
-                summary=detail,
-                priority="low",
-            )
+            self._turn = detail
+            return None
+
+        # Criteria met — important milestone
         if event == "result" and "Criteria met" in detail:
             return NotificationEvent(
                 event_type="criteria_met",
@@ -266,15 +269,8 @@ class NotificationBus:
                 summary=detail,
                 priority="high",
             )
-        if event == "result" and "Recorded" in detail:
-            return NotificationEvent(
-                event_type="run_recorded",
-                project_name=self.project_name,
-                experiment_id=self._experiment_id,
-                summary=f"{self._turn} — {detail}",
-                details={"turn": self._turn},
-                priority="low",
-            )
+
+        # Paused
         if event == "phase" and "Paused" in detail:
             return NotificationEvent(
                 event_type="paused",
@@ -283,17 +279,17 @@ class NotificationBus:
                 summary=detail,
                 priority="medium",
             )
-        if (
-            event == "agent"
-            and "Advisor" in detail
-            and "proposing next experiment" in detail
-        ):
+
+        # New experiment starting (from meta-orchestrator)
+        if event == "phase" and "Starting experiment" in detail:
             return NotificationEvent(
-                event_type="experiment_starting",
+                event_type="experiment_started",
                 project_name=self.project_name,
                 summary=detail,
-                priority="low",
+                priority="medium",
             )
+
+        # Skip everything else (turns, agent activity, run records, tool use)
         return None
 
     def _dispatch_loop(self) -> None:

@@ -37,13 +37,19 @@ claude login                    # opens browser to authenticate
 ### Install Urika
 
 ```bash
-git clone https://github.com/xkiwilabs/Urika.git
-cd Urika
-pip install -e .                # includes visualization, ML, and knowledge pipeline
+pip install urika
 urika setup                     # check installation, detect hardware, optionally install DL
 ```
 
-The default install includes everything except deep learning (torch, transformers, etc.). For deep learning: `pip install -e ".[dl]"`.
+The default install includes visualization, ML, statistics, knowledge pipeline, and notification support. Deep learning (torch, transformers) is optional: `pip install "urika[dl]"`.
+
+**From source (development):**
+
+```bash
+git clone https://github.com/xkiwilabs/Urika.git
+cd Urika
+pip install -e ".[dev]"
+```
 
 See [Getting Started](docs/01-getting-started.md) for full details.
 
@@ -164,6 +170,12 @@ See [Models and Privacy](docs/12-models-and-privacy.md) for configuration detail
 | [CLI Reference](docs/15-cli-reference.md) | Every command with full options |
 | [Interactive REPL](docs/16-interactive-repl.md) | Slash commands, tab completion, conversation mode |
 | [Notifications](docs/17-notifications.md) | Email, Slack, Telegram alerts and remote commands |
+
+## Citation
+
+If you use Urika in your research or analysis, please acknowledge its use in your publications:
+
+> Urika -- Multi-agent scientific analysis platform. Developed by Michael J. Richardson and colleagues at Macquarie University, Sydney, Australia. https://github.com/xkiwilabs/Urika
 
 ## License
 

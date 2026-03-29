@@ -71,9 +71,15 @@ Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it acr
 ## Step 2: Install Urika
 
 ```bash
+pip install urika
+```
+
+**From source (for development or latest changes):**
+
+```bash
 git clone https://github.com/xkiwilabs/Urika.git
 cd Urika
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 This installs everything you need for statistical analysis, machine learning, visualization, and knowledge ingestion:

@@ -1570,10 +1570,28 @@ def run(
             max_experiments = int(
                 interactive_prompt("How many experiments?", default="3")
             )
+            auto = True
         elif choice.startswith("Custom"):
             max_turns = int(
                 interactive_prompt("Max turns per experiment", default=str(max_turns))
             )
+
+        # Show settings summary before starting
+        click.echo()
+        click.echo("  Starting with:")
+        click.echo(f"    Max turns:    {max_turns}")
+        if max_experiments:
+            click.echo(f"    Experiments:  up to {max_experiments} (autonomous)")
+        else:
+            click.echo("    Mode:         single experiment")
+        if instructions:
+            instr_preview = (
+                instructions[:80] + "..."
+                if len(instructions) > 80
+                else instructions
+            )
+            click.echo(f"    Instructions: {instr_preview}")
+        click.echo()
 
     # Show header (skip if called from REPL — already has header)
     if not json_output and not os.environ.get("URIKA_REPL"):
@@ -2087,9 +2105,37 @@ def run(
     turns = result.get("turns", 0)
     error = result.get("error")
 
-    # Send completion/failure notification
+    # Send completion/failure notification with outcome summary
     if notif_bus is not None:
         from urika.notifications.events import NotificationEvent as _NE
+
+        summary_text = ""
+        if run_status in ("completed", "paused", "stopped"):
+            # Build outcome summary from progress
+            try:
+                exp_progress = load_progress(project_path, experiment_id)
+                runs = exp_progress.get("runs", [])
+                if runs:
+                    methods = list({r["method"] for r in runs})
+                    summary_text = f"{len(runs)} runs, {len(methods)} methods. "
+                    # Find best metric
+                    best_val = None
+                    best_method = None
+                    best_metric = None
+                    for r in runs:
+                        for k, v in r.get("metrics", {}).items():
+                            if isinstance(v, (int, float)):
+                                if best_val is None or v > best_val:
+                                    best_val = v
+                                    best_method = r["method"]
+                                    best_metric = k
+                    if best_val is not None:
+                        if 0 <= best_val <= 1:
+                            summary_text += f"Best: {best_method} ({best_metric}={best_val:.1%})"
+                        else:
+                            summary_text += f"Best: {best_method} ({best_metric}={best_val:.4g})"
+            except Exception:
+                pass
 
         if run_status == "completed":
             notif_bus.notify(
@@ -2097,7 +2143,7 @@ def run(
                     event_type="experiment_completed",
                     project_name=project,
                     experiment_id=experiment_id,
-                    summary=f"Experiment completed after {turns} turns",
+                    summary=f"Experiment completed ({turns} turns). {summary_text}".strip(),
                     priority="high",
                 )
             )
@@ -2117,7 +2163,17 @@ def run(
                     event_type="experiment_paused",
                     project_name=project,
                     experiment_id=experiment_id,
-                    summary=f"Experiment paused after {turns} turns",
+                    summary=f"Experiment paused ({turns} turns). {summary_text}".strip(),
+                    priority="medium",
+                )
+            )
+        elif run_status == "stopped":
+            notif_bus.notify(
+                _NE(
+                    event_type="experiment_stopped",
+                    project_name=project,
+                    experiment_id=experiment_id,
+                    summary=f"Experiment stopped ({turns} turns). {summary_text}".strip(),
                     priority="medium",
                 )
             )
