@@ -171,6 +171,12 @@ See [Models and Privacy](docs/12-models-and-privacy.md) for configuration detail
 | [Interactive REPL](docs/16-interactive-repl.md) | Slash commands, tab completion, conversation mode |
 | [Notifications](docs/17-notifications.md) | Email, Slack, Telegram alerts and remote commands |
 
+## Citation
+
+If you use Urika in your research or analysis, please acknowledge its use in your publications:
+
+> Urika -- Multi-agent scientific analysis platform. Developed by Michael J. Richardson and colleagues at Macquarie University, Sydney, Australia. https://github.com/xkiwilabs/Urika
+
 ## License
 
 [Apache 2.0](LICENSE) -- Free to use, modify, and distribute for any purpose, including commercial use. Includes patent protection for contributors. See the [full license](LICENSE) for details.
