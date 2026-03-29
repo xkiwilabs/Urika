@@ -1570,10 +1570,28 @@ def run(
             max_experiments = int(
                 interactive_prompt("How many experiments?", default="3")
             )
+            auto = True
         elif choice.startswith("Custom"):
             max_turns = int(
                 interactive_prompt("Max turns per experiment", default=str(max_turns))
             )
+
+        # Show settings summary before starting
+        click.echo()
+        click.echo("  Starting with:")
+        click.echo(f"    Max turns:    {max_turns}")
+        if max_experiments:
+            click.echo(f"    Experiments:  up to {max_experiments} (autonomous)")
+        else:
+            click.echo("    Mode:         single experiment")
+        if instructions:
+            instr_preview = (
+                instructions[:80] + "..."
+                if len(instructions) > 80
+                else instructions
+            )
+            click.echo(f"    Instructions: {instr_preview}")
+        click.echo()
 
     # Show header (skip if called from REPL — already has header)
     if not json_output and not os.environ.get("URIKA_REPL"):
