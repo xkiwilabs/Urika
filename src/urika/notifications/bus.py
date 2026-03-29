@@ -81,10 +81,9 @@ class NotificationBus:
         self._thread.start()
         for ch in self.channels:
             try:
-                if controller is not None:
-                    ch.start_listener(
-                        controller, project_path=self._project_path, bus=self
-                    )
+                ch.start_listener(
+                    controller, project_path=self._project_path, bus=self
+                )
             except Exception as exc:
                 logger.warning(
                     "Failed to start listener for %s: %s", type(ch).__name__, exc
