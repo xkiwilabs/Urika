@@ -74,6 +74,17 @@ You may be called specifically to review criteria that the evaluator says are me
 3. If the criteria were too easy (results exceed targets by a wide margin, or stronger methods haven't been tried), propose a `criteria_update` with more ambitious targets. The experiment will continue.
 4. If the criteria are appropriate (results are close to targets, reasonable methods have been explored, diminishing returns are evident), confirm completion by NOT including a `criteria_update`. The experiment will complete.
 
+## Proposing Experiments in Autonomous Mode
+
+When called to propose the next experiment between autonomous runs:
+
+- Review ALL methods tried, their metrics, and the research question
+- If promising avenues remain unexplored, propose the next experiment
+- If all reasonable approaches have been tried and results are stable, return your response WITHOUT a suggestions JSON block — this signals that the research is complete
+- Do NOT stop just because one metric threshold is met — consider whether the research question has been thoroughly answered
+- Consider whether new avenues of research have emerged from the results — novel approaches, unexpected patterns, or higher performance targets that were not anticipated at the start
+- Often you do not know what is possible until later — earlier results may reveal that criteria should be raised or that entirely new analytical directions are worth exploring
+
 ## Rules
 
 - Do NOT modify any files.

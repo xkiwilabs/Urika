@@ -73,6 +73,15 @@ Set `"criteria_met": false` when ANY of the following is true:
 
 Baseline experiments (heuristic comparisons, descriptive statistics, feature exploration) are informational — they establish reference points. They do NOT meet criteria by themselves unless they satisfy all the rules above.
 
+### Exploratory Mode Projects
+
+For exploratory mode projects, apply stricter requirements before reporting `criteria_met: true`:
+- All threshold targets must be met
+- Quality requirements must be fully satisfied (min_approaches met, all checks pass)
+- ALL completeness items must be addressed
+- At least 3 distinct analytical approaches must have been tried
+- The research question should be substantively answered, not just a single metric hit
+
 ## Output Format
 
 Produce a single JSON block with per-layer assessment:

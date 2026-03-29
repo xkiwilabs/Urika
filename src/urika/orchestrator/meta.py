@@ -30,7 +30,7 @@ async def run_project(
         capped: run up to max_experiments with no pauses
         unlimited: run until advisor says done (hard cap 50)
     """
-    from urika.cli_display import print_step, print_success
+    from urika.cli_display import print_step
     from urika.core.experiment import create_experiment
     from urika.orchestrator import run_experiment
 
@@ -92,11 +92,6 @@ async def run_project(
             if choice == "instructions":
                 instructions = click.prompt("  Instructions").strip()
 
-        # Check if criteria fully met
-        if _criteria_fully_met(project_dir):
-            print_success("All criteria met.")
-            break
-
     # Finalize after all experiments complete (skip if paused)
     paused = pause_controller is not None and pause_controller.is_pause_requested()
     if results and not paused:
@@ -138,9 +133,77 @@ async def _determine_next(
     if advisor is None:
         return None
 
-    context = "Propose the next experiment.\n"
+    import json as _json
+    import tomllib
+
+    context_parts = []
+
+    # Project info
+    toml_path = project_dir / "urika.toml"
+    if toml_path.exists():
+        try:
+            with open(toml_path, "rb") as f:
+                tconf = tomllib.load(f)
+            proj = tconf.get("project", {})
+            context_parts.append(f"Project: {proj.get('name', project_dir.name)}")
+            context_parts.append(f"Mode: {proj.get('mode', 'exploratory')}")
+            q = proj.get("question", "")
+            if q:
+                context_parts.append(f"Question: {q[:200]}")
+        except Exception:
+            pass
+
+    # What's been tried
+    methods_path = project_dir / "methods.json"
+    if methods_path.exists():
+        try:
+            mdata = _json.loads(methods_path.read_text(encoding="utf-8"))
+            methods = mdata.get("methods", [])
+            context_parts.append(
+                f"\n{len(methods)} methods tried across all experiments."
+            )
+            for m in methods[-10:]:
+                metrics = m.get("metrics", {})
+                metric_str = ", ".join(f"{k}={v}" for k, v in list(metrics.items())[:3])
+                context_parts.append(
+                    f"  {m['name']} [{m.get('status', '?')}] {metric_str}"
+                )
+        except Exception:
+            pass
+
+    # Current criteria
+    try:
+        from urika.core.criteria import load_criteria
+
+        c = load_criteria(project_dir)
+        if c:
+            context_parts.append(
+                f"\nCriteria (v{c.version}): {_json.dumps(c.criteria)[:500]}"
+            )
+    except Exception:
+        pass
+
+    # Experiments run
+    try:
+        from urika.core.experiment import list_experiments
+
+        experiments = list_experiments(project_dir)
+        context_parts.append(f"\nExperiments completed: {len(experiments)}")
+        for exp in experiments[-5:]:
+            context_parts.append(f"  {exp.experiment_id}: {exp.name}")
+    except Exception:
+        pass
+
+    context_parts.append(
+        "\nBased on the above, propose the next experiment. "
+        "If all promising avenues have been explored and no further "
+        "experiments would add value, respond with no suggestions."
+    )
+
     if instructions:
-        context += f"User instructions: {instructions}\n"
+        context_parts.append(f"\nUser instructions: {instructions}")
+
+    context = "\n".join(context_parts)
 
     config = advisor.build_config(project_dir=project_dir, experiment_id="")
     result = await runner.run(config, context, on_message=on_message)
