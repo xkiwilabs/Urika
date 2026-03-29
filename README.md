@@ -4,9 +4,12 @@
 
 <p align="center">
   <a href="docs/01-getting-started.md">Getting Started</a> &middot;
+  <a href="docs/05-running-experiments.md">Running Experiments</a> &middot;
+  <a href="docs/09-agent-system.md">Agent System</a> &middot;
+  <a href="docs/12-models-and-privacy.md">Models &amp; Privacy</a> &middot;
+  <a href="docs/17-notifications.md">Notifications</a> &middot;
   <a href="docs/15-cli-reference.md">CLI Reference</a> &middot;
-  <a href="docs/16-interactive-repl.md">Interactive REPL</a> &middot;
-  <a href="docs/09-agent-system.md">Agent System</a>
+  <a href="docs/16-interactive-repl.md">Interactive REPL</a>
 </p>
 
 ---
@@ -139,6 +142,7 @@ See [Models and Privacy](docs/12-models-and-privacy.md) for configuration detail
 | [Project Structure](docs/14-project-structure.md) | File layout and what each file does |
 | [CLI Reference](docs/15-cli-reference.md) | Every command with full options |
 | [Interactive REPL](docs/16-interactive-repl.md) | Slash commands, tab completion, conversation mode |
+| [Notifications](docs/17-notifications.md) | Email, Slack, Telegram alerts and remote commands |
 
 ## License
 
