@@ -88,12 +88,8 @@ class ScanResult:
                 ("Spatial", self.spatial),
             ]:
                 if file_list:
-                    formats = sorted(
-                        {f.suffix.upper().lstrip(".") for f in file_list}
-                    )
-                    lines.append(
-                        f"  {label}: {len(file_list)} ({', '.join(formats)})"
-                    )
+                    formats = sorted({f.suffix.upper().lstrip(".") for f in file_list})
+                    lines.append(f"  {label}: {len(file_list)} ({', '.join(formats)})")
                     specialized_count += len(file_list)
 
             tabular_count = len(self.data_files) - specialized_count

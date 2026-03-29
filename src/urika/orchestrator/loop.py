@@ -583,7 +583,13 @@ async def run_experiment(
         logger.warning("Knowledge scan failed: %s", exc)
 
     for turn in range(start_turn, max_turns + 1):
-        # Check for pause request before starting this turn
+        # Check for pause/stop request before starting this turn
+        if pause_controller is not None and pause_controller.is_stop_requested():
+            from urika.core.session import stop_session
+
+            stop_session(project_dir, experiment_id, reason="Stopped remotely")
+            progress("phase", f"Stopped after turn {turn - 1}")
+            return _usage_dict("stopped", turn - 1)
         if pause_controller is not None and pause_controller.is_pause_requested():
             pause_session(project_dir, experiment_id)
             progress("phase", f"Paused after turn {turn - 1}")

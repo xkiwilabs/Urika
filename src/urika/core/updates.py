@@ -84,12 +84,14 @@ def check_for_updates(*, force: bool = False) -> dict | None:
     update_available = _parse_version(latest) > _parse_version(current)
 
     # Cache result
-    _save_cache({
-        "latest": latest,
-        "current": current,
-        "update_available": update_available,
-        "checked_at": time.time(),
-    })
+    _save_cache(
+        {
+            "latest": latest,
+            "current": current,
+            "update_available": update_available,
+            "checked_at": time.time(),
+        }
+    )
 
     if update_available:
         return {
@@ -124,10 +126,7 @@ def _fetch_latest_release() -> str | None:
     except Exception:
         # Also try tags endpoint (works if no "releases" exist)
         try:
-            tags_url = (
-                f"https://api.github.com/repos/{_REPO}/tags"
-                f"?per_page=1"
-            )
+            tags_url = f"https://api.github.com/repos/{_REPO}/tags?per_page=1"
             tags_req = urllib.request.Request(
                 tags_url,
                 headers={
