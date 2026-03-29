@@ -509,8 +509,13 @@ class NotificationBus:
             self._session.set_agent_idle()
 
     def _run_remote_advisor(self, question: str) -> str:
-        """Run the advisor agent and return its text response."""
+        """Run the advisor agent and return its text response.
+
+        Includes conversation history from the REPL session and saves
+        the exchange so the next call has context.
+        """
         import asyncio
+        import json as _json
 
         try:
             from urika.agents.registry import AgentRegistry
@@ -528,15 +533,41 @@ class NotificationBus:
         config = advisor.build_config(project_dir=self._project_path, experiment_id="")
         config.max_turns = 25
 
+        # Build context with conversation history (like REPL's _handle_free_text)
+        context = f"Project: {self.project_name}\n"
+        if self._session is not None:
+            conv = getattr(self._session, "get_conversation_context", lambda: "")()
+            if conv:
+                context += f"\nPrevious conversation:\n{conv}\n"
+
+        # Add project state summary
+        methods_path = self._project_path / "methods.json"
+        if methods_path.exists():
+            try:
+                mdata = _json.loads(methods_path.read_text(encoding="utf-8"))
+                mlist = mdata.get("methods", [])
+                context += f"\n{len(mlist)} methods tried.\n"
+            except Exception:
+                pass
+
+        context += f"\nUser: {question}\n"
+
         try:
             loop = asyncio.new_event_loop()
             try:
-                result = loop.run_until_complete(runner.run(config, question))
+                result = loop.run_until_complete(runner.run(config, context))
             finally:
                 loop.close()
 
             if result.success and result.text_output:
-                return result.text_output.strip()
+                text = result.text_output.strip()
+                # Save to conversation history so next call has context
+                if self._session is not None:
+                    add_msg = getattr(self._session, "add_message", None)
+                    if add_msg:
+                        add_msg("user", question)
+                        add_msg("advisor", text)
+                return text
             return f"Advisor error: {result.error or 'no response'}"
         except Exception as exc:
             return f"Advisor error: {exc}"
