@@ -82,7 +82,9 @@ cd Urika
 pip install -e ".[dev]"
 ```
 
-This installs everything you need for statistical analysis, machine learning, visualization, and knowledge ingestion:
+> **Switching from source to PyPI?** If you previously installed from source, use `pip install --force-reinstall urika` to clear cached files.
+
+This installs everything you need for statistical analysis, machine learning, visualization, notifications, and knowledge ingestion:
 
 | Package | What it provides |
 |---------|-----------------|
@@ -98,6 +100,8 @@ This installs everything you need for statistical analysis, machine learning, vi
 | shap | Model explainability |
 | imbalanced-learn | Class imbalance handling |
 | pypdf | PDF paper ingestion into the knowledge base |
+| slack-sdk | Slack notifications and remote commands |
+| python-telegram-bot | Telegram notifications and remote commands |
 
 ## Step 3: Verify installation
 
@@ -112,14 +116,12 @@ This checks installed packages by category, detects your hardware (CPU cores, RA
 The only optional install group is `[dl]` for deep learning (~2 GB download):
 
 ```bash
-pip install -e ".[dl]"           # + deep learning (torch, transformers, etc.)
-pip install -e ".[all]"          # same as core + dl
+pip install "urika[dl]"         # + deep learning (torch, transformers, etc.)
 ```
 
 | Group | Packages | What it adds |
 |-------|----------|-------------|
 | `[dl]` | torch, transformers, sentence-transformers, torchvision, torchaudio, timm | Neural networks, LLM fine-tuning, text embeddings, image/audio models |
-| `[all]` | Core + dl | Everything in one install |
 
 You can also install deep learning packages interactively via `urika setup`, which detects whether you have an NVIDIA GPU and installs the appropriate CPU or CUDA variant.
 

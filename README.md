@@ -51,6 +51,8 @@ cd Urika
 pip install -e ".[dev]"
 ```
 
+> **Switching from source to PyPI?** If you previously installed from source, use `pip install --force-reinstall urika` to clear cached files.
+
 See [Getting Started](docs/01-getting-started.md) for full details.
 
 ## Quickstart
