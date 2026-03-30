@@ -4197,11 +4197,14 @@ def notifications_command(
 
     notif = settings.get("notifications", {})
 
-    # ── Disable mode ──
+    # ── Disable mode (project-level only) ──
     if disable:
-        settings.setdefault("notifications", {})["enabled"] = False
+        if not is_project:
+            click.echo("  Disable is a project-level setting. Use: urika notifications --disable --project <name>")
+            return
+        settings.setdefault("notifications", {})["channels"] = []
         _save_notification_settings(settings, is_project, project_path)
-        print_success("Notifications disabled.")
+        print_success("Notifications disabled for this project.")
         return
 
     # ── Show mode ──
@@ -4551,20 +4554,13 @@ def _notifications_global_setup(*, settings, project_path):
                 "Slack",
                 "Telegram",
                 "Send test notification",
-                "Disable all",
                 "Done",
             ],
-            default=6,
+            default=5,
             allow_cancel=False,
         )
 
         if choice == "Done":
-            break
-
-        if choice == "Disable all":
-            settings.setdefault("notifications", {})["enabled"] = False
-            _save_notification_settings(settings, False, project_path)
-            print_success("Notifications disabled.")
             break
 
         if choice == "Send test notification":
