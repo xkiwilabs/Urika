@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urika — {{PROJECT_NAME}}</title>
+<style>
+/* ── CSS Variables ─────────────────────────────────────────── */
+:root {
+  --u-blue: #2563eb;
+  --u-accent: #3b82f6;
+  --u-text: #1e293b;
+  --u-text-secondary: #475569;
+  --u-muted: #64748b;
+  --u-border: #e2e8f0;
+  --u-bg: #f8fafc;
+  --u-bg-surface: #ffffff;
+  --u-bg-code: #f1f5f9;
+  --u-bg-sidebar: #ffffff;
+  --u-bg-header: #ffffff;
+  --u-bg-footer: #f8fafc;
+  --u-bg-hover: #f1f5f9;
+  --u-bg-active: #eff6ff;
+  --u-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --u-shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
+  --u-radius: 6px;
+  --u-font: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --u-font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  --u-sidebar-width: 260px;
+  --u-transition: 200ms ease;
+}
+
+body.dark {
+  --u-text: #e2e8f0;
+  --u-text-secondary: #94a3b8;
+  --u-muted: #94a3b8;
+  --u-border: #334155;
+  --u-bg: #0f172a;
+  --u-bg-surface: #1e293b;
+  --u-bg-code: #1e293b;
+  --u-bg-sidebar: #1e293b;
+  --u-bg-header: #1e293b;
+  --u-bg-footer: #1e293b;
+  --u-bg-hover: #334155;
+  --u-bg-active: #1e3a5f;
+  --u-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --u-shadow-lg: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* ── Reset / Base ──────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: var(--u-font);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--u-text);
+  background: var(--u-bg);
+  transition: background var(--u-transition), color var(--u-transition);
+}
+
+/* ── Layout ────────────────────────────────────────────────── */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  background: var(--u-bg-header);
+  border-bottom: 1px solid var(--u-border);
+  box-shadow: var(--u-shadow);
+  z-index: 10;
+  flex-shrink: 0;
+  transition: background var(--u-transition), border-color var(--u-transition);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.wordmark {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--u-blue);
+}
+
+.project-name {
+  font-size: 14px;
+  color: var(--u-muted);
+  font-weight: 500;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-icon {
+  background: none;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 16px;
+  color: var(--u-muted);
+  transition: all var(--u-transition);
+  line-height: 1;
+}
+
+.btn-icon:hover {
+  background: var(--u-bg-hover);
+  color: var(--u-text);
+  border-color: var(--u-accent);
+}
+
+.sidebar-toggle {
+  display: none;
+}
+
+.main-area {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────── */
+.sidebar {
+  width: var(--u-sidebar-width);
+  min-width: var(--u-sidebar-width);
+  background: var(--u-bg-sidebar);
+  border-right: 1px solid var(--u-border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 0;
+  flex-shrink: 0;
+  transition: background var(--u-transition), border-color var(--u-transition),
+              transform var(--u-transition), width var(--u-transition);
+}
+
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--u-border); border-radius: 2px; }
+
+.tree-section {
+  margin-bottom: 4px;
+}
+
+.tree-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--u-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--u-transition);
+}
+
+.tree-section-header:hover { color: var(--u-text); }
+
+.tree-toggle {
+  font-size: 10px;
+  transition: transform var(--u-transition);
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+}
+
+.tree-toggle.collapsed { transform: rotate(0deg); }
+.tree-toggle.expanded { transform: rotate(90deg); }
+
+.tree-children {
+  overflow: hidden;
+  transition: max-height var(--u-transition);
+}
+
+.tree-children.collapsed {
+  max-height: 0 !important;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 16px 5px 28px;
+  font-size: 13px;
+  color: var(--u-text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--u-transition);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-item:hover {
+  background: var(--u-bg-hover);
+  color: var(--u-text);
+}
+
+.tree-item.active {
+  background: var(--u-bg-active);
+  color: var(--u-accent);
+  font-weight: 500;
+}
+
+.tree-item .icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.tree-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Nesting levels */
+.tree-item[data-depth="2"] { padding-left: 40px; }
+.tree-item[data-depth="3"] { padding-left: 52px; }
+.tree-item[data-depth="4"] { padding-left: 64px; }
+
+.tree-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 16px 5px 28px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--u-text);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--u-transition);
+}
+
+.tree-folder-header:hover { background: var(--u-bg-hover); }
+
+.tree-folder-header[data-depth="2"] { padding-left: 40px; }
+.tree-folder-header[data-depth="3"] { padding-left: 52px; }
+
+/* ── Content ───────────────────────────────────────────────── */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+  transition: background var(--u-transition);
+}
+
+.content-inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* Welcome view */
+.welcome {
+  text-align: center;
+  padding: 64px 24px;
+}
+
+.welcome h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--u-text);
+  margin-bottom: 8px;
+}
+
+.welcome .question {
+  font-size: 16px;
+  color: var(--u-muted);
+  margin-bottom: 32px;
+  font-style: italic;
+}
+
+.stats-grid {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: var(--u-bg-surface);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  padding: 20px 28px;
+  text-align: center;
+  min-width: 130px;
+  box-shadow: var(--u-shadow);
+  transition: all var(--u-transition);
+}
+
+.stat-card:hover {
+  box-shadow: var(--u-shadow-lg);
+  transform: translateY(-1px);
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--u-accent);
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--u-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+/* Rendered content */
+.rendered-content {
+  line-height: 1.7;
+  color: var(--u-text);
+}
+
+.rendered-content h1 { font-size: 24px; font-weight: 700; margin: 24px 0 12px; }
+.rendered-content h2 { font-size: 20px; font-weight: 700; margin: 20px 0 10px; }
+.rendered-content h3 { font-size: 17px; font-weight: 600; margin: 16px 0 8px; }
+.rendered-content h4 { font-size: 15px; font-weight: 600; margin: 14px 0 6px; }
+
+.rendered-content p { margin-bottom: 12px; }
+
+.rendered-content a {
+  color: var(--u-accent);
+  text-decoration: none;
+}
+.rendered-content a:hover { text-decoration: underline; }
+
+.rendered-content pre {
+  background: var(--u-bg-code);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  padding: 16px;
+  overflow-x: auto;
+  margin: 16px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: var(--u-font-mono);
+  transition: background var(--u-transition), border-color var(--u-transition);
+}
+
+.rendered-content code {
+  font-family: var(--u-font-mono);
+  font-size: 13px;
+}
+
+.rendered-content :not(pre) > code {
+  background: var(--u-bg-code);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-size: 0.9em;
+}
+
+.rendered-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+.rendered-content th {
+  background: var(--u-bg-code);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--u-border);
+  transition: background var(--u-transition), border-color var(--u-transition);
+}
+
+.rendered-content td {
+  padding: 8px 12px;
+  border: 1px solid var(--u-border);
+  transition: border-color var(--u-transition);
+}
+
+.rendered-content tr:nth-child(even) td {
+  background: var(--u-bg-code);
+}
+
+.rendered-content ul, .rendered-content ol {
+  margin: 8px 0 12px 24px;
+}
+
+.rendered-content li { margin-bottom: 4px; }
+
+.rendered-content blockquote {
+  border-left: 3px solid var(--u-accent);
+  margin: 16px 0;
+  padding: 8px 16px;
+  color: var(--u-muted);
+  background: var(--u-bg-code);
+  border-radius: 0 var(--u-radius) var(--u-radius) 0;
+}
+
+.rendered-content hr {
+  border: none;
+  border-top: 1px solid var(--u-border);
+  margin: 24px 0;
+}
+
+/* Image display */
+.image-display {
+  text-align: center;
+  padding: 24px 0;
+}
+
+.image-display img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--u-radius);
+  box-shadow: var(--u-shadow-lg);
+  cursor: pointer;
+  transition: transform var(--u-transition);
+}
+
+.image-display img:hover {
+  transform: scale(1.02);
+}
+
+.image-caption {
+  font-size: 13px;
+  color: var(--u-muted);
+  margin-top: 12px;
+}
+
+/* Content header (breadcrumb) */
+.content-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--u-border);
+}
+
+.content-header .breadcrumb {
+  font-size: 13px;
+  color: var(--u-muted);
+}
+
+.content-header .breadcrumb span {
+  color: var(--u-text);
+  font-weight: 500;
+}
+
+/* ── Lightbox ──────────────────────────────────────────────── */
+.lightbox {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.85);
+  z-index: 1000;
+  cursor: zoom-out;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox.active { display: flex; }
+
+.lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: var(--u-radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  font-size: 28px;
+  color: #fff;
+  cursor: pointer;
+  background: none;
+  border: none;
+  opacity: 0.7;
+  transition: opacity var(--u-transition);
+}
+
+.lightbox-close:hover { opacity: 1; }
+
+/* ── Footer ────────────────────────────────────────────────── */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 0 24px;
+  height: 36px;
+  background: var(--u-bg-footer);
+  border-top: 1px solid var(--u-border);
+  font-size: 12px;
+  color: var(--u-muted);
+  flex-shrink: 0;
+  transition: background var(--u-transition), border-color var(--u-transition);
+}
+
+.footer-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.footer-sep {
+  color: var(--u-border);
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar-toggle { display: inline-flex; }
+
+  .sidebar {
+    position: fixed;
+    top: 56px;
+    left: 0;
+    bottom: 36px;
+    z-index: 20;
+    transform: translateX(-100%);
+    box-shadow: var(--u-shadow-lg);
+  }
+
+  .sidebar.open { transform: translateX(0); }
+
+  .content { padding: 20px 16px; }
+  .stats-grid { flex-direction: column; align-items: center; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <button class="btn-icon sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">&#9776;</button>
+      <span class="wordmark">Urika</span>
+      <span class="project-name" id="projectName">{{PROJECT_NAME}}</span>
+    </div>
+    <div class="header-right">
+      <button class="btn-icon" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">&#9790;</button>
+    </div>
+  </header>
+
+  <!-- Main Area -->
+  <div class="main-area">
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+      <div id="treeContainer">
+        <div style="padding: 20px; color: var(--u-muted); font-size: 13px;">Loading...</div>
+      </div>
+    </nav>
+
+    <!-- Content -->
+    <main class="content" id="contentPanel">
+      <div class="content-inner" id="contentInner">
+        <div class="welcome" id="welcomeView">
+          <h1 id="welcomeTitle">{{PROJECT_NAME}}</h1>
+          <p class="question" id="welcomeQuestion"></p>
+          <div class="stats-grid" id="statsGrid"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer" id="footer">
+    <span class="footer-stat" id="footerContent">Loading...</span>
+  </footer>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox">
+  <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<script>
+/* ── State ─────────────────────────────────────────────────── */
+var treeState = {};
+var activeItem = null;
+
+/* ── Init ──────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+  loadTheme();
+  loadTreeState();
+  fetchTree();
+  fetchStats();
+});
+
+/* ── Theme ─────────────────────────────────────────────────── */
+function loadTheme() {
+  var saved = localStorage.getItem('urika-theme');
+  if (saved === 'dark') {
+    document.body.classList.add('dark');
+    updateThemeBtn();
+  }
+}
+
+function toggleTheme() {
+  document.body.classList.toggle('dark');
+  var isDark = document.body.classList.contains('dark');
+  localStorage.setItem('urika-theme', isDark ? 'dark' : 'light');
+  updateThemeBtn();
+}
+
+function updateThemeBtn() {
+  var btn = document.getElementById('themeBtn');
+  var isDark = document.body.classList.contains('dark');
+  btn.textContent = isDark ? '\u2606' : '\u263E';
+  btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+}
+
+/* ── Sidebar Toggle (mobile) ──────────────────────────────── */
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
+/* ── Tree State Persistence ───────────────────────────────── */
+function loadTreeState() {
+  try {
+    var saved = localStorage.getItem('urika-tree-state');
+    if (saved) treeState = JSON.parse(saved);
+  } catch (e) {
+    treeState = {};
+  }
+}
+
+function saveTreeState() {
+  localStorage.setItem('urika-tree-state', JSON.stringify(treeState));
+}
+
+function isNodeExpanded(nodeId) {
+  if (nodeId in treeState) return treeState[nodeId];
+  return true;
+}
+
+/* ── Fetch Tree ────────────────────────────────────────────── */
+function fetchTree() {
+  fetch('/api/tree')
+    .then(function(r) { return r.json(); })
+    .then(function(data) { renderTree(data); })
+    .catch(function() {
+      var el = document.getElementById('treeContainer');
+      el.textContent = 'Failed to load tree';
+      el.style.padding = '20px';
+      el.style.color = 'var(--u-muted)';
+      el.style.fontSize = '13px';
+    });
+}
+
+/* ── Render Tree ───────────────────────────────────────────── */
+function renderTree(sections) {
+  var container = document.getElementById('treeContainer');
+  container.textContent = '';
+
+  sections.forEach(function(section, i) {
+    var sectionEl = document.createElement('div');
+    sectionEl.className = 'tree-section';
+
+    var nodeId = 'section-' + i;
+    var expanded = isNodeExpanded(nodeId);
+
+    var header = document.createElement('div');
+    header.className = 'tree-section-header';
+
+    var toggleSpan = document.createElement('span');
+    toggleSpan.className = 'tree-toggle ' + (expanded ? 'expanded' : 'collapsed');
+    toggleSpan.textContent = '\u25B6';
+    header.appendChild(toggleSpan);
+
+    var labelText = document.createTextNode(' ' + sectionIconText(section.label) + ' ' + section.label);
+    header.appendChild(labelText);
+
+    var childrenEl = document.createElement('div');
+    childrenEl.className = 'tree-children' + (expanded ? '' : ' collapsed');
+    childrenEl.id = nodeId;
+
+    header.addEventListener('click', (function(nid, cel) {
+      return function() { toggleNode(nid, cel); };
+    })(nodeId, childrenEl));
+
+    sectionEl.appendChild(header);
+
+    if (section.children) {
+      section.children.forEach(function(child, j) {
+        renderNode(child, childrenEl, nodeId + '-' + j, 1);
+      });
+    }
+
+    sectionEl.appendChild(childrenEl);
+    container.appendChild(sectionEl);
+  });
+}
+
+function renderNode(node, parent, nodeId, depth) {
+  if (node.type === 'experiment' || node.type === 'folder') {
+    var expanded = isNodeExpanded(nodeId);
+
+    var header = document.createElement('div');
+    header.className = 'tree-folder-header';
+    header.setAttribute('data-depth', depth);
+
+    var toggleSpan = document.createElement('span');
+    toggleSpan.className = 'tree-toggle ' + (expanded ? 'expanded' : 'collapsed');
+    toggleSpan.textContent = '\u25B6';
+    header.appendChild(toggleSpan);
+
+    var iconSpan = document.createElement('span');
+    iconSpan.className = 'icon';
+    iconSpan.textContent = nodeIconText(node);
+    header.appendChild(iconSpan);
+
+    var labelSpan = document.createElement('span');
+    labelSpan.className = 'tree-item-label';
+    labelSpan.textContent = node.label;
+    header.appendChild(labelSpan);
+
+    var childrenEl = document.createElement('div');
+    childrenEl.className = 'tree-children' + (expanded ? '' : ' collapsed');
+    childrenEl.id = nodeId;
+
+    header.addEventListener('click', (function(nid, cel) {
+      return function() { toggleNode(nid, cel); };
+    })(nodeId, childrenEl));
+
+    parent.appendChild(header);
+
+    if (node.children) {
+      node.children.forEach(function(child, k) {
+        renderNode(child, childrenEl, nodeId + '-' + k, depth + 1);
+      });
+    }
+
+    parent.appendChild(childrenEl);
+  } else if (node.type === 'link') {
+    var item = document.createElement('div');
+    item.className = 'tree-item';
+    item.setAttribute('data-depth', depth);
+
+    var iconEl = document.createElement('span');
+    iconEl.className = 'icon';
+    iconEl.textContent = nodeIconText(node);
+    item.appendChild(iconEl);
+
+    var labelEl = document.createElement('span');
+    labelEl.className = 'tree-item-label';
+    labelEl.textContent = node.label;
+    item.appendChild(labelEl);
+
+    item.addEventListener('click', (function(path) {
+      return function() { window.open('/file/' + path, '_blank'); };
+    })(node.path));
+
+    parent.appendChild(item);
+  } else if (node.type === 'image') {
+    var item = document.createElement('div');
+    item.className = 'tree-item';
+    item.setAttribute('data-depth', depth);
+    item.setAttribute('data-path', node.path);
+
+    var iconEl = document.createElement('span');
+    iconEl.className = 'icon';
+    iconEl.textContent = nodeIconText(node);
+    item.appendChild(iconEl);
+
+    var labelEl = document.createElement('span');
+    labelEl.className = 'tree-item-label';
+    labelEl.textContent = node.label;
+    item.appendChild(labelEl);
+
+    item.addEventListener('click', (function(el, path, label) {
+      return function() { setActive(el); showImage(path, label); };
+    })(item, node.path, node.label));
+
+    parent.appendChild(item);
+  } else {
+    var item = document.createElement('div');
+    item.className = 'tree-item';
+    item.setAttribute('data-depth', depth);
+    item.setAttribute('data-path', node.path);
+
+    var iconEl = document.createElement('span');
+    iconEl.className = 'icon';
+    iconEl.textContent = nodeIconText(node);
+    item.appendChild(iconEl);
+
+    var labelEl = document.createElement('span');
+    labelEl.className = 'tree-item-label';
+    labelEl.textContent = node.label;
+    item.appendChild(labelEl);
+
+    item.addEventListener('click', (function(el, path) {
+      return function() { setActive(el); fetchFile(path); };
+    })(item, node.path));
+
+    parent.appendChild(item);
+  }
+}
+
+/* ── Toggle Node ───────────────────────────────────────────── */
+function toggleNode(nodeId, el) {
+  var isExpanded = !el.classList.contains('collapsed');
+  el.classList.toggle('collapsed');
+
+  var header = el.previousElementSibling;
+  if (header) {
+    var toggle = header.querySelector('.tree-toggle');
+    if (toggle) {
+      toggle.className = 'tree-toggle ' + (isExpanded ? 'collapsed' : 'expanded');
+    }
+  }
+
+  treeState[nodeId] = !isExpanded;
+  saveTreeState();
+}
+
+/* ── Set Active Item ───────────────────────────────────────── */
+function setActive(el) {
+  if (activeItem) activeItem.classList.remove('active');
+  el.classList.add('active');
+  activeItem = el;
+
+  if (window.innerWidth <= 768) {
+    document.getElementById('sidebar').classList.remove('open');
+  }
+}
+
+/* ── Fetch & Display File ──────────────────────────────────── */
+function fetchFile(path) {
+  var inner = document.getElementById('contentInner');
+  inner.textContent = '';
+  var loading = document.createElement('div');
+  loading.style.padding = '24px';
+  loading.style.color = 'var(--u-muted)';
+  loading.textContent = 'Loading...';
+  inner.appendChild(loading);
+
+  fetch('/api/file?path=' + encodeURIComponent(path))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      inner.textContent = '';
+
+      var headerDiv = document.createElement('div');
+      headerDiv.className = 'content-header';
+      var crumb = document.createElement('span');
+      crumb.className = 'breadcrumb';
+      buildBreadcrumb(crumb, path);
+      headerDiv.appendChild(crumb);
+      inner.appendChild(headerDiv);
+
+      var contentDiv = document.createElement('div');
+      contentDiv.className = 'rendered-content';
+      /* Server-rendered HTML from our own API — safe to insert */
+      contentDiv.innerHTML = data.html;
+      inner.appendChild(contentDiv);
+    })
+    .catch(function() {
+      inner.textContent = '';
+      var errDiv = document.createElement('div');
+      errDiv.style.padding = '24px';
+      errDiv.style.color = '#ef4444';
+      errDiv.textContent = 'Failed to load file';
+      inner.appendChild(errDiv);
+    });
+}
+
+/* ── Show Image ────────────────────────────────────────────── */
+function showImage(path, label) {
+  var inner = document.getElementById('contentInner');
+  inner.textContent = '';
+
+  var headerDiv = document.createElement('div');
+  headerDiv.className = 'content-header';
+  var crumb = document.createElement('span');
+  crumb.className = 'breadcrumb';
+  buildBreadcrumb(crumb, path);
+  headerDiv.appendChild(crumb);
+  inner.appendChild(headerDiv);
+
+  var displayDiv = document.createElement('div');
+  displayDiv.className = 'image-display';
+
+  var img = document.createElement('img');
+  img.src = '/file/' + path;
+  img.alt = label;
+  img.addEventListener('click', function() { openLightbox(img.src); });
+  displayDiv.appendChild(img);
+
+  var caption = document.createElement('div');
+  caption.className = 'image-caption';
+  caption.textContent = label;
+  displayDiv.appendChild(caption);
+
+  inner.appendChild(displayDiv);
+}
+
+/* ── Lightbox ──────────────────────────────────────────────── */
+function openLightbox(src) {
+  var lightbox = document.getElementById('lightbox');
+  document.getElementById('lightboxImg').src = src;
+  lightbox.classList.add('active');
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('active');
+  document.getElementById('lightboxImg').src = '';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeLightbox();
+});
+
+document.getElementById('lightbox').addEventListener('click', function(e) {
+  if (e.target === e.currentTarget) closeLightbox();
+});
+
+/* ── Fetch Stats ───────────────────────────────────────────── */
+function fetchStats() {
+  fetch('/api/stats')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('projectName').textContent = data.name || '{{PROJECT_NAME}}';
+      document.getElementById('welcomeTitle').textContent = data.name || '{{PROJECT_NAME}}';
+
+      if (data.question) {
+        document.getElementById('welcomeQuestion').textContent = data.question;
+      }
+
+      var grid = document.getElementById('statsGrid');
+      grid.textContent = '';
+
+      if (data.experiments !== undefined) {
+        grid.appendChild(createStatCard(String(data.experiments), 'Experiments'));
+      }
+      if (data.methods !== undefined) {
+        grid.appendChild(createStatCard(String(data.methods), 'Methods'));
+      }
+      if (data.runs !== undefined) {
+        grid.appendChild(createStatCard(String(data.runs), 'Runs'));
+      }
+      if (data.best) {
+        var bestLabel = data.best.metric || 'Best';
+        var bestVal = typeof data.best.value === 'number'
+          ? data.best.value.toFixed(4) : String(data.best.value);
+        grid.appendChild(createStatCard(bestVal, bestLabel));
+      }
+
+      var footer = document.getElementById('footerContent');
+      footer.textContent = '';
+      var parts = [];
+      if (data.experiments !== undefined) parts.push('Experiments: ' + data.experiments);
+      if (data.methods !== undefined) parts.push('Methods: ' + data.methods);
+      if (data.best) {
+        var bv = typeof data.best.value === 'number'
+          ? data.best.value.toFixed(4) : String(data.best.value);
+        parts.push('Best: ' + (data.best.metric || '') + '=' + bv);
+      }
+      footer.textContent = parts.join(' | ') || 'Urika Dashboard';
+    })
+    .catch(function() {
+      document.getElementById('footerContent').textContent = 'Urika Dashboard';
+    });
+}
+
+/* ── Helpers ───────────────────────────────────────────────── */
+function createStatCard(value, label) {
+  var card = document.createElement('div');
+  card.className = 'stat-card';
+  var valDiv = document.createElement('div');
+  valDiv.className = 'stat-value';
+  valDiv.textContent = value;
+  var labDiv = document.createElement('div');
+  labDiv.className = 'stat-label';
+  labDiv.textContent = label;
+  card.appendChild(valDiv);
+  card.appendChild(labDiv);
+  return card;
+}
+
+function buildBreadcrumb(container, path) {
+  var parts = path.split('/');
+  var last = parts.pop();
+  if (parts.length > 0) {
+    var prefix = document.createTextNode(parts.join(' / ') + ' / ');
+    container.appendChild(prefix);
+  }
+  var strong = document.createElement('span');
+  strong.textContent = last;
+  container.appendChild(strong);
+}
+
+function sectionIconText(label) {
+  var icons = {
+    'Experiments': '\uD83D\uDD2C',
+    'Projectbook': '\uD83D\uDCD6',
+    'Methods': '\u2699',
+    'Criteria': '\u2611',
+    'Data': '\uD83D\uDDC3'
+  };
+  return icons[label] || '';
+}
+
+function nodeIconText(node) {
+  if (node.type === 'experiment') return '\uD83E\uDDEA';
+  if (node.type === 'folder') return '\uD83D\uDCC1';
+  if (node.type === 'image') return '\uD83D\uDDBC';
+  if (node.type === 'link') return '\uD83C\uDF10';
+  var ext = (node.label || '').split('.').pop();
+  if (ext === 'md') return '\uD83D\uDCC4';
+  if (ext === 'json') return '\uD83D\uDCCB';
+  if (ext === 'py') return '\uD83D\uDC0D';
+  return '\uD83D\uDCC4';
+}
+</script>
+</body>
+</html>
