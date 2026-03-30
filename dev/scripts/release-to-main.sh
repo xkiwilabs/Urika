@@ -42,7 +42,6 @@ git checkout dev -- LICENSE
 git checkout dev -- .gitignore
 git checkout dev -- .github/ 2>/dev/null || true
 git checkout dev -- CHANGELOG.md 2>/dev/null || true
-git checkout dev -- CONTRIBUTING.md 2>/dev/null || true
 
 # Remove dev-only files that came along with docs/
 git rm -rq docs/tutorials/ 2>/dev/null || true
