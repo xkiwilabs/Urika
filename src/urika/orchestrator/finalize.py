@@ -19,6 +19,7 @@ async def finalize_project(
     on_message: Callable[..., Any] | None = None,
     *,
     instructions: str = "",
+    audience: str = "expert",
 ) -> dict:
     """Run the finalization sequence: Finalizer -> Report -> Presentation -> README."""
     progress = on_progress or (lambda e, d="": None)
@@ -31,7 +32,7 @@ async def finalize_project(
     if finalizer_role is None:
         return {"error": "Finalizer agent not found"}
 
-    config = finalizer_role.build_config(project_dir=project_dir)
+    config = finalizer_role.build_config(project_dir=project_dir, audience=audience)
     prompt = (
         "Finalize this project. Read all experiments, select the best methods, "
         "write standalone production-ready code, generate findings.json, "
@@ -53,7 +54,7 @@ async def finalize_project(
     report_role = registry.get("report_agent")
     if report_role is not None:
         report_config = report_role.build_config(
-            project_dir=project_dir, experiment_id=""
+            project_dir=project_dir, experiment_id="", audience=audience
         )
         report_result = await runner.run(
             report_config,
@@ -80,7 +81,7 @@ async def finalize_project(
     pres_role = registry.get("presentation_agent")
     if pres_role is not None:
         pres_config = pres_role.build_config(
-            project_dir=project_dir, experiment_id=""
+            project_dir=project_dir, experiment_id="", audience=audience
         )
         pres_result = await runner.run(
             pres_config,

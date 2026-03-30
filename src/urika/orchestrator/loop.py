@@ -77,6 +77,7 @@ async def _generate_reports(
     progress: Callable[..., Any],
     runner: AgentRunner | None = None,
     on_message: Callable[..., Any] | None = None,
+    audience: str = "expert",
 ) -> dict[str, int | float]:
     """Generate labbook reports and update README after experiment completion.
 
@@ -141,7 +142,9 @@ async def _generate_reports(
             if report_role is not None:
                 progress("agent", "Report agent \u2014 writing experiment narrative")
                 config = report_role.build_config(
-                    project_dir=project_dir, experiment_id=experiment_id
+                    project_dir=project_dir,
+                    experiment_id=experiment_id,
+                    audience=audience,
                 )
                 result = await runner.run(
                     config,
@@ -174,7 +177,9 @@ async def _generate_reports(
             if report_role is not None:
                 progress("agent", "Report agent \u2014 writing project narrative")
                 config = report_role.build_config(
-                    project_dir=project_dir, experiment_id=""
+                    project_dir=project_dir,
+                    experiment_id="",
+                    audience=audience,
                 )
                 result = await runner.run(
                     config,
@@ -196,7 +201,8 @@ async def _generate_reports(
     if runner is not None:
         try:
             pres_usage = await _generate_presentation(
-                project_dir, experiment_id, runner, progress, on_message
+                project_dir, experiment_id, runner, progress, on_message,
+                audience=audience,
             )
             _usage["tokens_in"] += pres_usage.get("tokens_in", 0)
             _usage["tokens_out"] += pres_usage.get("tokens_out", 0)
@@ -215,6 +221,7 @@ async def _generate_presentation(
     progress: Callable[..., Any],
     on_message: Callable[..., Any] | None = None,
     instructions: str = "",
+    audience: str = "expert",
 ) -> dict[str, int | float]:
     """Generate a reveal.js presentation from experiment results.
 
@@ -241,7 +248,7 @@ async def _generate_presentation(
     progress("agent", "Presentation agent — creating slide deck")
 
     config = pres_role.build_config(
-        project_dir=project_dir, experiment_id=experiment_id
+        project_dir=project_dir, experiment_id=experiment_id, audience=audience
     )
     prompt = f"Create a presentation for experiment {experiment_id}."
     if instructions:
@@ -480,6 +487,7 @@ async def run_experiment(
     instructions: str = "",
     get_user_input: Callable[..., Any] | None = None,
     pause_controller: object = None,
+    audience: str = "expert",
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
@@ -895,6 +903,7 @@ async def run_experiment(
                     progress,
                     runner=runner,
                     on_message=on_message,
+                    audience=audience,
                 )
                 _total_tokens_in += report_usage.get("tokens_in", 0)
                 _total_tokens_out += report_usage.get("tokens_out", 0)
@@ -1011,7 +1020,8 @@ async def run_experiment(
     # Reached max_turns without criteria being met
     complete_session(project_dir, experiment_id)
     report_usage = await _generate_reports(
-        project_dir, experiment_id, progress, runner=runner, on_message=on_message
+        project_dir, experiment_id, progress, runner=runner, on_message=on_message,
+        audience=audience,
     )
     _total_tokens_in += report_usage.get("tokens_in", 0)
     _total_tokens_out += report_usage.get("tokens_out", 0)

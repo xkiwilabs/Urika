@@ -26,6 +26,7 @@ async def run_project(
     on_message: Callable[..., Any] | None = None,
     get_user_input: Callable[..., Any] | None = None,
     pause_controller: object = None,
+    audience: str = "expert",
 ) -> dict[str, Any]:
     """Run experiments until criteria met or limits reached.
 
@@ -86,6 +87,7 @@ async def run_project(
             instructions=instructions,
             get_user_input=get_user_input,
             pause_controller=pause_controller,
+            audience=audience,
         )
         results.append(result)
 
@@ -117,7 +119,10 @@ async def run_project(
             from urika.orchestrator.finalize import finalize_project
 
             progress("phase", "Finalizing project")
-            await finalize_project(project_dir, runner, on_progress, on_message)
+            await finalize_project(
+                project_dir, runner, on_progress, on_message,
+                audience=audience,
+            )
         except Exception as exc:
             logger.warning("Finalization failed: %s", exc)
 
