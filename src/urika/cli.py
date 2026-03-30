@@ -4037,15 +4037,16 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         ep = p.setdefault("endpoints", {}).setdefault("private", {})
         ep["base_url"] = ep_url
 
-        # API key (optional for local servers, required for remote)
-        from urika.cli_helpers import interactive_prompt
+        # API key only for remote servers (not needed for Ollama/LM Studio)
+        if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
+            from urika.cli_helpers import interactive_prompt
 
-        key_env = interactive_prompt(
-            "  API key env var NAME, not the key itself (e.g. INFERENCE_HUB_KEY)",
-            default="",
-        )
-        if key_env:
-            ep["api_key_env"] = key_env
+            key_env = interactive_prompt(
+                "  API key env var NAME, not the key itself (e.g. INFERENCE_HUB_KEY)",
+                default="",
+            )
+            if key_env:
+                ep["api_key_env"] = key_env
 
         from urika.cli_helpers import interactive_prompt
 
