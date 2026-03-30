@@ -201,7 +201,7 @@ def cmd_quit(session: ReplSession, args: str) -> None:
 def cmd_config(session: ReplSession, args: str) -> None:
     from urika.cli import config_command
 
-    arg = args.strip()
+    arg = args.strip().lstrip("-")
     ctx = click.Context(config_command)
 
     if arg == "show":
@@ -241,8 +241,10 @@ def cmd_config(session: ReplSession, args: str) -> None:
 def cmd_notifications(session: ReplSession, args: str) -> None:
     from urika.cli import notifications_command
 
-    arg = args.strip()
+    arg = args.strip().lstrip("-")
     ctx = click.Context(notifications_command)
+
+    project = session.project_name if session.has_project else None
 
     if arg == "show":
         ctx.invoke(
@@ -250,7 +252,7 @@ def cmd_notifications(session: ReplSession, args: str) -> None:
             show=True,
             send_test=False,
             disable=False,
-            project=session.project_name if session.has_project else None,
+            project=project,
         )
     elif arg == "test":
         ctx.invoke(
@@ -258,7 +260,7 @@ def cmd_notifications(session: ReplSession, args: str) -> None:
             show=False,
             send_test=True,
             disable=False,
-            project=session.project_name if session.has_project else None,
+            project=project,
         )
     elif arg == "disable":
         ctx.invoke(
@@ -266,7 +268,7 @@ def cmd_notifications(session: ReplSession, args: str) -> None:
             show=False,
             send_test=False,
             disable=True,
-            project=session.project_name if session.has_project else None,
+            project=project,
         )
     else:
         ctx.invoke(
@@ -274,7 +276,7 @@ def cmd_notifications(session: ReplSession, args: str) -> None:
             show=False,
             send_test=False,
             disable=False,
-            project=session.project_name if session.has_project else None,
+            project=project,
         )
 
 
