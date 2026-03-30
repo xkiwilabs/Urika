@@ -383,6 +383,25 @@
                 t.classList.toggle('current', i === event.indexh);
             });
         });
+
+        // Lightbox: click any figure to view full-size
+        document.querySelectorAll('.slide-figure img').forEach(function(img) {
+            img.style.cursor = 'pointer';
+            img.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var lb = document.getElementById('urika-lightbox');
+                document.getElementById('urika-lightbox-img').src = img.src;
+                lb.style.display = 'flex';
+            });
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') document.getElementById('urika-lightbox').style.display = 'none';
+        });
     </script>
+
+    <div id="urika-lightbox" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;cursor:pointer;justify-content:center;align-items:center;">
+        <img id="urika-lightbox-img" style="max-width:90vw;max-height:90vh;object-fit:contain;border-radius:8px;">
+        <span style="position:absolute;top:20px;right:24px;color:#fff;font-size:32px;cursor:pointer;line-height:1;" onclick="document.getElementById('urika-lightbox').style.display='none'">&times;</span>
+    </div>
 </body>
 </html>
