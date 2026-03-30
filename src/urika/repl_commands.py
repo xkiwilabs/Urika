@@ -809,6 +809,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
     if exp_choice is None:
         return
 
+    audience = _get_audience(session)
     session.set_agent_active("present")
     try:
         if exp_choice == "all":
@@ -825,6 +826,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
                     "presentation_agent",
                     exp.experiment_id,
                     f"Create a presentation for experiment {exp.experiment_id}.",
+                    audience=audience,
                 )
                 if text:
                     _save_presentation(session, text, exp.experiment_id)
@@ -839,6 +841,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
                 "Create a project-level presentation covering ALL experiments, "
                 "the research progression, key findings across the entire project, "
                 "and next steps. This is an overview presentation, not per-experiment.",
+                audience=audience,
             )
             if text:
                 _save_presentation(session, text, None)
@@ -849,6 +852,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
                 "presentation_agent",
                 exp_choice,
                 f"Create a presentation for experiment {exp_choice}.",
+                audience=audience,
             )
             if text:
                 _save_presentation(session, text, exp_choice)
@@ -870,6 +874,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
     )
     from urika.core.readme_generator import write_readme
 
+    audience = _get_audience(session)
     session.set_agent_active("report")
     try:
         if exp_choice == "all":
@@ -891,6 +896,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                     "report_agent",
                     exp.experiment_id,
                     f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                    audience=audience,
                 )
                 if text:
                     from urika.core.report_writer import write_versioned
@@ -920,6 +926,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                 "report_agent",
                 "",
                 "Write a project-level narrative report covering all experiments and the research progression.",
+                audience=audience,
             )
             if text:
                 from urika.core.report_writer import write_versioned
@@ -958,6 +965,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                 "report_agent",
                 exp_choice,
                 f"Write a detailed narrative report for experiment {exp_choice}.",
+                audience=audience,
             )
             if text:
                 from urika.core.report_writer import write_versioned
@@ -1114,6 +1122,7 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
     import os
 
     instructions = args.strip()
+    audience = _get_audience(session)
     os.environ["URIKA_REPL"] = "1"
     session.set_agent_active("finalize")
     try:
@@ -1124,6 +1133,7 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
             cli_finalize,
             project=session.project_name,
             instructions=instructions,
+            audience=audience,
         )
     finally:
         session.set_agent_idle()
@@ -1198,7 +1208,11 @@ def cmd_build_tool(session: ReplSession, args: str) -> None:
 
 
 def _run_single_agent(
-    session: ReplSession, agent_name: str, experiment_id: str, prompt: str
+    session: ReplSession,
+    agent_name: str,
+    experiment_id: str,
+    prompt: str,
+    audience: str = "expert",
 ) -> str:
     """Run a single agent and display its output. Returns the text output."""
     try:
@@ -1226,7 +1240,9 @@ def _run_single_agent(
         _on_msg = _make_on_message()
 
         config = role.build_config(
-            project_dir=session.project_path, experiment_id=experiment_id
+            project_dir=session.project_path,
+            experiment_id=experiment_id,
+            audience=audience,
         )
 
         session_info = {
@@ -1328,6 +1344,23 @@ def _load_run_defaults(session: ReplSession) -> dict:
         except Exception:
             pass
     return defaults
+
+
+def _get_audience(session: ReplSession) -> str:
+    """Read the audience preference from the project config."""
+    import tomllib
+
+    if session.project_path is None:
+        return "expert"
+    toml_path = session.project_path / "urika.toml"
+    if toml_path.exists():
+        try:
+            with open(toml_path, "rb") as f:
+                data = tomllib.load(f)
+            return data.get("preferences", {}).get("audience", "expert")
+        except Exception:
+            pass
+    return "expert"
 
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:

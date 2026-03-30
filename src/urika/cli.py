@@ -1498,6 +1498,12 @@ def _determine_next_experiment(
     help="Ask advisor to review criteria when met (may raise the bar).",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--audience",
+    type=click.Choice(["novice", "expert"]),
+    default=None,
+    help="Output audience level (default: from project config or expert).",
+)
 def run(
     project: str,
     experiment_id: str | None,
@@ -1509,6 +1515,7 @@ def run(
     max_experiments: int | None,
     review_criteria: bool,
     json_output: bool = False,
+    audience: str | None = None,
 ) -> None:
     """Run an experiment using the orchestrator."""
     try:
@@ -1548,6 +1555,10 @@ def run(
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Resolve audience from project config if not explicitly provided
+    if audience is None:
+        audience = _config.audience
 
     # If --max-turns was not explicitly provided, read from urika.toml
     if max_turns is None:
@@ -1793,6 +1804,7 @@ def run(
                     on_message=_on_message,
                     get_user_input=_get_user_input,
                     pause_controller=pause_ctrl,
+                    audience=audience,
                 )
             )
 
@@ -2111,6 +2123,7 @@ def run(
                 instructions=instructions,
                 get_user_input=_get_user_input,
                 pause_controller=pause_ctrl,
+                audience=audience,
             )
         )
 
@@ -2264,7 +2277,11 @@ def run(
 
 
 def _run_report_agent(
-    project_path: Path, experiment_id: str, prompt: str, instructions: str = ""
+    project_path: Path,
+    experiment_id: str,
+    prompt: str,
+    instructions: str = "",
+    audience: str = "expert",
 ) -> str:
     """Run the report agent and return its text output."""
     try:
@@ -2282,7 +2299,7 @@ def _run_report_agent(
 
         print_agent("report_agent")
         config = role.build_config(
-            project_dir=project_path, experiment_id=experiment_id
+            project_dir=project_path, experiment_id=experiment_id, audience=audience
         )
 
         if instructions:
@@ -2316,11 +2333,18 @@ def _run_report_agent(
     help="Guide the report (e.g. 'focus on feature importance findings').",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--audience",
+    type=click.Choice(["novice", "expert"]),
+    default=None,
+    help="Output audience level (default: from project config or expert).",
+)
 def report(
     project: str,
     experiment_id: str | None,
     instructions: str,
     json_output: bool = False,
+    audience: str | None = None,
 ) -> None:
     """Generate labbook reports."""
     from urika.core.labbook import (
@@ -2332,6 +2356,10 @@ def report(
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Resolve audience from project config if not explicitly provided
+    if audience is None:
+        audience = _config.audience
 
     # If no experiment specified, offer selection (like REPL's _pick_experiment)
     if experiment_id is None:
@@ -2380,6 +2408,7 @@ def report(
                     exp.experiment_id,
                     f"Write a detailed narrative report for experiment {exp.experiment_id}.",
                     instructions=instructions,
+                    audience=audience,
                 )
                 if narrative:
                     from urika.core.report_writer import write_versioned
@@ -2432,6 +2461,7 @@ def report(
                 "Write a project-level narrative report covering all experiments "
                 "and the research progression.",
                 instructions=instructions,
+                audience=audience,
             )
             if narrative:
                 from urika.core.report_writer import write_versioned
@@ -2475,6 +2505,7 @@ def report(
             experiment_id,
             f"Write a detailed narrative report for experiment {experiment_id}.",
             instructions=instructions,
+            audience=audience,
         )
         if narrative:
             from urika.core.report_writer import write_versioned
@@ -3179,7 +3210,15 @@ def plan(
     help="Optional instructions for the finalizer agent.",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def finalize(project: str | None, instructions: str, json_output: bool) -> None:
+@click.option(
+    "--audience",
+    type=click.Choice(["novice", "expert"]),
+    default=None,
+    help="Output audience level (default: from project config or expert).",
+)
+def finalize(
+    project: str | None, instructions: str, json_output: bool, audience: str | None = None
+) -> None:
     """Finalize the project — produce polished methods, report, and presentation."""
     import time
 
@@ -3195,6 +3234,10 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Resolve audience from project config if not explicitly provided
+    if audience is None:
+        audience = _config.audience
 
     from urika.agents.config import load_runtime_config
 
@@ -3226,6 +3269,7 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
                     _on_progress,
                     _on_message,
                     instructions=instructions,
+                    audience=audience,
                 )
             )
         except KeyboardInterrupt:
@@ -3281,6 +3325,7 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
                     _on_progress,
                     _on_message,
                     instructions=instructions,
+                    audience=audience,
                 )
             )
         except KeyboardInterrupt:
@@ -3588,7 +3633,15 @@ def build_tool(
     help="Guide the presentation (e.g. 'emphasize ensemble results').",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def present(project: str | None, instructions: str, json_output: bool) -> None:
+@click.option(
+    "--audience",
+    type=click.Choice(["novice", "expert"]),
+    default=None,
+    help="Output audience level (default: from project config or expert).",
+)
+def present(
+    project: str | None, instructions: str, json_output: bool, audience: str | None = None
+) -> None:
     """Generate a presentation for an experiment."""
     import asyncio
     import time
@@ -3599,6 +3652,10 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Resolve audience from project config if not explicitly provided
+    if audience is None:
+        audience = _config.audience
 
     experiments = list_experiments(project_path)
     if not experiments:
@@ -3652,6 +3709,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                             _noop_callback,
                             on_message=on_msg,
                             instructions=instructions,
+                            audience=audience,
                         )
                     )
                     _pres_tokens_in += _pu.get("tokens_in", 0)
@@ -3681,6 +3739,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                         _noop_callback,
                         on_message=on_msg,
                         instructions=instructions,
+                        audience=audience,
                     )
                 )
                 _pres_tokens_in += _pu.get("tokens_in", 0)
@@ -3708,6 +3767,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                         _noop_callback,
                         on_message=on_msg,
                         instructions=instructions,
+                        audience=audience,
                     )
                 )
                 _pres_tokens_in += _pu.get("tokens_in", 0)
