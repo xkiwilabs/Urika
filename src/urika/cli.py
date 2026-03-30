@@ -4462,7 +4462,7 @@ def _notifications_project_setup(*, settings, project_path):
         print_step("No channels enabled.")
         return
 
-    # Ask for extra email recipients
+    # Ask for per-project overrides
     extra_to: list[str] = []
     if "email" in channels:
         extra_raw = interactive_prompt(
@@ -4472,16 +4472,30 @@ def _notifications_project_setup(*, settings, project_path):
         if extra_raw.strip():
             extra_to = [a.strip() for a in extra_raw.split(",") if a.strip()]
 
+    override_chat_id = ""
+    if "telegram" in channels:
+        global_chat = global_notif.get("telegram", {}).get("chat_id", "")
+        override_raw = interactive_prompt(
+            f"Telegram chat ID for this project (blank to use global: {global_chat})",
+            default="",
+        )
+        if override_raw.strip():
+            override_chat_id = override_raw.strip()
+
     # Save to project urika.toml
     notif: dict = {"channels": channels}
     if extra_to:
         notif["email"] = {"to": extra_to}
+    if override_chat_id:
+        notif["telegram"] = {"chat_id": override_chat_id}
     settings["notifications"] = notif
     _save_notification_settings(settings, is_project=True, project_path=project_path)
 
     print_success(f"Notifications enabled: {', '.join(channels)}")
     if extra_to:
         click.echo(f"  Extra recipients: {', '.join(extra_to)}")
+    if override_chat_id:
+        click.echo(f"  Telegram chat: {override_chat_id} (project-specific)")
     click.echo()
 
 
