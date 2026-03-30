@@ -62,6 +62,21 @@ class TestReportAgentRole:
         config = role.build_config(tmp_path, experiment_id="exp-001")
         assert config.cwd == tmp_path
 
+    def test_novice_audience_includes_plain_language(self, tmp_path: Path) -> None:
+        role = get_role()
+        config = role.build_config(tmp_path, experiment_id="exp-001", audience="novice")
+        assert "plain language" in config.system_prompt
+
+    def test_expert_audience_includes_domain_expertise(self, tmp_path: Path) -> None:
+        role = get_role()
+        config = role.build_config(tmp_path, experiment_id="exp-001", audience="expert")
+        assert "domain expertise" in config.system_prompt
+
+    def test_default_audience_is_expert(self, tmp_path: Path) -> None:
+        role = get_role()
+        config = role.build_config(tmp_path, experiment_id="exp-001")
+        assert "domain expertise" in config.system_prompt
+
     def test_discoverable_by_registry(self) -> None:
         registry = AgentRegistry()
         registry.discover()
