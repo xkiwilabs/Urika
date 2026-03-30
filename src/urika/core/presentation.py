@@ -164,8 +164,10 @@ def _render_figure_slide(
     return f"""
             <section class="slide-figure">
                 <h2>{_escape(title)}</h2>
-                <img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">
-                {cap}
+                <div class="slide-figure">
+                    <img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">
+                    {cap}
+                </div>
                 {items}
             </section>
 """
@@ -203,7 +205,7 @@ def _render_two_col_slide(
             <section class="slide-two-col">
                 <h2>{_escape(title)}</h2>
                 <div class="columns">
-                    <div class="col-figure">
+                    <div class="col-figure slide-figure">
                         <img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">
                         {cap}
                     </div>

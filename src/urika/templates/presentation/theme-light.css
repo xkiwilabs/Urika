@@ -1,13 +1,21 @@
 /* Urika Light Theme — minimal overrides, template.html handles typography */
 :root {
     --r-background-color: #f1f5f9;
-    --r-main-font-size: 18px;
+    --r-main-font-size: 15px;
     --r-main-color: #1e293b;
     --r-heading-color: #2563eb;
     --r-link-color: #3b82f6;
     --r-link-color-hover: #60a5fa;
     --r-selection-background-color: #93c5fd;
     --r-selection-color: #fff;
+
+    --u-blue: #2563eb;
+    --u-accent: #3b82f6;
+    --u-text: #1e293b;
+    --u-muted: #64748b;
+    --u-light: #94a3b8;
+    --u-border: #e2e8f0;
+    --u-bg: #f8fafc;
 }
 .reveal-viewport {
     background: #f1f5f9;

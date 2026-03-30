@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{THEME_CSS}}">
     <style>
         /* ═══════════════════════════════════════════════════════
-           Urika Presentation — Clean, Professional, Fits Screen
+           Urika Presentation — Viewport-Locked, No Scrolling
            ═══════════════════════════════════════════════════════ */
 
         :root {
@@ -23,8 +23,8 @@
 
         /* ── Reset reveal.js defaults that cause overflow ── */
         .reveal {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 18px !important; /* absolute base — everything scales from this */
+            font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            font-size: clamp(12px, 2vw, 15px) !important;
             color: var(--u-text);
         }
         .reveal .slides {
@@ -35,21 +35,23 @@
             box-sizing: border-box;
             overflow: hidden;
             height: 100%;
+            max-height: 100%;
             display: flex !important;
             flex-direction: column;
         }
 
-        /* ── Typography — small, readable, fits ── */
+        /* ── Typography — clamp() for responsive scaling ── */
         .reveal h1 {
-            font-size: 28px;
+            font-size: clamp(22px, 3.5vw, 28px);
             font-weight: 700;
             color: var(--u-blue);
             text-transform: none;
             margin: 0 0 8px 0;
             letter-spacing: -0.02em;
+            flex-shrink: 0;
         }
         .reveal h2 {
-            font-size: 22px;
+            font-size: clamp(18px, 2.8vw, 22px);
             font-weight: 600;
             color: var(--u-blue);
             text-transform: none;
@@ -59,7 +61,7 @@
             flex-shrink: 0;
         }
         .reveal ul, .reveal ol {
-            font-size: 15px;
+            font-size: clamp(12px, 2vw, 15px);
             line-height: 1.6;
             margin: 0;
             padding-left: 1.2em;
@@ -71,7 +73,7 @@
             color: var(--u-text);
         }
         .reveal p {
-            font-size: 15px;
+            font-size: clamp(12px, 2vw, 15px);
             line-height: 1.6;
             margin: 0 0 8px 0;
             color: var(--u-text);
@@ -84,17 +86,14 @@
             align-items: center !important;
         }
         .title-slide h1 {
-            font-size: 36px;
+            font-size: clamp(28px, 4.5vw, 36px);
             font-weight: 800;
-            background: linear-gradient(135deg, var(--u-blue), var(--u-accent));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--u-accent);
             margin-bottom: 4px;
             border: none;
         }
         .title-slide .subtitle {
-            font-size: 16px;
+            font-size: clamp(13px, 2vw, 16px);
             color: var(--u-muted);
             font-weight: 400;
             margin-top: 12px;
@@ -104,14 +103,14 @@
             display: block;
             width: 60px;
             height: 3px;
-            background: linear-gradient(135deg, var(--u-blue), var(--u-accent));
+            background: var(--u-accent);
             margin: 20px auto 0;
             border-radius: 2px;
         }
 
-        /* ── Bullet slides — content fills available space ── */
+        /* ── Bullet slides — content fills ~70% for breathing room ── */
         .reveal section ul {
-            max-height: calc(100% - 60px);
+            max-height: 70%;
         }
 
         /* ── Figure slides ── */
@@ -120,25 +119,28 @@
             align-items: center !important;
         }
         .slide-figure img {
-            max-width: 75%;
-            max-height: 380px;
+            max-width: 85%;
+            max-height: 55%;
             border-radius: 6px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            border: 1px solid var(--u-border);
             display: block;
             margin: 8px auto;
             object-fit: contain;
         }
         .slide-figure .caption {
-            font-size: 12px;
+            font-size: clamp(10px, 1.5vw, 12px);
             color: var(--u-muted);
             font-style: italic;
             margin-top: 6px;
+            flex-shrink: 0;
         }
         .slide-figure ul {
-            font-size: 13px;
+            font-size: clamp(10px, 1.5vw, 13px);
             text-align: left;
             max-width: 80%;
             margin: 8px auto 0;
+            flex: 0 1 auto;
+            overflow: hidden;
         }
 
         /* ── Two-column layout ── */
@@ -150,7 +152,7 @@
             overflow: hidden;
         }
         .slide-two-col .col-figure {
-            flex: 1;
+            flex: 1.2;
             text-align: center;
             display: flex;
             flex-direction: column;
@@ -159,27 +161,27 @@
         }
         .slide-two-col .col-figure img {
             max-width: 100%;
-            max-height: 340px;
+            max-height: 65%;
             border-radius: 6px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border: 1px solid var(--u-border);
             object-fit: contain;
         }
         .slide-two-col .col-text {
-            flex: 1;
+            flex: 0.8;
             overflow: hidden;
         }
         .slide-two-col .col-text ul {
-            font-size: 14px;
+            font-size: clamp(11px, 1.8vw, 13px);
         }
         .slide-two-col .caption {
-            font-size: 11px;
+            font-size: clamp(10px, 1.5vw, 11px);
             color: var(--u-muted);
             font-style: italic;
             margin-top: 4px;
         }
         .slide-two-col .bottom-text {
             text-align: center;
-            font-size: 13px;
+            font-size: clamp(10px, 1.5vw, 13px);
             color: var(--u-muted);
             margin-top: 8px;
             flex-shrink: 0;
@@ -192,17 +194,14 @@
             align-items: center !important;
         }
         .slide-stat .big-number {
-            font-size: 72px;
+            font-size: clamp(48px, 9vw, 72px);
             font-weight: 800;
-            background: linear-gradient(135deg, var(--u-blue), var(--u-accent));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--u-accent);
             margin: 8px 0;
             line-height: 1;
         }
         .slide-stat .stat-label {
-            font-size: 16px;
+            font-size: clamp(13px, 2vw, 16px);
             color: var(--u-muted);
             font-weight: 400;
         }
@@ -210,7 +209,7 @@
             text-align: center;
             list-style: none;
             padding: 0;
-            font-size: 14px;
+            font-size: clamp(12px, 2vw, 14px);
             margin-top: 12px;
         }
 
