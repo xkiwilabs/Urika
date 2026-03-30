@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 from urika.core.models import ProjectConfig
 from urika.core.source_scanner import ScanResult, scan_source_path
@@ -237,7 +240,7 @@ class ProjectBuilder:
         return "**/*{" + ",".join(sorted_exts) + "}"
 
 
-def _read_data_file(f: Path) -> "pd.DataFrame":
+def _read_data_file(f: Path) -> pd.DataFrame:
     """Read a data file using the appropriate pandas reader based on extension."""
     import pandas as pd
 

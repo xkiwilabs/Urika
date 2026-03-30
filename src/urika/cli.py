@@ -4206,7 +4206,21 @@ def notifications_command(
 
     # ── Show mode ──
     if show:
-        _show_notification_config(notif)
+        if is_project:
+            # Show merged config (global defaults + project overrides)
+            from urika.notifications import _load_notification_config
+
+            merged = _load_notification_config(project_path)
+            channels_list = settings.get("notifications", {}).get("channels", [])
+            click.echo(f"\n  Project: {project}")
+            if channels_list:
+                click.echo(f"  Enabled channels: {', '.join(channels_list)}")
+            else:
+                click.echo("  No channels enabled for this project.")
+            # Show the merged channel details from global + project config
+            _show_notification_config(merged)
+        else:
+            _show_notification_config(notif)
         return
 
     # ── Test mode ──
@@ -4230,8 +4244,13 @@ def _show_notification_config(notif: dict) -> None:
     from urika.cli_display import print_step
     from urika.core.secrets import list_secrets
 
-    enabled = notif.get("enabled", False)
-    click.echo(f"\n  Notifications: {'enabled' if enabled else 'disabled'}\n")
+    # "enabled" is a project-level setting; global config just stores channel details
+    has_channels = any(
+        notif.get(ch, {}).get(key)
+        for ch, key in [("email", "to"), ("slack", "channel"), ("telegram", "chat_id")]
+    )
+    status = "configured" if has_channels else "not configured"
+    click.echo(f"\n  Notifications: {status}\n")
 
     # Email
     email = notif.get("email", {})
