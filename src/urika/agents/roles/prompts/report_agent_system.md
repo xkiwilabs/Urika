@@ -67,6 +67,10 @@ What remains to be done.
 - **Concise but complete** — cover everything important without padding
 - **Connect findings** — show how results relate to each other and to the research question
 
+## Audience
+
+{audience_instructions}
+
 ## Rules
 
 - Do NOT modify any files.

@@ -86,6 +86,10 @@ Choose the best layout for each slide:
 - If a slide has a figure but no bullets to put beside it, use `figure` not `figure-text`
 - Never use `figure-text` with an empty right column
 
+## Audience
+
+{audience_instructions}
+
 ## Rules
 
 - Do NOT modify any files.

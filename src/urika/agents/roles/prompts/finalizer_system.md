@@ -122,6 +122,10 @@ Write `{project_dir}/projectbook/findings.json` — a structured summary that Re
 
 Select the most relevant figures from experiment artifacts and copy them to `{project_dir}/projectbook/figures/`. These will be used by the Report and Presentation agents.
 
+## Audience
+
+{audience_instructions}
+
 ## Rules
 
 - Write ALL files directly using the Write tool. Do not describe what you would write — actually write it.
