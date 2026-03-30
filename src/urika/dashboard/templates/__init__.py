@@ -1,0 +1,1 @@
+"""Dashboard HTML templates."""
