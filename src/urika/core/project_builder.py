@@ -69,7 +69,7 @@ class ProjectBuilder:
         frames: list[pd.DataFrame] = []
         for f in files:
             try:
-                frames.append(pd.read_csv(f))
+                frames.append(_read_data_file(f))
             except Exception:
                 continue
 
@@ -136,7 +136,7 @@ class ProjectBuilder:
             existing["data"] = {
                 "source": str(self.source_path),
                 "format": self._detect_format(),
-                "pattern": "**/*.csv",
+                "pattern": self._detect_glob_pattern(),
             }
 
         existing.setdefault("preferences", {})["web_search"] = self.web_search
@@ -223,3 +223,38 @@ class ProjectBuilder:
         if len(self._scan_result.data_files) == 1:
             return self._scan_result.data_files[0].suffix.lstrip(".").lower()
         return "unknown"
+
+    def _detect_glob_pattern(self) -> str:
+        """Detect the appropriate glob pattern from scan results."""
+        if self._scan_result is None or not self._scan_result.data_files:
+            return "**/*.csv"
+        exts = {f.suffix.lower() for f in self._scan_result.data_files}
+        if len(exts) == 1:
+            ext = next(iter(exts))
+            return f"**/*{ext}"
+        # Mixed formats — list all extensions found
+        sorted_exts = sorted(exts)
+        return "**/*{" + ",".join(sorted_exts) + "}"
+
+
+def _read_data_file(f: Path) -> "pd.DataFrame":
+    """Read a data file using the appropriate pandas reader based on extension."""
+    import pandas as pd
+
+    ext = f.suffix.lower()
+    if ext == ".tsv":
+        return pd.read_csv(f, sep="\t")
+    if ext in (".xlsx", ".xls"):
+        return pd.read_excel(f)
+    if ext == ".parquet":
+        return pd.read_parquet(f)
+    if ext in (".json", ".jsonl"):
+        return pd.read_json(f)
+    if ext in (".feather", ".arrow"):
+        return pd.read_feather(f)
+    if ext == ".sav":
+        return pd.read_spss(f)
+    if ext == ".dta":
+        return pd.read_stata(f)
+    # Default fallback (covers .csv and unknown extensions)
+    return pd.read_csv(f)

@@ -154,10 +154,12 @@ def cmd_project(session: ReplSession, args: str) -> None:
 def cmd_new(session: ReplSession, args: str) -> None:
     import os as _os
 
-    from urika.cli import new as cli_new
+    from urika.cli import _sanitize_project_name, new as cli_new
     from urika.core.registry import ProjectRegistry
 
     name = args.strip() if args.strip() else None
+    if name is not None:
+        name = _sanitize_project_name(name)
 
     # Snapshot existing projects so we can detect a new one
     registry = ProjectRegistry()
@@ -1261,7 +1263,7 @@ def _run_single_agent(
     except ImportError:
         from urika.cli_display import print_error
 
-        print_error("Claude Agent SDK not installed. Run: pip install urika[agents]")
+        print_error("Claude Agent SDK not installed. Run: pip install claude-agent-sdk")
         return ""
     except Exception as exc:
         from urika.cli_display import print_error

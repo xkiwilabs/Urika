@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 import click
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from urika.agents.runner import AgentRunner
+
+logger = logging.getLogger(__name__)
 
 
 async def run_project(
@@ -18,9 +22,9 @@ async def run_project(
     max_turns: int = 5,
     instructions: str = "",
     review_criteria: bool = False,
-    on_progress: object = None,
-    on_message: object = None,
-    get_user_input: object = None,
+    on_progress: Callable[..., Any] | None = None,
+    on_message: Callable[..., Any] | None = None,
+    get_user_input: Callable[..., Any] | None = None,
     pause_controller: object = None,
 ) -> dict[str, Any]:
     """Run experiments until criteria met or limits reached.
@@ -114,8 +118,8 @@ async def run_project(
 
             progress("phase", "Finalizing project")
             await finalize_project(project_dir, runner, on_progress, on_message)
-        except Exception:
-            pass  # Finalization is best-effort
+        except Exception as exc:
+            logger.warning("Finalization failed: %s", exc)
 
     return {
         "experiments_run": len(results),
@@ -135,7 +139,7 @@ async def _determine_next(
     project_dir: Path,
     runner: AgentRunner,
     instructions: str,
-    on_message: object,
+    on_message: Callable[..., Any] | None,
 ) -> tuple[dict[str, Any] | None, str]:
     """Call advisor to propose next experiment."""
     from urika.agents.registry import AgentRegistry
@@ -176,7 +180,7 @@ async def _determine_next(
             context_parts.append(
                 f"\n{len(methods)} methods tried across all experiments."
             )
-            for m in methods[-10:]:
+            for m in methods[-20:]:
                 metrics = m.get("metrics", {})
                 metric_str = ", ".join(f"{k}={v}" for k, v in list(metrics.items())[:3])
                 context_parts.append(
@@ -203,7 +207,7 @@ async def _determine_next(
 
         experiments = list_experiments(project_dir)
         context_parts.append(f"\nExperiments completed: {len(experiments)}")
-        for exp in experiments[-5:]:
+        for exp in experiments[-10:]:
             context_parts.append(f"  {exp.experiment_id}: {exp.name}")
     except Exception:
         pass

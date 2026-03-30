@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from urika.agents.config import AgentConfig
 
@@ -31,7 +31,7 @@ class AgentRunner(ABC):
 
     @abstractmethod
     async def run(
-        self, config: AgentConfig, prompt: str, *, on_message: object = None
+        self, config: AgentConfig, prompt: str, *, on_message: Callable[..., Any] | None = None
     ) -> AgentResult:
         """Execute an agent with the given config and prompt.
 

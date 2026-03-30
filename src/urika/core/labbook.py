@@ -55,7 +55,7 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
         # Also check run artifacts list
         for art in run.get("artifacts", []):
             art_path = Path(art)
-            if art_path.suffix.lower() == ".png" and art_path.name.lower() not in [
+            if art_path.suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".gif") and art_path.name.lower() not in [
                 m.name.lower() for m in matched
             ]:
                 if (project_dir / "experiments" / experiment_id / art).exists():
@@ -269,10 +269,14 @@ def generate_key_findings(project_dir: Path) -> None:
             best_exp_name, best_run = all_runs[0]
             if best_run.get("metrics"):
                 first_metric = next(iter(best_run["metrics"]))
+                lower_better = first_metric in _LOWER_IS_BETTER
                 for exp_name, run in all_runs:
-                    run_val = run.get("metrics", {}).get(first_metric, float("-inf"))
-                    best_val = best_run["metrics"].get(first_metric, float("-inf"))
-                    if run_val > best_val:
+                    default = float("inf") if lower_better else float("-inf")
+                    run_val = run.get("metrics", {}).get(first_metric, default)
+                    best_val = best_run["metrics"].get(first_metric, default)
+                    if lower_better and run_val < best_val:
+                        best_exp_name, best_run = exp_name, run
+                    elif not lower_better and run_val > best_val:
                         best_exp_name, best_run = exp_name, run
 
                 metrics_str = ", ".join(
@@ -310,8 +314,27 @@ def generate_key_findings(project_dir: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+_LOWER_IS_BETTER = {
+    "rmse",
+    "mse",
+    "mae",
+    "mape",
+    "loss",
+    "error",
+    "brier_score",
+    "log_loss",
+    "sse",
+    "residual",
+    "p_value",
+    "aic",
+    "bic",
+    "deviance",
+    "perplexity",
+}
+
+
 def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Find the best run by the first metric (higher is better)."""
+    """Find the best run by the first metric, respecting metric direction."""
     if not runs:
         return None
 
@@ -320,6 +343,8 @@ def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
 
     first_metric = next(iter(valid[0]["metrics"]))
+    if first_metric in _LOWER_IS_BETTER:
+        return min(valid, key=lambda r: r["metrics"].get(first_metric, float("inf")))
     return max(valid, key=lambda r: r["metrics"].get(first_metric, float("-inf")))
 
 
@@ -336,11 +361,14 @@ _MAX_FIGURES_PER_EXPERIMENT = 10
 
 
 def _collect_experiment_figures(project_dir: Path, experiment_id: str) -> list[Path]:
-    """Return sorted .png files from an experiment's artifacts dir (max 10)."""
+    """Return sorted figure files from an experiment's artifacts dir (max 10)."""
     artifacts_dir = project_dir / "experiments" / experiment_id / "artifacts"
     if not artifacts_dir.is_dir():
         return []
-    figures = sorted(artifacts_dir.glob("*.png"))
+    figures: list[Path] = []
+    for ext in (".png", ".jpg", ".jpeg", ".svg", ".gif"):
+        figures.extend(artifacts_dir.glob(f"*{ext}"))
+    figures.sort()
     return figures[:_MAX_FIGURES_PER_EXPERIMENT]
 
 

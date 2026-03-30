@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from urika.agents.config import load_runtime_config
 from urika.agents.registry import AgentRegistry
@@ -15,6 +15,7 @@ from urika.core.session import (
     complete_session,
     fail_session,
     pause_session,
+    release_lock,
     resume_session,
     start_session,
     update_turn,
@@ -33,7 +34,11 @@ logger = logging.getLogger(__name__)
 
 
 # Metrics where lower values are better (errors, losses, p-values)
-_LOWER_IS_BETTER = {"rmse", "mae", "mse", "loss", "error", "p_value", "aic", "bic"}
+_LOWER_IS_BETTER = {
+    "rmse", "mse", "mae", "mape", "loss", "error",
+    "brier_score", "log_loss", "sse", "residual",
+    "p_value", "aic", "bic", "deviance", "perplexity",
+}
 
 
 def _detect_primary_metric(
@@ -69,9 +74,9 @@ def _noop_callback(event: str, detail: str = "") -> None:
 async def _generate_reports(
     project_dir: Path,
     experiment_id: str,
-    progress: object,
+    progress: Callable[..., Any],
     runner: AgentRunner | None = None,
-    on_message: object = None,
+    on_message: Callable[..., Any] | None = None,
 ) -> dict[str, int | float]:
     """Generate labbook reports and update README after experiment completion.
 
@@ -207,8 +212,8 @@ async def _generate_presentation(
     project_dir: Path,
     experiment_id: str,
     runner: AgentRunner,
-    progress: object,
-    on_message: object = None,
+    progress: Callable[..., Any],
+    on_message: Callable[..., Any] | None = None,
     instructions: str = "",
 ) -> dict[str, int | float]:
     """Generate a reveal.js presentation from experiment results.
@@ -307,7 +312,7 @@ async def _generate_presentation(
                             ".svg",
                             ".gif",
                         ):
-                            shutil.copy2(fig, pres_figures / fig.name)
+                            shutil.copy2(fig, pres_figures / f"{exp_dir.name}_{fig.name}")
 
     progress("result", f"Presentation saved to {output_dir}/index.html")
     return _pres_usage
@@ -317,7 +322,7 @@ async def _async_generate_summary(
     project_dir: Path,
     experiment_id: str,
     runner: AgentRunner,
-    on_message: object = None,
+    on_message: Callable[..., Any] | None = None,
 ) -> tuple[str, dict[str, int | float]]:
     """Call report agent to write a short project status summary.
 
@@ -398,7 +403,7 @@ async def _async_generate_summary(
     return "", _result_usage
 
 
-def _print_run_summary(project_dir: Path, experiment_id: str, progress: object) -> None:
+def _print_run_summary(project_dir: Path, experiment_id: str, progress: Callable[..., Any]) -> None:
     """Print a summary of what was achieved in this experiment."""
     try:
         exp_progress = load_progress(project_dir, experiment_id)
@@ -470,10 +475,10 @@ async def run_experiment(
     max_turns: int = 50,
     review_criteria: bool = False,
     resume: bool = False,
-    on_progress: object = None,
-    on_message: object = None,
+    on_progress: Callable[..., Any] | None = None,
+    on_message: Callable[..., Any] | None = None,
     instructions: str = "",
-    get_user_input: object = None,
+    get_user_input: Callable[..., Any] | None = None,
     pause_controller: object = None,
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
@@ -992,7 +997,15 @@ async def run_experiment(
             update_turn(project_dir, experiment_id)
 
         except Exception as exc:
-            fail_session(project_dir, experiment_id, error=str(exc))
+            try:
+                fail_session(project_dir, experiment_id, error=str(exc))
+            except Exception as fail_exc:
+                logger.warning("fail_session raised: %s", fail_exc)
+            finally:
+                try:
+                    release_lock(project_dir, experiment_id)
+                except Exception:
+                    pass
             return _usage_dict("failed", turn, error=str(exc))
 
     # Reached max_turns without criteria being met

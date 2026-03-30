@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any, Callable
 
 from urika.agents.registry import AgentRegistry
 from urika.agents.runner import AgentRunner
@@ -14,8 +15,8 @@ logger = logging.getLogger(__name__)
 async def finalize_project(
     project_dir: Path,
     runner: AgentRunner,
-    on_progress: object = None,
-    on_message: object = None,
+    on_progress: Callable[..., Any] | None = None,
+    on_message: Callable[..., Any] | None = None,
     *,
     instructions: str = "",
 ) -> dict:
@@ -62,8 +63,15 @@ async def finalize_project(
             "Reproducibility, References.",
             on_message=on_message,
         )
-        if report_result.success:
+        if report_result.success and report_result.text_output:
+            from urika.core.report_writer import write_versioned
+
+            report_path = project_dir / "projectbook" / "final-report.md"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            write_versioned(report_path, report_result.text_output.strip() + "\n")
             progress("result", "Final report written")
+        elif report_result.success:
+            progress("result", "Final report written (no text output)")
         else:
             progress("result", "Final report generation failed")
 
@@ -104,15 +112,34 @@ async def finalize_project(
                 render_presentation(slide_data, output_dir, theme=theme)
 
                 # Copy project-level figures into the presentation directory
+                import shutil
+
+                pres_figures = output_dir / "figures"
+                pres_figures.mkdir(exist_ok=True)
                 project_figures = project_dir / "projectbook" / "figures"
                 if project_figures.exists():
-                    import shutil
-
-                    pres_figures = output_dir / "figures"
-                    pres_figures.mkdir(exist_ok=True)
                     for fig in project_figures.iterdir():
                         if fig.is_file():
                             shutil.copy2(fig, pres_figures / fig.name)
+
+                # Copy experiment-level figures with experiment prefix
+                experiments_dir = project_dir / "experiments"
+                if experiments_dir.exists():
+                    for exp_dir in sorted(experiments_dir.iterdir()):
+                        artifacts = exp_dir / "artifacts"
+                        if artifacts.is_dir():
+                            for fig in artifacts.iterdir():
+                                if fig.is_file() and fig.suffix.lower() in (
+                                    ".png",
+                                    ".jpg",
+                                    ".jpeg",
+                                    ".svg",
+                                    ".gif",
+                                ):
+                                    shutil.copy2(
+                                        fig,
+                                        pres_figures / f"{exp_dir.name}_{fig.name}",
+                                    )
 
                 progress("result", "Final presentation saved")
 

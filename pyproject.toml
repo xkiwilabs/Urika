@@ -33,18 +33,20 @@ dependencies = [
     "seaborn>=0.13",
     # Knowledge pipeline (small, needed for PDF ingestion)
     "pypdf>=4.0",
-    # ML essentials (small packages, useful for most projects)
+]
+
+[project.optional-dependencies]
+ml = [
     "xgboost>=2.0",
     "lightgbm>=4.0",
     "optuna>=3.0",
     "shap>=0.42",
     "imbalanced-learn>=0.11",
-    # Notifications (email is stdlib, these are for Slack and Telegram)
+]
+notifications = [
     "slack-sdk>=3.0",
     "python-telegram-bot>=20.0",
 ]
-
-[project.optional-dependencies]
 dl = [
     "torch>=2.0",
     "transformers>=4.30",
@@ -54,9 +56,12 @@ dl = [
     "timm>=0.9",
 ]
 all = [
+    "urika[ml]",
+    "urika[notifications]",
     "urika[dl]",
 ]
 dev = [
+    "urika[all]",
     "pytest>=7.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.1",

@@ -6,7 +6,7 @@ to change the runtime (e.g. custom runtime, Pi SDK).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -24,7 +24,7 @@ class ClaudeSDKRunner(AgentRunner):
     """Runs agents via Claude Agent SDK."""
 
     async def run(
-        self, config: AgentConfig, prompt: str, *, on_message: object = None
+        self, config: AgentConfig, prompt: str, *, on_message: Callable[..., Any] | None = None
     ) -> AgentResult:
         """Execute an agent and return structured results."""
         options = self._build_options(config)

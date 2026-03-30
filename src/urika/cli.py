@@ -6,6 +6,8 @@ import asyncio
 import os
 from pathlib import Path
 
+import re
+
 import click
 
 from urika.core.experiment import create_experiment, list_experiments
@@ -70,6 +72,28 @@ def _record_agent_usage(
         )
     except Exception:
         pass
+
+
+def _sanitize_project_name(name: str) -> str:
+    """Sanitize a project name so it is safe to use as a directory name.
+
+    - Strips leading/trailing whitespace
+    - Replaces path separators (/ and \\) with hyphens
+    - Removes '..' sequences
+    - Keeps only alphanumeric, hyphens, underscores, spaces, and periods
+    - Strips leading/trailing dots and hyphens
+    - Raises click.ClickException if the result is empty
+    """
+    name = name.strip()
+    name = name.replace("/", "-").replace("\\", "-")
+    name = name.replace("..", "")
+    name = re.sub(r"[^a-zA-Z0-9 _.\-]", "", name)
+    name = name.strip(".-")
+    if not name:
+        raise click.ClickException(
+            "Invalid project name: nothing left after sanitization."
+        )
+    return name
 
 
 def _projects_dir() -> Path:
@@ -270,6 +294,7 @@ def new(
 
     if name is None:
         name = interactive_prompt("Project name", required=True)
+    name = _sanitize_project_name(name)
 
     # Load saved defaults from ~/.urika/settings.toml
     from urika.core.settings import get_default_privacy
@@ -437,6 +462,7 @@ def new(
                 break
             # New name
             name = interactive_prompt("New project name", required=True)
+            name = _sanitize_project_name(name)
             builder.name = name
             project_dir = _projects_dir() / name
 
@@ -1489,7 +1515,7 @@ def run(
         from urika.agents.runner import get_runner
     except ImportError:
         raise click.ClickException(
-            "Claude Agent SDK not installed. Run: pip install urika[agents]"
+            "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
         )
     import signal
     import time
@@ -2118,17 +2144,29 @@ def run(
                 if runs:
                     methods = list({r["method"] for r in runs})
                     summary_text = f"{len(runs)} runs, {len(methods)} methods. "
-                    # Find best metric
+                    # Find best metric, respecting direction
+                    from urika.core.labbook import _LOWER_IS_BETTER as _LIB
+
                     best_val = None
                     best_method = None
                     best_metric = None
+                    lower_better = False
                     for r in runs:
                         for k, v in r.get("metrics", {}).items():
                             if isinstance(v, (int, float)):
-                                if best_val is None or v > best_val:
-                                    best_val = v
-                                    best_method = r["method"]
+                                if best_metric is None:
                                     best_metric = k
+                                    lower_better = k in _LIB
+                                if k == best_metric:
+                                    if best_val is None:
+                                        best_val = v
+                                        best_method = r["method"]
+                                    elif lower_better and v < best_val:
+                                        best_val = v
+                                        best_method = r["method"]
+                                    elif not lower_better and v > best_val:
+                                        best_val = v
+                                        best_method = r["method"]
                     if best_val is not None:
                         if 0 <= best_val <= 1:
                             summary_text += f"Best: {best_method} ({best_metric}={best_val:.1%})"
@@ -2827,7 +2865,7 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         from urika.agents.registry import AgentRegistry
     except ImportError:
         raise click.ClickException(
-            "Claude Agent SDK not installed. Run: pip install urika[agents]"
+            "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
         )
 
     runner = get_runner()
