@@ -9,7 +9,15 @@ from typing import Callable
 
 @dataclass
 class SecurityPolicy:
-    """Filesystem and command boundaries for an agent."""
+    """Filesystem and command boundaries for an agent.
+
+    ADVISORY ONLY: These policies are not enforced at runtime.
+    The actual enforcement mechanism is the ``allowed_tools`` list in
+    :class:`AgentConfig`, which controls which tools an agent subprocess
+    may invoke.  The methods here (``is_write_allowed``,
+    ``is_bash_allowed``) exist for future enforcement and for use in
+    tests but are **not** called during normal agent execution.
+    """
 
     writable_dirs: list[Path]
     readable_dirs: list[
@@ -19,7 +27,11 @@ class SecurityPolicy:
     blocked_bash_patterns: list[str]
 
     def is_write_allowed(self, path: Path) -> bool:
-        """Check if a file path is within any writable directory."""
+        """Check if a file path is within any writable directory.
+
+        Note: Advisory only — not called at runtime.  Enforcement is via
+        ``allowed_tools`` in :class:`AgentConfig`.
+        """
         resolved = path.resolve()
         return any(
             resolved == d.resolve() or _is_relative_to(resolved, d.resolve())
@@ -27,7 +39,11 @@ class SecurityPolicy:
         )
 
     def is_bash_allowed(self, command: str) -> bool:
-        """Check if a bash command is allowed by prefix rules and not blocked."""
+        """Check if a bash command is allowed by prefix rules and not blocked.
+
+        Note: Advisory only — not called at runtime.  Enforcement is via
+        ``allowed_tools`` in :class:`AgentConfig`.
+        """
         cmd = command.strip()
         for pattern in self.blocked_bash_patterns:
             if pattern in cmd:
@@ -134,12 +150,6 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
     except Exception:
         return RuntimeConfig()
 
-
-def build_agent_env(project_dir: Path) -> dict[str, str] | None:
-    """Get venv environment for agents, if project has one configured."""
-    from urika.core.venv import get_venv_env
-
-    return get_venv_env(project_dir)
 
 
 def build_agent_env_for_endpoint(

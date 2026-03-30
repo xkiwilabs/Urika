@@ -6,7 +6,7 @@ import logging
 import queue
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from urika.notifications.base import NotificationChannel
@@ -325,7 +325,7 @@ class NotificationBus:
     # ------------------------------------------------------------------
 
     def handle_remote_command(
-        self, command: str, args: str = "", respond: object = None
+        self, command: str, args: str = "", respond: Callable[..., Any] | None = None
     ) -> None:
         """Handle an inbound command from Telegram/Slack.
 

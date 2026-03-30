@@ -24,18 +24,16 @@ logger = logging.getLogger(__name__)
 # Event types that warrant inline Pause/Stop buttons.
 _ACTIVE_RUN_EVENTS = frozenset(
     {
-        "turn_started",
-        "run_recorded",
-        "experiment_starting",
+        "experiment_started",
     }
 )
 
 # Emoji map for high-priority event types.
 _EMOJI: dict[str, str] = {
     "criteria_met": "\u2705",  # ✅
-    "error": "\u274c",  # ❌
-    "experiment_complete": "\U0001f3c1",  # 🏁
-    "finalize_complete": "\U0001f3c1",  # 🏁
+    "experiment_failed": "\u274c",  # ❌
+    "experiment_completed": "\U0001f3c1",  # 🏁
+    "meta_completed": "\U0001f3c1",  # 🏁
 }
 
 
@@ -214,6 +212,15 @@ class TelegramChannel(NotificationChannel):
         """Route any /command through the bus."""
         if not update.message or not update.message.text:
             return
+
+        # Verify sender matches configured chat_id
+        if self._chat_id and str(update.message.chat_id) != str(self._chat_id):
+            logger.warning(
+                "Ignoring command from unauthorized chat_id %s",
+                update.message.chat_id,
+            )
+            return
+
         text = update.message.text.strip()
         if not text.startswith("/"):
             return
@@ -263,6 +270,16 @@ class TelegramChannel(NotificationChannel):
         query = update.callback_query
         if query is None:
             return
+
+        # Verify sender matches configured chat_id
+        if self._chat_id and str(query.message.chat_id) != str(self._chat_id):
+            logger.warning(
+                "Ignoring callback from unauthorized chat_id %s",
+                query.message.chat_id,
+            )
+            await query.answer()
+            return
+
         await query.answer()
 
         # Map callback data to commands

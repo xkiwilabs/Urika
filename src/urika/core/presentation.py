@@ -88,7 +88,7 @@ def render_presentation(
 
 def _render_title_slide(title: str, subtitle: str) -> str:
     """Render the title slide."""
-    sub = f'<p class="subtitle">{subtitle}</p>' if subtitle else ""
+    sub = f'<p class="subtitle">{_escape(subtitle)}</p>' if subtitle else ""
     return f"""
             <section class="title-slide">
                 <h1>{_escape(title)}</h1>

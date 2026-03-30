@@ -49,7 +49,7 @@ class TestValidateCriteria:
         assert len(failures) == 2
 
     def test_missing_metric_skipped(self) -> None:
-        """Metric not present in metrics dict is skipped (passes)."""
+        """Metric in criteria but absent from run is skipped."""
         metrics = {"r2": 0.95}
         criteria = {"r2": {"min": 0.9}, "rmse": {"max": 1.0}}
         passed, failures = validate_criteria(metrics, criteria)
@@ -72,7 +72,7 @@ class TestValidateCriteria:
         assert failures == []
 
     def test_empty_metrics(self) -> None:
-        """Empty metrics dict means all criteria are skipped (pass)."""
+        """Empty metrics dict — all criteria skipped, passes."""
         criteria = {"r2": {"min": 0.9}}
         passed, failures = validate_criteria({}, criteria)
         assert passed is True

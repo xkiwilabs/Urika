@@ -155,6 +155,12 @@ class SlackChannel(NotificationChannel):
             def _handle_interaction(
                 client: SocketModeClient, req: SocketModeRequest
             ) -> None:
+                # TODO: Restrict interactions to authorized users/channels.
+                # Slack's architecture routes button clicks through Slack's
+                # servers, making sender verification harder than Telegram.
+                # Consider checking payload.user.id or payload.channel.id
+                # against an allow-list in future.
+
                 # Block Kit button clicks arrive as events with actions in the payload
                 payload = req.payload or {}
                 actions = payload.get("actions", [])
