@@ -5,7 +5,7 @@ This walkthrough shows the end-to-end process of creating a Urika project, from 
 ## Prerequisites
 
 ```bash
-pip install -e ".[agents]"
+pip install -e ".[dev]"
 ```
 
 ## Step 1: Start Project Creation

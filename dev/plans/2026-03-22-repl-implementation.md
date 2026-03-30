@@ -722,7 +722,7 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             print_error(f"Advisor error: {result.error}")
 
     except ImportError:
-        print_error("Claude Agent SDK not installed. Run: pip install urika[agents]")
+        print_error("Claude Agent SDK not installed. Run: pip install urika")
     except Exception as exc:
         print_error(f"Error: {exc}")
 ```
