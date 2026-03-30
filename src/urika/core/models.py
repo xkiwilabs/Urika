@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 VALID_MODES = {"exploratory", "confirmatory", "pipeline"}
+VALID_AUDIENCES = {"expert", "novice"}
 
 
 @dataclass
@@ -20,10 +21,14 @@ class ProjectConfig:
     description: str = ""
     data_paths: list[str] = field(default_factory=list)
     success_criteria: dict[str, Any] = field(default_factory=dict)
+    audience: str = "expert"
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
             msg = f"mode must be one of {VALID_MODES}, got '{self.mode}'"
+            raise ValueError(msg)
+        if self.audience not in VALID_AUDIENCES:
+            msg = f"audience must be one of {VALID_AUDIENCES}, got '{self.audience}'"
             raise ValueError(msg)
 
     def to_toml_dict(self) -> dict[str, Any]:
@@ -40,6 +45,7 @@ class ProjectConfig:
             d["project"]["data_paths"] = self.data_paths
         if self.success_criteria:
             d["project"]["success_criteria"] = self.success_criteria
+        d["preferences"] = {"audience": self.audience}
         return d
 
     @classmethod
@@ -53,6 +59,7 @@ class ProjectConfig:
             description=p.get("description", ""),
             data_paths=p.get("data_paths", []),
             success_criteria=p.get("success_criteria", {}),
+            audience=d.get("preferences", {}).get("audience", "expert"),
         )
 
 

@@ -104,6 +104,50 @@ class TestProjectConfig:
         restored = ProjectConfig.from_toml_dict(d)
         assert restored.description == "My project description"
 
+    def test_audience_default_expert(self) -> None:
+        config = ProjectConfig(name="test", question="Q?", mode="exploratory")
+        assert config.audience == "expert"
+
+    def test_audience_from_toml(self) -> None:
+        d = {
+            "project": {
+                "name": "test",
+                "question": "Q?",
+                "mode": "exploratory",
+            },
+            "preferences": {"audience": "novice"},
+        }
+        config = ProjectConfig.from_toml_dict(d)
+        assert config.audience == "novice"
+
+    def test_audience_invalid_raises(self) -> None:
+        with pytest.raises(ValueError, match="audience"):
+            ProjectConfig(
+                name="test",
+                question="Q?",
+                mode="exploratory",
+                audience="beginner",
+            )
+
+    def test_audience_roundtrips_via_toml(self) -> None:
+        config = ProjectConfig(
+            name="test",
+            question="Q?",
+            mode="exploratory",
+            audience="novice",
+        )
+        d = config.to_toml_dict()
+        restored = ProjectConfig.from_toml_dict(d)
+        assert restored.audience == "novice"
+
+    def test_audience_expert_in_toml(self) -> None:
+        """Expert audience should be written to preferences section."""
+        config = ProjectConfig(
+            name="test", question="Q?", mode="exploratory", audience="expert"
+        )
+        d = config.to_toml_dict()
+        assert d["preferences"]["audience"] == "expert"
+
 
 class TestExperimentConfig:
     def test_create(self) -> None:
