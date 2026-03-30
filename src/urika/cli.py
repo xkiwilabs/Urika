@@ -3904,6 +3904,26 @@ def usage(project: str | None, json_output: bool) -> None:
     click.echo()
 
 
+@cli.command("dashboard")
+@click.argument("project", required=False, default=None)
+@click.option("--port", default=8420, type=int, help="Server port (default: 8420)")
+def dashboard(project: str | None, port: int) -> None:
+    """Open the project dashboard in your browser."""
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    click.echo(f"\n  Starting dashboard for {_config.name}...")
+
+    from urika.dashboard.server import start_dashboard
+
+    try:
+        start_dashboard(project_path, port=port)
+    except KeyboardInterrupt:
+        pass
+
+    click.echo("  Dashboard stopped.")
+
+
 @cli.command("config")
 @click.argument("project", required=False, default=None)
 @click.option("--show", is_flag=True, help="Show current settings.")

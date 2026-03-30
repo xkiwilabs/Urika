@@ -1207,6 +1207,46 @@ def cmd_build_tool(session: ReplSession, args: str) -> None:
         session.set_agent_idle()
 
 
+@command(
+    "dashboard",
+    requires_project=True,
+    description="Open project dashboard in browser",
+)
+def cmd_dashboard(session: ReplSession, args: str) -> None:
+    import threading
+
+    from urika.dashboard.server import DashboardServer
+
+    # Parse --port from args
+    port = 8420
+    parts = args.strip().split()
+    for i, part in enumerate(parts):
+        if part == "--port" and i + 1 < len(parts):
+            try:
+                port = int(parts[i + 1])
+            except ValueError:
+                click.echo("  Invalid port number.")
+                return
+
+    try:
+        server = DashboardServer(session.project_path, port=port)
+    except OSError as e:
+        click.echo(f"  Cannot start dashboard: {e}")
+        return
+
+    actual_port = server.server_address[1]
+    url = f"http://127.0.0.1:{actual_port}"
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    import webbrowser
+
+    webbrowser.open(url)
+    click.echo(f"  Dashboard running at {url}")
+    click.echo("  (stops when REPL exits)")
+
+
 def _run_single_agent(
     session: ReplSession,
     agent_name: str,
