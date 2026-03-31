@@ -423,6 +423,17 @@ html, body {
   margin: 24px 0;
 }
 
+.rendered-content img {
+  max-width: 80%;
+  max-height: 450px;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  margin: 16px auto;
+  border-radius: var(--u-radius);
+  box-shadow: var(--u-shadow);
+}
+
 /* Image display */
 .image-display {
   text-align: center;
@@ -430,8 +441,10 @@ html, body {
 }
 
 .image-display img {
-  max-width: 100%;
+  max-width: 80%;
+  max-height: 500px;
   height: auto;
+  object-fit: contain;
   border-radius: var(--u-radius);
   box-shadow: var(--u-shadow-lg);
   cursor: pointer;
