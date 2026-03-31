@@ -1212,14 +1212,35 @@ def cmd_build_tool(session: ReplSession, args: str) -> None:
     requires_project=True,
     description="Open project dashboard in browser",
 )
+_dashboard_server = None
+
+
 def cmd_dashboard(session: ReplSession, args: str) -> None:
     import threading
 
     from urika.dashboard.server import DashboardServer
 
+    global _dashboard_server
+
+    parts = args.strip().split()
+
+    # /dashboard stop — shut down running server
+    if parts and parts[0] in ("stop", "--stop"):
+        if _dashboard_server is not None:
+            _dashboard_server.shutdown()
+            _dashboard_server = None
+            click.echo("  Dashboard stopped.")
+        else:
+            click.echo("  No dashboard running.")
+        return
+
+    # If already running, stop it first (restart)
+    if _dashboard_server is not None:
+        _dashboard_server.shutdown()
+        _dashboard_server = None
+
     # Parse --port from args
     port = 8420
-    parts = args.strip().split()
     for i, part in enumerate(parts):
         if part == "--port" and i + 1 < len(parts):
             try:
@@ -1234,6 +1255,7 @@ def cmd_dashboard(session: ReplSession, args: str) -> None:
         click.echo(f"  Cannot start dashboard: {e}")
         return
 
+    _dashboard_server = server
     actual_port = server.server_address[1]
     url = f"http://127.0.0.1:{actual_port}"
 
@@ -1244,7 +1266,7 @@ def cmd_dashboard(session: ReplSession, args: str) -> None:
 
     webbrowser.open(url)
     click.echo(f"  Dashboard running at {url}")
-    click.echo("  (stops when REPL exits)")
+    click.echo("  /dashboard stop to shut down, /dashboard to restart")
 
 
 def _run_single_agent(
