@@ -1321,7 +1321,22 @@ def _determine_next_experiment(
     next_suggestion = None
     call_advisor_agent = bool(instructions) or bool(completed)
 
-    if not call_advisor_agent:
+    # Check for pending suggestions from remote advisor (Telegram/Slack)
+    pending_path = project_path / "suggestions" / "pending.json"
+    if pending_path.exists():
+        try:
+            data = json.loads(pending_path.read_text(encoding="utf-8"))
+            suggestions = data.get("suggestions", [])
+            if suggestions:
+                next_suggestion = suggestions[0]
+                # Consume the pending file
+                pending_path.unlink(missing_ok=True)
+                if not auto:
+                    print_step("Using suggestion from recent advisor conversation")
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    if not call_advisor_agent and next_suggestion is None:
         # First experiment, no instructions — use initial plan
         suggestions_path = project_path / "suggestions" / "initial.json"
         if suggestions_path.exists():

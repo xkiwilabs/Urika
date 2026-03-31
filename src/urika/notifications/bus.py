@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import threading
 from pathlib import Path
@@ -578,6 +579,31 @@ class NotificationBus:
                     if add_msg:
                         add_msg("user", question)
                         add_msg("advisor", text)
+                # Save suggestions to file so /run subprocess can find them
+                try:
+                    from urika.orchestrator.parsing import parse_suggestions
+
+                    parsed = parse_suggestions(text)
+                    if parsed and parsed.get("suggestions"):
+                        suggestions_dir = self._project_path / "suggestions"
+                        suggestions_dir.mkdir(exist_ok=True)
+                        pending_path = suggestions_dir / "pending.json"
+                        import tempfile
+
+                        # Atomic write
+                        tmp_fd, tmp_path = tempfile.mkstemp(
+                            dir=str(suggestions_dir), suffix=".tmp"
+                        )
+                        try:
+                            with os.fdopen(tmp_fd, "w") as f:
+                                import json as _json2
+
+                                _json2.dump(parsed, f)
+                            Path(tmp_path).rename(pending_path)
+                        except Exception:
+                            Path(tmp_path).unlink(missing_ok=True)
+                except Exception:
+                    pass  # Best-effort — don't break advisor response
                 return text
             return f"Advisor error: {result.error or 'no response'}"
         except Exception as exc:
