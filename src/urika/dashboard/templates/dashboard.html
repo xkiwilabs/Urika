@@ -432,6 +432,12 @@ html, body {
   margin: 16px auto;
   border-radius: var(--u-radius);
   box-shadow: var(--u-shadow);
+  cursor: pointer;
+  transition: transform var(--u-transition);
+}
+
+.rendered-content img:hover {
+  transform: scale(1.02);
 }
 
 /* Image display */
@@ -916,6 +922,11 @@ function fetchFile(path) {
       /* Server-rendered HTML from our own API — safe to insert */
       contentDiv.innerHTML = data.html;
       inner.appendChild(contentDiv);
+      /* Make all images in rendered content clickable for lightbox */
+      contentDiv.querySelectorAll('img').forEach(function(img) {
+        img.style.cursor = 'pointer';
+        img.addEventListener('click', function() { openLightbox(img.src); });
+      });
     })
     .catch(function() {
       inner.textContent = '';
