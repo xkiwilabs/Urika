@@ -1679,14 +1679,14 @@ def run(
             except Exception:
                 pass
 
-        if notif_bus is None:
+        if notif_bus is None and not os.environ.get("URIKA_REMOTE_RUN"):
             from urika.notifications import build_bus
 
             notif_bus = build_bus(project_path)
             if notif_bus is not None:
                 notif_bus.start(controller=pause_ctrl)
             _owns_bus_meta = True
-        else:
+        elif notif_bus is not None:
             # Update the persistent bus with this run's controller
             notif_bus._controller = pause_ctrl
 
@@ -1984,14 +1984,14 @@ def run(
         except Exception:
             pass
 
-    if notif_bus is None:
+    if notif_bus is None and not os.environ.get("URIKA_REMOTE_RUN"):
         from urika.notifications import build_bus as _build_bus
 
         notif_bus = _build_bus(project_path)
         if notif_bus is not None:
             notif_bus.start(controller=pause_ctrl)
         _owns_bus = True
-    else:
+    elif notif_bus is not None:
         # Update the persistent bus with this run's controller
         notif_bus._controller = pause_ctrl
 
