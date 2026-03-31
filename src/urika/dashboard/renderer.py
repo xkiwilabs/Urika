@@ -1,15 +1,45 @@
 """Render file content to HTML for dashboard display."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from urllib.parse import quote
 
 
-def render_file_content(content: str, filename: str) -> str:
+def _rewrite_image_paths(html: str, base_dir: str = "") -> str:
+    """Rewrite relative image paths in rendered markdown to use /api/raw."""
+
+    def _replace(match: re.Match[str]) -> str:
+        src = match.group(1)
+        if src.startswith(("http://", "https://", "/api/")):
+            return match.group(0)  # Already absolute
+        # Resolve relative path against the file's directory
+        if base_dir:
+            resolved = base_dir.rstrip("/") + "/" + src
+            # Normalize (remove ../ segments)
+            parts: list[str] = []
+            for part in resolved.split("/"):
+                if part == "..":
+                    if parts:
+                        parts.pop()
+                elif part != ".":
+                    parts.append(part)
+            resolved = "/".join(parts)
+        else:
+            resolved = src
+        return f'src="/api/raw?path={quote(resolved)}"'
+
+    return re.sub(r'src="([^"]*)"', _replace, html)
+
+
+def render_file_content(content: str, filename: str, base_dir: str = "") -> str:
     """Render file content to HTML based on file extension.
 
     Args:
         content: Raw file content as a string.
         filename: Filename (used to detect extension).
+        base_dir: Directory containing the file (relative to project root),
+            used to resolve relative image paths in markdown.
 
     Returns:
         HTML string suitable for display in the dashboard content panel.
@@ -19,7 +49,8 @@ def render_file_content(content: str, filename: str) -> str:
     if ext == ".md":
         import markdown
 
-        return markdown.markdown(content, extensions=["tables", "fenced_code"])
+        html = markdown.markdown(content, extensions=["tables", "fenced_code"])
+        return _rewrite_image_paths(html, base_dir)
     elif ext == ".json":
         try:
             import json

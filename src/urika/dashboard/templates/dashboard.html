@@ -798,7 +798,7 @@ function renderNode(node, parent, nodeId, depth) {
     item.appendChild(labelEl);
 
     item.addEventListener('click', (function(path) {
-      return function() { window.open('/file/' + path, '_blank'); };
+      return function() { window.open('/api/raw?path=' + encodeURIComponent(path), '_blank'); };
     })(node.path));
 
     parent.appendChild(item);
@@ -931,7 +931,7 @@ function showImage(path, label) {
   displayDiv.className = 'image-display';
 
   var img = document.createElement('img');
-  img.src = '/file/' + path;
+  img.src = '/api/raw?path=' + encodeURIComponent(path);
   img.alt = label;
   img.addEventListener('click', function() { openLightbox(img.src); });
   displayDiv.appendChild(img);

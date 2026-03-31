@@ -100,7 +100,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         from urika.dashboard.renderer import render_file_content
 
-        html = render_file_content(content, resolved.name)
+        # Compute the directory containing this file, relative to project root
+        try:
+            base_dir = str(resolved.parent.relative_to(self.server.project_dir))
+        except ValueError:
+            base_dir = ""
+
+        html = render_file_content(content, resolved.name, base_dir=base_dir)
         self._send_json({"html": html})
 
     def _api_raw(self, qs: dict) -> None:
