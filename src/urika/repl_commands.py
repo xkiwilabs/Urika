@@ -1207,14 +1207,14 @@ def cmd_build_tool(session: ReplSession, args: str) -> None:
         session.set_agent_idle()
 
 
+_dashboard_server = None
+
+
 @command(
     "dashboard",
     requires_project=True,
     description="Open project dashboard in browser",
 )
-_dashboard_server = None
-
-
 def cmd_dashboard(session: ReplSession, args: str) -> None:
     import threading
 
