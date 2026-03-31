@@ -9,6 +9,7 @@ import pytest
 from urika.core.experiment import create_experiment
 from urika.core.models import ProjectConfig, SessionState
 from urika.core.session import (
+    _lock_path,
     acquire_lock,
     complete_session,
     fail_session,
@@ -407,3 +408,31 @@ class TestGetActiveExperiment:
         start_session(project_dir, experiment_id)
         complete_session(project_dir, experiment_id)
         assert get_active_experiment(project_dir) is None
+
+
+class TestStaleLockDetection:
+    def test_stale_lock_cleaned(self, tmp_path: Path) -> None:
+        """Stale lock from dead process is cleaned up."""
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("99999999")  # Non-existent PID
+        # Should acquire because PID 99999999 is dead
+        assert acquire_lock(tmp_path, "exp-001") is True
+
+    def test_live_lock_blocks(self, tmp_path: Path) -> None:
+        """Lock from live process blocks acquisition."""
+        import os
+
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(str(os.getpid()))  # Current process — alive
+        assert acquire_lock(tmp_path, "exp-001") is False
+
+    def test_lock_writes_pid(self, tmp_path: Path) -> None:
+        """New lock files contain the PID."""
+        import os
+
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        assert acquire_lock(tmp_path, "exp-001") is True
+        assert lock.read_text().strip() == str(os.getpid())
