@@ -72,7 +72,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """Return project tree as JSON."""
         from urika.dashboard.tree import build_project_tree
 
-        tree = build_project_tree(self.server.project_dir)
+        sort_order = qs.get("sort", [None])[0]
+        reverse = sort_order != "oldest"
+        tree = build_project_tree(self.server.project_dir, reverse=reverse)
         self._send_json(tree)
 
     def _api_file(self, qs: dict) -> None:

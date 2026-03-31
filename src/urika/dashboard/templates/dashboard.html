@@ -152,6 +152,12 @@ html, body {
 .sidebar::-webkit-scrollbar-track { background: transparent; }
 .sidebar::-webkit-scrollbar-thumb { background: var(--u-border); border-radius: 2px; }
 
+.sidebar-controls {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--u-border);
+  margin-bottom: 4px;
+}
+
 .tree-section {
   margin-bottom: 4px;
 }
@@ -567,6 +573,11 @@ html, body {
   <div class="main-area">
     <!-- Sidebar -->
     <nav class="sidebar" id="sidebar">
+      <div class="sidebar-controls">
+        <label style="font-size:12px;color:var(--u-muted);cursor:pointer;">
+          <input type="checkbox" id="sort-toggle" onchange="toggleSortOrder()"> Oldest first
+        </label>
+      </div>
       <div id="treeContainer">
         <div style="padding: 20px; color: var(--u-muted); font-size: 13px;">Loading...</div>
       </div>
@@ -605,6 +616,7 @@ var activeItem = null;
 document.addEventListener('DOMContentLoaded', function() {
   loadTheme();
   loadTreeState();
+  initSortToggle();
   fetchTree();
   fetchStats();
 });
@@ -653,12 +665,28 @@ function saveTreeState() {
 
 function isNodeExpanded(nodeId) {
   if (nodeId in treeState) return treeState[nodeId];
-  return true;
+  return false;
+}
+
+/* ── Sort Toggle ───────────────────────────────────────────── */
+function initSortToggle() {
+  var saved = localStorage.getItem('urika-sort-oldest');
+  if (saved === 'true') {
+    document.getElementById('sort-toggle').checked = true;
+  }
+}
+
+function toggleSortOrder() {
+  var oldest = document.getElementById('sort-toggle').checked;
+  localStorage.setItem('urika-sort-oldest', oldest);
+  fetchTree();
 }
 
 /* ── Fetch Tree ────────────────────────────────────────────── */
 function fetchTree() {
-  fetch('/api/tree')
+  var oldest = document.getElementById('sort-toggle') && document.getElementById('sort-toggle').checked;
+  var url = '/api/tree' + (oldest ? '?sort=oldest' : '');
+  fetch(url)
     .then(function(r) { return r.json(); })
     .then(function(data) { renderTree(data); })
     .catch(function() {

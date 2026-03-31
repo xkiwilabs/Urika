@@ -7,7 +7,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".gif"}
 MARKDOWN_EXTENSIONS = {".md"}
 
 
-def build_project_tree(project_dir: Path) -> list[dict]:
+def build_project_tree(project_dir: Path, *, reverse: bool = True) -> list[dict]:
     """Build a curated tree of project contents for the dashboard sidebar.
 
     Each node is a dict with:
@@ -22,7 +22,7 @@ def build_project_tree(project_dir: Path) -> list[dict]:
     sections: list[dict] = []
 
     # 1. Experiments
-    sections.append(_build_experiments_section(project_dir))
+    sections.append(_build_experiments_section(project_dir, reverse=reverse))
 
     # 2. Projectbook
     sections.append(_build_projectbook_section(project_dir))
@@ -39,14 +39,15 @@ def build_project_tree(project_dir: Path) -> list[dict]:
     return sections
 
 
-def _build_experiments_section(project_dir: Path) -> dict:
+def _build_experiments_section(project_dir: Path, *, reverse: bool = True) -> dict:
     """Scan experiments/ directory and build experiment nodes."""
     experiments_dir = project_dir / "experiments"
     children: list[dict] = []
 
     if experiments_dir.is_dir():
         exp_dirs = sorted(
-            d for d in experiments_dir.iterdir() if d.is_dir()
+            (d for d in experiments_dir.iterdir() if d.is_dir()),
+            reverse=reverse,
         )
         for exp_dir in exp_dirs:
             children.append(_build_experiment_node(project_dir, exp_dir))
