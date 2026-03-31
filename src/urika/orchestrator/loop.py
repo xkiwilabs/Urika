@@ -153,18 +153,24 @@ async def _generate_reports(
                 )
                 _track(result)
                 if result.success and result.text_output:
-                    from urika.core.report_writer import write_versioned
+                    content = result.text_output.strip()
+                    # Only write if the output looks like actual report content
+                    # (has markdown headings and is substantial), not agent narration
+                    if len(content) > 500 and content.count("\n#") >= 2:
+                        from urika.core.report_writer import write_versioned
 
-                    narrative_path = (
-                        project_dir
-                        / "experiments"
-                        / experiment_id
-                        / "labbook"
-                        / "narrative.md"
-                    )
-                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                    write_versioned(narrative_path, result.text_output.strip() + "\n")
-                    progress("result", "Experiment narrative written")
+                        narrative_path = (
+                            project_dir
+                            / "experiments"
+                            / experiment_id
+                            / "labbook"
+                            / "narrative.md"
+                        )
+                        narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                        write_versioned(narrative_path, content + "\n")
+                        progress("result", "Experiment narrative written")
+                    else:
+                        progress("result", "Experiment narrative generated")
         except Exception as exc:
             logger.warning("Experiment narrative generation failed: %s", exc)
 
@@ -188,12 +194,18 @@ async def _generate_reports(
                 )
                 _track(result)
                 if result.success and result.text_output:
-                    from urika.core.report_writer import write_versioned
+                    content = result.text_output.strip()
+                    # Only write if the output looks like actual report content
+                    # (has markdown headings and is substantial), not agent narration
+                    if len(content) > 500 and content.count("\n#") >= 2:
+                        from urika.core.report_writer import write_versioned
 
-                    narrative_path = project_dir / "projectbook" / "narrative.md"
-                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                    write_versioned(narrative_path, result.text_output.strip() + "\n")
-                    progress("result", "Project narrative written")
+                        narrative_path = project_dir / "projectbook" / "narrative.md"
+                        narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                        write_versioned(narrative_path, content + "\n")
+                        progress("result", "Project narrative written")
+                    else:
+                        progress("result", "Project narrative generated")
         except Exception as exc:
             logger.warning("Project narrative generation failed: %s", exc)
 

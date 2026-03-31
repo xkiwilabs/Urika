@@ -65,14 +65,20 @@ async def finalize_project(
             on_message=on_message,
         )
         if report_result.success and report_result.text_output:
-            from urika.core.report_writer import write_versioned
+            content = report_result.text_output.strip()
+            # Only write if the output looks like actual report content
+            # (has markdown headings and is substantial), not agent narration
+            if len(content) > 500 and content.count("\n#") >= 2:
+                from urika.core.report_writer import write_versioned
 
-            report_path = project_dir / "projectbook" / "final-report.md"
-            report_path.parent.mkdir(parents=True, exist_ok=True)
-            write_versioned(report_path, report_result.text_output.strip() + "\n")
-            progress("result", "Final report written")
+                report_path = project_dir / "projectbook" / "final-report.md"
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                write_versioned(report_path, content + "\n")
+                progress("result", "Final report written")
+            else:
+                progress("result", "Final report generated")
         elif report_result.success:
-            progress("result", "Final report written (no text output)")
+            progress("result", "Final report generated")
         else:
             progress("result", "Final report generation failed")
 
