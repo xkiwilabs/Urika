@@ -173,6 +173,20 @@ def classify_remote_command(command: str) -> str:
     return "rejected"
 
 
+def _cleanup_experiment(project_path: Path, experiment_id: str) -> None:
+    """Clean up lock and session after a failed remote run."""
+    try:
+        from urika.core.session import fail_session, release_lock
+
+        try:
+            fail_session(project_path, experiment_id, error="Remote run terminated")
+        except Exception:
+            pass
+        release_lock(project_path, experiment_id)
+    except Exception:
+        pass
+
+
 class NotificationBus:
     """Dispatches notification events to configured channels via a background thread."""
 
@@ -660,23 +674,65 @@ class NotificationBus:
         respond(" ".join(desc_parts) + "...")
 
         try:
-            result = subprocess.run(
+            import time as _time
+
+            process = subprocess.Popen(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=3600,  # 1 hour max
-                env={**__import__("os").environ, "URIKA_REMOTE_RUN": "1"},
+                env={**os.environ, "URIKA_REMOTE_RUN": "1"},
             )
 
-            # Send last part of output as response
-            output = result.stdout.strip()
-            if result.returncode == 0:
-                # Extract the summary from the end of output
-                lines = output.split("\n")
+            max_timeout = 6 * 3600  # 6 hours
+            start_time = _time.monotonic()
+            last_update = start_time
+            output_lines: list[str] = []
+            experiment_id = None
+
+            # Read output line by line, forwarding progress
+            for line in process.stdout:
+                output_lines.append(line)
+                elapsed = _time.monotonic() - start_time
+
+                # Extract experiment ID from output
+                if "Running experiment" in line and experiment_id is None:
+                    parts = line.strip().split("Running experiment ")
+                    if len(parts) > 1:
+                        experiment_id = parts[1].split()[0]
+
+                # Forward progress lines to Telegram (turn, agent, result events)
+                stripped = line.strip()
+                if stripped and not stripped.startswith("\x1b"):
+                    now = _time.monotonic()
+                    # Send updates at most every 30 seconds to avoid rate limits
+                    if now - last_update > 30:
+                        for marker in ("Turn ", "\u2713 ", "\u2717 ", "\u25b8 "):
+                            if marker in stripped:
+                                respond(stripped[:500])
+                                last_update = now
+                                break
+
+                # Check timeout
+                if elapsed > max_timeout:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    respond(f"Run timed out after {max_timeout // 3600} hours.")
+                    if experiment_id:
+                        _cleanup_experiment(self._project_path, experiment_id)
+                    return
+
+            process.wait()
+
+            if process.returncode == 0:
                 summary_lines = [
-                    line
-                    for line in lines[-20:]
-                    if line.strip() and not line.strip().startswith("\x1b")
+                    l.strip()
+                    for l in output_lines[-20:]
+                    if l.strip() and not l.strip().startswith("\x1b")
                 ]
                 summary = (
                     "\n".join(summary_lines[-10:])
@@ -685,14 +741,12 @@ class NotificationBus:
                 )
                 respond(f"Experiment finished:\n{summary}")
             else:
-                error = (
-                    result.stderr.strip() or output[-500:]
-                    if output
-                    else "Unknown error"
-                )
+                error_lines = [l.strip() for l in output_lines[-10:] if l.strip()]
+                error = "\n".join(error_lines) or "Unknown error"
                 respond(f"Run failed:\n{error[:2000]}")
-        except subprocess.TimeoutExpired:
-            respond("Run timed out after 1 hour.")
+                if experiment_id:
+                    _cleanup_experiment(self._project_path, experiment_id)
+
         except Exception as exc:
             respond(f"Run error: {exc}")
 
