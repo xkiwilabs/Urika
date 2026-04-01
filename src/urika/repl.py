@@ -260,6 +260,21 @@ def _handle_command(session: ReplSession, text: str) -> None:
             print_error(f"Unknown command: /{cmd_name}. Type /help for commands.")
         return
 
+    # Block agent commands when private endpoint is unreachable
+    _AGENT_COMMANDS = {
+        "run", "evaluate", "plan", "advisor", "report",
+        "present", "finalize", "build-tool", "resume",
+    }
+    if cmd_name in _AGENT_COMMANDS and not session._private_endpoint_ok:
+        click.echo(
+            "  \u2717 Agent commands disabled \u2014 local model unreachable "
+            "in hybrid/private mode."
+        )
+        click.echo(
+            "    Start your local model or switch to open: /config"
+        )
+        return
+
     handler = all_cmds[cmd_name]["func"]
     try:
         handler(session, args)
@@ -277,6 +292,13 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
     """Send free text to the advisor agent."""
     if not session.has_project:
         click.echo("  Load a project first: /project <name>")
+        return
+
+    if not session._private_endpoint_ok:
+        click.echo(
+            "  \u2717 Agent commands disabled \u2014 local model unreachable "
+            "in hybrid/private mode."
+        )
         return
 
     try:

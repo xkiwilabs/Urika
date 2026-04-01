@@ -26,6 +26,9 @@ class ReplSession:
     # Notification bus — persistent, lives across runs
     notification_bus: object = None  # NotificationBus | None (avoid circular import)
 
+    # Privacy endpoint state — False blocks agent commands in hybrid/private mode
+    _private_endpoint_ok: bool = True
+
     # Agent activity — tracks if any command is running
     agent_active: bool = False
     active_command: str = ""

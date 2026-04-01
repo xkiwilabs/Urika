@@ -147,6 +147,24 @@ def cmd_project(session: ReplSession, args: str) -> None:
     print_success(f"Project: {name} \u00b7 {config.mode}")
     click.echo(f"    {len(experiments)} experiments \u00b7 {completed} completed")
     click.echo(f"    Privacy: {privacy} \u00b7 Notifications: {notif_str}")
+
+    # Check private endpoint reachability for hybrid/private mode
+    from urika.core.privacy import check_private_endpoint, requires_private_endpoint
+
+    if requires_private_endpoint(session.project_path):
+        reachable, msg = check_private_endpoint(session.project_path)
+        if reachable:
+            click.echo(f"    Local model: {msg}")
+            session._private_endpoint_ok = True
+        else:
+            click.echo(f"    \u2717 {msg}")
+            click.echo(
+                "    Agent commands disabled. Start your local model or switch to open: /config"
+            )
+            session._private_endpoint_ok = False
+    else:
+        session._private_endpoint_ok = True  # open mode, no restriction
+
     click.echo()
 
 
