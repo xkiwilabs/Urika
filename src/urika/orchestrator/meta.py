@@ -36,7 +36,7 @@ async def run_project(
         unlimited: run until advisor says done (hard cap 50)
     """
     from urika.cli_display import print_step
-    from urika.core.experiment import create_experiment
+    from urika.core.experiment import create_experiment, list_experiments
     from urika.orchestrator import run_experiment
 
     safety_cap = 50 if mode == "unlimited" else max_experiments
