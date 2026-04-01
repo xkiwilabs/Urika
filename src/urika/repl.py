@@ -31,6 +31,7 @@ from urika.cli_display import (
 )
 from urika.repl_commands import (
     PROJECT_COMMANDS,
+    cmd_advisor,
     cmd_build_tool,
     cmd_evaluate,
     cmd_finalize,
@@ -393,8 +394,15 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             except Exception:
                 pass
 
-            # Parse suggestions and offer to run them
-            _offer_to_run_suggestions(session, result.text_output)
+            # Send advisor response to remote channel if applicable
+            if session._is_remote_command and session._remote_respond:
+                from urika.notifications.bus import _split_message
+                for chunk in _split_message(advisor_text, max_len=4000):
+                    session._remote_respond(chunk)
+
+            # Parse suggestions and offer to run them (skip for remote)
+            if not session._is_remote_command:
+                _offer_to_run_suggestions(session, result.text_output)
         else:
             print_error(f"Advisor error: {result.error}")
 
@@ -450,6 +458,7 @@ def _offer_to_run_suggestions(session: ReplSession, advisor_output: str) -> None
 # Map remote command names to REPL handler functions
 _REMOTE_COMMAND_MAP = {
     "run": cmd_run,
+    "advisor": cmd_advisor,
     "evaluate": cmd_evaluate,
     "plan": cmd_plan,
     "report": cmd_report,

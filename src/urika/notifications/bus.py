@@ -437,9 +437,8 @@ class NotificationBus:
     def _queue_agent_command(self, command: str, args: str, respond) -> None:
         """Queue an agent command for REPL execution.
 
-        All agent commands (except advisor) are queued for the REPL's
-        auto-drain thread, which executes them with full terminal output.
-        The advisor runs in-process since it needs to return immediately.
+        All agent commands are queued for the REPL's auto-drain thread,
+        which executes them with full terminal output.
         """
         if self._session is None:
             respond("No active REPL session.")
@@ -453,29 +452,7 @@ class NotificationBus:
             respond("Run in progress. Stop first to start a new run.")
             return
 
-        # Advisor runs in-process — it returns text immediately
-        if command == "advisor":
-            if self._session.agent_active:
-                self._session.queue_remote_command(command, args, respond)
-                respond(
-                    f"/{command} queued \u2014 will run after"
-                    f" {self._session.active_command} finishes."
-                )
-            else:
-                respond("Running /advisor (thinking \u2014 may take a few minutes)...")
-                self._session.set_agent_active("advisor")
-                try:
-                    text = self._run_remote_advisor(args)
-                    for chunk in _split_message(text, max_len=4000):
-                        respond(chunk)
-                except Exception as exc:
-                    logger.warning("Remote advisor failed: %s", exc)
-                    respond(f"Error: {exc}")
-                finally:
-                    self._session.set_agent_idle()
-            return
-
-        # All other agent commands queue through the REPL
+        # All agent commands queue through the REPL
         self._session.queue_remote_command(command, args, respond)
         if self._session.agent_active:
             respond(
