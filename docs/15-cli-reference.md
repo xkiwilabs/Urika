@@ -310,6 +310,25 @@ max_turns_per_experiment = 10
 ```
 
 
+## Viewing
+
+### `urika dashboard [PROJECT] [--port PORT]`
+
+Open a browser-based read-only dashboard for a project. Displays experiments, reports, figures, methods, and criteria in an interactive web interface.
+
+- **`--port PORT`** — Server port (default: 8420)
+
+The dashboard shows:
+- **Sidebar** — Curated project tree: experiments (with labbook, artifacts, presentations), projectbook, methods, criteria
+- **Content area** — Rendered markdown, syntax-highlighted JSON/Python, zoomable images
+- **Footer** — Project stats at a glance
+
+Click any figure to zoom. Presentations open in a new tab. Light/dark mode toggle in the header.
+
+The server runs on localhost only and stops when you exit.
+
+---
+
 ## Results and Reports
 
 ### `urika results`
