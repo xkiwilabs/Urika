@@ -538,11 +538,15 @@ class NotificationBus:
         context += f"\nUser: {question}\n"
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                result = loop.run_until_complete(runner.run(config, context))
-            finally:
-                loop.close()
+            # Run in a separate thread to avoid conflicting with
+            # the Telegram/Slack event loop in the current thread.
+            import concurrent.futures
+
+            def _run_advisor():
+                return asyncio.run(runner.run(config, context))
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(_run_advisor).result()
 
             if result.success and result.text_output:
                 text = result.text_output.strip()
@@ -602,19 +606,19 @@ class NotificationBus:
 
                 # Update rolling context summary (best-effort)
                 try:
-                    _summary_loop = asyncio.new_event_loop()
-                    try:
-                        from urika.core.advisor_memory import (
-                            update_context_summary,
-                        )
+                    from urika.core.advisor_memory import (
+                        update_context_summary,
+                    )
 
-                        _summary_loop.run_until_complete(
+                    def _update_summary():
+                        return asyncio.run(
                             update_context_summary(
                                 self._project_path, runner, registry
                             )
                         )
-                    finally:
-                        _summary_loop.close()
+
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                        _pool.submit(_update_summary).result(timeout=120)
                 except Exception:
                     pass
 
