@@ -373,11 +373,37 @@ def cmd_run(session: ReplSession, args: str) -> None:
     from urika.cli_display import print_warning
     from urika.core.experiment import list_experiments
 
+    is_remote = session._is_remote_command
+
+    # Parse remote args: /run, /run 3, /run --multi 5, /run --resume, /run try trees
+    remote_parsed = _parse_remote_run_args(args) if is_remote else None
+
+    # Handle --resume via remote
+    if remote_parsed and remote_parsed.get("resume"):
+        cmd_resume(session, "")
+        return
+
     # Check if any experiment is already running (lockfile exists)
     experiments = list_experiments(session.project_path)
     for exp in experiments:
         lock = session.project_path / "experiments" / exp.experiment_id / ".lock"
         if lock.exists():
+            if is_remote:
+                click.echo(
+                    f"  Experiment '{exp.experiment_id}' locked — stopping stale lock."
+                )
+                try:
+                    from urika.core.session import stop_session
+
+                    stop_session(
+                        session.project_path,
+                        exp.experiment_id,
+                        reason="Stopped by remote run",
+                    )
+                except Exception:
+                    lock.unlink(missing_ok=True)
+                break
+
             print_warning(f"Experiment '{exp.experiment_id}' is currently running.")
             choice = _prompt_numbered(
                 "  What would you like to do?",
@@ -407,90 +433,113 @@ def cmd_run(session: ReplSession, args: str) -> None:
                 lock.unlink(missing_ok=True)
             break
 
-    # Show defaults, offer custom
     defaults = _load_run_defaults(session)
-    click.echo("\n  Run settings:")
-    click.echo(f"    Max turns: {defaults['max_turns']}")
-    click.echo(f"    Auto mode: {defaults['auto_mode']}")
-    instructions = (
-        session.get_conversation_context() if session.conversation else "(none)"
-    )
-    click.echo(
-        f"    Instructions: {instructions[:80]}{'...' if len(instructions) > 80 else ''}"
-    )
 
-    choice = _prompt_numbered(
-        "\n  Proceed?",
-        ["Run with defaults", "Custom settings", "Skip"],
-        default=1,
-    )
+    if is_remote:
+        # Remote: skip all interactive prompts, use defaults + parsed args
+        max_turns = remote_parsed.get("max_turns") or defaults["max_turns"]
+        auto_mode = defaults["auto_mode"]
+        max_experiments = remote_parsed.get("max_experiments")
+        run_instructions = remote_parsed.get("instructions", "")
+        review_criteria = False
 
-    if choice == "Skip":
-        return
-
-    max_turns = defaults["max_turns"]
-    auto_mode = defaults["auto_mode"]
-    max_experiments = None
-    run_instructions = ""
-    review_criteria = False
-
-    if choice == "Custom settings":
-        max_turns = int(
-            _click.prompt("  Max turns", default=str(defaults["max_turns"]))
+        # Show summary
+        click.echo("\n  Run settings (remote):")
+        click.echo(f"    Max turns:    {max_turns}")
+        if max_experiments:
+            click.echo(f"    Experiments:  up to {max_experiments}")
+        if run_instructions:
+            instr_preview = (
+                run_instructions[:80] + "..."
+                if len(run_instructions) > 80
+                else run_instructions
+            )
+            click.echo(f"    Instructions: {instr_preview}")
+        click.echo()
+    else:
+        # Interactive: show defaults, offer custom
+        click.echo("\n  Run settings:")
+        click.echo(f"    Max turns: {defaults['max_turns']}")
+        click.echo(f"    Auto mode: {defaults['auto_mode']}")
+        instructions = (
+            session.get_conversation_context() if session.conversation else "(none)"
         )
-        auto_mode = _prompt_numbered(
-            "\n  Auto mode:",
-            [
-                "Checkpoint — pause between experiments for review",
-                "Capped — run up to max experiments with no pauses",
-                "Unlimited — run until criteria met or advisor says done",
-            ],
-            default={"checkpoint": 1, "capped": 2, "unlimited": 3}.get(
-                defaults["auto_mode"], 1
-            ),
+        click.echo(
+            f"    Instructions: {instructions[:80]}{'...' if len(instructions) > 80 else ''}"
         )
-        # Map back to short name
-        auto_mode = {
-            "Checkpoint": "checkpoint",
-            "Capped": "capped",
-            "Unlimited": "unlimited",
-        }.get(auto_mode.split("—")[0].strip(), "checkpoint")
-        if auto_mode == "capped":
-            max_experiments = int(_click.prompt("  Max experiments", default="10"))
-        elif auto_mode == "unlimited":
-            max_experiments = 50  # safety cap
-        run_instructions = _click.prompt(
-            "  Instructions (optional, enter to skip)", default=""
-        )
-        rc_choice = _prompt_numbered(
-            "\n  Re-evaluate criteria if met?",
-            [
-                "No — complete when criteria met (default)",
-                "Yes — advisor reviews criteria, may raise the bar",
-            ],
+
+        choice = _prompt_numbered(
+            "\n  Proceed?",
+            ["Run with defaults", "Custom settings", "Skip"],
             default=1,
         )
-        review_criteria = rc_choice.startswith("Yes")
 
-    # Show settings summary
-    click.echo()
-    click.echo("  Run settings:")
-    click.echo(f"    Max turns:    {max_turns}")
-    if max_experiments:
-        click.echo(f"    Experiments:  up to {max_experiments}")
-        click.echo(f"    Auto mode:    {auto_mode}")
-    else:
-        click.echo("    Auto mode:    single experiment")
-    if run_instructions:
-        instr_preview = (
-            run_instructions[:80] + "..."
-            if len(run_instructions) > 80
-            else run_instructions
-        )
-        click.echo(f"    Instructions: {instr_preview}")
-    if review_criteria:
-        click.echo("    Review criteria: yes")
-    click.echo()
+        if choice == "Skip":
+            return
+
+        max_turns = defaults["max_turns"]
+        auto_mode = defaults["auto_mode"]
+        max_experiments = None
+        run_instructions = ""
+        review_criteria = False
+
+        if choice == "Custom settings":
+            max_turns = int(
+                _click.prompt("  Max turns", default=str(defaults["max_turns"]))
+            )
+            auto_mode = _prompt_numbered(
+                "\n  Auto mode:",
+                [
+                    "Checkpoint \u2014 pause between experiments for review",
+                    "Capped \u2014 run up to max experiments with no pauses",
+                    "Unlimited \u2014 run until criteria met or advisor says done",
+                ],
+                default={"checkpoint": 1, "capped": 2, "unlimited": 3}.get(
+                    defaults["auto_mode"], 1
+                ),
+            )
+            # Map back to short name
+            auto_mode = {
+                "Checkpoint": "checkpoint",
+                "Capped": "capped",
+                "Unlimited": "unlimited",
+            }.get(auto_mode.split("\u2014")[0].strip(), "checkpoint")
+            if auto_mode == "capped":
+                max_experiments = int(_click.prompt("  Max experiments", default="10"))
+            elif auto_mode == "unlimited":
+                max_experiments = 50  # safety cap
+            run_instructions = _click.prompt(
+                "  Instructions (optional, enter to skip)", default=""
+            )
+            rc_choice = _prompt_numbered(
+                "\n  Re-evaluate criteria if met?",
+                [
+                    "No \u2014 complete when criteria met (default)",
+                    "Yes \u2014 advisor reviews criteria, may raise the bar",
+                ],
+                default=1,
+            )
+            review_criteria = rc_choice.startswith("Yes")
+
+        # Show settings summary
+        click.echo()
+        click.echo("  Run settings:")
+        click.echo(f"    Max turns:    {max_turns}")
+        if max_experiments:
+            click.echo(f"    Experiments:  up to {max_experiments}")
+            click.echo(f"    Auto mode:    {auto_mode}")
+        else:
+            click.echo("    Auto mode:    single experiment")
+        if run_instructions:
+            instr_preview = (
+                run_instructions[:80] + "..."
+                if len(run_instructions) > 80
+                else run_instructions
+            )
+            click.echo(f"    Instructions: {instr_preview}")
+        if review_criteria:
+            click.echo("    Review criteria: yes")
+        click.echo()
 
     # Use conversation context as instructions if none provided
     if not run_instructions and session.conversation:
@@ -554,7 +603,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
             max_turns=max_turns,
             resume=False,
             quiet=False,
-            auto=(auto_mode != "checkpoint"),
+            auto=(is_remote or auto_mode != "checkpoint"),
             instructions=run_instructions,
             max_experiments=max_experiments,
             review_criteria=review_criteria,
@@ -565,6 +614,49 @@ def cmd_run(session: ReplSession, args: str) -> None:
         _user_input_callback = None
         _repl_session_ref = None
         os.environ.pop("URIKA_REPL", None)
+
+
+def _parse_remote_run_args(args: str) -> dict:
+    """Parse remote /run arguments into a settings dict.
+
+    Supported formats:
+      /run               → defaults
+      /run 3             → max_turns=3
+      /run --multi 5     → max_experiments=5
+      /run --resume      → resume=True
+      /run try trees     → instructions="try trees"
+      /run --multi 3 focus on features → max_experiments=3, instructions="focus on features"
+    """
+    result: dict = {
+        "max_turns": None,
+        "max_experiments": None,
+        "resume": False,
+        "instructions": "",
+    }
+
+    args_stripped = args.strip()
+    if not args_stripped:
+        return result
+
+    parts = args_stripped.split()
+    if parts[0] == "--resume":
+        result["resume"] = True
+    elif parts[0] == "--multi" and len(parts) > 1:
+        try:
+            result["max_experiments"] = int(parts[1])
+            if len(parts) > 2:
+                result["instructions"] = " ".join(parts[2:])
+        except ValueError:
+            result["instructions"] = args_stripped
+    else:
+        try:
+            result["max_turns"] = int(parts[0])
+            if len(parts) > 1:
+                result["instructions"] = " ".join(parts[1:])
+        except ValueError:
+            result["instructions"] = args_stripped
+
+    return result
 
 
 @command("experiments", requires_project=True, description="List experiments")
@@ -698,9 +790,9 @@ def cmd_resume(session: ReplSession, args: str) -> None:
         click.echo("  No paused, stopped, or failed experiments to resume.")
         return
 
-    # If multiple, let user pick; if one, use it directly
-    if len(resumable) == 1:
-        exp, status = resumable[0]
+    # If multiple, let user pick; if one or remote, use most recent directly
+    if len(resumable) == 1 or session._is_remote_command:
+        exp, status = resumable[-1]  # Most recent resumable
         click.echo(f"  Resuming {exp.experiment_id} [{status}]...")
     else:
         options = [f"{exp.experiment_id} [{status}]" for exp, status in resumable]
@@ -713,6 +805,8 @@ def cmd_resume(session: ReplSession, args: str) -> None:
         exp = next(e for e, _s in resumable if e.experiment_id == exp_id)
 
     import os
+
+    is_remote = session._is_remote_command
 
     global _repl_session_ref  # noqa: PLW0603
 
@@ -731,7 +825,7 @@ def cmd_resume(session: ReplSession, args: str) -> None:
             max_turns=defaults["max_turns"],
             resume=True,
             quiet=False,
-            auto=(defaults["auto_mode"] != "checkpoint"),
+            auto=(is_remote or defaults["auto_mode"] != "checkpoint"),
             instructions="",
             max_experiments=None,
         )
@@ -775,6 +869,12 @@ def _pick_experiment(
     if not experiments:
         click.echo("  No experiments.")
         return None
+
+    # Remote: auto-pick the most recent experiment (no interactive prompt)
+    if session._is_remote_command:
+        exp_id = experiments[-1].experiment_id
+        click.echo(f"  Auto-selected: {exp_id}")
+        return exp_id
 
     # Build options — most recent first
     reversed_exps = list(reversed(experiments))
