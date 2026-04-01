@@ -342,6 +342,30 @@ urika:customer-churn> /run
 ```
 
 
+## Persistent Memory
+
+The advisor remembers conversations across REPL sessions, CLI invocations, and Telegram interactions.
+
+**How it works:**
+
+- **Full history** — Every exchange is saved to `projectbook/advisor-history.json` (append-only audit log with timestamps and source)
+- **Rolling summary** — After each conversation, the advisor generates a concise research context summary saved to `projectbook/advisor-context.md`. This summary (~500-1000 words) is loaded into every subsequent advisor call, giving it continuity across sessions.
+
+The rolling summary includes:
+- Current research strategy
+- Recent decisions (what was agreed, rejected, discovered)
+- Next steps (planned experiments)
+- Key insights (findings that should inform future work)
+
+**Pending suggestions** — When you discuss experiments with the advisor (via REPL, CLI, or Telegram), the suggested experiments are saved to `suggestions/pending.json`. The next `/run` or `/run --multi` automatically picks up these suggestions instead of calling the advisor fresh.
+
+This means you can:
+1. Chat with the advisor about what to try next
+2. Close the REPL or step away
+3. Come back later (or send `/run` from Telegram)
+4. The experiments you discussed will run automatically
+
+
 ## Tips
 
 - **Be specific.** "Try random forest" is fine; "Try random forest with max_depth=5-15, min_samples_leaf=10, and 100-500 trees, using stratified 5-fold CV" is better.
