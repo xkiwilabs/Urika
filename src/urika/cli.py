@@ -3010,13 +3010,18 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
             suggestions=_parsed_suggestions,
         )
 
-        # Update rolling context summary (best-effort)
+        # Update rolling context summary in a separate thread
         try:
+            import concurrent.futures
             from urika.core.advisor_memory import update_context_summary
 
-            asyncio.run(
-                update_context_summary(project_path, runner, registry)
-            )
+            def _do_summary():
+                return asyncio.run(
+                    update_context_summary(project_path, runner, registry)
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                _pool.submit(_do_summary).result(timeout=120)
         except Exception:
             pass
 

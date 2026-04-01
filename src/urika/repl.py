@@ -390,17 +390,23 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
                 suggestions=parsed_suggestions,
             )
 
-            # Update rolling context summary (best-effort)
+            # Update rolling context summary in a separate thread
+            # (avoids event loop issues from sequential asyncio.run calls)
             try:
+                import concurrent.futures
                 from urika.core.advisor_memory import update_context_summary
 
-                asyncio.run(
-                    update_context_summary(
-                        session.project_path, runner, registry
+                def _do_summary_update():
+                    return asyncio.run(
+                        update_context_summary(
+                            session.project_path, runner, registry
+                        )
                     )
-                )
-            except Exception:
-                pass
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                    _pool.submit(_do_summary_update).result(timeout=120)
+            except Exception as _summary_exc:
+                logger.warning("Context summary update failed: %s", _summary_exc)
 
             # Send advisor response to remote channel if applicable
             if session._is_remote_command and session._remote_respond:
