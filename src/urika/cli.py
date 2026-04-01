@@ -1540,7 +1540,10 @@ def run(
             "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
         )
     import signal
+    import threading
     import time
+
+    _is_main_thread = threading.current_thread() is threading.main_thread()
 
     from urika.cli_display import (
         ThinkingPanel,
@@ -1721,7 +1724,7 @@ def run(
             )
             key_listener.start()
 
-        original_handler = signal.getsignal(signal.SIGINT)
+        original_handler = signal.getsignal(signal.SIGINT) if _is_main_thread else None
 
         def _cleanup_meta(signum: int, frame: object) -> None:
             if key_listener is not None:
@@ -1735,7 +1738,8 @@ def run(
             print_step("    urika run --instructions '...'   Run with new instructions")
             raise SystemExit(1)
 
-        signal.signal(signal.SIGINT, _cleanup_meta)
+        if _is_main_thread:
+            signal.signal(signal.SIGINT, _cleanup_meta)
 
         from datetime import datetime, timezone
 
@@ -1832,7 +1836,8 @@ def run(
                 key_listener.stop()
             if panel is not None:
                 panel.cleanup()
-            signal.signal(signal.SIGINT, original_handler)
+            if _is_main_thread and original_handler is not None:
+                signal.signal(signal.SIGINT, original_handler)
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
         n_exp = result.get("experiments_run", 0)
@@ -2045,8 +2050,9 @@ def run(
         print_step("    urika run --instructions '...'   Run with new instructions")
         raise SystemExit(1)
 
-    original_handler = signal.getsignal(signal.SIGINT)
-    signal.signal(signal.SIGINT, _cleanup_on_interrupt)
+    original_handler = signal.getsignal(signal.SIGINT) if _is_main_thread else None
+    if _is_main_thread:
+        signal.signal(signal.SIGINT, _cleanup_on_interrupt)
 
     from datetime import datetime, timezone
 
@@ -2152,7 +2158,8 @@ def run(
         if panel is not None:
             panel.cleanup()
         # Restore original handler
-        signal.signal(signal.SIGINT, original_handler)
+        if _is_main_thread and original_handler is not None:
+            signal.signal(signal.SIGINT, original_handler)
 
     elapsed_ms = int(time.monotonic() * 1000) - start_ms
     run_status = result.get("status", "unknown")
