@@ -49,6 +49,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         handler = routes.get(path)
         if handler:
             handler(qs)
+        elif path.startswith("/view/"):
+            self._serve_view(path[6:])  # Strip "/view/" prefix
         else:
             self._send_error(404, "Not found")
 
@@ -108,6 +110,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         html = render_file_content(content, resolved.name, base_dir=base_dir)
         self._send_json({"html": html})
+
+    def _serve_view(self, rel_path: str) -> None:
+        """Serve project files with preserved relative paths.
+
+        Used for presentations so reveal.js/CSS/figures resolve correctly.
+        URL: /view/experiments/exp-001/presentation/index.html
+        """
+        resolved = self._validate_path(rel_path)
+        if resolved is None:
+            return  # 403 already sent
+
+        if not resolved.is_file():
+            self._send_error(404, "File not found")
+            return
+
+        try:
+            data = resolved.read_bytes()
+        except OSError:
+            self._send_error(500, "Cannot read file")
+            return
+
+        content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+        self._send_response(200, data, content_type)
 
     def _api_raw(self, qs: dict) -> None:
         """Serve raw file bytes (for images etc.)."""
