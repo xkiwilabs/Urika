@@ -37,7 +37,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Core Modules
 
-- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`, `advisor`, `evaluate`, `present`, `plan`, `finalize`, `build-tool`, `criteria`, `usage`
+- `src/urika/cli.py` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`, `advisor`, `evaluate`, `present`, `plan`, `finalize`, `build-tool`, `criteria`, `usage`, `dashboard`
 - `src/urika/cli_display.py` — Terminal display: colors, spinners, ThinkingPanel, agent labels, ASCII header
 - `src/urika/repl.py` — Interactive REPL shell with prompt_toolkit, tab completion, slash commands
 - `src/urika/repl_commands.py` — REPL slash command handlers (/run, /project, /report, /present, /advisor, /evaluate, /plan, /finalize, /build-tool, /results, /tools, /resume, etc.)
@@ -56,7 +56,8 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/core/readme_generator.py` — Auto-generated README.md with agent-written summary
 - `src/urika/core/report_writer.py` — Versioned file writer (timestamped backups)
 - `src/urika/core/presentation.py` — Render slide JSON into reveal.js HTML presentations
-- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent, presentation_agent, report_agent, project_builder, data_agent, finalizer), registry, config, Claude SDK adapter
+- `src/urika/core/advisor_memory.py` — Persistent advisor conversation history and rolling context summaries
+- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent, presentation_agent, report_agent, project_builder, data_agent, finalizer), registry, config, Claude SDK adapter, audience.py
 - `src/urika/orchestrator/` — Experiment loop (planning→task→evaluator→advisor), autonomous mode (experiment-to-experiment), finalize sequence (finalizer→report→presentation→README), output parsing, knowledge integration
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
 - `src/urika/methods/` — Agent-created analytical pipelines (IMethod ABC, MethodRegistry), zero built-ins — agents create methods at runtime
@@ -64,10 +65,11 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/data/` — Data loading and profiling: multi-format loader, data models, profiler, pluggable readers (CSV, with registry for extensions)
 - `src/urika/knowledge/` — Knowledge pipeline: extractors (PDF, text, URL), KnowledgeStore, keyword search
 - `src/urika/templates/presentation/` — Bundled reveal.js + CSS for slide decks
+- `src/urika/dashboard/` — Browser-based read-only project dashboard with curated tree, markdown/image rendering, light/dark mode
 
 ## Project Status
 
-960+ tests. Foundation, agents (11 roles + orchestrator), orchestrator (experiment + meta + finalize), evaluation, methods (agent-created), tools (18 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 25+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
+1100+ tests. Foundation, agents (11 roles + orchestrator), orchestrator (experiment + meta + finalize), evaluation, methods (agent-created), tools (18 built-in), knowledge pipeline, CLI (20+ commands), REPL (interactive shell with 25+ slash commands), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, dashboard, audience modes, persistent advisor memory, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (5 experiments, 25 runs, 20+ methods).
 
 ## Development
 
