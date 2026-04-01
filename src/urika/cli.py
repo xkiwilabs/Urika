@@ -2926,10 +2926,18 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     config = role.build_config(project_dir=project_path, experiment_id="")
     config.max_turns = 25  # Standalone chat needs more turns than in-loop advisor
 
-    # Build richer context (like REPL's _handle_free_text)
+    # Build richer context — inject rolling summary from previous sessions
     import json as _json
 
+    from urika.core.advisor_memory import load_context_summary
+
     context = f"Project: {project}\n"
+    context_summary = load_context_summary(project_path)
+    if context_summary:
+        context += (
+            f"\n## Research Context (from previous sessions)\n\n"
+            f"{context_summary}\n\n"
+        )
     context += f"\nUser: {text}\n"
     methods_path = project_path / "methods.json"
     if methods_path.exists():
@@ -2970,6 +2978,41 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
 
     if result.success and result.text_output:
         click.echo(format_agent_output(result.text_output))
+
+        # Save to persistent advisor history
+        from urika.core.advisor_memory import append_exchange
+
+        advisor_text = result.text_output.strip()
+        append_exchange(
+            project_path, role="user", text=text, source="cli"
+        )
+
+        from urika.orchestrator.parsing import parse_suggestions as _parse_sug
+
+        _parsed = _parse_sug(advisor_text)
+        _parsed_suggestions = (
+            _parsed["suggestions"]
+            if _parsed and _parsed.get("suggestions")
+            else None
+        )
+        append_exchange(
+            project_path,
+            role="advisor",
+            text=advisor_text,
+            source="cli",
+            suggestions=_parsed_suggestions,
+        )
+
+        # Update rolling context summary (best-effort)
+        try:
+            from urika.core.advisor_memory import update_context_summary
+
+            asyncio.run(
+                update_context_summary(project_path, runner, registry)
+            )
+        except Exception:
+            pass
+
         _offer_to_run_advisor_suggestions(result.text_output, project, project_path)
     else:
         click.echo(f"Error: {result.error}")
