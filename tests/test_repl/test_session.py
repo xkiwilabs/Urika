@@ -162,16 +162,24 @@ class TestReplSession:
         session.queue_remote_command("run", "experiment-1")
         assert session.has_remote_command is True
         cmd = session.pop_remote_command()
-        assert cmd == ("run", "experiment-1")
+        assert cmd == ("run", "experiment-1", None)
+
+    def test_queue_remote_command_with_respond(self) -> None:
+        session = ReplSession()
+        cb = lambda t: None
+        session.queue_remote_command("run", "exp-1", respond=cb)
+        assert session.has_remote_command is True
+        cmd = session.pop_remote_command()
+        assert cmd == ("run", "exp-1", cb)
 
     def test_queue_multiple_remote_commands(self) -> None:
         session = ReplSession()
         session.queue_remote_command("run", "exp-1")
         session.queue_remote_command("status", "")
         first = session.pop_remote_command()
-        assert first == ("run", "exp-1")
+        assert first == ("run", "exp-1", None)
         second = session.pop_remote_command()
-        assert second == ("status", "")
+        assert second == ("status", "", None)
         assert session.has_remote_command is False
 
     def test_clear_remote_queue(self) -> None:

@@ -306,14 +306,15 @@ class TestHandleRemoteCommand:
             active_command = "evaluate"
             queued = []
 
-            def queue_remote_command(self, cmd, args):
-                self.queued.append((cmd, args))
+            def queue_remote_command(self, cmd, args, respond=None):
+                self.queued.append((cmd, args, respond))
 
         bus._session = FakeSession()
         responses = []
         bus.handle_remote_command("advisor", args="try PCA?", respond=responses.append)
         assert len(bus._session.queued) == 1
-        assert bus._session.queued[0] == ("advisor", "try PCA?")
+        assert bus._session.queued[0][0] == "advisor"
+        assert bus._session.queued[0][1] == "try PCA?"
         assert "queued" in responses[0]
         assert "evaluate" in responses[0]
 
@@ -325,8 +326,8 @@ class TestHandleRemoteCommand:
             active_command = "run"
             queued = []
 
-            def queue_remote_command(self, cmd, args):
-                self.queued.append((cmd, args))
+            def queue_remote_command(self, cmd, args, respond=None):
+                self.queued.append((cmd, args, respond))
 
         bus._session = FakeSession()
         responses = []
@@ -342,8 +343,14 @@ class TestHandleRemoteCommand:
             active_command = ""
             queued = []
 
-            def queue_remote_command(self, cmd, args):
-                self.queued.append((cmd, args))
+            def queue_remote_command(self, cmd, args, respond=None):
+                self.queued.append((cmd, args, respond))
+
+            def set_agent_active(self, cmd):
+                pass
+
+            def set_agent_idle(self, error=""):
+                pass
 
         bus._session = FakeSession()
         responses = []
@@ -358,7 +365,7 @@ class TestHandleRemoteCommand:
             agent_active = False
             queued = []
 
-            def queue_remote_command(self, cmd, args):
+            def queue_remote_command(self, cmd, args, respond=None):
                 self.queued.append((cmd, args))
 
         bus._session = FakeSession()
@@ -435,7 +442,7 @@ class TestRemoteCommandQueue:
 
         assert session.has_remote_command
         cmd = session.pop_remote_command()
-        assert cmd == ("run", "--resume")
+        assert cmd == ("run", "--resume", None)
 
     def test_agent_queued_while_busy_real_session(self):
         """Agent command queued when another agent is running."""
@@ -453,7 +460,8 @@ class TestRemoteCommandQueue:
         assert session.has_remote_command
         assert "queued" in responses[0].lower()
         cmd = session.pop_remote_command()
-        assert cmd == ("advisor", "try PCA?")
+        assert cmd[0] == "advisor"
+        assert cmd[1] == "try PCA?"
 
     def test_agent_runs_while_idle_real_session(self):
         """Agent command executes in background when REPL is idle."""

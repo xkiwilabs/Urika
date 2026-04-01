@@ -11,9 +11,10 @@ class TestRemoteCommandFlow:
         session = ReplSession()
         session.queue_remote_command("status", "")
         assert session.has_remote_command
-        cmd, args = session.pop_remote_command()
+        cmd, args, respond = session.pop_remote_command()
         assert cmd == "status"
         assert args == ""
+        assert respond is None
         assert not session.has_remote_command
 
     def test_queue_order_preserved(self):
@@ -23,9 +24,9 @@ class TestRemoteCommandFlow:
         session.queue_remote_command("results", "")
         session.queue_remote_command("run", "")
 
-        cmd1, _ = session.pop_remote_command()
-        cmd2, _ = session.pop_remote_command()
-        cmd3, _ = session.pop_remote_command()
+        cmd1, _, _ = session.pop_remote_command()
+        cmd2, _, _ = session.pop_remote_command()
+        cmd3, _, _ = session.pop_remote_command()
         assert cmd1 == "advisor"
         assert cmd2 == "results"
         assert cmd3 == "run"

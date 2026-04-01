@@ -175,7 +175,7 @@ def run_repl() -> None:
             item = session.pop_remote_command()
             if item is None:
                 break
-            cmd, args = item
+            cmd, args, respond = item
             cmd_text = f"/{cmd} {args}".strip()
             click.echo(f"\n  [Remote] {cmd_text}")
             _handle_command(session, cmd_text)
