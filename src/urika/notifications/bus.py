@@ -510,8 +510,16 @@ class NotificationBus:
         config = advisor.build_config(project_dir=self._project_path, experiment_id="")
         config.max_turns = 25
 
-        # Build context with conversation history (like REPL's _handle_free_text)
+        # Build context — inject rolling summary from previous sessions
+        from urika.core.advisor_memory import load_context_summary
+
         context = f"Project: {self.project_name}\n"
+        context_summary = load_context_summary(self._project_path)
+        if context_summary:
+            context += (
+                f"\n## Research Context (from previous sessions)\n\n"
+                f"{context_summary}\n\n"
+            )
         if self._session is not None:
             conv = getattr(self._session, "get_conversation_context", lambda: "")()
             if conv:
@@ -545,11 +553,13 @@ class NotificationBus:
                         add_msg("user", question)
                         add_msg("advisor", text)
                 # Save suggestions to file so /run subprocess can find them
+                parsed_suggestions = None
                 try:
                     from urika.orchestrator.parsing import parse_suggestions
 
                     parsed = parse_suggestions(text)
                     if parsed and parsed.get("suggestions"):
+                        parsed_suggestions = parsed["suggestions"]
                         suggestions_dir = self._project_path / "suggestions"
                         suggestions_dir.mkdir(exist_ok=True)
                         pending_path = suggestions_dir / "pending.json"
@@ -569,6 +579,45 @@ class NotificationBus:
                             Path(tmp_path).unlink(missing_ok=True)
                 except Exception:
                     pass  # Best-effort — don't break advisor response
+
+                # Save to persistent advisor history
+                try:
+                    from urika.core.advisor_memory import append_exchange
+
+                    append_exchange(
+                        self._project_path,
+                        role="user",
+                        text=question,
+                        source="telegram",
+                    )
+                    append_exchange(
+                        self._project_path,
+                        role="advisor",
+                        text=text,
+                        source="telegram",
+                        suggestions=parsed_suggestions,
+                    )
+                except Exception:
+                    pass
+
+                # Update rolling context summary (best-effort)
+                try:
+                    _summary_loop = asyncio.new_event_loop()
+                    try:
+                        from urika.core.advisor_memory import (
+                            update_context_summary,
+                        )
+
+                        _summary_loop.run_until_complete(
+                            update_context_summary(
+                                self._project_path, runner, registry
+                            )
+                        )
+                    finally:
+                        _summary_loop.close()
+                except Exception:
+                    pass
+
                 return text
             return f"Advisor error: {result.error or 'no response'}"
         except Exception as exc:
