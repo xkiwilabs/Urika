@@ -4203,11 +4203,11 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
 
         global_settings = load_settings()
         global_model = global_settings.get("runtime", {}).get("model", "")
-        model_default = global_model or "qwen3:14b"
 
         model_name = interactive_prompt(
-            "  Model name",
-            default=model_default,
+            "  Model name" + (f" [{global_model}]" if global_model else " (e.g. qwen3:14b)"),
+            default=global_model if global_model else "",
+            required=True,
         )
         settings.setdefault("runtime", {})["model"] = model_name
         print_success(f"Mode: private · Endpoint: {ep_url} · Model: {model_name}")
@@ -4278,11 +4278,12 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             .get("data_agent", {})
             .get("model", "")
         )
-        model_default = global_data_model or "qwen3:14b"
 
         private_model = interactive_prompt(
-            "  Private model for data agents",
-            default=model_default,
+            "  Private model for data agents"
+            + (f" [{global_data_model}]" if global_data_model else " (e.g. qwen3:14b)"),
+            default=global_data_model if global_data_model else "",
+            required=True,
         )
 
         # Set per-agent overrides
