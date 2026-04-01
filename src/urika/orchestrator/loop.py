@@ -698,23 +698,52 @@ async def run_experiment(
             else:
                 task_input = task_prompt
 
-            # --- data_agent (hybrid mode only) ---
-            if runtime_config.privacy_mode == "hybrid":
+            # --- data_agent (hybrid/private mode) ---
+            if runtime_config.privacy_mode in ("hybrid", "private"):
                 data_role = registry.get("data_agent")
-                if data_role is not None:
-                    progress("agent", "Data agent \u2014 extracting features")
-                    data_config = data_role.build_config(
-                        project_dir=project_dir, experiment_id=experiment_id
+                if data_role is None:
+                    _data_error = (
+                        "Data Agent not registered — cannot proceed in "
+                        f"{runtime_config.privacy_mode} mode. "
+                        "Raw data must be profiled locally before cloud "
+                        "agents can run."
                     )
-                    data_result = await runner.run(
-                        data_config, task_input, on_message=on_message
+                    fail_session(
+                        project_dir, experiment_id, error=_data_error
                     )
-                    _total_tokens_in += data_result.tokens_in
-                    _total_tokens_out += data_result.tokens_out
-                    _total_cost_usd += data_result.cost_usd or 0.0
-                    _total_agent_calls += 1
-                    if data_result.success and data_result.text_output:
-                        task_input = data_result.text_output + "\n\n" + task_input
+                    return _usage_dict(
+                        "failed", turn, error=_data_error
+                    )
+
+                progress("agent", "Data agent \u2014 extracting features")
+                data_config = data_role.build_config(
+                    project_dir=project_dir, experiment_id=experiment_id
+                )
+                data_result = await runner.run(
+                    data_config, task_input, on_message=on_message
+                )
+                _total_tokens_in += data_result.tokens_in
+                _total_tokens_out += data_result.tokens_out
+                _total_cost_usd += data_result.cost_usd or 0.0
+                _total_agent_calls += 1
+
+                if not data_result.success:
+                    _data_error = (
+                        "Data Agent failed — cannot proceed in "
+                        f"{runtime_config.privacy_mode} mode. "
+                        "Raw data must be profiled locally before "
+                        "cloud agents can run. "
+                        "Start your local model or switch to open mode."
+                    )
+                    fail_session(
+                        project_dir, experiment_id, error=_data_error
+                    )
+                    return _usage_dict(
+                        "failed", turn, error=_data_error
+                    )
+
+                if data_result.text_output:
+                    task_input = data_result.text_output + "\n\n" + task_input
 
             # --- task_agent ---
             progress("agent", "Task agent — running experiment")
