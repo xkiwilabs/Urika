@@ -1925,12 +1925,12 @@ def run(
     # --- Single experiment path ---
     if experiment_id is None:
         experiments = list_experiments(project_path)
-        # Find pending (non-completed) experiments
+        # Find pending (non-completed, non-failed, non-stopped) experiments
         pending = [
             e
             for e in experiments
             if load_progress(project_path, e.experiment_id).get("status")
-            not in ("completed",)
+            not in ("completed", "failed", "stopped")
         ]
         if pending:
             if resume and len(pending) > 1 and not json_output:
