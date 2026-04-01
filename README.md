@@ -8,7 +8,8 @@
   <a href="docs/12-models-and-privacy.md">Models &amp; Privacy</a> &middot;
   <a href="docs/17-notifications.md">Notifications</a> &middot;
   <a href="docs/15-cli-reference.md">CLI Reference</a> &middot;
-  <a href="docs/16-interactive-repl.md">Interactive REPL</a>
+  <a href="docs/16-interactive-repl.md">Interactive REPL</a> &middot;
+  <a href="docs/07-viewing-results.md#project-dashboard">Dashboard</a>
 </p>
 
 ---
