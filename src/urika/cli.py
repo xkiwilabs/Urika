@@ -4199,10 +4199,15 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
                 ep["api_key_env"] = key_env
 
         from urika.cli_helpers import interactive_prompt
+        from urika.core.settings import load_settings
+
+        global_settings = load_settings()
+        global_model = global_settings.get("runtime", {}).get("model", "")
+        model_default = global_model or "qwen3:14b"
 
         model_name = interactive_prompt(
             "  Model name",
-            default="qwen3:14b",
+            default=model_default,
         )
         settings.setdefault("runtime", {})["model"] = model_name
         print_success(f"Mode: private · Endpoint: {ep_url} · Model: {model_name}")
@@ -4263,10 +4268,21 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
                 ep["api_key_env"] = key_env
 
         from urika.cli_helpers import interactive_prompt
+        from urika.core.settings import load_settings
+
+        # Default from global settings if configured
+        global_settings = load_settings()
+        global_data_model = (
+            global_settings.get("runtime", {})
+            .get("models", {})
+            .get("data_agent", {})
+            .get("model", "")
+        )
+        model_default = global_data_model or "qwen3:14b"
 
         private_model = interactive_prompt(
             "  Private model for data agents",
-            default="qwen3:14b",
+            default=model_default,
         )
 
         # Set per-agent overrides
