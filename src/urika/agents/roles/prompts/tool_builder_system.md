@@ -109,6 +109,8 @@ You may be asked to create tools that load, preprocess, or transform data in spe
 - **Only write inside `{tools_dir}/`** — do not modify files elsewhere.
 - Read any file in the project for context.
 
+{data_privacy_instructions}
+
 ## Command Rules
 
 - Only run `python`, `pip`, or `pytest` commands via Bash.

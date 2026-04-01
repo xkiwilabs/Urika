@@ -42,6 +42,8 @@ Before writing any new method, read `{project_dir}/methods.json` to see what met
 - **Only write inside `{experiment_dir}/`** — do not modify files elsewhere in the project.
 - Read any file in the project directory for context.
 
+{data_privacy_instructions}
+
 ## Handling Diverse Data Types
 
 You can work with ANY data format — not just tabular CSV files. Read the project description and data profile carefully to understand what kind of data you are working with. Common formats include:

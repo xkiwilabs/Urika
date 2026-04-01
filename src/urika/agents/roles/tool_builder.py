@@ -29,6 +29,13 @@ def get_role() -> AgentRole:
 def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
     runtime_config = load_runtime_config(project_dir)
     tools_dir = project_dir / "tools"
+
+    from urika.agents.roles.task_agent import _build_data_privacy_block
+
+    data_privacy = _build_data_privacy_block(
+        project_dir, runtime_config.privacy_mode
+    )
+
     return AgentConfig(
         name="tool_builder",
         system_prompt=load_prompt(
@@ -37,6 +44,7 @@ def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
                 "project_dir": str(project_dir),
                 "tools_dir": str(tools_dir),
                 "hardware_summary": hardware_summary(),
+                "data_privacy_instructions": data_privacy,
             },
         ),
         allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],
