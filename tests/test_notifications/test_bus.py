@@ -346,17 +346,12 @@ class TestHandleRemoteCommand:
             def queue_remote_command(self, cmd, args, respond=None):
                 self.queued.append((cmd, args, respond))
 
-            def set_agent_active(self, cmd):
-                pass
-
-            def set_agent_idle(self, error=""):
-                pass
-
         bus._session = FakeSession()
         responses = []
         bus.handle_remote_command("plan", respond=responses.append)
-        # When idle, agent commands execute in background (not queued)
-        assert "Running /plan" in responses[0]
+        # Agent commands are always queued for REPL drain thread
+        assert "queued" in responses[0].lower()
+        assert len(bus._session.queued) == 1
 
     def test_resume_when_idle(self):
         bus = NotificationBus()
@@ -463,8 +458,8 @@ class TestRemoteCommandQueue:
         assert cmd[0] == "advisor"
         assert cmd[1] == "try PCA?"
 
-    def test_agent_runs_while_idle_real_session(self):
-        """Agent command executes in background when REPL is idle."""
+    def test_agent_queued_while_idle_real_session(self):
+        """Agent command queued even when REPL is idle (drained by REPL thread)."""
         from urika.repl_session import ReplSession
 
         session = ReplSession()
@@ -476,5 +471,6 @@ class TestRemoteCommandQueue:
         responses: list[str] = []
         bus._queue_agent_command("plan", "", responses.append)
 
-        # When idle, responds "Running" instead of "queued"
-        assert "running" in responses[0].lower()
+        # Always queued now — REPL drain thread handles execution
+        assert "queued" in responses[0].lower()
+        assert session.has_remote_command
