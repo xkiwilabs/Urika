@@ -61,11 +61,41 @@ async def run_project(
                 f"Experiment {exp_num + 1}: {exp.experiment_id} (pending)"
             )
         else:
-            # Determine next experiment via advisor
-            progress("agent", "Advisor agent — proposing next experiment")
-            next_exp, advisor_text = await _determine_next(
-                project_dir, runner, instructions, on_message
-            )
+            # Check for pending suggestions from advisor conversations
+            next_exp = None
+            pending_path = project_dir / "suggestions" / "pending.json"
+            if pending_path.exists():
+                try:
+                    import json as _pjson
+
+                    pdata = _pjson.loads(
+                        pending_path.read_text(encoding="utf-8")
+                    )
+                    psuggest = pdata.get("suggestions", [])
+                    if psuggest:
+                        next_exp = psuggest[0]
+                        # Remove used suggestion, delete file if empty
+                        psuggest.pop(0)
+                        if psuggest:
+                            pending_path.write_text(
+                                _pjson.dumps(pdata, indent=2),
+                                encoding="utf-8",
+                            )
+                        else:
+                            pending_path.unlink(missing_ok=True)
+                        print_step(
+                            "Using suggestion from recent advisor conversation"
+                        )
+                except Exception:
+                    pass
+
+            if next_exp is None:
+                # No pending suggestions — ask advisor
+                progress("agent", "Advisor agent — proposing next experiment")
+                next_exp, advisor_text = await _determine_next(
+                    project_dir, runner, instructions, on_message
+                )
+
             if next_exp is None:
                 print_step("Advisor: no further experiments to suggest.")
                 if advisor_text:
