@@ -406,6 +406,24 @@ def cmd_run(session: ReplSession, args: str) -> None:
     for exp in experiments:
         lock = session.project_path / "experiments" / exp.experiment_id / ".lock"
         if lock.exists():
+            # Check if the owning process is still alive
+            import os as _os
+            try:
+                pid_str = lock.read_text().strip()
+                if pid_str:
+                    _os.kill(int(pid_str), 0)
+                    # Process alive — lock is valid
+                else:
+                    # Empty lock (legacy) — treat as valid conservatively
+                    pass
+            except (ValueError, ProcessLookupError):
+                # PID dead or invalid — stale lock, clean it up
+                click.echo(f"  Cleaned stale lock on {exp.experiment_id}")
+                lock.unlink(missing_ok=True)
+                continue
+            except PermissionError:
+                pass  # Process exists, can't signal — treat as valid
+
             if is_remote:
                 click.echo(
                     f"  Experiment '{exp.experiment_id}' locked — stopping stale lock."
