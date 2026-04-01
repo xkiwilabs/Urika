@@ -45,30 +45,47 @@ async def run_project(
     progress = on_progress or (lambda e, d="": None)
 
     for exp_num in range(safety_cap):
-        # Determine next experiment via advisor
-        progress("agent", "Advisor agent — proposing next experiment")
-        next_exp, advisor_text = await _determine_next(
-            project_dir, runner, instructions, on_message
-        )
-        if next_exp is None:
-            print_step("Advisor: no further experiments to suggest.")
-            if advisor_text:
-                preview = advisor_text[:500].strip()
-                if len(advisor_text) > 500:
-                    preview += "..."
-                click.echo(f"\n  {preview}\n")
-            break
+        # Check for existing pending experiments first (e.g., created but not yet run)
+        from urika.core.progress import load_progress
 
-        exp_name = next_exp.get("name", f"auto-{exp_num + 1}").replace(" ", "-").lower()
-        description = next_exp.get("method", next_exp.get("description", ""))
+        pending_experiments = [
+            e for e in list_experiments(project_dir)
+            if load_progress(project_dir, e.experiment_id).get("status")
+            in ("pending",)
+        ]
 
-        # Create experiment
-        exp = create_experiment(
-            project_dir, name=exp_name, hypothesis=description[:500]
-        )
-        print_step(f"Experiment {exp_num + 1}: {exp.experiment_id}")
+        if pending_experiments:
+            # Run the most recent pending experiment before asking advisor
+            exp = pending_experiments[-1]
+            print_step(
+                f"Experiment {exp_num + 1}: {exp.experiment_id} (pending)"
+            )
+        else:
+            # Determine next experiment via advisor
+            progress("agent", "Advisor agent — proposing next experiment")
+            next_exp, advisor_text = await _determine_next(
+                project_dir, runner, instructions, on_message
+            )
+            if next_exp is None:
+                print_step("Advisor: no further experiments to suggest.")
+                if advisor_text:
+                    preview = advisor_text[:500].strip()
+                    if len(advisor_text) > 500:
+                        preview += "..."
+                    click.echo(f"\n  {preview}\n")
+                break
+
+            exp_name = next_exp.get("name", f"auto-{exp_num + 1}").replace(" ", "-").lower()
+            description = next_exp.get("method", next_exp.get("description", ""))
+
+            # Create experiment
+            exp = create_experiment(
+                project_dir, name=exp_name, hypothesis=description[:500]
+            )
+            print_step(f"Experiment {exp_num + 1}: {exp.experiment_id}")
 
         # Notify: new experiment starting
+        description = getattr(exp, "name", "")
         progress(
             "phase",
             f"Starting experiment {exp_num + 1}: {exp.experiment_id}"
@@ -217,14 +234,17 @@ async def _determine_next(
     except Exception:
         pass
 
+    if instructions:
+        context_parts.append(
+            f"\nIMPORTANT — User instructions (follow these): {instructions}"
+        )
+
     context_parts.append(
         "\nBased on the above, propose the next experiment. "
-        "If all promising avenues have been explored and no further "
-        "experiments would add value, respond with no suggestions."
+        "If the user gave instructions, follow them. "
+        "Only respond with no suggestions if the user's instructions "
+        "have been fully addressed AND all promising avenues explored."
     )
-
-    if instructions:
-        context_parts.append(f"\nUser instructions: {instructions}")
 
     context = "\n".join(context_parts)
 
