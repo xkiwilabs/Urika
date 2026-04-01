@@ -4201,7 +4201,8 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         from urika.cli_helpers import interactive_prompt
 
         model_name = interactive_prompt(
-            "  Model name (e.g. qwen3:14b, mistral:7b)",
+            "  Model name",
+            default="qwen3:14b",
         )
         settings.setdefault("runtime", {})["model"] = model_name
         print_success(f"Mode: private · Endpoint: {ep_url} · Model: {model_name}")
@@ -4264,7 +4265,8 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         from urika.cli_helpers import interactive_prompt
 
         private_model = interactive_prompt(
-            "  Private model for data agents (e.g. qwen3:14b)",
+            "  Private model for data agents",
+            default="qwen3:14b",
         )
 
         # Set per-agent overrides
