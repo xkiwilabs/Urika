@@ -86,6 +86,22 @@ Choose the best layout for each slide:
 - If a slide has a figure but no bullets to put beside it, use `figure` not `figure-text`
 - Never use `figure-text` with an empty right column
 
+## Slide Layout Rules
+
+- **Full-width figures by default.** Use the `figure` slide type for ALL figures with multiple panels, small text, legends, or axis labels. The figure gets the full slide width for maximum readability.
+- **Two-column (`figure-text`) is opt-in only.** Use ONLY for simple single-panel visualizations (bar charts, pie charts) where 2-3 bullets alongside are sufficient. If in doubt, use full-width `figure`.
+- **Hard content limits per slide:**
+  - Maximum 4 bullets per slide
+  - Maximum 8 words per bullet
+  - Maximum 1 figure per slide
+  - If you have more content, split across multiple slides
+- **Never crowd a slide.** White space is a feature, not wasted space. When in doubt, add another slide rather than cramming content.
+- **Figures must be readable.** Axis labels, legends, and annotations must be legible at presentation size. If a figure has dense information, give it a full-width slide.
+
+## Audience
+
+{audience_instructions}
+
 ## Rules
 
 - Do NOT modify any files.

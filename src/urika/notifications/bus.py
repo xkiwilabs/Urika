@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import threading
 from pathlib import Path
@@ -172,6 +173,20 @@ def classify_remote_command(command: str) -> str:
     return "rejected"
 
 
+def _cleanup_experiment(project_path: Path, experiment_id: str) -> None:
+    """Clean up lock and session after a failed remote run."""
+    try:
+        from urika.core.session import fail_session, release_lock
+
+        try:
+            fail_session(project_path, experiment_id, error="Remote run terminated")
+        except Exception:
+            pass
+        release_lock(project_path, experiment_id)
+    except Exception:
+        pass
+
+
 class NotificationBus:
     """Dispatches notification events to configured channels via a background thread."""
 
@@ -337,13 +352,6 @@ class NotificationBus:
         _respond = respond or (lambda t: None)
         category = classify_remote_command(command)
 
-        # Print to terminal so there's a record
-        import sys
-
-        cmd_display = f"/{command} {args}".strip()
-        sys.stdout.write(f"\n  \033[33m[Remote]\033[0m {cmd_display}\n")
-        sys.stdout.flush()
-
         if category == "rejected":
             _respond(f"/{command} is not available remotely. Use the terminal.")
             return
@@ -420,10 +428,10 @@ class NotificationBus:
                 respond("Cannot resume right now.")
 
     def _queue_agent_command(self, command: str, args: str, respond) -> None:
-        """Queue or execute an agent command.
+        """Queue an agent command for REPL execution.
 
-        If idle: execute in a background thread and send result back.
-        If busy: queue for REPL to drain after current command finishes.
+        All agent commands are queued for the REPL's auto-drain thread,
+        which executes them with full terminal output.
         """
         if self._session is None:
             respond("No active REPL session.")
@@ -437,87 +445,15 @@ class NotificationBus:
             respond("Run in progress. Stop first to start a new run.")
             return
 
+        # All agent commands queue through the REPL
+        self._session.queue_remote_command(command, args, respond)
         if self._session.agent_active:
-            self._session.queue_remote_command(command, args)
             respond(
                 f"/{command} queued \u2014 will run after"
                 f" {self._session.active_command} finishes."
             )
         else:
-            # Idle: execute immediately in background thread
-            _agent_hints = {
-                "advisor": "thinking — may take a few minutes",
-                "run": "starting experiment — this will take a while",
-                "evaluate": "evaluating — may take a minute",
-                "plan": "designing method — may take a minute",
-                "report": "writing report — may take a few minutes",
-                "present": "creating presentation — may take a few minutes",
-                "finalize": "finalizing project — this will take a while",
-                "build-tool": "building tool — may take a few minutes",
-            }
-            hint = _agent_hints.get(command, "working")
-            respond(f"Running /{command} ({hint})...")
-            thread = threading.Thread(
-                target=self._run_agent_in_background,
-                args=(command, args, respond),
-                name=f"urika-remote-{command}",
-                daemon=True,
-            )
-            thread.start()
-
-    def _run_agent_in_background(self, command: str, args: str, respond) -> None:
-        """Execute an agent command in a background thread."""
-        if self._session is None or self._project_path is None:
-            respond("No active session.")
-            return
-
-        self._session.set_agent_active(command)
-        try:
-            if command in (
-                "status",
-                "results",
-                "methods",
-                "criteria",
-                "experiments",
-                "logs",
-                "usage",
-            ):
-                # These are read-only — shouldn't reach here but handle gracefully
-                text = self._execute_read_only(command, args)
-                respond(text)
-                return
-
-            if command == "advisor":
-                text = self._run_remote_advisor(args)
-                for chunk in _split_message(text, max_len=4000):
-                    respond(chunk)
-                return
-
-            if command == "run":
-                self._run_remote_experiment(args, respond)
-                return
-
-            # Commands that can run via subprocess with --json or default args
-            if command in ("evaluate", "plan", "finalize", "build-tool"):
-                self._run_remote_cli_command(command, args, respond)
-                return
-
-            if command in ("report", "present"):
-                # These prompt for experiment — pass most recent via --json
-                self._run_remote_cli_command(command, args, respond)
-                return
-
-            # Fallback: queue for REPL
-            self._session.queue_remote_command(command, args)
-            respond(
-                f"/{command} needs the REPL terminal to run. "
-                f"It's queued and will execute when you interact with the REPL."
-            )
-        except Exception as exc:
-            logger.warning("Remote %s failed: %s", command, exc)
-            respond(f"Error: {exc}")
-        finally:
-            self._session.set_agent_idle()
+            respond(f"/{command} queued \u2014 executing shortly...")
 
     def _run_remote_advisor(self, question: str) -> str:
         """Run the advisor agent and return its text response.
@@ -544,8 +480,16 @@ class NotificationBus:
         config = advisor.build_config(project_dir=self._project_path, experiment_id="")
         config.max_turns = 25
 
-        # Build context with conversation history (like REPL's _handle_free_text)
+        # Build context — inject rolling summary from previous sessions
+        from urika.core.advisor_memory import load_context_summary
+
         context = f"Project: {self.project_name}\n"
+        context_summary = load_context_summary(self._project_path)
+        if context_summary:
+            context += (
+                f"\n## Research Context (from previous sessions)\n\n"
+                f"{context_summary}\n\n"
+            )
         if self._session is not None:
             conv = getattr(self._session, "get_conversation_context", lambda: "")()
             if conv:
@@ -564,11 +508,15 @@ class NotificationBus:
         context += f"\nUser: {question}\n"
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                result = loop.run_until_complete(runner.run(config, context))
-            finally:
-                loop.close()
+            # Run in a separate thread to avoid conflicting with
+            # the Telegram/Slack event loop in the current thread.
+            import concurrent.futures
+
+            def _run_advisor():
+                return asyncio.run(runner.run(config, context))
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(_run_advisor).result()
 
             if result.success and result.text_output:
                 text = result.text_output.strip()
@@ -578,173 +526,74 @@ class NotificationBus:
                     if add_msg:
                         add_msg("user", question)
                         add_msg("advisor", text)
+                # Save suggestions to file so /run subprocess can find them
+                parsed_suggestions = None
+                try:
+                    from urika.orchestrator.parsing import parse_suggestions
+
+                    parsed = parse_suggestions(text)
+                    if parsed and parsed.get("suggestions"):
+                        parsed_suggestions = parsed["suggestions"]
+                        suggestions_dir = self._project_path / "suggestions"
+                        suggestions_dir.mkdir(exist_ok=True)
+                        pending_path = suggestions_dir / "pending.json"
+                        import tempfile
+
+                        # Atomic write
+                        tmp_fd, tmp_path = tempfile.mkstemp(
+                            dir=str(suggestions_dir), suffix=".tmp"
+                        )
+                        try:
+                            with os.fdopen(tmp_fd, "w") as f:
+                                import json as _json2
+
+                                _json2.dump(parsed, f)
+                            Path(tmp_path).rename(pending_path)
+                        except Exception:
+                            Path(tmp_path).unlink(missing_ok=True)
+                except Exception:
+                    pass  # Best-effort — don't break advisor response
+
+                # Save to persistent advisor history
+                try:
+                    from urika.core.advisor_memory import append_exchange
+
+                    append_exchange(
+                        self._project_path,
+                        role="user",
+                        text=question,
+                        source="telegram",
+                    )
+                    append_exchange(
+                        self._project_path,
+                        role="advisor",
+                        text=text,
+                        source="telegram",
+                        suggestions=parsed_suggestions,
+                    )
+                except Exception:
+                    pass
+
+                # Update rolling context summary (best-effort)
+                try:
+                    from urika.core.advisor_memory import (
+                        update_context_summary,
+                    )
+
+                    def _update_summary():
+                        return asyncio.run(
+                            update_context_summary(
+                                self._project_path, runner, registry
+                            )
+                        )
+
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                        _pool.submit(_update_summary).result(timeout=120)
+                except Exception:
+                    pass
+
                 return text
             return f"Advisor error: {result.error or 'no response'}"
         except Exception as exc:
             return f"Advisor error: {exc}"
 
-    def _run_remote_experiment(self, args: str, respond) -> None:
-        """Run an experiment via subprocess with --auto (no interactive prompts).
-
-        Sends progress updates back to the channel.
-        """
-        import subprocess
-        import sys
-
-        if self._project_path is None:
-            respond("No project loaded.")
-            return
-
-        project_name = self._project_path.name
-
-        # Parse args: /run, /run 3, /run --multi 5, /run --resume, /run focus on trees
-        cmd = [sys.executable, "-m", "urika", "run", project_name, "--auto"]
-
-        args_stripped = args.strip()
-        if args_stripped:
-            parts = args_stripped.split()
-            if parts[0] == "--resume":
-                cmd.append("--resume")
-            elif parts[0] == "--multi" and len(parts) > 1:
-                try:
-                    n = int(parts[1])
-                    cmd.extend(["--max-experiments", str(n)])
-                    if len(parts) > 2:
-                        cmd.extend(["--instructions", " ".join(parts[2:])])
-                except ValueError:
-                    cmd.extend(["--instructions", args_stripped])
-            else:
-                try:
-                    max_turns = int(parts[0])
-                    cmd.extend(["--max-turns", str(max_turns)])
-                    if len(parts) > 1:
-                        cmd.extend(["--instructions", " ".join(parts[1:])])
-                except ValueError:
-                    cmd.extend(["--instructions", args_stripped])
-
-        desc_parts = [f"Starting experiment on {project_name}"]
-        if "--max-experiments" in cmd:
-            idx = cmd.index("--max-experiments")
-            desc_parts.append(f"({cmd[idx + 1]} experiments)")
-        if "--max-turns" in cmd:
-            idx = cmd.index("--max-turns")
-            desc_parts.append(f"(max {cmd[idx + 1]} turns)")
-        if "--resume" in cmd:
-            desc_parts = [f"Resuming experiment on {project_name}"]
-        respond(" ".join(desc_parts) + "...")
-
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=3600,  # 1 hour max
-                env={**__import__("os").environ, "URIKA_REMOTE_RUN": "1"},
-            )
-
-            # Send last part of output as response
-            output = result.stdout.strip()
-            if result.returncode == 0:
-                # Extract the summary from the end of output
-                lines = output.split("\n")
-                summary_lines = [
-                    line
-                    for line in lines[-20:]
-                    if line.strip() and not line.strip().startswith("\x1b")
-                ]
-                summary = (
-                    "\n".join(summary_lines[-10:])
-                    if summary_lines
-                    else "Run completed."
-                )
-                respond(f"Experiment finished:\n{summary}")
-            else:
-                error = (
-                    result.stderr.strip() or output[-500:]
-                    if output
-                    else "Unknown error"
-                )
-                respond(f"Run failed:\n{error[:2000]}")
-        except subprocess.TimeoutExpired:
-            respond("Run timed out after 1 hour.")
-        except Exception as exc:
-            respond(f"Run error: {exc}")
-
-    def _run_remote_cli_command(self, command: str, args: str, respond) -> None:
-        """Run a CLI command via subprocess with --json to avoid interactive prompts."""
-        import subprocess
-        import sys
-        import json as _json
-
-        if self._project_path is None:
-            respond("No project loaded.")
-            return
-
-        project_name = self._project_path.name
-
-        # Build command
-        cmd_map = {
-            "evaluate": ["evaluate", project_name],
-            "plan": ["plan", project_name],
-            "finalize": ["finalize", project_name],
-            "report": ["report", project_name],
-            "present": ["present", project_name],
-            "build-tool": ["build-tool", project_name],
-        }
-
-        base = cmd_map.get(command)
-        if base is None:
-            respond(f"Unknown command: /{command}")
-            return
-
-        cmd = [sys.executable, "-m", "urika"] + base + ["--json"]
-
-        # Add args as experiment ID or instructions
-        args_stripped = args.strip()
-        if args_stripped:
-            if command in ("evaluate", "plan", "report", "present"):
-                # Could be experiment ID (exp-NNN) or instructions
-                if args_stripped.startswith("exp-"):
-                    cmd.extend(["--experiment", args_stripped])
-                else:
-                    cmd.extend(["--instructions", args_stripped])
-            elif command == "finalize":
-                cmd.extend(["--instructions", args_stripped])
-            elif command == "build-tool":
-                # build-tool takes instructions as positional arg
-                # Remove --json, add instructions before it
-                cmd = [
-                    sys.executable,
-                    "-m",
-                    "urika",
-                    "build-tool",
-                    project_name,
-                    args_stripped,
-                    "--json",
-                ]
-
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=600,  # 10 min max for single agent commands
-                env={**__import__("os").environ, "URIKA_REMOTE_RUN": "1"},
-            )
-
-            if result.returncode == 0:
-                # Try to parse JSON output
-                output = result.stdout.strip()
-                try:
-                    data = _json.loads(output)
-                    text = data.get("output", data.get("path", str(data)))
-                    respond(f"/{command} completed:\n{text[:3000]}")
-                except _json.JSONDecodeError:
-                    respond(f"/{command} completed:\n{output[-1000:]}")
-            else:
-                error = result.stderr.strip() or result.stdout.strip()
-                respond(f"/{command} failed:\n{error[:1000]}")
-        except subprocess.TimeoutExpired:
-            respond(f"/{command} timed out.")
-        except Exception as exc:
-            respond(f"/{command} error: {exc}")

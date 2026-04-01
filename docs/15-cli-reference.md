@@ -265,6 +265,7 @@ urika run [PROJECT] [OPTIONS]
 | `--auto` | Fully autonomous mode -- no confirmation prompts |
 | `--instructions TEXT` | Guide the next experiment (e.g., "focus on tree-based models") |
 | `--review-criteria` | Ask advisor to review criteria when met (may raise the bar) |
+| `--audience [expert\|novice]` | Control explanation depth in reports and presentations (default: expert) |
 
 **Interactive settings:** When called with no flags, shows a settings dialog:
 
@@ -309,6 +310,25 @@ The `max_turns` default can be set in `urika.toml`:
 max_turns_per_experiment = 10
 ```
 
+
+## Viewing
+
+### `urika dashboard [PROJECT] [--port PORT]`
+
+Open a browser-based read-only dashboard for a project. Displays experiments, reports, figures, methods, and criteria in an interactive web interface.
+
+- **`--port PORT`** — Server port (default: 8420)
+
+The dashboard shows:
+- **Sidebar** — Curated project tree: experiments (with labbook, artifacts, presentations), projectbook, methods, criteria
+- **Content area** — Rendered markdown, syntax-highlighted JSON/Python, zoomable images
+- **Footer** — Project stats at a glance
+
+Click any figure to zoom. Presentations open in a new tab. Light/dark mode toggle in the header.
+
+The server runs on localhost only and stops when you exit.
+
+---
 
 ## Results and Reports
 
@@ -367,6 +387,7 @@ urika report [PROJECT] [--experiment ID]
 | Option | Description |
 |--------|-------------|
 | `--experiment ID` | Generate report for a specific experiment |
+| `--audience [expert\|novice]` | Control explanation depth (default: expert) |
 
 When no experiment is specified, you are prompted to choose: a specific experiment, all experiments, or project-level reports.
 
@@ -383,6 +404,12 @@ urika present [PROJECT]
 ```
 
 Prompts you to choose: a specific experiment, all experiments, or a project-level presentation.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--audience [expert\|novice]` | Control explanation depth (default: expert) |
 
 ---
 
@@ -486,6 +513,7 @@ urika finalize [PROJECT] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--instructions TEXT` | Optional instructions for the finalizer agent (e.g., "focus on the random forest method") |
+| `--audience [expert\|novice]` | Control explanation depth in reports and presentations (default: expert) |
 
 **Examples:**
 

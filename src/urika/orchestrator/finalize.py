@@ -19,6 +19,7 @@ async def finalize_project(
     on_message: Callable[..., Any] | None = None,
     *,
     instructions: str = "",
+    audience: str = "expert",
 ) -> dict:
     """Run the finalization sequence: Finalizer -> Report -> Presentation -> README."""
     progress = on_progress or (lambda e, d="": None)
@@ -31,7 +32,7 @@ async def finalize_project(
     if finalizer_role is None:
         return {"error": "Finalizer agent not found"}
 
-    config = finalizer_role.build_config(project_dir=project_dir)
+    config = finalizer_role.build_config(project_dir=project_dir, audience=audience)
     prompt = (
         "Finalize this project. Read all experiments, select the best methods, "
         "write standalone production-ready code, generate findings.json, "
@@ -53,7 +54,7 @@ async def finalize_project(
     report_role = registry.get("report_agent")
     if report_role is not None:
         report_config = report_role.build_config(
-            project_dir=project_dir, experiment_id=""
+            project_dir=project_dir, experiment_id="", audience=audience
         )
         report_result = await runner.run(
             report_config,
@@ -64,14 +65,20 @@ async def finalize_project(
             on_message=on_message,
         )
         if report_result.success and report_result.text_output:
-            from urika.core.report_writer import write_versioned
+            content = report_result.text_output.strip()
+            # Only write if the output looks like actual report content
+            # (has markdown headings and is substantial), not agent narration
+            if len(content) > 500 and content.count("\n#") >= 2:
+                from urika.core.report_writer import write_versioned
 
-            report_path = project_dir / "projectbook" / "final-report.md"
-            report_path.parent.mkdir(parents=True, exist_ok=True)
-            write_versioned(report_path, report_result.text_output.strip() + "\n")
-            progress("result", "Final report written")
+                report_path = project_dir / "projectbook" / "final-report.md"
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                write_versioned(report_path, content + "\n")
+                progress("result", "Final report written")
+            else:
+                progress("result", "Final report generated")
         elif report_result.success:
-            progress("result", "Final report written (no text output)")
+            progress("result", "Final report generated")
         else:
             progress("result", "Final report generation failed")
 
@@ -80,7 +87,7 @@ async def finalize_project(
     pres_role = registry.get("presentation_agent")
     if pres_role is not None:
         pres_config = pres_role.build_config(
-            project_dir=project_dir, experiment_id=""
+            project_dir=project_dir, experiment_id="", audience=audience
         )
         pres_result = await runner.run(
             pres_config,

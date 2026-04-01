@@ -1321,7 +1321,22 @@ def _determine_next_experiment(
     next_suggestion = None
     call_advisor_agent = bool(instructions) or bool(completed)
 
-    if not call_advisor_agent:
+    # Check for pending suggestions from remote advisor (Telegram/Slack)
+    pending_path = project_path / "suggestions" / "pending.json"
+    if pending_path.exists():
+        try:
+            data = json.loads(pending_path.read_text(encoding="utf-8"))
+            suggestions = data.get("suggestions", [])
+            if suggestions:
+                next_suggestion = suggestions[0]
+                # Consume the pending file
+                pending_path.unlink(missing_ok=True)
+                if not auto:
+                    print_step("Using suggestion from recent advisor conversation")
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    if not call_advisor_agent and next_suggestion is None:
         # First experiment, no instructions — use initial plan
         suggestions_path = project_path / "suggestions" / "initial.json"
         if suggestions_path.exists():
@@ -1498,6 +1513,12 @@ def _determine_next_experiment(
     help="Ask advisor to review criteria when met (may raise the bar).",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--audience",
+    type=click.Choice(["novice", "expert"]),
+    default=None,
+    help="Output audience level (default: from project config or expert).",
+)
 def run(
     project: str,
     experiment_id: str | None,
@@ -1509,6 +1530,7 @@ def run(
     max_experiments: int | None,
     review_criteria: bool,
     json_output: bool = False,
+    audience: str | None = None,
 ) -> None:
     """Run an experiment using the orchestrator."""
     try:
@@ -1518,7 +1540,10 @@ def run(
             "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
         )
     import signal
+    import threading
     import time
+
+    _is_main_thread = threading.current_thread() is threading.main_thread()
 
     from urika.cli_display import (
         ThinkingPanel,
@@ -1548,6 +1573,10 @@ def run(
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Resolve audience from project config if not explicitly provided
+    if audience is None:
+        audience = _config.audience
 
     # If --max-turns was not explicitly provided, read from urika.toml
     if max_turns is None:
@@ -1668,14 +1697,14 @@ def run(
             except Exception:
                 pass
 
-        if notif_bus is None:
+        if notif_bus is None and not os.environ.get("URIKA_REMOTE_RUN"):
             from urika.notifications import build_bus
 
             notif_bus = build_bus(project_path)
             if notif_bus is not None:
                 notif_bus.start(controller=pause_ctrl)
             _owns_bus_meta = True
-        else:
+        elif notif_bus is not None:
             # Update the persistent bus with this run's controller
             notif_bus._controller = pause_ctrl
 
@@ -1695,7 +1724,7 @@ def run(
             )
             key_listener.start()
 
-        original_handler = signal.getsignal(signal.SIGINT)
+        original_handler = signal.getsignal(signal.SIGINT) if _is_main_thread else None
 
         def _cleanup_meta(signum: int, frame: object) -> None:
             if key_listener is not None:
@@ -1709,7 +1738,8 @@ def run(
             print_step("    urika run --instructions '...'   Run with new instructions")
             raise SystemExit(1)
 
-        signal.signal(signal.SIGINT, _cleanup_meta)
+        if _is_main_thread:
+            signal.signal(signal.SIGINT, _cleanup_meta)
 
         from datetime import datetime, timezone
 
@@ -1793,6 +1823,7 @@ def run(
                     on_message=_on_message,
                     get_user_input=_get_user_input,
                     pause_controller=pause_ctrl,
+                    audience=audience,
                 )
             )
 
@@ -1805,7 +1836,8 @@ def run(
                 key_listener.stop()
             if panel is not None:
                 panel.cleanup()
-            signal.signal(signal.SIGINT, original_handler)
+            if _is_main_thread and original_handler is not None:
+                signal.signal(signal.SIGINT, original_handler)
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
         n_exp = result.get("experiments_run", 0)
@@ -1972,14 +2004,14 @@ def run(
         except Exception:
             pass
 
-    if notif_bus is None:
+    if notif_bus is None and not os.environ.get("URIKA_REMOTE_RUN"):
         from urika.notifications import build_bus as _build_bus
 
         notif_bus = _build_bus(project_path)
         if notif_bus is not None:
             notif_bus.start(controller=pause_ctrl)
         _owns_bus = True
-    else:
+    elif notif_bus is not None:
         # Update the persistent bus with this run's controller
         notif_bus._controller = pause_ctrl
 
@@ -2018,8 +2050,9 @@ def run(
         print_step("    urika run --instructions '...'   Run with new instructions")
         raise SystemExit(1)
 
-    original_handler = signal.getsignal(signal.SIGINT)
-    signal.signal(signal.SIGINT, _cleanup_on_interrupt)
+    original_handler = signal.getsignal(signal.SIGINT) if _is_main_thread else None
+    if _is_main_thread:
+        signal.signal(signal.SIGINT, _cleanup_on_interrupt)
 
     from datetime import datetime, timezone
 
@@ -2111,6 +2144,7 @@ def run(
                 instructions=instructions,
                 get_user_input=_get_user_input,
                 pause_controller=pause_ctrl,
+                audience=audience,
             )
         )
 
@@ -2124,7 +2158,8 @@ def run(
         if panel is not None:
             panel.cleanup()
         # Restore original handler
-        signal.signal(signal.SIGINT, original_handler)
+        if _is_main_thread and original_handler is not None:
+            signal.signal(signal.SIGINT, original_handler)
 
     elapsed_ms = int(time.monotonic() * 1000) - start_ms
     run_status = result.get("status", "unknown")
@@ -2264,7 +2299,11 @@ def run(
 
 
 def _run_report_agent(
-    project_path: Path, experiment_id: str, prompt: str, instructions: str = ""
+    project_path: Path,
+    experiment_id: str,
+    prompt: str,
+    instructions: str = "",
+    audience: str = "expert",
 ) -> str:
     """Run the report agent and return its text output."""
     try:
@@ -2282,7 +2321,7 @@ def _run_report_agent(
 
         print_agent("report_agent")
         config = role.build_config(
-            project_dir=project_path, experiment_id=experiment_id
+            project_dir=project_path, experiment_id=experiment_id, audience=audience
         )
 
         if instructions:
@@ -2316,11 +2355,18 @@ def _run_report_agent(
     help="Guide the report (e.g. 'focus on feature importance findings').",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--audience",
+    type=click.Choice(["novice", "expert"]),
+    default=None,
+    help="Output audience level (default: from project config or expert).",
+)
 def report(
     project: str,
     experiment_id: str | None,
     instructions: str,
     json_output: bool = False,
+    audience: str | None = None,
 ) -> None:
     """Generate labbook reports."""
     from urika.core.labbook import (
@@ -2332,6 +2378,10 @@ def report(
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Resolve audience from project config if not explicitly provided
+    if audience is None:
+        audience = _config.audience
 
     # If no experiment specified, offer selection (like REPL's _pick_experiment)
     if experiment_id is None:
@@ -2380,6 +2430,7 @@ def report(
                     exp.experiment_id,
                     f"Write a detailed narrative report for experiment {exp.experiment_id}.",
                     instructions=instructions,
+                    audience=audience,
                 )
                 if narrative:
                     from urika.core.report_writer import write_versioned
@@ -2432,6 +2483,7 @@ def report(
                 "Write a project-level narrative report covering all experiments "
                 "and the research progression.",
                 instructions=instructions,
+                audience=audience,
             )
             if narrative:
                 from urika.core.report_writer import write_versioned
@@ -2475,6 +2527,7 @@ def report(
             experiment_id,
             f"Write a detailed narrative report for experiment {experiment_id}.",
             instructions=instructions,
+            audience=audience,
         )
         if narrative:
             from urika.core.report_writer import write_versioned
@@ -2880,10 +2933,18 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     config = role.build_config(project_dir=project_path, experiment_id="")
     config.max_turns = 25  # Standalone chat needs more turns than in-loop advisor
 
-    # Build richer context (like REPL's _handle_free_text)
+    # Build richer context — inject rolling summary from previous sessions
     import json as _json
 
+    from urika.core.advisor_memory import load_context_summary
+
     context = f"Project: {project}\n"
+    context_summary = load_context_summary(project_path)
+    if context_summary:
+        context += (
+            f"\n## Research Context (from previous sessions)\n\n"
+            f"{context_summary}\n\n"
+        )
     context += f"\nUser: {text}\n"
     methods_path = project_path / "methods.json"
     if methods_path.exists():
@@ -2924,6 +2985,46 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
 
     if result.success and result.text_output:
         click.echo(format_agent_output(result.text_output))
+
+        # Save to persistent advisor history
+        from urika.core.advisor_memory import append_exchange
+
+        advisor_text = result.text_output.strip()
+        append_exchange(
+            project_path, role="user", text=text, source="cli"
+        )
+
+        from urika.orchestrator.parsing import parse_suggestions as _parse_sug
+
+        _parsed = _parse_sug(advisor_text)
+        _parsed_suggestions = (
+            _parsed["suggestions"]
+            if _parsed and _parsed.get("suggestions")
+            else None
+        )
+        append_exchange(
+            project_path,
+            role="advisor",
+            text=advisor_text,
+            source="cli",
+            suggestions=_parsed_suggestions,
+        )
+
+        # Update rolling context summary in a separate thread
+        try:
+            import concurrent.futures
+            from urika.core.advisor_memory import update_context_summary
+
+            def _do_summary():
+                return asyncio.run(
+                    update_context_summary(project_path, runner, registry)
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                _pool.submit(_do_summary).result(timeout=120)
+        except Exception:
+            pass
+
         _offer_to_run_advisor_suggestions(result.text_output, project, project_path)
     else:
         click.echo(f"Error: {result.error}")
@@ -3179,7 +3280,15 @@ def plan(
     help="Optional instructions for the finalizer agent.",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def finalize(project: str | None, instructions: str, json_output: bool) -> None:
+@click.option(
+    "--audience",
+    type=click.Choice(["novice", "expert"]),
+    default=None,
+    help="Output audience level (default: from project config or expert).",
+)
+def finalize(
+    project: str | None, instructions: str, json_output: bool, audience: str | None = None
+) -> None:
     """Finalize the project — produce polished methods, report, and presentation."""
     import time
 
@@ -3195,6 +3304,10 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Resolve audience from project config if not explicitly provided
+    if audience is None:
+        audience = _config.audience
 
     from urika.agents.config import load_runtime_config
 
@@ -3226,6 +3339,7 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
                     _on_progress,
                     _on_message,
                     instructions=instructions,
+                    audience=audience,
                 )
             )
         except KeyboardInterrupt:
@@ -3281,6 +3395,7 @@ def finalize(project: str | None, instructions: str, json_output: bool) -> None:
                     _on_progress,
                     _on_message,
                     instructions=instructions,
+                    audience=audience,
                 )
             )
         except KeyboardInterrupt:
@@ -3588,7 +3703,15 @@ def build_tool(
     help="Guide the presentation (e.g. 'emphasize ensemble results').",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def present(project: str | None, instructions: str, json_output: bool) -> None:
+@click.option(
+    "--audience",
+    type=click.Choice(["novice", "expert"]),
+    default=None,
+    help="Output audience level (default: from project config or expert).",
+)
+def present(
+    project: str | None, instructions: str, json_output: bool, audience: str | None = None
+) -> None:
     """Generate a presentation for an experiment."""
     import asyncio
     import time
@@ -3599,6 +3722,10 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Resolve audience from project config if not explicitly provided
+    if audience is None:
+        audience = _config.audience
 
     experiments = list_experiments(project_path)
     if not experiments:
@@ -3652,6 +3779,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                             _noop_callback,
                             on_message=on_msg,
                             instructions=instructions,
+                            audience=audience,
                         )
                     )
                     _pres_tokens_in += _pu.get("tokens_in", 0)
@@ -3681,6 +3809,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                         _noop_callback,
                         on_message=on_msg,
                         instructions=instructions,
+                        audience=audience,
                     )
                 )
                 _pres_tokens_in += _pu.get("tokens_in", 0)
@@ -3708,6 +3837,7 @@ def present(project: str | None, instructions: str, json_output: bool) -> None:
                         _noop_callback,
                         on_message=on_msg,
                         instructions=instructions,
+                        audience=audience,
                     )
                 )
                 _pres_tokens_in += _pu.get("tokens_in", 0)
@@ -3842,6 +3972,26 @@ def usage(project: str | None, json_output: bool) -> None:
                     f"{tok_str} tokens · ~${totals['total_cost_usd']:.2f}"
                 )
     click.echo()
+
+
+@cli.command("dashboard")
+@click.argument("project", required=False, default=None)
+@click.option("--port", default=8420, type=int, help="Server port (default: 8420)")
+def dashboard(project: str | None, port: int) -> None:
+    """Open the project dashboard in your browser."""
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    click.echo(f"\n  Starting dashboard for {_config.name}...")
+
+    from urika.dashboard.server import start_dashboard
+
+    try:
+        start_dashboard(project_path, port=port)
+    except KeyboardInterrupt:
+        pass
+
+    click.echo("  Dashboard stopped.")
 
 
 @cli.command("config")

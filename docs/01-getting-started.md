@@ -199,6 +199,7 @@ urika status my-study           # check progress
 urika results my-study          # view leaderboard
 urika report my-study           # generate reports
 urika present my-study          # generate presentation
+urika dashboard my-study        # browse everything in your browser
 ```
 
 Every REPL slash command has a matching CLI command and vice versa.

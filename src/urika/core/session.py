@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,11 +41,41 @@ def save_session(project_dir: Path, experiment_id: str, state: SessionState) -> 
 
 
 def acquire_lock(project_dir: Path, experiment_id: str) -> bool:
-    """Create .lock file. Returns False if already locked."""
+    """Acquire an experiment lock. Returns False if already locked (by a live process)."""
     path = _lock_path(project_dir, experiment_id)
     if path.exists():
+        # Check if the lock is stale (owning process is dead)
+        try:
+            pid_str = path.read_text().strip()
+            if pid_str:
+                pid = int(pid_str)
+                os.kill(pid, 0)  # Check if process is alive (doesn't actually kill)
+                return False  # Process is alive — lock is valid
+            else:
+                # Empty lock file (legacy) — check age
+                import time
+
+                age = time.time() - path.stat().st_mtime
+                if age < 6 * 3600:  # Less than 6 hours old
+                    return False
+                # Older than 6 hours with no PID — assume stale
+        except (ValueError, ProcessLookupError):
+            # PID is dead or invalid — lock is stale, clean it up
+            pass
+        except PermissionError:
+            return False  # Process exists but we can't signal it
+        except OSError:
+            return False  # Other OS error — be conservative
+        # If we get here, the lock is stale — remove it
+        try:
+            path.unlink()
+        except OSError:
+            return False
+    # Create new lock with our PID
+    try:
+        path.write_text(str(os.getpid()))
+    except OSError:
         return False
-    path.touch()
     return True
 
 

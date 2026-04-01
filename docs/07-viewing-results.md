@@ -3,6 +3,23 @@
 This guide covers how to view experiment results, generate reports, create presentations, and inspect project state.
 
 
+## Project Dashboard
+
+```
+urika dashboard [PROJECT] [--port PORT]
+```
+
+The quickest way to browse all project outputs. Opens a browser-based dashboard with:
+
+- **Sidebar** — curated project tree: experiments (labbook, artifacts, presentations), projectbook, methods, criteria
+- **Content area** — rendered markdown, syntax-highlighted JSON/Python, zoomable images (click any figure to enlarge)
+- **Footer** — project stats at a glance (experiment count, methods, best metric)
+
+Experiments are listed newest-first and collapsed by default. Presentations open in a new tab. Light/dark mode toggle in the header.
+
+In the REPL: `/dashboard` to start, `/dashboard stop` to shut down.
+
+
 ## Results and Leaderboard
 
 ```

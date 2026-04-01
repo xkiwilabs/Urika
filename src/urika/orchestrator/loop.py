@@ -77,6 +77,7 @@ async def _generate_reports(
     progress: Callable[..., Any],
     runner: AgentRunner | None = None,
     on_message: Callable[..., Any] | None = None,
+    audience: str = "expert",
 ) -> dict[str, int | float]:
     """Generate labbook reports and update README after experiment completion.
 
@@ -141,7 +142,9 @@ async def _generate_reports(
             if report_role is not None:
                 progress("agent", "Report agent \u2014 writing experiment narrative")
                 config = report_role.build_config(
-                    project_dir=project_dir, experiment_id=experiment_id
+                    project_dir=project_dir,
+                    experiment_id=experiment_id,
+                    audience=audience,
                 )
                 result = await runner.run(
                     config,
@@ -150,18 +153,24 @@ async def _generate_reports(
                 )
                 _track(result)
                 if result.success and result.text_output:
-                    from urika.core.report_writer import write_versioned
+                    content = result.text_output.strip()
+                    # Only write if the output looks like actual report content
+                    # (has markdown headings and is substantial), not agent narration
+                    if len(content) > 500 and content.count("\n#") >= 2:
+                        from urika.core.report_writer import write_versioned
 
-                    narrative_path = (
-                        project_dir
-                        / "experiments"
-                        / experiment_id
-                        / "labbook"
-                        / "narrative.md"
-                    )
-                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                    write_versioned(narrative_path, result.text_output.strip() + "\n")
-                    progress("result", "Experiment narrative written")
+                        narrative_path = (
+                            project_dir
+                            / "experiments"
+                            / experiment_id
+                            / "labbook"
+                            / "narrative.md"
+                        )
+                        narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                        write_versioned(narrative_path, content + "\n")
+                        progress("result", "Experiment narrative written")
+                    else:
+                        progress("result", "Experiment narrative generated")
         except Exception as exc:
             logger.warning("Experiment narrative generation failed: %s", exc)
 
@@ -174,7 +183,9 @@ async def _generate_reports(
             if report_role is not None:
                 progress("agent", "Report agent \u2014 writing project narrative")
                 config = report_role.build_config(
-                    project_dir=project_dir, experiment_id=""
+                    project_dir=project_dir,
+                    experiment_id="",
+                    audience=audience,
                 )
                 result = await runner.run(
                     config,
@@ -183,12 +194,18 @@ async def _generate_reports(
                 )
                 _track(result)
                 if result.success and result.text_output:
-                    from urika.core.report_writer import write_versioned
+                    content = result.text_output.strip()
+                    # Only write if the output looks like actual report content
+                    # (has markdown headings and is substantial), not agent narration
+                    if len(content) > 500 and content.count("\n#") >= 2:
+                        from urika.core.report_writer import write_versioned
 
-                    narrative_path = project_dir / "projectbook" / "narrative.md"
-                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                    write_versioned(narrative_path, result.text_output.strip() + "\n")
-                    progress("result", "Project narrative written")
+                        narrative_path = project_dir / "projectbook" / "narrative.md"
+                        narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                        write_versioned(narrative_path, content + "\n")
+                        progress("result", "Project narrative written")
+                    else:
+                        progress("result", "Project narrative generated")
         except Exception as exc:
             logger.warning("Project narrative generation failed: %s", exc)
 
@@ -196,7 +213,8 @@ async def _generate_reports(
     if runner is not None:
         try:
             pres_usage = await _generate_presentation(
-                project_dir, experiment_id, runner, progress, on_message
+                project_dir, experiment_id, runner, progress, on_message,
+                audience=audience,
             )
             _usage["tokens_in"] += pres_usage.get("tokens_in", 0)
             _usage["tokens_out"] += pres_usage.get("tokens_out", 0)
@@ -215,6 +233,7 @@ async def _generate_presentation(
     progress: Callable[..., Any],
     on_message: Callable[..., Any] | None = None,
     instructions: str = "",
+    audience: str = "expert",
 ) -> dict[str, int | float]:
     """Generate a reveal.js presentation from experiment results.
 
@@ -241,7 +260,7 @@ async def _generate_presentation(
     progress("agent", "Presentation agent — creating slide deck")
 
     config = pres_role.build_config(
-        project_dir=project_dir, experiment_id=experiment_id
+        project_dir=project_dir, experiment_id=experiment_id, audience=audience
     )
     prompt = f"Create a presentation for experiment {experiment_id}."
     if instructions:
@@ -480,6 +499,7 @@ async def run_experiment(
     instructions: str = "",
     get_user_input: Callable[..., Any] | None = None,
     pause_controller: object = None,
+    audience: str = "expert",
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
@@ -600,6 +620,20 @@ async def run_experiment(
             progress("phase", f"Paused after turn {turn - 1}")
             return _usage_dict("paused", turn - 1)
 
+        # Verify private endpoint is still reachable (hybrid/private mode)
+        from urika.core.privacy import check_private_endpoint, requires_private_endpoint
+
+        if requires_private_endpoint(project_dir):
+            ep_ok, ep_msg = check_private_endpoint(project_dir)
+            if not ep_ok:
+                _ep_error = (
+                    f"Private endpoint went offline: {ep_msg}. "
+                    "Stopping to protect data privacy."
+                )
+                progress("result", _ep_error)
+                fail_session(project_dir, experiment_id, error=_ep_error)
+                return _usage_dict("failed", turn, error=_ep_error)
+
         progress("turn", f"Turn {turn}/{max_turns}")
         try:
             # --- planning_agent (optional) ---
@@ -678,23 +712,52 @@ async def run_experiment(
             else:
                 task_input = task_prompt
 
-            # --- data_agent (hybrid mode only) ---
-            if runtime_config.privacy_mode == "hybrid":
+            # --- data_agent (hybrid/private mode) ---
+            if runtime_config.privacy_mode in ("hybrid", "private"):
                 data_role = registry.get("data_agent")
-                if data_role is not None:
-                    progress("agent", "Data agent \u2014 extracting features")
-                    data_config = data_role.build_config(
-                        project_dir=project_dir, experiment_id=experiment_id
+                if data_role is None:
+                    _data_error = (
+                        "Data Agent not registered — cannot proceed in "
+                        f"{runtime_config.privacy_mode} mode. "
+                        "Raw data must be profiled locally before cloud "
+                        "agents can run."
                     )
-                    data_result = await runner.run(
-                        data_config, task_input, on_message=on_message
+                    fail_session(
+                        project_dir, experiment_id, error=_data_error
                     )
-                    _total_tokens_in += data_result.tokens_in
-                    _total_tokens_out += data_result.tokens_out
-                    _total_cost_usd += data_result.cost_usd or 0.0
-                    _total_agent_calls += 1
-                    if data_result.success and data_result.text_output:
-                        task_input = data_result.text_output + "\n\n" + task_input
+                    return _usage_dict(
+                        "failed", turn, error=_data_error
+                    )
+
+                progress("agent", "Data agent \u2014 extracting features")
+                data_config = data_role.build_config(
+                    project_dir=project_dir, experiment_id=experiment_id
+                )
+                data_result = await runner.run(
+                    data_config, task_input, on_message=on_message
+                )
+                _total_tokens_in += data_result.tokens_in
+                _total_tokens_out += data_result.tokens_out
+                _total_cost_usd += data_result.cost_usd or 0.0
+                _total_agent_calls += 1
+
+                if not data_result.success:
+                    _data_error = (
+                        "Data Agent failed — cannot proceed in "
+                        f"{runtime_config.privacy_mode} mode. "
+                        "Raw data must be profiled locally before "
+                        "cloud agents can run. "
+                        "Start your local model or switch to open mode."
+                    )
+                    fail_session(
+                        project_dir, experiment_id, error=_data_error
+                    )
+                    return _usage_dict(
+                        "failed", turn, error=_data_error
+                    )
+
+                if data_result.text_output:
+                    task_input = data_result.text_output + "\n\n" + task_input
 
             # --- task_agent ---
             progress("agent", "Task agent — running experiment")
@@ -895,6 +958,7 @@ async def run_experiment(
                     progress,
                     runner=runner,
                     on_message=on_message,
+                    audience=audience,
                 )
                 _total_tokens_in += report_usage.get("tokens_in", 0)
                 _total_tokens_out += report_usage.get("tokens_out", 0)
@@ -1011,7 +1075,8 @@ async def run_experiment(
     # Reached max_turns without criteria being met
     complete_session(project_dir, experiment_id)
     report_usage = await _generate_reports(
-        project_dir, experiment_id, progress, runner=runner, on_message=on_message
+        project_dir, experiment_id, progress, runner=runner, on_message=on_message,
+        audience=audience,
     )
     _total_tokens_in += report_usage.get("tokens_in", 0)
     _total_tokens_out += report_usage.get("tokens_out", 0)

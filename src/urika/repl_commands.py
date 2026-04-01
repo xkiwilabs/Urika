@@ -147,6 +147,24 @@ def cmd_project(session: ReplSession, args: str) -> None:
     print_success(f"Project: {name} \u00b7 {config.mode}")
     click.echo(f"    {len(experiments)} experiments \u00b7 {completed} completed")
     click.echo(f"    Privacy: {privacy} \u00b7 Notifications: {notif_str}")
+
+    # Check private endpoint reachability for hybrid/private mode
+    from urika.core.privacy import check_private_endpoint, requires_private_endpoint
+
+    if requires_private_endpoint(session.project_path):
+        reachable, msg = check_private_endpoint(session.project_path)
+        if reachable:
+            click.echo(f"    Local model: {msg}")
+            session._private_endpoint_ok = True
+        else:
+            click.echo(f"    \u2717 {msg}")
+            click.echo(
+                "    Agent commands disabled. Start your local model or switch to open: /config"
+            )
+            session._private_endpoint_ok = False
+    else:
+        session._private_endpoint_ok = True  # open mode, no restriction
+
     click.echo()
 
 
@@ -373,11 +391,55 @@ def cmd_run(session: ReplSession, args: str) -> None:
     from urika.cli_display import print_warning
     from urika.core.experiment import list_experiments
 
+    is_remote = session._is_remote_command
+
+    # Parse remote args: /run, /run 3, /run --multi 5, /run --resume, /run try trees
+    remote_parsed = _parse_remote_run_args(args) if is_remote else None
+
+    # Handle --resume via remote
+    if remote_parsed and remote_parsed.get("resume"):
+        cmd_resume(session, "")
+        return
+
     # Check if any experiment is already running (lockfile exists)
     experiments = list_experiments(session.project_path)
     for exp in experiments:
         lock = session.project_path / "experiments" / exp.experiment_id / ".lock"
         if lock.exists():
+            # Check if the owning process is still alive
+            import os as _os
+            try:
+                pid_str = lock.read_text().strip()
+                if pid_str:
+                    _os.kill(int(pid_str), 0)
+                    # Process alive — lock is valid
+                else:
+                    # Empty lock (legacy) — treat as valid conservatively
+                    pass
+            except (ValueError, ProcessLookupError):
+                # PID dead or invalid — stale lock, clean it up
+                click.echo(f"  Cleaned stale lock on {exp.experiment_id}")
+                lock.unlink(missing_ok=True)
+                continue
+            except PermissionError:
+                pass  # Process exists, can't signal — treat as valid
+
+            if is_remote:
+                click.echo(
+                    f"  Experiment '{exp.experiment_id}' locked — stopping stale lock."
+                )
+                try:
+                    from urika.core.session import stop_session
+
+                    stop_session(
+                        session.project_path,
+                        exp.experiment_id,
+                        reason="Stopped by remote run",
+                    )
+                except Exception:
+                    lock.unlink(missing_ok=True)
+                break
+
             print_warning(f"Experiment '{exp.experiment_id}' is currently running.")
             choice = _prompt_numbered(
                 "  What would you like to do?",
@@ -407,90 +469,113 @@ def cmd_run(session: ReplSession, args: str) -> None:
                 lock.unlink(missing_ok=True)
             break
 
-    # Show defaults, offer custom
     defaults = _load_run_defaults(session)
-    click.echo("\n  Run settings:")
-    click.echo(f"    Max turns: {defaults['max_turns']}")
-    click.echo(f"    Auto mode: {defaults['auto_mode']}")
-    instructions = (
-        session.get_conversation_context() if session.conversation else "(none)"
-    )
-    click.echo(
-        f"    Instructions: {instructions[:80]}{'...' if len(instructions) > 80 else ''}"
-    )
 
-    choice = _prompt_numbered(
-        "\n  Proceed?",
-        ["Run with defaults", "Custom settings", "Skip"],
-        default=1,
-    )
+    if is_remote:
+        # Remote: skip all interactive prompts, use defaults + parsed args
+        max_turns = remote_parsed.get("max_turns") or defaults["max_turns"]
+        auto_mode = defaults["auto_mode"]
+        max_experiments = remote_parsed.get("max_experiments")
+        run_instructions = remote_parsed.get("instructions", "")
+        review_criteria = False
 
-    if choice == "Skip":
-        return
-
-    max_turns = defaults["max_turns"]
-    auto_mode = defaults["auto_mode"]
-    max_experiments = None
-    run_instructions = ""
-    review_criteria = False
-
-    if choice == "Custom settings":
-        max_turns = int(
-            _click.prompt("  Max turns", default=str(defaults["max_turns"]))
+        # Show summary
+        click.echo("\n  Run settings (remote):")
+        click.echo(f"    Max turns:    {max_turns}")
+        if max_experiments:
+            click.echo(f"    Experiments:  up to {max_experiments}")
+        if run_instructions:
+            instr_preview = (
+                run_instructions[:80] + "..."
+                if len(run_instructions) > 80
+                else run_instructions
+            )
+            click.echo(f"    Instructions: {instr_preview}")
+        click.echo()
+    else:
+        # Interactive: show defaults, offer custom
+        click.echo("\n  Run settings:")
+        click.echo(f"    Max turns: {defaults['max_turns']}")
+        click.echo(f"    Auto mode: {defaults['auto_mode']}")
+        instructions = (
+            session.get_conversation_context() if session.conversation else "(none)"
         )
-        auto_mode = _prompt_numbered(
-            "\n  Auto mode:",
-            [
-                "Checkpoint — pause between experiments for review",
-                "Capped — run up to max experiments with no pauses",
-                "Unlimited — run until criteria met or advisor says done",
-            ],
-            default={"checkpoint": 1, "capped": 2, "unlimited": 3}.get(
-                defaults["auto_mode"], 1
-            ),
+        click.echo(
+            f"    Instructions: {instructions[:80]}{'...' if len(instructions) > 80 else ''}"
         )
-        # Map back to short name
-        auto_mode = {
-            "Checkpoint": "checkpoint",
-            "Capped": "capped",
-            "Unlimited": "unlimited",
-        }.get(auto_mode.split("—")[0].strip(), "checkpoint")
-        if auto_mode == "capped":
-            max_experiments = int(_click.prompt("  Max experiments", default="10"))
-        elif auto_mode == "unlimited":
-            max_experiments = 50  # safety cap
-        run_instructions = _click.prompt(
-            "  Instructions (optional, enter to skip)", default=""
-        )
-        rc_choice = _prompt_numbered(
-            "\n  Re-evaluate criteria if met?",
-            [
-                "No — complete when criteria met (default)",
-                "Yes — advisor reviews criteria, may raise the bar",
-            ],
+
+        choice = _prompt_numbered(
+            "\n  Proceed?",
+            ["Run with defaults", "Custom settings", "Skip"],
             default=1,
         )
-        review_criteria = rc_choice.startswith("Yes")
 
-    # Show settings summary
-    click.echo()
-    click.echo("  Run settings:")
-    click.echo(f"    Max turns:    {max_turns}")
-    if max_experiments:
-        click.echo(f"    Experiments:  up to {max_experiments}")
-        click.echo(f"    Auto mode:    {auto_mode}")
-    else:
-        click.echo("    Auto mode:    single experiment")
-    if run_instructions:
-        instr_preview = (
-            run_instructions[:80] + "..."
-            if len(run_instructions) > 80
-            else run_instructions
-        )
-        click.echo(f"    Instructions: {instr_preview}")
-    if review_criteria:
-        click.echo("    Review criteria: yes")
-    click.echo()
+        if choice == "Skip":
+            return
+
+        max_turns = defaults["max_turns"]
+        auto_mode = defaults["auto_mode"]
+        max_experiments = None
+        run_instructions = ""
+        review_criteria = False
+
+        if choice == "Custom settings":
+            max_turns = int(
+                _click.prompt("  Max turns", default=str(defaults["max_turns"]))
+            )
+            auto_mode = _prompt_numbered(
+                "\n  Auto mode:",
+                [
+                    "Checkpoint \u2014 pause between experiments for review",
+                    "Capped \u2014 run up to max experiments with no pauses",
+                    "Unlimited \u2014 run until criteria met or advisor says done",
+                ],
+                default={"checkpoint": 1, "capped": 2, "unlimited": 3}.get(
+                    defaults["auto_mode"], 1
+                ),
+            )
+            # Map back to short name
+            auto_mode = {
+                "Checkpoint": "checkpoint",
+                "Capped": "capped",
+                "Unlimited": "unlimited",
+            }.get(auto_mode.split("\u2014")[0].strip(), "checkpoint")
+            if auto_mode == "capped":
+                max_experiments = int(_click.prompt("  Max experiments", default="10"))
+            elif auto_mode == "unlimited":
+                max_experiments = 50  # safety cap
+            run_instructions = _click.prompt(
+                "  Instructions (optional, enter to skip)", default=""
+            )
+            rc_choice = _prompt_numbered(
+                "\n  Re-evaluate criteria if met?",
+                [
+                    "No \u2014 complete when criteria met (default)",
+                    "Yes \u2014 advisor reviews criteria, may raise the bar",
+                ],
+                default=1,
+            )
+            review_criteria = rc_choice.startswith("Yes")
+
+        # Show settings summary
+        click.echo()
+        click.echo("  Run settings:")
+        click.echo(f"    Max turns:    {max_turns}")
+        if max_experiments:
+            click.echo(f"    Experiments:  up to {max_experiments}")
+            click.echo(f"    Auto mode:    {auto_mode}")
+        else:
+            click.echo("    Auto mode:    single experiment")
+        if run_instructions:
+            instr_preview = (
+                run_instructions[:80] + "..."
+                if len(run_instructions) > 80
+                else run_instructions
+            )
+            click.echo(f"    Instructions: {instr_preview}")
+        if review_criteria:
+            click.echo("    Review criteria: yes")
+        click.echo()
 
     # Use conversation context as instructions if none provided
     if not run_instructions and session.conversation:
@@ -554,7 +639,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
             max_turns=max_turns,
             resume=False,
             quiet=False,
-            auto=(auto_mode != "checkpoint"),
+            auto=(is_remote or auto_mode != "checkpoint"),
             instructions=run_instructions,
             max_experiments=max_experiments,
             review_criteria=review_criteria,
@@ -565,6 +650,49 @@ def cmd_run(session: ReplSession, args: str) -> None:
         _user_input_callback = None
         _repl_session_ref = None
         os.environ.pop("URIKA_REPL", None)
+
+
+def _parse_remote_run_args(args: str) -> dict:
+    """Parse remote /run arguments into a settings dict.
+
+    Supported formats:
+      /run               → defaults
+      /run 3             → max_turns=3
+      /run --multi 5     → max_experiments=5
+      /run --resume      → resume=True
+      /run try trees     → instructions="try trees"
+      /run --multi 3 focus on features → max_experiments=3, instructions="focus on features"
+    """
+    result: dict = {
+        "max_turns": None,
+        "max_experiments": None,
+        "resume": False,
+        "instructions": "",
+    }
+
+    args_stripped = args.strip()
+    if not args_stripped:
+        return result
+
+    parts = args_stripped.split()
+    if parts[0] == "--resume":
+        result["resume"] = True
+    elif parts[0] == "--multi" and len(parts) > 1:
+        try:
+            result["max_experiments"] = int(parts[1])
+            if len(parts) > 2:
+                result["instructions"] = " ".join(parts[2:])
+        except ValueError:
+            result["instructions"] = args_stripped
+    else:
+        try:
+            result["max_turns"] = int(parts[0])
+            if len(parts) > 1:
+                result["instructions"] = " ".join(parts[1:])
+        except ValueError:
+            result["instructions"] = args_stripped
+
+    return result
 
 
 @command("experiments", requires_project=True, description="List experiments")
@@ -698,9 +826,9 @@ def cmd_resume(session: ReplSession, args: str) -> None:
         click.echo("  No paused, stopped, or failed experiments to resume.")
         return
 
-    # If multiple, let user pick; if one, use it directly
-    if len(resumable) == 1:
-        exp, status = resumable[0]
+    # If multiple, let user pick; if one or remote, use most recent directly
+    if len(resumable) == 1 or session._is_remote_command:
+        exp, status = resumable[-1]  # Most recent resumable
         click.echo(f"  Resuming {exp.experiment_id} [{status}]...")
     else:
         options = [f"{exp.experiment_id} [{status}]" for exp, status in resumable]
@@ -713,6 +841,8 @@ def cmd_resume(session: ReplSession, args: str) -> None:
         exp = next(e for e, _s in resumable if e.experiment_id == exp_id)
 
     import os
+
+    is_remote = session._is_remote_command
 
     global _repl_session_ref  # noqa: PLW0603
 
@@ -731,7 +861,7 @@ def cmd_resume(session: ReplSession, args: str) -> None:
             max_turns=defaults["max_turns"],
             resume=True,
             quiet=False,
-            auto=(defaults["auto_mode"] != "checkpoint"),
+            auto=(is_remote or defaults["auto_mode"] != "checkpoint"),
             instructions="",
             max_experiments=None,
         )
@@ -776,6 +906,12 @@ def _pick_experiment(
         click.echo("  No experiments.")
         return None
 
+    # Remote: auto-pick the most recent experiment (no interactive prompt)
+    if session._is_remote_command:
+        exp_id = experiments[-1].experiment_id
+        click.echo(f"  Auto-selected: {exp_id}")
+        return exp_id
+
     # Build options — most recent first
     reversed_exps = list(reversed(experiments))
     options = []
@@ -809,6 +945,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
     if exp_choice is None:
         return
 
+    audience = _get_audience(session)
     session.set_agent_active("present")
     try:
         if exp_choice == "all":
@@ -825,6 +962,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
                     "presentation_agent",
                     exp.experiment_id,
                     f"Create a presentation for experiment {exp.experiment_id}.",
+                    audience=audience,
                 )
                 if text:
                     _save_presentation(session, text, exp.experiment_id)
@@ -839,6 +977,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
                 "Create a project-level presentation covering ALL experiments, "
                 "the research progression, key findings across the entire project, "
                 "and next steps. This is an overview presentation, not per-experiment.",
+                audience=audience,
             )
             if text:
                 _save_presentation(session, text, None)
@@ -849,6 +988,7 @@ def cmd_present(session: ReplSession, args: str) -> None:
                 "presentation_agent",
                 exp_choice,
                 f"Create a presentation for experiment {exp_choice}.",
+                audience=audience,
             )
             if text:
                 _save_presentation(session, text, exp_choice)
@@ -870,6 +1010,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
     )
     from urika.core.readme_generator import write_readme
 
+    audience = _get_audience(session)
     session.set_agent_active("report")
     try:
         if exp_choice == "all":
@@ -891,6 +1032,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                     "report_agent",
                     exp.experiment_id,
                     f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                    audience=audience,
                 )
                 if text:
                     from urika.core.report_writer import write_versioned
@@ -920,6 +1062,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                 "report_agent",
                 "",
                 "Write a project-level narrative report covering all experiments and the research progression.",
+                audience=audience,
             )
             if text:
                 from urika.core.report_writer import write_versioned
@@ -958,6 +1101,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                 "report_agent",
                 exp_choice,
                 f"Write a detailed narrative report for experiment {exp_choice}.",
+                audience=audience,
             )
             if text:
                 from urika.core.report_writer import write_versioned
@@ -1114,6 +1258,7 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
     import os
 
     instructions = args.strip()
+    audience = _get_audience(session)
     os.environ["URIKA_REPL"] = "1"
     session.set_agent_active("finalize")
     try:
@@ -1124,6 +1269,7 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
             cli_finalize,
             project=session.project_name,
             instructions=instructions,
+            audience=audience,
         )
     finally:
         session.set_agent_idle()
@@ -1197,8 +1343,74 @@ def cmd_build_tool(session: ReplSession, args: str) -> None:
         session.set_agent_idle()
 
 
+_dashboard_server = None
+
+
+@command(
+    "dashboard",
+    requires_project=True,
+    description="Open project dashboard in browser",
+)
+def cmd_dashboard(session: ReplSession, args: str) -> None:
+    import threading
+
+    from urika.dashboard.server import DashboardServer
+
+    global _dashboard_server
+
+    parts = args.strip().split()
+
+    # /dashboard stop — shut down running server
+    if parts and parts[0] in ("stop", "--stop"):
+        if _dashboard_server is not None:
+            _dashboard_server.shutdown()
+            _dashboard_server = None
+            click.echo("  Dashboard stopped.")
+        else:
+            click.echo("  No dashboard running.")
+        return
+
+    # If already running, stop it first (restart)
+    if _dashboard_server is not None:
+        _dashboard_server.shutdown()
+        _dashboard_server = None
+
+    # Parse --port from args
+    port = 8420
+    for i, part in enumerate(parts):
+        if part == "--port" and i + 1 < len(parts):
+            try:
+                port = int(parts[i + 1])
+            except ValueError:
+                click.echo("  Invalid port number.")
+                return
+
+    try:
+        server = DashboardServer(session.project_path, port=port)
+    except OSError as e:
+        click.echo(f"  Cannot start dashboard: {e}")
+        return
+
+    _dashboard_server = server
+    actual_port = server.server_address[1]
+    url = f"http://127.0.0.1:{actual_port}"
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    import webbrowser
+
+    webbrowser.open(url)
+    click.echo(f"  Dashboard running at {url}")
+    click.echo("  /dashboard stop to shut down, /dashboard to restart")
+
+
 def _run_single_agent(
-    session: ReplSession, agent_name: str, experiment_id: str, prompt: str
+    session: ReplSession,
+    agent_name: str,
+    experiment_id: str,
+    prompt: str,
+    audience: str = "expert",
 ) -> str:
     """Run a single agent and display its output. Returns the text output."""
     try:
@@ -1226,7 +1438,9 @@ def _run_single_agent(
         _on_msg = _make_on_message()
 
         config = role.build_config(
-            project_dir=session.project_path, experiment_id=experiment_id
+            project_dir=session.project_path,
+            experiment_id=experiment_id,
+            audience=audience,
         )
 
         session_info = {
@@ -1328,6 +1542,23 @@ def _load_run_defaults(session: ReplSession) -> dict:
         except Exception:
             pass
     return defaults
+
+
+def _get_audience(session: ReplSession) -> str:
+    """Read the audience preference from the project config."""
+    import tomllib
+
+    if session.project_path is None:
+        return "expert"
+    toml_path = session.project_path / "urika.toml"
+    if toml_path.exists():
+        try:
+            with open(toml_path, "rb") as f:
+                data = tomllib.load(f)
+            return data.get("preferences", {}).get("audience", "expert")
+        except Exception:
+            pass
+    return "expert"
 
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:

@@ -26,13 +26,21 @@ class ReplSession:
     # Notification bus — persistent, lives across runs
     notification_bus: object = None  # NotificationBus | None (avoid circular import)
 
+    # Privacy endpoint state — False blocks agent commands in hybrid/private mode
+    _private_endpoint_ok: bool = True
+
     # Agent activity — tracks if any command is running
     agent_active: bool = False
     active_command: str = ""
 
     # Remote command queue — commands from Telegram/Slack
-    _remote_queue: list[tuple[str, str]] = field(default_factory=list)
+    # Each item is (command, args, respond) where respond is an optional callback
+    _remote_queue: list[tuple[str, str, object]] = field(default_factory=list)
     _remote_lock: threading.Lock = field(default_factory=threading.Lock)
+
+    # Remote command state — set during remote command execution
+    _is_remote_command: bool = False
+    _remote_respond: object = None  # Callable[[str], None] | None
 
     # Usage tracking
     session_start: float = field(default_factory=time.monotonic)
@@ -183,13 +191,24 @@ class ReplSession:
         with self._remote_lock:
             return len(self._remote_queue) > 0
 
-    def queue_remote_command(self, command: str, args: str) -> None:
-        """Queue a command from Telegram/Slack for REPL execution."""
-        with self._remote_lock:
-            self._remote_queue.append((command, args))
+    def queue_remote_command(
+        self, command: str, args: str, respond: object = None
+    ) -> None:
+        """Queue a command from Telegram/Slack for REPL execution.
 
-    def pop_remote_command(self) -> tuple[str, str] | None:
-        """Pop the next remote command, or None if empty."""
+        Args:
+            command: command name (e.g. "run", "evaluate")
+            args: command arguments
+            respond: optional callback(text) to send results back to the channel
+        """
+        with self._remote_lock:
+            self._remote_queue.append((command, args, respond))
+
+    def pop_remote_command(self) -> tuple[str, str, object] | None:
+        """Pop the next remote command, or None if empty.
+
+        Returns (command, args, respond) tuple or None.
+        """
         with self._remote_lock:
             if self._remote_queue:
                 return self._remote_queue.pop(0)

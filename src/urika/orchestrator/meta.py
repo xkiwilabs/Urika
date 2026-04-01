@@ -26,6 +26,7 @@ async def run_project(
     on_message: Callable[..., Any] | None = None,
     get_user_input: Callable[..., Any] | None = None,
     pause_controller: object = None,
+    audience: str = "expert",
 ) -> dict[str, Any]:
     """Run experiments until criteria met or limits reached.
 
@@ -35,7 +36,7 @@ async def run_project(
         unlimited: run until advisor says done (hard cap 50)
     """
     from urika.cli_display import print_step
-    from urika.core.experiment import create_experiment
+    from urika.core.experiment import create_experiment, list_experiments
     from urika.orchestrator import run_experiment
 
     safety_cap = 50 if mode == "unlimited" else max_experiments
@@ -44,30 +45,77 @@ async def run_project(
     progress = on_progress or (lambda e, d="": None)
 
     for exp_num in range(safety_cap):
-        # Determine next experiment via advisor
-        progress("agent", "Advisor agent — proposing next experiment")
-        next_exp, advisor_text = await _determine_next(
-            project_dir, runner, instructions, on_message
-        )
-        if next_exp is None:
-            print_step("Advisor: no further experiments to suggest.")
-            if advisor_text:
-                preview = advisor_text[:500].strip()
-                if len(advisor_text) > 500:
-                    preview += "..."
-                click.echo(f"\n  {preview}\n")
-            break
+        # Check for existing pending experiments first (e.g., created but not yet run)
+        from urika.core.progress import load_progress
 
-        exp_name = next_exp.get("name", f"auto-{exp_num + 1}").replace(" ", "-").lower()
-        description = next_exp.get("method", next_exp.get("description", ""))
+        pending_experiments = [
+            e for e in list_experiments(project_dir)
+            if load_progress(project_dir, e.experiment_id).get("status")
+            in ("pending",)
+        ]
 
-        # Create experiment
-        exp = create_experiment(
-            project_dir, name=exp_name, hypothesis=description[:500]
-        )
-        print_step(f"Experiment {exp_num + 1}: {exp.experiment_id}")
+        if pending_experiments:
+            # Run the most recent pending experiment before asking advisor
+            exp = pending_experiments[-1]
+            print_step(
+                f"Experiment {exp_num + 1}: {exp.experiment_id} (pending)"
+            )
+        else:
+            # Check for pending suggestions from advisor conversations
+            next_exp = None
+            pending_path = project_dir / "suggestions" / "pending.json"
+            if pending_path.exists():
+                try:
+                    import json as _pjson
+
+                    pdata = _pjson.loads(
+                        pending_path.read_text(encoding="utf-8")
+                    )
+                    psuggest = pdata.get("suggestions", [])
+                    if psuggest:
+                        next_exp = psuggest[0]
+                        # Remove used suggestion, delete file if empty
+                        psuggest.pop(0)
+                        if psuggest:
+                            pending_path.write_text(
+                                _pjson.dumps(pdata, indent=2),
+                                encoding="utf-8",
+                            )
+                        else:
+                            pending_path.unlink(missing_ok=True)
+                        print_step(
+                            "Using suggestion from recent advisor conversation"
+                        )
+                except Exception:
+                    pass
+
+            if next_exp is None:
+                # No pending suggestions — ask advisor
+                progress("agent", "Advisor agent — proposing next experiment")
+                next_exp, advisor_text = await _determine_next(
+                    project_dir, runner, instructions, on_message
+                )
+
+            if next_exp is None:
+                print_step("Advisor: no further experiments to suggest.")
+                if advisor_text:
+                    preview = advisor_text[:500].strip()
+                    if len(advisor_text) > 500:
+                        preview += "..."
+                    click.echo(f"\n  {preview}\n")
+                break
+
+            exp_name = next_exp.get("name", f"auto-{exp_num + 1}").replace(" ", "-").lower()
+            description = next_exp.get("method", next_exp.get("description", ""))
+
+            # Create experiment
+            exp = create_experiment(
+                project_dir, name=exp_name, hypothesis=description[:500]
+            )
+            print_step(f"Experiment {exp_num + 1}: {exp.experiment_id}")
 
         # Notify: new experiment starting
+        description = getattr(exp, "name", "")
         progress(
             "phase",
             f"Starting experiment {exp_num + 1}: {exp.experiment_id}"
@@ -86,6 +134,7 @@ async def run_project(
             instructions=instructions,
             get_user_input=get_user_input,
             pause_controller=pause_controller,
+            audience=audience,
         )
         results.append(result)
 
@@ -117,7 +166,10 @@ async def run_project(
             from urika.orchestrator.finalize import finalize_project
 
             progress("phase", "Finalizing project")
-            await finalize_project(project_dir, runner, on_progress, on_message)
+            await finalize_project(
+                project_dir, runner, on_progress, on_message,
+                audience=audience,
+            )
         except Exception as exc:
             logger.warning("Finalization failed: %s", exc)
 
@@ -155,6 +207,15 @@ async def _determine_next(
     import tomllib
 
     context_parts = []
+
+    # Inject rolling context summary from previous advisor sessions
+    from urika.core.advisor_memory import load_context_summary
+
+    context_summary = load_context_summary(project_dir)
+    if context_summary:
+        context_parts.append(
+            f"## Research Context (from previous sessions)\n\n{context_summary}"
+        )
 
     # Project info
     toml_path = project_dir / "urika.toml"
@@ -212,14 +273,17 @@ async def _determine_next(
     except Exception:
         pass
 
+    if instructions:
+        context_parts.append(
+            f"\nIMPORTANT — User instructions (follow these): {instructions}"
+        )
+
     context_parts.append(
         "\nBased on the above, propose the next experiment. "
-        "If all promising avenues have been explored and no further "
-        "experiments would add value, respond with no suggestions."
+        "If the user gave instructions, follow them. "
+        "Only respond with no suggestions if the user's instructions "
+        "have been fully addressed AND all promising avenues explored."
     )
-
-    if instructions:
-        context_parts.append(f"\nUser instructions: {instructions}")
 
     context = "\n".join(context_parts)
 
@@ -230,6 +294,25 @@ async def _determine_next(
         return None, result.error or ""
 
     parsed = parse_suggestions(result.text_output)
+
+    # Save advisor exchange to persistent history (best-effort, no summary update)
+    try:
+        from urika.core.advisor_memory import append_exchange
+
+        append_exchange(
+            project_dir,
+            role="advisor",
+            text=result.text_output or "",
+            source="meta",
+            suggestions=(
+                parsed["suggestions"]
+                if parsed and parsed.get("suggestions")
+                else None
+            ),
+        )
+    except Exception:
+        pass
+
     if parsed and parsed.get("suggestions"):
         return parsed["suggestions"][0], result.text_output or ""
     return None, result.text_output or ""

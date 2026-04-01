@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import threading
+import time
 
 import click
 from prompt_toolkit import PromptSession
@@ -28,12 +31,31 @@ from urika.cli_display import (
 )
 from urika.repl_commands import (
     PROJECT_COMMANDS,
+    cmd_advisor,
+    cmd_build_tool,
+    cmd_evaluate,
+    cmd_finalize,
+    cmd_plan,
+    cmd_present,
+    cmd_report,
+    cmd_resume,
+    cmd_run,
     get_all_commands,
     get_command_names,
     get_experiment_ids,
     get_project_names,
 )
 from urika.repl_session import ReplSession
+
+logger = logging.getLogger(__name__)
+
+
+def _strip_json_blocks(text: str) -> str:
+    """Remove ```json ... ``` blocks from agent output for clean remote responses."""
+    import re
+
+    cleaned = re.sub(r"```json\s*\n.*?\n\s*```", "", text, flags=re.DOTALL)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
 class UrikaCompleter(Completer):
@@ -175,10 +197,13 @@ def run_repl() -> None:
             item = session.pop_remote_command()
             if item is None:
                 break
-            cmd, args = item
+            cmd, args, respond = item
             cmd_text = f"/{cmd} {args}".strip()
-            click.echo(f"\n  [Remote] {cmd_text}")
-            _handle_command(session, cmd_text)
+            click.echo(f"\n  {_C.YELLOW}[Remote]{_C.RESET} {cmd_text}")
+            _execute_remote_command(session, cmd, args, respond)
+
+    # Start background thread to drain remote commands while agent is idle
+    _start_remote_drain_thread(session)
 
     # ── Main loop ────────────────────────────────────────
     while True:
@@ -235,6 +260,21 @@ def _handle_command(session: ReplSession, text: str) -> None:
             print_error(f"Unknown command: /{cmd_name}. Type /help for commands.")
         return
 
+    # Block agent commands when private endpoint is unreachable
+    _AGENT_COMMANDS = {
+        "run", "evaluate", "plan", "advisor", "report",
+        "present", "finalize", "build-tool", "resume",
+    }
+    if cmd_name in _AGENT_COMMANDS and not session._private_endpoint_ok:
+        click.echo(
+            "  \u2717 Agent commands disabled \u2014 local model unreachable "
+            "in hybrid/private mode."
+        )
+        click.echo(
+            "    Start your local model or switch to open: /config"
+        )
+        return
+
     handler = all_cmds[cmd_name]["func"]
     try:
         handler(session, args)
@@ -254,6 +294,13 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         click.echo("  Load a project first: /project <name>")
         return
 
+    if not session._private_endpoint_ok:
+        click.echo(
+            "  \u2717 Agent commands disabled \u2014 local model unreachable "
+            "in hybrid/private mode."
+        )
+        return
+
     try:
         from urika.agents.registry import AgentRegistry
         from urika.agents.runner import get_runner
@@ -269,8 +316,16 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             print_error("Advisor agent not found.")
             return
 
-        # Build context
+        # Build context — inject rolling summary from previous sessions
+        from urika.core.advisor_memory import load_context_summary
+
         context = f"Project: {session.project_name}\n"
+        context_summary = load_context_summary(session.project_path)
+        if context_summary:
+            context += (
+                f"\n## Research Context (from previous sessions)\n\n"
+                f"{context_summary}\n\n"
+            )
         conv = session.get_conversation_context()
         if conv:
             context += f"\nPrevious conversation:\n{conv}\n"
@@ -332,8 +387,59 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             session.add_message("user", text)
             session.add_message("advisor", result.text_output.strip())
 
-            # Parse suggestions and offer to run them
-            _offer_to_run_suggestions(session, result.text_output)
+            # Save to persistent advisor history
+            from urika.core.advisor_memory import append_exchange
+
+            advisor_text = result.text_output.strip()
+            append_exchange(
+                session.project_path, role="user", text=text, source="repl"
+            )
+
+            # Parse suggestions for saving alongside advisor response
+            from urika.orchestrator.parsing import parse_suggestions
+
+            parsed = parse_suggestions(advisor_text)
+            parsed_suggestions = (
+                parsed["suggestions"]
+                if parsed and parsed.get("suggestions")
+                else None
+            )
+            append_exchange(
+                session.project_path,
+                role="advisor",
+                text=advisor_text,
+                source="repl",
+                suggestions=parsed_suggestions,
+            )
+
+            # Update rolling context summary in a separate thread
+            # (avoids event loop issues from sequential asyncio.run calls)
+            try:
+                import concurrent.futures
+                from urika.core.advisor_memory import update_context_summary
+
+                def _do_summary_update():
+                    return asyncio.run(
+                        update_context_summary(
+                            session.project_path, runner, registry
+                        )
+                    )
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                    _pool.submit(_do_summary_update).result(timeout=120)
+            except Exception as _summary_exc:
+                logger.warning("Context summary update failed: %s", _summary_exc)
+
+            # Send advisor response to remote channel if applicable
+            if session._is_remote_command and session._remote_respond:
+                from urika.notifications.bus import _split_message
+                clean_text = _strip_json_blocks(advisor_text)
+                for chunk in _split_message(clean_text, max_len=4000):
+                    session._remote_respond(chunk)
+
+            # Parse suggestions and offer to run them (skip for remote)
+            if not session._is_remote_command:
+                _offer_to_run_suggestions(session, result.text_output)
         else:
             print_error(f"Advisor error: {result.error}")
 
@@ -377,8 +483,97 @@ def _offer_to_run_suggestions(session: ReplSession, advisor_output: str) -> None
             default=1,
         )
         if choice.startswith("Yes"):
-            from urika.repl_commands import cmd_run
+            from urika.repl_commands import cmd_run as _cmd_run
 
-            cmd_run(session, "")
+            _cmd_run(session, "")
     except click.Abort:
         pass
+
+
+# ── Remote command execution ─────────────────────────────────
+
+# Map remote command names to REPL handler functions
+_REMOTE_COMMAND_MAP = {
+    "run": cmd_run,
+    "advisor": cmd_advisor,
+    "evaluate": cmd_evaluate,
+    "plan": cmd_plan,
+    "report": cmd_report,
+    "present": cmd_present,
+    "finalize": cmd_finalize,
+    "build-tool": cmd_build_tool,
+    "resume": cmd_resume,
+}
+
+
+def _execute_remote_command(
+    session: ReplSession,
+    command: str,
+    args: str,
+    respond: object | None,
+) -> None:
+    """Execute a remote command through the REPL command handlers.
+
+    Sets session._is_remote_command so handlers can skip interactive
+    prompts and run with defaults. Sends completion/error back via
+    the respond callback if provided.
+    """
+    handler = _REMOTE_COMMAND_MAP.get(command)
+    if handler is None:
+        msg = f"Unknown remote command: /{command}"
+        click.echo(f"  {msg}")
+        if respond:
+            respond(msg)
+        return
+
+    session._is_remote_command = True
+    session._remote_respond = respond
+    try:
+        handler(session, args)
+        if respond:
+            respond(f"/{command} completed.")
+    except click.Abort:
+        click.echo("\n  Cancelled.")
+        if respond:
+            respond(f"/{command} cancelled.")
+    except Exception as exc:
+        print_error(f"Error: {exc}")
+        if respond:
+            respond(f"/{command} error: {exc}")
+    finally:
+        session._is_remote_command = False
+        session._remote_respond = None
+
+
+def _start_remote_drain_thread(session: ReplSession) -> None:
+    """Start a daemon thread that drains remote commands when REPL is idle.
+
+    Checks the queue every 2 seconds. When the REPL is not running an
+    agent command, pops the next queued command and executes it through
+    the standard REPL command handlers.
+    """
+
+    def _drain_loop() -> None:
+        while True:
+            try:
+                if (
+                    not session.agent_active
+                    and not session._is_remote_command
+                    and session.has_remote_command
+                ):
+                    item = session.pop_remote_command()
+                    if item is not None:
+                        cmd, args, respond = item
+                        cmd_text = f"/{cmd} {args}".strip()
+                        click.echo(
+                            f"\n  {_C.YELLOW}[Remote]{_C.RESET} {cmd_text}"
+                        )
+                        _execute_remote_command(session, cmd, args, respond)
+            except Exception:
+                logger.debug("Remote drain error", exc_info=True)
+            time.sleep(2)
+
+    thread = threading.Thread(
+        target=_drain_loop, name="urika-remote-drain", daemon=True
+    )
+    thread.start()
