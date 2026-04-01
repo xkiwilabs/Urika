@@ -178,6 +178,15 @@ async def _determine_next(
 
     context_parts = []
 
+    # Inject rolling context summary from previous advisor sessions
+    from urika.core.advisor_memory import load_context_summary
+
+    context_summary = load_context_summary(project_dir)
+    if context_summary:
+        context_parts.append(
+            f"## Research Context (from previous sessions)\n\n{context_summary}"
+        )
+
     # Project info
     toml_path = project_dir / "urika.toml"
     if toml_path.exists():
@@ -255,6 +264,25 @@ async def _determine_next(
         return None, result.error or ""
 
     parsed = parse_suggestions(result.text_output)
+
+    # Save advisor exchange to persistent history (best-effort, no summary update)
+    try:
+        from urika.core.advisor_memory import append_exchange
+
+        append_exchange(
+            project_dir,
+            role="advisor",
+            text=result.text_output or "",
+            source="meta",
+            suggestions=(
+                parsed["suggestions"]
+                if parsed and parsed.get("suggestions")
+                else None
+            ),
+        )
+    except Exception:
+        pass
+
     if parsed and parsed.get("suggestions"):
         return parsed["suggestions"][0], result.text_output or ""
     return None, result.text_output or ""
