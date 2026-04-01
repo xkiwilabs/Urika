@@ -50,6 +50,14 @@ from urika.repl_session import ReplSession
 logger = logging.getLogger(__name__)
 
 
+def _strip_json_blocks(text: str) -> str:
+    """Remove ```json ... ``` blocks from agent output for clean remote responses."""
+    import re
+
+    cleaned = re.sub(r"```json\s*\n.*?\n\s*```", "", text, flags=re.DOTALL)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
 class UrikaCompleter(Completer):
     """Tab completer for REPL — commands, project names, experiment IDs."""
 
@@ -397,7 +405,8 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             # Send advisor response to remote channel if applicable
             if session._is_remote_command and session._remote_respond:
                 from urika.notifications.bus import _split_message
-                for chunk in _split_message(advisor_text, max_len=4000):
+                clean_text = _strip_json_blocks(advisor_text)
+                for chunk in _split_message(clean_text, max_len=4000):
                     session._remote_respond(chunk)
 
             # Parse suggestions and offer to run them (skip for remote)
