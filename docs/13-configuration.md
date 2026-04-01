@@ -106,6 +106,28 @@ venv = true    # false = use global environment (default), true = per-project ve
 When enabled, a `.venv/` directory is created inside the project with `--system-site-packages`, inheriting the global base packages. Agents install project-specific packages into this venv. See [Creating Projects](03-creating-projects.md#isolated-environments) for details.
 
 
+## Audience Mode
+
+Control the level of explanation in reports and presentations:
+
+```toml
+[preferences]
+audience = "expert"    # or "novice"
+```
+
+- **expert** (default) — Assumes domain expertise. Concise, uses technical terminology freely.
+- **novice** — Explains every method in plain language. Adds "What this means" explanations, defines technical terms, walks through results step by step. Presentations include extra slides explaining approaches conceptually.
+
+Override per-command with `--audience`:
+
+```bash
+urika report --audience novice
+urika present --audience novice
+urika run --audience novice
+urika finalize --audience novice
+```
+
+
 ## criteria.json
 
 Versioned criteria that define what "good enough" looks like for the project. Criteria evolve over the course of experimentation as agents learn more about the data and problem.

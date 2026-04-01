@@ -265,6 +265,7 @@ urika run [PROJECT] [OPTIONS]
 | `--auto` | Fully autonomous mode -- no confirmation prompts |
 | `--instructions TEXT` | Guide the next experiment (e.g., "focus on tree-based models") |
 | `--review-criteria` | Ask advisor to review criteria when met (may raise the bar) |
+| `--audience [expert\|novice]` | Control explanation depth in reports and presentations (default: expert) |
 
 **Interactive settings:** When called with no flags, shows a settings dialog:
 
@@ -386,6 +387,7 @@ urika report [PROJECT] [--experiment ID]
 | Option | Description |
 |--------|-------------|
 | `--experiment ID` | Generate report for a specific experiment |
+| `--audience [expert\|novice]` | Control explanation depth (default: expert) |
 
 When no experiment is specified, you are prompted to choose: a specific experiment, all experiments, or project-level reports.
 
@@ -402,6 +404,12 @@ urika present [PROJECT]
 ```
 
 Prompts you to choose: a specific experiment, all experiments, or a project-level presentation.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--audience [expert\|novice]` | Control explanation depth (default: expert) |
 
 ---
 
@@ -505,6 +513,7 @@ urika finalize [PROJECT] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--instructions TEXT` | Optional instructions for the finalizer agent (e.g., "focus on the random forest method") |
+| `--audience [expert\|novice]` | Control explanation depth in reports and presentations (default: expert) |
 
 **Examples:**
 
