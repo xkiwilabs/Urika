@@ -620,6 +620,20 @@ async def run_experiment(
             progress("phase", f"Paused after turn {turn - 1}")
             return _usage_dict("paused", turn - 1)
 
+        # Verify private endpoint is still reachable (hybrid/private mode)
+        from urika.core.privacy import check_private_endpoint, requires_private_endpoint
+
+        if requires_private_endpoint(project_dir):
+            ep_ok, ep_msg = check_private_endpoint(project_dir)
+            if not ep_ok:
+                _ep_error = (
+                    f"Private endpoint went offline: {ep_msg}. "
+                    "Stopping to protect data privacy."
+                )
+                progress("result", _ep_error)
+                fail_session(project_dir, experiment_id, error=_ep_error)
+                return _usage_dict("failed", turn, error=_ep_error)
+
         progress("turn", f"Turn {turn}/{max_turns}")
         try:
             # --- planning_agent (optional) ---
