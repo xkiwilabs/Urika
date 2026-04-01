@@ -285,8 +285,16 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             print_error("Advisor agent not found.")
             return
 
-        # Build context
+        # Build context — inject rolling summary from previous sessions
+        from urika.core.advisor_memory import load_context_summary
+
         context = f"Project: {session.project_name}\n"
+        context_summary = load_context_summary(session.project_path)
+        if context_summary:
+            context += (
+                f"\n## Research Context (from previous sessions)\n\n"
+                f"{context_summary}\n\n"
+            )
         conv = session.get_conversation_context()
         if conv:
             context += f"\nPrevious conversation:\n{conv}\n"
@@ -347,6 +355,43 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             click.echo(format_agent_output(result.text_output))
             session.add_message("user", text)
             session.add_message("advisor", result.text_output.strip())
+
+            # Save to persistent advisor history
+            from urika.core.advisor_memory import append_exchange
+
+            advisor_text = result.text_output.strip()
+            append_exchange(
+                session.project_path, role="user", text=text, source="repl"
+            )
+
+            # Parse suggestions for saving alongside advisor response
+            from urika.orchestrator.parsing import parse_suggestions
+
+            parsed = parse_suggestions(advisor_text)
+            parsed_suggestions = (
+                parsed["suggestions"]
+                if parsed and parsed.get("suggestions")
+                else None
+            )
+            append_exchange(
+                session.project_path,
+                role="advisor",
+                text=advisor_text,
+                source="repl",
+                suggestions=parsed_suggestions,
+            )
+
+            # Update rolling context summary (best-effort)
+            try:
+                from urika.core.advisor_memory import update_context_summary
+
+                asyncio.run(
+                    update_context_summary(
+                        session.project_path, runner, registry
+                    )
+                )
+            except Exception:
+                pass
 
             # Parse suggestions and offer to run them
             _offer_to_run_suggestions(session, result.text_output)
