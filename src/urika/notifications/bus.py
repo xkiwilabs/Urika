@@ -352,13 +352,6 @@ class NotificationBus:
         _respond = respond or (lambda t: None)
         category = classify_remote_command(command)
 
-        # Print to terminal so there's a record
-        import sys
-
-        cmd_display = f"/{command} {args}".strip()
-        sys.stdout.write(f"\n  \033[33m[Remote]\033[0m {cmd_display}\n")
-        sys.stdout.flush()
-
         if category == "rejected":
             _respond(f"/{command} is not available remotely. Use the terminal.")
             return
