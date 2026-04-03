@@ -7,15 +7,6 @@ from urika.cli._legacy import (
     # The Click group
     cli,
     # Internal helpers (underscore-prefixed, not covered by star import)
-    _make_on_message,
-    _record_agent_usage,
-    _sanitize_project_name,
-    _projects_dir,
-    _resolve_project,
-    _ensure_project,
-    _test_endpoint,
-    _prompt_numbered,
-    _prompt_path,
     _offer_to_run_advisor_suggestions,
     _UrikaCLI,
     _run_builder_agent_loop,
@@ -34,4 +25,17 @@ from urika.cli._legacy import (
     update_project,
     present,
     dashboard,
+)
+
+# Helpers now live in _helpers.py — re-export for backward compatibility
+from urika.cli._helpers import (  # noqa: F401
+    _make_on_message,
+    _record_agent_usage,
+    _sanitize_project_name,
+    _projects_dir,
+    _resolve_project,
+    _ensure_project,
+    _test_endpoint,
+    _prompt_numbered,
+    _prompt_path,
 )
