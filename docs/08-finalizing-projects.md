@@ -142,6 +142,64 @@ This means anyone with Python installed can reproduce the analysis, regardless o
 | `projectbook/final-presentation/` | Final reveal.js presentation |
 | `README.md` | Updated project README with findings |
 
+## Interim Summaries (Draft Mode)
+
+Draft mode runs the same finalization pipeline but frames everything as an interim progress summary rather than final deliverables. Outputs go to `projectbook/draft/` so they never overwrite the real final outputs.
+
+### What it does
+
+The `--draft` flag modifies each step of the pipeline:
+
+1. **Finalizer Agent** -- reads all completed experiments and writes a draft findings summary to `projectbook/draft/findings.json` with summary figures in `projectbook/draft/figures/`. Does **not** write standalone method scripts, `requirements.txt`, or reproduce scripts.
+2. **Report Agent** -- reads the draft findings and writes an interim progress report to `projectbook/draft/report.md`. Structured as: Summary of Progress, Methods Explored, Current Best Results, Open Questions, Next Steps.
+3. **Presentation Agent** -- reads the draft findings and creates a progress presentation in `projectbook/draft/presentation/`.
+4. **README update** -- skipped entirely in draft mode.
+
+### When to use it
+
+- Mid-project review: see where things stand without waiting for all experiments to finish
+- Sharing progress with colleagues or supervisors before the work is complete
+- Checking whether the project is heading in the right direction
+- Generating figures and summaries for interim meetings or reports
+
+Draft mode can run at any time, including while experiments are still in progress. Running a draft does not prevent you from running more experiments afterward.
+
+### How to run
+
+From the CLI:
+
+```bash
+urika finalize my-project --draft
+urika finalize my-project --draft --audience novice
+urika finalize my-project --draft --instructions "focus on the baseline results"
+```
+
+From the REPL:
+
+```
+urika:my-project> /finalize --draft
+urika:my-project> /finalize --draft focus on preliminary findings
+```
+
+### What it skips
+
+| Skipped in draft mode | Why |
+|----------------------|-----|
+| Standalone method scripts (`methods/final_*.py`) | Not meaningful until methods are finalized |
+| `requirements.txt` | Tied to standalone scripts |
+| `reproduce.sh` / `reproduce.bat` | Tied to standalone scripts |
+| `README.md` update | The project is not finished yet |
+
+### Draft output summary
+
+| File | Description |
+|------|-------------|
+| `projectbook/draft/findings.json` | Interim findings summary (JSON) |
+| `projectbook/draft/figures/` | Summary figures |
+| `projectbook/draft/report.md` | Progress report (markdown) |
+| `projectbook/draft/presentation/` | Progress presentation (reveal.js) |
+
+
 ---
 
 **Next:** [Agent System](09-agent-system.md)
