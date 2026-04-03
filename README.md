@@ -37,22 +37,24 @@ claude login                    # opens browser to authenticate
 
 ### Install Urika
 
-```bash
-pip install urika
-urika setup                     # check installation, detect hardware, optionally install DL
-```
-
-The default install includes visualization, ML, statistics, knowledge pipeline, and notification support. Deep learning (torch, transformers) is optional: `pip install "urika[dl]"`.
-
-**From source (development):**
+**Recommended: install from source.** Urika is under active development with frequent updates. Installing from source gives you the latest features and fixes:
 
 ```bash
 git clone https://github.com/xkiwilabs/Urika.git
 cd Urika
 pip install -e ".[dev]"
+urika setup                     # check installation, detect hardware, optionally install DL
 ```
 
-> **Switching from source to PyPI?** If you previously installed from source, use `pip install --force-reinstall urika` to clear cached files.
+To update, just `git pull` from the repo.
+
+**Alternative: install from PyPI** (pre-release — may lag behind source):
+
+```bash
+pip install urika
+```
+
+The default install includes visualization, ML, statistics, knowledge pipeline, and notification support. Deep learning (torch, transformers) is optional: `pip install "urika[dl]"`.
 
 See [Getting Started](docs/01-getting-started.md) for full details.
 
