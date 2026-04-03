@@ -9,22 +9,28 @@ from urika.cli._legacy import (
     # Internal helpers (underscore-prefixed, not covered by star import)
     _offer_to_run_advisor_suggestions,
     _UrikaCLI,
-    _run_builder_agent_loop,
-    _ingest_knowledge,
     _determine_next_experiment,
     # Command functions imported by repl_commands.py
-    new,
-    status,
     run,
     report,
-    inspect,
     logs,
     finalize,
     config_command,
     notifications_command,
-    update_project,
     present,
     dashboard,
+)
+
+# Project commands now live in project.py
+import urika.cli.project  # noqa: F401
+from urika.cli.project import (  # noqa: F401
+    new,
+    status,
+    update_project,
+    inspect,
+    list_cmd,
+    _run_builder_agent_loop,
+    _ingest_knowledge,
 )
 
 # Helpers now live in _helpers.py — re-export for backward compatibility
