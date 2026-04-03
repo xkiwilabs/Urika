@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Draft finalize mode (`--draft`) for interim project summaries — outputs to `projectbook/draft/`, skips standalone scripts and README update
 - Project dashboard (`urika dashboard`) — browser-based read-only project viewer with curated tree, markdown/image/JSON rendering, light/dark mode
 - Audience modes (`--audience novice/expert`) — control explanation depth in reports and presentations
 - Persistent advisor memory — conversation history and rolling context summary across sessions

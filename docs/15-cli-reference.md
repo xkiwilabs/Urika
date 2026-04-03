@@ -514,15 +514,18 @@ urika finalize [PROJECT] [OPTIONS]
 |--------|-------------|
 | `--instructions TEXT` | Optional instructions for the finalizer agent (e.g., "focus on the random forest method") |
 | `--audience [expert\|novice]` | Control explanation depth in reports and presentations (default: expert) |
+| `--draft` | Interim summary -- outputs to `projectbook/draft/`, does not overwrite final outputs or write standalone scripts |
 
 **Examples:**
 
 ```bash
 urika finalize my-project
 urika finalize my-project --instructions "emphasize the ensemble methods"
+urika finalize my-project --draft
+urika finalize my-project --draft --audience novice
 ```
 
-See [Finalizing Projects](08-finalizing-projects.md) for details on what is produced.
+See [Finalizing Projects](08-finalizing-projects.md) for details on what is produced, including draft mode.
 
 ---
 
