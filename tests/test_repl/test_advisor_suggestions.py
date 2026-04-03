@@ -31,7 +31,7 @@ class TestCliOfferToRunAdvisorSuggestions:
             '```json\n{"suggestions": [{"name": "exp-1", "method": "test"}]}\n```'
         )
         with patch(
-            "urika.cli._prompt_numbered",
+            "urika.cli._legacy._prompt_numbered",
             return_value="No \u2014 I'll run later with urika run",
         ):
             # Should not call run or create_experiment
@@ -51,14 +51,14 @@ class TestCliOfferToRunAdvisorSuggestions:
 
         with (
             patch(
-                "urika.cli._prompt_numbered",
+                "urika.cli._legacy._prompt_numbered",
                 return_value="Yes \u2014 start running now",
             ),
             patch(
                 "urika.core.experiment.create_experiment",
                 return_value=mock_exp,
             ) as mock_create,
-            patch("urika.cli.click.Context") as mock_ctx_cls,
+            patch("urika.cli._legacy.click.Context") as mock_ctx_cls,
         ):
             mock_ctx = MagicMock()
             invoked_kwargs = {}
@@ -83,7 +83,7 @@ class TestCliOfferToRunAdvisorSuggestions:
         advisor_output = (
             '```json\n{"suggestions": [{"name": "exp-1"}]}\n```'
         )
-        with patch("urika.cli._prompt_numbered", side_effect=click.Abort):
+        with patch("urika.cli._legacy._prompt_numbered", side_effect=click.Abort):
             # Should not raise
             _offer_to_run_advisor_suggestions(
                 advisor_output, "proj", tmp_path
