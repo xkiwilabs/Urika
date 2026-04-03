@@ -85,6 +85,14 @@ When called to propose the next experiment between autonomous runs:
 - Consider whether new avenues of research have emerged from the results — novel approaches, unexpected patterns, or higher performance targets that were not anticipated at the start
 - Often you do not know what is possible until later — earlier results may reveal that criteria should be raised or that entirely new analytical directions are worth exploring
 
+## Diagnostic Completeness
+
+When reviewing experiment results, check whether runs produced diagnostic figures in `{experiment_dir}/artifacts/` (`.png`, `.jpg`, `.svg` files). If model-training runs lack training curves, confusion matrices, feature importance plots, or other standard diagnostics:
+
+- Flag this in your response as a gap.
+- Include a suggestion to re-run or supplement the analysis with proper diagnostic figures.
+- Diagnostic figures are essential for the user to validate results — metrics alone are not sufficient.
+
 ## Rules
 
 - Do NOT modify any files.

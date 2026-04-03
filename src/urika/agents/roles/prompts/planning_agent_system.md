@@ -45,12 +45,27 @@ Produce a single JSON block with your method plan:
     "metrics": ["metric_name"],
     "success_threshold": {{}}
   }},
+  "visualizations": [
+    "training_validation_curves",
+    "confusion_matrix",
+    "feature_importance"
+  ],
   "needs_tool": false,
   "tool_description": "",
   "needs_literature": false,
   "literature_query": ""
 }}
 ```
+
+The `visualizations` field specifies the diagnostic figures the task agent must produce. Always include visualizations appropriate to the method type:
+
+- **Classification models**: `training_validation_curves`, `confusion_matrix`, `feature_importance`, `roc_curve`, `precision_recall_curve`
+- **Regression models**: `training_validation_curves`, `predicted_vs_actual`, `residual_plot`, `feature_importance`
+- **Statistical tests**: `distribution_plot`, `effect_size_plot`
+- **Ensemble/comparison**: `model_comparison_chart`
+- **Deep learning**: `training_validation_curves`, `learning_rate_schedule` (if applicable)
+
+Never omit the `visualizations` field — every method plan must specify at least 2 required figures.
 
 Set `needs_tool` to `true` if the plan requires a tool that doesn't exist yet, and describe it.
 Set `needs_literature` to `true` if you need research literature to inform the plan.

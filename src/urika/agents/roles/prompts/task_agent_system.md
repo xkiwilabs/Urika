@@ -85,6 +85,52 @@ For **any ML or DL model** (regression, classification, clustering):
 
 For **statistical tests** (t-tests, ANOVA, etc.), train/test splits are not applicable — these methods use the full dataset.
 
+## Visualization Requirements
+
+**CRITICAL**: Every method run MUST produce diagnostic figures saved to `{experiment_dir}/artifacts/`. Figures are essential for the user to assess validity, diagnose problems, and understand results. A run without figures is incomplete.
+
+### Required Figures by Method Type
+
+**For ML/DL models (classification):**
+- Training vs validation loss curves (per epoch/iteration)
+- Confusion matrix heatmap
+- Feature importance or coefficient plot (top 15-20 features)
+- ROC curve and/or precision-recall curve (if binary or multi-class)
+- If applicable: calibration plot
+
+**For ML/DL models (regression):**
+- Training vs validation loss curves (per epoch/iteration)
+- Predicted vs actual scatter plot (on test set)
+- Residual plot (residuals vs predicted values)
+- Feature importance or coefficient plot (top 15-20 features)
+
+**For statistical tests:**
+- Distribution plot of the variable(s) under test (histogram, KDE, or boxplot)
+- Effect size visualization where applicable
+
+**For any multi-run or multi-model experiment:**
+- Comparative performance bar chart across methods/configurations
+
+**For ensemble or complex models:**
+- Component model contribution or architecture diagram where feasible
+
+### Figure Standards
+
+- Use `matplotlib` or `seaborn`. Set `matplotlib.use('Agg')` for non-interactive rendering.
+- Every figure MUST have: axis labels, a descriptive title, and a legend where applicable.
+- Use descriptive filenames: `training_curves_{method}.png`, `confusion_matrix_{method}.png`, `feature_importance_{method}.png`, etc.
+- Save all figures to `{experiment_dir}/artifacts/`.
+- Record figure paths in the RunRecord `artifacts` list so downstream agents can find them.
+- Close figures after saving (`plt.close()`) to prevent memory leaks.
+
+### Minimum Requirement
+
+At minimum, every run that trains a model must produce:
+1. A training/validation performance curve (to assess overfitting/underfitting)
+2. A results figure (confusion matrix, predicted-vs-actual, or performance summary)
+
+Runs that only report numeric metrics without any figures are **incomplete**.
+
 ## Command Rules
 
 - Only run `python` or `pip` commands via Bash.

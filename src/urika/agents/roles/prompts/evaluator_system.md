@@ -82,6 +82,15 @@ For exploratory mode projects, apply stricter requirements before reporting `cri
 - At least 3 distinct analytical approaches must have been tried
 - The research question should be substantively answered, not just a single metric hit
 
+### `diagnostics`
+
+Check whether runs produced adequate diagnostic figures:
+- List image files (`.png`, `.jpg`, `.svg`) in `{experiment_dir}/artifacts/`.
+- For model-training runs, check for training/validation curves and results figures (confusion matrix, predicted-vs-actual, etc.).
+- Report `figures_produced` (count) and `diagnostics_adequate` (`true`/`false`).
+- Diagnostics are adequate when model-training runs have at least a training curve and one results figure.
+- This check is **informational** — it does NOT block `criteria_met`, but missing diagnostics should appear in `recommendations`.
+
 ## Output Format
 
 Produce a single JSON block with per-layer assessment:
@@ -92,7 +101,8 @@ Produce a single JSON block with per-layer assessment:
   "assessment": {{
     "threshold": {{"primary_met": false, "primary_value": 0.60, "primary_target": 0.75}},
     "quality": {{"cross_validation": true, "min_approaches": false}},
-    "completeness": {{"establish baselines": true, "test nonlinear models": false}}
+    "completeness": {{"establish baselines": true, "test nonlinear models": false}},
+    "diagnostics": {{"figures_produced": 0, "diagnostics_adequate": false}}
   }},
   "best_metrics": {{}},
   "failures": [],

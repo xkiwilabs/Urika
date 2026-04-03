@@ -70,11 +70,7 @@ Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it acr
 
 ## Step 2: Install Urika
 
-```bash
-pip install urika
-```
-
-**From source (for development or latest changes):**
+**Recommended: install from source.** Urika is under active development with frequent updates — new agents, tools, and improvements land regularly. Installing from source ensures you always have the latest version:
 
 ```bash
 git clone https://github.com/xkiwilabs/Urika.git
@@ -82,7 +78,29 @@ cd Urika
 pip install -e ".[dev]"
 ```
 
-> **Switching from source to PyPI?** If you previously installed from source, use `pip install --force-reinstall urika` to clear cached files.
+To update at any time:
+
+```bash
+cd Urika
+git pull
+```
+
+Because this is an editable install (`-e`), pulling new changes takes effect immediately — no reinstall needed.
+
+**Alternative: install from PyPI** (pre-release — may lag behind source):
+
+```bash
+pip install urika
+```
+
+The PyPI package is currently a pre-release and may not include the latest features or fixes. If you start with PyPI and want to switch to source later:
+
+```bash
+pip uninstall urika
+git clone https://github.com/xkiwilabs/Urika.git
+cd Urika
+pip install -e ".[dev]"
+```
 
 This installs everything you need for statistical analysis, machine learning, visualization, notifications, and knowledge ingestion:
 
