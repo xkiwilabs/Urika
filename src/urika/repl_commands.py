@@ -1257,7 +1257,12 @@ def cmd_plan(session: ReplSession, args: str) -> None:
 def cmd_finalize(session: ReplSession, args: str) -> None:
     import os
 
-    instructions = args.strip()
+    raw = args.strip()
+    draft = False
+    if "--draft" in raw:
+        draft = True
+        raw = raw.replace("--draft", "").strip()
+    instructions = raw
     audience = _get_audience(session)
     os.environ["URIKA_REPL"] = "1"
     session.set_agent_active("finalize")
@@ -1270,6 +1275,7 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
             project=session.project_name,
             instructions=instructions,
             audience=audience,
+            draft=draft,
         )
     finally:
         session.set_agent_idle()
