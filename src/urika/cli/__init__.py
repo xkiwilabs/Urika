@@ -7,11 +7,8 @@ from urika.cli._legacy import (
     # The Click group
     cli,
     # Internal helpers (underscore-prefixed, not covered by star import)
-    _offer_to_run_advisor_suggestions,
     _UrikaCLI,
-    _determine_next_experiment,
     # Command functions imported by repl_commands.py
-    run,
     report,
     logs,
     finalize,
@@ -31,6 +28,14 @@ from urika.cli.project import (  # noqa: F401
     list_cmd,
     _run_builder_agent_loop,
     _ingest_knowledge,
+)
+
+# Run command now lives in run.py
+import urika.cli.run  # noqa: F401
+from urika.cli.run import (  # noqa: F401
+    run,
+    _determine_next_experiment,
+    _offer_to_run_advisor_suggestions,
 )
 
 # Helpers now live in _helpers.py — re-export for backward compatibility

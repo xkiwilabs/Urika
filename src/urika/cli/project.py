@@ -467,8 +467,8 @@ def new(
         default=1,
     )
 
-    # Lazy import to avoid circular dependency — run may be in _legacy or run.py
-    from urika.cli._legacy import run
+    # Lazy import to avoid circular dependency
+    from urika.cli.run import run
 
     if choice.startswith("Skip"):
         pass
