@@ -3286,8 +3286,18 @@ def plan(
     default=None,
     help="Output audience level (default: from project config or expert).",
 )
+@click.option(
+    "--draft",
+    is_flag=True,
+    default=False,
+    help="Interim summary — outputs to projectbook/draft/, doesn't overwrite final outputs.",
+)
 def finalize(
-    project: str | None, instructions: str, json_output: bool, audience: str | None = None
+    project: str | None,
+    instructions: str,
+    json_output: bool,
+    audience: str | None = None,
+    draft: bool = False,
 ) -> None:
     """Finalize the project — produce polished methods, report, and presentation."""
     import time
@@ -3340,6 +3350,7 @@ def finalize(
                     _on_message,
                     instructions=instructions,
                     audience=audience,
+                    draft=draft,
                 )
             )
         except KeyboardInterrupt:
@@ -3351,7 +3362,7 @@ def finalize(
         panel = ThinkingPanel()
         panel.project = f"{project} · {_rc.privacy_mode}"
         panel._project_dir = project_path
-        panel.activity = "Finalizing..."
+        panel.activity = "Draft summary..." if draft else "Finalizing..."
         panel.activate()
         panel.start_spinner()
 
@@ -3396,6 +3407,7 @@ def finalize(
                     _on_message,
                     instructions=instructions,
                     audience=audience,
+                    draft=draft,
                 )
             )
         except KeyboardInterrupt:
@@ -3432,16 +3444,25 @@ def finalize(
         return
 
     if result.get("success"):
-        print_success("Project finalized!")
-        click.echo(f"  Methods:       {project_path / 'methods/'}")
-        click.echo(
-            f"  Final report:  {project_path / 'projectbook' / 'final-report.md'}"
-        )
-        click.echo(
-            f"  Presentation:  "
-            f"{project_path / 'projectbook' / 'final-presentation' / 'index.html'}"
-        )
-        click.echo(f"  Reproduce:     {project_path / 'reproduce.sh'}")
+        if draft:
+            draft_dir = project_path / "projectbook" / "draft"
+            print_success("Draft summary saved to projectbook/draft/")
+            click.echo(f"  Findings:      {draft_dir / 'findings.json'}")
+            click.echo(f"  Report:        {draft_dir / 'report.md'}")
+            click.echo(
+                f"  Presentation:  {draft_dir / 'presentation' / 'index.html'}"
+            )
+        else:
+            print_success("Project finalized!")
+            click.echo(f"  Methods:       {project_path / 'methods/'}")
+            click.echo(
+                f"  Final report:  {project_path / 'projectbook' / 'final-report.md'}"
+            )
+            click.echo(
+                f"  Presentation:  "
+                f"{project_path / 'projectbook' / 'final-presentation' / 'index.html'}"
+            )
+            click.echo(f"  Reproduce:     {project_path / 'reproduce.sh'}")
     else:
         print_error(f"Finalization failed: {result.get('error', 'unknown')}")
 
