@@ -8,8 +8,6 @@ from urika.cli._legacy import (
     cli,
     # Internal helpers (underscore-prefixed, not covered by star import)
     _UrikaCLI,
-    # Command functions still in _legacy
-    logs,
 )
 
 # Project commands now live in project.py
@@ -53,6 +51,16 @@ from urika.cli.config import (  # noqa: F401
     notifications_command,
     setup_command,
     dashboard,
+)
+
+# Data/results commands now live in data.py
+import urika.cli.data  # noqa: F401
+from urika.cli.data import (  # noqa: F401
+    results,
+    methods,
+    tools,
+    logs,
+    usage,
 )
 
 # Helpers now live in _helpers.py — re-export for backward compatibility
