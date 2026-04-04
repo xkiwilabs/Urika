@@ -29,7 +29,7 @@ from urika.cli_display import (
     print_error,
     print_header,
 )
-from urika.repl_commands import (
+from urika.repl.commands import (
     PROJECT_COMMANDS,
     cmd_advisor,
     cmd_build_tool,
@@ -45,7 +45,7 @@ from urika.repl_commands import (
     get_experiment_ids,
     get_project_names,
 )
-from urika.repl_session import ReplSession
+from urika.repl.session import ReplSession
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ def run_repl() -> None:
     history = InMemoryHistory()
     completer = UrikaCompleter(session)
 
-    from urika.repl_commands import get_global_stats
+    from urika.repl.commands import get_global_stats
 
     # Show header
     print_header()
