@@ -8,13 +8,10 @@ from urika.cli._legacy import (
     cli,
     # Internal helpers (underscore-prefixed, not covered by star import)
     _UrikaCLI,
-    # Command functions imported by repl_commands.py
-    report,
+    # Command functions still in _legacy
     logs,
-    finalize,
     config_command,
     notifications_command,
-    present,
     dashboard,
 )
 
@@ -36,6 +33,20 @@ from urika.cli.run import (  # noqa: F401
     run,
     _determine_next_experiment,
     _offer_to_run_advisor_suggestions,
+)
+
+# Agent commands now live in agents.py
+import urika.cli.agents  # noqa: F401
+from urika.cli.agents import (  # noqa: F401
+    advisor,
+    evaluate,
+    plan,
+    report,
+    present,
+    finalize,
+    build_tool,
+    criteria,
+    _run_report_agent,
 )
 
 # Helpers now live in _helpers.py — re-export for backward compatibility
