@@ -10,9 +10,6 @@ from urika.cli._legacy import (
     _UrikaCLI,
     # Command functions still in _legacy
     logs,
-    config_command,
-    notifications_command,
-    dashboard,
 )
 
 # Project commands now live in project.py
@@ -47,6 +44,15 @@ from urika.cli.agents import (  # noqa: F401
     build_tool,
     criteria,
     _run_report_agent,
+)
+
+# Config commands now live in config.py
+import urika.cli.config  # noqa: F401
+from urika.cli.config import (  # noqa: F401
+    config_command,
+    notifications_command,
+    setup_command,
+    dashboard,
 )
 
 # Helpers now live in _helpers.py — re-export for backward compatibility
