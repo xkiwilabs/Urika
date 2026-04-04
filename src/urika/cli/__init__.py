@@ -1,16 +1,9 @@
 """Urika CLI — Click command group and all commands."""
 
-# Import everything from the legacy module to maintain backward compatibility.
-# All external imports (from urika.cli import X) continue to work.
-from urika.cli._legacy import *  # noqa: F401,F403
-from urika.cli._legacy import (
-    # The Click group
-    cli,
-    # Internal helpers (underscore-prefixed, not covered by star import)
-    _UrikaCLI,
-)
+# The Click group definition lives in _base.py
+from urika.cli._base import cli, _UrikaCLI  # noqa: F401
 
-# Project commands now live in project.py
+# Project commands
 import urika.cli.project  # noqa: F401
 from urika.cli.project import (  # noqa: F401
     new,
@@ -22,7 +15,7 @@ from urika.cli.project import (  # noqa: F401
     _ingest_knowledge,
 )
 
-# Run command now lives in run.py
+# Run command
 import urika.cli.run  # noqa: F401
 from urika.cli.run import (  # noqa: F401
     run,
@@ -30,7 +23,7 @@ from urika.cli.run import (  # noqa: F401
     _offer_to_run_advisor_suggestions,
 )
 
-# Agent commands now live in agents.py
+# Agent commands
 import urika.cli.agents  # noqa: F401
 from urika.cli.agents import (  # noqa: F401
     advisor,
@@ -44,7 +37,7 @@ from urika.cli.agents import (  # noqa: F401
     _run_report_agent,
 )
 
-# Config commands now live in config.py
+# Config commands
 import urika.cli.config  # noqa: F401
 from urika.cli.config import (  # noqa: F401
     config_command,
@@ -53,7 +46,7 @@ from urika.cli.config import (  # noqa: F401
     dashboard,
 )
 
-# Data/results commands now live in data.py
+# Data/results commands (includes experiment and venv subgroups)
 import urika.cli.data  # noqa: F401
 from urika.cli.data import (  # noqa: F401
     results,
@@ -61,9 +54,15 @@ from urika.cli.data import (  # noqa: F401
     tools,
     logs,
     usage,
+    experiment,
+    experiment_create,
+    experiment_list,
+    venv_group,
+    venv_create,
+    venv_status,
 )
 
-# Helpers now live in _helpers.py — re-export for backward compatibility
+# Helpers — re-export for backward compatibility
 from urika.cli._helpers import (  # noqa: F401
     _make_on_message,
     _record_agent_usage,

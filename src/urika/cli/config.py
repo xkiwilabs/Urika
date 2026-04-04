@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from urika.cli._legacy import cli
+from urika.cli._base import cli
 
 from urika.cli._helpers import (
     _resolve_project,

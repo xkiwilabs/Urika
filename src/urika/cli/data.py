@@ -1,4 +1,4 @@
-"""Data/results-related CLI commands: results, methods, tools, logs, usage, knowledge."""
+"""Data/results-related CLI commands: results, methods, tools, logs, usage, knowledge, experiment, venv."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from pathlib import Path
 
 import click
 
-from urika.cli._legacy import cli
-from urika.core.experiment import list_experiments
+from urika.cli._base import cli
+from urika.core.experiment import create_experiment, list_experiments
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
 from urika.evaluation.leaderboard import load_leaderboard
@@ -382,3 +382,91 @@ def usage(project: str | None, json_output: bool) -> None:
     click.echo()
 
 
+# ── Experiment subgroup ─────────────────────────────────────
+
+
+@cli.group()
+def experiment() -> None:
+    """Manage experiments within a project."""
+
+
+@experiment.command("create")
+@click.argument("project", required=False, default=None)
+@click.argument("name")
+@click.option("--hypothesis", default="", help="Experiment hypothesis.")
+def experiment_create(project: str, name: str, hypothesis: str) -> None:
+    """Create a new experiment in a project."""
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+    exp = create_experiment(project_path, name=name, hypothesis=hypothesis)
+    click.echo(f"{exp.experiment_id}")
+
+
+@experiment.command("list")
+@click.argument("project", required=False, default=None)
+def experiment_list(project: str) -> None:
+    """List experiments in a project."""
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+    experiments = list_experiments(project_path)
+
+    if not experiments:
+        click.echo("No experiments yet.")
+        return
+
+    for exp in experiments:
+        progress = load_progress(project_path, exp.experiment_id)
+        n_runs = len(progress.get("runs", []))
+        exp_status = progress.get("status", "unknown")
+        click.echo(f"  {exp.experiment_id}  {exp.name}  [{exp_status}, {n_runs} runs]")
+
+
+# ── Venv subgroup ───────────────────────────────────────────
+
+
+@cli.group("venv")
+def venv_group() -> None:
+    """Manage project virtual environments."""
+
+
+@venv_group.command("create")
+@click.argument("project", required=False, default=None)
+def venv_create(project: str | None) -> None:
+    """Create a venv for a project."""
+    import tomllib
+
+    from urika.core.venv import create_project_venv
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    venv_path = create_project_venv(project_path)
+
+    # Update urika.toml to enable venv
+    toml_path = project_path / "urika.toml"
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+    data.setdefault("environment", {})["venv"] = True
+    from urika.core.workspace import _write_toml
+
+    _write_toml(toml_path, data)
+
+    click.echo(f"Created .venv at {venv_path}")
+
+
+@venv_group.command("status")
+@click.argument("project", required=False, default=None)
+def venv_status(project: str | None) -> None:
+    """Show venv status for a project."""
+    from urika.core.venv import is_venv_enabled
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    if is_venv_enabled(project_path):
+        venv_path = project_path / ".venv"
+        exists = venv_path.exists()
+        click.echo(f"Venv: enabled ({'exists' if exists else 'NOT FOUND'})")
+        click.echo(f"Path: {venv_path}")
+    else:
+        click.echo("Venv: not enabled (using global environment)")

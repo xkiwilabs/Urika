@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from urika.cli._legacy import cli
+from urika.cli._base import cli
 from urika.core.experiment import list_experiments
 from urika.core.progress import load_progress
 
