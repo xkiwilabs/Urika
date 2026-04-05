@@ -79,8 +79,11 @@ export function buildAgentTools(config: AgentToolConfig): AgentTool[] {
       model,
       systemPrompt,
       execute: async (_input: string): Promise<string> => {
-        // Will be wired to pi-ai in Task 11
-        throw new Error(`Agent execution not yet wired: ${role}`);
+        // Execution is handled by Orchestrator.executeAgentTool()
+        // This placeholder exists for direct testing only
+        throw new Error(
+          `Use Orchestrator.executeAgentTool() instead of calling ${role}.execute() directly`,
+        );
       },
     });
   }
