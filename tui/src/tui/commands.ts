@@ -34,7 +34,8 @@ export async function handleSlashCommand(
     case "quit":
     case "exit":
     case "q":
-      process.exit(0);
+      // Return a special signal — the app handles cleanup before exiting
+      return { output: "__QUIT__", handled: true };
 
     case "status":
       if (!rpcClient) return { output: "Not connected to backend.", handled: true };

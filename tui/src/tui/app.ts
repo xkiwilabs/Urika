@@ -129,6 +129,14 @@ export class UrikaApp {
     this.tui.stop();
   }
 
+  /** Clean shutdown — stop TUI, close connections, exit. */
+  shutdown(): void {
+    this.tui.stop();
+    this.options.orchestrator.close();
+    this.options.rpcClient?.close();
+    process.exit(0);
+  }
+
   private async handleInput(text: string): Promise<void> {
     if (!text.trim()) return;
 
@@ -139,6 +147,10 @@ export class UrikaApp {
       this.options.projectDir,
     );
     if (cmdResult.handled) {
+      if (cmdResult.output === "__QUIT__") {
+        this.shutdown();
+        return;
+      }
       if (cmdResult.output) {
         this.output.appendText(cmdResult.output);
         this.tui.requestRender();
