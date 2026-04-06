@@ -62,6 +62,10 @@ from urika.cli.data import (  # noqa: F401
     venv_status,
 )
 
+# TUI command
+import urika.cli.tui  # noqa: F401
+from urika.cli.tui import tui  # noqa: F401
+
 # Helpers — re-export for backward compatibility
 from urika.cli._helpers import (  # noqa: F401
     _make_on_message,

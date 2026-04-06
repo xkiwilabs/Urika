@@ -292,6 +292,12 @@ def _determine_next_experiment(
     default=None,
     help="Output audience level (default: from project config or expert).",
 )
+@click.option(
+    "--legacy",
+    is_flag=True,
+    default=False,
+    help="Use the deterministic Python orchestrator (default behavior for now).",
+)
 def run(
     project: str,
     experiment_id: str | None,
@@ -304,8 +310,12 @@ def run(
     review_criteria: bool,
     json_output: bool = False,
     audience: str | None = None,
+    legacy: bool = False,
 ) -> None:
     """Run an experiment using the orchestrator."""
+    # TODO: When --legacy is False and TUI binary is available,
+    # launch TS orchestrator in headless mode instead.
+    # For now, both paths use the Python orchestrator.
     try:
         from urika.agents.runner import get_runner
     except ImportError:
