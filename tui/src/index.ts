@@ -13,6 +13,7 @@ import { UrikaApp } from "./tui/app";
 import { RpcClient } from "./rpc/client";
 import { createInterface } from "readline";
 import { readdirSync } from "fs";
+import { getApiKeyForProvider } from "./auth/login";
 
 const VERSION = "0.1.0";
 
@@ -41,6 +42,9 @@ async function main() {
   const promptsDir = findPromptsDir(resolvedDir);
   const pythonCommand = process.env.PYTHON_CMD ?? "python";
 
+  // Extract provider from default model for OAuth key resolution
+  const defaultProvider = config.defaultModel.split("/")[0];
+
   // Create orchestrator
   const orchestrator = new Orchestrator({
     projectDir: resolvedDir,
@@ -48,6 +52,7 @@ async function main() {
     defaultModel: config.defaultModel,
     modelOverrides: config.models,
     pythonCommand,
+    getApiKey: () => getApiKeyForProvider(defaultProvider),
   });
 
   // Connect orchestrator (starts its internal RPC subprocess)

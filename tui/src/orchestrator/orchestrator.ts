@@ -23,6 +23,8 @@ export interface OrchestratorConfig {
   defaultModel: string;
   modelOverrides: Record<string, string>;
   pythonCommand: string;
+  /** Optional function that resolves an API key before each LLM call. */
+  getApiKey?: () => Promise<string | null>;
 }
 
 export interface OrchestratorEvents {
@@ -142,7 +144,8 @@ export class Orchestrator {
       };
 
       const model = this.resolveModel(orchestratorModel);
-      const response = await completeSimple(model, context);
+      const apiKey = await this.resolveApiKey();
+      const response = await completeSimple(model, context, apiKey ? { apiKey } : undefined);
 
       this.messages.push(response);
 
@@ -220,6 +223,7 @@ export class Orchestrator {
     instructions: string,
   ): Promise<string> {
     const model = this.resolveModel(agent.model);
+    const apiKey = await this.resolveApiKey();
 
     const context: Context = {
       systemPrompt: agent.systemPrompt,
@@ -228,7 +232,7 @@ export class Orchestrator {
       ],
     };
 
-    const response = await completeSimple(model, context);
+    const response = await completeSimple(model, context, apiKey ? { apiKey } : undefined);
     const text = this.extractText(response);
     this.events.onAgentOutput?.(agent.name, text);
     return text;
@@ -251,6 +255,12 @@ export class Orchestrator {
     const params = { ...args, project_dir: this.config.projectDir };
     const result = await this.rpcClient.call(rpcMethod, params);
     return JSON.stringify(result);
+  }
+
+  /** Resolve an API key via the configured callback, if any. */
+  private async resolveApiKey(): Promise<string | null> {
+    if (!this.config.getApiKey) return null;
+    return this.config.getApiKey();
   }
 
   /** Parse a "provider/model-id" string and return a pi-ai Model. */

@@ -1,14 +1,28 @@
 import type { RpcClient } from "../rpc/client";
+import {
+  loginProvider,
+  isLoggedIn,
+  getSupportedProviders,
+} from "../auth/login";
+import {
+  removeProviderCredentials,
+  listProviders,
+} from "../auth/storage";
 
 export interface SlashCommandResult {
   output: string;
   handled: boolean;
 }
 
+export interface CommandCallbacks {
+  onPrompt?: (message: string) => Promise<string>;
+}
+
 export async function handleSlashCommand(
   input: string,
   rpcClient: RpcClient | null,
   projectDir: string,
+  callbacks?: CommandCallbacks,
 ): Promise<SlashCommandResult> {
   const trimmed = input.trim();
   if (!trimmed.startsWith("/")) return { output: "", handled: false };
@@ -46,6 +60,15 @@ export async function handleSlashCommand(
         return { output: `Error: ${e.message}`, handled: true };
       }
 
+    case "login":
+      return handleLogin(arg, callbacks);
+
+    case "logout":
+      return handleLogout(arg);
+
+    case "auth":
+      return handleAuthStatus();
+
     case "pause":
       return { output: "Pause requested.", handled: true };
 
@@ -57,6 +80,9 @@ export async function handleSlashCommand(
         output: [
           "/status   — Show project status",
           "/results  — Show latest experiment results",
+          "/login    — Login with OAuth (e.g. /login anthropic)",
+          "/logout   — Logout provider (e.g. /logout anthropic)",
+          "/auth     — Show authentication status",
           "/pause    — Pause current run",
           "/stop     — Stop current run",
           "/quit     — Exit Urika TUI",
@@ -70,4 +96,81 @@ export async function handleSlashCommand(
     default:
       return { output: `Unknown command: /${cmd}. Type /help for available commands.`, handled: true };
   }
+}
+
+async function handleLogin(
+  provider: string,
+  callbacks?: CommandCallbacks,
+): Promise<SlashCommandResult> {
+  if (!provider) {
+    const providers = getSupportedProviders();
+    const list = providers.map((p) => `  ${p.id} — ${p.name}`).join("\n");
+    return {
+      output: `Usage: /login <provider>\n\nAvailable providers:\n${list}`,
+      handled: true,
+    };
+  }
+
+  if (isLoggedIn(provider)) {
+    return {
+      output: `Already logged in to ${provider}. Use /logout ${provider} first to re-authenticate.`,
+      handled: true,
+    };
+  }
+
+  try {
+    const messages: string[] = [];
+    const success = await loginProvider(provider, {
+      onUrl: (url, instructions) => {
+        messages.push(`Open this URL to authenticate:\n  ${url}`);
+        if (instructions) messages.push(instructions);
+      },
+      onPrompt: async (message) => {
+        if (callbacks?.onPrompt) {
+          return callbacks.onPrompt(message);
+        }
+        // Fallback: no interactive prompt available
+        return "";
+      },
+      onProgress: (msg) => {
+        messages.push(msg);
+      },
+    });
+
+    if (success) {
+      messages.push(`Logged in to ${provider}.`);
+    } else {
+      messages.push(`Unknown provider: ${provider}. Use /login to see available providers.`);
+    }
+
+    return { output: messages.join("\n"), handled: true };
+  } catch (err: any) {
+    return { output: `Login failed: ${err.message}`, handled: true };
+  }
+}
+
+function handleLogout(provider: string): SlashCommandResult {
+  if (!provider) {
+    return { output: "Usage: /logout <provider>", handled: true };
+  }
+
+  if (!isLoggedIn(provider)) {
+    return { output: `Not logged in to ${provider}.`, handled: true };
+  }
+
+  removeProviderCredentials(provider);
+  return { output: `Logged out of ${provider}.`, handled: true };
+}
+
+function handleAuthStatus(): SlashCommandResult {
+  const providers = listProviders();
+  if (providers.length === 0) {
+    return { output: "No active logins. Use /login <provider> to authenticate.", handled: true };
+  }
+
+  const lines = ["Authenticated providers:"];
+  for (const p of providers) {
+    lines.push(`  ${p}`);
+  }
+  return { output: lines.join("\n"), handled: true };
 }
