@@ -22,32 +22,46 @@ async function main() {
   const headless = args.includes("--headless");
   const projectDir = args.find((a) => !a.startsWith("--"));
 
-  if (!projectDir) {
-    console.error("Usage: urika-tui [--headless] <project-dir>");
+  const pythonCommand = process.env.PYTHON_CMD ?? "python";
+
+  // Headless mode requires a project dir
+  if (headless && !projectDir) {
+    console.error("Usage: urika-tui --headless <project-dir>");
     process.exit(1);
   }
 
-  const resolvedDir = resolve(projectDir);
-
-  // Load config
+  // Load config if project dir given, otherwise use defaults
   let config;
-  try {
-    config = loadUrikaConfig(resolvedDir);
-  } catch (err: any) {
-    console.error(`Failed to load urika.toml: ${err.message}`);
-    process.exit(1);
+  let resolvedDir: string | null = null;
+  if (projectDir) {
+    resolvedDir = resolve(projectDir);
+    try {
+      config = loadUrikaConfig(resolvedDir);
+    } catch (err: any) {
+      console.error(`Failed to load urika.toml: ${err.message}`);
+      process.exit(1);
+    }
+  } else {
+    config = {
+      projectName: "",
+      question: "",
+      mode: "exploratory",
+      defaultModel: "anthropic/claude-sonnet-4-6",
+      models: {} as Record<string, string>,
+      privacyMode: "open",
+      localRoles: [] as string[],
+    };
   }
 
   // Find prompts directory
-  const promptsDir = findPromptsDir(resolvedDir);
-  const pythonCommand = process.env.PYTHON_CMD ?? "python";
+  const promptsDir = findPromptsDir(resolvedDir ?? process.cwd());
 
   // Extract provider from default model for OAuth key resolution
   const defaultProvider = config.defaultModel.split("/")[0];
 
   // Create orchestrator
   const orchestrator = new Orchestrator({
-    projectDir: resolvedDir,
+    projectDir: resolvedDir ?? process.cwd(),
     promptsDir,
     defaultModel: config.defaultModel,
     modelOverrides: config.models,
@@ -60,12 +74,14 @@ async function main() {
 
   // Initialize orchestrator with project context
   await orchestrator.initialize({
-    projectName: config.projectName,
-    question: config.question,
+    projectName: config.projectName || "No project selected",
+    question: config.question || "Use /status or tell me which project to work on",
     mode: config.mode,
-    dataDir: join(resolvedDir, "data"),
+    dataDir: resolvedDir ? join(resolvedDir, "data") : "",
     experimentId: "",
-    currentState: "No experiments running. Awaiting user instructions.",
+    currentState: resolvedDir
+      ? "No experiments running. Awaiting user instructions."
+      : "No project selected. Tell me which project to work on, or type /help.",
   });
 
   if (headless) {
@@ -98,9 +114,9 @@ async function main() {
 
     // Launch TUI
     const app = new UrikaApp({
-      projectName: config.projectName,
+      projectName: config.projectName || "Urika",
       version: VERSION,
-      projectDir: resolvedDir,
+      projectDir: resolvedDir ?? process.cwd(),
       orchestrator,
       rpcClient,
     });
