@@ -47,6 +47,28 @@ def cli(ctx) -> None:
         pass
 
     if ctx.invoked_subcommand is None:
+        # Try TUI first, fall back to REPL
+        from urika.cli.tui import _find_tui_binary
+
+        import shutil
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        binary = _find_tui_binary()
+        if binary:
+            subprocess.run([binary])
+            raise SystemExit(0)
+
+        # Try bun dev mode
+        repo_root = Path(__file__).parent.parent.parent.parent
+        dev_ts = repo_root / "tui" / "src" / "index.ts"
+        bun = shutil.which("bun")
+        if dev_ts.exists() and bun:
+            subprocess.run([bun, "run", str(dev_ts)], cwd=str(repo_root / "tui"))
+            raise SystemExit(0)
+
+        # Fall back to REPL
         from urika.repl import run_repl
 
         run_repl()
