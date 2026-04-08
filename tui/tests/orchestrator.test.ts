@@ -19,9 +19,10 @@ describe("Orchestrator", () => {
     const orch = new Orchestrator(DEFAULT_CONFIG);
     const names = orch.getToolNames();
     expect(names).toContain("list_projects");
+    expect(names).toContain("switch_project");
     expect(names).not.toContain("planning_agent");
     expect(names).not.toContain("create_experiment");
-    expect(names).toHaveLength(1);
+    expect(names).toHaveLength(2);
   });
 
   it("has all tools after project is initialized", async () => {

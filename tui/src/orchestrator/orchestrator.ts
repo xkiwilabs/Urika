@@ -37,7 +37,7 @@ export interface OrchestratorEvents {
 }
 
 /** Global tools — available without a project. */
-const GLOBAL_TOOLS = ["list_projects"] as const;
+const GLOBAL_TOOLS = ["list_projects", "switch_project"] as const;
 
 /** Project-level tools — only available after loading a project. */
 const PROJECT_TOOLS = [
@@ -54,6 +54,7 @@ const PROJECT_TOOLS = [
 /** Maps orchestrator tool names to Python RPC method paths. */
 const RPC_METHOD_MAP: Record<string, string> = {
   list_projects: "project.list",
+  switch_project: "project.list", // uses list to find project path, then switches
   list_experiments: "experiment.list",
   create_experiment: "experiment.create",
   append_run: "progress.append_run",
@@ -262,6 +263,11 @@ export class Orchestrator {
       throw new Error("RPC client not connected — call connect() first");
     }
 
+    // Special handling for switch_project
+    if (name === "switch_project") {
+      return this.handleSwitchProject(args.name);
+    }
+
     const rpcMethod = RPC_METHOD_MAP[name];
     if (!rpcMethod) {
       throw new Error(`Unknown tool: ${name}`);
@@ -270,6 +276,45 @@ export class Orchestrator {
     const params = { ...args, project_dir: this.config.projectDir };
     const result = await this.rpcClient.call(rpcMethod, params);
     return JSON.stringify(result);
+  }
+
+  /** Switch to a project by name — looks up path from registry and reinitializes. */
+  private async handleSwitchProject(projectName: string): Promise<string> {
+    if (!this.rpcClient) throw new Error("Not connected");
+
+    // List projects to find the path
+    const projects = await this.rpcClient.call("project.list", {}) as any[];
+    const match = projects.find(
+      (p: any) => p.name === projectName || p.name.toLowerCase() === projectName.toLowerCase()
+    );
+    if (!match) {
+      return JSON.stringify({ error: `Project not found: ${projectName}` });
+    }
+
+    // Load the project config
+    const config = await this.rpcClient.call("project.load_config", {
+      project_dir: match.path,
+    }) as any;
+
+    // Reinitialize with the new project
+    this.config.projectDir = match.path;
+    await this.initialize({
+      projectName: config.name || projectName,
+      question: config.question || "",
+      mode: config.mode || "exploratory",
+      dataDir: match.path + "/data",
+      experimentId: "",
+      currentState: `Loaded project: ${config.name}. Ready for instructions.`,
+    });
+
+    this.events.onText?.(`Switched to project: ${config.name}`);
+
+    return JSON.stringify({
+      success: true,
+      project: config.name,
+      question: config.question,
+      mode: config.mode,
+    });
   }
 
   /** Resolve an API key via the configured callback, if any. */
@@ -308,6 +353,14 @@ export class Orchestrator {
       name: "list_projects",
       description: "List all registered Urika projects with their names and paths",
       parameters: Type.Object({}),
+    });
+
+    tools.push({
+      name: "switch_project",
+      description: "Load/switch to a project by name. Call this when the user wants to open a project.",
+      parameters: Type.Object({
+        name: Type.String({ description: "Project name to load" }),
+      }),
     });
 
     // Project-level tools — only when a project is loaded
