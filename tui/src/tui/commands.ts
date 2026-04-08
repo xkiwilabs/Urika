@@ -115,32 +115,50 @@ async function handleProject(
   projectDir: string,
 ): Promise<SlashCommandResult> {
   if (!name) {
-    // Show current project
+    // No args: list all projects, highlight current
     if (!rpcClient) return { output: "  Not connected to backend.", handled: true };
     try {
-      const config = await rpcClient.call("project.load_config", { project_dir: projectDir }) as any;
-      return {
-        output: [
-          "",
-          `  Project: ${config.name || "none"}`,
-          `  Question: ${config.question || "—"}`,
-          `  Mode: ${config.mode || "—"}`,
-          "",
-          "  Usage: /project <name> to switch projects",
-          "",
-        ].join("\n"),
-        handled: true,
-      };
-    } catch {
-      return { output: "  No project loaded. Usage: /project <name>", handled: true };
+      const projects = await rpcClient.call("project.list", {}) as any[];
+      if (!projects || projects.length === 0) {
+        return { output: "  No projects registered. Use the CLI: urika new <name>", handled: true };
+      }
+      // Try to get current project name for highlighting
+      let currentName = "";
+      try {
+        const config = await rpcClient.call("project.load_config", { project_dir: projectDir }) as any;
+        currentName = config.name || "";
+      } catch {
+        // No current project loaded
+      }
+      const lines = ["", "  Projects:", ""];
+      for (const p of projects) {
+        const marker = p.name === currentName ? " (active)" : "";
+        lines.push(`    ◆ ${p.name}${marker}`);
+      }
+      lines.push("", "  Usage: /project <name> to switch projects", "");
+      return { output: lines.join("\n"), handled: true };
+    } catch (e: any) {
+      return { output: `  Error: ${e.message}`, handled: true };
     }
   }
 
-  // TODO: Switch project — needs to update orchestrator context
-  return {
-    output: `  Project switching not yet wired. Use: urika tui <project-dir>`,
-    handled: true,
-  };
+  // Switch project: look up name in registry, return signal for app to reinitialize
+  if (!rpcClient) return { output: "  Not connected to backend.", handled: true };
+  try {
+    const projects = await rpcClient.call("project.list", {}) as any[];
+    const match = projects.find(
+      (p: any) => p.name === name || p.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (!match) {
+      return {
+        output: `  Project "${name}" not found. Use /list to see available projects.`,
+        handled: true,
+      };
+    }
+    return { output: `__PROJECT__:${match.path}`, handled: true };
+  } catch (e: any) {
+    return { output: `  Error: ${e.message}`, handled: true };
+  }
 }
 
 async function handleList(rpcClient: RpcClient | null): Promise<SlashCommandResult> {

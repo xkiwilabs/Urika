@@ -24,6 +24,7 @@ def project_dir(tmp_path: Path) -> Path:
 
 
 EXPECTED_METHODS = [
+    "project.list",
     "project.load_config",
     "experiment.create",
     "experiment.list",
@@ -55,15 +56,15 @@ EXPECTED_METHODS = [
 
 class TestRegistryHasExpectedMethods:
     def test_registry_has_expected_methods(self) -> None:
-        """All 26 method names exist in the registry."""
+        """All 27 method names exist in the registry."""
         registry = build_registry()
         for method_name in EXPECTED_METHODS:
             assert method_name in registry, f"Missing method: {method_name}"
 
     def test_registry_count(self) -> None:
-        """Registry has exactly 26 methods."""
+        """Registry has exactly 27 methods."""
         registry = build_registry()
-        assert len(registry) == 26
+        assert len(registry) == 27
 
     def test_all_handlers_are_callable(self) -> None:
         """Every handler is callable."""
@@ -167,6 +168,30 @@ class TestExperimentLoadViaRPC:
         )
         assert loaded["name"] == "Load test"
         assert loaded["experiment_id"] == created["experiment_id"]
+
+
+class TestProjectListViaRPC:
+    def test_project_list_returns_list(self) -> None:
+        """project.list returns a list (may be empty if no projects registered)."""
+        registry = build_registry()
+        result = registry["project.list"]({})
+        assert isinstance(result, list)
+
+    def test_project_list_entries_have_name_and_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Registered projects appear in the list with name and path."""
+        monkeypatch.setenv("URIKA_HOME", str(tmp_path / ".urika"))
+        from urika.core.registry import ProjectRegistry
+
+        reg = ProjectRegistry()
+        reg.register("my-project", tmp_path / "my-project")
+
+        registry = build_registry()
+        result = registry["project.list"]({})
+        assert len(result) >= 1
+        entry = next(e for e in result if e["name"] == "my-project")
+        assert entry["path"] == str(tmp_path / "my-project")
 
 
 class TestProjectLoadConfigViaRPC:

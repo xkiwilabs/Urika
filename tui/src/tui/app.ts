@@ -7,8 +7,10 @@ import {
   CombinedAutocompleteProvider,
   type EditorTheme,
   type SlashCommand as PiSlashCommand,
+  type AutocompleteItem,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { join } from "path";
 import { renderHeader } from "./header";
 import { formatAgentLabel } from "./agent-display";
 import { handleSlashCommand } from "./commands";
@@ -34,22 +36,6 @@ const EDITOR_THEME: EditorTheme = {
   },
 };
 
-const SLASH_COMMANDS: PiSlashCommand[] = [
-  { name: "help", description: "Show available commands" },
-  { name: "project", description: "Open a project" },
-  { name: "list", description: "List all projects" },
-  { name: "new", description: "Create a new project" },
-  { name: "status", description: "Show project status" },
-  { name: "results", description: "Show experiment results" },
-  { name: "config", description: "Show/edit configuration" },
-  { name: "login", description: "Login to a provider (e.g. /login anthropic)" },
-  { name: "logout", description: "Logout from a provider" },
-  { name: "auth", description: "Show authentication status" },
-  { name: "pause", description: "Pause current run" },
-  { name: "stop", description: "Stop current run" },
-  { name: "quit", description: "Exit Urika TUI" },
-];
-
 export class UrikaApp {
   private tui: TUI;
   private editor: Editor;
@@ -74,8 +60,44 @@ export class UrikaApp {
       await this.handleInput(text);
     };
 
+    // Build slash commands with dynamic completions (needs rpcClient access)
+    const rpcClient = options.rpcClient;
+    const slashCommands: PiSlashCommand[] = [
+      { name: "help", description: "Show available commands" },
+      {
+        name: "project",
+        description: "Open a project",
+        getArgumentCompletions: async (prefix: string): Promise<AutocompleteItem[]> => {
+          if (!rpcClient) return [];
+          try {
+            const projects = await rpcClient.call("project.list", {}) as any[];
+            return projects
+              .filter((p: any) => p.name.toLowerCase().startsWith(prefix.toLowerCase()))
+              .map((p: any) => ({
+                value: p.name,
+                label: p.name,
+                description: p.path,
+              }));
+          } catch {
+            return [];
+          }
+        },
+      },
+      { name: "list", description: "List all projects" },
+      { name: "new", description: "Create a new project" },
+      { name: "status", description: "Show project status" },
+      { name: "results", description: "Show experiment results" },
+      { name: "config", description: "Show/edit configuration" },
+      { name: "login", description: "Login to a provider (e.g. /login anthropic)" },
+      { name: "logout", description: "Logout from a provider" },
+      { name: "auth", description: "Show authentication status" },
+      { name: "pause", description: "Pause current run" },
+      { name: "stop", description: "Stop current run" },
+      { name: "quit", description: "Exit Urika TUI" },
+    ];
+
     // Autocomplete for slash commands
-    const autocomplete = new CombinedAutocompleteProvider(SLASH_COMMANDS);
+    const autocomplete = new CombinedAutocompleteProvider(slashCommands);
     this.editor.setAutocompleteProvider(autocomplete);
 
     // Loader — animated spinner, shown during agent work
@@ -189,6 +211,11 @@ export class UrikaApp {
         this.shutdown();
         return;
       }
+      if (cmdResult.output.startsWith("__PROJECT__:")) {
+        const newProjectDir = cmdResult.output.slice("__PROJECT__:".length);
+        await this.switchProject(newProjectDir);
+        return;
+      }
       if (cmdResult.output) {
         this.addOutput(cmdResult.output);
       }
@@ -214,6 +241,44 @@ export class UrikaApp {
       this.processing = false;
       this.hideLoader();
       this.updateStatus(`${this.options.projectName} · ready`);
+    }
+  }
+
+  private async switchProject(newProjectDir: string): Promise<void> {
+    this.showLoader("switching project");
+    try {
+      // Load the new project config to get name + question
+      const rpcClient = this.options.rpcClient;
+      if (!rpcClient) {
+        this.addOutput(chalk.red("  Not connected to backend."));
+        return;
+      }
+
+      const config = await rpcClient.call("project.load_config", {
+        project_dir: newProjectDir,
+      }) as any;
+
+      const projectName = config.name || "Urika";
+
+      // Reinitialize the orchestrator with the new project
+      await this.options.orchestrator.initialize({
+        projectName,
+        question: config.question || "",
+        mode: config.mode || "exploratory",
+        dataDir: join(newProjectDir, "data"),
+        experimentId: "",
+        currentState: "Project switched. Awaiting user instructions.",
+      });
+
+      // Update app state
+      this.options.projectDir = newProjectDir;
+      this.options.projectName = projectName;
+      this.updateStatus(`${projectName} · ready`);
+      this.addOutput(chalk.cyan(`  Switched to project: ${projectName}`));
+    } catch (err: any) {
+      this.addOutput(chalk.red(`  Failed to switch project: ${err.message}`));
+    } finally {
+      this.hideLoader();
     }
   }
 }

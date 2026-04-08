@@ -78,9 +78,44 @@ describe("handleSlashCommand", () => {
     expect(result.output).toContain("Not connected");
   });
 
-  it("handles /project without args", async () => {
+  it("handles /project without args and no rpc client", async () => {
     const result = await handleSlashCommand("/project", null, "/tmp");
     expect(result.handled).toBe(true);
+    expect(result.output).toContain("Not connected");
+  });
+
+  it("handles /project <name> without rpc client", async () => {
+    const result = await handleSlashCommand("/project myproj", null, "/tmp");
+    expect(result.handled).toBe(true);
+    expect(result.output).toContain("Not connected");
+  });
+
+  it("handles /project <name> with mock rpc returning __PROJECT__ signal", async () => {
+    const mockRpc = {
+      call: async (method: string, _params: any) => {
+        if (method === "project.list") {
+          return [{ name: "sleep-study", path: "/home/user/sleep-study" }];
+        }
+        return {};
+      },
+      close: () => {},
+    } as any;
+    const result = await handleSlashCommand("/project sleep-study", mockRpc, "/tmp");
+    expect(result.handled).toBe(true);
+    expect(result.output).toBe("__PROJECT__:/home/user/sleep-study");
+  });
+
+  it("handles /project <name> not found", async () => {
+    const mockRpc = {
+      call: async (method: string, _params: any) => {
+        if (method === "project.list") return [];
+        return {};
+      },
+      close: () => {},
+    } as any;
+    const result = await handleSlashCommand("/project nonexistent", mockRpc, "/tmp");
+    expect(result.handled).toBe(true);
+    expect(result.output).toContain("not found");
   });
 
   it("handles /auth with no logins", async () => {

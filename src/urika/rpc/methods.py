@@ -19,6 +19,7 @@ def build_registry() -> Registry:
     Dataclass results are converted via ``.to_dict()`` where applicable.
     """
     return {
+        "project.list": _project_list,
         "project.load_config": _project_load_config,
         "experiment.create": _experiment_create,
         "experiment.list": _experiment_list,
@@ -61,6 +62,14 @@ def _path(params: dict[str, Any], key: str = "project_dir") -> Path:
 # ---------------------------------------------------------------------------
 # project.*
 # ---------------------------------------------------------------------------
+
+
+def _project_list(params: dict[str, Any]) -> list[dict[str, Any]]:
+    from urika.core.registry import ProjectRegistry
+
+    registry = ProjectRegistry()
+    projects = registry.list_all()
+    return [{"name": name, "path": str(path)} for name, path in projects.items()]
 
 
 def _project_load_config(params: dict[str, Any]) -> dict[str, Any]:
