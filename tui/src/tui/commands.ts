@@ -30,6 +30,18 @@ export async function handleSlashCommand(
   const [cmd, ...args] = trimmed.slice(1).split(/\s+/);
   const arg = args.join(" ");
 
+  // Check if a project is loaded (projectDir points to a real project)
+  const hasProject = projectDir !== "" && projectDir !== process.cwd();
+
+  // Project-level commands require a loaded project
+  const PROJECT_COMMANDS = ["status", "results", "config", "pause", "stop"];
+  if (PROJECT_COMMANDS.includes(cmd) && !hasProject) {
+    return {
+      output: "  Load a project first: /project <name>",
+      handled: true,
+    };
+  }
+
   switch (cmd) {
     // ── Exit ──
     case "quit":
@@ -37,7 +49,7 @@ export async function handleSlashCommand(
     case "q":
       return { output: "__QUIT__", handled: true };
 
-    // ── Project management ──
+    // ── Project management (global) ──
     case "project":
       return handleProject(arg, rpcClient, projectDir);
 
@@ -45,19 +57,25 @@ export async function handleSlashCommand(
       return handleList(rpcClient);
 
     case "new":
-      return { output: "Use the CLI to create projects: urika new <name> -q <question>", handled: true };
+      return { output: "  Use the CLI to create projects: urika new <name> -q <question>", handled: true };
 
+    // ── Project-level commands ──
     case "config":
       return handleConfig(rpcClient, projectDir);
 
-    // ── Status & results ──
     case "status":
       return handleStatus(rpcClient, projectDir);
 
     case "results":
       return handleResults(rpcClient, projectDir);
 
-    // ── Auth ──
+    case "pause":
+      return { output: "  Pause requested.", handled: true };
+
+    case "stop":
+      return { output: "  Stop requested.", handled: true };
+
+    // ── Auth (global) ──
     case "login":
       return handleLogin(arg, callbacks);
 
@@ -66,13 +84,6 @@ export async function handleSlashCommand(
 
     case "auth":
       return handleAuthStatus();
-
-    // ── Run control ──
-    case "pause":
-      return { output: "Pause requested.", handled: true };
-
-    case "stop":
-      return { output: "Stop requested.", handled: true };
 
     // ── Help ──
     case "help":
