@@ -3,10 +3,8 @@ import {
   Editor,
   Text,
   Loader,
-  CancellableLoader,
   ProcessTerminal,
   CombinedAutocompleteProvider,
-  type Component,
   type EditorTheme,
   type SlashCommand as PiSlashCommand,
 } from "@mariozechner/pi-tui";
@@ -25,90 +23,6 @@ export interface UrikaAppOptions {
   rpcClient: RpcClient | null;
 }
 
-/**
- * OutputArea — accumulates rendered lines into native terminal scrollback.
- */
-class OutputArea implements Component {
-  private lines: string[] = [];
-
-  appendText(text: string): void {
-    this.lines.push(...text.split("\n"));
-  }
-
-  clear(): void {
-    this.lines = [];
-  }
-
-  invalidate(): void {}
-
-  render(_width: number): string[] {
-    return this.lines;
-  }
-}
-
-/**
- * ThinkingIndicator — shows agent activity below the editor.
- * Matches the REPL's ThinkingPanel behavior.
- */
-class ThinkingIndicator implements Component {
-  private agent = "";
-  private turn = 0;
-  private model = "";
-  private cost = 0;
-  private elapsed = 0;
-  private project = "";
-  private experimentId = "";
-  private active = false;
-
-  update(partial: {
-    agent?: string;
-    turn?: number;
-    model?: string;
-    cost?: number;
-    elapsed?: number;
-    project?: string;
-    experimentId?: string;
-    active?: boolean;
-  }): void {
-    if (partial.agent !== undefined) this.agent = partial.agent;
-    if (partial.turn !== undefined) this.turn = partial.turn;
-    if (partial.model !== undefined) this.model = partial.model;
-    if (partial.cost !== undefined) this.cost = partial.cost;
-    if (partial.elapsed !== undefined) this.elapsed = partial.elapsed;
-    if (partial.project !== undefined) this.project = partial.project;
-    if (partial.experimentId !== undefined) this.experimentId = partial.experimentId;
-    if (partial.active !== undefined) this.active = partial.active;
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    const D = chalk.dim;
-    const sep = D(" │ ");
-    const divider = D("─".repeat(width));
-
-    if (!this.active) {
-      // Idle state — show project info
-      const parts: string[] = [];
-      if (this.project) parts.push(chalk.cyan(this.project));
-      if (this.experimentId) parts.push(chalk.white(this.experimentId));
-      parts.push(D("ready"));
-      return [divider, `  ${parts.join(sep)}`];
-    }
-
-    // Active state — show agent activity
-    const parts: string[] = [];
-    if (this.experimentId) parts.push(chalk.cyan(this.experimentId));
-    if (this.turn > 0) parts.push(chalk.white(`turn ${this.turn}`));
-    if (this.agent) parts.push(chalk.yellow(this.agent.replace(/_/g, " ")));
-    if (this.model) parts.push(D(this.model));
-    if (this.cost > 0) parts.push(chalk.green(`$${this.cost.toFixed(2)}`));
-    if (this.elapsed > 0) parts.push(D(`${Math.floor(this.elapsed / 1000)}s`));
-
-    return [divider, `  ${parts.join(sep)}`];
-  }
-}
-
 const EDITOR_THEME: EditorTheme = {
   borderColor: chalk.dim,
   selectList: {
@@ -120,7 +34,6 @@ const EDITOR_THEME: EditorTheme = {
   },
 };
 
-/** Slash commands for autocomplete. */
 const SLASH_COMMANDS: PiSlashCommand[] = [
   { name: "help", description: "Show available commands" },
   { name: "project", description: "Open a project" },
@@ -139,9 +52,9 @@ const SLASH_COMMANDS: PiSlashCommand[] = [
 
 export class UrikaApp {
   private tui: TUI;
-  private output: OutputArea;
-  private thinking: ThinkingIndicator;
   private editor: Editor;
+  private loader: Loader;
+  private statusLine: Text;
   private options: UrikaAppOptions;
   private processing = false;
 
@@ -150,31 +63,33 @@ export class UrikaApp {
     const terminal = new ProcessTerminal();
     this.tui = new TUI(terminal, true);
 
-    // Output area — scrolling content
-    this.output = new OutputArea();
+    // Print header once (enters scrollback immediately)
+    const headerLines = renderHeader(options.projectName, options.version);
+    const header = new Text(headerLines.join("\n"));
+    this.tui.addChild(header);
 
-    // Editor — user input with autocomplete
+    // Editor — always at bottom, user types here
     this.editor = new Editor(this.tui, EDITOR_THEME);
     this.editor.onSubmit = async (text: string) => {
       await this.handleInput(text);
     };
 
-    // Wire autocomplete for slash commands
+    // Autocomplete for slash commands
     const autocomplete = new CombinedAutocompleteProvider(SLASH_COMMANDS);
     this.editor.setAutocompleteProvider(autocomplete);
 
-    // Thinking indicator — below editor
-    this.thinking = new ThinkingIndicator();
-    this.thinking.update({ project: options.projectName });
+    // Loader — animated spinner, shown during agent work
+    this.loader = new Loader(this.tui, chalk.cyan, chalk.dim, "");
 
-    // Layout: header → output → editor → thinking
-    const headerLines = renderHeader(options.projectName, options.version);
-    const header = new Text(headerLines.join("\n"));
+    // Status line — one line below editor showing project + state
+    const statusText = options.projectName
+      ? chalk.dim(`  ${options.projectName} · ready`)
+      : chalk.dim("  ready · type /help for commands");
+    this.statusLine = new Text(statusText);
 
-    this.tui.addChild(header);
-    this.tui.addChild(this.output);
+    // Layout: editor then status below
     this.tui.addChild(this.editor);
-    this.tui.addChild(this.thinking);
+    this.tui.addChild(this.statusLine);
     this.tui.setFocus(this.editor);
 
     // Wire orchestrator events
@@ -186,55 +101,84 @@ export class UrikaApp {
   }
 
   stop(): void {
+    this.loader.stop();
     this.tui.stop();
   }
 
   shutdown(): void {
-    this.tui.stop();
+    this.stop();
     this.options.orchestrator.close();
     this.options.rpcClient?.close();
     process.exit(0);
   }
 
+  /** Add a text message to the output (scrolls up into history). */
+  private addOutput(text: string): void {
+    // Insert a Text component before the editor
+    const msg = new Text(text);
+    const editorIndex = this.tui.children.indexOf(this.editor);
+    if (editorIndex >= 0) {
+      this.tui.children.splice(editorIndex, 0, msg);
+    } else {
+      this.tui.addChild(msg);
+    }
+    this.tui.requestRender();
+  }
+
+  private showLoader(message: string): void {
+    this.loader.setMessage(message);
+    // Insert loader before editor if not already there
+    const editorIndex = this.tui.children.indexOf(this.editor);
+    if (!this.tui.children.includes(this.loader) && editorIndex >= 0) {
+      this.tui.children.splice(editorIndex, 0, this.loader);
+    }
+    this.loader.start();
+    this.tui.requestRender();
+  }
+
+  private hideLoader(): void {
+    this.loader.stop();
+    const idx = this.tui.children.indexOf(this.loader);
+    if (idx >= 0) this.tui.children.splice(idx, 1);
+    this.tui.requestRender();
+  }
+
+  private updateStatus(text: string): void {
+    this.statusLine.setText(chalk.dim(`  ${text}`));
+    this.tui.requestRender();
+  }
+
   private wireOrchestratorEvents(): void {
     this.options.orchestrator.setEvents({
       onAgentStart: (name) => {
-        this.output.appendText(formatAgentLabel(name));
-        this.thinking.update({ agent: name, active: true });
-        this.tui.requestRender();
+        this.addOutput(formatAgentLabel(name));
+        this.showLoader(name.replace(/_/g, " "));
       },
       onAgentOutput: (_name, text) => {
-        this.output.appendText(text);
-        this.tui.requestRender();
+        this.addOutput(text);
       },
       onAgentEnd: (_name) => {
-        this.thinking.update({ agent: "", active: false });
-        this.tui.requestRender();
+        this.hideLoader();
       },
       onText: (text) => {
-        this.output.appendText(text);
-        this.tui.requestRender();
+        this.addOutput(text);
       },
       onToolCall: (name, args) => {
         const summary = JSON.stringify(args).slice(0, 60);
-        this.output.appendText(chalk.dim(`  → ${name}(${summary})`));
-        this.tui.requestRender();
+        this.addOutput(chalk.dim(`  → ${name}(${summary})`));
       },
       onError: (error) => {
-        this.output.appendText(chalk.red(`  ✗ ${error}`));
-        this.thinking.update({ active: false });
-        this.tui.requestRender();
+        this.hideLoader();
+        this.addOutput(chalk.red(`  ✗ ${error}`));
       },
     });
   }
 
   private async handleInput(text: string): Promise<void> {
     if (!text.trim()) return;
-
-    // Add to editor history for up/down arrow
     this.editor.addToHistory(text);
 
-    // Check for slash commands
+    // Slash commands
     const cmdResult = await handleSlashCommand(
       text,
       this.options.rpcClient,
@@ -246,32 +190,30 @@ export class UrikaApp {
         return;
       }
       if (cmdResult.output) {
-        this.output.appendText(cmdResult.output);
-        this.tui.requestRender();
+        this.addOutput(cmdResult.output);
       }
       return;
     }
 
     // Send to orchestrator
     if (this.processing) {
-      this.output.appendText(chalk.yellow("  Still processing..."));
-      this.tui.requestRender();
+      this.addOutput(chalk.yellow("  Still processing..."));
       return;
     }
 
     this.processing = true;
-    this.output.appendText(chalk.dim(`  > ${text}`));
-    this.thinking.update({ active: true });
-    this.tui.requestRender();
+    this.addOutput(chalk.dim(`> ${text}`));
+    this.showLoader("thinking");
+    this.updateStatus(`${this.options.projectName} · processing`);
 
     try {
       await this.options.orchestrator.processMessage(text);
     } catch (err: any) {
-      this.output.appendText(chalk.red(`  ✗ ${err.message}`));
+      this.addOutput(chalk.red(`  ✗ ${err.message}`));
     } finally {
       this.processing = false;
-      this.thinking.update({ active: false });
-      this.tui.requestRender();
+      this.hideLoader();
+      this.updateStatus(`${this.options.projectName} · ready`);
     }
   }
 }
