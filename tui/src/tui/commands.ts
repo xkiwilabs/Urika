@@ -142,24 +142,33 @@ async function handleProject(
         // No current project loaded
       }
       const lines = ["", "  Projects:", ""];
-      for (const p of projects) {
+      for (let i = 0; i < projects.length; i++) {
+        const p = projects[i];
         const marker = p.name === currentName ? " (active)" : "";
-        lines.push(`    ◆ ${p.name}${marker}`);
+        lines.push(`    ${i + 1}. ${p.name}${marker}`);
       }
-      lines.push("", "  Usage: /project <name> to switch projects", "");
+      lines.push("", "  Type /project <number> or /project <name>", "");
       return { output: lines.join("\n"), handled: true };
     } catch (e: any) {
       return { output: `  Error: ${e.message}`, handled: true };
     }
   }
 
-  // Switch project: look up name in registry, return signal for app to reinitialize
+  // Switch project: accept number or name
   if (!rpcClient) return { output: "  Not connected to backend.", handled: true };
   try {
     const projects = await rpcClient.call("project.list", {}) as any[];
-    const match = projects.find(
-      (p: any) => p.name === name || p.name.toLowerCase() === name.toLowerCase(),
-    );
+
+    // Accept number selection (e.g. /project 1)
+    const num = parseInt(name, 10);
+    let match: any;
+    if (!isNaN(num) && num >= 1 && num <= projects.length) {
+      match = projects[num - 1];
+    } else {
+      match = projects.find(
+        (p: any) => p.name === name || p.name.toLowerCase() === name.toLowerCase(),
+      );
+    }
     if (!match) {
       return {
         output: `  Project "${name}" not found. Use /list to see available projects.`,
@@ -277,13 +286,22 @@ async function handleLogin(
   provider: string,
   callbacks?: CommandCallbacks,
 ): Promise<SlashCommandResult> {
+  const providers = getSupportedProviders();
+
   if (!provider) {
-    const providers = getSupportedProviders();
-    const list = providers.map((p) => `    ${p.id} — ${p.name}`).join("\n");
+    const list = providers
+      .map((p, i) => `    ${i + 1}. ${p.id} — ${p.name}`)
+      .join("\n");
     return {
-      output: `\n  Usage: /login <provider>\n\n  Available providers:\n${list}\n`,
+      output: `\n  Login to a provider:\n\n${list}\n\n  Type /login <number> or /login <name>\n`,
       handled: true,
     };
+  }
+
+  // Accept number selection (e.g. /login 1)
+  const num = parseInt(provider, 10);
+  if (!isNaN(num) && num >= 1 && num <= providers.length) {
+    provider = providers[num - 1].id;
   }
 
   if (isLoggedIn(provider)) {

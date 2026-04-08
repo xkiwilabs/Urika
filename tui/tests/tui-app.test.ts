@@ -127,8 +127,8 @@ describe("handleSlashCommand", () => {
   it("handles /login without provider", async () => {
     const result = await handleSlashCommand("/login", null, "/tmp");
     expect(result.handled).toBe(true);
-    expect(result.output).toContain("Available providers");
     expect(result.output).toContain("anthropic");
+    expect(result.output).toContain("/login <number>");
   });
 
   it("handles unknown commands", async () => {
