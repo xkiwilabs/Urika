@@ -84,37 +84,8 @@ export class UrikaApp {
     };
     this.editorContainer.addChild(this.editor);
 
-    // Autocomplete for slash commands
-    const rpcClient = options.rpcClient;
-    const slashCommands: PiSlashCommand[] = [
-      { name: "help", description: "Show available commands" },
-      {
-        name: "project",
-        description: "Open a project",
-        getArgumentCompletions: async (prefix: string): Promise<AutocompleteItem[]> => {
-          if (!rpcClient) return [];
-          try {
-            const projects = await rpcClient.call("project.list", {}) as any[];
-            return projects
-              .filter((p: any) => p.name.toLowerCase().startsWith(prefix.toLowerCase()))
-              .map((p: any) => ({ value: p.name, label: p.name, description: p.path }));
-          } catch { return []; }
-        },
-      },
-      { name: "list", description: "List all projects" },
-      { name: "new", description: "Create a new project" },
-      { name: "status", description: "Show project status" },
-      { name: "results", description: "Show experiment results" },
-      { name: "config", description: "Show/edit configuration" },
-      { name: "login", description: "Login to a provider (e.g. /login anthropic)" },
-      { name: "logout", description: "Logout from a provider" },
-      { name: "auth", description: "Show authentication status" },
-      { name: "pause", description: "Pause current run" },
-      { name: "stop", description: "Stop current run" },
-      { name: "quit", description: "Exit Urika TUI" },
-    ];
-    const autocomplete = new CombinedAutocompleteProvider(slashCommands);
-    this.editor.setAutocompleteProvider(autocomplete);
+    // Autocomplete — rebuilt when project state changes
+    this.rebuildAutocomplete();
 
     // 5. Footer — status line
     const footerText = options.projectName
@@ -132,6 +103,53 @@ export class UrikaApp {
 
     // Wire orchestrator events
     this.wireOrchestratorEvents();
+  }
+
+  /** Whether a project is currently loaded. */
+  private get hasProject(): boolean {
+    return this.options.projectDir !== "" && this.options.projectDir !== process.cwd();
+  }
+
+  /** Rebuild slash command autocomplete based on current state. */
+  private rebuildAutocomplete(): void {
+    const rpcClient = this.options.rpcClient;
+
+    // Global commands — always available
+    const commands: PiSlashCommand[] = [
+      { name: "help", description: "Show available commands" },
+      {
+        name: "project",
+        description: "Open a project",
+        getArgumentCompletions: async (prefix: string): Promise<AutocompleteItem[]> => {
+          if (!rpcClient) return [];
+          try {
+            const projects = await rpcClient.call("project.list", {}) as any[];
+            return projects
+              .filter((p: any) => p.name.toLowerCase().startsWith(prefix.toLowerCase()))
+              .map((p: any) => ({ value: p.name, label: p.name, description: p.path }));
+          } catch { return []; }
+        },
+      },
+      { name: "list", description: "List all projects" },
+      { name: "new", description: "Create a new project" },
+      { name: "login", description: "Login to a provider (e.g. /login anthropic)" },
+      { name: "logout", description: "Logout from a provider" },
+      { name: "auth", description: "Show authentication status" },
+      { name: "quit", description: "Exit Urika TUI" },
+    ];
+
+    // Project-level commands — only when a project is loaded
+    if (this.hasProject) {
+      commands.push(
+        { name: "status", description: "Show project status" },
+        { name: "results", description: "Show experiment results" },
+        { name: "config", description: "Show project configuration" },
+        { name: "pause", description: "Pause current run" },
+        { name: "stop", description: "Stop current run" },
+      );
+    }
+
+    this.editor.setAutocompleteProvider(new CombinedAutocompleteProvider(commands));
   }
 
   start(): void {
@@ -291,6 +309,7 @@ export class UrikaApp {
       this.options.projectDir = newProjectDir;
       this.options.projectName = projectName;
       this.updateFooter(`${projectName} · ready`);
+      this.rebuildAutocomplete(); // Add project-level commands
       this.addChat(chalk.cyan(`Switched to project: ${projectName}`));
     } catch (err: any) {
       this.addChat(chalk.red(`Failed to switch project: ${err.message}`));
