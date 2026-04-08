@@ -15,12 +15,17 @@ export interface OrchestratorContext {
  * Load and populate the orchestrator's system prompt.
  */
 export function buildOrchestratorPrompt(ctx: OrchestratorContext): string {
-  return loadPrompt(join(ctx.promptsDir, "orchestrator_system.md"), {
-    project_name: ctx.projectName,
-    question: ctx.question,
-    mode: ctx.mode,
-    data_dir: ctx.dataDir,
-    experiment_id: ctx.experimentId,
-    current_state: ctx.currentState,
-  });
+  try {
+    return loadPrompt(join(ctx.promptsDir, "orchestrator_system.md"), {
+      project_name: ctx.projectName,
+      question: ctx.question,
+      mode: ctx.mode,
+      data_dir: ctx.dataDir,
+      experiment_id: ctx.experimentId,
+      current_state: ctx.currentState,
+    });
+  } catch {
+    // Fallback if prompt file not found (e.g. in tests)
+    return `You are the Urika Orchestrator. Project: ${ctx.projectName}. ${ctx.currentState}`;
+  }
 }

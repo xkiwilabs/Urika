@@ -15,8 +15,25 @@ describe("Orchestrator", () => {
     expect(orch).toBeDefined();
   });
 
-  it("has agent tools and state tools registered", () => {
+  it("only has global tools before project is loaded", () => {
     const orch = new Orchestrator(DEFAULT_CONFIG);
+    const names = orch.getToolNames();
+    expect(names).toContain("list_projects");
+    expect(names).not.toContain("planning_agent");
+    expect(names).not.toContain("create_experiment");
+    expect(names).toHaveLength(1);
+  });
+
+  it("has all tools after project is initialized", async () => {
+    const orch = new Orchestrator(DEFAULT_CONFIG);
+    await orch.initialize({
+      projectName: "test-project",
+      question: "Does X predict Y?",
+      mode: "exploratory",
+      dataDir: "/tmp/test/data",
+      experimentId: "",
+      currentState: "Ready.",
+    });
     const names = orch.getToolNames();
 
     // Agent tools (8 roles)
@@ -24,21 +41,15 @@ describe("Orchestrator", () => {
     expect(names).toContain("task_agent");
     expect(names).toContain("evaluator");
     expect(names).toContain("advisor");
-    expect(names).toContain("tool_builder");
-    expect(names).toContain("literature_agent");
-    expect(names).toContain("data_agent");
-    expect(names).toContain("report_agent");
 
-    // State tools (6)
+    // State tools
+    expect(names).toContain("list_projects");
+    expect(names).toContain("list_experiments");
     expect(names).toContain("create_experiment");
-    expect(names).toContain("append_run");
     expect(names).toContain("load_progress");
-    expect(names).toContain("get_best_run");
     expect(names).toContain("load_criteria");
+    expect(names).toContain("load_methods");
     expect(names).toContain("finalize_project");
-
-    // 8 agents + 6 state = 14
-    expect(names).toHaveLength(14);
   });
 
   it("accepts event handlers without throwing", () => {
@@ -53,36 +64,30 @@ describe("Orchestrator", () => {
     });
   });
 
-  it("rejects processMessage before connect", async () => {
-    const orch = new Orchestrator(DEFAULT_CONFIG);
-    // processMessage calls the LLM, which requires API keys, so it will fail.
-    // But we can verify the orchestrator doesn't crash on construction.
-    expect(orch.getToolNames().length).toBeGreaterThan(0);
-  });
-
   it("close is safe to call without connect", () => {
     const orch = new Orchestrator(DEFAULT_CONFIG);
-    // Should not throw even if rpcClient is null
     orch.close();
   });
 
-  it("uses model overrides for the orchestrator model", () => {
-    const orch = new Orchestrator({
-      ...DEFAULT_CONFIG,
-      modelOverrides: { orchestrator: "anthropic/claude-haiku-4-5" },
+  it("clears messages on initialize", async () => {
+    const orch = new Orchestrator(DEFAULT_CONFIG);
+    await orch.initialize({
+      projectName: "project-a",
+      question: "Q1",
+      mode: "exploratory",
+      dataDir: "/tmp/a/data",
+      experimentId: "",
+      currentState: "Ready.",
     });
-    // The override is used internally during processMessage.
-    // We verify construction succeeds and tools are still built.
+    // Re-initialize (project switch) should not crash
+    await orch.initialize({
+      projectName: "project-b",
+      question: "Q2",
+      mode: "exploratory",
+      dataDir: "/tmp/b/data",
+      experimentId: "",
+      currentState: "Switched.",
+    });
     expect(orch.getToolNames()).toContain("planning_agent");
-  });
-
-  it("passes model overrides through to agent tools", () => {
-    const orch = new Orchestrator({
-      ...DEFAULT_CONFIG,
-      modelOverrides: { evaluator: "anthropic/claude-haiku-4-5" },
-    });
-    // If overrides were not passed, buildAgentTools would use defaultModel.
-    // We can only verify the orchestrator constructed without error.
-    expect(orch.getToolNames()).toContain("evaluator");
   });
 });

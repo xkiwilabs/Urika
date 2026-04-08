@@ -36,23 +36,31 @@ export interface OrchestratorEvents {
   onError?: (error: string) => void;
 }
 
-/** State tool names exposed to the orchestrator LLM. */
-const STATE_TOOLS = [
+/** Global tools — available without a project. */
+const GLOBAL_TOOLS = ["list_projects"] as const;
+
+/** Project-level tools — only available after loading a project. */
+const PROJECT_TOOLS = [
+  "list_experiments",
   "create_experiment",
   "append_run",
   "load_progress",
   "get_best_run",
   "load_criteria",
+  "load_methods",
   "finalize_project",
 ] as const;
 
 /** Maps orchestrator tool names to Python RPC method paths. */
 const RPC_METHOD_MAP: Record<string, string> = {
+  list_projects: "project.list",
+  list_experiments: "experiment.list",
   create_experiment: "experiment.create",
   append_run: "progress.append_run",
   load_progress: "progress.load",
   get_best_run: "progress.get_best_run",
   load_criteria: "criteria.load",
+  load_methods: "methods.list",
   finalize_project: "finalize.run",
 };
 
@@ -63,6 +71,7 @@ export class Orchestrator {
   private messages: Message[] = [];
   private events: OrchestratorEvents = {};
   private systemPrompt: string = "";
+  private hasProject = false;
 
   constructor(config: OrchestratorConfig) {
     this.config = config;
@@ -77,10 +86,12 @@ export class Orchestrator {
 
   /** Returns the names of all tools available to the orchestrator LLM. */
   getToolNames(): string[] {
-    return [
-      ...this.agentTools.map((t) => t.name),
-      ...STATE_TOOLS,
-    ];
+    const names = [...GLOBAL_TOOLS];
+    if (this.hasProject) {
+      names.push(...this.agentTools.map((t) => t.name));
+      names.push(...PROJECT_TOOLS);
+    }
+    return names;
   }
 
   /** Register event handlers for orchestrator activity. */
@@ -108,10 +119,14 @@ export class Orchestrator {
     experimentId: string;
     currentState: string;
   }): Promise<void> {
+    this.hasProject = projectContext.projectName !== "" &&
+      projectContext.projectName !== "No project selected";
     this.systemPrompt = buildOrchestratorPrompt({
       promptsDir: this.config.promptsDir,
       ...projectContext,
     });
+    // Clear conversation history when switching projects
+    this.messages = [];
   }
 
   /**
@@ -284,82 +299,98 @@ export class Orchestrator {
       .join("\n");
   }
 
-  /** Build the full pi-ai Tool array for the orchestrator LLM context. */
+  /** Build the pi-ai Tool array scoped to current state. */
   private buildPiAiTools(): Tool[] {
     const tools: Tool[] = [];
 
-    // Agent tools — each takes an instructions string
-    for (const agent of this.agentTools) {
+    // Global tools — always available
+    tools.push({
+      name: "list_projects",
+      description: "List all registered Urika projects with their names and paths",
+      parameters: Type.Object({}),
+    });
+
+    // Project-level tools — only when a project is loaded
+    if (this.hasProject) {
+      // Agent tools
+      for (const agent of this.agentTools) {
+        tools.push({
+          name: agent.name,
+          description: agent.description,
+          parameters: Type.Object({
+            instructions: Type.String({ description: "Instructions for the agent" }),
+          }),
+        });
+      }
+
+      // State tools
       tools.push({
-        name: agent.name,
-        description: agent.description,
+        name: "list_experiments",
+        description: "List all experiments in the current project",
+        parameters: Type.Object({}),
+      });
+
+      tools.push({
+        name: "create_experiment",
+        description: "Create a new experiment in the project",
         parameters: Type.Object({
-          instructions: Type.String({
-            description: "Instructions for the agent",
+          name: Type.String({ description: "Experiment name" }),
+          hypothesis: Type.String({ description: "Hypothesis to test" }),
+        }),
+      });
+
+      tools.push({
+        name: "load_progress",
+        description: "Load progress for an experiment — returns all runs and status",
+        parameters: Type.Object({
+          experiment_id: Type.String({ description: "Experiment ID (e.g. exp-001)" }),
+        }),
+      });
+
+      tools.push({
+        name: "get_best_run",
+        description: "Find the best run by a specific metric",
+        parameters: Type.Object({
+          experiment_id: Type.String({ description: "Experiment ID" }),
+          metric: Type.String({ description: "Metric name (e.g. r2, rmse)" }),
+          direction: Type.String({ description: "higher or lower" }),
+        }),
+      });
+
+      tools.push({
+        name: "load_criteria",
+        description: "Load current success criteria for the project",
+        parameters: Type.Object({}),
+      });
+
+      tools.push({
+        name: "load_methods",
+        description: "List all methods tried in the project with their metrics",
+        parameters: Type.Object({}),
+      });
+
+      tools.push({
+        name: "append_run",
+        description: "Record a completed run result",
+        parameters: Type.Object({
+          experiment_id: Type.String({ description: "Experiment ID" }),
+          run: Type.Object({
+            run_id: Type.String(),
+            method: Type.String(),
+            params: Type.Any(),
+            metrics: Type.Any(),
+            hypothesis: Type.String(),
+            observation: Type.String(),
           }),
         }),
       });
+
+      tools.push({
+        name: "finalize_project",
+        description: "Run the finalize pipeline: finalizer -> report -> presentation -> README. Call when all experiments are done.",
+        parameters: Type.Object({}),
+      });
     }
-
-    // State tools — routed to Python RPC
-    tools.push({
-      name: "create_experiment",
-      description: "Create a new experiment in the project",
-      parameters: Type.Object({
-        name: Type.String({ description: "Experiment name" }),
-        hypothesis: Type.String({ description: "Hypothesis to test" }),
-      }),
-    });
-
-    tools.push({
-      name: "load_progress",
-      description:
-        "Load progress for an experiment — returns all runs and status",
-      parameters: Type.Object({
-        experiment_id: Type.String({
-          description: "Experiment ID (e.g. exp-001)",
-        }),
-      }),
-    });
-
-    tools.push({
-      name: "get_best_run",
-      description: "Find the best run by a specific metric",
-      parameters: Type.Object({
-        experiment_id: Type.String({ description: "Experiment ID" }),
-        metric: Type.String({ description: "Metric name (e.g. r2, rmse)" }),
-        direction: Type.String({ description: "higher or lower" }),
-      }),
-    });
-
-    tools.push({
-      name: "load_criteria",
-      description: "Load current success criteria for the project",
-      parameters: Type.Object({}),
-    });
-
-    tools.push({
-      name: "append_run",
-      description: "Record a completed run result",
-      parameters: Type.Object({
-        experiment_id: Type.String({ description: "Experiment ID" }),
-        run: Type.Object({
-          run_id: Type.String(),
-          method: Type.String(),
-          params: Type.Any(),
-          metrics: Type.Any(),
-          hypothesis: Type.String(),
-          observation: Type.String(),
-        }),
-      }),
-    });
-
-    tools.push({
-      name: "finalize_project",
-      description:
-        "Run the finalize pipeline: finalizer -> report -> presentation -> README. Call when all experiments are done.",
-      parameters: Type.Object({}),
-    });
 
     return tools;
   }
