@@ -220,6 +220,9 @@ export class UrikaApp {
       text,
       this.options.rpcClient,
       this.options.projectDir,
+      {
+        onOutput: (msg: string) => this.addChat(msg),
+      },
     );
     if (cmdResult.handled) {
       if (cmdResult.output === "__QUIT__") {

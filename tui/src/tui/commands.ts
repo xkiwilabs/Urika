@@ -16,6 +16,7 @@ export interface SlashCommandResult {
 
 export interface CommandCallbacks {
   onPrompt?: (message: string) => Promise<string>;
+  onOutput?: (text: string) => void;
 }
 
 export async function handleSlashCommand(
@@ -311,26 +312,28 @@ async function handleLogin(
     };
   }
 
+  // Show output immediately via callback (don't collect and return later)
+  const out = callbacks?.onOutput ?? (() => {});
+
   try {
-    const messages: string[] = [];
+    out(`  Logging in to ${provider}...`);
     const success = await loginProvider(provider, {
       onUrl: (url, instructions) => {
-        messages.push(`  Open this URL to authenticate:\n    ${url}`);
-        if (instructions) messages.push(`  ${instructions}`);
+        out(`  Open this URL to authenticate:\n    ${url}`);
+        if (instructions) out(`  ${instructions}`);
       },
       onPrompt: async (message) => {
         if (callbacks?.onPrompt) return callbacks.onPrompt(message);
         return "";
       },
-      onProgress: (msg) => messages.push(`  ${msg}`),
+      onProgress: (msg) => out(`  ${msg}`),
     });
 
     if (success) {
-      messages.push(`  ✓ Logged in to ${provider}.`);
+      return { output: `  ✓ Logged in to ${provider}.`, handled: true };
     } else {
-      messages.push(`  Unknown provider: ${provider}. Use /login to see options.`);
+      return { output: `  Unknown provider: ${provider}. Use /login to see options.`, handled: true };
     }
-    return { output: messages.join("\n"), handled: true };
   } catch (err: any) {
     return { output: `  Login failed: ${err.message}`, handled: true };
   }
