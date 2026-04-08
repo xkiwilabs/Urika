@@ -121,12 +121,20 @@ async function main() {
       rpcClient,
     });
 
-    // Handle clean shutdown
-    process.on("SIGINT", () => {
+    // Handle clean shutdown — kill all child processes
+    const cleanup = () => {
       app.stop();
       orchestrator.close();
       rpcClient.close();
-      process.exit(0);
+    };
+
+    process.on("SIGINT", () => { cleanup(); process.exit(0); });
+    process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+    process.on("exit", () => { cleanup(); });
+    process.on("uncaughtException", (err) => {
+      cleanup();
+      console.error(err);
+      process.exit(1);
     });
 
     app.start();

@@ -1,8 +1,10 @@
 import {
   TUI,
+  Container,
   Editor,
   Text,
   Loader,
+  Spacer,
   ProcessTerminal,
   CombinedAutocompleteProvider,
   type EditorTheme,
@@ -36,11 +38,24 @@ const EDITOR_THEME: EditorTheme = {
   },
 };
 
+/**
+ * UrikaApp — follows Pi's container hierarchy pattern:
+ *
+ *   TUI
+ *     +-- headerContainer    (static header, shown once)
+ *     +-- chatContainer      (messages grow here)
+ *     +-- statusContainer    (loader/spinner when processing)
+ *     +-- editorContainer    (editor OR selector, swapped as needed)
+ *     +-- footer             (project name, state)
+ */
 export class UrikaApp {
   private tui: TUI;
+  private chatContainer: Container;
+  private statusContainer: Container;
+  private editorContainer: Container;
   private editor: Editor;
-  private loader: Loader;
-  private statusLine: Text;
+  private footer: Text;
+  private loader: Loader | null = null;
   private options: UrikaAppOptions;
   private processing = false;
 
@@ -49,18 +64,27 @@ export class UrikaApp {
     const terminal = new ProcessTerminal();
     this.tui = new TUI(terminal, true);
 
-    // Print header once (enters scrollback immediately)
+    // 1. Header container
+    const headerContainer = new Container();
     const headerLines = renderHeader(options.projectName, options.version);
-    const header = new Text(headerLines.join("\n"));
-    this.tui.addChild(header);
+    headerContainer.addChild(new Text(headerLines.join("\n")));
+    headerContainer.addChild(new Spacer(1));
 
-    // Editor — always at bottom, user types here
+    // 2. Chat container — all messages go here
+    this.chatContainer = new Container();
+
+    // 3. Status container — loader appears here during agent work
+    this.statusContainer = new Container();
+
+    // 4. Editor container — wraps editor, can be swapped for selectors
+    this.editorContainer = new Container();
     this.editor = new Editor(this.tui, EDITOR_THEME);
     this.editor.onSubmit = async (text: string) => {
       await this.handleInput(text);
     };
+    this.editorContainer.addChild(this.editor);
 
-    // Build slash commands with dynamic completions (needs rpcClient access)
+    // Autocomplete for slash commands
     const rpcClient = options.rpcClient;
     const slashCommands: PiSlashCommand[] = [
       { name: "help", description: "Show available commands" },
@@ -73,14 +97,8 @@ export class UrikaApp {
             const projects = await rpcClient.call("project.list", {}) as any[];
             return projects
               .filter((p: any) => p.name.toLowerCase().startsWith(prefix.toLowerCase()))
-              .map((p: any) => ({
-                value: p.name,
-                label: p.name,
-                description: p.path,
-              }));
-          } catch {
-            return [];
-          }
+              .map((p: any) => ({ value: p.name, label: p.name, description: p.path }));
+          } catch { return []; }
         },
       },
       { name: "list", description: "List all projects" },
@@ -95,23 +113,21 @@ export class UrikaApp {
       { name: "stop", description: "Stop current run" },
       { name: "quit", description: "Exit Urika TUI" },
     ];
-
-    // Autocomplete for slash commands
     const autocomplete = new CombinedAutocompleteProvider(slashCommands);
     this.editor.setAutocompleteProvider(autocomplete);
 
-    // Loader — animated spinner, shown during agent work
-    this.loader = new Loader(this.tui, chalk.cyan, chalk.dim, "");
-
-    // Status line — one line below editor showing project + state
-    const statusText = options.projectName
+    // 5. Footer — status line
+    const footerText = options.projectName
       ? chalk.dim(`  ${options.projectName} · ready`)
       : chalk.dim("  ready · type /help for commands");
-    this.statusLine = new Text(statusText);
+    this.footer = new Text(footerText);
 
-    // Layout: editor then status below
-    this.tui.addChild(this.editor);
-    this.tui.addChild(this.statusLine);
+    // Assemble layout — order determines visual stacking
+    this.tui.addChild(headerContainer);
+    this.tui.addChild(this.chatContainer);
+    this.tui.addChild(this.statusContainer);
+    this.tui.addChild(this.editorContainer);
+    this.tui.addChild(this.footer);
     this.tui.setFocus(this.editor);
 
     // Wire orchestrator events
@@ -123,7 +139,7 @@ export class UrikaApp {
   }
 
   stop(): void {
-    this.loader.stop();
+    this.loader?.stop();
     this.tui.stop();
   }
 
@@ -134,73 +150,72 @@ export class UrikaApp {
     process.exit(0);
   }
 
-  /** Add a text message to the output (scrolls up into history). */
-  private addOutput(text: string): void {
-    // Insert a Text component before the editor
-    const msg = new Text(text);
-    const editorIndex = this.tui.children.indexOf(this.editor);
-    if (editorIndex >= 0) {
-      this.tui.children.splice(editorIndex, 0, msg);
-    } else {
-      this.tui.addChild(msg);
-    }
+  // ── Output helpers (following Pi's pattern) ──
+
+  /** Add a message to chat (scrolls up naturally). */
+  private addChat(text: string, padding = 1): void {
+    this.chatContainer.addChild(new Text(text, padding));
     this.tui.requestRender();
   }
 
+  /** Show the loader spinner in statusContainer. */
   private showLoader(message: string): void {
-    this.loader.setMessage(message);
-    // Insert loader before editor if not already there
-    const editorIndex = this.tui.children.indexOf(this.editor);
-    if (!this.tui.children.includes(this.loader) && editorIndex >= 0) {
-      this.tui.children.splice(editorIndex, 0, this.loader);
-    }
+    this.statusContainer.clear();
+    this.loader = new Loader(this.tui, chalk.cyan, chalk.dim, message);
+    this.statusContainer.addChild(this.loader);
     this.loader.start();
     this.tui.requestRender();
   }
 
+  /** Hide the loader spinner. */
   private hideLoader(): void {
-    this.loader.stop();
-    const idx = this.tui.children.indexOf(this.loader);
-    if (idx >= 0) this.tui.children.splice(idx, 1);
+    this.loader?.stop();
+    this.loader = null;
+    this.statusContainer.clear();
     this.tui.requestRender();
   }
 
-  private updateStatus(text: string): void {
-    this.statusLine.setText(chalk.dim(`  ${text}`));
+  /** Update the footer status text. */
+  private updateFooter(text: string): void {
+    this.footer.setText(chalk.dim(`  ${text}`));
     this.tui.requestRender();
   }
+
+  // ── Event wiring ──
 
   private wireOrchestratorEvents(): void {
     this.options.orchestrator.setEvents({
       onAgentStart: (name) => {
-        this.addOutput(formatAgentLabel(name));
+        this.addChat(formatAgentLabel(name));
         this.showLoader(name.replace(/_/g, " "));
       },
       onAgentOutput: (_name, text) => {
-        this.addOutput(text);
+        this.addChat(text);
       },
       onAgentEnd: (_name) => {
         this.hideLoader();
       },
       onText: (text) => {
-        this.addOutput(text);
+        this.addChat(text);
       },
       onToolCall: (name, args) => {
         const summary = JSON.stringify(args).slice(0, 60);
-        this.addOutput(chalk.dim(`  → ${name}(${summary})`));
+        this.addChat(chalk.dim(`→ ${name}(${summary})`));
       },
       onError: (error) => {
         this.hideLoader();
-        this.addOutput(chalk.red(`  ✗ ${error}`));
+        this.addChat(chalk.red(`✗ ${error}`));
       },
     });
   }
+
+  // ── Input handling ──
 
   private async handleInput(text: string): Promise<void> {
     if (!text.trim()) return;
     this.editor.addToHistory(text);
 
-    // Slash commands
+    // Slash commands — handled directly, don't go to orchestrator
     const cmdResult = await handleSlashCommand(
       text,
       this.options.rpcClient,
@@ -217,40 +232,41 @@ export class UrikaApp {
         return;
       }
       if (cmdResult.output) {
-        this.addOutput(cmdResult.output);
+        this.addChat(cmdResult.output);
       }
       return;
     }
 
-    // Send to orchestrator
+    // Free text — send to orchestrator
     if (this.processing) {
-      this.addOutput(chalk.yellow("  Still processing..."));
+      this.addChat(chalk.yellow("Still processing..."));
       return;
     }
 
     this.processing = true;
-    this.addOutput(chalk.dim(`> ${text}`));
+    this.addChat(chalk.dim(`> ${text}`));
     this.showLoader("thinking");
-    this.updateStatus(`${this.options.projectName} · processing`);
+    this.updateFooter(`${this.options.projectName} · processing`);
 
     try {
       await this.options.orchestrator.processMessage(text);
     } catch (err: any) {
-      this.addOutput(chalk.red(`  ✗ ${err.message}`));
+      this.addChat(chalk.red(`✗ ${err.message}`));
     } finally {
       this.processing = false;
       this.hideLoader();
-      this.updateStatus(`${this.options.projectName} · ready`);
+      this.updateFooter(`${this.options.projectName} · ready`);
     }
   }
+
+  // ── Project switching ──
 
   private async switchProject(newProjectDir: string): Promise<void> {
     this.showLoader("switching project");
     try {
-      // Load the new project config to get name + question
       const rpcClient = this.options.rpcClient;
       if (!rpcClient) {
-        this.addOutput(chalk.red("  Not connected to backend."));
+        this.addChat(chalk.red("Not connected to backend."));
         return;
       }
 
@@ -260,7 +276,6 @@ export class UrikaApp {
 
       const projectName = config.name || "Urika";
 
-      // Reinitialize the orchestrator with the new project
       await this.options.orchestrator.initialize({
         projectName,
         question: config.question || "",
@@ -270,13 +285,12 @@ export class UrikaApp {
         currentState: "Project switched. Awaiting user instructions.",
       });
 
-      // Update app state
       this.options.projectDir = newProjectDir;
       this.options.projectName = projectName;
-      this.updateStatus(`${projectName} · ready`);
-      this.addOutput(chalk.cyan(`  Switched to project: ${projectName}`));
+      this.updateFooter(`${projectName} · ready`);
+      this.addChat(chalk.cyan(`Switched to project: ${projectName}`));
     } catch (err: any) {
-      this.addOutput(chalk.red(`  Failed to switch project: ${err.message}`));
+      this.addChat(chalk.red(`Failed to switch project: ${err.message}`));
     } finally {
       this.hideLoader();
     }
