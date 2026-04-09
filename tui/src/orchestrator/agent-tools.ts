@@ -45,7 +45,6 @@ export interface AgentToolConfig {
   experimentId: string;
   defaultModel: string;
   modelOverrides: Record<string, string>;
-  onTextDelta?: (role: string, text: string) => void;
 }
 
 export interface AgentTool {

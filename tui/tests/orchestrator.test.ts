@@ -65,16 +65,90 @@ describe("Orchestrator", () => {
     expect(names).toContain("summarize_project");
   });
 
-  it("accepts event handlers without throwing", () => {
+  it("creates an Agent after initialize", async () => {
     const orch = new Orchestrator(DEFAULT_CONFIG);
-    orch.setEvents({
-      onAgentStart: (_name) => {},
-      onAgentOutput: (_name, _text) => {},
-      onAgentEnd: (_name) => {},
-      onText: (_text) => {},
-      onToolCall: (_name, _args) => {},
-      onError: (_error) => {},
+    expect(orch.getAgent()).toBeNull();
+
+    await orch.initialize({
+      projectName: "test-project",
+      question: "Does X predict Y?",
+      mode: "exploratory",
+      dataDir: "/tmp/test/data",
+      experimentId: "",
+      currentState: "Ready.",
     });
+
+    expect(orch.getAgent()).toBeDefined();
+    expect(orch.getAgent()).not.toBeNull();
+  });
+
+  it("agent has correct tools after initialize", async () => {
+    const orch = new Orchestrator(DEFAULT_CONFIG);
+    await orch.initialize({
+      projectName: "test-project",
+      question: "Q?",
+      mode: "exploratory",
+      dataDir: "/tmp/test/data",
+      experimentId: "",
+      currentState: "Ready.",
+    });
+
+    const agent = orch.getAgent()!;
+    const toolNames = agent.state.tools.map((t) => t.name);
+
+    // Should have agent tools + RPC state tools
+    expect(toolNames).toContain("planning_agent");
+    expect(toolNames).toContain("task_agent");
+    expect(toolNames).toContain("list_experiments");
+    expect(toolNames).toContain("summarize_project");
+
+    // All tools should have labels
+    for (const tool of agent.state.tools) {
+      expect(tool.label).toBeDefined();
+      expect(typeof tool.label).toBe("string");
+      expect(tool.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("agent has only global tools before project is loaded", async () => {
+    const orch = new Orchestrator(DEFAULT_CONFIG);
+    await orch.initialize({
+      projectName: "No project selected",
+      question: "",
+      mode: "exploratory",
+      dataDir: "",
+      experimentId: "",
+      currentState: "No project.",
+    });
+
+    const agent = orch.getAgent()!;
+    const toolNames = agent.state.tools.map((t) => t.name);
+
+    expect(toolNames).toContain("list_projects");
+    expect(toolNames).toContain("switch_project");
+    expect(toolNames).not.toContain("planning_agent");
+    expect(toolNames).toHaveLength(2);
+  });
+
+  it("supports subscribe after initialize", async () => {
+    const orch = new Orchestrator(DEFAULT_CONFIG);
+    await orch.initialize({
+      projectName: "test",
+      question: "Q?",
+      mode: "exploratory",
+      dataDir: "/tmp/test/data",
+      experimentId: "",
+      currentState: "Ready.",
+    });
+
+    const events: string[] = [];
+    const unsub = orch.subscribe((event) => {
+      events.push(event.type);
+    });
+
+    expect(typeof unsub).toBe("function");
+    // Clean up
+    unsub();
   });
 
   it("close is safe to call without connect", () => {
@@ -82,7 +156,7 @@ describe("Orchestrator", () => {
     orch.close();
   });
 
-  it("clears messages on initialize", async () => {
+  it("clears agent on initialize (project switch)", async () => {
     const orch = new Orchestrator(DEFAULT_CONFIG);
     await orch.initialize({
       projectName: "project-a",
@@ -92,7 +166,9 @@ describe("Orchestrator", () => {
       experimentId: "",
       currentState: "Ready.",
     });
-    // Re-initialize (project switch) should not crash
+    const agent1 = orch.getAgent();
+
+    // Re-initialize (project switch) — should create a new agent
     await orch.initialize({
       projectName: "project-b",
       question: "Q2",
@@ -101,6 +177,16 @@ describe("Orchestrator", () => {
       experimentId: "",
       currentState: "Switched.",
     });
+    const agent2 = orch.getAgent();
+
+    expect(agent2).not.toBe(agent1);
     expect(orch.getToolNames()).toContain("planning_agent");
+  });
+
+  it("steer and abort are safe to call before initialize", () => {
+    const orch = new Orchestrator(DEFAULT_CONFIG);
+    // Should not throw
+    orch.steer("hello");
+    orch.abort();
   });
 });

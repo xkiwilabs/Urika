@@ -85,23 +85,42 @@ async function main() {
   });
 
   if (headless) {
-    // Headless mode: read stdin, process, print JSON events
-    orchestrator.setEvents({
-      onAgentStart: (name) => emit("agent_start", { agent: name }),
-      onAgentOutput: (name, text) =>
-        emit("agent_output", { agent: name, text }),
-      onAgentEnd: (name) => emit("agent_end", { agent: name }),
-      onText: (text) => emit("text", { text }),
-      onToolCall: (name, args) => emit("tool_call", { tool: name, args }),
-      onError: (error) => emit("error", { error }),
-    });
+    // Headless mode: read stdin, process, print JSON events via agent subscribe
+    const agent = orchestrator.getAgent();
+    if (agent) {
+      let responseText = "";
+      agent.subscribe(async (event) => {
+        switch (event.type) {
+          case "agent_start":
+            responseText = "";
+            break;
+          case "message_update":
+            if (event.assistantMessageEvent.type === "text_delta") {
+              responseText += event.assistantMessageEvent.delta;
+            }
+            break;
+          case "tool_execution_start":
+            emit("tool_call", { tool: event.toolName, args: event.args });
+            break;
+          case "tool_execution_end":
+            if (event.isError) {
+              emit("error", { error: `Tool failed: ${event.toolName}` });
+            }
+            break;
+          case "agent_end":
+            if (responseText) {
+              emit("response", { text: responseText });
+            }
+            break;
+        }
+      });
+    }
 
     const rl = createInterface({ input: process.stdin });
     for await (const line of rl) {
       if (!line.trim()) continue;
       try {
-        const response = await orchestrator.processMessage(line.trim());
-        emit("response", { text: response });
+        await orchestrator.processMessage(line.trim());
       } catch (err: any) {
         emit("error", { error: err.message });
       }
