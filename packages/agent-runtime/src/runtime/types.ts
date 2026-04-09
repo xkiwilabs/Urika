@@ -28,6 +28,9 @@ export interface AgentConfig {
   model?: string;
   runtime?: RuntimeBackend;
   privacy?: "local" | "cloud";
+  /** Tool executor functions keyed by tool name. The orchestrator builds these
+   *  and passes them in — the runtime wires them to the underlying agent SDK. */
+  toolExecutors?: Record<string, (args: any, signal?: AbortSignal) => Promise<any>>;
 }
 
 /** Tool definition — declared in runtime.toml or programmatically */
