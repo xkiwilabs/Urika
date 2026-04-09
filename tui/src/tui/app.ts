@@ -6,15 +6,16 @@ import {
   Markdown,
   CancellableLoader,
   Spacer,
-  TruncatedText,
   ProcessTerminal,
   CombinedAutocompleteProvider,
+  type Component,
   type EditorTheme,
   type MarkdownTheme,
   type SlashCommand as PiSlashCommand,
   type AutocompleteItem,
 } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
+import type { AssistantMessage } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { join } from "path";
 import { renderHeader } from "./header";
@@ -59,23 +60,83 @@ const MARKDOWN_THEME: MarkdownTheme = {
   underline: chalk.underline,
 };
 
+// ── Token/cost formatting (matches Pi's pattern) ──
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 10000) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 1000000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1000000).toFixed(1)}M`;
+}
+
+function formatCost(n: number): string {
+  if (n < 0.01) return "$0.00";
+  return `$${n.toFixed(2)}`;
+}
+
+function formatElapsed(startMs: number): string {
+  const sec = Math.floor((Date.now() - startMs) / 1000);
+  if (sec < 60) return `${sec}s`;
+  return `${Math.floor(sec / 60)}m${sec % 60}s`;
+}
+
 /**
- * UrikaApp — follows Pi's container hierarchy pattern:
- *
- *   TUI
- *     +-- headerContainer    (static header, shown once)
- *     +-- chatContainer      (messages grow here)
- *     +-- statusContainer    (loader/spinner when processing)
- *     +-- editorContainer    (editor OR selector, swapped as needed)
- *     +-- footer             (project name, state)
+ * Dynamic footer that reads live session state on each render.
+ * Matches Pi's FooterComponent pattern: project, model, tokens, cost.
  */
+class FooterComponent implements Component {
+  project = "";
+  model = "";
+  agent = "";
+  tokensIn = 0;
+  tokensOut = 0;
+  cost = 0;
+  startTime = 0;
+  active = false;
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    const D = chalk.dim;
+    const sep = D(" · ");
+
+    // Left side: project + agent activity
+    const left: string[] = [];
+    if (this.project) left.push(chalk.cyan(this.project));
+
+    if (this.active) {
+      if (this.agent) left.push(chalk.yellow(this.agent.replace(/_/g, " ")));
+      if (this.startTime) left.push(D(formatElapsed(this.startTime)));
+    } else {
+      left.push(D("ready"));
+    }
+
+    // Right side: model + tokens + cost
+    const right: string[] = [];
+    if (this.model) right.push(D(this.model));
+    if (this.tokensIn > 0 || this.tokensOut > 0) {
+      right.push(D(`↑${formatTokens(this.tokensIn)} ↓${formatTokens(this.tokensOut)}`));
+    }
+    if (this.cost > 0) right.push(chalk.green(formatCost(this.cost)));
+
+    const leftStr = `  ${left.join(sep)}`;
+    const rightStr = right.length > 0 ? `${right.join(sep)}  ` : "";
+
+    // Pad between left and right
+    const gap = Math.max(1, width - leftStr.length - rightStr.length + 20); // rough ANSI compensation
+    const line = `${leftStr}${" ".repeat(Math.min(gap, width))}${rightStr}`;
+
+    return [D("─".repeat(width)), line];
+  }
+}
+
 export class UrikaApp {
   private tui: TUI;
   private chatContainer: Container;
   private statusContainer: Container;
   private editorContainer: Container;
   private editor: Editor;
-  private footer: TruncatedText;
+  private footer: FooterComponent;
   private loader: CancellableLoader | null = null;
   private options: UrikaAppOptions;
   private processing = false;
@@ -84,7 +145,6 @@ export class UrikaApp {
   private streamingText = "";
   /** The Markdown component currently being streamed to. */
   private streamingMarkdown: Markdown | null = null;
-
   /** Unsubscribe function for the current agent subscription. */
   private unsubscribe: (() => void) | null = null;
 
@@ -99,13 +159,13 @@ export class UrikaApp {
     headerContainer.addChild(new Text(headerLines.join("\n")));
     headerContainer.addChild(new Spacer(1));
 
-    // 2. Chat container — all messages go here
+    // 2. Chat container
     this.chatContainer = new Container();
 
-    // 3. Status container — loader appears here during agent work
+    // 3. Status container (loader)
     this.statusContainer = new Container();
 
-    // 4. Editor container — wraps editor, can be swapped for selectors
+    // 4. Editor container
     this.editorContainer = new Container();
     this.editor = new Editor(this.tui, EDITOR_THEME);
     this.editor.onSubmit = async (text: string) => {
@@ -113,16 +173,14 @@ export class UrikaApp {
     };
     this.editorContainer.addChild(this.editor);
 
-    // Autocomplete — rebuilt when project state changes
+    // Autocomplete
     this.rebuildAutocomplete();
 
-    // 5. Footer — status line
-    const footerText = options.projectName
-      ? chalk.dim(`  ${options.projectName} · ready`)
-      : chalk.dim("  ready · type /help for commands");
-    this.footer = new TruncatedText(footerText);
+    // 5. Footer — dynamic, reads live state
+    this.footer = new FooterComponent();
+    this.footer.project = options.projectName;
 
-    // Assemble layout — order determines visual stacking
+    // Assemble layout
     this.tui.addChild(headerContainer);
     this.tui.addChild(this.chatContainer);
     this.tui.addChild(this.statusContainer);
@@ -130,31 +188,27 @@ export class UrikaApp {
     this.tui.addChild(this.footer);
     this.tui.setFocus(this.editor);
 
-    // Wire orchestrator agent events
+    // Wire agent events
     this.setupSubscription();
 
-    // Wire project switch callback
+    // Wire project switch
     this.options.orchestrator.onProjectSwitch = (info) => {
       this.options.projectDir = info.projectDir;
       this.options.projectName = info.projectName;
-      this.updateFooter(`${info.projectName} · ready`);
+      this.footer.project = info.projectName;
+      this.footer.active = false;
       this.rebuildAutocomplete();
       this.addChat(chalk.cyan(`Switched to project: ${info.projectName}`));
-      // Re-subscribe since initialize() recreates the Agent
       this.setupSubscription();
     };
   }
 
-  /** Whether a project is currently loaded. */
   private get hasProject(): boolean {
     return this.options.projectDir !== "" && this.options.projectDir !== process.cwd();
   }
 
-  /** Rebuild slash command autocomplete based on current state. */
   private rebuildAutocomplete(): void {
     const rpcClient = this.options.rpcClient;
-
-    // Global commands — always available
     const commands: PiSlashCommand[] = [
       { name: "help", description: "Show available commands" },
       {
@@ -178,7 +232,6 @@ export class UrikaApp {
       { name: "quit", description: "Exit Urika TUI" },
     ];
 
-    // Project-level commands — only when a project is loaded
     if (this.hasProject) {
       commands.push(
         { name: "status", description: "Show project status" },
@@ -209,15 +262,13 @@ export class UrikaApp {
     process.exit(0);
   }
 
-  // ── Output helpers (following Pi's pattern) ──
+  // ── Output helpers ──
 
-  /** Add a message to chat (scrolls up naturally). */
   private addChat(text: string, padding = 1): void {
     this.chatContainer.addChild(new Text(text, padding));
     this.tui.requestRender();
   }
 
-  /** Add a Markdown-rendered message to chat. */
   private addMarkdown(text: string): Markdown {
     const md = new Markdown(text, 1, 0, MARKDOWN_THEME);
     this.chatContainer.addChild(md);
@@ -225,7 +276,6 @@ export class UrikaApp {
     return md;
   }
 
-  /** Show the CancellableLoader in statusContainer. */
   private showLoader(message: string): void {
     this.statusContainer.clear();
     this.loader = new CancellableLoader(this.tui, chalk.cyan, chalk.dim, message);
@@ -234,14 +284,14 @@ export class UrikaApp {
       this.hideLoader();
       this.addChat(chalk.yellow("Aborted."));
       this.processing = false;
-      this.updateFooter(`${this.options.projectName} · ready`);
+      this.footer.active = false;
+      this.tui.requestRender();
     };
     this.statusContainer.addChild(this.loader);
     this.loader.start();
     this.tui.requestRender();
   }
 
-  /** Hide the loader spinner. */
   private hideLoader(): void {
     this.loader?.stop();
     this.loader = null;
@@ -249,36 +299,23 @@ export class UrikaApp {
     this.tui.requestRender();
   }
 
-  /** Update the footer status text. */
-  private updateFooter(text: string): void {
-    // TruncatedText doesn't have setText — replace it
-    this.tui.removeChild(this.footer);
-    this.footer = new TruncatedText(chalk.dim(`  ${text}`));
-    this.tui.addChild(this.footer);
-    this.tui.requestRender();
-  }
-
   // ── Agent event subscription ──
 
-  /**
-   * Subscribe to the orchestrator's pi-agent-core Agent events.
-   * Handles streaming text, tool execution, and lifecycle events.
-   */
   private setupSubscription(): void {
-    // Unsubscribe from previous agent if any
     this.unsubscribe?.();
-
     const agent = this.options.orchestrator.getAgent();
     if (!agent) return;
 
-    this.unsubscribe = agent.subscribe(async (event: AgentEvent, signal: AbortSignal) => {
+    this.unsubscribe = agent.subscribe(async (event: AgentEvent) => {
       switch (event.type) {
         case "agent_start":
-          // Run started — nothing to show yet
+          this.footer.active = true;
+          this.footer.startTime = Date.now();
+          this.showLoader("Working...");
           break;
 
         case "message_start":
-          // New LLM response starting — create a Markdown component
+          // New LLM response — create streaming Markdown
           this.streamingText = "";
           this.streamingMarkdown = this.addMarkdown("");
           this.hideLoader();
@@ -287,41 +324,63 @@ export class UrikaApp {
         case "message_update": {
           const ame = event.assistantMessageEvent;
           if (ame.type === "text_delta") {
-            // Stream text to the Markdown component
             this.streamingText += ame.delta;
             this.streamingMarkdown?.setText(this.streamingText);
             this.tui.requestRender();
+          } else if (ame.type === "thinking_delta") {
+            // Update loader with thinking indicator
+            this.loader?.setMessage("Reasoning...");
+          } else if (ame.type === "toolcall_start") {
+            // LLM is deciding to call a tool
+            this.showLoader("Selecting tool...");
+          } else if (ame.type === "toolcall_end") {
+            const toolName = ame.toolCall.name.replace(/_/g, " ");
+            this.addChat(chalk.dim(`  → ${toolName}`));
+          }
+
+          // Update footer with usage from partial message
+          if ("partial" in ame && ame.partial?.usage) {
+            const u = ame.partial.usage;
+            this.footer.tokensIn += 0; // partial doesn't have cumulative — updated on message_end
+            this.footer.model = ame.partial.model || this.footer.model;
           }
           break;
         }
 
-        case "message_end":
-          // LLM response complete — finalize streaming
+        case "message_end": {
           this.streamingMarkdown = null;
           this.streamingText = "";
+          // Update footer with final usage
+          const msg = event.message as AssistantMessage;
+          if (msg && "usage" in msg && msg.usage) {
+            this.footer.tokensIn += msg.usage.input;
+            this.footer.tokensOut += msg.usage.output;
+            this.footer.cost += msg.usage.cost?.total ?? 0;
+            this.footer.model = msg.model || this.footer.model;
+          }
+          this.tui.requestRender();
           break;
+        }
 
         case "tool_execution_start":
-          // Show loader with tool name
+          this.footer.agent = event.toolName;
           this.showLoader(event.toolName.replace(/_/g, " "));
-          this.addChat(
-            chalk.dim(`  ${formatAgentLabel(event.toolName)}`),
-          );
           break;
 
         case "tool_execution_end":
-          // Tool finished — hide loader, show brief result
+          this.footer.agent = "";
           this.hideLoader();
           if (event.isError) {
-            this.addChat(chalk.red(`  Tool error: ${event.toolName}`));
+            this.addChat(chalk.red(`  ✗ ${event.toolName}: error`));
           }
           break;
 
         case "agent_end":
-          // Entire run done
           this.hideLoader();
           this.processing = false;
-          this.updateFooter(`${this.options.projectName} · ready`);
+          this.footer.active = false;
+          this.footer.agent = "";
+          this.tui.requestRender();
           break;
       }
     });
@@ -333,14 +392,12 @@ export class UrikaApp {
     if (!text.trim()) return;
     this.editor.addToHistory(text);
 
-    // Slash commands — handled directly, don't go to orchestrator
+    // Slash commands
     const cmdResult = await handleSlashCommand(
       text,
       this.options.rpcClient,
       this.options.projectDir,
-      {
-        onOutput: (msg: string) => this.addChat(msg),
-      },
+      { onOutput: (msg: string) => this.addChat(msg) },
     );
     if (cmdResult.handled) {
       if (cmdResult.output === "__QUIT__") {
@@ -358,9 +415,8 @@ export class UrikaApp {
       return;
     }
 
-    // Free text — send to orchestrator
+    // Free text
     if (this.processing) {
-      // If agent is running, steer it instead of blocking
       this.options.orchestrator.steer(text);
       this.addChat(chalk.dim(`> ${text} (steering)`));
       return;
@@ -368,8 +424,7 @@ export class UrikaApp {
 
     this.processing = true;
     this.addChat(chalk.dim(`> ${text}`));
-    this.showLoader("thinking");
-    this.updateFooter(`${this.options.projectName} · processing`);
+    // Loader and footer updates happen in agent_start event
 
     try {
       await this.options.orchestrator.processMessage(text);
@@ -377,15 +432,15 @@ export class UrikaApp {
       this.addChat(chalk.red(`Error: ${err.message}`));
       this.processing = false;
       this.hideLoader();
-      this.updateFooter(`${this.options.projectName} · ready`);
+      this.footer.active = false;
+      this.tui.requestRender();
     }
-    // Note: processing=false and footer update now happen in agent_end event
   }
 
   // ── Project switching ──
 
   private async switchProject(newProjectDir: string): Promise<void> {
-    this.showLoader("switching project");
+    this.showLoader("Switching project...");
     try {
       const rpcClient = this.options.rpcClient;
       if (!rpcClient) {
@@ -410,10 +465,13 @@ export class UrikaApp {
 
       this.options.projectDir = newProjectDir;
       this.options.projectName = projectName;
-      this.updateFooter(`${projectName} · ready`);
-      this.rebuildAutocomplete(); // Add project-level commands
+      this.footer.project = projectName;
+      this.footer.active = false;
+      this.footer.tokensIn = 0;
+      this.footer.tokensOut = 0;
+      this.footer.cost = 0;
+      this.rebuildAutocomplete();
       this.addChat(chalk.cyan(`Switched to project: ${projectName}`));
-      // Re-subscribe since initialize() recreates the Agent
       this.setupSubscription();
     } catch (err: any) {
       this.addChat(chalk.red(`Failed to switch project: ${err.message}`));
