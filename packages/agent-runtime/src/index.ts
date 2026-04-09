@@ -26,3 +26,11 @@ export type {
   ManagedAgent,
   AgentRuntime,
 } from "./runtime/types";
+
+export * from "./config/types";
+export * from "./config/loader";
+export * from "./rpc/client";
+export * from "./rpc/types";
+export * from "./auth/storage";
+export * from "./auth/login";
+export * from "./orchestrator/prompt-loader";
