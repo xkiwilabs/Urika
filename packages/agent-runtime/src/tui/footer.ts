@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import type { Component } from "@mariozechner/pi-tui";
+import { type Component, visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 
 // ── Token/cost/elapsed formatting ──
 
@@ -78,9 +78,11 @@ export class FooterComponent implements Component, FooterState {
     const leftStr = `  ${left.join(sep)}`;
     const rightStr = right.length > 0 ? `${right.join(sep)}  ` : "";
 
-    // Pad between left and right (rough ANSI compensation)
-    const gap = Math.max(1, width - leftStr.length - rightStr.length + 20);
-    const line = `${leftStr}${" ".repeat(Math.min(gap, width))}${rightStr}`;
+    // Use visibleWidth to measure ANSI-aware string length
+    const leftVisible = visibleWidth(leftStr);
+    const rightVisible = visibleWidth(rightStr);
+    const gap = Math.max(1, width - leftVisible - rightVisible);
+    const line = truncateToWidth(`${leftStr}${" ".repeat(gap)}${rightStr}`, width);
 
     return [D("─".repeat(width)), line];
   }
