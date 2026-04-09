@@ -57,6 +57,7 @@ const PROJECT_TOOLS = [
   "start_session",
   "pause_session",
   "generate_report",
+  "summarize_project",
 ] as const;
 
 /** Maps orchestrator tool names to Python RPC method paths. */
@@ -79,6 +80,7 @@ const RPC_METHOD_MAP: Record<string, string> = {
   start_session: "session.start",
   pause_session: "session.pause",
   generate_report: "report.results_summary",
+  summarize_project: "project.summarize",
 };
 
 export class Orchestrator {
@@ -536,6 +538,12 @@ export class Orchestrator {
       tools.push({
         name: "generate_report",
         description: "Generate the project results summary and key findings reports",
+        parameters: Type.Object({}),
+      });
+
+      tools.push({
+        name: "summarize_project",
+        description: "Get a concise structured summary of the project — experiments, top methods, criteria status, run counts. Returns data, not prose. Use this when the user asks for a summary or overview.",
         parameters: Type.Object({}),
       });
     }

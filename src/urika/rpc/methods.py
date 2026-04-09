@@ -46,6 +46,7 @@ def build_registry() -> Registry:
         "labbook.generate_summary": _labbook_generate_summary,
         "report.results_summary": _report_results_summary,
         "report.key_findings": _report_key_findings,
+        "project.summarize": _project_summarize,
     }
 
 
@@ -70,6 +71,70 @@ def _project_list(params: dict[str, Any]) -> list[dict[str, Any]]:
     registry = ProjectRegistry()
     projects = registry.list_all()
     return [{"name": name, "path": str(path)} for name, path in projects.items()]
+
+
+def _project_summarize(params: dict[str, Any]) -> dict[str, Any]:
+    """Aggregate project state into a concise summary — no LLM, pure data."""
+    from urika.core.experiment import list_experiments
+    from urika.core.progress import load_progress
+    from urika.core.criteria import load_criteria
+    from urika.core.method_registry import load_methods
+    from urika.core.workspace import load_project_config
+
+    project_dir = _path(params)
+    config = load_project_config(project_dir)
+
+    # Experiments summary
+    experiments = list_experiments(project_dir)
+    exp_summaries = []
+    total_runs = 0
+    for exp in experiments:
+        progress = load_progress(project_dir, exp.experiment_id)
+        runs = progress.get("runs", [])
+        total_runs += len(runs)
+        status = progress.get("status", "unknown")
+        best_metrics = {}
+        for run in runs:
+            for k, v in run.get("metrics", {}).items():
+                if isinstance(v, (int, float)):
+                    if k not in best_metrics or v > best_metrics[k]:
+                        best_metrics[k] = v
+        exp_summaries.append({
+            "id": exp.experiment_id,
+            "name": exp.name,
+            "status": status,
+            "runs": len(runs),
+            "best_metrics": best_metrics,
+        })
+
+    # Methods summary — top 5 by first metric
+    methods = load_methods(project_dir)
+    top_methods = sorted(
+        methods,
+        key=lambda m: max(m.get("metrics", {}).values()) if m.get("metrics") else 0,
+        reverse=True,
+    )[:5]
+
+    # Criteria
+    criteria_version = load_criteria(project_dir)
+    criteria_summary = criteria_version.to_dict() if criteria_version else None
+
+    return {
+        "project": config.name if hasattr(config, "name") else str(project_dir),
+        "question": config.question if hasattr(config, "question") else "",
+        "total_experiments": len(experiments),
+        "total_runs": total_runs,
+        "completed_experiments": sum(
+            1 for e in exp_summaries if e["status"] == "completed"
+        ),
+        "experiments": exp_summaries[:10],  # first 10 only
+        "top_methods": [
+            {"name": m.get("name"), "metrics": m.get("metrics")}
+            for m in top_methods
+        ],
+        "criteria": criteria_summary,
+        "total_methods": len(methods),
+    }
 
 
 def _project_load_config(params: dict[str, Any]) -> dict[str, Any]:

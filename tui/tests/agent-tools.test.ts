@@ -9,14 +9,13 @@ describe("AGENT_ROLES", () => {
     expect(AGENT_ROLES.advisor).toBe("advisor_agent_system.md");
   });
 
-  it("has 11 agent roles", () => {
-    expect(Object.keys(AGENT_ROLES)).toHaveLength(11);
+  it("has 10 agent roles", () => {
+    expect(Object.keys(AGENT_ROLES)).toHaveLength(10);
   });
 
-  it("includes presentation_agent, finalizer, and project_summarizer", () => {
+  it("includes presentation_agent and finalizer", () => {
     expect(AGENT_ROLES.presentation_agent).toBe("presentation_agent_system.md");
     expect(AGENT_ROLES.finalizer).toBe("finalizer_system.md");
-    expect(AGENT_ROLES.project_summarizer).toBe("project_summarizer_system.md");
   });
 });
 
@@ -29,7 +28,7 @@ describe("buildAgentTools", () => {
       defaultModel: "anthropic/claude-sonnet-4-6",
       modelOverrides: {},
     });
-    expect(tools).toHaveLength(11);
+    expect(tools).toHaveLength(10);
     const names = tools.map((t) => t.name);
     expect(names).toContain("planning_agent");
     expect(names).toContain("task_agent");
@@ -41,7 +40,7 @@ describe("buildAgentTools", () => {
     expect(names).toContain("report_agent");
     expect(names).toContain("presentation_agent");
     expect(names).toContain("finalizer");
-    expect(names).toContain("project_summarizer");
+    // project_summarizer is now an RPC tool, not an agent
   });
 
   it("each tool has name, description, model, systemPrompt, and execute", () => {

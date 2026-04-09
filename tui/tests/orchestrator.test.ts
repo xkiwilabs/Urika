@@ -37,16 +37,16 @@ describe("Orchestrator", () => {
     });
     const names = orch.getToolNames();
 
-    // Agent tools (11 roles)
+    // Agent tools (10 roles — project_summarizer is now an RPC tool)
     expect(names).toContain("planning_agent");
     expect(names).toContain("task_agent");
     expect(names).toContain("evaluator");
     expect(names).toContain("advisor");
     expect(names).toContain("presentation_agent");
     expect(names).toContain("finalizer");
-    expect(names).toContain("project_summarizer");
+    expect(names).not.toContain("project_summarizer"); // now an RPC tool
 
-    // State tools (project-level — no list_projects when in a project)
+    // State tools
     expect(names).not.toContain("list_projects");
     expect(names).toContain("list_experiments");
     expect(names).toContain("create_experiment");
@@ -54,8 +54,6 @@ describe("Orchestrator", () => {
     expect(names).toContain("load_criteria");
     expect(names).toContain("load_methods");
     expect(names).toContain("finalize_project");
-
-    // New RPC state tools
     expect(names).toContain("profile_data");
     expect(names).toContain("search_knowledge");
     expect(names).toContain("list_knowledge");
@@ -64,6 +62,7 @@ describe("Orchestrator", () => {
     expect(names).toContain("start_session");
     expect(names).toContain("pause_session");
     expect(names).toContain("generate_report");
+    expect(names).toContain("summarize_project");
   });
 
   it("accepts event handlers without throwing", () => {

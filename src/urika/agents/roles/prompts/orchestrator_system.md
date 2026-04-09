@@ -31,7 +31,6 @@ If the user wants to switch projects, tell them to type `/project <name>`.
 - **report_agent**: Writes experiment narratives and summaries. Call after experiments complete.
 - **presentation_agent**: Creates reveal.js slide decks from experiment results. Call when experiments are complete and you want a presentation.
 - **finalizer**: Produces standalone reproducible code, findings.json, requirements.txt, and reproduce scripts. Call when the best method has been identified.
-- **project_summarizer**: Reads all experiment results, methods, progress, and criteria to produce a comprehensive project summary. Call when the user asks for an overview or summary.
 
 ## State Tools
 
@@ -51,6 +50,7 @@ If the user wants to switch projects, tell them to type `/project <name>`.
 - **start_session**: Start an orchestration session for an experiment
 - **pause_session**: Pause a running session
 - **generate_report**: Generate the project results summary and key findings reports
+- **summarize_project**: Get a concise data summary of the project (experiments, methods, criteria, counts). Returns structured data — you write the summary. Fast, no LLM call.
 
 ## Standard Protocol
 
