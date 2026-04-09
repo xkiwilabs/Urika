@@ -123,6 +123,15 @@ export class Orchestrator {
   }): Promise<void> {
     this.hasProject = projectContext.projectName !== "" &&
       projectContext.projectName !== "No project selected";
+
+    // Update projectDir from dataDir (dataDir is always projectDir + "/data")
+    if (projectContext.dataDir) {
+      const newProjectDir = projectContext.dataDir.replace(/\/data\/?$/, "");
+      if (newProjectDir) {
+        this.config.projectDir = newProjectDir;
+      }
+    }
+
     this.systemPrompt = buildOrchestratorPrompt({
       promptsDir: this.config.promptsDir,
       ...projectContext,
