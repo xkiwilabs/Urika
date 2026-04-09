@@ -1,0 +1,22 @@
+{
+  "name": "@urika/agent-runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build --compile --target=bun src/index.ts --outfile dist/agent-runtime",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.65.0",
+    "@mariozechner/pi-agent-core": "^0.65.0",
+    "@mariozechner/pi-tui": "^0.65.0",
+    "chalk": "^5.5.0",
+    "marked": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}
