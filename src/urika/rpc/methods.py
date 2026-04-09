@@ -47,6 +47,7 @@ def build_registry() -> Registry:
         "report.results_summary": _report_results_summary,
         "report.key_findings": _report_key_findings,
         "project.summarize": _project_summarize,
+        "experiment.run": _experiment_run,
     }
 
 
@@ -137,6 +138,47 @@ def _project_summarize(params: dict[str, Any]) -> dict[str, Any]:
         "criteria": criteria_summary,
         "total_methods": len(methods),
     }
+
+
+def _experiment_run(params: dict[str, Any]) -> dict[str, Any]:
+    """Run an experiment via the deterministic Python orchestrator loop.
+
+    This runs the full pipeline: planning -> task -> evaluator -> advisor,
+    with progress tracking, labbook updates, and report generation.
+
+    Params:
+        project_dir: Project directory path
+        experiment_id: Experiment ID to run
+        max_turns: Maximum orchestrator turns (default 10)
+        instructions: Optional user guidance
+        resume: Whether to resume a paused session
+    """
+    import asyncio
+
+    from urika.agents.runner import get_runner
+    from urika.orchestrator.loop import run_experiment
+
+    project_dir = _path(params)
+    experiment_id = params["experiment_id"]
+    max_turns = params.get("max_turns", 10)
+    instructions = params.get("instructions", "")
+    resume = params.get("resume", False)
+
+    runner = get_runner()
+
+    # Run the orchestration loop synchronously from RPC
+    result = asyncio.run(
+        run_experiment(
+            project_dir,
+            experiment_id,
+            runner,
+            max_turns=max_turns,
+            instructions=instructions,
+            resume=resume,
+        )
+    )
+
+    return result
 
 
 def _project_load_config(params: dict[str, Any]) -> dict[str, Any]:

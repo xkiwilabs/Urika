@@ -178,6 +178,26 @@ type = "string"
 description = "Experiment ID"
 
 [[tools]]
+name = "run_experiment"
+rpc_method = "experiment.run"
+description = "Run an experiment through the full deterministic pipeline (planning → task → evaluator → advisor, with labbook, reports, and progress tracking). Use this to EXECUTE an experiment — it ensures all steps complete and results are properly logged. This is the primary way to run experiments. Do NOT call planning_agent or task_agent directly if you want a full experiment run."
+scope = "project"
+
+[tools.params.experiment_id]
+type = "string"
+description = "Experiment ID (e.g. exp-033)"
+
+[tools.params.instructions]
+type = "string"
+description = "Optional user guidance for the experiment"
+optional = true
+
+[tools.params.max_turns]
+type = "number"
+description = "Maximum orchestrator turns (default 10)"
+optional = true
+
+[[tools]]
 name = "finalize_project"
 rpc_method = "finalize.run"
 description = "Run the finalize pipeline: finalizer -> report -> presentation -> README. Call when all experiments are done."
