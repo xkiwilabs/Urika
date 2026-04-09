@@ -21,7 +21,7 @@ describe("Orchestrator", () => {
     expect(names).toContain("list_projects");
     expect(names).toContain("switch_project");
     expect(names).not.toContain("planning_agent");
-    expect(names).not.toContain("create_experiment");
+    expect(names).not.toContain("list_experiments");
     expect(names).toHaveLength(2);
   });
 
@@ -43,8 +43,8 @@ describe("Orchestrator", () => {
     expect(names).toContain("evaluator");
     expect(names).toContain("advisor");
 
-    // State tools
-    expect(names).toContain("list_projects");
+    // State tools (project-level — no list_projects when in a project)
+    expect(names).not.toContain("list_projects");
     expect(names).toContain("list_experiments");
     expect(names).toContain("create_experiment");
     expect(names).toContain("load_progress");

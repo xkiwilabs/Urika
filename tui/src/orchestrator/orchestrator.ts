@@ -87,12 +87,13 @@ export class Orchestrator {
 
   /** Returns the names of all tools available to the orchestrator LLM. */
   getToolNames(): string[] {
-    const names = [...GLOBAL_TOOLS];
-    if (this.hasProject) {
-      names.push(...this.agentTools.map((t) => t.name));
-      names.push(...PROJECT_TOOLS);
+    if (!this.hasProject) {
+      return [...GLOBAL_TOOLS];
     }
-    return names;
+    return [
+      ...this.agentTools.map((t) => t.name),
+      ...PROJECT_TOOLS,
+    ];
   }
 
   /** Register event handlers for orchestrator activity. */
@@ -348,23 +349,27 @@ export class Orchestrator {
   private buildPiAiTools(): Tool[] {
     const tools: Tool[] = [];
 
-    // Global tools — always available
-    tools.push({
-      name: "list_projects",
-      description: "List all registered Urika projects with their names and paths",
-      parameters: Type.Object({}),
-    });
+    if (!this.hasProject) {
+      // No project loaded — only global tools
+      tools.push({
+        name: "list_projects",
+        description: "List all registered Urika projects with their names and paths",
+        parameters: Type.Object({}),
+      });
 
-    tools.push({
-      name: "switch_project",
-      description: "Load/switch to a project by name. Call this when the user wants to open a project.",
-      parameters: Type.Object({
-        name: Type.String({ description: "Project name to load" }),
-      }),
-    });
+      tools.push({
+        name: "switch_project",
+        description: "Load/switch to a project by name. Call this when the user wants to open a project.",
+        parameters: Type.Object({
+          name: Type.String({ description: "Project name to load" }),
+        }),
+      });
 
-    // Project-level tools — only when a project is loaded
-    if (this.hasProject) {
+      return tools;
+    }
+
+    // Project loaded — project-focused tools only
+    {
       // Agent tools
       for (const agent of this.agentTools) {
         tools.push({
