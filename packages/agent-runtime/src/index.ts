@@ -11,4 +11,18 @@
 
 export const VERSION = "0.1.0";
 
-// Types will be exported here as they're created
+// Runtime types
+export type {
+  RuntimeBackend,
+  RuntimeEvent,
+  UsageStats,
+  AgentConfig,
+  ToolDefinition,
+  ParamDefinition,
+  AgentDeclaration,
+  CommandDeclaration,
+  ModelInfo,
+  AuthStatus,
+  ManagedAgent,
+  AgentRuntime,
+} from "./runtime/types";
