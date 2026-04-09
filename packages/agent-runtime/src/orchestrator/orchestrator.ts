@@ -407,11 +407,16 @@ export class GenericOrchestrator {
       toolExecutors: agentExecutors,
     });
 
-    // Run the sub-agent and collect its text output
+    // Forward sub-agent events to the orchestrator's listeners for TUI streaming
     let output = "";
     const unsub = subAgent.subscribe((event: RuntimeEvent) => {
+      // Collect text for the tool result
       if (event.type === "text_delta") {
         output += event.delta;
+      }
+      // Forward ALL events to the orchestrator's listeners so the TUI sees them
+      for (const listener of this.listeners) {
+        listener(event);
       }
     });
 
