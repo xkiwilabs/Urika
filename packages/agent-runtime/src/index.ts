@@ -29,6 +29,10 @@ export type {
 
 export { PiRuntime } from "./runtime/pi-runtime";
 export { ClaudeRuntime } from "./runtime/claude-runtime";
+export { CodexRuntime } from "./runtime/codex-runtime";
+export { GoogleRuntime } from "./runtime/google-runtime";
+export { createRuntime } from "./runtime/factory";
+export type { RuntimeFactoryOptions } from "./runtime/factory";
 
 export * from "./config/types";
 export * from "./config/loader";
@@ -37,6 +41,12 @@ export * from "./rpc/types";
 export * from "./auth/storage";
 export * from "./auth/login";
 export * from "./orchestrator/prompt-loader";
+export { GenericOrchestrator } from "./orchestrator/orchestrator";
+export type { OrchestratorContext, ProjectSwitchResult, OnProjectSwitch } from "./orchestrator/orchestrator";
+
+// App entry point
+export { createApp } from "./app";
+export type { App, AppOptions, AppContext, CommandContext as AppCommandContext, CommandHandler } from "./app";
 
 // TUI components
 export { AgentTuiApp, CMD_QUIT, CMD_PROJECT_PREFIX } from "./tui/app";
