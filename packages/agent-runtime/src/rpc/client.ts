@@ -23,14 +23,34 @@ export class RpcClient {
     this.readline = createInterface({ input: this.process.stdout! });
     this.readline.on("line", (line: string) => {
       if (!line.trim()) return;
-      const resp: RpcResponse = JSON.parse(line);
-      const handler = this.pending.get(resp.id);
-      if (!handler) return;
-      this.pending.delete(resp.id);
-      if (resp.error) {
-        handler.reject(new RpcError(resp.error.code, resp.error.message));
-      } else {
-        handler.resolve(resp.result);
+      try {
+        const resp: RpcResponse = JSON.parse(line);
+        const handler = this.pending.get(resp.id);
+        if (!handler) return;
+        this.pending.delete(resp.id);
+        if (resp.error) {
+          handler.reject(new RpcError(resp.error.code, resp.error.message));
+        } else {
+          handler.resolve(resp.result);
+        }
+      } catch {
+        // Ignore unparseable lines (e.g. stderr leaking to stdout)
+      }
+    });
+
+    this.process.on("error", (err: Error) => {
+      // Reject all pending calls
+      for (const [id, handler] of this.pending) {
+        handler.reject(new RpcError(-32000, `RPC process error: ${err.message}`));
+        this.pending.delete(id);
+      }
+    });
+
+    this.process.on("exit", (code: number | null) => {
+      // Reject all pending calls
+      for (const [id, handler] of this.pending) {
+        handler.reject(new RpcError(-32001, `RPC process exited with code ${code}`));
+        this.pending.delete(id);
       }
     });
   }

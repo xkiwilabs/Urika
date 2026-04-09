@@ -1,4 +1,4 @@
-import type { CommandHandler } from "@urika/agent-runtime";
+import { CMD_PROJECT_PREFIX, type CommandHandler } from "@urika/agent-runtime";
 
 /**
  * Urika-specific command handlers for slash commands that need
@@ -35,7 +35,7 @@ export const commandHandlers: Record<string, CommandHandler> = {
     }
     if (!match) return `  Project not found: ${args}`;
     await ctx.switchProject(match.path);
-    return `  Switched to: ${match.name}`;
+    return CMD_PROJECT_PREFIX + match.path;
   },
 
   new: async () => {
@@ -97,6 +97,16 @@ export const commandHandlers: Record<string, CommandHandler> = {
     lines.push("");
     return lines.join("\n");
   },
+
+  list: async (_args, ctx) => {
+    const projects = (await ctx.rpc.call("project.list", {})) as any[];
+    if (!projects.length) return "  No projects.";
+    return projects.map((p: any, i: number) => `  ${i + 1}. ${p.name}`).join("\n");
+  },
+
+  pause: async () => "  Pause requested.",
+
+  stop: async () => "  Stop requested.",
 
   config: async (_args, ctx) => {
     const config = (await ctx.rpc.call("project.load_config", {

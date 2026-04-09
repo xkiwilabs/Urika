@@ -50,6 +50,9 @@ export class GenericOrchestrator {
   private agent: ManagedAgent | null = null;
   private hasProject = false;
   private projectDir = "";
+  private listeners: Set<(event: RuntimeEvent) => void> = new Set();
+  /** Agent-level unsubscribe functions, keyed by listener. */
+  private agentUnsubs: Map<(event: RuntimeEvent) => void, () => void> = new Map();
 
   /** Called when a project switch tool is invoked. */
   onProjectSwitch?: OnProjectSwitch;
@@ -98,6 +101,11 @@ export class GenericOrchestrator {
       model,
       toolExecutors: executors,
     });
+
+    // Re-subscribe all existing listeners to the new agent
+    for (const listener of this.listeners) {
+      this.subscribeAgentListener(listener);
+    }
   }
 
   /** Send a user message to the orchestrator agent. */
@@ -112,10 +120,18 @@ export class GenericOrchestrator {
 
   /** Subscribe to runtime events (text deltas, tool calls, etc.). */
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
-    if (!this.agent) {
-      throw new Error("Cannot subscribe before initialize()");
+    this.listeners.add(listener);
+    if (this.agent) {
+      this.subscribeAgentListener(listener);
     }
-    return this.agent.subscribe(listener);
+    return () => {
+      this.listeners.delete(listener);
+      const agentUnsub = this.agentUnsubs.get(listener);
+      if (agentUnsub) {
+        agentUnsub();
+        this.agentUnsubs.delete(listener);
+      }
+    };
   }
 
   /** Inject a steering message mid-run. */
@@ -144,6 +160,16 @@ export class GenericOrchestrator {
   }
 
   // ── Private ──
+
+  /** Subscribe a single listener to the current agent, tracking the unsub. */
+  private subscribeAgentListener(listener: (event: RuntimeEvent) => void): void {
+    if (!this.agent) return;
+    // Remove previous agent subscription if any (e.g. on reinitialize)
+    const prevUnsub = this.agentUnsubs.get(listener);
+    if (prevUnsub) prevUnsub();
+    const unsub = this.agent.subscribe(listener);
+    this.agentUnsubs.set(listener, unsub);
+  }
 
   /**
    * Build the orchestrator system prompt from the prompts directory.

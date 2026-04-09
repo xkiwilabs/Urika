@@ -6,7 +6,7 @@
  * @urika/agent-runtime framework.
  */
 
-import { createApp } from "@urika/agent-runtime";
+import { createApp, getApiKeyForProvider } from "@urika/agent-runtime";
 import { renderHeader } from "./header";
 import { commandHandlers } from "./commands";
 import { getPromptVariables, onProjectSwitch } from "./context";
@@ -23,6 +23,12 @@ async function main() {
     commandHandlers,
     getPromptVariables,
     onProjectSwitch,
+    runtimeOptions: {
+      getApiKey: async (provider: string) => {
+        const key = await getApiKeyForProvider(provider);
+        return key ?? undefined;
+      },
+    },
   });
 
   process.on("SIGINT", () => {

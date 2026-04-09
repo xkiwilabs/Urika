@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { loadSystemConfig } from "../src/config/loader";
 import { mkdtempSync, writeFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
 
 const SAMPLE_CONFIG = `
@@ -76,12 +76,13 @@ function writeConfig(content: string = SAMPLE_CONFIG): string {
 
 describe("loadSystemConfig", () => {
   it("parses system section", () => {
-    const config = loadSystemConfig(writeConfig());
+    const configPath = writeConfig();
+    const config = loadSystemConfig(configPath);
     expect(config.system.name).toBe("test-system");
     expect(config.system.version).toBe("1.0.0");
     expect(config.system.description).toBe("A test system");
     expect(config.system.rpcCommand).toBe("python -m test.rpc");
-    expect(config.system.promptsDir).toBe("prompts");
+    expect(config.system.promptsDir).toBe(join(dirname(configPath), "prompts"));
   });
 
   it("parses runtime section with model overrides", () => {

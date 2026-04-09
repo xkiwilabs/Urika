@@ -200,17 +200,26 @@ export async function createApp(options: AppOptions): Promise<App> {
     commandHandlers: tuiCommandHandlers,
     rpcClient,
     onSetupSubscription: (handlers: SubscriptionHandlers) => {
+      let streamingMarkdown: import("@mariozechner/pi-tui").Markdown | null = null;
+      let streamingText = "";
+
       return orchestrator.subscribe((event: RuntimeEvent) => {
         switch (event.type) {
           case "text_delta":
-            // Stream text to current markdown block
-            handlers.addChat(event.delta);
+            if (!streamingMarkdown) {
+              streamingMarkdown = handlers.addMarkdown("");
+            }
+            streamingText += event.delta;
+            streamingMarkdown.setText(streamingText);
             break;
           case "thinking_delta":
-            // Thinking deltas update the loader message
+            // Update loader message
             break;
           case "tool_start":
-            handlers.showLoader(`Running ${event.name}...`);
+            // Finalize current streaming block
+            streamingMarkdown = null;
+            streamingText = "";
+            handlers.showLoader(`Running ${event.name.replace(/_/g, " ")}...`);
             break;
           case "tool_end":
             handlers.hideLoader();
@@ -219,21 +228,26 @@ export async function createApp(options: AppOptions): Promise<App> {
             }
             break;
           case "agent_start":
+            streamingMarkdown = null;
+            streamingText = "";
             handlers.showLoader("Thinking...");
-            handlers.updateFooter({ active: true });
+            handlers.updateFooter({ active: true, startTime: Date.now() });
             break;
           case "agent_end":
+            streamingMarkdown = null;
+            streamingText = "";
             handlers.hideLoader();
             handlers.updateFooter({
               active: false,
               tokensIn: event.usage.tokensIn,
               tokensOut: event.usage.tokensOut,
               cost: event.usage.cost,
-              elapsed: event.usage.elapsed,
               model: event.usage.model,
             });
             break;
           case "error":
+            streamingMarkdown = null;
+            streamingText = "";
             handlers.hideLoader();
             handlers.addChat(chalk.red(`Error: ${event.message}`));
             break;

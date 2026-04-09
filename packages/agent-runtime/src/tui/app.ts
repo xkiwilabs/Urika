@@ -16,7 +16,7 @@ import {
 import chalk from "chalk";
 import { FooterComponent, type FooterState } from "./footer";
 import type { RpcClient } from "../rpc/client";
-import type { CommandDeclaration } from "../runtime/types";
+import type { CommandDeclaration } from "../config/types";
 
 // ── Themes ──
 
@@ -224,8 +224,8 @@ export class AgentTuiApp {
       };
 
       // Wire up RPC-based autocomplete if declared
-      if (cmd.autocomplete_rpc && rpcClient) {
-        const rpcMethod = cmd.autocomplete_rpc;
+      if (cmd.autocompleteRpc && rpcClient) {
+        const rpcMethod = cmd.autocompleteRpc;
         piCmd.getArgumentCompletions = async (prefix: string): Promise<AutocompleteItem[]> => {
           try {
             const items = (await rpcClient.call(rpcMethod, { prefix })) as any[];

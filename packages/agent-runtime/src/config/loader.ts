@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { dirname, resolve } from "path";
 import { parse as parseTOML } from "smol-toml";
 import type { SystemConfig } from "./types";
 
@@ -11,6 +12,7 @@ import type { SystemConfig } from "./types";
 export function loadSystemConfig(configPath: string): SystemConfig {
   const raw = readFileSync(configPath, "utf-8");
   const parsed = parseTOML(raw) as Record<string, any>;
+  const configDir = dirname(resolve(configPath));
 
   return {
     system: {
@@ -18,7 +20,9 @@ export function loadSystemConfig(configPath: string): SystemConfig {
       version: parsed.system?.version ?? "0.0.0",
       description: parsed.system?.description ?? "",
       rpcCommand: parsed.system?.rpc_command ?? "",
-      promptsDir: parsed.system?.prompts_dir ?? "",
+      promptsDir: parsed.system?.prompts_dir
+        ? resolve(configDir, parsed.system.prompts_dir)
+        : "",
     },
     runtime: {
       defaultBackend: parsed.runtime?.default_backend ?? "pi",
