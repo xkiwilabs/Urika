@@ -62,9 +62,9 @@ class TestRegistryHasExpectedMethods:
             assert method_name in registry, f"Missing method: {method_name}"
 
     def test_registry_count(self) -> None:
-        """Registry has exactly 27 methods."""
+        """Registry has exactly 28 methods."""
         registry = build_registry()
-        assert len(registry) == 27
+        assert len(registry) == 28
 
     def test_all_handlers_are_callable(self) -> None:
         """Every handler is callable."""

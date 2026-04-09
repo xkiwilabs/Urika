@@ -93,12 +93,14 @@ def _project_summarize(params: dict[str, Any]) -> dict[str, Any]:
         runs = progress.get("runs", [])
         total_runs += len(runs)
         status = progress.get("status", "unknown")
-        best_metrics = {}
+        best_metrics: dict[str, float] = {}
         for run in runs:
             for k, v in run.get("metrics", {}).items():
-                if isinstance(v, (int, float)):
-                    if k not in best_metrics or v > best_metrics[k]:
-                        best_metrics[k] = v
+                if not isinstance(v, (int, float)):
+                    continue
+                cur = best_metrics.get(k)
+                if cur is None or v > cur:
+                    best_metrics[k] = v
         exp_summaries.append({
             "id": exp.experiment_id,
             "name": exp.name,
@@ -109,11 +111,11 @@ def _project_summarize(params: dict[str, Any]) -> dict[str, Any]:
 
     # Methods summary — top 5 by first metric
     methods = load_methods(project_dir)
-    top_methods = sorted(
-        methods,
-        key=lambda m: max(m.get("metrics", {}).values()) if m.get("metrics") else 0,
-        reverse=True,
-    )[:5]
+    def _best_numeric(m: dict) -> float:
+        vals = [v for v in m.get("metrics", {}).values() if isinstance(v, (int, float))]
+        return max(vals) if vals else 0.0
+
+    top_methods = sorted(methods, key=_best_numeric, reverse=True)[:5]
 
     # Criteria
     criteria_version = load_criteria(project_dir)

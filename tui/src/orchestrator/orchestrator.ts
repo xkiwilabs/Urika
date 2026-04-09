@@ -511,8 +511,9 @@ export class Orchestrator {
         description: "Add or update project success criteria",
         parameters: Type.Object({
           criteria: Type.Any({ description: "Criteria object with metric thresholds" }),
+          set_by: Type.String({ description: "Who set these criteria (e.g. 'user', 'advisor')" }),
           rationale: Type.String({ description: "Why these criteria are appropriate" }),
-          turn: Type.Number({ description: "Current turn number" }),
+          turn: Type.Number({ description: "Current turn number (use 0 if not in a turn)" }),
         }),
       });
 
