@@ -1068,6 +1068,77 @@ def present(
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def summarize(project: str | None, json_output: bool) -> None:
+    """Summarize the current state of a project."""
+    import asyncio
+    import time
+
+    from datetime import datetime, timezone
+
+    from urika.cli_display import Spinner, format_agent_output, print_agent
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    try:
+        from urika.agents.runner import get_runner
+        from urika.agents.registry import AgentRegistry
+    except ImportError:
+        raise click.ClickException(
+            "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
+        )
+
+    runner = get_runner()
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get("project_summarizer")
+    if role is None:
+        raise click.ClickException("Project summarizer agent not found.")
+
+    if not json_output:
+        print_agent("project_summarizer")
+    config = role.build_config(project_dir=project_path)
+
+    prompt = "Summarize the current state of this project."
+
+    _start_ms = int(time.monotonic() * 1000)
+    _start_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        with Spinner("Summarizing"):
+            result = asyncio.run(
+                runner.run(
+                    config,
+                    prompt,
+                    on_message=_make_on_message()
+                    if not json_output
+                    else lambda m: None,
+                )
+            )
+    except KeyboardInterrupt:
+        click.echo("\n  Summarize stopped.")
+        click.echo("  Re-run with: urika summarize")
+        return
+
+    _record_agent_usage(project_path, result, _start_iso, _start_ms)
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json(
+            {"output": result.text_output.strip() if result.success else result.error}
+        )
+        return
+
+    if result.success and result.text_output:
+        click.echo(format_agent_output(result.text_output))
+    else:
+        click.echo(f"Error: {result.error}")
+
+
+@cli.command()
+@click.argument("project", required=False, default=None)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def criteria(project: str | None, json_output: bool) -> None:
     """Show current project criteria."""
     from urika.core.criteria import load_criteria

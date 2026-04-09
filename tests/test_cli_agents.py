@@ -957,3 +957,76 @@ class TestCriteriaCommand:
         assert "version" in criteria
         assert "set_by" in criteria
         assert criteria["version"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Summarize
+# ---------------------------------------------------------------------------
+
+
+class TestSummarizeCommand:
+    def test_summarize_help(self, runner: CliRunner) -> None:
+        """Verify the summarize command is registered and shows help."""
+        result = runner.invoke(cli, ["summarize", "--help"])
+        assert result.exit_code == 0
+        assert "Summarize" in result.output
+
+    def test_summarize_runs_agent(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        with _agent_mocks(
+            _mock_agent_result(
+                text_output="Project has 3 experiments, best R2=0.85"
+            )
+        ):
+            result = runner.invoke(
+                cli,
+                ["summarize", "test-proj", "--json"],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        data = _extract_json(result.output)
+        assert "R2=0.85" in data["output"]
+
+    def test_summarize_success_plain(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        with _agent_mocks(
+            _mock_agent_result(text_output="Summary: 2 experiments completed")
+        ):
+            result = runner.invoke(
+                cli,
+                ["summarize", "test-proj"],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        assert "2 experiments completed" in result.output
+
+    def test_summarize_nonexistent_project(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli,
+            ["summarize", "no-such-proj"],
+            env=urika_env,
+        )
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+    def test_summarize_error_json(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+        with _agent_mocks(
+            _mock_agent_result(success=False, text_output="", error="Agent timeout")
+        ):
+            result = runner.invoke(
+                cli,
+                ["summarize", "test-proj", "--json"],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        data = _extract_json(result.output)
+        assert data["output"] == "Agent timeout"
