@@ -3,6 +3,7 @@ import type { AgentRuntime, ManagedAgent, RuntimeEvent, ToolDefinition } from ".
 import type { SystemConfig, ToolDeclaration, AgentDeclaration } from "../config/types";
 import type { RpcClient } from "../rpc/client";
 import { loadPrompt } from "./prompt-loader";
+import { SessionManager, type OrchestratorSession } from "./session-manager";
 
 // ── Context ──
 
@@ -53,6 +54,8 @@ export class GenericOrchestrator {
   private listeners: Set<(event: RuntimeEvent) => void> = new Set();
   /** Agent-level unsubscribe functions, keyed by listener. */
   private agentUnsubs: Map<(event: RuntimeEvent) => void, () => void> = new Map();
+  /** Session manager for conversation persistence. */
+  private sessionManager: SessionManager;
 
   /** Called when a project switch tool is invoked. */
   onProjectSwitch?: OnProjectSwitch;
@@ -65,6 +68,12 @@ export class GenericOrchestrator {
     this.runtime = runtime;
     this.rpcClient = rpcClient;
     this.config = config;
+    this.sessionManager = new SessionManager(rpcClient, "");
+  }
+
+  /** Get the session manager for resume/list operations. */
+  getSessionManager(): SessionManager {
+    return this.sessionManager;
   }
 
   // ── Public API ──
@@ -82,6 +91,7 @@ export class GenericOrchestrator {
 
     if (context.dataDir) {
       this.projectDir = context.dataDir.replace(/\/data\/?$/, "") || context.dataDir;
+      this.sessionManager.setProjectDir(this.projectDir);
     }
 
     // Build system prompt
@@ -105,6 +115,42 @@ export class GenericOrchestrator {
     // Re-subscribe all existing listeners to the new agent
     for (const listener of this.listeners) {
       this.subscribeAgentListener(listener);
+    }
+
+    // Internal subscription: auto-save session on agent_end
+    this.agent.subscribe((event: RuntimeEvent) => {
+      if (event.type === "agent_end" && this.agent && this.hasProject) {
+        const messages = this.agent.getMessages?.() ?? [];
+        if (messages.length > 0) {
+          this.sessionManager
+            .saveMessages(messages)
+            .catch((err) => {
+              // Silent — persistence failures shouldn't break the UI
+              console.error("Failed to save session:", err.message);
+            });
+        }
+      }
+    });
+  }
+
+  /**
+   * Resume a previously saved session — replaces current conversation history.
+   * Call AFTER initialize() so the agent exists.
+   */
+  async resumeSession(session: OrchestratorSession): Promise<void> {
+    this.sessionManager.setCurrentSession(session);
+
+    if (this.agent && session.recent_messages.length > 0) {
+      this.agent.setMessages?.(session.recent_messages);
+    }
+  }
+
+  /** Start a new (empty) session — clears current conversation. */
+  startNewSession(): void {
+    this.sessionManager.clearCurrentSession();
+    this.sessionManager.newSession();
+    if (this.agent) {
+      this.agent.setMessages?.([]);
     }
   }
 

@@ -91,6 +91,10 @@ export interface ManagedAgent {
   steer(message: string): void;
   abort(): void;
   readonly isRunning: boolean;
+  /** Get current conversation messages (for persistence). Returns [] if not supported. */
+  getMessages?(): any[];
+  /** Replace conversation messages (for resume). No-op if not supported. */
+  setMessages?(messages: any[]): void;
 }
 
 /** Runtime backend interface — each backend implements this */

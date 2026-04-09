@@ -173,6 +173,14 @@ class PiManagedAgent implements ManagedAgent {
   get isRunning(): boolean {
     return this._isRunning;
   }
+
+  getMessages(): any[] {
+    return this.agent.state.messages ?? [];
+  }
+
+  setMessages(messages: any[]): void {
+    this.agent.state.messages = messages;
+  }
 }
 
 // ---------------------------------------------------------------------------

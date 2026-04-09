@@ -43,6 +43,8 @@ export * from "./auth/login";
 export * from "./orchestrator/prompt-loader";
 export { GenericOrchestrator } from "./orchestrator/orchestrator";
 export type { OrchestratorContext, ProjectSwitchResult, OnProjectSwitch } from "./orchestrator/orchestrator";
+export { SessionManager, MAX_RECENT_TURNS, COMPACT_CHUNK_SIZE } from "./orchestrator/session-manager";
+export type { OrchestratorSession, SessionListEntry } from "./orchestrator/session-manager";
 
 // App entry point
 export { createApp } from "./app";
