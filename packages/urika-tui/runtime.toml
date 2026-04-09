@@ -1,0 +1,333 @@
+# ─────────────────────────────────────────────────────────────
+# Urika runtime configuration
+# Declares agents, tools, commands, and orchestrator settings
+# for the @urika/agent-runtime framework.
+# ─────────────────────────────────────────────────────────────
+
+[system]
+name = "urika"
+version = "0.1.2"
+description = "Multi-agent scientific analysis platform"
+rpc_command = "python -m urika.rpc"
+prompts_dir = "src/urika/agents/roles/prompts"
+
+[runtime]
+default_backend = "pi"
+default_model = "anthropic/claude-sonnet-4-6"
+
+[runtime.models]
+# Per-agent model overrides (optional)
+# orchestrator = "anthropic/claude-sonnet-4-6"
+# task_agent = "anthropic/claude-sonnet-4-6"
+
+[privacy]
+mode = "open"
+local_agents = ["data_agent"]
+
+[orchestrator]
+prompt = "orchestrator_system.md"
+
+# ─────────────────────────────────────────────────────────────
+# Agents — 10 specialist roles
+# ─────────────────────────────────────────────────────────────
+
+[[agents]]
+name = "planning_agent"
+prompt = "planning_agent_system.md"
+description = "Designs the analytical method pipeline. Call when starting a new approach or when strategy needs to change."
+
+[[agents]]
+name = "task_agent"
+prompt = "task_agent_system.md"
+description = "Executes experiments by writing and running Python code. Call after planning_agent produces a method plan."
+
+[[agents]]
+name = "evaluator"
+prompt = "evaluator_system.md"
+description = "Scores results against project success criteria. Read-only. Call after task_agent completes a run."
+
+[[agents]]
+name = "advisor"
+prompt = "advisor_agent_system.md"
+description = "Analyzes all results so far and proposes the next experiment or declares completion. Call after evaluator."
+
+[[agents]]
+name = "tool_builder"
+prompt = "tool_builder_system.md"
+description = "Creates custom analysis tools for the project. Call when a needed tool doesn't exist."
+
+[[agents]]
+name = "literature_agent"
+prompt = "literature_agent_system.md"
+description = "Searches the project knowledge base for relevant papers and notes. Call when domain context is needed."
+
+[[agents]]
+name = "data_agent"
+prompt = "data_agent_system.md"
+description = "Extracts and prepares features from raw data in privacy-preserving mode. Call in hybrid/private mode before task_agent."
+privacy = "local"
+
+[[agents]]
+name = "report_agent"
+prompt = "report_agent_system.md"
+description = "Writes experiment narratives and summaries. Call after experiments complete."
+
+[[agents]]
+name = "presentation_agent"
+prompt = "presentation_agent_system.md"
+description = "Creates reveal.js slide decks from experiment results. Call when experiments are complete and you want a presentation."
+
+[[agents]]
+name = "finalizer"
+prompt = "finalizer_system.md"
+description = "Produces standalone reproducible code, findings.json, requirements.txt, and reproduce scripts. Call when the best method has been identified."
+
+# ─────────────────────────────────────────────────────────────
+# Tools — RPC-backed operations
+# ─────────────────────────────────────────────────────────────
+
+# ── Global tools ──
+
+[[tools]]
+name = "list_projects"
+rpc_method = "project.list"
+description = "List all registered Urika projects with their names and paths"
+scope = "global"
+
+[[tools]]
+name = "switch_project"
+rpc_method = "project.list"
+description = "Load/switch to a project by name. Call this when the user wants to open a project."
+scope = "global"
+special = "switch_project"
+
+[tools.params.name]
+type = "string"
+description = "Project name to load"
+
+# ── Project-level tools ──
+
+[[tools]]
+name = "list_experiments"
+rpc_method = "experiment.list"
+description = "List all experiments in the current project"
+scope = "project"
+
+[[tools]]
+name = "create_experiment"
+rpc_method = "experiment.create"
+description = "Create a new experiment in the project"
+scope = "project"
+
+[tools.params.name]
+type = "string"
+description = "Experiment name"
+
+[tools.params.hypothesis]
+type = "string"
+description = "Hypothesis to test"
+
+[[tools]]
+name = "load_progress"
+rpc_method = "progress.load"
+description = "Load progress for an experiment — returns all runs and status"
+scope = "project"
+
+[tools.params.experiment_id]
+type = "string"
+description = "Experiment ID (e.g. exp-001)"
+
+[[tools]]
+name = "get_best_run"
+rpc_method = "progress.get_best_run"
+description = "Find the best run by a specific metric"
+scope = "project"
+
+[tools.params.experiment_id]
+type = "string"
+description = "Experiment ID"
+
+[tools.params.metric]
+type = "string"
+description = "Metric name (e.g. r2, rmse)"
+
+[tools.params.direction]
+type = "string"
+description = "higher or lower"
+
+[[tools]]
+name = "load_criteria"
+rpc_method = "criteria.load"
+description = "Load current success criteria for the project"
+scope = "project"
+
+[[tools]]
+name = "load_methods"
+rpc_method = "methods.list"
+description = "List all methods tried in the project with their metrics"
+scope = "project"
+
+[[tools]]
+name = "append_run"
+rpc_method = "progress.append_run"
+description = "Record a completed run result"
+scope = "project"
+
+[tools.params.experiment_id]
+type = "string"
+description = "Experiment ID"
+
+[[tools]]
+name = "finalize_project"
+rpc_method = "finalize.run"
+description = "Run the finalize pipeline: finalizer -> report -> presentation -> README. Call when all experiments are done."
+scope = "project"
+
+[[tools]]
+name = "profile_data"
+rpc_method = "data.profile"
+description = "Profile the project dataset — columns, types, statistics, null counts"
+scope = "project"
+
+[tools.params.data_path]
+type = "string"
+description = "Path to data file"
+
+[[tools]]
+name = "search_knowledge"
+rpc_method = "knowledge.search"
+description = "Search the project knowledge base for relevant papers and notes"
+scope = "project"
+
+[tools.params.query]
+type = "string"
+description = "Search query"
+
+[[tools]]
+name = "list_knowledge"
+rpc_method = "knowledge.list"
+description = "List all entries in the project knowledge base"
+scope = "project"
+
+[[tools]]
+name = "list_tools"
+rpc_method = "tools.list"
+description = "List all available analysis tools (built-in + project-specific)"
+scope = "project"
+
+[[tools]]
+name = "update_criteria"
+rpc_method = "criteria.append"
+description = "Add or update project success criteria"
+scope = "project"
+
+[[tools]]
+name = "start_session"
+rpc_method = "session.start"
+description = "Start an orchestration session for an experiment"
+scope = "project"
+
+[tools.params.experiment_id]
+type = "string"
+description = "Experiment ID"
+
+[tools.params.max_turns]
+type = "number"
+description = "Maximum turns"
+optional = true
+
+[[tools]]
+name = "pause_session"
+rpc_method = "session.pause"
+description = "Pause a running session"
+scope = "project"
+
+[tools.params.experiment_id]
+type = "string"
+description = "Experiment ID"
+
+[[tools]]
+name = "generate_report"
+rpc_method = "report.results_summary"
+description = "Generate the project results summary and key findings reports"
+scope = "project"
+
+[[tools]]
+name = "summarize_project"
+rpc_method = "project.summarize"
+description = "Get a concise structured summary of the project — experiments, top methods, criteria status, run counts"
+scope = "project"
+
+# ─────────────────────────────────────────────────────────────
+# Commands — slash commands for the TUI
+# ─────────────────────────────────────────────────────────────
+
+# ── Global commands ──
+
+[[commands]]
+name = "help"
+description = "Show available commands"
+scope = "global"
+
+[[commands]]
+name = "project"
+description = "List or switch projects"
+scope = "global"
+autocomplete_rpc = "project.list"
+
+[[commands]]
+name = "list"
+description = "List all projects"
+scope = "global"
+
+[[commands]]
+name = "new"
+description = "Create a new project"
+scope = "global"
+
+[[commands]]
+name = "login"
+description = "Login to a provider via OAuth"
+scope = "global"
+
+[[commands]]
+name = "logout"
+description = "Logout from a provider"
+scope = "global"
+
+[[commands]]
+name = "auth"
+description = "Show auth status"
+scope = "global"
+
+[[commands]]
+name = "quit"
+description = "Exit Urika"
+scope = "global"
+
+# ── Project-level commands ──
+
+[[commands]]
+name = "status"
+description = "Show project/experiment status"
+scope = "project"
+
+[[commands]]
+name = "results"
+description = "Show latest results"
+scope = "project"
+
+[[commands]]
+name = "config"
+description = "Show configuration"
+scope = "project"
+
+[[commands]]
+name = "pause"
+description = "Pause current run"
+scope = "project"
+
+[[commands]]
+name = "stop"
+description = "Stop current run"
+scope = "project"

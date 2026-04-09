@@ -1,6 +1,6 @@
 {
   "name": "@urika/urika-tui",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
@@ -9,6 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@urika/agent-runtime": "file:../agent-runtime",
     "chalk": "^5.5.0"
   },
   "devDependencies": {
