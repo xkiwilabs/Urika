@@ -32,16 +32,26 @@ def _find_tui_binary() -> str | None:
     if system_bin:
         return system_bin
 
-    # Local dev build
+    # Local dev build (new packages location)
     repo_root = Path(__file__).parent.parent.parent.parent
-    dev_bin = repo_root / "tui" / "dist" / "urika-tui"
+    dev_bin = repo_root / "packages" / "urika-tui" / "dist" / "urika-tui"
     if dev_bin.exists():
         return str(dev_bin)
 
-    # Local dev via bun (run TypeScript directly)
-    dev_ts = repo_root / "tui" / "src" / "index.ts"
+    # Legacy location
+    legacy_bin = repo_root / "tui" / "dist" / "urika-tui"
+    if legacy_bin.exists():
+        return str(legacy_bin)
+
+    # Local dev via bun (run TypeScript directly — new location)
+    dev_ts = repo_root / "packages" / "urika-tui" / "src" / "index.ts"
     if dev_ts.exists() and shutil.which("bun"):
         return None  # Signal to use bun run
+
+    # Legacy location
+    legacy_ts = repo_root / "tui" / "src" / "index.ts"
+    if legacy_ts.exists() and shutil.which("bun"):
+        return None
 
     return None
 
@@ -71,8 +81,16 @@ def tui(project: str | None) -> None:
     else:
         # Try bun dev mode
         repo_root = Path(__file__).parent.parent.parent.parent
-        dev_ts = repo_root / "tui" / "src" / "index.ts"
         bun = shutil.which("bun")
+
+        # New packages location
+        dev_ts = repo_root / "packages" / "urika-tui" / "src" / "index.ts"
+        dev_cwd = repo_root / "packages" / "urika-tui"
+
+        # Fall back to legacy location
+        if not dev_ts.exists():
+            dev_ts = repo_root / "tui" / "src" / "index.ts"
+            dev_cwd = repo_root / "tui"
 
         if dev_ts.exists() and bun:
             args = [bun, "run", str(dev_ts)]
@@ -80,18 +98,16 @@ def tui(project: str | None) -> None:
                 args.append(str(project_dir))
             print_step("Launching Urika TUI (dev mode via bun)...")
             try:
-                result = subprocess.run(args, cwd=str(repo_root / "tui"))
+                result = subprocess.run(args, cwd=str(dev_cwd))
                 sys.exit(result.returncode)
             except FileNotFoundError:
-                print_error(
-                    "Bun not found. Install bun or build the TUI: cd tui && bun run build"
-                )
+                print_error("Bun not found. Install bun or build the TUI.")
                 raise SystemExit(1)
         else:
             print_error(
                 "TUI not found. Options:\n"
-                "  1. Build it: cd tui && bun run build\n"
-                "  2. Run dev mode: cd tui && bun run dev -- <project-dir>\n"
+                "  1. Build: cd packages/urika-tui && bun run build\n"
+                "  2. Dev mode: cd packages/urika-tui && bun run dev\n"
                 "  3. Set URIKA_TUI_BIN environment variable"
             )
             raise SystemExit(1)

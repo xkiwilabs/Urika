@@ -60,12 +60,16 @@ def cli(ctx) -> None:
             subprocess.run([binary])
             raise SystemExit(0)
 
-        # Try bun dev mode
+        # Try bun dev mode (new packages location first, then legacy)
         repo_root = Path(__file__).parent.parent.parent.parent
-        dev_ts = repo_root / "tui" / "src" / "index.ts"
         bun = shutil.which("bun")
+        dev_ts = repo_root / "packages" / "urika-tui" / "src" / "index.ts"
+        dev_cwd = repo_root / "packages" / "urika-tui"
+        if not dev_ts.exists():
+            dev_ts = repo_root / "tui" / "src" / "index.ts"
+            dev_cwd = repo_root / "tui"
         if dev_ts.exists() and bun:
-            subprocess.run([bun, "run", str(dev_ts)], cwd=str(repo_root / "tui"))
+            subprocess.run([bun, "run", str(dev_ts)], cwd=str(dev_cwd))
             raise SystemExit(0)
 
         # Fall back to REPL
