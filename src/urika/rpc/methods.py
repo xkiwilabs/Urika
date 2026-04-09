@@ -48,6 +48,11 @@ def build_registry() -> Registry:
         "report.key_findings": _report_key_findings,
         "project.summarize": _project_summarize,
         "experiment.run": _experiment_run,
+        "sessions.save": _sessions_save,
+        "sessions.load": _sessions_load,
+        "sessions.list": _sessions_list,
+        "sessions.most_recent": _sessions_most_recent,
+        "sessions.delete": _sessions_delete,
     }
 
 
@@ -542,3 +547,46 @@ def _report_key_findings(params: dict[str, Any]) -> None:
 
     generate_key_findings(_path(params))
     return None
+
+
+# ---------------------------------------------------------------------------
+# sessions.*  (orchestrator conversation history)
+# ---------------------------------------------------------------------------
+
+
+def _sessions_save(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.orchestrator_sessions import OrchestratorSession, save_session
+
+    session = OrchestratorSession.from_dict(params["session"])
+    save_session(_path(params), session)
+    return session.to_dict()
+
+
+def _sessions_load(params: dict[str, Any]) -> dict[str, Any] | None:
+    from urika.core.orchestrator_sessions import load_session
+
+    session = load_session(_path(params), params["session_id"])
+    if session is None:
+        return None
+    return session.to_dict()
+
+
+def _sessions_list(params: dict[str, Any]) -> list[dict[str, Any]]:
+    from urika.core.orchestrator_sessions import list_sessions
+
+    return list_sessions(_path(params), limit=params.get("limit", 20))
+
+
+def _sessions_most_recent(params: dict[str, Any]) -> dict[str, Any] | None:
+    from urika.core.orchestrator_sessions import get_most_recent
+
+    session = get_most_recent(_path(params))
+    if session is None:
+        return None
+    return session.to_dict()
+
+
+def _sessions_delete(params: dict[str, Any]) -> bool:
+    from urika.core.orchestrator_sessions import delete_session
+
+    return delete_session(_path(params), params["session_id"])
