@@ -92,3 +92,72 @@ export function isLoggedIn(provider: string): boolean {
   const stored = loadCredentials();
   return provider in stored;
 }
+
+// ── TUI-friendly command handlers ──
+
+/**
+ * Handle /login command from TUI. Shows providers or runs login flow.
+ * Uses `output` callback to show messages immediately during the async flow.
+ */
+export async function handleLogin(
+  providerArg: string,
+  output: (msg: string) => void,
+): Promise<void> {
+  const providers = getSupportedProviders();
+
+  if (!providerArg) {
+    const list = providers
+      .map((p, i) => `    ${i + 1}. ${p.id} — ${p.name}`)
+      .join("\n");
+    output(`\n  Login to a provider:\n\n${list}\n\n  Type /login <number> or /login <name>\n`);
+    return;
+  }
+
+  // Accept number or name
+  let provider = providerArg;
+  const num = parseInt(provider, 10);
+  if (!isNaN(num) && num >= 1 && num <= providers.length) {
+    provider = providers[num - 1].id;
+  }
+
+  if (isLoggedIn(provider)) {
+    output(`  Already logged in to ${provider}. Use /logout ${provider} first.`);
+    return;
+  }
+
+  output(`  Logging in to ${provider}...`);
+
+  const success = await loginProvider(provider, {
+    onUrl: (url, instructions) => {
+      output(`  Open this URL:\n    ${url}`);
+      if (instructions) output(`  ${instructions}`);
+    },
+    onPrompt: async () => "",
+    onProgress: (msg) => output(`  ${msg}`),
+  });
+
+  if (success) {
+    output(`  ✓ Logged in to ${provider}.`);
+  } else {
+    output(`  Unknown provider: ${provider}. Use /login to see options.`);
+  }
+}
+
+/** Handle /logout command from TUI. */
+export function handleLogout(provider: string): string {
+  if (!provider) return "  Usage: /logout <provider>";
+  if (!isLoggedIn(provider)) return `  Not logged in to ${provider}.`;
+  const { removeProviderCredentials } = require("./storage");
+  removeProviderCredentials(provider);
+  return `  ✓ Logged out of ${provider}.`;
+}
+
+/** Handle /auth command from TUI. */
+export function handleAuthStatus(): string {
+  const { listProviders } = require("./storage");
+  const providers = listProviders();
+  if (providers.length === 0) {
+    return "  No active logins. Use /login <provider>.";
+  }
+  return "\n  Authenticated:\n" + providers.map((p: string) => `    ✓ ${p}`).join("\n") + "\n";
+}

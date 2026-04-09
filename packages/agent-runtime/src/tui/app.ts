@@ -328,6 +328,40 @@ export class AgentTuiApp {
       const cmdName = spaceIdx === -1 ? text.slice(1) : text.slice(1, spaceIdx);
       const cmdArgs = spaceIdx === -1 ? "" : text.slice(spaceIdx + 1).trim();
 
+      // Built-in commands (framework-level)
+      if (cmdName === "quit" || cmdName === "exit" || cmdName === "q") {
+        this.shutdown();
+        return;
+      }
+      if (cmdName === "help") {
+        const lines = this.options.commands.map(
+          (c) => `  /${c.name.padEnd(14)} ${c.description}`,
+        );
+        this.addChat("\n  Commands:\n\n" + lines.join("\n") + "\n\n  Everything else is sent to the orchestrator.\n");
+        return;
+      }
+      if (cmdName === "login") {
+        const { handleLogin } = await import("../auth/login");
+        try {
+          this.addChat("  Logging in...");
+          await handleLogin(cmdArgs, (msg: string) => this.addChat(msg));
+        } catch (err: any) {
+          this.addChat(chalk.red(`  Login failed: ${err.message}`));
+        }
+        return;
+      }
+      if (cmdName === "logout") {
+        const { handleLogout } = await import("../auth/login");
+        this.addChat(handleLogout(cmdArgs));
+        return;
+      }
+      if (cmdName === "auth") {
+        const { handleAuthStatus } = await import("../auth/login");
+        this.addChat(handleAuthStatus());
+        return;
+      }
+
+      // Host-specific command handlers
       const handler = this.options.commandHandlers[cmdName];
       if (handler) {
         const ctx: CommandContext = {
@@ -365,6 +399,10 @@ export class AgentTuiApp {
         }
         return;
       }
+
+      // No handler found for this slash command
+      this.addChat(chalk.dim(`  Unknown command: /${cmdName}. Type /help for commands.`));
+      return;
     }
 
     // Free text — if already processing, steer
