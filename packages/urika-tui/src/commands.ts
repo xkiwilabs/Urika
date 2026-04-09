@@ -35,6 +35,23 @@ export const commandHandlers: Record<string, CommandHandler> = {
     }
     if (!match) return `  Project not found: ${args}`;
     await ctx.switchProject(match.path);
+
+    // Check for recent sessions and show a hint
+    try {
+      const sm = ctx.orchestrator.getSessionManager();
+      const sessions = await sm.listSessions(1);
+      if (sessions.length > 0) {
+        const s = sessions[0];
+        const date = s.updated ? new Date(s.updated).toLocaleString() : "";
+        // Queue the hint to display after the project switch message
+        setTimeout(() => {
+          ctx.addChat(`  💡 Previous session from ${date} available. Type /resume to reload.`);
+        }, 0);
+      }
+    } catch {
+      // Ignore — sessions are best-effort
+    }
+
     return CMD_PROJECT_PREFIX + match.path;
   },
 
@@ -107,6 +124,50 @@ export const commandHandlers: Record<string, CommandHandler> = {
   pause: async () => "  Pause requested.",
 
   stop: async () => "  Stop requested.",
+
+  resume: async (args, ctx) => {
+    const sm = ctx.orchestrator.getSessionManager();
+    const sessions = await sm.listSessions(20);
+    if (!sessions.length) {
+      return "  No saved sessions for this project.";
+    }
+
+    // No arg: show numbered list
+    if (!args) {
+      const lines = ["", "  Recent sessions:", ""];
+      for (let i = 0; i < sessions.length; i++) {
+        const s = sessions[i];
+        const date = s.updated ? new Date(s.updated).toLocaleString() : "";
+        const preview = (s.preview || "(empty)").slice(0, 60);
+        const turns = s.turn_count > 0 ? ` · ${s.turn_count} turns` : "";
+        lines.push(`    ${i + 1}. ${date}${turns}`);
+        lines.push(`       ${preview}`);
+      }
+      lines.push("", "  Type /resume <number> to resume a session", "");
+      return lines.join("\n");
+    }
+
+    // With arg: resume that session
+    const num = parseInt(args, 10);
+    if (isNaN(num) || num < 1 || num > sessions.length) {
+      return `  Invalid session number: ${args}. Use /resume to see the list.`;
+    }
+
+    const entry = sessions[num - 1];
+    const session = await sm.loadSession(entry.session_id);
+    if (!session) {
+      return `  Session not found: ${entry.session_id}`;
+    }
+
+    await ctx.orchestrator.resumeSession(session);
+    const turns = session.recent_messages.length / 2;
+    return `  ✓ Resumed session from ${new Date(session.updated).toLocaleString()} (${turns.toFixed(0)} turns)`;
+  },
+
+  "new-session": async (_args, ctx) => {
+    ctx.orchestrator.startNewSession();
+    return "  ✓ Started a new session. Previous conversation archived.";
+  },
 
   config: async (_args, ctx) => {
     const config = (await ctx.rpc.call("project.load_config", {

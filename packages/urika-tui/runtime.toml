@@ -351,3 +351,13 @@ scope = "project"
 name = "stop"
 description = "Stop current run"
 scope = "project"
+
+[[commands]]
+name = "resume"
+description = "Resume a previous orchestrator session"
+scope = "project"
+
+[[commands]]
+name = "new-session"
+description = "Start a new orchestrator conversation (archives current)"
+scope = "project"

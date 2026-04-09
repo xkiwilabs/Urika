@@ -14,6 +14,10 @@ export interface CommandContext {
   projectDir: string;
   projectName: string;
   switchProject: (path: string) => Promise<void>;
+  /** Access to the orchestrator for session management. */
+  orchestrator: GenericOrchestrator;
+  /** Write directly to the chat area (for multi-message output). */
+  addChat: (text: string) => void;
 }
 
 export type CommandHandler = (args: string, ctx: CommandContext) => Promise<string>;
@@ -159,6 +163,8 @@ export async function createApp(options: AppOptions): Promise<App> {
           rpc: rpcClient,
           projectDir,
           projectName,
+          orchestrator,
+          addChat: tuiCtx.addChat,
           switchProject: async (path: string) => {
             const result = orchestrator.onProjectSwitch
               ? await orchestrator.onProjectSwitch(path)
