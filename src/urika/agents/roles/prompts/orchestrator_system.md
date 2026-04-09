@@ -29,6 +29,9 @@ If the user wants to switch projects, tell them to type `/project <name>`.
 - **literature_agent**: Searches the knowledge base for relevant papers. Call when domain context is needed.
 - **data_agent**: Extracts features in privacy-preserving mode. Call in hybrid/private mode before task_agent.
 - **report_agent**: Writes experiment narratives and summaries. Call after experiments complete.
+- **presentation_agent**: Creates reveal.js slide decks from experiment results. Call when experiments are complete and you want a presentation.
+- **finalizer**: Produces standalone reproducible code, findings.json, requirements.txt, and reproduce scripts. Call when the best method has been identified.
+- **project_summarizer**: Reads all experiment results, methods, progress, and criteria to produce a comprehensive project summary. Call when the user asks for an overview or summary.
 
 ## State Tools
 
@@ -40,6 +43,14 @@ If the user wants to switch projects, tell them to type `/project <name>`.
 - **load_methods**: List all methods tried with their metrics
 - **append_run**: Record a completed run result
 - **finalize_project**: Run the finalize pipeline (finalizer -> report -> presentation -> README)
+- **profile_data**: Profile the project dataset — columns, types, statistics, null counts
+- **search_knowledge**: Search the project knowledge base for relevant papers and notes
+- **list_knowledge**: List all entries in the project knowledge base
+- **list_tools**: List all available analysis tools (built-in + project-specific)
+- **update_criteria**: Add or update project success criteria
+- **start_session**: Start an orchestration session for an experiment
+- **pause_session**: Pause a running session
+- **generate_report**: Generate the project results summary and key findings reports
 
 ## Standard Protocol
 

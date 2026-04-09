@@ -49,6 +49,14 @@ const PROJECT_TOOLS = [
   "load_criteria",
   "load_methods",
   "finalize_project",
+  "profile_data",
+  "search_knowledge",
+  "list_knowledge",
+  "list_tools",
+  "update_criteria",
+  "start_session",
+  "pause_session",
+  "generate_report",
 ] as const;
 
 /** Maps orchestrator tool names to Python RPC method paths. */
@@ -63,6 +71,14 @@ const RPC_METHOD_MAP: Record<string, string> = {
   load_criteria: "criteria.load",
   load_methods: "methods.list",
   finalize_project: "finalize.run",
+  profile_data: "data.profile",
+  search_knowledge: "knowledge.search",
+  list_knowledge: "knowledge.list",
+  list_tools: "tools.list",
+  update_criteria: "criteria.append",
+  start_session: "session.start",
+  pause_session: "session.pause",
+  generate_report: "report.results_summary",
 };
 
 export class Orchestrator {
@@ -455,6 +471,71 @@ export class Orchestrator {
       tools.push({
         name: "finalize_project",
         description: "Run the finalize pipeline: finalizer -> report -> presentation -> README. Call when all experiments are done.",
+        parameters: Type.Object({}),
+      });
+
+      // Data & knowledge tools
+      tools.push({
+        name: "profile_data",
+        description: "Profile the project dataset — columns, types, statistics, null counts",
+        parameters: Type.Object({
+          data_path: Type.String({ description: "Path to data file" }),
+        }),
+      });
+
+      tools.push({
+        name: "search_knowledge",
+        description: "Search the project knowledge base for relevant papers and notes",
+        parameters: Type.Object({
+          query: Type.String({ description: "Search query" }),
+        }),
+      });
+
+      tools.push({
+        name: "list_knowledge",
+        description: "List all entries in the project knowledge base",
+        parameters: Type.Object({}),
+      });
+
+      tools.push({
+        name: "list_tools",
+        description: "List all available analysis tools (built-in + project-specific)",
+        parameters: Type.Object({}),
+      });
+
+      // Criteria management
+      tools.push({
+        name: "update_criteria",
+        description: "Add or update project success criteria",
+        parameters: Type.Object({
+          criteria: Type.Any({ description: "Criteria object with metric thresholds" }),
+          rationale: Type.String({ description: "Why these criteria are appropriate" }),
+          turn: Type.Number({ description: "Current turn number" }),
+        }),
+      });
+
+      // Session management
+      tools.push({
+        name: "start_session",
+        description: "Start an orchestration session for an experiment",
+        parameters: Type.Object({
+          experiment_id: Type.String({ description: "Experiment ID" }),
+          max_turns: Type.Optional(Type.Number({ description: "Maximum turns" })),
+        }),
+      });
+
+      tools.push({
+        name: "pause_session",
+        description: "Pause a running session",
+        parameters: Type.Object({
+          experiment_id: Type.String({ description: "Experiment ID" }),
+        }),
+      });
+
+      // Reports
+      tools.push({
+        name: "generate_report",
+        description: "Generate the project results summary and key findings reports",
         parameters: Type.Object({}),
       });
     }

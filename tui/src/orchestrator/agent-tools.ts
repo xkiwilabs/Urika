@@ -11,6 +11,9 @@ export const AGENT_ROLES: Record<string, string> = {
   literature_agent: "literature_agent_system.md",
   data_agent: "data_agent_system.md",
   report_agent: "report_agent_system.md",
+  presentation_agent: "presentation_agent_system.md",
+  finalizer: "finalizer_system.md",
+  project_summarizer: "project_summarizer_system.md",
 };
 
 /** Role descriptions for the orchestrator to understand what each agent does. */
@@ -31,6 +34,12 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
     "Extracts and prepares features from raw data in privacy-preserving mode. Call in hybrid/private mode before task_agent.",
   report_agent:
     "Writes experiment narratives and summaries. Call after experiments complete.",
+  presentation_agent:
+    "Creates reveal.js slide decks from experiment results. Call when experiments are complete and you want a presentation.",
+  finalizer:
+    "Produces standalone reproducible code, findings.json, requirements.txt, and reproduce scripts. Call when the best method has been identified.",
+  project_summarizer:
+    "Reads all experiment results, methods, progress, and criteria to produce a comprehensive project summary. Call when the user asks for an overview or summary of the project.",
 };
 
 export interface AgentToolConfig {
