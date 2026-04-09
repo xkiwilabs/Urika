@@ -27,6 +27,9 @@ export type {
   AgentRuntime,
 } from "./runtime/types";
 
+export { PiRuntime } from "./runtime/pi-runtime";
+export { ClaudeRuntime } from "./runtime/claude-runtime";
+
 export * from "./config/types";
 export * from "./config/loader";
 export * from "./rpc/client";
