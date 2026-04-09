@@ -34,3 +34,10 @@ export * from "./rpc/types";
 export * from "./auth/storage";
 export * from "./auth/login";
 export * from "./orchestrator/prompt-loader";
+
+// TUI components
+export { AgentTuiApp, CMD_QUIT, CMD_PROJECT_PREFIX } from "./tui/app";
+export type { AgentTuiAppOptions, CommandContext, SubscriptionHandlers } from "./tui/app";
+export { FooterComponent, formatTokens, formatCost, formatElapsed } from "./tui/footer";
+export type { FooterState } from "./tui/footer";
+export { formatAgentLabel, getAgentColor, registerAgentColor } from "./tui/agent-display";
