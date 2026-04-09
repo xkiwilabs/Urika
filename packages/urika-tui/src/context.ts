@@ -24,14 +24,36 @@ export async function getPromptVariables(
  * Loads the project config via RPC and returns the resolved project info.
  */
 export async function onProjectSwitch(
-  projectDir: string,
+  projectNameOrDir: string,
   ctx: AppContext,
 ): Promise<{ projectName: string; projectDir: string }> {
+  // If it looks like a path (contains /), use it directly
+  if (projectNameOrDir.includes("/")) {
+    const config = (await ctx.rpc.call("project.load_config", {
+      project_dir: projectNameOrDir,
+    })) as any;
+    return {
+      projectName: config.name ?? "Unknown",
+      projectDir: projectNameOrDir,
+    };
+  }
+
+  // Otherwise it's a project name — look up the path from the registry
+  const projects = (await ctx.rpc.call("project.list", {})) as any[];
+  const match = projects.find(
+    (p: any) =>
+      p.name === projectNameOrDir ||
+      p.name.toLowerCase() === projectNameOrDir.toLowerCase(),
+  );
+  if (!match) {
+    throw new Error(`Project not found: ${projectNameOrDir}`);
+  }
+
   const config = (await ctx.rpc.call("project.load_config", {
-    project_dir: projectDir,
+    project_dir: match.path,
   })) as any;
   return {
-    projectName: config.name ?? "Unknown",
-    projectDir,
+    projectName: config.name ?? match.name,
+    projectDir: match.path,
   };
 }
