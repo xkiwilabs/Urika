@@ -1,10 +1,14 @@
 """JSON-RPC 2.0 protocol handler."""
 from __future__ import annotations
 
+import inspect
 import json
 from typing import Any, Callable
 
-Registry = dict[str, Callable[[dict[str, Any]], Any]]
+Registry = dict[str, Callable[..., Any]]
+
+# Callback signature: notify(method: str, params: dict) -> None
+NotifyCallback = Callable[[str, dict[str, Any]], None]
 
 
 class RPCError(Exception):
@@ -14,8 +18,21 @@ class RPCError(Exception):
         super().__init__(message)
 
 
-def handle_request(raw: str, registry: Registry) -> str | None:
-    """Parse a JSON-RPC 2.0 request, dispatch to registry, return response."""
+def build_notification(method: str, params: dict[str, Any]) -> str:
+    """Build a JSON-RPC 2.0 notification (no id field)."""
+    return json.dumps({"jsonrpc": "2.0", "method": method, "params": params})
+
+
+def handle_request(
+    raw: str,
+    registry: Registry,
+    notify: NotifyCallback | None = None,
+) -> str | None:
+    """Parse a JSON-RPC 2.0 request, dispatch to registry, return response.
+
+    If the handler accepts a `notify` keyword argument, it is passed through
+    so long-running handlers can emit progress notifications.
+    """
     try:
         req = json.loads(raw)
     except json.JSONDecodeError as e:
@@ -31,7 +48,13 @@ def handle_request(raw: str, registry: Registry) -> str | None:
         return _error_response(req_id, -32601, f"Method not found: {method}")
 
     try:
-        result = registry[method](params)
+        handler = registry[method]
+        # Check if handler accepts a `notify` parameter
+        sig = inspect.signature(handler)
+        if "notify" in sig.parameters and notify is not None:
+            result = handler(params, notify=notify)
+        else:
+            result = handler(params)
     except Exception as e:
         if req_id is None:
             return None

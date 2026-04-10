@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from urika.rpc.protocol import Registry
 
@@ -145,18 +145,17 @@ def _project_summarize(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _experiment_run(params: dict[str, Any]) -> dict[str, Any]:
+def _experiment_run(
+    params: dict[str, Any],
+    notify: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     """Run an experiment via the deterministic Python orchestrator loop.
 
     This runs the full pipeline: planning -> task -> evaluator -> advisor,
     with progress tracking, labbook updates, and report generation.
 
-    Params:
-        project_dir: Project directory path
-        experiment_id: Experiment ID to run
-        max_turns: Maximum orchestrator turns (default 10)
-        instructions: Optional user guidance
-        resume: Whether to resume a paused session
+    If `notify` is provided, streams progress events as JSON-RPC notifications
+    so the TUI can display what's happening in real-time.
     """
     import asyncio
 
@@ -171,7 +170,36 @@ def _experiment_run(params: dict[str, Any]) -> dict[str, Any]:
 
     runner = get_runner()
 
-    # Run the orchestration loop synchronously from RPC
+    # Wire progress + message callbacks to notify
+    def on_progress(event: str, detail: str = "") -> None:
+        if notify:
+            try:
+                notify("experiment.progress", {"event": event, "detail": detail})
+            except Exception:
+                pass
+
+    def on_message(msg: Any) -> None:
+        if not notify:
+            return
+        # Extract useful fields from SDK messages
+        try:
+            msg_type = getattr(msg, "__class__", type(msg)).__name__
+            text = ""
+            if hasattr(msg, "content"):
+                content = msg.content
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, list):
+                    for block in content:
+                        if hasattr(block, "text"):
+                            text += block.text
+            elif hasattr(msg, "text"):
+                text = msg.text
+            if text:
+                notify("experiment.message", {"type": msg_type, "text": text[:2000]})
+        except Exception:
+            pass
+
     result = asyncio.run(
         run_experiment(
             project_dir,
@@ -180,6 +208,8 @@ def _experiment_run(params: dict[str, Any]) -> dict[str, Any]:
             max_turns=max_turns,
             instructions=instructions,
             resume=resume,
+            on_progress=on_progress,
+            on_message=on_message,
         )
     )
 

@@ -209,7 +209,25 @@ export async function createApp(options: AppOptions): Promise<App> {
       let streamingMarkdown: import("@mariozechner/pi-tui").Markdown | null = null;
       let streamingText = "";
 
-      return orchestrator.subscribe((event: RuntimeEvent) => {
+      // Wire RPC notifications (from long-running tools like run_experiment)
+      // to the chat stream so the user sees progress.
+      const unsubRpc = rpcClient.onNotification((method, params) => {
+        if (method === "experiment.progress") {
+          const event = String(params.event ?? "");
+          const detail = String(params.detail ?? "");
+          const line = detail ? `  ${event}: ${detail}` : `  ${event}`;
+          handlers.addChat(chalk.dim(line));
+          handlers.requestRender();
+        } else if (method === "experiment.message") {
+          const text = String(params.text ?? "");
+          if (text) {
+            handlers.addChat(text);
+            handlers.requestRender();
+          }
+        }
+      });
+
+      const unsubOrch = orchestrator.subscribe((event: RuntimeEvent) => {
         switch (event.type) {
           case "text_delta":
             if (!streamingMarkdown) {
@@ -260,6 +278,12 @@ export async function createApp(options: AppOptions): Promise<App> {
         }
         handlers.requestRender();
       });
+
+      // Return combined unsubscribe
+      return () => {
+        unsubRpc();
+        unsubOrch();
+      };
     },
     onMessage: (text: string) => orchestrator.processMessage(text),
     onSteer: (text: string) => orchestrator.steer(text),

@@ -3,6 +3,11 @@ import { createInterface, type Interface } from "readline";
 import type { RpcRequest, RpcResponse } from "./types";
 import { RpcError } from "./types";
 
+export type NotificationListener = (
+  method: string,
+  params: Record<string, unknown>,
+) => void;
+
 export class RpcClient {
   private process: ChildProcess;
   private readline: Interface;
@@ -14,6 +19,7 @@ export class RpcClient {
       reject: (error: RpcError) => void;
     }
   >();
+  private notificationListeners: Set<NotificationListener> = new Set();
 
   constructor(command: string, args: string[]) {
     this.process = spawn(command, args, {
@@ -24,7 +30,22 @@ export class RpcClient {
     this.readline.on("line", (line: string) => {
       if (!line.trim()) return;
       try {
-        const resp: RpcResponse = JSON.parse(line);
+        const msg = JSON.parse(line);
+
+        // Notification (no `id` field) — dispatch to notification listeners
+        if (msg.id === undefined && msg.method) {
+          for (const listener of this.notificationListeners) {
+            try {
+              listener(msg.method, msg.params ?? {});
+            } catch {
+              // Never let a bad listener break the RPC loop
+            }
+          }
+          return;
+        }
+
+        // Normal response — resolve pending call
+        const resp: RpcResponse = msg;
         const handler = this.pending.get(resp.id);
         if (!handler) return;
         this.pending.delete(resp.id);
@@ -39,7 +60,6 @@ export class RpcClient {
     });
 
     this.process.on("error", (err: Error) => {
-      // Reject all pending calls
       for (const [id, handler] of this.pending) {
         handler.reject(new RpcError(-32000, `RPC process error: ${err.message}`));
         this.pending.delete(id);
@@ -47,7 +67,6 @@ export class RpcClient {
     });
 
     this.process.on("exit", (code: number | null) => {
-      // Reject all pending calls
       for (const [id, handler] of this.pending) {
         handler.reject(new RpcError(-32001, `RPC process exited with code ${code}`));
         this.pending.delete(id);
@@ -65,6 +84,14 @@ export class RpcClient {
       this.pending.set(id, { resolve, reject });
       this.process.stdin!.write(JSON.stringify(req) + "\n");
     });
+  }
+
+  /** Subscribe to JSON-RPC notifications from the server. */
+  onNotification(listener: NotificationListener): () => void {
+    this.notificationListeners.add(listener);
+    return () => {
+      this.notificationListeners.delete(listener);
+    };
   }
 
   close(): void {
