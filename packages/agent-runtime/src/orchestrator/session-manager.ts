@@ -24,6 +24,28 @@ export const MAX_RECENT_TURNS = 20;
 /** When compacting, how many of the oldest turns to summarize. */
 export const COMPACT_CHUNK_SIZE = 10;
 
+/** Build a simple text summary of a list of messages (truncation-based).
+ * Future work: use an LLM to produce a semantic summary.
+ */
+function summarizeMessages(messages: any[]): string {
+  const lines: string[] = [`[${messages.length} earlier messages]`];
+  for (const msg of messages) {
+    const role = msg?.role ?? "?";
+    let text = "";
+    if (typeof msg?.content === "string") {
+      text = msg.content;
+    } else if (Array.isArray(msg?.content)) {
+      const textBlock = msg.content.find((b: any) => b?.type === "text");
+      if (textBlock) text = textBlock.text;
+    }
+    if (text) {
+      const snippet = text.slice(0, 100).replace(/\n/g, " ");
+      lines.push(`  ${role}: ${snippet}${text.length > 100 ? "..." : ""}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 /**
  * SessionManager — persists orchestrator conversation history per-project.
  * Sessions live under {project_dir}/.urika/sessions/ and are managed via RPC.
@@ -80,10 +102,32 @@ export class SessionManager {
     return (this.currentSession?.recent_messages?.length ?? 0) > 0;
   }
 
-  /** Update messages and persist to disk. */
+  /** Update messages and persist to disk.
+   *
+   * If messages exceed MAX_RECENT_TURNS*2, older messages are truncated
+   * into a simple text summary (LLM-based summarization is future work).
+   */
   async saveMessages(messages: any[]): Promise<void> {
     const session = this.getCurrentSession();
-    session.recent_messages = messages;
+
+    // Simple truncation-based compaction: when too many messages,
+    // move older ones into older_summary as a plain count/preview.
+    const maxRecent = MAX_RECENT_TURNS * 2;
+    if (messages.length > maxRecent) {
+      const splitAt = COMPACT_CHUNK_SIZE * 2;
+      const older = messages.slice(0, splitAt);
+      const recent = messages.slice(splitAt);
+
+      // Build a text summary of the older messages
+      const olderSummary = summarizeMessages(older);
+      const existingSummary = session.older_summary;
+      session.older_summary = existingSummary
+        ? `${existingSummary}\n${olderSummary}`
+        : olderSummary;
+      session.recent_messages = recent;
+    } else {
+      session.recent_messages = messages;
+    }
 
     // Set preview from first user message (if not already set)
     if (!session.preview) {

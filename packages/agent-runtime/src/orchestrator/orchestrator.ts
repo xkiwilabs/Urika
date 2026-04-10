@@ -118,40 +118,49 @@ export class GenericOrchestrator {
     }
 
     // Internal subscription: auto-save session on agent_end
-    this.agent.subscribe((event: RuntimeEvent) => {
-      if (event.type === "agent_end" && this.agent && this.hasProject) {
-        const messages = this.agent.getMessages?.() ?? [];
-        if (messages.length > 0) {
-          this.sessionManager
-            .saveMessages(messages)
-            .catch((err) => {
-              // Silent — persistence failures shouldn't break the UI
-              console.error("Failed to save session:", err.message);
-            });
-        }
-      }
+    // Capture current agent + project dir in closure to avoid races on re-init.
+    const currentAgent = this.agent;
+    const currentProjectDir = this.projectDir;
+    const wasProjectLoaded = this.hasProject;
+    currentAgent.subscribe((event: RuntimeEvent) => {
+      if (event.type !== "agent_end" || !wasProjectLoaded) return;
+      // Only save if we're still working with the same project
+      if (this.projectDir !== currentProjectDir) return;
+      const messages = currentAgent.getMessages?.() ?? [];
+      if (messages.length === 0) return;
+      this.sessionManager.saveMessages(messages).catch((err) => {
+        console.error("Failed to save session:", err?.message ?? err);
+      });
     });
   }
 
   /**
    * Resume a previously saved session — replaces current conversation history.
-   * Call AFTER initialize() so the agent exists.
+   * Returns true if the runtime supports resume, false otherwise.
    */
-  async resumeSession(session: OrchestratorSession): Promise<void> {
+  async resumeSession(session: OrchestratorSession): Promise<boolean> {
     this.sessionManager.setCurrentSession(session);
 
-    if (this.agent && session.recent_messages.length > 0) {
-      this.agent.setMessages?.(session.recent_messages);
+    if (!this.agent) return false;
+    if (typeof this.agent.setMessages !== "function") {
+      // Runtime doesn't support message replacement (e.g. ClaudeRuntime)
+      return false;
     }
+
+    if (session.recent_messages.length > 0) {
+      this.agent.setMessages(session.recent_messages);
+    }
+    return true;
   }
 
   /** Start a new (empty) session — clears current conversation. */
-  startNewSession(): void {
+  startNewSession(): boolean {
     this.sessionManager.clearCurrentSession();
     this.sessionManager.newSession();
-    if (this.agent) {
-      this.agent.setMessages?.([]);
-    }
+    if (!this.agent) return false;
+    if (typeof this.agent.setMessages !== "function") return false;
+    this.agent.setMessages([]);
+    return true;
   }
 
   /** Send a user message to the orchestrator agent. */

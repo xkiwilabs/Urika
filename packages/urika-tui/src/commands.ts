@@ -43,9 +43,9 @@ export const commandHandlers: Record<string, CommandHandler> = {
       if (sessions.length > 0) {
         const s = sessions[0];
         const date = s.updated ? new Date(s.updated).toLocaleString() : "";
-        // Queue the hint to display after the project switch message
+        // Defer so the hint appears after the project switch message
         setTimeout(() => {
-          ctx.addChat(`  💡 Previous session from ${date} available. Type /resume to reload.`);
+          ctx.addChat(`  Previous session from ${date} available. Type /resume to reload.`);
         }, 0);
       }
     } catch {
@@ -126,6 +126,9 @@ export const commandHandlers: Record<string, CommandHandler> = {
   stop: async () => "  Stop requested.",
 
   resume: async (args, ctx) => {
+    if (!ctx.projectName) {
+      return "  Load a project first: /project <name>";
+    }
     const sm = ctx.orchestrator.getSessionManager();
     const sessions = await sm.listSessions(20);
     if (!sessions.length) {
@@ -159,14 +162,23 @@ export const commandHandlers: Record<string, CommandHandler> = {
       return `  Session not found: ${entry.session_id}`;
     }
 
-    await ctx.orchestrator.resumeSession(session);
+    const supported = await ctx.orchestrator.resumeSession(session);
+    if (!supported) {
+      return "  This runtime does not support session resume (only Pi runtime supports it for now).";
+    }
     const turns = session.recent_messages.length / 2;
-    return `  ✓ Resumed session from ${new Date(session.updated).toLocaleString()} (${turns.toFixed(0)} turns)`;
+    return `  Resumed session from ${new Date(session.updated).toLocaleString()} (${turns.toFixed(0)} turns)`;
   },
 
   "new-session": async (_args, ctx) => {
-    ctx.orchestrator.startNewSession();
-    return "  ✓ Started a new session. Previous conversation archived.";
+    if (!ctx.projectName) {
+      return "  Load a project first: /project <name>";
+    }
+    const supported = ctx.orchestrator.startNewSession();
+    if (!supported) {
+      return "  This runtime does not support session management (only Pi runtime supports it for now).";
+    }
+    return "  Started a new session. Previous conversation archived.";
   },
 
   config: async (_args, ctx) => {
