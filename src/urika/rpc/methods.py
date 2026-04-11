@@ -50,6 +50,11 @@ def build_registry() -> Registry:
         "experiment.run": _experiment_run,
         "experiment.pause": _experiment_pause,
         "agent.run": _agent_run,
+        "orchestrator.chat": _orchestrator_chat,
+        "orchestrator.set_project": _orchestrator_set_project,
+        "orchestrator.get_messages": _orchestrator_get_messages,
+        "orchestrator.set_messages": _orchestrator_set_messages,
+        "orchestrator.clear": _orchestrator_clear,
         "sessions.save": _sessions_save,
         "sessions.load": _sessions_load,
         "sessions.list": _sessions_list,
@@ -352,6 +357,69 @@ def _agent_run(
         "model": result.model,
         "error": result.error,
     }
+
+
+# ---------------------------------------------------------------------------
+# orchestrator.*  (conversational orchestrator — TUI chat backend)
+# ---------------------------------------------------------------------------
+
+
+def _orchestrator_chat(
+    params: dict[str, Any],
+    notify: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Send a message to the orchestrator and get a response.
+
+    The orchestrator maintains conversation state across calls.
+    Streams progress via notifications.
+    """
+    import asyncio
+
+    from urika.orchestrator.chat import get_orchestrator
+
+    orch = get_orchestrator()
+    message = params["message"]
+
+    response = asyncio.run(orch.chat(message, notify=notify))
+
+    return {
+        "response": response,
+        "message_count": len(orch.get_messages()),
+    }
+
+
+def _orchestrator_set_project(params: dict[str, Any]) -> dict[str, Any]:
+    """Switch the orchestrator to a new project."""
+    from urika.orchestrator.chat import get_orchestrator
+
+    orch = get_orchestrator()
+    project_dir = _path(params)
+    orch.set_project(project_dir)
+    return {"ok": True}
+
+
+def _orchestrator_get_messages(params: dict[str, Any]) -> list[dict[str, Any]]:
+    """Get the orchestrator's conversation history."""
+    from urika.orchestrator.chat import get_orchestrator
+
+    return get_orchestrator().get_messages()
+
+
+def _orchestrator_set_messages(params: dict[str, Any]) -> dict[str, Any]:
+    """Replace the orchestrator's conversation history (for resume)."""
+    from urika.orchestrator.chat import get_orchestrator
+
+    orch = get_orchestrator()
+    orch.set_messages(params.get("messages", []))
+    return {"ok": True, "count": len(orch.get_messages())}
+
+
+def _orchestrator_clear(params: dict[str, Any]) -> dict[str, Any]:
+    """Clear the orchestrator's conversation history."""
+    from urika.orchestrator.chat import get_orchestrator
+
+    get_orchestrator().clear()
+    return {"ok": True}
 
 
 def _project_load_config(params: dict[str, Any]) -> dict[str, Any]:
