@@ -38,26 +38,17 @@ export class ClaudeRuntime implements AgentRuntime {
   }
 
   isAuthenticated(): boolean {
+    // Quick check: claude CLI exists and can respond
     try {
-      const output = execFileSync(this.claudePath, ["auth", "status"], {
+      execFileSync(this.claudePath, ["--version"], {
         stdio: "pipe",
         timeout: 5000,
-      }).toString();
-      // auth status returns JSON with "loggedIn": true/false
-      const status = JSON.parse(output);
-      return status.loggedIn === true;
+      });
+      // CLI exists — auth is handled by Claude Code's own login system
+      // If not logged in, the CLI will return an auth error on first use
+      return true;
     } catch {
-      // CLI not found or auth command failed — try version check as fallback
-      try {
-        execFileSync(this.claudePath, ["--version"], {
-          stdio: "pipe",
-          timeout: 5000,
-        });
-        // CLI exists but auth status failed — assume not authenticated
-        return false;
-      } catch {
-        return false;
-      }
+      return false;
     }
   }
 
@@ -223,8 +214,8 @@ class ClaudeManagedAgent implements ManagedAgent {
       "--print",
       "--output-format",
       "stream-json",
+      "--verbose",
       "--include-partial-messages",
-      "--bare",
     ];
 
     // System prompt
@@ -254,6 +245,10 @@ class ClaudeManagedAgent implements ManagedAgent {
 
   private handleClaudeEvent(event: any): void {
     switch (event.type) {
+      case "system":
+        // Init event — skip (contains session_id, tools, model info)
+        break;
+
       case "content_block_delta":
         if (event.delta?.type === "text_delta") {
           this.emit({ type: "text_delta", delta: event.delta.text });
@@ -270,6 +265,10 @@ class ClaudeManagedAgent implements ManagedAgent {
               this.emit({ type: "text_delta", delta: block.text });
             }
           }
+        }
+        // Check for auth errors
+        if (event.error === "authentication_failed") {
+          this.emit({ type: "error", message: "Not logged in. Run: claude login" });
         }
         break;
 
@@ -288,6 +287,10 @@ class ClaudeManagedAgent implements ManagedAgent {
           result: event.content,
           isError: event.is_error ?? false,
         });
+        break;
+
+      case "result":
+        // Final result — handled in prompt() for usage extraction
         break;
     }
   }
