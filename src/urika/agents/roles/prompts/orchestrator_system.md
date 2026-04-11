@@ -46,7 +46,9 @@ To run an experiment:
 
 ## Individual Agent Tools (for ad-hoc use only)
 
-Use these when the user asks for a specific targeted action, NOT for full experiments:
+Use these when the user asks for a specific targeted action, NOT for full experiments.
+
+Each agent runs with full capabilities — they can read project files, write code, execute Python, search the codebase. They are full Claude Code agents, not limited text generators.
 
 - **planning_agent**: Ad-hoc method design (e.g., "what's a good approach for X?")
 - **advisor**: Ad-hoc analysis of current state
