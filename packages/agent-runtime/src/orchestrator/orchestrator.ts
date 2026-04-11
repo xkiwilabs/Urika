@@ -286,13 +286,14 @@ export class GenericOrchestrator {
       }
     }
 
-    // Agent sub-agent tools (project-only)
+    // Agent tools (project-only) — executed via RPC to Python backend
+    // Python agents get full Claude SDK tools (Read, Write, Bash, Glob, Grep)
     if (this.hasProject) {
       for (const agentDecl of this.config.agents) {
         const toolDef = this.agentDeclToTool(agentDecl);
         tools.push(toolDef);
         executors[agentDecl.name] = (args) =>
-          this.executeSubAgent(agentDecl, args.instructions ?? args.input ?? "");
+          this.executeAgentRpc(agentDecl.name, args.instructions ?? args.input ?? "");
       }
     }
 
@@ -409,78 +410,29 @@ export class GenericOrchestrator {
   }
 
   /**
-   * Execute a sub-agent by creating a temporary agent via the runtime.
+   * Execute an agent via RPC — calls the Python backend which runs the agent
+   * with full Claude SDK tools (Read, Write, Bash, Glob, Grep).
    *
-   * For agents with privacy="local", uses the same runtime (future: could
-   * force a local-only runtime).
+   * This replaces the old `executeSubAgent` which used PiRuntime and had
+   * no tools. The Python backend's `agent.run` method uses `AgentRegistry`
+   * to find the role, `build_config()` to get the proper tools/prompts,
+   * and `get_runner()` to execute via the Claude Agent SDK.
    */
-  private async executeSubAgent(
-    decl: AgentDeclaration,
+  private async executeAgentRpc(
+    agentName: string,
     instructions: string,
   ): Promise<string> {
-    // Load the agent's system prompt
-    let systemPrompt: string;
-    try {
-      systemPrompt = loadPrompt(
-        join(this.config.system.promptsDir, decl.prompt),
-        {
-          project_dir: this.projectDir,
-          experiment_id: "",
-        },
-      );
-    } catch {
-      systemPrompt = `You are the ${decl.name} agent.`;
+    const result = await this.rpcClient.call("agent.run", {
+      project_dir: this.projectDir,
+      agent_name: agentName,
+      prompt: instructions,
+      experiment_id: "",
+    }) as any;
+
+    if (!result.success) {
+      throw new Error(result.error || `Agent ${agentName} failed`);
     }
 
-    // Resolve model — agent-specific override, then per-agent models map, then default
-    const model =
-      decl.model ??
-      this.config.runtime.models[decl.name] ??
-      this.config.runtime.defaultModel;
-
-    // Resolve agent-specific tools (subset of the config tools)
-    const agentTools: ToolDefinition[] = [];
-    const agentExecutors: Record<string, (args: any, signal?: AbortSignal) => Promise<any>> = {};
-
-    if (decl.tools) {
-      for (const toolName of decl.tools) {
-        const toolDecl = this.config.tools.find((t) => t.name === toolName);
-        if (toolDecl) {
-          agentTools.push(this.toolDeclToDefinition(toolDecl));
-          agentExecutors[toolDecl.name] = (args) =>
-            this.executeRpcTool(toolDecl.rpcMethod, args);
-        }
-      }
-    }
-
-    const subAgent = this.runtime.createAgent({
-      name: decl.name,
-      systemPrompt,
-      tools: agentTools,
-      model,
-      privacy: decl.privacy,
-      toolExecutors: agentExecutors,
-    });
-
-    // Forward sub-agent events to the orchestrator's listeners for TUI streaming
-    let output = "";
-    const unsub = subAgent.subscribe((event: RuntimeEvent) => {
-      // Collect text for the tool result
-      if (event.type === "text_delta") {
-        output += event.delta;
-      }
-      // Forward ALL events to the orchestrator's listeners so the TUI sees them
-      for (const listener of this.listeners) {
-        listener(event);
-      }
-    });
-
-    try {
-      await subAgent.prompt(instructions);
-    } finally {
-      unsub();
-    }
-
-    return output || "No output from agent.";
+    return result.text_output || "No output from agent.";
   }
 }

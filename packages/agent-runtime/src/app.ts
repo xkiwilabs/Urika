@@ -243,6 +243,28 @@ export async function createApp(options: AppOptions): Promise<App> {
             handlers.addChat(text);
             handlers.requestRender();
           }
+        } else if (method === "agent.started") {
+          const agent = String(params.agent ?? "");
+          handlers.showLoader(agent.replace(/_/g, " "));
+          handlers.updateFooter({ agent });
+          handlers.requestRender();
+        } else if (method === "agent.message") {
+          const text = String(params.text ?? "");
+          if (text) {
+            handlers.addChat(text);
+            handlers.requestRender();
+          }
+        } else if (method === "agent.completed") {
+          handlers.hideLoader();
+          handlers.updateFooter({ agent: "" });
+          const tokensIn = Number(params.tokens_in ?? 0);
+          const tokensOut = Number(params.tokens_out ?? 0);
+          const cost = Number(params.cost_usd ?? 0);
+          totalTokensIn += tokensIn;
+          totalTokensOut += tokensOut;
+          totalCost += cost;
+          handlers.updateFooter({ tokensIn: totalTokensIn, tokensOut: totalTokensOut, cost: totalCost });
+          handlers.requestRender();
         }
       });
 
