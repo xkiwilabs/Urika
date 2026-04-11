@@ -121,9 +121,18 @@ export const commandHandlers: Record<string, CommandHandler> = {
     return projects.map((p: any, i: number) => `  ${i + 1}. ${p.name}`).join("\n");
   },
 
-  pause: async () => "  Pause requested.",
+  pause: async (_args, ctx) => {
+    // Signal the orchestrator to pause — it will finish the current subagent
+    // then stop before the next turn
+    ctx.orchestrator.abort();
+    return "  Pausing after current subagent finishes...\n  Type /resume to continue or give new instructions.";
+  },
 
-  stop: async () => "  Stop requested.",
+  stop: async (_args, ctx) => {
+    // Stop immediately — abort the current agent run
+    ctx.orchestrator.abort();
+    return "  Stopped. What would you like to do next?";
+  },
 
   resume: async (args, ctx) => {
     if (!ctx.projectName) {
