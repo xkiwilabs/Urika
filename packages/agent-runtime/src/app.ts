@@ -243,10 +243,16 @@ export async function createApp(options: AppOptions): Promise<App> {
             // Finalize current streaming block
             streamingMarkdown = null;
             streamingText = "";
-            handlers.showLoader(`Running ${event.name.replace(/_/g, " ")}...`);
+            // Clean up tool name for display
+            const toolLabel = event.name
+              .replace(/_/g, " ")
+              .replace(/^run experiment$/, "experiment");
+            handlers.showLoader(toolLabel);
+            handlers.updateFooter({ agent: event.name });
             break;
           case "tool_end":
             handlers.hideLoader();
+            handlers.updateFooter({ agent: "" });
             if (event.isError) {
               handlers.addChat(chalk.red(`Tool ${event.name} failed.`));
             }
@@ -255,7 +261,7 @@ export async function createApp(options: AppOptions): Promise<App> {
             streamingMarkdown = null;
             streamingText = "";
             handlers.showLoader("Thinking...");
-            handlers.updateFooter({ active: true, startTime: Date.now() });
+            handlers.updateFooter({ active: true, startTime: Date.now(), agent: "" });
             break;
           case "agent_end":
             streamingMarkdown = null;
@@ -263,6 +269,7 @@ export async function createApp(options: AppOptions): Promise<App> {
             handlers.hideLoader();
             handlers.updateFooter({
               active: false,
+              agent: "",
               tokensIn: event.usage.tokensIn,
               tokensOut: event.usage.tokensOut,
               cost: event.usage.cost,

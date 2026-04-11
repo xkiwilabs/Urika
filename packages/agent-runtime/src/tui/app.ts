@@ -4,7 +4,6 @@ import {
   Editor,
   Text,
   Markdown,
-  CancellableLoader,
   Spacer,
   ProcessTerminal,
   CombinedAutocompleteProvider,
@@ -15,6 +14,7 @@ import {
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { FooterComponent, type FooterState } from "./footer";
+import { ThinkingLoader } from "./thinking-loader";
 import type { RpcClient } from "../rpc/client";
 import type { CommandDeclaration } from "../config/types";
 
@@ -135,7 +135,7 @@ export class AgentTuiApp {
   private editorContainer: Container;
   private editor: Editor;
   private footer: FooterComponent;
-  private loader: CancellableLoader | null = null;
+  private loader: ThinkingLoader | null = null;
   private options: AgentTuiAppOptions;
   private processing = false;
 
@@ -275,7 +275,8 @@ export class AgentTuiApp {
 
   showLoader(message: string): void {
     this.statusContainer.clear();
-    this.loader = new CancellableLoader(this.tui, chalk.cyan, chalk.dim, message);
+    this.loader = new ThinkingLoader(this.tui);
+    this.loader.setMessage(message);
     this.loader.onAbort = () => {
       this.options.onAbort();
       this.hideLoader();

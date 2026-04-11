@@ -36,9 +36,6 @@ export interface FooterState {
 /**
  * Dynamic footer component for agent TUI apps.
  * Displays: project, active agent, elapsed time, model, tokens, cost.
- *
- * Implements pi-tui's Component interface so it can be added directly
- * to a TUI container.
  */
 export class FooterComponent implements Component, FooterState {
   project = "";
@@ -54,22 +51,26 @@ export class FooterComponent implements Component, FooterState {
 
   render(width: number): string[] {
     const D = chalk.dim;
-    const sep = D(" · ");
+    const sep = D(" | ");
 
-    // Left side: project + agent activity
+    // Left side: project + agent + elapsed
     const left: string[] = [];
     if (this.project) left.push(chalk.cyan(this.project));
 
     if (this.active) {
-      if (this.agent) left.push(chalk.yellow(this.agent.replace(/_/g, " ")));
-      if (this.startTime) left.push(D(formatElapsed(this.startTime)));
+      if (this.agent) {
+        left.push(chalk.yellow(this.agent.replace(/_/g, " ")));
+      }
+      if (this.startTime) {
+        left.push(chalk.magenta(formatElapsed(this.startTime)));
+      }
     } else {
       left.push(D("ready"));
     }
 
     // Right side: model + tokens + cost
     const right: string[] = [];
-    if (this.model) right.push(D(this.model));
+    if (this.model) right.push(chalk.blue(this.model));
     if (this.tokensIn > 0 || this.tokensOut > 0) {
       right.push(D(`↑${formatTokens(this.tokensIn)} ↓${formatTokens(this.tokensOut)}`));
     }
@@ -78,13 +79,12 @@ export class FooterComponent implements Component, FooterState {
     const leftStr = `  ${left.join(sep)}`;
     const rightStr = right.length > 0 ? `${right.join(sep)}  ` : "";
 
-    // Use visibleWidth to measure ANSI-aware string length
     const leftVisible = visibleWidth(leftStr);
     const rightVisible = visibleWidth(rightStr);
     const gap = Math.max(1, width - leftVisible - rightVisible);
     const line = truncateToWidth(`${leftStr}${" ".repeat(gap)}${rightStr}`, width);
 
-    return [D("─".repeat(width)), line];
+    return [line];
   }
 
   /** Bulk update from a partial state object. */
