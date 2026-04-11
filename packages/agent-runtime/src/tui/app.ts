@@ -413,9 +413,13 @@ export class AgentTuiApp {
       return;
     }
 
-    // Send to orchestrator
+    // Send to orchestrator — show loader immediately
     this.processing = true;
     this.addChat(chalk.dim(`> ${text}`));
+    this.showLoader("Thinking...");
+    this.footer.active = true;
+    this.footer.startTime = Date.now();
+    this.tui.requestRender();
 
     try {
       await this.options.onMessage(text);
