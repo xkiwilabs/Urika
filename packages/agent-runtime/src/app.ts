@@ -208,6 +208,10 @@ export async function createApp(options: AppOptions): Promise<App> {
     onSetupSubscription: (handlers: SubscriptionHandlers) => {
       let streamingMarkdown: import("@mariozechner/pi-tui").Markdown | null = null;
       let streamingText = "";
+      let totalTokensIn = 0;
+      let totalTokensOut = 0;
+      let totalCost = 0;
+      let lastModel = "";
 
       // Wire RPC notifications (from long-running tools like run_experiment)
       // to the chat stream so the user sees progress.
@@ -267,13 +271,20 @@ export async function createApp(options: AppOptions): Promise<App> {
             streamingMarkdown = null;
             streamingText = "";
             handlers.hideLoader();
+            // Accumulate usage (don't overwrite — subagents also fire agent_end)
+            totalTokensIn += event.usage.tokensIn;
+            totalTokensOut += event.usage.tokensOut;
+            totalCost += event.usage.cost;
+            if (event.usage.model && event.usage.model !== "unknown") {
+              lastModel = event.usage.model;
+            }
             handlers.updateFooter({
               active: false,
               agent: "",
-              tokensIn: event.usage.tokensIn,
-              tokensOut: event.usage.tokensOut,
-              cost: event.usage.cost,
-              model: event.usage.model,
+              tokensIn: totalTokensIn,
+              tokensOut: totalTokensOut,
+              cost: totalCost,
+              model: lastModel,
             });
             break;
           case "error":
