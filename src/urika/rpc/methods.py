@@ -49,6 +49,7 @@ def build_registry() -> Registry:
         "project.summarize": _project_summarize,
         "experiment.run": _experiment_run,
         "experiment.pause": _experiment_pause,
+        "agent.run": _agent_run,
         "sessions.save": _sessions_save,
         "sessions.load": _sessions_load,
         "sessions.list": _sessions_list,
@@ -254,6 +255,103 @@ def _experiment_pause(params: dict[str, Any]) -> dict[str, Any]:
     pause_flag.parent.mkdir(parents=True, exist_ok=True)
     pause_flag.write_text("pause", encoding="utf-8")
     return {"ok": True, "message": "Pause requested — will pause after current subagent finishes."}
+
+
+def _agent_run(
+    params: dict[str, Any],
+    notify: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Run a specific agent role with full SDK tools.
+
+    This is how the TUI invokes individual agents (advisor, evaluator,
+    planning_agent, etc.) with the same Claude Agent SDK capabilities
+    they have in the CLI — Read, Write, Bash, Glob, Grep.
+
+    Params:
+        project_dir: Project directory path
+        agent_name: Agent role name (e.g. "advisor_agent", "evaluator", "task_agent")
+        prompt: The prompt/instructions for the agent
+        experiment_id: Optional experiment ID for experiment-scoped agents
+    """
+    import asyncio
+
+    from urika.agents.registry import AgentRegistry
+    from urika.agents.runner import get_runner
+
+    project_dir = _path(params)
+    agent_name = params["agent_name"]
+    prompt = params["prompt"]
+    experiment_id = params.get("experiment_id", "")
+
+    # Discover agent roles
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get(agent_name)
+    if role is None:
+        raise ValueError(
+            f"Agent role not found: {agent_name}. "
+            f"Available: {', '.join(r.name for r in registry.list_all())}"
+        )
+
+    # Build config with full tools, prompts, privacy settings
+    config = role.build_config(
+        project_dir=project_dir,
+        experiment_id=experiment_id,
+    )
+
+    # Get the runner (Claude SDK by default)
+    runner = get_runner()
+
+    # Notify progress
+    if notify:
+        try:
+            notify("agent.started", {"agent": agent_name, "prompt_preview": prompt[:100]})
+        except Exception:
+            pass
+
+    def on_message(msg: Any) -> None:
+        """Stream agent messages back as notifications."""
+        if not notify:
+            return
+        try:
+            text = ""
+            if hasattr(msg, "content"):
+                content = msg.content
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, list):
+                    for block in content:
+                        if hasattr(block, "text"):
+                            text += block.text
+            if text:
+                notify("agent.message", {"agent": agent_name, "text": text[:2000]})
+        except Exception:
+            pass
+
+    # Run the agent
+    result = asyncio.run(runner.run(config, prompt, on_message=on_message))
+
+    if notify:
+        try:
+            notify("agent.completed", {
+                "agent": agent_name,
+                "success": result.success,
+                "tokens_in": result.tokens_in,
+                "tokens_out": result.tokens_out,
+                "cost_usd": result.cost_usd,
+            })
+        except Exception:
+            pass
+
+    return {
+        "success": result.success,
+        "text_output": result.text_output,
+        "tokens_in": result.tokens_in,
+        "tokens_out": result.tokens_out,
+        "cost_usd": result.cost_usd or 0,
+        "model": result.model,
+        "error": result.error,
+    }
 
 
 def _project_load_config(params: dict[str, Any]) -> dict[str, Any]:
