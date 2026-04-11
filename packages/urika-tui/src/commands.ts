@@ -122,10 +122,21 @@ export const commandHandlers: Record<string, CommandHandler> = {
   },
 
   pause: async (_args, ctx) => {
-    // Signal the orchestrator to pause — it will finish the current subagent
-    // then stop before the next turn
-    ctx.orchestrator.abort();
-    return "  Pausing after current subagent finishes...\n  Type /resume to continue or give new instructions.";
+    // Write the pause flag file directly (can't use RPC — it's blocked by run_experiment).
+    // The Python orchestrator checks this file between turns.
+    const { writeFileSync, mkdirSync } = await import("fs");
+    const { join } = await import("path");
+    const flagDir = join(ctx.projectDir, ".urika");
+    const flagPath = join(flagDir, "pause_requested");
+    try {
+      mkdirSync(flagDir, { recursive: true });
+      writeFileSync(flagPath, "pause");
+    } catch {
+      // Fall back to abort if file write fails
+      ctx.orchestrator.abort();
+      return "  Could not write pause flag — stopped instead.";
+    }
+    return "  Pausing after current subagent finishes...\n  The experiment will stop between turns.\n  Type /resume to continue or give new instructions.";
   },
 
   stop: async (_args, ctx) => {

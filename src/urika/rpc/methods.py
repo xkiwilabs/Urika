@@ -48,6 +48,7 @@ def build_registry() -> Registry:
         "report.key_findings": _report_key_findings,
         "project.summarize": _project_summarize,
         "experiment.run": _experiment_run,
+        "experiment.pause": _experiment_pause,
         "sessions.save": _sessions_save,
         "sessions.load": _sessions_load,
         "sessions.list": _sessions_list,
@@ -156,11 +157,15 @@ def _experiment_run(
 
     If `notify` is provided, streams progress events as JSON-RPC notifications
     so the TUI can display what's happening in real-time.
+
+    The handler creates a pause flag file that the TUI can write to via
+    a separate RPC call to trigger a graceful pause between turns.
     """
     import asyncio
 
     from urika.agents.runner import get_runner
     from urika.orchestrator.loop import run_experiment
+    from urika.orchestrator.pause import PauseController
 
     project_dir = _path(params)
     experiment_id = params["experiment_id"]
@@ -169,6 +174,23 @@ def _experiment_run(
     resume = params.get("resume", False)
 
     runner = get_runner()
+
+    # Create a PauseController that checks a flag file
+    # The TUI can request a pause by calling experiment.pause RPC
+    pause_ctrl = PauseController()
+    pause_flag = project_dir / ".urika" / "pause_requested"
+    pause_flag.parent.mkdir(parents=True, exist_ok=True)
+    # Clean up any stale flag
+    if pause_flag.exists():
+        pause_flag.unlink()
+
+    # Wrap PauseController to also check the flag file
+    _orig_is_pause = pause_ctrl.is_pause_requested
+    def _check_pause() -> bool:
+        if pause_flag.exists():
+            return True
+        return _orig_is_pause()
+    pause_ctrl.is_pause_requested = _check_pause  # type: ignore[assignment]
 
     # Wire progress + message callbacks to notify
     def on_progress(event: str, detail: str = "") -> None:
@@ -210,10 +232,28 @@ def _experiment_run(
             resume=resume,
             on_progress=on_progress,
             on_message=on_message,
+            pause_controller=pause_ctrl,
         )
     )
 
+    # Clean up pause flag
+    if pause_flag.exists():
+        pause_flag.unlink()
+
     return result
+
+
+def _experiment_pause(params: dict[str, Any]) -> dict[str, Any]:
+    """Request a pause for a running experiment.
+
+    Creates a flag file that the running experiment checks between turns.
+    The experiment will pause after the current subagent finishes.
+    """
+    project_dir = _path(params)
+    pause_flag = project_dir / ".urika" / "pause_requested"
+    pause_flag.parent.mkdir(parents=True, exist_ok=True)
+    pause_flag.write_text("pause", encoding="utf-8")
+    return {"ok": True, "message": "Pause requested — will pause after current subagent finishes."}
 
 
 def _project_load_config(params: dict[str, Any]) -> dict[str, Any]:
