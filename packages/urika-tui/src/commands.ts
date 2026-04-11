@@ -55,8 +55,44 @@ export const commandHandlers: Record<string, CommandHandler> = {
     return CMD_PROJECT_PREFIX + match.path;
   },
 
-  new: async () => {
-    return "  Use the CLI: urika new <name> -q <question>";
+  new: async (args, ctx) => {
+    if (!args) {
+      return [
+        "",
+        "  Create a new project:",
+        "",
+        '  /new <name> -q "<research question>" --data <path>',
+        "",
+        "  Example:",
+        '  /new sleep-study -q "Does sleep quality predict cognitive performance?"',
+        "",
+        "  Options:",
+        '    -q, --question "..."    Research question',
+        "    --data <path>           Path to data file/directory",
+        "    -m, --mode <mode>       exploratory (default), confirmatory, pipeline",
+        "",
+      ].join("\n");
+    }
+
+    // Run urika new via subprocess (safe — uses execFileSync, not shell)
+    const { execFileSync } = await import("child_process");
+    try {
+      // Parse args into an array for execFileSync
+      const cliArgs = ["new", ...args.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [], "--json"];
+      const output = execFileSync("urika", cliArgs, {
+        encoding: "utf-8",
+        timeout: 30000,
+      });
+      try {
+        const result = JSON.parse(output);
+        if (result.project_dir) {
+          return `  Project created: ${result.name ?? args}\n  Path: ${result.project_dir}\n\n  Type /project ${result.name ?? args} to load it.`;
+        }
+      } catch {}
+      return output.trim();
+    } catch (err: any) {
+      return `  Error: ${err.stderr?.trim() || err.message}`;
+    }
   },
 
   status: async (_args, ctx) => {
@@ -210,17 +246,38 @@ export const commandHandlers: Record<string, CommandHandler> = {
     return "  Started a new session. Previous conversation archived.";
   },
 
-  config: async (_args, ctx) => {
-    const config = (await ctx.rpc.call("project.load_config", {
-      project_dir: ctx.projectDir,
-    })) as any;
-
-    const lines = ["", "  Configuration:", ""];
-    for (const [key, value] of Object.entries(config)) {
-      if (typeof value === "object") continue;
-      lines.push(`    ${key}: ${value}`);
+  config: async (args, ctx) => {
+    // Run urika config via subprocess to get formatted output
+    const { execFileSync } = await import("child_process");
+    try {
+      const cliArgs = ["config", "--show"];
+      if (ctx.projectName) {
+        cliArgs.push(ctx.projectName);
+      }
+      const output = execFileSync("urika", cliArgs, {
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+      return output.trim();
+    } catch {
+      // Fallback to RPC
+      try {
+        if (ctx.projectDir) {
+          const config = (await ctx.rpc.call("project.load_config", {
+            project_dir: ctx.projectDir,
+          })) as any;
+          const lines = ["", "  Configuration:", ""];
+          for (const [key, value] of Object.entries(config)) {
+            if (typeof value === "object") continue;
+            lines.push(`    ${key}: ${value}`);
+          }
+          lines.push("");
+          return lines.join("\n");
+        }
+        return "  No project loaded. Use /config to see global settings.";
+      } catch (err: any) {
+        return `  Error: ${err.message}`;
+      }
     }
-    lines.push("");
-    return lines.join("\n");
   },
 };
