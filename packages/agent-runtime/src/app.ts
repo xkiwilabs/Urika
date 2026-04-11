@@ -214,13 +214,28 @@ export async function createApp(options: AppOptions): Promise<App> {
       let lastModel = "";
 
       // Wire RPC notifications (from long-running tools like run_experiment)
-      // to the chat stream so the user sees progress.
+      // to update the loader + footer + chat stream in real-time.
       const unsubRpc = rpcClient.onNotification((method, params) => {
         if (method === "experiment.progress") {
           const event = String(params.event ?? "");
           const detail = String(params.detail ?? "");
-          const line = detail ? `  ${event}: ${detail}` : `  ${event}`;
-          handlers.addChat(chalk.dim(line));
+
+          // Update loader and footer based on progress event type
+          if (event === "agent") {
+            // Subagent started — update loader with agent name
+            const agentName = detail.split("—")[0]?.trim() || detail;
+            handlers.showLoader(agentName);
+            handlers.updateFooter({ agent: agentName });
+          } else if (event === "turn") {
+            // Turn started — show in footer
+            handlers.updateFooter({ agent: detail });
+          } else if (event === "phase") {
+            // Phase change — update loader
+            handlers.showLoader(detail);
+          } else if (event === "result") {
+            // Result — show in chat
+            handlers.addChat(chalk.dim(`  ${detail}`));
+          }
           handlers.requestRender();
         } else if (method === "experiment.message") {
           const text = String(params.text ?? "");
@@ -241,18 +256,23 @@ export async function createApp(options: AppOptions): Promise<App> {
             streamingMarkdown.setText(streamingText);
             break;
           case "thinking_delta":
-            // Update loader message
+            // When the orchestrator is thinking, let the ThinkingLoader
+            // rotate its own verbs — no explicit update needed
             break;
           case "tool_start":
             // Finalize current streaming block
             streamingMarkdown = null;
             streamingText = "";
-            // Clean up tool name for display
-            const toolLabel = event.name
-              .replace(/_/g, " ")
-              .replace(/^run experiment$/, "experiment");
-            handlers.showLoader(toolLabel);
-            handlers.updateFooter({ agent: event.name });
+            if (event.name === "run_experiment") {
+              // Show experiment ID in footer, loader says "Starting experiment..."
+              const expId = event.args?.experiment_id ?? "experiment";
+              handlers.showLoader("Starting experiment...");
+              handlers.updateFooter({ agent: `exp ${expId}` });
+            } else {
+              const toolLabel = event.name.replace(/_/g, " ");
+              handlers.showLoader(toolLabel);
+              handlers.updateFooter({ agent: toolLabel });
+            }
             break;
           case "tool_end":
             handlers.hideLoader();
