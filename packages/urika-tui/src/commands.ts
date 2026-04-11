@@ -129,9 +129,18 @@ export const commandHandlers: Record<string, CommandHandler> = {
   },
 
   stop: async (_args, ctx) => {
-    // Stop immediately — abort the current agent run
+    // Stop immediately — abort the agent AND kill the Python RPC process
     ctx.orchestrator.abort();
-    return "  Stopped. What would you like to do next?";
+    // Kill the RPC subprocess to stop any long-running Python operation
+    if (ctx.rpc) {
+      const rpcParts = "python -m urika.rpc".split(" ");
+      (ctx.rpc as any).kill?.();
+      // Restart the RPC so subsequent commands work
+      setTimeout(() => {
+        (ctx.rpc as any).restart?.(rpcParts[0], rpcParts.slice(1));
+      }, 500);
+    }
+    return "  Stopped. RPC restarting... What would you like to do next?";
   },
 
   resume: async (args, ctx) => {

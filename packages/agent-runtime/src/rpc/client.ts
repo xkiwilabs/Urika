@@ -94,7 +94,66 @@ export class RpcClient {
     };
   }
 
+  /** Kill the RPC subprocess forcefully. Use when /stop needs to abort a long-running operation. */
+  kill(): void {
+    try {
+      this.process.kill("SIGKILL");
+    } catch {
+      // Already dead
+    }
+    this.readline.close();
+    // Reject all pending calls
+    for (const [, handler] of this.pending) {
+      handler.reject(new RpcError(-32001, "RPC process killed"));
+    }
+    this.pending.clear();
+  }
+
+  /** Restart the RPC subprocess after a kill. */
+  restart(command: string, args: string[]): void {
+    this.process = spawn(command, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    this.readline = createInterface({ input: this.process.stdout! });
+    this.readline.on("line", (line: string) => {
+      if (!line.trim()) return;
+      try {
+        const msg = JSON.parse(line);
+        if (msg.id === undefined && msg.method) {
+          for (const listener of this.notificationListeners) {
+            try { listener(msg.method, msg.params ?? {}); } catch {}
+          }
+          return;
+        }
+        const resp: RpcResponse = msg;
+        const handler = this.pending.get(resp.id);
+        if (!handler) return;
+        this.pending.delete(resp.id);
+        if (resp.error) {
+          handler.reject(new RpcError(resp.error.code, resp.error.message));
+        } else {
+          handler.resolve(resp.result);
+        }
+      } catch {}
+    });
+    this.process.on("error", (err: Error) => {
+      for (const [id, handler] of this.pending) {
+        handler.reject(new RpcError(-32000, `RPC process error: ${err.message}`));
+        this.pending.delete(id);
+      }
+    });
+    this.process.on("exit", (code: number | null) => {
+      for (const [id, handler] of this.pending) {
+        handler.reject(new RpcError(-32001, `RPC process exited with code ${code}`));
+        this.pending.delete(id);
+      }
+    });
+  }
+
   close(): void {
+    try {
+      this.process.kill();
+    } catch {}
     this.process.stdin!.end();
     this.readline.close();
   }
