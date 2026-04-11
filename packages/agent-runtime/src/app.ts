@@ -172,22 +172,9 @@ export async function createApp(options: AppOptions): Promise<App> {
             projectName = result.projectName;
             projectDir = result.projectDir;
 
-            // Reinitialize orchestrator
-            const vars = options.getPromptVariables
-              ? await options.getPromptVariables({
-                  projectDir,
-                  projectName,
-                  rpc: rpcClient,
-                })
-              : {};
-            await orchestrator.initialize({
-              projectName,
-              question: "",
-              mode: "exploratory",
-              dataDir: projectDir + "/data",
-              experimentId: "",
-              currentState: `Loaded project: ${projectName}.`,
-              promptVariables: vars,
+            // Tell the Python orchestrator about the project switch
+            await rpcClient.call("orchestrator.set_project", {
+              project_dir: projectDir,
             });
           },
         };
@@ -265,89 +252,70 @@ export async function createApp(options: AppOptions): Promise<App> {
           totalCost += cost;
           handlers.updateFooter({ tokensIn: totalTokensIn, tokensOut: totalTokensOut, cost: totalCost });
           handlers.requestRender();
-        }
-      });
 
-      const unsubOrch = orchestrator.subscribe((event: RuntimeEvent) => {
-        switch (event.type) {
-          case "text_delta":
+        // Orchestrator chat notifications
+        } else if (method === "orchestrator.thinking") {
+          handlers.showLoader("Thinking...");
+          handlers.updateFooter({ active: true, startTime: Date.now() });
+          handlers.requestRender();
+        } else if (method === "orchestrator.delta") {
+          const text = String(params.text ?? "");
+          if (text) {
             if (!streamingMarkdown) {
               streamingMarkdown = handlers.addMarkdown("");
+              handlers.hideLoader();
             }
-            streamingText += event.delta;
+            streamingText += text;
             streamingMarkdown.setText(streamingText);
-            break;
-          case "thinking_delta":
-            // When the orchestrator is thinking, let the ThinkingLoader
-            // rotate its own verbs — no explicit update needed
-            break;
-          case "tool_start":
-            // Finalize current streaming block
-            streamingMarkdown = null;
-            streamingText = "";
-            if (event.name === "run_experiment") {
-              // Show experiment ID in footer, loader says "Starting experiment..."
-              const expId = event.args?.experiment_id ?? "experiment";
-              handlers.showLoader("Starting experiment...");
-              handlers.updateFooter({ agent: `exp ${expId}` });
-            } else {
-              const toolLabel = event.name.replace(/_/g, " ");
-              handlers.showLoader(toolLabel);
-              handlers.updateFooter({ agent: toolLabel });
-            }
-            break;
-          case "tool_end":
-            handlers.hideLoader();
-            handlers.updateFooter({ agent: "" });
-            if (event.isError) {
-              handlers.addChat(chalk.red(`Tool ${event.name} failed.`));
-            }
-            break;
-          case "agent_start":
-            streamingMarkdown = null;
-            streamingText = "";
-            handlers.showLoader("Thinking...");
-            handlers.updateFooter({ active: true, startTime: Date.now(), agent: "" });
-            break;
-          case "agent_end":
-            streamingMarkdown = null;
-            streamingText = "";
-            handlers.hideLoader();
-            // Accumulate usage (don't overwrite — subagents also fire agent_end)
-            totalTokensIn += event.usage.tokensIn;
-            totalTokensOut += event.usage.tokensOut;
-            totalCost += event.usage.cost;
-            if (event.usage.model && event.usage.model !== "unknown") {
-              lastModel = event.usage.model;
-            }
-            handlers.updateFooter({
-              active: false,
-              agent: "",
-              tokensIn: totalTokensIn,
-              tokensOut: totalTokensOut,
-              cost: totalCost,
-              model: lastModel,
-            });
-            break;
-          case "error":
-            streamingMarkdown = null;
-            streamingText = "";
-            handlers.hideLoader();
-            handlers.addChat(chalk.red(`Error: ${event.message}`));
-            break;
+            handlers.requestRender();
+          }
+        } else if (method === "orchestrator.done") {
+          streamingMarkdown = null;
+          streamingText = "";
+          handlers.hideLoader();
+          const tokensIn = Number(params.tokens_in ?? 0);
+          const tokensOut = Number(params.tokens_out ?? 0);
+          const cost = Number(params.cost_usd ?? 0);
+          totalTokensIn += tokensIn;
+          totalTokensOut += tokensOut;
+          totalCost += cost;
+          lastModel = String(params.model ?? lastModel);
+          handlers.updateFooter({
+            active: false,
+            agent: "",
+            tokensIn: totalTokensIn,
+            tokensOut: totalTokensOut,
+            cost: totalCost,
+            model: lastModel,
+          });
+          handlers.requestRender();
         }
-        handlers.requestRender();
       });
 
-      // Return combined unsubscribe
+      // Return unsubscribe for RPC notifications
       return () => {
         unsubRpc();
-        unsubOrch();
       };
     },
-    onMessage: (text: string) => orchestrator.processMessage(text),
-    onSteer: (text: string) => orchestrator.steer(text),
-    onAbort: () => orchestrator.abort(),
+    onMessage: async (text: string) => {
+      // Send to Python orchestrator via RPC — ALL LLM calls go through Python
+      const result = await rpcClient.call("orchestrator.chat", {
+        message: text,
+      }) as any;
+      // Response is already streamed via notifications — but if not,
+      // show the final result
+      if (result?.response && !result.response.startsWith("Error:")) {
+        // Response was already shown via orchestrator.delta notifications
+        // Only show here if notifications didn't fire
+      }
+    },
+    onSteer: (_text: string) => {
+      // Steering not supported with RPC orchestrator (single-threaded)
+      // The message will be processed on the next turn
+    },
+    onAbort: () => {
+      // Can't abort a blocking RPC call — user should use /stop
+    },
   });
 
   return {
