@@ -190,7 +190,16 @@ class OrchestratorChat:
                 "- /help — see all available commands\n"
                 "\n"
                 "Tell the user about these options when they first connect. "
-                "Also mention they can describe their research question and you can help set things up."
+                "Also mention they can describe their research question and you can help set things up.\n"
+                "\n"
+                "IMPORTANT: You are a conversational agent with Read/Glob/Grep tools for "
+                "reading project state. You CANNOT run experiments directly. When the user "
+                "wants to run an experiment, tell them to use the /run command:\n"
+                "  /run                    — run the next suggested experiment\n"
+                "  /run --experiment exp-035  — run a specific experiment\n"
+                "  /evaluate exp-035       — evaluate an experiment\n"
+                "  /finalize               — finalize the project\n"
+                "You can help them decide WHAT to run, but they execute via slash commands."
             ),
         }
 
@@ -202,7 +211,16 @@ class OrchestratorChat:
                 variables["question"] = config.question or ""
                 variables["mode"] = config.mode or "exploratory"
                 variables["data_dir"] = str(self.project_dir / "data")
-                variables["current_state"] = "Project loaded. Awaiting instructions."
+                variables["current_state"] = (
+                    "Project loaded. Awaiting instructions.\n\n"
+                    "IMPORTANT: You can read project files to answer questions. "
+                    "When the user wants to RUN an experiment, tell them to use:\n"
+                    "  /run --experiment <exp-id>  — run a specific experiment\n"
+                    "  /run                        — run the next suggested experiment\n"
+                    "  /evaluate <exp-id>          — evaluate an experiment\n"
+                    "  /finalize                   — finalize the project\n"
+                    "You help decide WHAT to do. Execution uses slash commands."
+                )
             except Exception:
                 pass
 

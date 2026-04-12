@@ -121,103 +121,98 @@ async def _async_repl_loop(
     so the user can continue typing while they execute. Free text typed
     while an agent is running is queued for injection into the next call.
     """
-    from prompt_toolkit.patch_stdout import patch_stdout
+    while True:
+        try:
+            if session.has_project:
+                prompt_text = f"urika:{session.project_name}> "
+            else:
+                prompt_text = "urika> "
 
-    with patch_stdout():
-        while True:
-            try:
-                if session.has_project:
-                    prompt_text = f"urika:{session.project_name}> "
-                else:
-                    prompt_text = "urika> "
+            _drain_remote_queue(session)
 
-                _drain_remote_queue(session)
+            user_input = (await prompt_session.prompt_async(prompt_text)).strip()
 
-                user_input = (await prompt_session.prompt_async(prompt_text)).strip()
+            if not user_input:
+                continue
 
-                if not user_input:
-                    continue
+            if user_input.startswith("/"):
+                parts = user_input[1:].split(" ", 1)
+                cmd_name = parts[0].lower()
 
-                if user_input.startswith("/"):
-                    parts = user_input[1:].split(" ", 1)
-                    cmd_name = parts[0].lower()
-
-                    if cmd_name in AGENT_COMMANDS:
-                        if session.agent_active:
-                            click.echo(
-                                "  An agent is already running. "
-                                "Use /stop to cancel."
-                            )
-                            continue
-                        # Run agent command in a background thread
-                        def _run_agent(cmd=user_input):
-                            try:
-                                _handle_command(session, cmd)
-                            finally:
-                                session.set_agent_inactive()
-
-                        session.set_agent_active(cmd_name)
-                        thread = threading.Thread(
-                            target=_run_agent, daemon=True
-                        )
-                        thread.start()
-                    elif cmd_name in INTERACTIVE_COMMANDS:
-                        # Interactive commands need their own thread
-                        # (they use prompt_toolkit/asyncio internally)
-                        def _run_interactive(cmd=user_input):
-                            _handle_command(session, cmd)
-
-                        thread = threading.Thread(
-                            target=_run_interactive, daemon=True
-                        )
-                        thread.start()
-                        thread.join()  # wait for it — user expects to see the result
-                    else:
-                        # Instant commands run on the main thread
-                        _handle_command(session, user_input)
-                else:
-                    # Free text
+                if cmd_name in AGENT_COMMANDS:
                     if session.agent_active:
-                        # Agent is running — queue input for injection
-                        session.queue_input(user_input)
                         click.echo(
-                            f"  > {user_input} "
-                            f"(queued for {session.active_command})"
+                            "  An agent is already running. "
+                            "Use /stop to cancel."
                         )
-                    else:
-                        # Run chat in background thread so prompt stays active
-                        # and the bottom toolbar keeps showing
-                        def _run_chat(msg=user_input):
-                            try:
-                                _handle_free_text(session, msg)
-                            finally:
-                                session.set_agent_inactive()
+                        continue
+                    # Run agent command in a background thread
+                    def _run_agent(cmd=user_input):
+                        try:
+                            _handle_command(session, cmd)
+                        finally:
+                            session.set_agent_inactive()
 
-                        session.set_agent_active("chat")
-                        thread = threading.Thread(
-                            target=_run_chat, daemon=True
-                        )
-                        thread.start()
+                    session.set_agent_active(cmd_name)
+                    thread = threading.Thread(
+                        target=_run_agent, daemon=True
+                    )
+                    thread.start()
+                elif cmd_name in INTERACTIVE_COMMANDS:
+                    # Interactive commands need their own thread
+                    def _run_interactive(cmd=user_input):
+                        _handle_command(session, cmd)
 
-                _drain_remote_queue(session)
+                    thread = threading.Thread(
+                        target=_run_interactive, daemon=True
+                    )
+                    thread.start()
+                    thread.join()
+                else:
+                    # Instant commands run on the main thread
+                    _handle_command(session, user_input)
+            else:
+                # Free text
+                if session.agent_active:
+                    # Agent is running — queue input for injection
+                    session.queue_input(user_input)
+                    click.echo(
+                        f"  > {user_input} "
+                        f"(queued for {session.active_command})"
+                    )
+                else:
+                    # Run chat in background thread so prompt stays active
+                    def _run_chat(msg=user_input):
+                        try:
+                            _handle_free_text(session, msg)
+                        finally:
+                            session.set_agent_inactive()
 
-            except (EOFError, KeyboardInterrupt):
-                if session.notification_bus is not None:
-                    try:
-                        session.notification_bus.stop()
-                    except Exception:
-                        pass
-                session.save_usage()
-                click.echo("\n  Goodbye.")
-                break
-            except SystemExit:
-                if session.notification_bus is not None:
-                    try:
-                        session.notification_bus.stop()
-                    except Exception:
-                        pass
-                session.save_usage()
-                break
+                    session.set_agent_active("chat")
+                    thread = threading.Thread(
+                        target=_run_chat, daemon=True
+                    )
+                    thread.start()
+
+            _drain_remote_queue(session)
+
+        except (EOFError, KeyboardInterrupt):
+            if session.notification_bus is not None:
+                try:
+                    session.notification_bus.stop()
+                except Exception:
+                    pass
+            session.save_usage()
+            click.echo("\n  Goodbye.")
+            break
+        except SystemExit:
+            if session.notification_bus is not None:
+                try:
+                    session.notification_bus.stop()
+                except Exception:
+                    pass
+            session.save_usage()
+            break
 
 
 def run_repl() -> None:
