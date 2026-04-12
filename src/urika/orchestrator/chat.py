@@ -69,11 +69,15 @@ class OrchestratorChat:
         user_message: str,
         *,
         notify: Callable[[str, dict[str, Any]], None] | None = None,
+        on_output: Callable[[str], None] | None = None,
     ) -> dict[str, Any]:
         """Send a message and get a response.
 
         Returns a dict with: response (text), success, tokens_in, tokens_out,
-        cost_usd, model. The response is also streamed via `notify` callbacks.
+        cost_usd, model.
+
+        on_output: optional callback for streaming verbose output to the terminal.
+        notify: optional callback for RPC notifications (TUI path).
         """
         if self._runner is None:
             self._runner = get_runner()
@@ -93,8 +97,6 @@ class OrchestratorChat:
 
         def on_message(msg: Any) -> None:
             """Stream orchestrator messages back."""
-            if not notify:
-                return
             try:
                 text = ""
                 if hasattr(msg, "content"):
@@ -106,7 +108,10 @@ class OrchestratorChat:
                             if hasattr(block, "text"):
                                 text += block.text
                 if text:
-                    notify("orchestrator.delta", {"text": text})
+                    if notify:
+                        notify("orchestrator.delta", {"text": text})
+                    if on_output:
+                        on_output(text)
             except Exception:
                 pass
 
@@ -207,7 +212,7 @@ class OrchestratorChat:
                 allowed_bash_prefixes=[],
                 blocked_bash_patterns=[],
             ),
-            max_turns=10,
+            max_turns=25,
             cwd=self.project_dir,
             model=model,
             env=env,

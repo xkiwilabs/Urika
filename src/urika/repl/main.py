@@ -480,7 +480,14 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
     try:
         # Already running in a background thread (from _async_repl_loop)
         # so we can use asyncio.run() safely here
-        result = asyncio.run(orchestrator.chat(text))
+        def _stream_output(text: str) -> None:
+            """Print agent output as it streams — verbose CoT display."""
+            # Show each message as it arrives (tool use, thinking, etc.)
+            for line in text.strip().split("\n"):
+                if line.strip():
+                    click.echo(f"  {_C.DIM}{line}{_C.RESET}")
+
+        result = asyncio.run(orchestrator.chat(text, on_output=_stream_output))
         response = result.get("response", "")
 
         # Update session usage stats (shown in toolbar)
