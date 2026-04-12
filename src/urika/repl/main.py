@@ -180,7 +180,7 @@ async def _async_repl_loop(
                     if session.agent_active:
                         # Agent is running — queue input for injection
                         session.queue_input(user_input)
-                        print(
+                        click.echo(
                             f"  > {user_input} "
                             f"(queued for {session.active_command})"
                         )
@@ -491,9 +491,9 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         if result.get("model"):
             session.model = result["model"]
 
-        print()
-        print(format_agent_output(response))
-        print()
+        click.echo()
+        click.echo(format_agent_output(response))
+        click.echo()
 
         # Update session conversation for context
         session.add_message("user", text)
