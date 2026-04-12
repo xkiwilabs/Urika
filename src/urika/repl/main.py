@@ -254,9 +254,17 @@ def run_repl() -> None:
                 _privacy_cache[key] = "open"
         return _privacy_cache[key]
 
-    # Spinner frames for the toolbar — rotates when agent is active
+    # Spinner for the toolbar — rotates when agent is active
     _spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    _spinner_idx = [0]  # mutable in closure
+    _spinner_idx = [0]
+
+    # Activity verbs that rotate during agent work
+    _activity_verbs = [
+        "Thinking", "Reasoning", "Analyzing", "Processing",
+        "Exploring", "Evaluating", "Considering", "Reviewing",
+    ]
+    _verb_idx = [0]
+    _last_verb_time = [0.0]
 
     def _bottom_toolbar():
         try:
@@ -264,45 +272,70 @@ def run_repl() -> None:
         except OSError:
             cols = 80
 
-        parts = []
-        parts.append("\033[2m" + "\u2500" * cols + "\033[0m\n")
+        D = "\033[2m"   # dim
+        R = "\033[0m"   # reset
+        sep = f"{D} \u2502 {R}"  # │ separator
 
-        # Show spinner + active agent when something is running
+        lines = []
+
+        # ── Line 1: Activity line ──
+        line1_parts = [f"{D}" + "\u2500" * cols + f"{R}\n"]
+
         if session.agent_active:
+            # Spinner
             frame = _spinner_frames[_spinner_idx[0] % len(_spinner_frames)]
             _spinner_idx[0] += 1
+
+            # Rotate verb every 3 seconds
+            now = time.monotonic()
+            if now - _last_verb_time[0] > 3.0:
+                _verb_idx[0] = (_verb_idx[0] + 1) % len(_activity_verbs)
+                _last_verb_time[0] = now
+            verb = _activity_verbs[_verb_idx[0]]
+
             agent_name = session.active_command or "agent"
-            parts.append(f" \033[36m{frame}\033[0m")
-            parts.append(f" \033[33;1m{agent_name}\033[0m")
-            if session.has_project:
-                parts.append(f" \033[2m\u00b7 {session.project_name}\033[0m")
+            line1_parts.append(f" \033[36m{frame}\033[0m")
+            line1_parts.append(f" \033[33;1m{agent_name}\033[0m")
+            line1_parts.append(f" {D}\u2014 {verb}\u2026{R}")
+
+            if session.agent_name:
+                line1_parts.append(f"{sep}\033[33m{session.agent_name}\033[0m")
+            if hasattr(session, "experiment_id") and session.experiment_id:
+                line1_parts.append(f"{sep}{D}{session.experiment_id}{R}")
         else:
-            parts.append(" \033[34;1murika\033[0m")
-            if session.has_project:
-                parts.append(f" \033[2m\u00b7 {session.project_name}\033[0m")
-                privacy = _get_privacy(session.project_path)
-                parts.append(f" \033[33m\u00b7 {privacy}\033[0m")
+            line1_parts.append(f" {D}ready{R}")
+
+        lines.append("".join(line1_parts))
+
+        # ── Line 2: Status line (always shown) ──
+        line2_parts = []
+        line2_parts.append(" \033[34;1murika\033[0m")
+
+        if session.has_project:
+            line2_parts.append(f"{sep}\033[36m{session.project_name}\033[0m")
+            privacy = _get_privacy(session.project_path)
+            line2_parts.append(f"{sep}\033[33m{privacy}\033[0m")
 
         if session.model:
             from urika.cli_display import format_model_source
-
             model_display = format_model_source(
-                session.model,
-                project_dir=session.project_path,
+                session.model, project_dir=session.project_path,
             )
-            parts.append(f" \033[36m\u00b7 {model_display}\033[0m")
+            line2_parts.append(f"{sep}\033[36m{model_display}\033[0m")
+
         elapsed = _format_duration(session.elapsed_ms)
-        parts.append(f" \033[35m\u00b7 {elapsed}\033[0m")
+        line2_parts.append(f"{sep}\033[35m{elapsed}\033[0m")
+
         if session.agent_calls > 0:
             tokens = session.total_tokens_in + session.total_tokens_out
             tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
-            parts.append(
-                f" \033[2m\u00b7 {tok_str} tokens"
-                f" \u00b7 {session.agent_calls} calls\033[0m"
-            )
+            line2_parts.append(f"{sep}{D}{tok_str} tokens \u00b7 {session.agent_calls} calls{R}")
             if session.total_cost_usd > 0:
-                parts.append(f" \033[32m\u00b7 ~${session.total_cost_usd:.2f}\033[0m")
-        return ANSI("".join(parts))
+                line2_parts.append(f"{sep}\033[32m~${session.total_cost_usd:.2f}\033[0m")
+
+        lines.append("".join(line2_parts))
+
+        return ANSI("\n".join(lines))
 
     custom_style = Style.from_dict({"bottom-toolbar": "noreverse"})
 
