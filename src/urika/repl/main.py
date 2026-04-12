@@ -377,21 +377,18 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
 
     orchestrator = _get_orchestrator(session)
 
-    from urika.cli_display import Spinner
-
-    session_info = {
-        "project": session.project_name or "",
-        "model": session.model or "",
-        "cost": session.total_cost_usd,
-    }
     try:
         # Run in a separate thread since we're inside an async event loop
-        # and orchestrator.chat() uses asyncio.run() internally
         import concurrent.futures
+
+        session.set_agent_active("chat")
+        click.echo(f"  {_C.DIM}Thinking...{_C.RESET}")
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            with Spinner("Thinking", session_info=session_info):
-                future = pool.submit(lambda: asyncio.run(orchestrator.chat(text)))
-                response = future.result()
+            future = pool.submit(lambda: asyncio.run(orchestrator.chat(text)))
+            response = future.result()
+
+        session.set_agent_inactive()
         click.echo()
         click.echo(format_agent_output(response))
         click.echo()
