@@ -42,6 +42,9 @@ class ReplSession:
     _is_remote_command: bool = False
     _remote_respond: object = None  # Callable[[str], None] | None
 
+    # Orchestrator session — for persistence
+    _orch_session: object = None  # OrchestratorSession | None
+
     # Usage tracking
     session_start: float = field(default_factory=time.monotonic)
     session_start_iso: str = field(

@@ -397,6 +397,25 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         # Update session conversation for context
         session.add_message("user", text)
         session.add_message("assistant", response[:500])
+
+        # Save session
+        if session.project_path:
+            try:
+                from urika.core.orchestrator_sessions import (
+                    save_session,
+                    create_new_session,
+                )
+
+                # Get or create session data
+                if not hasattr(session, "_orch_session") or session._orch_session is None:
+                    session._orch_session = create_new_session()
+                orch_session = session._orch_session
+                orch_session.recent_messages = orchestrator.get_messages()
+                if not orch_session.preview:
+                    orch_session.preview = text[:80]
+                save_session(session.project_path, orch_session)
+            except Exception:
+                pass  # Session persistence is best-effort
     except Exception as exc:
         spinner.stop()
         print_error(f"Error: {exc}")
