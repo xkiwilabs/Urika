@@ -439,7 +439,7 @@ def cmd_tools(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-@command("stop", description="Stop the running agent/experiment")
+@command("stop", requires_project=True, description="Stop the running agent/experiment")
 def cmd_stop(session: ReplSession, args: str) -> None:
     """Stop the currently running agent or experiment immediately."""
     if not session.agent_active:
@@ -457,7 +457,7 @@ def cmd_stop(session: ReplSession, args: str) -> None:
     click.echo(f"  Stopped {active}.")
 
 
-@command("pause", description="Pause experiment after current subagent")
+@command("pause", requires_project=True, description="Pause experiment after current subagent")
 def cmd_pause(session: ReplSession, args: str) -> None:
     """Pause the running experiment after the current subagent finishes."""
     if not session.agent_active:

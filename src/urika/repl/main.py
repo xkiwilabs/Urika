@@ -103,6 +103,12 @@ AGENT_COMMANDS = {
     "present", "finalize", "build-tool", "resume",
 }
 
+# Commands that use interactive prompts and need their own thread
+# (they call asyncio.run or prompt_toolkit internally)
+INTERACTIVE_COMMANDS = {
+    "config", "setup", "update", "new",
+}
+
 
 async def _async_repl_loop(
     session: ReplSession,
@@ -155,6 +161,17 @@ async def _async_repl_loop(
                             target=_run_agent, daemon=True
                         )
                         thread.start()
+                    elif cmd_name in INTERACTIVE_COMMANDS:
+                        # Interactive commands need their own thread
+                        # (they use prompt_toolkit/asyncio internally)
+                        def _run_interactive(cmd=user_input):
+                            _handle_command(session, cmd)
+
+                        thread = threading.Thread(
+                            target=_run_interactive, daemon=True
+                        )
+                        thread.start()
+                        thread.join()  # wait for it — user expects to see the result
                     else:
                         # Instant commands run on the main thread
                         _handle_command(session, user_input)
@@ -206,6 +223,15 @@ async def _async_repl_loop(
 def run_repl() -> None:
     """Main REPL entry point."""
     session = ReplSession()
+
+    # Set default model from SDK so the footer shows it from startup
+    try:
+        from urika.agents.runner import get_runner
+        runner = get_runner()
+        session.model = getattr(runner, "default_model", "") or "claude-agent-sdk"
+    except Exception:
+        session.model = "claude-agent-sdk"
+
     history = InMemoryHistory()
     completer = UrikaCompleter(session)
 
@@ -326,12 +352,13 @@ def run_repl() -> None:
         elapsed = _format_duration(session.elapsed_ms)
         line2_parts.append(f"{sep}\033[35m{elapsed}\033[0m")
 
-        if session.agent_calls > 0:
-            tokens = session.total_tokens_in + session.total_tokens_out
-            tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
-            line2_parts.append(f"{sep}{D}{tok_str} tokens \u00b7 {session.agent_calls} calls{R}")
-            if session.total_cost_usd > 0:
-                line2_parts.append(f"{sep}\033[32m~${session.total_cost_usd:.2f}\033[0m")
+        tokens = session.total_tokens_in + session.total_tokens_out
+        tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
+        line2_parts.append(f"{sep}{D}{tok_str} tokens \u00b7 {session.agent_calls} calls{R}")
+        if session.total_cost_usd > 0:
+            line2_parts.append(f"{sep}\033[32m~${session.total_cost_usd:.2f}\033[0m")
+        else:
+            line2_parts.append(f"{sep}{D}$0.00{R}")
 
         lines.append("".join(line2_parts))
 
