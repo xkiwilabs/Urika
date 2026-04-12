@@ -254,6 +254,10 @@ def run_repl() -> None:
                 _privacy_cache[key] = "open"
         return _privacy_cache[key]
 
+    # Spinner frames for the toolbar — rotates when agent is active
+    _spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    _spinner_idx = [0]  # mutable in closure
+
     def _bottom_toolbar():
         try:
             cols = os.get_terminal_size().columns
@@ -262,11 +266,23 @@ def run_repl() -> None:
 
         parts = []
         parts.append("\033[2m" + "\u2500" * cols + "\033[0m\n")
-        parts.append(" \033[34;1murika\033[0m")
-        if session.has_project:
-            parts.append(f" \033[2m\u00b7 {session.project_name}\033[0m")
-            privacy = _get_privacy(session.project_path)
-            parts.append(f" \033[33m\u00b7 {privacy}\033[0m")
+
+        # Show spinner + active agent when something is running
+        if session.agent_active:
+            frame = _spinner_frames[_spinner_idx[0] % len(_spinner_frames)]
+            _spinner_idx[0] += 1
+            agent_name = session.active_command or "agent"
+            parts.append(f" \033[36m{frame}\033[0m")
+            parts.append(f" \033[33;1m{agent_name}\033[0m")
+            if session.has_project:
+                parts.append(f" \033[2m\u00b7 {session.project_name}\033[0m")
+        else:
+            parts.append(" \033[34;1murika\033[0m")
+            if session.has_project:
+                parts.append(f" \033[2m\u00b7 {session.project_name}\033[0m")
+                privacy = _get_privacy(session.project_path)
+                parts.append(f" \033[33m\u00b7 {privacy}\033[0m")
+
         if session.model:
             from urika.cli_display import format_model_source
 
@@ -276,7 +292,7 @@ def run_repl() -> None:
             )
             parts.append(f" \033[36m\u00b7 {model_display}\033[0m")
         elapsed = _format_duration(session.elapsed_ms)
-        parts.append(f" \033[31m\u00b7 {elapsed}\033[0m")
+        parts.append(f" \033[35m\u00b7 {elapsed}\033[0m")
         if session.agent_calls > 0:
             tokens = session.total_tokens_in + session.total_tokens_out
             tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
@@ -297,6 +313,19 @@ def run_repl() -> None:
         bottom_toolbar=_bottom_toolbar,
         style=custom_style,
     )
+
+    # Background thread to refresh the toolbar spinner when agent is active
+    def _toolbar_refresh():
+        while True:
+            time.sleep(0.2)  # 5 Hz refresh
+            if session.agent_active and prompt_session.app:
+                try:
+                    prompt_session.app.invalidate()
+                except Exception:
+                    pass
+
+    _refresh_thread = threading.Thread(target=_toolbar_refresh, daemon=True)
+    _refresh_thread.start()
 
     def _drain_remote_queue(session: ReplSession) -> None:
         """Execute any queued remote commands from Telegram/Slack."""
