@@ -168,6 +168,10 @@ class ReplSession:
             self.agent_active = False
             self.active_command = ""
 
+    def set_agent_inactive(self) -> None:
+        """Mark the agent command as inactive (alias for set_agent_idle)."""
+        self.set_agent_idle()
+
     def update_agent_activity(
         self,
         activity: str = "",

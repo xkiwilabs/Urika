@@ -96,12 +96,23 @@ class UrikaCompleter(Completer):
                             yield Completion(eid, start_position=-len(arg))
 
 
+AGENT_COMMANDS = {
+    "run", "evaluate", "plan", "advisor", "report",
+    "present", "finalize", "build-tool", "resume",
+}
+
+
 async def _async_repl_loop(
     session: ReplSession,
     prompt_session: PromptSession,
     _drain_remote_queue,
 ) -> None:
-    """Async REPL main loop — allows background threads to print."""
+    """Async REPL main loop — allows background threads to print.
+
+    Agent commands (those in AGENT_COMMANDS) run in background threads
+    so the user can continue typing while they execute. Free text typed
+    while an agent is running is queued for injection into the next call.
+    """
     from prompt_toolkit.patch_stdout import patch_stdout
 
     with patch_stdout():
@@ -120,9 +131,43 @@ async def _async_repl_loop(
                     continue
 
                 if user_input.startswith("/"):
-                    _handle_command(session, user_input)
+                    parts = user_input[1:].split(" ", 1)
+                    cmd_name = parts[0].lower()
+
+                    if cmd_name in AGENT_COMMANDS:
+                        if session.agent_active:
+                            click.echo(
+                                "  An agent is already running. "
+                                "Use /stop to cancel."
+                            )
+                            continue
+                        # Run agent command in a background thread
+                        def _run_agent(cmd=user_input):
+                            try:
+                                _handle_command(session, cmd)
+                            finally:
+                                session.set_agent_inactive()
+
+                        session.set_agent_active(cmd_name)
+                        thread = threading.Thread(
+                            target=_run_agent, daemon=True
+                        )
+                        thread.start()
+                    else:
+                        # Instant commands run on the main thread
+                        _handle_command(session, user_input)
                 else:
-                    _handle_free_text(session, user_input)
+                    # Free text
+                    if session.agent_active:
+                        # Agent is running — queue input for injection
+                        session.queue_input(user_input)
+                        click.echo(
+                            f"  {_C.DIM}> {user_input} "
+                            f"(queued for {session.active_command})"
+                            f"{_C.RESET}"
+                        )
+                    else:
+                        _handle_free_text(session, user_input)
 
                 _drain_remote_queue(session)
 
