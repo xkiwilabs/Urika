@@ -384,12 +384,9 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         "model": session.model or "",
         "cost": session.total_cost_usd,
     }
-    spinner = Spinner("Thinking", session_info=session_info)
-    spinner.start()
-
     try:
-        response = asyncio.run(orchestrator.chat(text))
-        spinner.stop()
+        with Spinner("Thinking", session_info=session_info):
+            response = asyncio.run(orchestrator.chat(text))
         click.echo()
         click.echo(format_agent_output(response))
         click.echo()
@@ -417,7 +414,6 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
             except Exception:
                 pass  # Session persistence is best-effort
     except Exception as exc:
-        spinner.stop()
         print_error(f"Error: {exc}")
 
 
