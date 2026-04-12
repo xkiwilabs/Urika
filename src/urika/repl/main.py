@@ -382,16 +382,16 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         import concurrent.futures
 
         session.set_agent_active("chat")
-        click.echo(f"  {_C.DIM}Thinking...{_C.RESET}")
+        print("  Thinking...")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(lambda: asyncio.run(orchestrator.chat(text)))
             response = future.result()
 
         session.set_agent_inactive()
-        click.echo()
-        click.echo(format_agent_output(response))
-        click.echo()
+        print()
+        print(format_agent_output(response))
+        print()
 
         # Update session conversation for context
         session.add_message("user", text)
