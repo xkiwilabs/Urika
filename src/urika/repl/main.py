@@ -163,13 +163,24 @@ async def _async_repl_loop(
                     if session.agent_active:
                         # Agent is running — queue input for injection
                         session.queue_input(user_input)
-                        click.echo(
-                            f"  {_C.DIM}> {user_input} "
+                        print(
+                            f"  > {user_input} "
                             f"(queued for {session.active_command})"
-                            f"{_C.RESET}"
                         )
                     else:
-                        _handle_free_text(session, user_input)
+                        # Run chat in background thread so prompt stays active
+                        # and the bottom toolbar keeps showing
+                        def _run_chat(msg=user_input):
+                            try:
+                                _handle_free_text(session, msg)
+                            finally:
+                                session.set_agent_inactive()
+
+                        session.set_agent_active("chat")
+                        thread = threading.Thread(
+                            target=_run_chat, daemon=True
+                        )
+                        thread.start()
 
                 _drain_remote_queue(session)
 
@@ -378,17 +389,10 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
     orchestrator = _get_orchestrator(session)
 
     try:
-        # Run in a separate thread since we're inside an async event loop
-        import concurrent.futures
-
-        session.set_agent_active("chat")
+        # Already running in a background thread (from _async_repl_loop)
+        # so we can use asyncio.run() safely here
         print("  Thinking...")
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(lambda: asyncio.run(orchestrator.chat(text)))
-            response = future.result()
-
-        session.set_agent_inactive()
+        response = asyncio.run(orchestrator.chat(text))
         print()
         print(format_agent_output(response))
         print()
