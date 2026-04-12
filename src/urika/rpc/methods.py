@@ -380,10 +380,10 @@ def _orchestrator_chat(
     orch = get_orchestrator()
     message = params["message"]
 
-    response = asyncio.run(orch.chat(message, notify=notify))
+    result = asyncio.run(orch.chat(message, notify=notify))
 
     return {
-        "response": response,
+        **result,
         "message_count": len(orch.get_messages()),
     }
 

@@ -69,11 +69,11 @@ class OrchestratorChat:
         user_message: str,
         *,
         notify: Callable[[str, dict[str, Any]], None] | None = None,
-    ) -> str:
+    ) -> dict[str, Any]:
         """Send a message and get a response.
 
-        The orchestrator's response is streamed via `notify` callbacks
-        and also returned as the full text.
+        Returns a dict with: response (text), success, tokens_in, tokens_out,
+        cost_usd, model. The response is also streamed via `notify` callbacks.
         """
         if self._runner is None:
             self._runner = get_runner()
@@ -132,7 +132,14 @@ class OrchestratorChat:
             except Exception:
                 pass
 
-        return result.text_output if result.success else (result.error or "Agent failed")
+        return {
+            "response": result.text_output if result.success else (result.error or "Agent failed"),
+            "success": result.success,
+            "tokens_in": result.tokens_in,
+            "tokens_out": result.tokens_out,
+            "cost_usd": result.cost_usd or 0,
+            "model": result.model,
+        }
 
     def _build_config(self) -> AgentConfig:
         """Build the orchestrator's AgentConfig."""

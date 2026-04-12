@@ -420,8 +420,17 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
     try:
         # Already running in a background thread (from _async_repl_loop)
         # so we can use asyncio.run() safely here
-        print("  Thinking...")
-        response = asyncio.run(orchestrator.chat(text))
+        result = asyncio.run(orchestrator.chat(text))
+        response = result.get("response", "")
+
+        # Update session usage stats (shown in toolbar)
+        session.total_tokens_in += result.get("tokens_in", 0)
+        session.total_tokens_out += result.get("tokens_out", 0)
+        session.total_cost_usd += result.get("cost_usd", 0)
+        session.agent_calls += 1
+        if result.get("model"):
+            session.model = result["model"]
+
         print()
         print(format_agent_output(response))
         print()
