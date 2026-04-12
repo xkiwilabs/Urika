@@ -96,6 +96,55 @@ class UrikaCompleter(Completer):
                             yield Completion(eid, start_position=-len(arg))
 
 
+async def _async_repl_loop(
+    session: ReplSession,
+    prompt_session: PromptSession,
+    _drain_remote_queue,
+) -> None:
+    """Async REPL main loop — allows background threads to print."""
+    from prompt_toolkit.patch_stdout import patch_stdout
+
+    with patch_stdout():
+        while True:
+            try:
+                if session.has_project:
+                    prompt_text = f"urika:{session.project_name}> "
+                else:
+                    prompt_text = "urika> "
+
+                _drain_remote_queue(session)
+
+                user_input = (await prompt_session.prompt_async(prompt_text)).strip()
+
+                if not user_input:
+                    continue
+
+                if user_input.startswith("/"):
+                    _handle_command(session, user_input)
+                else:
+                    _handle_free_text(session, user_input)
+
+                _drain_remote_queue(session)
+
+            except (EOFError, KeyboardInterrupt):
+                if session.notification_bus is not None:
+                    try:
+                        session.notification_bus.stop()
+                    except Exception:
+                        pass
+                session.save_usage()
+                click.echo("\n  Goodbye.")
+                break
+            except SystemExit:
+                if session.notification_bus is not None:
+                    try:
+                        session.notification_bus.stop()
+                    except Exception:
+                        pass
+                session.save_usage()
+                break
+
+
 def run_repl() -> None:
     """Main REPL entry point."""
     session = ReplSession()
@@ -205,45 +254,12 @@ def run_repl() -> None:
     # Start background thread to drain remote commands while agent is idle
     _start_remote_drain_thread(session)
 
-    # ── Main loop ────────────────────────────────────────
-    while True:
-        try:
-            if session.has_project:
-                prompt_text = f"urika:{session.project_name}> "
-            else:
-                prompt_text = "urika> "
-
-            _drain_remote_queue(session)
-
-            user_input = prompt_session.prompt(prompt_text).strip()
-
-            if not user_input:
-                continue
-
-            if user_input.startswith("/"):
-                _handle_command(session, user_input)
-            else:
-                _handle_free_text(session, user_input)
-
-            _drain_remote_queue(session)
-
-        except (EOFError, KeyboardInterrupt):
-            if session.notification_bus is not None:
-                try:
-                    session.notification_bus.stop()
-                except Exception:
-                    pass
-            session.save_usage()
-            click.echo("\n  Goodbye.")
-            break
-        except SystemExit:
-            if session.notification_bus is not None:
-                try:
-                    session.notification_bus.stop()
-                except Exception:
-                    pass
-            session.save_usage()
-            break
+    # ── Main loop (async for concurrent input/output) ────
+    try:
+        asyncio.run(_async_repl_loop(session, prompt_session, _drain_remote_queue))
+    except (EOFError, KeyboardInterrupt):
+        session.save_usage()
+        click.echo("\n  Goodbye.")
 
 
 def _handle_command(session: ReplSession, text: str) -> None:
