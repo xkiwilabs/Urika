@@ -385,8 +385,13 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         "cost": session.total_cost_usd,
     }
     try:
-        with Spinner("Thinking", session_info=session_info):
-            response = asyncio.run(orchestrator.chat(text))
+        # Run in a separate thread since we're inside an async event loop
+        # and orchestrator.chat() uses asyncio.run() internally
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            with Spinner("Thinking", session_info=session_info):
+                future = pool.submit(lambda: asyncio.run(orchestrator.chat(text)))
+                response = future.result()
         click.echo()
         click.echo(format_agent_output(response))
         click.echo()
