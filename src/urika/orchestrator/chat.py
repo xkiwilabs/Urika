@@ -150,7 +150,18 @@ class OrchestratorChat:
             "mode": "exploratory",
             "data_dir": "",
             "experiment_id": "",
-            "current_state": "No project loaded.",
+            "current_state": (
+                "No project loaded. The user can:\n"
+                "- /project <name> — load an existing project\n"
+                "- /list — see all available projects\n"
+                "- /new <name> -q \"research question\" --data <path> — create a new project\n"
+                "- /config — view or change global settings (privacy mode, model, endpoints)\n"
+                "- /config --show — show current configuration\n"
+                "- /help — see all available commands\n"
+                "\n"
+                "Tell the user about these options when they first connect. "
+                "Also mention they can describe their research question and you can help set things up."
+            ),
         }
 
         if self.project_dir and self.project_dir.exists():
