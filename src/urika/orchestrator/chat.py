@@ -96,22 +96,47 @@ class OrchestratorChat:
                 pass
 
         def on_message(msg: Any) -> None:
-            """Stream orchestrator messages back."""
+            """Stream orchestrator messages in real-time — tool use + text."""
             try:
-                text = ""
-                if hasattr(msg, "content"):
-                    content = msg.content
-                    if isinstance(content, str):
-                        text = content
-                    elif isinstance(content, list):
-                        for block in content:
-                            if hasattr(block, "text"):
-                                text += block.text
-                if text:
+                if not hasattr(msg, "content"):
+                    return
+
+                content = msg.content
+                if isinstance(content, str):
                     if notify:
-                        notify("orchestrator.delta", {"text": text})
+                        notify("orchestrator.delta", {"text": content})
                     if on_output:
-                        on_output(text)
+                        on_output("text", content)
+                    return
+
+                if not isinstance(content, list):
+                    return
+
+                for block in content:
+                    # Tool use — show what the agent is doing
+                    tool_name = getattr(block, "name", None)
+                    if tool_name:
+                        inp = getattr(block, "input", {}) or {}
+                        detail = ""
+                        if isinstance(inp, dict):
+                            detail = (
+                                inp.get("command", "")
+                                or inp.get("file_path", "")
+                                or inp.get("pattern", "")
+                                or inp.get("content", "")[:80]
+                            )
+                        if on_output:
+                            on_output("tool", f"{tool_name}: {detail}")
+                        if notify:
+                            notify("orchestrator.tool", {"tool": tool_name, "detail": detail})
+
+                    # Text content
+                    text = getattr(block, "text", None)
+                    if text:
+                        if on_output:
+                            on_output("text", text)
+                        if notify:
+                            notify("orchestrator.delta", {"text": text})
             except Exception:
                 pass
 

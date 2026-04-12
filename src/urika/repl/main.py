@@ -480,12 +480,16 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
     try:
         # Already running in a background thread (from _async_repl_loop)
         # so we can use asyncio.run() safely here
-        def _stream_output(text: str) -> None:
-            """Print agent output as it streams — verbose CoT display."""
-            # Show each message as it arrives (tool use, thinking, etc.)
-            for line in text.strip().split("\n"):
-                if line.strip():
-                    click.echo(f"  {_C.DIM}{line}{_C.RESET}")
+        from urika.cli_display import print_tool_use
+
+        def _stream_output(kind: str, content: str) -> None:
+            """Print agent activity as it streams — same style as CLI agents."""
+            if kind == "tool":
+                # Show tool use: Read, Bash, Glob, Grep — real-time
+                parts = content.split(": ", 1)
+                tool_name = parts[0]
+                detail = parts[1] if len(parts) > 1 else ""
+                print_tool_use(tool_name, detail)
 
         result = asyncio.run(orchestrator.chat(text, on_output=_stream_output))
         response = result.get("response", "")
