@@ -138,6 +138,12 @@ def cmd_project(session: ReplSession, args: str) -> None:
 
     session.load_project(path, name)
 
+    # Sync chat orchestrator to new project (if active)
+    from urika.repl.main import _orchestrator
+
+    if _orchestrator is not None:
+        _orchestrator.set_project(path)
+
     # Start notification bus for this project
     try:
         from urika.notifications import build_bus

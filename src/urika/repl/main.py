@@ -8,11 +8,11 @@ the input loop during execution (Phase B will add async input).
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import threading
 import time
+from typing import TYPE_CHECKING
 
 import click
 from prompt_toolkit import PromptSession
@@ -25,7 +25,6 @@ from urika.cli_display import (
     _C,
     _format_duration,
     format_agent_output,
-    print_agent,
     print_error,
     print_header,
 )
@@ -46,6 +45,9 @@ from urika.repl.commands import (
     get_project_names,
 )
 from urika.repl.session import ReplSession
+
+if TYPE_CHECKING:
+    from urika.orchestrator.chat import OrchestratorChat
 
 logger = logging.getLogger(__name__)
 
@@ -349,12 +351,23 @@ def _handle_command(session: ReplSession, text: str) -> None:
         print_error(f"Error: {exc}")
 
 
-def _handle_free_text(session: ReplSession, text: str) -> None:
-    """Send free text to the advisor agent."""
-    if not session.has_project:
-        click.echo("  Load a project first: /project <name>")
-        return
+_orchestrator: "OrchestratorChat | None" = None
 
+
+def _get_orchestrator(session: ReplSession) -> "OrchestratorChat":
+    """Get or create the chat orchestrator, synced to current project."""
+    global _orchestrator
+    if _orchestrator is None:
+        from urika.orchestrator.chat import OrchestratorChat
+
+        _orchestrator = OrchestratorChat(project_dir=session.project_path)
+    elif session.project_path and _orchestrator.project_dir != session.project_path:
+        _orchestrator.set_project(session.project_path)
+    return _orchestrator
+
+
+def _handle_free_text(session: ReplSession, text: str) -> None:
+    """Send free text to the chat orchestrator."""
     if not session._private_endpoint_ok:
         click.echo(
             "  \u2717 Agent commands disabled \u2014 local model unreachable "
@@ -362,151 +375,30 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         )
         return
 
+    orchestrator = _get_orchestrator(session)
+
+    from urika.cli_display import Spinner
+
+    session_info = {
+        "project": session.project_name or "",
+        "model": session.model or "",
+        "cost": session.total_cost_usd,
+    }
+    spinner = Spinner("Thinking", session_info=session_info)
+    spinner.start()
+
     try:
-        from urika.agents.registry import AgentRegistry
-        from urika.agents.runner import get_runner
-        from urika.cli import _make_on_message
-        from urika.cli_display import Spinner
+        response = asyncio.run(orchestrator.chat(text))
+        spinner.stop()
+        click.echo()
+        click.echo(format_agent_output(response))
+        click.echo()
 
-        runner = get_runner()
-        registry = AgentRegistry()
-        registry.discover()
-
-        advisor = registry.get("advisor_agent")
-        if advisor is None:
-            print_error("Advisor agent not found.")
-            return
-
-        # Build context — inject rolling summary from previous sessions
-        from urika.core.advisor_memory import load_context_summary
-
-        context = f"Project: {session.project_name}\n"
-        context_summary = load_context_summary(session.project_path)
-        if context_summary:
-            context += (
-                f"\n## Research Context (from previous sessions)\n\n"
-                f"{context_summary}\n\n"
-            )
-        conv = session.get_conversation_context()
-        if conv:
-            context += f"\nPrevious conversation:\n{conv}\n"
-        context += f"\nUser: {text}\n"
-
-        # Load project state
-        methods_path = session.project_path / "methods.json"
-        if methods_path.exists():
-            try:
-                mdata = json.loads(methods_path.read_text(encoding="utf-8"))
-                mlist = mdata.get("methods", [])
-                context += f"\n{len(mlist)} methods tried.\n"
-            except Exception:
-                pass
-
-        config = advisor.build_config(
-            project_dir=session.project_path, experiment_id=""
-        )
-        config.max_turns = 25  # Standalone chat needs more turns than in-loop advisor
-
-        _on_msg = _make_on_message()
-
-        print_agent("advisor_agent")
-        session.set_agent_active("advisor")
-        try:
-            session_info = {
-                "project": session.project_name or "",
-                "model": session.model or "",
-                "cost": session.total_cost_usd,
-            }
-            with Spinner("Thinking", session_info=session_info) as sp:
-
-                def _on_msg_with_footer(msg):
-                    _on_msg(msg)
-                    model = getattr(msg, "model", None)
-                    if model:
-                        sp.update_session(model=model)
-
-                result = asyncio.run(
-                    runner.run(
-                        config,
-                        context,
-                        on_message=_on_msg_with_footer,
-                    )
-                )
-        finally:
-            session.set_agent_idle()
-
-        # Track usage
-        session.record_agent_call(
-            tokens_in=getattr(result, "tokens_in", 0) or 0,
-            tokens_out=getattr(result, "tokens_out", 0) or 0,
-            cost_usd=result.cost_usd or 0.0,
-            model=getattr(result, "model", "") or "",
-        )
-
-        if result.success and result.text_output:
-            click.echo(format_agent_output(result.text_output))
-            session.add_message("user", text)
-            session.add_message("advisor", result.text_output.strip())
-
-            # Save to persistent advisor history
-            from urika.core.advisor_memory import append_exchange
-
-            advisor_text = result.text_output.strip()
-            append_exchange(
-                session.project_path, role="user", text=text, source="repl"
-            )
-
-            # Parse suggestions for saving alongside advisor response
-            from urika.orchestrator.parsing import parse_suggestions
-
-            parsed = parse_suggestions(advisor_text)
-            parsed_suggestions = (
-                parsed["suggestions"]
-                if parsed and parsed.get("suggestions")
-                else None
-            )
-            append_exchange(
-                session.project_path,
-                role="advisor",
-                text=advisor_text,
-                source="repl",
-                suggestions=parsed_suggestions,
-            )
-
-            # Update rolling context summary in a separate thread
-            # (avoids event loop issues from sequential asyncio.run calls)
-            try:
-                import concurrent.futures
-                from urika.core.advisor_memory import update_context_summary
-
-                def _do_summary_update():
-                    return asyncio.run(
-                        update_context_summary(
-                            session.project_path, runner, registry
-                        )
-                    )
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
-                    _pool.submit(_do_summary_update).result(timeout=120)
-            except Exception as _summary_exc:
-                logger.warning("Context summary update failed: %s", _summary_exc)
-
-            # Send advisor response to remote channel if applicable
-            if session._is_remote_command and session._remote_respond:
-                from urika.notifications.bus import _split_message
-                clean_text = _strip_json_blocks(advisor_text)
-                for chunk in _split_message(clean_text, max_len=4000):
-                    session._remote_respond(chunk)
-
-            # Parse suggestions and offer to run them (skip for remote)
-            if not session._is_remote_command:
-                _offer_to_run_suggestions(session, result.text_output)
-        else:
-            print_error(f"Advisor error: {result.error}")
-
-    except ImportError:
-        print_error("Claude Agent SDK not installed.")
+        # Update session conversation for context
+        session.add_message("user", text)
+        session.add_message("assistant", response[:500])
     except Exception as exc:
+        spinner.stop()
         print_error(f"Error: {exc}")
 
 
