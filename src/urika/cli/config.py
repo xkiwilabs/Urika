@@ -121,7 +121,8 @@ def config_command(
 
     # ── Interactive setup ──
     current_mode = settings.get("privacy", {}).get("mode", "open")
-    click.echo(f"\n  Current privacy mode: {current_mode}\n")
+    scope = f"project ({project})" if is_project else "global default"
+    click.echo(f"\n  Current {scope} privacy mode: {current_mode}\n")
 
     try:
         _config_interactive(
