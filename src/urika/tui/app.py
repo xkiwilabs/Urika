@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header
+from textual.widgets import Footer
+
+from urika.tui.widgets.output_panel import OutputPanel
 
 
 class UrikaApp(App):
@@ -13,5 +15,5 @@ class UrikaApp(App):
     SUB_TITLE = "Multi-agent scientific analysis"
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield OutputPanel()
         yield Footer()
