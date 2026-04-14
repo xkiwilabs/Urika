@@ -39,15 +39,19 @@ class StatusBar(Static):
         parts = ["urika"]
         if self.session.has_project:
             parts.append(self.session.project_name)
-            # Privacy mode
+            # Privacy mode — failures here must not crash the render path,
+            # but we narrow to I/O and parse errors only. AttributeError /
+            # TypeError from a renamed session field should propagate so
+            # bugs surface loudly in tests instead of silently blanking the
+            # privacy badge forever.
             try:
                 from urika.agents.config import load_runtime_config
 
                 rc = load_runtime_config(self.session.project_path)
                 if rc.privacy_mode != "open":
                     parts.append(rc.privacy_mode)
-            except Exception:
-                pass
+            except (OSError, ValueError, KeyError) as exc:
+                self.log.warning(f"privacy-mode lookup failed: {exc}")
         if self.session.agent_running:
             parts.append(self.session.agent_name or "working")
             if self.session.agent_activity:
