@@ -74,13 +74,99 @@ class StatusBar(Static):
         return " · ".join(parts)
 
     def render(self) -> Text:
-        """Render both lines."""
-        line1 = self.render_line1()
-        line2 = self.render_line2()
-        text = Text()
-        text.append(line1 + "\n")
-        text.append(line2, style="dim")
-        return text
+        """Render both lines as a colored Rich Text.
+
+        Matches the REPL/CLI footer palette so the TUI's status bar
+        is visually consistent with the classic interface. Field
+        colors (mapping the original ANSI codes):
+
+          urika       bold #4a9eff (Urika blue, same as the banner)
+          project     cyan
+          privacy     yellow
+          agent name  yellow (only while agent_running)
+          activity    dim (only while agent_running)
+          model       cyan
+          elapsed     magenta
+          tokens/calls dim
+          cost        green if > 0, else dim
+
+        Separator is ``│`` in dim grey — matching the REPL toolbar.
+        We build the Rich Text directly here rather than reusing
+        the plain-string helpers because the tests depend on those
+        returning plain strings (see test_status_bar.py).
+        """
+        # Hex values chosen to look right against Textual's default
+        # dark theme surface color. The "urika" label matches the
+        # banner hex exactly for brand consistency.
+        URIKA = "bold #4a9eff"
+        CYAN = "#00d7ff"
+        YELLOW = "#ffcc66"
+        MAGENTA = "#cc66ff"
+        GREEN = "#66ff99"
+        DIM = "#666666"
+
+        sep = Text(" │ ", style=DIM)
+
+        def _join(parts: list[Text]) -> Text:
+            """Join parts with the dim separator."""
+            joined = Text()
+            for i, part in enumerate(parts):
+                if i > 0:
+                    joined.append(sep)
+                joined.append(part)
+            return joined
+
+        # ── Line 1: urika · project · privacy · agent ──
+        line1_parts: list[Text] = [Text("urika", style=URIKA)]
+        if self.session.has_project:
+            line1_parts.append(Text(self.session.project_name or "", style=CYAN))
+            # Privacy badge lookup — same narrow exception policy
+            # as the plain-string render_line1. Don't crash the
+            # status bar render on a transient I/O error, but don't
+            # silently swallow programmer bugs either.
+            try:
+                from urika.agents.config import load_runtime_config
+
+                rc = load_runtime_config(self.session.project_path)
+                if rc.privacy_mode != "open":
+                    line1_parts.append(Text(rc.privacy_mode, style=YELLOW))
+            except (OSError, ValueError, KeyError) as exc:
+                self.log.warning(f"privacy-mode lookup failed: {exc}")
+        if self.session.agent_running:
+            line1_parts.append(
+                Text(self.session.agent_name or "working", style=YELLOW)
+            )
+            if self.session.agent_activity:
+                line1_parts.append(
+                    Text(self.session.agent_activity, style=DIM)
+                )
+
+        # ── Line 2: model · elapsed · tokens · cost ──
+        line2_parts: list[Text] = []
+        if self.session.model:
+            line2_parts.append(Text(self.session.model, style=CYAN))
+
+        elapsed = _format_duration(self.session.elapsed_ms)
+        line2_parts.append(Text(elapsed, style=MAGENTA))
+
+        tokens = self.session.total_tokens_in + self.session.total_tokens_out
+        tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
+        line2_parts.append(
+            Text(f"{tok_str} tokens · {self.session.agent_calls} calls", style=DIM)
+        )
+
+        if self.session.total_cost_usd > 0:
+            line2_parts.append(
+                Text(f"~${self.session.total_cost_usd:.2f}", style=GREEN)
+            )
+        else:
+            line2_parts.append(Text("$0.00", style=DIM))
+
+        out = Text()
+        out.append(_join(line1_parts))
+        out.append("\n")
+        out.append(_join(line2_parts))
+        return out
 
     def on_mount(self) -> None:
         """Start a 250ms timer to refresh status."""

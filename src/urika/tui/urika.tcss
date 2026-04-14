@@ -41,6 +41,15 @@ InputBar {
     border-title-color: #4a9eff;
 }
 
+/* Textual's Input default CSS has ``&:focus { border: tall $border; }``
+ * where $border is a tan/brown theme color. That override kicks in
+ * the moment the InputBar gets focus (which is immediately on mount)
+ * and paints the border brown. Pin the focus state to the same Urika
+ * blue so the border color is stable. */
+InputBar:focus {
+    border: tall #4a9eff;
+}
+
 StatusBar {
     height: 2;
     background: $surface;
