@@ -98,28 +98,44 @@ class UrikaApp(App):
     def on_mount(self) -> None:
         """Show the welcome header + global stats on startup.
 
-        Lands in the OutputPanel as a sequence of RichLog lines. The
-        ASCII banner from :func:`urika.cli_display.print_header` uses
-        raw ``print()`` with ``\\033[...m`` ANSI codes; we cannot route
-        it through :class:`OutputCapture` because ``_TuiWriter._post_line``
-        calls ``_strip_ansi`` (the panel doesn't render raw VT100).
-        Instead, capture stdout into a StringIO and render each line
-        via ``Text.from_ansi`` so the Rich log preserves the classic
-        Urika blue.
+        Renders the same ASCII banner as the REPL/CLI but through the
+        OutputPanel. Two subtleties worth commenting on:
+
+        1. ``cli_display._C`` disables all color codes when
+           ``sys.stdout.isatty()`` is False — which it always is
+           inside Textual. We force-set the codes to truecolor
+           escapes (``\\x1b[38;2;r;g;bm``) so Rich's ``Text.from_ansi``
+           parses them as exact hex values rather than standard ANSI
+           color(4), which Rich renders as a dark navy that looks
+           purple on modern palettes.
+
+        2. We route the banner through a local ``StringIO`` via
+           ``contextlib.redirect_stdout``, NOT through
+           ``OutputCapture``. ``OutputCapture._strip_ansi`` deliberately
+           removes VT100 escape codes before writing to the panel
+           (so worker output doesn't pollute RichLog with raw
+           escapes), which would undo the color fix.
         """
         import contextlib
         import io
 
         from rich.text import Text
 
-        from urika.cli_display import print_header
+        from urika.cli_display import _C, print_header
 
         panel = self.query_one(OutputPanel)
 
-        # ASCII banner — same one the REPL/CLI prints. Capture stdout
-        # locally (not through OutputCapture — that strips ANSI) and
-        # parse the escape codes into Rich styles via Text.from_ansi
-        # so the panel keeps the blue banner color.
+        # Force-set the color codes. Use truecolor hex escapes so the
+        # rendering matches the REPL visually regardless of terminal
+        # palette. The hex values were picked to match the existing
+        # "Urika blue" the CLI produces in most modern terminals.
+        _URIKA_BLUE = "\x1b[38;2;74;158;255m"  # #4a9eff — bright cyan-blue
+        _C.BLUE = _URIKA_BLUE
+        _C.DIM = "\x1b[2m"
+        _C.BOLD = "\x1b[1m"
+        _C.RESET = "\x1b[0m"
+        _C.WHITE = "\x1b[97m"
+
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             print_header()

@@ -29,10 +29,16 @@ OutputPanel {
 }
 
 InputBar {
-    /* Keep it minimal — Textual's Input default (height 3, tall
-     * border) is what makes the caret row visible. Overriding the
-     * border here collapses the content area and the caret vanishes. */
+    /* Keep width/height overrides minimal — Textual's Input default
+     * (height 3, tall border) is what makes the caret row visible.
+     * Overriding the border SIZE (e.g. ``border: round $accent``)
+     * can collapse the content area and hide the caret. The TYPE
+     * stays ``tall`` (thin top + bottom rule); only the color is
+     * changed to the Urika blue so the input is visually separated
+     * from the output panel above and the status bar below. */
     margin: 0;
+    border: tall #4a9eff;
+    border-title-color: #4a9eff;
 }
 
 StatusBar {
