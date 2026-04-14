@@ -77,12 +77,16 @@ class TestCommandDispatch:
 
     @pytest.mark.asyncio
     async def test_welcome_message_on_mount(self) -> None:
+        """The on_mount welcome line was enhanced in Task 10 — see
+        test_welcome.py for the full branding/stats/help-hint checks.
+        Here we only re-verify that /help is mentioned, because that's
+        the dispatch contract these tests care about."""
         app = UrikaApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             panel = app.query_one("OutputPanel")
             text = _panel_text(panel)
-            assert "Welcome to Urika" in text
+            assert "Urika" in text
             assert "/help" in text
 
     @pytest.mark.asyncio

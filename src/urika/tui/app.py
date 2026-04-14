@@ -68,9 +68,37 @@ class UrikaApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Show welcome message on startup."""
+        """Show the welcome header + global stats on startup.
+
+        Lands in the OutputPanel as a normal sequence of RichLog
+        lines. ``get_global_stats`` is wrapped in a try/except so a
+        fresh install with no projects/stats files doesn't block the
+        TUI — an empty welcome is better than a crash.
+        """
         panel = self.query_one(OutputPanel)
-        panel.write_line("Welcome to Urika. Type /help for commands.")
+        panel.write_line("  Urika — Multi-agent scientific analysis platform")
+        panel.write_line("")
+
+        try:
+            from urika.repl.commands import get_global_stats
+
+            stats = get_global_stats()
+            panel.write_line(
+                f"  {stats['projects']} projects · "
+                f"{stats['experiments']} experiments · "
+                f"{stats['methods']} methods · "
+                f"{stats['sdk']}"
+            )
+        except (OSError, KeyError, ImportError) as exc:
+            # Fresh install / missing stats files / partial import.
+            # Log rather than silently swallow so real bugs surface.
+            self.log.warning(f"welcome stats lookup failed: {exc}")
+
+        panel.write_line("")
+        panel.write_line(
+            "  Type /help for commands, or just type to talk to the advisor."
+        )
+        panel.write_line("")
 
     @on(InputBar.CommandSubmitted)
     def _on_command(self, event: InputBar.CommandSubmitted) -> None:
