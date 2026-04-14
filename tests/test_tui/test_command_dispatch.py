@@ -70,8 +70,9 @@ class TestCommandDispatch:
             bar.value = "/quit"
             await pilot.press("enter")
             await pilot.pause()
-            # run_test context exits cleanly; app._exit flag flipped.
-            # Textual sets App._exit = True on exit(); verify it.
+            # HACK: `App._exit` is a private Textual attribute. No
+            # public equivalent in 8.1.1. Revisit on Textual upgrades;
+            # if renamed, wrap self.exit() in our own observable flag.
             assert app._exit is True
 
     @pytest.mark.asyncio
@@ -134,10 +135,93 @@ class TestCommandDispatch:
                 text = _panel_text(panel)
                 assert "Error" in text
                 assert "intentional boom" in text
-                # App still running.
+                # HACK: private Textual attribute — see note on
+                # test_quit_command_exits. Asserting False here proves
+                # the exception path did NOT exit the app.
                 assert app._exit is False
         finally:
             GLOBAL_COMMANDS.pop("boomtest", None)
+
+    @pytest.mark.asyncio
+    async def test_slash_command_runs_while_agent_running(self) -> None:
+        """Regression guard: slash commands must still dispatch when
+        agent_running=True so escape hatches like /quit, /stop, /help
+        work even while a worker is busy. The queue branch in
+        _on_command only applies to non-slash text."""
+        session = ReplSession()
+        session.agent_running = True  # simulate running agent
+        app = UrikaApp(session=session)
+        async with app.run_test() as pilot:
+            panel = app.query_one("OutputPanel")
+            bar = app.query_one("InputBar")
+            bar.value = "/help"
+            await pilot.press("enter")
+            await pilot.pause()
+            text = _panel_text(panel)
+            # /help executed — its output is visible.
+            assert "Commands:" in text
+            # And the slash command was NOT queued.
+            assert not session.has_queued_input
+
+    @pytest.mark.asyncio
+    async def test_free_text_with_project_runs_orchestrator(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression guard for the Task 7 review blocker: free text
+        with a project loaded must actually run the orchestrator and
+        display its response. Previously broken because
+        `_handle_free_text` called `asyncio.run(...)` from inside
+        Textual's already-running event loop, raising RuntimeError
+        that was silently swallowed by the handler's broad except.
+        """
+        from urika.tui import app as tui_app_module
+
+        calls: list[str] = []
+
+        class StubOrchestrator:
+            def __init__(self, project_dir: Path | None = None) -> None:
+                self.project_dir = project_dir
+
+            async def chat(self, text: str, **kwargs: object) -> dict:
+                calls.append(text)
+                return {
+                    "response": f"stub reply to: {text}",
+                    "success": True,
+                    "tokens_in": 5,
+                    "tokens_out": 10,
+                    "cost_usd": 0.01,
+                    "model": "stub-model",
+                }
+
+        monkeypatch.setattr(tui_app_module, "OrchestratorChat", StubOrchestrator)
+
+        session = ReplSession()
+        session.load_project(path=tmp_path, name="chat-study")
+
+        app = UrikaApp(session=session)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            panel = app.query_one("OutputPanel")
+            bar = app.query_one("InputBar")
+            bar.value = "hello agent"
+            await pilot.press("enter")
+
+            # Worker coroutine runs on the event loop; multiple pauses
+            # give the scheduler a chance to complete it.
+            for _ in range(20):
+                await pilot.pause()
+                if not session.agent_running:
+                    break
+
+            text = _panel_text(panel)
+            assert calls == ["hello agent"]
+            assert "stub reply to: hello agent" in text
+            # Session stats were updated from the worker.
+            assert session.total_tokens_in >= 5
+            assert session.total_tokens_out >= 10
+            assert session.model == "stub-model"
+            # Worker cleared the running flag on exit.
+            assert session.agent_running is False
 
     @pytest.mark.asyncio
     async def test_prompt_refreshed_after_command(self, tmp_path: Path) -> None:

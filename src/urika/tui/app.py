@@ -6,6 +6,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.widgets import Footer
 
+from urika.orchestrator.chat import OrchestratorChat
 from urika.repl.session import ReplSession
 from urika.tui.capture import OutputCapture
 from urika.tui.widgets.input_bar import InputBar
@@ -31,6 +32,10 @@ class UrikaApp(App):
         # activates it for a single handler invocation. NOT reentrant —
         # never nest `with self._capture:` blocks.
         self._capture = OutputCapture(self)
+        # Lazy orchestrator — created when first free-text lands, reused
+        # across turns so conversation history is preserved. Reset if
+        # the project changes.
+        self._orchestrator: OrchestratorChat | None = None
 
     def compose(self) -> ComposeResult:
         yield OutputPanel()
@@ -79,11 +84,12 @@ class UrikaApp(App):
             # Refine the error message if the user hit a project-only
             # command without a project loaded — get_all_commands
             # already filters those out, so we reach here either way.
-            if cmd_name in PROJECT_COMMANDS and not self.session.has_project:
-                with self._capture:
+            # Single `with self._capture:` block so future branches
+            # can't accidentally skip the capture wrapper.
+            with self._capture:
+                if cmd_name in PROJECT_COMMANDS and not self.session.has_project:
                     print_error("Load a project first: /project <name>")
-            else:
-                with self._capture:
+                else:
                     print_error(
                         f"Unknown command: /{cmd_name}. Type /help for commands."
                     )
@@ -110,17 +116,69 @@ class UrikaApp(App):
         input_bar.refresh_prompt()
 
     def _dispatch_free_text(self, text: str) -> None:
-        """Send free text to the advisor / chat orchestrator."""
+        """Send free text to the chat orchestrator on a Textual Worker.
+
+        Must NOT call the REPL's `_handle_free_text` synchronously —
+        that function wraps `asyncio.run(orchestrator.chat(...))`, which
+        raises RuntimeError when called from an already-running event
+        loop (which Textual always has). Instead, schedule an async
+        coroutine worker that awaits `orchestrator.chat` directly.
+        Task 8 will extend this to full agent-command workers with
+        cancellation; Task 7 only needs the chat path.
+        """
         if not self.session.has_project:
             panel = self.query_one(OutputPanel)
             panel.write_line("  Load a project first: /project <name>")
             return
-        # Synchronous for now — Task 8 moves this onto a Textual Worker
-        # so the UI stays responsive while the orchestrator is thinking.
-        from urika.repl import _handle_free_text
+        self.run_worker(self._run_free_text(text), name="free_text")
 
-        with self._capture:
-            _handle_free_text(self.session, text)
+    async def _run_free_text(self, text: str) -> None:
+        """Worker coroutine: run the orchestrator and display its reply.
+
+        Runs inside Textual's event loop, so `orchestrator.chat` is
+        awaited naturally. Session bookkeeping (tokens, cost, model,
+        conversation history) mirrors the REPL's `_handle_free_text`
+        so the two paths stay observably equivalent.
+        """
+        from urika.cli_display import format_agent_output
+
+        # Create-or-reuse orchestrator. Reset when the project changes
+        # so we don't bleed context between projects.
+        if (
+            self._orchestrator is None
+            or self._orchestrator.project_dir != self.session.project_path
+        ):
+            self._orchestrator = OrchestratorChat(
+                project_dir=self.session.project_path
+            )
+        orch = self._orchestrator
+
+        self.session.set_agent_running(agent_name="chat")
+        panel = self.query_one(OutputPanel)
+        try:
+            result = await orch.chat(text)
+            response = result.get("response", "") or ""
+
+            # Update session stats for the status bar.
+            self.session.total_tokens_in += result.get("tokens_in", 0) or 0
+            self.session.total_tokens_out += result.get("tokens_out", 0) or 0
+            self.session.total_cost_usd += result.get("cost_usd", 0) or 0
+            self.session.agent_calls += 1
+            if result.get("model"):
+                self.session.model = result["model"]
+
+            panel.write_line("")
+            panel.write_line(format_agent_output(response))
+            panel.write_line("")
+
+            self.session.add_message("user", text)
+            self.session.add_message("assistant", response[:500])
+        except Exception as exc:
+            # Not a silent swallow — the error lands in the panel so the
+            # user can see what went wrong.
+            panel.write_line(f"  \u2717 Error: {exc}")
+        finally:
+            self.session.set_agent_idle()
 
     def action_cancel_agent(self) -> None:
         """Cancel the running agent on Ctrl+C."""
