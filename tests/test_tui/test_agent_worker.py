@@ -293,17 +293,28 @@ class TestAgentWorker:
             assert "checkpoint" in text
 
     @pytest.mark.asyncio
-    async def test_action_cancel_agent_no_op_when_idle(self) -> None:
-        """Calling Ctrl+C when no agent is running is a safe no-op —
-        no flag file, no panel message, no crash."""
+    async def test_action_cancel_agent_quits_when_idle(self) -> None:
+        """When no agent is running, Ctrl+C should fall through to
+        quit_app — otherwise Ctrl+C is a silent no-op and users with
+        no visible keybindings have no escape from the TUI. The
+        fall-through writes no cancel-flag file and prints no cancel
+        notice; it just triggers app.exit()."""
         app = UrikaApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             panel = app.query_one("OutputPanel")
-            text_before = _panel_text(panel)
+            cancel_lines_before = [
+                str(s) for s in panel.lines if "Cancel" in str(s)
+            ]
 
             app.action_cancel_agent()
             await pilot.pause()
 
-            text_after = _panel_text(panel)
-            assert text_after == text_before
+            # No cancel notice — falls through to quit, not cancel.
+            cancel_lines_after = [
+                str(s) for s in panel.lines if "Cancel" in str(s)
+            ]
+            assert cancel_lines_after == cancel_lines_before
+            # HACK: private Textual attribute — matches the HACK
+            # annotations in test_command_dispatch.py.
+            assert app._exit is True

@@ -53,7 +53,14 @@ class UrikaApp(App):
     SUB_TITLE = "Multi-agent scientific analysis"
 
     BINDINGS = [
-        ("ctrl+c", "cancel_agent", "Cancel"),
+        # Ctrl+Q is the unambiguous quit binding — surfaced in the
+        # Footer so users can see it at a glance. Ctrl+C still works
+        # (cancels a running agent, or quits when idle — see
+        # action_cancel_agent). Ctrl+D is an extra escape hatch but
+        # Textual's terminal driver sometimes swallows it as EOF, so
+        # we don't rely on it as the primary quit key.
+        ("ctrl+q", "quit_app", "Quit"),
+        ("ctrl+c", "cancel_agent", "Cancel / Quit"),
         ("ctrl+d", "quit_app", "Quit"),
     ]
 
@@ -79,11 +86,23 @@ class UrikaApp(App):
         """Show the welcome header + global stats on startup.
 
         Lands in the OutputPanel as a normal sequence of RichLog
-        lines. ``get_global_stats`` is wrapped in a try/except so a
-        fresh install with no projects/stats files doesn't block the
-        TUI — an empty welcome is better than a crash.
+        lines. The ASCII header produced by
+        :func:`urika.cli_display.print_header` is routed through
+        :meth:`_run_with_panel_output` so the colored banner lines
+        are captured into the panel. ``get_global_stats`` is wrapped
+        in a narrow try/except so a fresh install with no projects
+        file doesn't block the TUI — an empty welcome is better than
+        a crash.
         """
+        from urika.cli_display import print_header
+
         panel = self.query_one(OutputPanel)
+
+        # ASCII banner — the same one the REPL/CLI print. Use the
+        # capture helper so the colored print() calls inside
+        # print_header() route to the panel rather than the raw
+        # terminal (which isn't attached to anything Textual owns).
+        self._run_with_panel_output(print_header)
         panel.write_line("  Urika — Multi-agent scientific analysis platform")
         panel.write_line("")
 
@@ -106,6 +125,7 @@ class UrikaApp(App):
         panel.write_line(
             "  Type /help for commands, or just type to talk to the advisor."
         )
+        panel.write_line("  Press Ctrl+Q to quit.")
         panel.write_line("")
 
     @on(InputBar.CommandSubmitted)
@@ -314,24 +334,25 @@ class UrikaApp(App):
             self.session.set_agent_idle()
 
     def action_cancel_agent(self) -> None:
-        """Request cancellation of the running agent on Ctrl+C.
+        """Ctrl+C handler.
 
-        Thread-based Textual Workers CANNOT be killed mid-execution
-        from Python — the handler must cooperate. For experiment
-        runs that means writing a ``.urika/pause_requested`` flag
-        that ``PauseController`` polls between subagents. For a
-        free-text chat the orchestrator has no cancellation hook
-        yet, so the worker runs to completion even after this
-        action fires.
+        When an agent is running: cooperative cancel — write the
+        ``.urika/pause_requested`` flag file that ``PauseController``
+        polls between subagents. Do NOT flip ``session.agent_running``
+        externally — the worker's ``finally`` block owns that flag,
+        and flipping it here would let a second worker spawn while
+        the first still holds its ``OutputCapture``, colliding on
+        ``sys.stdout``.
 
-        Importantly: **do not** flip ``session.agent_running`` here.
-        The worker's ``finally`` block owns that flag — flipping it
-        externally would let a second worker spawn while the first
-        one is still inside its ``OutputCapture``, and the two
-        captures would collide on ``sys.stdout``.
+        When no agent is running: treat Ctrl+C as a quit request.
+        Otherwise users with no visible keybindings get trapped in
+        the TUI with Ctrl+C as a silent no-op.
         """
         if not self.session.agent_running:
+            # Fall through to quit so Ctrl+C is never a dead key.
+            self.action_quit_app()
             return
+
         panel = self.query_one(OutputPanel)
         # Cooperative stop: write the same pause-flag file /stop uses
         # so experiment runners notice at their next checkpoint.
