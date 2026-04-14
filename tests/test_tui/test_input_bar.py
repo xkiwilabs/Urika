@@ -47,12 +47,19 @@ class TestInputBar:
     async def test_refresh_prompt_after_project_change(self, tmp_path) -> None:
         session = ReplSession()
         app = UrikaApp(session=session)
-        async with app.run_test():
+        async with app.run_test() as pilot:
+            await pilot.pause()
             bar = app.query_one("InputBar")
             assert "urika>" in bar.placeholder
+            # refresh_prompt has two halves: update the placeholder AND
+            # rebuild the suggester. Assert both — the suggester contract
+            # was uncovered when the review ran.
+            suggester_before = bar.suggester
             session.load_project(path=tmp_path, name="my-study")
             bar.refresh_prompt()
             assert "my-study" in bar.placeholder
+            assert bar.suggester is not None
+            assert bar.suggester is not suggester_before
 
     @pytest.mark.asyncio
     async def test_submit_emits_command_and_clears(self) -> None:
