@@ -8,10 +8,34 @@ from textual.widgets import Footer
 
 from urika.orchestrator.chat import OrchestratorChat
 from urika.repl.session import ReplSession
+from urika.tui.agent_worker import run_command_in_worker
 from urika.tui.capture import OutputCapture
 from urika.tui.widgets.input_bar import InputBar
 from urika.tui.widgets.output_panel import OutputPanel
 from urika.tui.widgets.status_bar import StatusBar
+
+# Commands that invoke a Claude agent and can take minutes. These run
+# on a background thread-worker so the TUI stays responsive. Kept as a
+# module constant so tests and future dispatch code share one source of
+# truth. Order doesn't matter — membership check only.
+_BLOCKING_COMMANDS = frozenset(
+    {
+        "run",
+        "finalize",
+        "evaluate",
+        "plan",
+        "advisor",
+        "present",
+        "report",
+        "build-tool",
+        "new",
+    }
+)
+
+# Escape hatches that remain usable even while an agent is running.
+# /quit must always work so the user can get out; /stop is reserved for
+# a future cancellation path (Task 8's action_cancel_agent is the stub).
+_ALWAYS_ALLOWED_COMMANDS = frozenset({"quit", "stop"})
 
 
 class UrikaApp(App):
@@ -64,7 +88,17 @@ class UrikaApp(App):
             self._dispatch_free_text(text)
 
     def _dispatch_command(self, text: str) -> None:
-        """Parse and execute a slash command."""
+        """Parse and execute a slash command.
+
+        Three routes:
+
+        * ``/quit`` — handled inline (no entry in the commands registry).
+        * Blocking commands (agent-invoking) — dispatched to a
+          thread-based worker via :func:`run_command_in_worker`. While
+          a worker is active, new blocking commands are rejected with
+          a busy hint; only ``/quit`` and ``/stop`` remain usable.
+        * Everything else — executed inline under ``self._capture``.
+        """
         parts = text[1:].split(" ", 1)
         cmd_name = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
@@ -78,6 +112,21 @@ class UrikaApp(App):
 
         from urika.cli_display import print_error
         from urika.repl.commands import PROJECT_COMMANDS, get_all_commands
+
+        # Busy guard: while an agent worker is running, reject new
+        # blocking commands before they can race the live OutputCapture
+        # (which is NOT reentrant). Escape hatches are whitelisted.
+        if (
+            self.session.agent_running
+            and cmd_name not in _ALWAYS_ALLOWED_COMMANDS
+            and cmd_name in _BLOCKING_COMMANDS
+        ):
+            with self._capture:
+                print_error(
+                    f"Agent busy running /{self.session.agent_name or 'command'}"
+                    " — wait or use /stop"
+                )
+            return
 
         all_cmds = get_all_commands(self.session)
         if cmd_name not in all_cmds:
@@ -96,6 +145,14 @@ class UrikaApp(App):
             return
 
         handler = all_cmds[cmd_name]["func"]
+
+        # Blocking commands run on a background thread worker. The
+        # worker manages its own OutputCapture, session.agent_running
+        # lifecycle, and prompt refresh — so we just hand off and return.
+        if cmd_name in _BLOCKING_COMMANDS:
+            run_command_in_worker(self, handler, args, cmd_name)
+            return
+
         with self._capture:
             try:
                 handler(self.session, args)
@@ -148,9 +205,7 @@ class UrikaApp(App):
             self._orchestrator is None
             or self._orchestrator.project_dir != self.session.project_path
         ):
-            self._orchestrator = OrchestratorChat(
-                project_dir=self.session.project_path
-            )
+            self._orchestrator = OrchestratorChat(project_dir=self.session.project_path)
         orch = self._orchestrator
 
         self.session.set_agent_running(agent_name="chat")
