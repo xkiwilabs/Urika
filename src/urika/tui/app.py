@@ -196,6 +196,7 @@ class UrikaApp(App):
 
         all_cmds = get_all_commands(self.session)
         if cmd_name not in all_cmds:
+
             def _print_unknown() -> None:
                 if cmd_name in PROJECT_COMMANDS and not self.session.has_project:
                     print_error("Load a project first: /project <name>")

@@ -123,9 +123,7 @@ class _TuiWriter:
         #
         # HACK: private-attribute access. Verify on Textual upgrades.
         # Mirrors the logic inside textual/app.py's call_from_thread.
-        same_thread = (
-            getattr(self._app, "_thread_id", 0) == threading.get_ident()
-        )
+        same_thread = getattr(self._app, "_thread_id", 0) == threading.get_ident()
         loop = getattr(self._app, "_loop", None)
         loop_running = loop is not None and loop.is_running()
         if same_thread and loop_running:
