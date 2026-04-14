@@ -87,24 +87,52 @@ class UrikaApp(App):
         else:
             self._dispatch_free_text(text)
 
+    def _run_with_panel_output(self, func) -> None:
+        """Run ``func`` so its stdout lands in the OutputPanel.
+
+        Handles both capture-active and capture-inactive contexts. If
+        the process ``sys.stdout`` is already a ``_TuiWriter`` (i.e.
+        a worker thread installed one), call ``func`` directly — the
+        existing writer is thread-safe and routes output to the panel
+        via ``call_from_thread``. Otherwise, enter ``self._capture``
+        briefly so the function's prints are captured.
+
+        This replaces the older pattern of blindly doing
+        ``with self._capture: ...`` which crashed when a worker was
+        active (nested captures raise RuntimeError by design).
+        """
+        import sys
+
+        from urika.tui.capture import _TuiWriter
+
+        if isinstance(sys.stdout, _TuiWriter):
+            func()
+        else:
+            with self._capture:
+                func()
+
     def _dispatch_command(self, text: str) -> None:
         """Parse and execute a slash command.
 
         Three routes:
 
-        * ``/quit`` — handled inline (no entry in the commands registry).
+        * ``/quit`` — handled inline (no entry in the commands registry),
+          always available.
+        * Anything else while an agent worker is running — rejected with
+          a busy hint, except ``/stop`` which writes a cooperative stop
+          flag that the experiment runner polls.
         * Blocking commands (agent-invoking) — dispatched to a
-          thread-based worker via :func:`run_command_in_worker`. While
-          a worker is active, new blocking commands are rejected with
-          a busy hint; only ``/quit`` and ``/stop`` remain usable.
-        * Everything else — executed inline under ``self._capture``.
+          thread-based worker via :func:`run_command_in_worker`.
+        * Everything else — executed inline via
+          :meth:`_run_with_panel_output` which picks the right
+          capture strategy based on runtime state.
         """
         parts = text[1:].split(" ", 1)
         cmd_name = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
 
         # /quit is handled inline — there is no "quit" in repl.commands
-        # (the old REPL handled it in its main loop).
+        # (the old REPL handled it in its main loop). Always available.
         if cmd_name == "quit":
             self.session.save_usage()
             self.exit()
@@ -113,35 +141,34 @@ class UrikaApp(App):
         from urika.cli_display import print_error
         from urika.repl.commands import PROJECT_COMMANDS, get_all_commands
 
-        # Busy guard: while an agent worker is running, reject new
-        # blocking commands before they can race the live OutputCapture
-        # (which is NOT reentrant). Escape hatches are whitelisted.
-        if (
-            self.session.agent_running
-            and cmd_name not in _ALWAYS_ALLOWED_COMMANDS
-            and cmd_name in _BLOCKING_COMMANDS
-        ):
-            with self._capture:
-                print_error(
-                    f"Agent busy running /{self.session.agent_name or 'command'}"
-                    " — wait or use /stop"
-                )
-            return
+        busy_hint = (
+            f"Agent busy running /{self.session.agent_name or 'command'}"
+            " — wait or use /stop"
+        )
+
+        # Busy guard: while an agent worker is running, reject any
+        # slash command that isn't an escape hatch. The hint is
+        # printed via ``_run_with_panel_output`` which picks the
+        # right capture strategy based on the actual ``sys.stdout``
+        # state (worker's _TuiWriter if one is installed; fresh
+        # self._capture otherwise).
+        if self.session.agent_running:
+            if cmd_name not in _ALWAYS_ALLOWED_COMMANDS:
+                self._run_with_panel_output(lambda: print_error(busy_hint))
+                return
+            # Escape hatch path (/stop): fall through to normal dispatch.
 
         all_cmds = get_all_commands(self.session)
         if cmd_name not in all_cmds:
-            # Refine the error message if the user hit a project-only
-            # command without a project loaded — get_all_commands
-            # already filters those out, so we reach here either way.
-            # Single `with self._capture:` block so future branches
-            # can't accidentally skip the capture wrapper.
-            with self._capture:
+            def _print_unknown() -> None:
                 if cmd_name in PROJECT_COMMANDS and not self.session.has_project:
                     print_error("Load a project first: /project <name>")
                 else:
                     print_error(
                         f"Unknown command: /{cmd_name}. Type /help for commands."
                     )
+
+            self._run_with_panel_output(_print_unknown)
             return
 
         handler = all_cmds[cmd_name]["func"]
@@ -149,11 +176,23 @@ class UrikaApp(App):
         # Blocking commands run on a background thread worker. The
         # worker manages its own OutputCapture, session.agent_running
         # lifecycle, and prompt refresh — so we just hand off and return.
+        #
+        # Defense in depth: reject a second blocking dispatch while
+        # one is already live. action_cancel_agent doesn't actually
+        # kill the worker thread, so a second worker would race to
+        # install a second OutputCapture and crash.
         if cmd_name in _BLOCKING_COMMANDS:
+            if self.session.agent_running:
+                self._run_with_panel_output(lambda: print_error(busy_hint))
+                return
             run_command_in_worker(self, handler, args, cmd_name)
             return
 
-        with self._capture:
+        # Non-blocking inline path. ``_run_with_panel_output`` handles
+        # the capture question: if a worker is already running (sys.
+        # stdout is _TuiWriter), it runs direct; otherwise it enters
+        # self._capture. Safe either way.
+        def _run_handler_inline() -> None:
             try:
                 handler(self.session, args)
             except SystemExit:
@@ -163,8 +202,10 @@ class UrikaApp(App):
                 self.exit()
             except Exception as exc:
                 # Not a silent swallow — the error is printed through
-                # OutputCapture so the user sees it and can recover.
+                # whichever capture path is active.
                 print_error(f"Error: {exc}")
+
+        self._run_with_panel_output(_run_handler_inline)
 
         # A command like /project mutates session.project_name, which
         # changes the prompt text and the suggester list. Refresh
@@ -236,11 +277,38 @@ class UrikaApp(App):
             self.session.set_agent_idle()
 
     def action_cancel_agent(self) -> None:
-        """Cancel the running agent on Ctrl+C."""
-        if self.session.agent_running:
-            self.session.set_agent_idle(error="Cancelled by user")
-            panel = self.query_one(OutputPanel)
-            panel.write_line("  Agent cancelled.")
+        """Request cancellation of the running agent on Ctrl+C.
+
+        Thread-based Textual Workers CANNOT be killed mid-execution
+        from Python — the handler must cooperate. For experiment
+        runs that means writing a ``.urika/pause_requested`` flag
+        that ``PauseController`` polls between subagents. For a
+        free-text chat the orchestrator has no cancellation hook
+        yet, so the worker runs to completion even after this
+        action fires.
+
+        Importantly: **do not** flip ``session.agent_running`` here.
+        The worker's ``finally`` block owns that flag — flipping it
+        externally would let a second worker spawn while the first
+        one is still inside its ``OutputCapture``, and the two
+        captures would collide on ``sys.stdout``.
+        """
+        if not self.session.agent_running:
+            return
+        panel = self.query_one(OutputPanel)
+        # Cooperative stop: write the same pause-flag file /stop uses
+        # so experiment runners notice at their next checkpoint.
+        if self.session.project_path is not None:
+            try:
+                flag_dir = self.session.project_path / ".urika"
+                flag_dir.mkdir(parents=True, exist_ok=True)
+                (flag_dir / "pause_requested").write_text("stop", encoding="utf-8")
+            except OSError as exc:
+                panel.write_line(f"  \u2717 Cancel-flag write failed: {exc}")
+                return
+        panel.write_line(
+            "  Cancel requested \u2014 agent will stop at next checkpoint."
+        )
 
     def action_quit_app(self) -> None:
         """Quit on Ctrl+D."""

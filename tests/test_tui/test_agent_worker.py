@@ -117,49 +117,76 @@ class TestAgentWorker:
                 PROJECT_COMMANDS.pop("run", None)
 
     @pytest.mark.asyncio
-    async def test_blocking_command_rejected_while_agent_running(
+    async def test_blocking_command_rejected_while_real_worker_running(
         self, tmp_path: Path
     ) -> None:
-        """Submitting a blocking slash command while agent_running=True
-        must surface a busy hint and NOT invoke the handler. /quit
-        remains usable as an escape hatch."""
+        """Submitting a blocking command while a REAL worker holds an
+        OutputCapture must surface a busy hint and NOT invoke the new
+        handler. This is the critical regression test for the Task 8
+        code-review blocker: merely flipping agent_running isn't
+        enough — a real OutputCapture must be active to prove the
+        non-reentrant guard isn't crashing the dispatch path.
+        """
         from urika.repl.commands import PROJECT_COMMANDS
 
-        calls: list[str] = []
+        started = threading.Event()
+        release = threading.Event()
+        second_calls: list[str] = []
 
-        def _fake_run(session, args):
-            calls.append(args)
+        def _blocking_run(session, args):
+            # Hold the worker open so the second /run is submitted
+            # while the first worker's OutputCapture is still live.
+            started.set()
+            release.wait(timeout=2.0)
+
+        def _second_run(session, args):
+            second_calls.append(args)
 
         original = PROJECT_COMMANDS.get("run")
-        PROJECT_COMMANDS["run"] = {"func": _fake_run, "description": "test"}
+        PROJECT_COMMANDS["run"] = {"func": _blocking_run, "description": "test"}
         try:
             session = ReplSession()
             session.load_project(path=tmp_path, name="fake")
-            session.set_agent_running(agent_name="other")
 
             app = UrikaApp(session=session)
             async with app.run_test() as pilot:
                 panel = app.query_one("OutputPanel")
                 bar = app.query_one("InputBar")
+
+                # First dispatch — real worker, holds OutputCapture.
                 bar.value = "/run baseline"
                 await pilot.press("enter")
-                await pilot.pause()
-
-                text = _panel_text(panel)
-                # Busy hint visible.
-                assert "busy" in text.lower()
-                # Handler was NOT called.
-                assert calls == []
-                # Agent still marked running (we never cleared it).
+                for _ in range(50):
+                    await pilot.pause()
+                    if started.is_set():
+                        break
+                assert started.is_set(), "first worker never entered handler"
                 assert session.agent_running is True
 
-                # Escape hatch: /quit still works even while busy.
-                bar.value = "/quit"
+                # Swap in the SECOND handler and submit another /run.
+                PROJECT_COMMANDS["run"] = {
+                    "func": _second_run,
+                    "description": "test",
+                }
+                bar.value = "/run secondary"
                 await pilot.press("enter")
                 await pilot.pause()
-                # HACK: private Textual attribute — matches the existing
-                # pattern in test_command_dispatch.py::test_quit_command_exits.
-                assert app._exit is True
+
+                # Second handler must NOT have been called.
+                assert second_calls == []
+                # Busy hint present in the panel — written through
+                # the first worker's _TuiWriter without entering a
+                # nested capture.
+                text = _panel_text(panel)
+                assert "busy" in text.lower()
+
+                # Release first worker and let it drain cleanly.
+                release.set()
+                for _ in range(50):
+                    await pilot.pause()
+                    if not session.agent_running:
+                        break
+                assert session.agent_running is False
         finally:
             if original is not None:
                 PROJECT_COMMANDS["run"] = original
@@ -167,18 +194,116 @@ class TestAgentWorker:
                 PROJECT_COMMANDS.pop("run", None)
 
     @pytest.mark.asyncio
-    async def test_action_cancel_agent_flips_flag(self) -> None:
-        """action_cancel_agent clears agent_running and prints a cancel
-        notice. Must not crash when called — still a stub, but must
-        remain functional after Task 8's changes."""
+    async def test_non_blocking_command_during_worker_does_not_crash(
+        self, tmp_path: Path
+    ) -> None:
+        """Non-blocking commands (e.g. /help) submitted while a worker
+        holds an OutputCapture must not crash the dispatch path. The
+        original Task 8 bug: the main-thread ``with self._capture:``
+        branch collided with the worker's installed _TuiWriter,
+        raising RuntimeError from the non-reentrant guard. Fix
+        rerouted non-escape commands to a busy hint (no nested
+        capture entry). This test pins that behavior.
+        """
+        from urika.repl.commands import PROJECT_COMMANDS
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def _blocking_run(session, args):
+            started.set()
+            release.wait(timeout=2.0)
+
+        original = PROJECT_COMMANDS.get("run")
+        PROJECT_COMMANDS["run"] = {"func": _blocking_run, "description": "test"}
+        try:
+            session = ReplSession()
+            session.load_project(path=tmp_path, name="fake")
+
+            app = UrikaApp(session=session)
+            async with app.run_test() as pilot:
+                panel = app.query_one("OutputPanel")
+                bar = app.query_one("InputBar")
+
+                bar.value = "/run baseline"
+                await pilot.press("enter")
+                for _ in range(50):
+                    await pilot.pause()
+                    if started.is_set():
+                        break
+                assert started.is_set()
+                assert session.agent_running is True
+
+                # Submit /help — non-blocking, non-escape. MUST not
+                # crash. The dispatch prints a busy hint directly
+                # (not through a new OutputCapture) so the worker's
+                # live capture stays intact.
+                bar.value = "/help"
+                await pilot.press("enter")
+                await pilot.pause()
+
+                text = _panel_text(panel)
+                assert "busy" in text.lower()
+                # And the app is still running — no crash.
+                assert app._exit is False
+
+                # Drain worker cleanly.
+                release.set()
+                for _ in range(50):
+                    await pilot.pause()
+                    if not session.agent_running:
+                        break
+                assert session.agent_running is False
+        finally:
+            if original is not None:
+                PROJECT_COMMANDS["run"] = original
+            else:
+                PROJECT_COMMANDS.pop("run", None)
+
+    @pytest.mark.asyncio
+    async def test_action_cancel_agent_writes_flag_and_notifies(
+        self, tmp_path: Path
+    ) -> None:
+        """action_cancel_agent is a cooperative cancel: writes the
+        pause-request flag file that PauseController polls, prints a
+        cancel notice, and does NOT flip ``agent_running`` (the
+        worker's finally block owns that flag — flipping it externally
+        would let a second worker spawn and collide on OutputCapture)."""
         session = ReplSession()
+        session.load_project(path=tmp_path, name="fake")
         session.set_agent_running(agent_name="task_agent")
+
         app = UrikaApp(session=session)
         async with app.run_test() as pilot:
             await pilot.pause()
             app.action_cancel_agent()
             await pilot.pause()
-            assert session.agent_running is False
+
+            # Flag file written at the canonical path /stop uses.
+            flag_file = tmp_path / ".urika" / "pause_requested"
+            assert flag_file.exists()
+            assert flag_file.read_text(encoding="utf-8") == "stop"
+
+            # agent_running is NOT cleared — the worker's finally owns it.
+            assert session.agent_running is True
+
             panel = app.query_one("OutputPanel")
             text = _panel_text(panel)
-            assert "Agent cancelled" in text
+            assert "Cancel requested" in text
+            assert "checkpoint" in text
+
+    @pytest.mark.asyncio
+    async def test_action_cancel_agent_no_op_when_idle(self) -> None:
+        """Calling Ctrl+C when no agent is running is a safe no-op —
+        no flag file, no panel message, no crash."""
+        app = UrikaApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            panel = app.query_one("OutputPanel")
+            text_before = _panel_text(panel)
+
+            app.action_cancel_agent()
+            await pilot.pause()
+
+            text_after = _panel_text(panel)
+            assert text_after == text_before

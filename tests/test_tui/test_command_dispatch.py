@@ -143,13 +143,19 @@ class TestCommandDispatch:
             GLOBAL_COMMANDS.pop("boomtest", None)
 
     @pytest.mark.asyncio
-    async def test_slash_command_runs_while_agent_running(self) -> None:
-        """Regression guard: slash commands must still dispatch when
-        agent_running=True so escape hatches like /quit, /stop, /help
-        work even while a worker is busy. The queue branch in
-        _on_command only applies to non-slash text."""
+    async def test_slash_command_while_agent_running_shows_busy_hint(self) -> None:
+        """Non-escape slash commands submitted while agent_running=True
+        must NOT be queued (the queue branch is non-slash only) AND
+        must NOT run inline (that would enter self._capture which
+        collides with the worker's already-installed OutputCapture).
+        They must show a busy hint and fall through cleanly.
+
+        /quit remains a separate escape hatch covered by
+        test_quit_command_exits. /stop is an escape hatch covered by
+        tests in test_agent_worker.py.
+        """
         session = ReplSession()
-        session.agent_running = True  # simulate running agent
+        session.agent_running = True
         app = UrikaApp(session=session)
         async with app.run_test() as pilot:
             panel = app.query_one("OutputPanel")
@@ -158,10 +164,13 @@ class TestCommandDispatch:
             await pilot.press("enter")
             await pilot.pause()
             text = _panel_text(panel)
-            # /help executed — its output is visible.
-            assert "Commands:" in text
+            # Busy hint, not /help output.
+            assert "busy" in text.lower()
+            assert "Commands:" not in text
             # And the slash command was NOT queued.
             assert not session.has_queued_input
+            # App still alive — no crash.
+            assert app._exit is False
 
     @pytest.mark.asyncio
     async def test_free_text_with_project_runs_orchestrator(

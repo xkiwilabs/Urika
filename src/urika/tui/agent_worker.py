@@ -90,7 +90,10 @@ def run_command_in_worker(
                     handler(app.session, args)
                 except SystemExit:
                     # A handler invoking sys.exit() should close the
-                    # app cleanly rather than crash the worker.
+                    # app cleanly rather than crash the worker. Mirror
+                    # the inline path's save_usage call so usage stats
+                    # from a quitting handler aren't lost.
+                    app.session.save_usage()
                     app.call_from_thread(app.exit)
                 except Exception as exc:
                     # Not swallowed — print_error runs inside the
