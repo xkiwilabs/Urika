@@ -6,6 +6,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import Footer
 
 from urika.repl.session import ReplSession
+from urika.tui.widgets.input_bar import InputBar
 from urika.tui.widgets.output_panel import OutputPanel
 from urika.tui.widgets.status_bar import StatusBar
 
@@ -22,5 +23,6 @@ class UrikaApp(App):
 
     def compose(self) -> ComposeResult:
         yield OutputPanel()
+        yield InputBar(self.session)
         yield StatusBar(self.session)
         yield Footer()
