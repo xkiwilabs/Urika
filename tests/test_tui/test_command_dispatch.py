@@ -237,6 +237,51 @@ class TestCommandDispatch:
             assert session.agent_running is False
 
     @pytest.mark.asyncio
+    async def test_agent_running_cleared_when_orchestrator_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression guard: if the orchestrator raises any exception
+        during a free-text turn, ``session.agent_running`` MUST be
+        cleared by the finally block. A previous version set the flag
+        BEFORE the try, so any early-path raise (e.g. a NoMatches on
+        OutputPanel during app teardown, or an error constructing
+        OrchestratorChat) left the flag pinned True and trapped all
+        subsequent messages in the queue branch forever.
+        """
+        from urika.tui import app as tui_app_module
+
+        class FailingOrchestrator:
+            def __init__(self, project_dir: Path | None = None) -> None:
+                self.project_dir = project_dir
+
+            async def chat(self, text: str, **kwargs: object) -> dict:
+                raise RuntimeError("simulated orchestrator failure")
+
+        monkeypatch.setattr(tui_app_module, "OrchestratorChat", FailingOrchestrator)
+
+        session = ReplSession()
+        session.load_project(path=tmp_path, name="fail-study")
+
+        app = UrikaApp(session=session)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            bar = app.query_one("InputBar")
+            bar.value = "this will fail"
+            await pilot.press("enter")
+
+            for _ in range(20):
+                await pilot.pause()
+                if not session.agent_running:
+                    break
+
+            # Critical: agent_running is cleared even though the
+            # orchestrator raised. No trapped-queue state.
+            assert session.agent_running is False
+            # And the error landed in the panel so the user sees it.
+            panel = app.query_one("OutputPanel")
+            assert "simulated orchestrator failure" in _panel_text(panel)
+
+    @pytest.mark.asyncio
     async def test_prompt_refreshed_after_command(self, tmp_path: Path) -> None:
         """After a command runs, the input bar's prompt is refreshed so
         placeholder/suggester track project state changes."""

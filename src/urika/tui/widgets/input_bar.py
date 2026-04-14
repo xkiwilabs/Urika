@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from textual import events, on
+from textual import on
+from textual.binding import Binding
 from textual.message import Message
 from textual.suggester import Suggester
 from textual.widgets import Input
@@ -94,7 +95,25 @@ class InputBar(Input):
     here. Layering our own border-top on top of Textual's default
     Input border collapsed the widget's content area and caused
     the caret to disappear on the first user test.
+
+    Tab binding is declared via BINDINGS with ``priority=True`` so
+    it intercepts the App-level Tab (focus-change) when this widget
+    has focus. A previous version overrode ``_on_key`` directly and
+    broke space-key handling in real terminals (the pilot test
+    passed but the real-terminal dispatch went through a different
+    path that swallowed non-Tab keys). The BINDINGS path is the
+    supported way to add key handling to an Input subclass.
     """
+
+    BINDINGS = [
+        Binding(
+            "tab",
+            "accept_suggestion",
+            "Complete",
+            show=False,
+            priority=True,
+        ),
+    ]
 
     class CommandSubmitted(Message):
         """Fired when user submits input."""
@@ -122,35 +141,26 @@ class InputBar(Input):
         self.focus()
         self.suggester = self._build_suggester()
 
-    async def _on_key(self, event: events.Key) -> None:
-        """Accept the current suggestion on Tab.
+    def action_accept_suggestion(self) -> None:
+        """Accept the current Input suggestion on Tab.
 
-        Textual's Input widget natively accepts suggestions via
-        Right-arrow when the cursor is at the end of the value.
-        Users coming from bash/zsh expect Tab to do the same thing,
-        so wire it up explicitly. If there's no suggestion, let
-        Textual handle Tab as a focus-change key (its default).
+        Mirrors Textual's native Right-arrow accept-suggestion
+        behavior but bound to Tab for bash/zsh muscle memory. If
+        we just completed a bare command (no argument separator
+        yet), append a trailing space so the next character fires
+        argument-level completion from _UrikaSuggester.
         """
-        if event.key == "tab":
-            suggestion = getattr(self, "_suggestion", "") or ""
-            if suggestion and suggestion != self.value:
-                # Replace the current value with the suggestion and
-                # move the cursor to the end. Add a trailing space
-                # so the user can immediately type the next token
-                # (e.g. ``/project `` → then a name).
-                self.value = suggestion
-                self.cursor_position = len(self.value)
-                # Only append a space if we completed a bare command
-                # (no space yet) so it becomes ``/cmd `` and the
-                # suggester can fire for argument completion.
-                if " " not in suggestion[1:]:
-                    self.value = suggestion + " "
-                    self.cursor_position = len(self.value)
-                event.stop()
-                event.prevent_default()
-                return
-        # Fall through to Input's default key handling.
-        await super()._on_key(event)
+        suggestion = getattr(self, "_suggestion", "") or ""
+        if not suggestion or suggestion == self.value:
+            return
+        # Bare command completion → append space so argument-mode
+        # suggester can fire immediately. Otherwise keep the exact
+        # completion the suggester produced.
+        if " " not in suggestion[1:]:
+            self.value = suggestion + " "
+        else:
+            self.value = suggestion
+        self.cursor_position = len(self.value)
 
     @on(Input.Submitted)
     def _on_submit(self, event: Input.Submitted) -> None:

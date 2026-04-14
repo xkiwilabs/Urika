@@ -165,7 +165,9 @@ class UrikaApp(App):
         panel.write_line(
             "  Type /help for commands, or just type to talk to the advisor."
         )
-        panel.write_line("  Press Ctrl+Q to quit.")
+        panel.write_line(
+            "  Press Ctrl+Q to quit. Hold Shift+drag to copy text from the panel."
+        )
         panel.write_line("")
 
     @on(InputBar.CommandSubmitted)
@@ -334,21 +336,32 @@ class UrikaApp(App):
         awaited naturally. Session bookkeeping (tokens, cost, model,
         conversation history) mirrors the REPL's `_handle_free_text`
         so the two paths stay observably equivalent.
+
+        ``set_agent_running`` is called INSIDE the try block so the
+        finally is guaranteed to clear it even if orchestrator
+        construction, query_one, or any other early-path call
+        raises. A previous version set the flag before the try,
+        which left it pinned True forever if a query_one raised
+        NoMatches during app teardown — subsequent messages then
+        got trapped in the ``agent_running`` queue branch in
+        ``_on_command``.
         """
         from urika.cli_display import format_agent_output
 
-        # Create-or-reuse orchestrator. Reset when the project changes
-        # so we don't bleed context between projects.
-        if (
-            self._orchestrator is None
-            or self._orchestrator.project_dir != self.session.project_path
-        ):
-            self._orchestrator = OrchestratorChat(project_dir=self.session.project_path)
-        orch = self._orchestrator
-
         self.session.set_agent_running(agent_name="chat")
-        panel = self.query_one(OutputPanel)
         try:
+            # Create-or-reuse orchestrator. Reset when the project
+            # changes so we don't bleed context between projects.
+            if (
+                self._orchestrator is None
+                or self._orchestrator.project_dir != self.session.project_path
+            ):
+                self._orchestrator = OrchestratorChat(
+                    project_dir=self.session.project_path
+                )
+            orch = self._orchestrator
+
+            panel = self.query_one(OutputPanel)
             result = await orch.chat(text)
             response = result.get("response", "") or ""
 
@@ -367,9 +380,15 @@ class UrikaApp(App):
             self.session.add_message("user", text)
             self.session.add_message("assistant", response[:500])
         except Exception as exc:
-            # Not a silent swallow — the error lands in the panel so the
-            # user can see what went wrong.
-            panel.write_line(f"  \u2717 Error: {exc}")
+            # Not a silent swallow — the error lands in the panel
+            # (via query_one if still available) or the Textual log
+            # if the panel itself is the thing that raised.
+            try:
+                self.query_one(OutputPanel).write_line(
+                    f"  \u2717 Error: {exc}"
+                )
+            except Exception:
+                self.log.error(f"chat error (panel unavailable): {exc}")
         finally:
             self.session.set_agent_idle()
 
