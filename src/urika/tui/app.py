@@ -6,7 +6,7 @@ from pathlib import Path
 
 from textual import on
 from textual.app import App, ComposeResult
-from textual.widgets import Footer
+from textual.containers import Vertical
 
 from urika.orchestrator.chat import OrchestratorChat
 from urika.repl.session import ReplSession
@@ -77,32 +77,56 @@ class UrikaApp(App):
         self._orchestrator: OrchestratorChat | None = None
 
     def compose(self) -> ComposeResult:
+        # Textual's ``dock: bottom`` does NOT stack multiple widgets
+        # to the same edge — each claims the absolute bottom region
+        # independently and they overlap. Instead, group the bottom
+        # strip (InputBar + StatusBar) inside a Vertical container
+        # that itself docks to bottom. Children stack naturally
+        # inside the container.
+        #
+        # The built-in Textual Footer (which renders BINDINGS hints)
+        # is deliberately omitted — it refused to play nicely with
+        # the Vertical/dock combo and kept overlapping StatusBar.
+        # The welcome message prints "Press Ctrl+Q to quit." as the
+        # visible backstop, and Ctrl+C falls through to quit when
+        # no agent is running, so users always have an escape hatch.
         yield OutputPanel()
-        yield InputBar(self.session)
-        yield StatusBar(self.session)
-        yield Footer()
+        with Vertical(id="bottom-stack"):
+            yield InputBar(self.session)
+            yield StatusBar(self.session)
 
     def on_mount(self) -> None:
         """Show the welcome header + global stats on startup.
 
-        Lands in the OutputPanel as a normal sequence of RichLog
-        lines. The ASCII header produced by
-        :func:`urika.cli_display.print_header` is routed through
-        :meth:`_run_with_panel_output` so the colored banner lines
-        are captured into the panel. ``get_global_stats`` is wrapped
-        in a narrow try/except so a fresh install with no projects
-        file doesn't block the TUI — an empty welcome is better than
-        a crash.
+        Lands in the OutputPanel as a sequence of RichLog lines. The
+        ASCII banner from :func:`urika.cli_display.print_header` uses
+        raw ``print()`` with ``\\033[...m`` ANSI codes; we cannot route
+        it through :class:`OutputCapture` because ``_TuiWriter._post_line``
+        calls ``_strip_ansi`` (the panel doesn't render raw VT100).
+        Instead, capture stdout into a StringIO and render each line
+        via ``Text.from_ansi`` so the Rich log preserves the classic
+        Urika blue.
         """
+        import contextlib
+        import io
+
+        from rich.text import Text
+
         from urika.cli_display import print_header
 
         panel = self.query_one(OutputPanel)
 
-        # ASCII banner — the same one the REPL/CLI print. Use the
-        # capture helper so the colored print() calls inside
-        # print_header() route to the panel rather than the raw
-        # terminal (which isn't attached to anything Textual owns).
-        self._run_with_panel_output(print_header)
+        # ASCII banner — same one the REPL/CLI prints. Capture stdout
+        # locally (not through OutputCapture — that strips ANSI) and
+        # parse the escape codes into Rich styles via Text.from_ansi
+        # so the panel keeps the blue banner color.
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            print_header()
+        for line in buf.getvalue().splitlines():
+            panel.write_line(Text.from_ansi(line))
+
+        panel.write_line("")
         panel.write_line("  Urika — Multi-agent scientific analysis platform")
         panel.write_line("")
 

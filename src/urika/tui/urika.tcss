@@ -1,14 +1,15 @@
-/* Urika TUI theme — three-zone layout with accent borders.
+/* Urika TUI theme — vertical container for the bottom strip.
  *
- * Layout (top to bottom):
- *   OutputPanel (1fr)  — scrollable agent output, fills remaining height
- *   InputBar    (3 ln) — always-focused command input, docked bottom
- *   StatusBar   (2 ln) — project/model/tokens/cost, docked bottom
- *   Footer      (1 ln) — Textual's built-in binding hints (ctrl+q etc.)
+ * Visual stack, top→bottom:
+ *   OutputPanel  (1fr)  fills remaining height, scrollable
+ *   #bottom-stack       Vertical container, height 5, docked bottom
+ *     ├─ InputBar (3)   caret row + border (Textual Input default)
+ *     └─ StatusBar (2)  project · model · tokens · cost
  *
- * Docked widgets stack in the order they're yielded from compose(), so
- * the visual order from bottom up is: Footer → StatusBar → InputBar →
- * OutputPanel fills the remainder.
+ * We DO NOT put ``dock: bottom`` on the individual bottom widgets.
+ * Textual docks don't stack — each widget claims the screen's bottom
+ * independently and they overlap. The Vertical wrapper is the only
+ * docked element; its children flow naturally within it.
  */
 
 Screen {
@@ -21,28 +22,22 @@ OutputPanel {
     padding: 0 1;
 }
 
-InputBar {
+#bottom-stack {
     dock: bottom;
-    /* Height 3 = 1 top border + 1 content row + 1 bottom padding.
-     * Lower than 3 makes Textual's Input widget render with zero
-     * visible content area. Don't go below 3. */
-    height: 3;
+    /* Pinned to 5 = InputBar 3 + StatusBar 2. */
+    height: 5;
+}
+
+InputBar {
+    /* Keep it minimal — Textual's Input default (height 3, tall
+     * border) is what makes the caret row visible. Overriding the
+     * border here collapses the content area and the caret vanishes. */
     margin: 0;
-    border-top: solid $accent;
-    background: $background;
 }
 
 StatusBar {
     height: 2;
-    dock: bottom;
     background: $surface;
     color: $text-muted;
     padding: 0 1;
-}
-
-/* Built-in Textual Footer — shows BINDINGS (ctrl+q, ctrl+c, etc.) so
- * users can see at a glance how to quit / cancel. Previously hidden;
- * the user had no visible clue how to exit the app. */
-Footer {
-    dock: bottom;
 }

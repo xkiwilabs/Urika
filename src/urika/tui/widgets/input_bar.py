@@ -14,13 +14,11 @@ class InputBar(Input):
     """Always-on input bar for commands and free text.
 
     Emits CommandSubmitted when the user presses Enter.
-    """
-
-    DEFAULT_CSS = """
-    InputBar {
-        dock: bottom;
-        margin-bottom: 0;
-    }
+    All visual styling (dock, margin, border) lives in
+    ``src/urika/tui/urika.tcss`` — do NOT add a DEFAULT_CSS block
+    here. Layering our own border-top on top of Textual's default
+    Input border collapsed the widget's content area and caused
+    the caret to disappear on the first user test.
     """
 
     class CommandSubmitted(Message):
