@@ -37,19 +37,56 @@ class TestAgentWorker:
             assert "/help" in text
 
     @pytest.mark.asyncio
-    async def test_input_during_agent_run_queues(self) -> None:
-        """Non-slash text submitted while agent is running lands in the
-        session input queue, not the free-text worker."""
-        session = ReplSession()
-        session.set_agent_running(agent_name="task_agent")
-        app = UrikaApp(session=session)
-        async with app.run_test() as pilot:
-            bar = app.query_one("InputBar")
-            bar.value = "try neural network"
-            await pilot.press("enter")
-            await pilot.pause()
-            assert session.has_queued_input
-            assert "neural network" in session.pop_queued_input()
+    async def test_input_during_agent_run_queues(self, tmp_path: Path) -> None:
+        """Non-slash text submitted while a real worker is running
+        lands in the session input queue, not the free-text worker.
+        Uses a real gated /run handler (not a synthetic
+        agent_running flag) because _on_command self-heals stale
+        flags before checking them."""
+        from urika.repl.commands import PROJECT_COMMANDS
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def _blocking_run(session, args):
+            started.set()
+            release.wait(timeout=3.0)
+
+        original = PROJECT_COMMANDS.get("run")
+        PROJECT_COMMANDS["run"] = {"func": _blocking_run, "description": "test"}
+        try:
+            session = ReplSession()
+            session.load_project(path=tmp_path, name="fake")
+            app = UrikaApp(session=session)
+            async with app.run_test() as pilot:
+                bar = app.query_one("InputBar")
+
+                # Start the real worker via /run.
+                bar.value = "/run baseline"
+                await pilot.press("enter")
+                for _ in range(50):
+                    await pilot.pause()
+                    if started.is_set():
+                        break
+                assert started.is_set()
+
+                # Now submit non-slash text — must go to the queue.
+                bar.value = "try neural network"
+                await pilot.press("enter")
+                await pilot.pause()
+                assert session.has_queued_input
+                assert "neural network" in session.pop_queued_input()
+
+                release.set()
+                for _ in range(50):
+                    await pilot.pause()
+                    if not session.agent_running:
+                        break
+        finally:
+            if original is not None:
+                PROJECT_COMMANDS["run"] = original
+            else:
+                PROJECT_COMMANDS.pop("run", None)
 
     @pytest.mark.asyncio
     async def test_blocking_command_routes_to_worker(self, tmp_path: Path) -> None:

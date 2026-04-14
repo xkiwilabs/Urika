@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,37 @@ from urika.tui.app import UrikaApp
 def _panel_text(panel) -> str:
     """Flatten all rendered Strips in an OutputPanel to plain text."""
     return "\n".join(str(strip) for strip in panel.lines)
+
+
+@contextmanager
+def _fake_blocking_run_worker():
+    """Temporarily register a fake blocking /run handler and return the
+    gate events. The caller dispatches ``/run`` in a real worker which
+    then blocks on the ``release`` event — keeping the agent_running
+    flag backed by a live Textual worker so the dispatch's self-heal
+    doesn't clear it.
+
+    Yields ``(started, release)``. Set release to let the worker finish.
+    """
+    from urika.repl.commands import PROJECT_COMMANDS
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def _blocking_run(session, args):
+        started.set()
+        release.wait(timeout=3.0)
+
+    original = PROJECT_COMMANDS.get("run")
+    PROJECT_COMMANDS["run"] = {"func": _blocking_run, "description": "test"}
+    try:
+        yield started, release
+    finally:
+        release.set()  # unblock any still-waiting worker
+        if original is not None:
+            PROJECT_COMMANDS["run"] = original
+        else:
+            PROJECT_COMMANDS.pop("run", None)
 
 
 class TestCommandDispatch:
@@ -102,21 +135,48 @@ class TestCommandDispatch:
             assert "Load a project first" in text
 
     @pytest.mark.asyncio
-    async def test_free_text_while_agent_running_queues(self) -> None:
+    async def test_free_text_while_agent_running_queues(
+        self, tmp_path: Path
+    ) -> None:
+        """While a real worker is running, non-slash text gets queued.
+        The worker must be real (not a synthetic agent_running flag)
+        because _on_command now self-heals stale flags — a fake flag
+        with no live worker would be cleared before dispatch."""
         session = ReplSession()
-        session.agent_running = True  # simulate running agent
-        app = UrikaApp(session=session)
-        async with app.run_test() as pilot:
-            panel = app.query_one("OutputPanel")
-            bar = app.query_one("InputBar")
-            bar.value = "an extra note"
-            await pilot.press("enter")
-            await pilot.pause()
-            text = _panel_text(panel)
-            assert "queued" in text
-            assert "an extra note" in text
-            # And the message actually landed in the session input queue.
-            assert session.has_queued_input
+        session.load_project(path=tmp_path, name="fake")
+
+        with _fake_blocking_run_worker() as (started, release):
+            app = UrikaApp(session=session)
+            async with app.run_test() as pilot:
+                panel = app.query_one("OutputPanel")
+                bar = app.query_one("InputBar")
+
+                # Start the real worker via /run baseline.
+                bar.value = "/run baseline"
+                await pilot.press("enter")
+                for _ in range(50):
+                    await pilot.pause()
+                    if started.is_set():
+                        break
+                assert started.is_set()
+                assert session.agent_running is True
+
+                # Now submit non-slash text — goes to the queue branch.
+                bar.value = "an extra note"
+                await pilot.press("enter")
+                await pilot.pause()
+                text = _panel_text(panel)
+                assert "queued" in text
+                assert "an extra note" in text
+                # And the message actually landed in the session queue.
+                assert session.has_queued_input
+
+                # Drain the worker.
+                release.set()
+                for _ in range(50):
+                    await pilot.pause()
+                    if not session.agent_running:
+                        break
 
     @pytest.mark.asyncio
     async def test_handler_exception_printed_not_crashed(self) -> None:
@@ -147,34 +207,57 @@ class TestCommandDispatch:
             GLOBAL_COMMANDS.pop("boomtest", None)
 
     @pytest.mark.asyncio
-    async def test_slash_command_while_agent_running_shows_busy_hint(self) -> None:
-        """Non-escape slash commands submitted while agent_running=True
-        must NOT be queued (the queue branch is non-slash only) AND
-        must NOT run inline (that would enter self._capture which
+    async def test_slash_command_while_agent_running_shows_busy_hint(
+        self, tmp_path: Path
+    ) -> None:
+        """Non-escape slash commands submitted while a real worker is
+        running must NOT be queued (the queue branch is non-slash only)
+        AND must NOT run inline (that would enter self._capture which
         collides with the worker's already-installed OutputCapture).
         They must show a busy hint and fall through cleanly.
+
+        Uses a REAL gated worker (not a synthetic agent_running flag)
+        because _on_command self-heals stale flags.
 
         /quit remains a separate escape hatch covered by
         test_quit_command_exits. /stop is an escape hatch covered by
         tests in test_agent_worker.py.
         """
         session = ReplSession()
-        session.agent_running = True
-        app = UrikaApp(session=session)
-        async with app.run_test() as pilot:
-            panel = app.query_one("OutputPanel")
-            bar = app.query_one("InputBar")
-            bar.value = "/help"
-            await pilot.press("enter")
-            await pilot.pause()
-            text = _panel_text(panel)
-            # Busy hint, not /help output.
-            assert "busy" in text.lower()
-            assert "Commands:" not in text
-            # And the slash command was NOT queued.
-            assert not session.has_queued_input
-            # App still alive — no crash.
-            assert app._exit is False
+        session.load_project(path=tmp_path, name="fake")
+
+        with _fake_blocking_run_worker() as (started, release):
+            app = UrikaApp(session=session)
+            async with app.run_test() as pilot:
+                panel = app.query_one("OutputPanel")
+                bar = app.query_one("InputBar")
+
+                # Start the real worker.
+                bar.value = "/run baseline"
+                await pilot.press("enter")
+                for _ in range(50):
+                    await pilot.pause()
+                    if started.is_set():
+                        break
+                assert started.is_set()
+                assert session.agent_running is True
+
+                # Now submit /help — should get a busy hint, not execute.
+                bar.value = "/help"
+                await pilot.press("enter")
+                await pilot.pause()
+                text = _panel_text(panel)
+                assert "busy" in text.lower()
+                # And the slash command was NOT queued.
+                assert not session.has_queued_input
+                # App still alive — no crash.
+                assert app._exit is False
+
+                release.set()
+                for _ in range(50):
+                    await pilot.pause()
+                    if not session.agent_running:
+                        break
 
     @pytest.mark.asyncio
     async def test_free_text_with_project_runs_orchestrator(

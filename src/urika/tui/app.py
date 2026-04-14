@@ -170,10 +170,44 @@ class UrikaApp(App):
         )
         panel.write_line("")
 
+    def _heal_stale_agent_running(self) -> None:
+        """Clear ``session.agent_running`` if no worker is actually alive.
+
+        Defensive self-heal for a class of bugs where the flag gets
+        pinned True — worker killed externally, finally block
+        skipped by an async cancellation at the wrong moment,
+        future refactor that forgets to clear the flag, etc. If
+        the flag says an agent is running but NONE of our known
+        worker names (free_text, agent:*) is in a non-terminal
+        state, the flag is stale and we reset it so user input
+        isn't trapped in the queue branch forever.
+        """
+        if not self.session.agent_running:
+            return
+        from textual.worker import WorkerState
+
+        live_states = {WorkerState.PENDING, WorkerState.RUNNING}
+        for worker in self.workers:
+            name = worker.name or ""
+            if name == "free_text" or name.startswith("agent:"):
+                if worker.state in live_states:
+                    return  # A real worker is alive — flag is accurate.
+        # Flag lies. Reset it.
+        self.session.set_agent_idle()
+        self.log.warning(
+            "agent_running was stale (no live worker found) — self-healed"
+        )
+
     @on(InputBar.CommandSubmitted)
     def _on_command(self, event: InputBar.CommandSubmitted) -> None:
         """Dispatch user input to command handlers, queue, or free-text path."""
         text = event.value
+
+        # Self-heal any stale agent_running flag before we check it,
+        # so the user isn't trapped in the queue branch if a previous
+        # worker exited without running its finally clause.
+        self._heal_stale_agent_running()
+
         if text.startswith("/"):
             self._dispatch_command(text)
         elif self.session.agent_running:
@@ -348,8 +382,27 @@ class UrikaApp(App):
         """
         from urika.cli_display import format_agent_output
 
-        self.session.set_agent_running(agent_name="chat")
         try:
+            # set_agent_running INSIDE the try (not before it) so the
+            # finally clause is guaranteed to clear the flag even if
+            # orchestrator construction, query_one, or any other
+            # early-path call raises. The previous iteration had it
+            # before the try and the finally never ran if early
+            # setup exploded, leaving agent_running pinned True and
+            # trapping every subsequent message in the queue branch.
+            self.session.set_agent_running(agent_name="chat")
+            panel = self.query_one(OutputPanel)
+
+            # Echo the user's message into the panel so chat history
+            # is visible in scrollback. Also serves as a diagnostic:
+            # if the user types "hello world" and this line shows
+            # "hello world" faithfully, then spaces are surviving
+            # the input→dispatch path — any missing spaces in the
+            # response would then be on the orchestrator side.
+            from rich.text import Text
+
+            panel.write_line(Text(f"> {text}", style="bold #4a9eff"))
+
             # Create-or-reuse orchestrator. Reset when the project
             # changes so we don't bleed context between projects.
             if (
@@ -361,7 +414,6 @@ class UrikaApp(App):
                 )
             orch = self._orchestrator
 
-            panel = self.query_one(OutputPanel)
             result = await orch.chat(text)
             response = result.get("response", "") or ""
 
