@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from textual import on
 from textual.app import App, ComposeResult
 from textual.widgets import Footer
@@ -41,6 +43,12 @@ _ALWAYS_ALLOWED_COMMANDS = frozenset({"quit", "stop"})
 class UrikaApp(App):
     """Urika TUI — three-zone interactive interface."""
 
+    # Absolute path so subclasses in tests (e.g. CapturingApp in
+    # test_input_bar.py) don't resolve CSS relative to their own
+    # __module__ directory and fail. Textual's default behavior is to
+    # resolve a string CSS_PATH relative to the subclass's module,
+    # which would break the moment anything subclasses UrikaApp.
+    CSS_PATH = Path(__file__).parent / "urika.tcss"
     TITLE = "Urika"
     SUB_TITLE = "Multi-agent scientific analysis"
 

@@ -1,0 +1,44 @@
+/* Urika TUI theme — three-zone layout with accent borders.
+ *
+ * Layout (top to bottom):
+ *   OutputPanel (1fr)  — scrollable agent output, fills remaining height
+ *   InputBar    (1 ln) — always-focused command input, docked bottom
+ *   StatusBar   (2 ln) — project/model/tokens/cost, docked bottom
+ *
+ * Docked widgets stack in the order they're yielded from compose(), so
+ * InputBar ends up between OutputPanel and StatusBar visually even
+ * though both dock to bottom.
+ */
+
+Screen {
+    background: $background;
+}
+
+OutputPanel {
+    height: 1fr;
+    border-bottom: solid $accent;
+    scrollbar-size: 1 1;
+    padding: 0 1;
+}
+
+InputBar {
+    dock: bottom;
+    height: 1;
+    margin: 0;
+    border-top: solid $accent;
+    background: $background;
+}
+
+StatusBar {
+    height: 2;
+    dock: bottom;
+    background: $surface;
+    color: $text-muted;
+    padding: 0 1;
+}
+
+/* The built-in Footer is hidden — StatusBar is our own footer and
+ * there's no need for both. BINDINGS still work via the key hooks. */
+Footer {
+    display: none;
+}
