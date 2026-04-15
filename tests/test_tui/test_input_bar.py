@@ -83,6 +83,44 @@ class TestInputBar:
             assert bar.value == ""
 
     @pytest.mark.asyncio
+    async def test_select_on_focus_disabled(self) -> None:
+        """Regression: ``select_on_focus`` must be False.
+
+        Textual's Input defaults select_on_focus to True. In a real
+        terminal, focus events can fire on redraws / window state
+        changes / mouse moves. When a selection is active, the next
+        keystroke replaces the selection with a single character —
+        which the user observed as "space eats the whole word". The
+        bug didn't show up in headless pilot tests because pilot
+        doesn't generate spurious focus events. Pin the defense.
+        """
+        app = UrikaApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            bar = app.query_one("InputBar")
+            assert bar.select_on_focus is False
+
+            # Also sanity-check the behavior: after focus, typing
+            # "hello" then refocusing then typing space must append
+            # a space, not replace the value.
+            bar.value = "hello"
+            # Force a refocus — in a real terminal this can happen
+            # spontaneously.
+            bar.blur()
+            await pilot.pause()
+            bar.focus()
+            await pilot.pause()
+            # Type a space. Without select_on_focus=False, this
+            # would replace "hello" with " ". With the fix, it
+            # appends.
+            bar.cursor_position = len(bar.value)
+            await pilot.press("space")
+            await pilot.pause()
+            assert bar.value == "hello ", (
+                f"space after refocus should append, got {bar.value!r}"
+            )
+
+    @pytest.mark.asyncio
     async def test_suggester_built_from_commands(self) -> None:
         app = UrikaApp()
         async with app.run_test() as pilot:

@@ -125,7 +125,20 @@ class InputBar(Input):
     def __init__(self, session: ReplSession, **kwargs: object) -> None:
         self.session = session
         prompt = self._build_prompt()
-        super().__init__(placeholder=prompt, **kwargs)
+        # select_on_focus=False is critical. Textual's Input defaults
+        # it to True, which re-selects the whole value every time the
+        # widget gains focus. In a real terminal focus events can
+        # fire on redraws, window state changes, and mouse moves —
+        # and when a selection is active, Input._on_key's branch
+        # "selection.is_empty → insert_text_at_cursor / else →
+        # replace(char, *selection)" means the NEXT keystroke
+        # replaces the entire value with a single character. This
+        # looked exactly like "space is eaten" in the user's session
+        # because every space press landed during a brief re-focus
+        # and replaced "hello" with "". Headless pilot doesn't
+        # trigger spurious focus events, which is why the bug
+        # didn't show up in tests.
+        super().__init__(placeholder=prompt, select_on_focus=False, **kwargs)
 
     def _build_prompt(self) -> str:
         if self.session.has_project:
