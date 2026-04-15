@@ -29,15 +29,23 @@ OutputPanel {
 }
 
 InputBar {
-    /* Keep width/height overrides minimal — Textual's Input default
-     * (height 3, tall border) is what makes the caret row visible.
-     * Overriding the border SIZE (e.g. ``border: round $accent``)
-     * can collapse the content area and hide the caret. The TYPE
-     * stays ``tall`` (thin top + bottom rule); only the color is
-     * changed to the Urika blue so the input is visually separated
-     * from the output panel above and the status bar below. */
+    /* Shorter vertical footprint than the Textual default.
+     *   - ``border: round #4a9eff`` uses Textual's "round" border
+     *     style which draws a 1-row top + 1-row bottom rule with
+     *     rounded corners. Still adds 2 rows but the visual weight
+     *     is lighter than "tall".
+     *   - ``height: 3`` = 1 top border + 1 content + 1 bottom
+     *     border (the minimum that keeps the caret row visible).
+     *   - ``padding: 0 1`` = zero vertical padding, one column
+     *     horizontal so the caret doesn't touch the border.
+     * The previous "tall" border was the same 3 rows but the user
+     * wanted the vertical weight reduced — swapping to "round"
+     * gives thinner top/bottom lines and the padding reset
+     * removes the extra breathing room above/below the text. */
     margin: 0;
-    border: tall #4a9eff;
+    height: 3;
+    padding: 0 1;
+    border: round #4a9eff;
     border-title-color: #4a9eff;
 }
 
@@ -45,9 +53,10 @@ InputBar {
  * where $border is a tan/brown theme color. That override kicks in
  * the moment the InputBar gets focus (which is immediately on mount)
  * and paints the border brown. Pin the focus state to the same Urika
- * blue so the border color is stable. */
+ * blue (and same "round" style) so the border is stable regardless
+ * of focus. */
 InputBar:focus {
-    border: tall #4a9eff;
+    border: round #4a9eff;
 }
 
 StatusBar {
