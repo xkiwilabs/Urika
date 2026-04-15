@@ -24,11 +24,30 @@ It is just an ``Input`` subclass that:
 
 from __future__ import annotations
 
+import datetime
+from contextlib import suppress
+
 from textual import on
 from textual.message import Message
 from textual.widgets import Input
 
 from urika.repl.session import ReplSession
+
+
+_LOG_PATH = "/tmp/urika-tui.log"
+
+
+def _log(message: str) -> None:
+    """Append a timestamped diagnostic line to /tmp/urika-tui.log.
+
+    Single place so both watch_value and _on_key share one file
+    handler. Errors are swallowed — we don't want a logging failure
+    to break the TUI during a user test.
+    """
+    with suppress(OSError):
+        with open(_LOG_PATH, "a", encoding="utf-8") as fh:
+            ts = datetime.datetime.now().strftime("%H:%M:%S.%f")
+            fh.write(f"{ts}  {message}\n")
 
 
 class InputBar(Input):
@@ -67,31 +86,27 @@ class InputBar(Input):
         self.focus()
 
     def watch_value(self, value: str) -> None:
-        """Diagnostic hook: log every value mutation to ``/tmp/urika-tui.log``.
+        """Diagnostic hook: log every value mutation to ``/tmp/urika-tui.log``."""
+        _log(f"watch_value → {value!r}  len={len(value)}")
 
-        Writes one timestamped line per keystroke so we can see the
-        exact trajectory of ``self.value``. The file is appended to
-        across the whole session and never cleared automatically —
-        truncate manually between test runs if you want a clean log::
+    async def _on_key(self, event: object) -> None:
+        """Diagnostic hook: log every key event that reaches Input.
 
-            : > /tmp/urika-tui.log
-            urika
-
-        Interpretation:
-
-        * ``value`` never contains a space → the bug is UPSTREAM of
-          the widget. Space keystrokes aren't reaching ``Input._on_key``
-          at all. Root cause is in key routing / focus / driver.
-        * ``value`` shows a space appear then disappear → something
-          is MUTATING value after the fact. Much narrower search.
+        We chain to ``super()._on_key(event)`` so the Input widget's
+        native character-insert path still runs. If the log shows
+        space keys arriving here but ``watch_value`` never reports a
+        space in ``value``, the interception is inside Input itself.
+        If the log NEVER shows a space arriving, the interception is
+        upstream of the widget entirely (dispatch / focus / driver).
         """
-        import datetime
-        from contextlib import suppress
-
-        with suppress(OSError):
-            with open("/tmp/urika-tui.log", "a", encoding="utf-8") as fh:
-                ts = datetime.datetime.now().strftime("%H:%M:%S.%f")
-                fh.write(f"{ts}  value={value!r}  len={len(value)}\n")
+        key = getattr(event, "key", None)
+        character = getattr(event, "character", None)
+        is_printable = getattr(event, "is_printable", None)
+        _log(
+            f"_on_key ← key={key!r}  char={character!r}  "
+            f"printable={is_printable}"
+        )
+        await super()._on_key(event)  # type: ignore[misc]
 
     @on(Input.Submitted)
     def _on_submit(self, event: Input.Submitted) -> None:
