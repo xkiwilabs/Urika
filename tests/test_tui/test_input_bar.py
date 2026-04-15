@@ -51,15 +51,12 @@ class TestInputBar:
             await pilot.pause()
             bar = app.query_one("InputBar")
             assert "urika>" in bar.placeholder
-            # refresh_prompt has two halves: update the placeholder AND
-            # rebuild the suggester. Assert both — the suggester contract
-            # was uncovered when the review ran.
-            suggester_before = bar.suggester
+            # Minimum-diagnostic build: refresh_prompt only touches
+            # the placeholder now. The suggester rebuild assertion
+            # will return once the suggester is restored.
             session.load_project(path=tmp_path, name="my-study")
             bar.refresh_prompt()
             assert "my-study" in bar.placeholder
-            assert bar.suggester is not None
-            assert bar.suggester is not suggester_before
 
     @pytest.mark.asyncio
     async def test_submit_emits_command_and_clears(self) -> None:
@@ -120,6 +117,10 @@ class TestInputBar:
                 f"space after refocus should append, got {bar.value!r}"
             )
 
+    @pytest.mark.skip(
+        reason="Suggester removed in minimum-diagnostic build while chasing "
+        "space-key eating bug. Re-enable once InputBar is back to full feature set."
+    )
     @pytest.mark.asyncio
     async def test_suggester_built_from_commands(self) -> None:
         app = UrikaApp()
@@ -128,6 +129,9 @@ class TestInputBar:
             bar = app.query_one("InputBar")
             assert bar.suggester is not None
 
+    @pytest.mark.skip(
+        reason="Suggester removed in minimum-diagnostic build; re-enable later."
+    )
     @pytest.mark.asyncio
     async def test_suggester_completes_commands(self) -> None:
         """The contextual suggester returns real commands for a
@@ -142,6 +146,9 @@ class TestInputBar:
             # No leading slash → no suggestion (free text path).
             assert await bar.suggester.get_suggestion("hello") is None
 
+    @pytest.mark.skip(
+        reason="Tab completion removed in minimum-diagnostic build; re-enable later."
+    )
     @pytest.mark.asyncio
     async def test_tab_accepts_command_suggestion(self) -> None:
         """Pressing Tab on a partial slash command must replace the
@@ -160,6 +167,9 @@ class TestInputBar:
             assert bar.value == "/help "
             assert bar.cursor_position == len("/help ")
 
+    @pytest.mark.skip(
+        reason="Suggester removed in minimum-diagnostic build; re-enable later."
+    )
     @pytest.mark.asyncio
     async def test_suggester_completes_project_argument(
         self, tmp_path
