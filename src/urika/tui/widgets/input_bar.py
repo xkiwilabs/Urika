@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import datetime
 from contextlib import suppress
+from typing import ClassVar
 
 from textual import on
 from textual.message import Message
@@ -89,15 +90,42 @@ class InputBar(Input):
         """Diagnostic hook: log every value mutation to ``/tmp/urika-tui.log``."""
         _log(f"watch_value → {value!r}  len={len(value)}")
 
-    async def _on_key(self, event: object) -> None:
-        """Diagnostic hook: log every key event that reaches Input.
+    # Key name → the character Textual should have attached to the
+    # Key event but didn't. Populated from an actual Textual 8.1.1
+    # bug in _xterm_parser.py: when a terminal uses the
+    # modifyOtherKeys / CSI-u extended-key protocol (kitty, ghostty,
+    # WezTerm, modern GNOME Terminal, etc.), printable keys like
+    # space arrive wrapped in multi-char escape sequences such as
+    # ``\x1b[27;1;32~``. The parser at line 377 sets
+    # ``character = sequence if len(sequence) == 1 else None`` which
+    # correctly derives ``key="space"`` but then leaves
+    # ``character=None`` because the raw sequence is longer than one
+    # char. Downstream, Input._on_key's ``if event.is_printable:``
+    # check fails and the keystroke is silently dropped.
+    #
+    # This map lets us synthesize the missing character from the key
+    # name and insert it ourselves. Only covers keys we've seen the
+    # bug affect in practice; extend if the user reports another
+    # key getting eaten the same way.
+    _MISSING_CHARACTER_BY_KEY: ClassVar[dict[str, str]] = {
+        "space": " ",
+    }
 
-        We chain to ``super()._on_key(event)`` so the Input widget's
-        native character-insert path still runs. If the log shows
-        space keys arriving here but ``watch_value`` never reports a
-        space in ``value``, the interception is inside Input itself.
-        If the log NEVER shows a space arriving, the interception is
-        upstream of the widget entirely (dispatch / focus / driver).
+    async def _on_key(self, event: object) -> None:
+        """Work around a Textual 8.1.1 parser bug for extended keys.
+
+        Logs every key event to /tmp/urika-tui.log for diagnosis
+        and then checks for the extended-key protocol regression:
+        if ``event.key`` is in ``_MISSING_CHARACTER_BY_KEY`` and
+        ``event.character is None``, we manually insert the known
+        character and stop the event before Input._on_key sees it
+        (otherwise Input would correctly conclude that a key event
+        with no character and no binding has nothing to do and
+        drop it on the floor).
+
+        For all other keys we chain to ``await super()._on_key(event)``
+        unchanged, so normal character input, BINDINGS, and special
+        keys continue to work as Textual intends.
         """
         key = getattr(event, "key", None)
         character = getattr(event, "character", None)
@@ -106,6 +134,28 @@ class InputBar(Input):
             f"_on_key ← key={key!r}  char={character!r}  "
             f"printable={is_printable}"
         )
+
+        # Workaround: synthesize the missing character for extended-
+        # key protocol regressions. Only fires when character is None
+        # AND the key name is in our known-bug map — normal single-
+        # byte space (character=" ") falls through unchanged.
+        if (
+            character is None
+            and key in self._MISSING_CHARACTER_BY_KEY
+        ):
+            injected = self._MISSING_CHARACTER_BY_KEY[key]
+            _log(f"_on_key   ↳ synthesizing character={injected!r}")
+            # Replicate Input._on_key's printable branch manually.
+            self.insert_text_at_cursor(injected)
+            # Stop the event so Input._on_key doesn't try to
+            # process it (and possibly log a warning).
+            try:
+                event.stop()  # type: ignore[attr-defined]
+                event.prevent_default()  # type: ignore[attr-defined]
+            except AttributeError:
+                pass
+            return
+
         await super()._on_key(event)  # type: ignore[misc]
 
     @on(Input.Submitted)

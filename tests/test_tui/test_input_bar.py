@@ -80,6 +80,45 @@ class TestInputBar:
             assert bar.value == ""
 
     @pytest.mark.asyncio
+    async def test_extended_key_space_workaround(self) -> None:
+        """Regression test for the Textual 8.1.1 extended-key parser bug.
+
+        When a modern terminal (GNOME Terminal / kitty / ghostty /
+        WezTerm) uses the modifyOtherKeys / CSI-u extended-key
+        protocol, printable keys like space arrive at
+        ``Input._on_key`` as ``Key(key="space", character=None)``
+        — the multi-char escape sequence around the ``32`` ASCII
+        code defeats the parser's ``sequence if len(sequence) == 1
+        else None`` logic. Input's ``if event.is_printable:`` check
+        then drops the event on the floor and the space vanishes.
+
+        InputBar._on_key works around it by synthesizing the
+        character from a known-bug map
+        (``_MISSING_CHARACTER_BY_KEY``) when ``character is None``
+        and ``key`` matches. This test directly injects a Key event
+        shaped exactly like the extended-key regression and asserts
+        that the space lands in ``value``.
+        """
+        from textual.events import Key
+
+        app = UrikaApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            bar = app.query_one("InputBar")
+            bar.value = "hello"
+            bar.cursor_position = 5
+            await pilot.pause()
+
+            # Simulate the buggy event exactly as the parser emits it.
+            buggy_event = Key(key="space", character=None)
+            await bar._on_key(buggy_event)
+            await pilot.pause()
+
+            assert bar.value == "hello ", (
+                f"workaround should have inserted a space; got {bar.value!r}"
+            )
+
+    @pytest.mark.asyncio
     async def test_select_on_focus_disabled(self) -> None:
         """Regression: ``select_on_focus`` must be False.
 
