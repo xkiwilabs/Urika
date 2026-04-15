@@ -67,19 +67,31 @@ class InputBar(Input):
         self.focus()
 
     def watch_value(self, value: str) -> None:
-        """Diagnostic hook: log every value mutation.
+        """Diagnostic hook: log every value mutation to ``/tmp/urika-tui.log``.
 
-        Visible in the Textual dev console
-        (``textual console`` in another terminal + launch the
-        app with ``textual run --dev -c urika``). If spaces are
-        being eaten BEFORE value is updated, the log will show
-        e.g. ``hello`` → ``hellow`` → ``hellowo`` with no space
-        ever appearing. If they're eaten AFTER value updates
-        (some watcher or later mutation), the log will show
-        ``hello`` → ``hello `` → ``hello`` back down — which
-        would prove a mutation we need to hunt.
+        Writes one timestamped line per keystroke so we can see the
+        exact trajectory of ``self.value``. The file is appended to
+        across the whole session and never cleared automatically —
+        truncate manually between test runs if you want a clean log::
+
+            : > /tmp/urika-tui.log
+            urika
+
+        Interpretation:
+
+        * ``value`` never contains a space → the bug is UPSTREAM of
+          the widget. Space keystrokes aren't reaching ``Input._on_key``
+          at all. Root cause is in key routing / focus / driver.
+        * ``value`` shows a space appear then disappear → something
+          is MUTATING value after the fact. Much narrower search.
         """
-        self.log(f"InputBar.value = {value!r}  len={len(value)}")
+        import datetime
+        from contextlib import suppress
+
+        with suppress(OSError):
+            with open("/tmp/urika-tui.log", "a", encoding="utf-8") as fh:
+                ts = datetime.datetime.now().strftime("%H:%M:%S.%f")
+                fh.write(f"{ts}  value={value!r}  len={len(value)}\n")
 
     @on(Input.Submitted)
     def _on_submit(self, event: Input.Submitted) -> None:
