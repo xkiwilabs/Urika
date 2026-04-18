@@ -48,7 +48,7 @@ class ActivityBar(Static):
 
     DEFAULT_CSS = """
     ActivityBar {
-        height: 0;
+        height: 1;
         padding: 0 1;
         color: #ffcc66;
     }
@@ -72,17 +72,11 @@ class ActivityBar(Static):
 
     def watch_tick(self, _value: int) -> None:
         """Re-render on every tick."""
-        if self.session.agent_running:
-            if self.styles.height is None or str(self.styles.height) == "0":
-                self.styles.height = 1
-            self.refresh()
-        else:
-            if self.styles.height is None or str(self.styles.height) != "0":
-                self.styles.height = 0
+        self.refresh()
 
     def render(self) -> Text:
         if not self.session.agent_running:
-            return Text("")
+            return Text(" ready", style="dim #666666")
 
         # Spinner frame
         frame = _SPINNER_FRAMES[self._frame_idx % len(_SPINNER_FRAMES)]

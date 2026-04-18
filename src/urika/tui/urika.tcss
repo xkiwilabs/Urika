@@ -25,10 +25,8 @@ OutputPanel {
 
 #bottom-stack {
     dock: bottom;
-    /* InputBar 3 + ActivityBar 0-1 + StatusBar 1 = 4-5 rows. */
-    height: auto;
-    max-height: 5;
-    min-height: 4;
+    /* InputBar 3 + ActivityBar 1 + StatusBar 1 = 5. Always fixed. */
+    height: 5;
 }
 
 InputBar {
