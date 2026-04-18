@@ -419,20 +419,14 @@ class UrikaApp(App):
         input_bar.refresh_prompt()
 
     def _dispatch_free_text(self, text: str) -> None:
-        """Send free text to the chat orchestrator on a Textual Worker.
+        """Send free text to the orchestrator on a Textual Worker.
 
-        Must NOT call the REPL's `_handle_free_text` synchronously —
-        that function wraps `asyncio.run(orchestrator.chat(...))`, which
-        raises RuntimeError when called from an already-running event
-        loop (which Textual always has). Instead, schedule an async
-        coroutine worker that awaits `orchestrator.chat` directly.
-        Task 8 will extend this to full agent-command workers with
-        cancellation; Task 7 only needs the chat path.
+        Works both with and without a project loaded. Without a
+        project, the orchestrator's system prompt provides guidance
+        about available commands and helps the user get started.
+        With a project, it answers questions about the data, plans
+        experiments, and coordinates agents.
         """
-        if not self.session.has_project:
-            panel = self.query_one(OutputPanel)
-            panel.write_line("  Load a project first: /project <name>")
-            return
         self.run_worker(self._run_free_text(text), name="free_text")
 
     async def _run_free_text(self, text: str) -> None:

@@ -123,16 +123,43 @@ class TestCommandDispatch:
             assert "/help" in text
 
     @pytest.mark.asyncio
-    async def test_free_text_without_project_shows_hint(self) -> None:
+    async def test_free_text_without_project_dispatches_to_orchestrator(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Free text without a project loaded should still reach the
+        orchestrator — it handles the no-project case by guiding the
+        user to load or create one."""
+        from urika.tui import app as tui_app_module
+
+        calls: list[str] = []
+
+        class StubOrchestrator:
+            def __init__(self, project_dir=None):
+                self.project_dir = project_dir
+
+            async def chat(self, text, **kwargs):
+                calls.append(text)
+                return {
+                    "response": "No project loaded. Try /project <name>.",
+                    "success": True,
+                    "tokens_in": 5,
+                    "tokens_out": 10,
+                    "cost_usd": 0,
+                    "model": "stub",
+                }
+
+        monkeypatch.setattr(tui_app_module, "OrchestratorChat", StubOrchestrator)
+
         app = UrikaApp()
         async with app.run_test() as pilot:
-            panel = app.query_one("OutputPanel")
             bar = app.query_one("InputBar")
-            bar.value = "What's the correlation between age and score?"
+            bar.value = "hello"
             await pilot.press("enter")
-            await pilot.pause()
-            text = _panel_text(panel)
-            assert "Load a project first" in text
+            for _ in range(20):
+                await pilot.pause()
+                if not app.session.agent_running:
+                    break
+            assert calls == ["hello"]
 
     @pytest.mark.asyncio
     async def test_free_text_while_agent_running_queues(
