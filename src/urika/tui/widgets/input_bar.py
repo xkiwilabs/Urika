@@ -156,10 +156,25 @@ class InputBar(Input):
 
     @on(Input.Submitted)
     def _on_submit(self, event: Input.Submitted) -> None:
-        """Handle Enter — emit CommandSubmitted, clear, stop the event."""
+        """Handle Enter — emit CommandSubmitted, clear, stop the event.
+
+        When a worker is waiting for interactive input (click.prompt
+        asking for a default value), empty Enter must be submitted
+        so the worker's stdin reader unblocks with "\\n" and
+        click.prompt accepts the default. Without this, empty input
+        is silently swallowed and the user can never accept defaults
+        or leave fields empty.
+        """
+        from urika.tui.agent_worker import get_active_stdin_reader
+
         text = event.value.strip()
+        reader = get_active_stdin_reader()
         if text:
             self.post_message(self.CommandSubmitted(text))
+        elif reader is not None:
+            # Empty submit while a worker waits for input — feed
+            # empty line so click.prompt accepts the default.
+            reader.feed("")
         self.value = ""
         event.stop()
 
