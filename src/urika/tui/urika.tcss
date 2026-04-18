@@ -19,7 +19,8 @@ Screen {
 
 OutputPanel {
     height: 1fr;
-    scrollbar-size: 1 1;
+    scrollbar-size-vertical: 1;
+    scrollbar-size-horizontal: 0;
     padding: 0 1;
 }
 

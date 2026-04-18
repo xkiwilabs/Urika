@@ -28,6 +28,7 @@ class OutputPanel(RichLog):
     """
 
     can_focus = False
+    wrap = True
 
     # No DEFAULT_CSS border — it was ``border-bottom: solid $accent``
     # which paints a tan/gold line between the panel and the input
@@ -38,5 +39,5 @@ class OutputPanel(RichLog):
     # explicit hex so it doesn't pick up the theme color.
 
     def write_line(self, content: str | Text) -> None:
-        """Write a line to the output panel."""
-        self.write(content)
+        """Write a line to the output panel with word-wrapping."""
+        self.write(content, expand=True)
