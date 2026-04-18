@@ -105,17 +105,23 @@ def run_command_suspended(
 
     from urika.cli_display import print_error
 
+    from urika.tui.widgets.output_panel import OutputPanel
+
+    error_holder: list[str] = []
+    success = False
+
     try:
         with app.suspend():
             print()
 
-            error_holder: list[str] = []
-
             def _run() -> None:
+                nonlocal success
                 try:
                     handler(app.session, args)
+                    success = True
                 except SystemExit:
                     app.session.save_usage()
+                    success = True
                 except Exception as exc:
                     error_holder.append(str(exc))
                     print_error(f"Error: {exc}")
@@ -123,8 +129,25 @@ def run_command_suspended(
             thread = threading.Thread(target=_run, daemon=True)
             thread.start()
             thread.join()
+            # Auto-resume — no "Press Enter" needed. Textual redraws
+            # the TUI immediately when the suspend block exits.
+    except Exception:
+        pass
 
-            print()
-            input("Press Enter to return to the TUI...")
+    # After TUI resumes, echo a summary to the panel so the user
+    # has context about what just happened (the interactive output
+    # went to the raw terminal, not the panel).
+    try:
+        from rich.text import Text
+
+        panel = app.query_one(OutputPanel)
+        if error_holder:
+            panel.write_line(
+                Text(f"  /{cmd_name} error: {error_holder[0]}", style="red")
+            )
+        elif success:
+            panel.write_line(
+                Text(f"  /{cmd_name} completed.", style="dim")
+            )
     except Exception:
         pass
