@@ -25,12 +25,10 @@ OutputPanel {
 
 #bottom-stack {
     dock: bottom;
-    /* InputBar 3 + ActivityBar 0-1 + StatusBar 2 = 5-6 rows.
-     * Use ``height: auto`` so the container grows when ActivityBar
-     * expands from 0→1 and shrinks when it collapses back. */
+    /* InputBar 3 + ActivityBar 0-1 + StatusBar 1 = 4-5 rows. */
     height: auto;
-    max-height: 6;
-    min-height: 5;
+    max-height: 5;
+    min-height: 4;
 }
 
 InputBar {
@@ -46,7 +44,7 @@ InputBar:focus {
 }
 
 StatusBar {
-    height: 2;
+    height: 1;
     background: $surface;
     color: $text-muted;
     padding: 0 1;
