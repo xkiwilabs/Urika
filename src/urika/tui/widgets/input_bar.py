@@ -1,65 +1,98 @@
-"""Input bar — minimum-viable diagnostic build.
-
-This is a deliberate strip-down to isolate the "space key is eaten"
-bug. Everything non-essential has been removed:
-
-* No custom BINDINGS (no Tab completion)
-* No custom Suggester (no ghost-text completion)
-* No focus-management quirks
-* No custom key handlers
-
-It is just an ``Input`` subclass that:
-
-1. Holds a reference to the session so the placeholder can show
-   the project name.
-2. Emits ``CommandSubmitted`` on Enter.
-3. Logs every single value mutation via ``watch_value`` so we can
-   see, in the Textual dev console, exactly what Textual thinks
-   the widget's value is after every keystroke. If the logs show
-   ``"hello "`` landing correctly but then getting clobbered to
-   ``"hello"``, the bug is a mutation we can't see statically.
-   If ``value`` never contains a space at all, the bug is upstream
-   of the widget (focus stealing, key routing, driver).
-"""
+"""Input bar with contextual command/argument completion."""
 
 from __future__ import annotations
 
-import datetime
-from contextlib import suppress
 from typing import ClassVar
 
 from textual import on
+from textual.binding import Binding
 from textual.message import Message
+from textual.suggester import Suggester
 from textual.widgets import Input
 
 from urika.repl.session import ReplSession
 
 
-_LOG_PATH = "/tmp/urika-tui.log"
+class _UrikaSuggester(Suggester):
+    """Context-aware completion for the Urika TUI input bar.
 
-
-def _log(message: str) -> None:
-    """Append a timestamped diagnostic line to /tmp/urika-tui.log.
-
-    Single place so both watch_value and _on_key share one file
-    handler. Errors are swallowed — we don't want a logging failure
-    to break the TUI during a user test.
+    * No leading ``/`` — no suggestion (free text).
+    * ``/<partial>`` (no space) — suggest available slash commands.
+    * ``/cmd <partial>`` — suggest command arguments (project names,
+      experiment IDs).
     """
-    with suppress(OSError):
-        with open(_LOG_PATH, "a", encoding="utf-8") as fh:
-            ts = datetime.datetime.now().strftime("%H:%M:%S.%f")
-            fh.write(f"{ts}  {message}\n")
+
+    _PROJECT_ARG_COMMANDS = frozenset({"project", "resume", "resume-session"})
+    _EXPERIMENT_ARG_COMMANDS = frozenset(
+        {"present", "logs", "evaluate", "report", "plan", "results"}
+    )
+
+    def __init__(self, session: ReplSession) -> None:
+        super().__init__(use_cache=False, case_sensitive=True)
+        self.session = session
+
+    async def get_suggestion(self, value: str) -> str | None:
+        if not value.startswith("/"):
+            return None
+        rest = value[1:]
+        if " " not in rest:
+            return self._suggest_command(rest)
+        cmd, _, arg_prefix = rest.partition(" ")
+        cmd_lc = cmd.lower()
+        if cmd_lc in self._PROJECT_ARG_COMMANDS:
+            return self._suggest_project(cmd, arg_prefix)
+        if cmd_lc in self._EXPERIMENT_ARG_COMMANDS:
+            return self._suggest_experiment(cmd, arg_prefix)
+        return None
+
+    def _suggest_command(self, prefix: str) -> str | None:
+        from urika.repl.commands import get_command_names
+
+        for name in get_command_names(self.session):
+            if name.startswith(prefix):
+                return "/" + name
+        return None
+
+    def _suggest_project(self, cmd: str, arg_prefix: str) -> str | None:
+        from urika.repl.commands import get_project_names
+
+        for name in get_project_names():
+            if name.startswith(arg_prefix):
+                return f"/{cmd} {name}"
+        return None
+
+    def _suggest_experiment(self, cmd: str, arg_prefix: str) -> str | None:
+        from urika.repl.commands import get_experiment_ids
+
+        for eid in get_experiment_ids(self.session):
+            if eid.startswith(arg_prefix):
+                return f"/{cmd} {eid}"
+        return None
 
 
 class InputBar(Input):
-    """Minimal Input subclass for the Urika TUI.
+    """Command input bar with tab completion and the Textual 8.1.1
+    space-key workaround.
 
-    Tab completion, suggester, custom key handling, and focus
-    overrides are all intentionally absent while we chase down
-    why space is being eaten in the real terminal. Once that is
-    resolved they can be added back one at a time, with a
-    regression test between each addition.
+    No placeholder text — the project/urika info is already visible
+    in the StatusBar directly below.
     """
+
+    BINDINGS = [
+        Binding(
+            "tab",
+            "accept_suggestion",
+            "Complete",
+            show=False,
+            priority=True,
+        ),
+    ]
+
+    # Textual 8.1.1 extended-key parser bug workaround. See the
+    # _on_key docstring for the full explanation.
+    _MISSING_CHARACTER_BY_KEY: ClassVar[dict[str, str]] = {
+        "space": " ",
+    }
 
     class CommandSubmitted(Message):
         """Fired when the user submits input with Enter."""
@@ -70,85 +103,48 @@ class InputBar(Input):
 
     def __init__(self, session: ReplSession, **kwargs: object) -> None:
         self.session = session
-        prompt = self._build_prompt()
         super().__init__(
-            placeholder=prompt,
+            placeholder="",
             select_on_focus=False,
             **kwargs,
         )
 
-    def _build_prompt(self) -> str:
-        if self.session.has_project:
-            return f"urika:{self.session.project_name}> "
-        return "urika> "
+    def _build_suggester(self) -> _UrikaSuggester:
+        return _UrikaSuggester(self.session)
 
     def on_mount(self) -> None:
-        """Focus the input on mount so users can type immediately."""
+        """Focus input and set up suggester."""
         self.focus()
+        self.suggester = self._build_suggester()
 
-    def watch_value(self, value: str) -> None:
-        """Diagnostic hook: log every value mutation to ``/tmp/urika-tui.log``."""
-        _log(f"watch_value → {value!r}  len={len(value)}")
-
-    # Key name → the character Textual should have attached to the
-    # Key event but didn't. Populated from an actual Textual 8.1.1
-    # bug in _xterm_parser.py: when a terminal uses the
-    # modifyOtherKeys / CSI-u extended-key protocol (kitty, ghostty,
-    # WezTerm, modern GNOME Terminal, etc.), printable keys like
-    # space arrive wrapped in multi-char escape sequences such as
-    # ``\x1b[27;1;32~``. The parser at line 377 sets
-    # ``character = sequence if len(sequence) == 1 else None`` which
-    # correctly derives ``key="space"`` but then leaves
-    # ``character=None`` because the raw sequence is longer than one
-    # char. Downstream, Input._on_key's ``if event.is_printable:``
-    # check fails and the keystroke is silently dropped.
-    #
-    # This map lets us synthesize the missing character from the key
-    # name and insert it ourselves. Only covers keys we've seen the
-    # bug affect in practice; extend if the user reports another
-    # key getting eaten the same way.
-    _MISSING_CHARACTER_BY_KEY: ClassVar[dict[str, str]] = {
-        "space": " ",
-    }
+    def action_accept_suggestion(self) -> None:
+        """Accept the current suggestion on Tab."""
+        suggestion = getattr(self, "_suggestion", "") or ""
+        if not suggestion or suggestion == self.value:
+            return
+        if " " not in suggestion[1:]:
+            self.value = suggestion + " "
+        else:
+            self.value = suggestion
+        self.cursor_position = len(self.value)
 
     async def _on_key(self, event: object) -> None:
-        """Work around a Textual 8.1.1 parser bug for extended keys.
+        """Textual 8.1.1 extended-key workaround.
 
-        Logs every key event to /tmp/urika-tui.log for diagnosis
-        and then checks for the extended-key protocol regression:
-        if ``event.key`` is in ``_MISSING_CHARACTER_BY_KEY`` and
-        ``event.character is None``, we manually insert the known
-        character and stop the event before Input._on_key sees it
-        (otherwise Input would correctly conclude that a key event
-        with no character and no binding has nothing to do and
-        drop it on the floor).
+        Modern terminals using modifyOtherKeys / CSI-u send space as
+        a multi-char escape sequence (e.g. ``\\x1b[27;1;32~``). The
+        xterm parser correctly derives ``key="space"`` but sets
+        ``character=None`` because the raw sequence is >1 char.
+        Input._on_key's ``if event.is_printable:`` then drops it.
 
-        For all other keys we chain to ``await super()._on_key(event)``
-        unchanged, so normal character input, BINDINGS, and special
-        keys continue to work as Textual intends.
+        We intercept space-with-None-character and manually insert
+        the space before Input sees it.
         """
         key = getattr(event, "key", None)
         character = getattr(event, "character", None)
-        is_printable = getattr(event, "is_printable", None)
-        _log(
-            f"_on_key ← key={key!r}  char={character!r}  "
-            f"printable={is_printable}"
-        )
 
-        # Workaround: synthesize the missing character for extended-
-        # key protocol regressions. Only fires when character is None
-        # AND the key name is in our known-bug map — normal single-
-        # byte space (character=" ") falls through unchanged.
-        if (
-            character is None
-            and key in self._MISSING_CHARACTER_BY_KEY
-        ):
-            injected = self._MISSING_CHARACTER_BY_KEY[key]
-            _log(f"_on_key   ↳ synthesizing character={injected!r}")
-            # Replicate Input._on_key's printable branch manually.
-            self.insert_text_at_cursor(injected)
-            # Stop the event so Input._on_key doesn't try to
-            # process it (and possibly log a warning).
+        if character is None and key in self._MISSING_CHARACTER_BY_KEY:
+            self.insert_text_at_cursor(self._MISSING_CHARACTER_BY_KEY[key])
             try:
                 event.stop()  # type: ignore[attr-defined]
                 event.prevent_default()  # type: ignore[attr-defined]
@@ -168,5 +164,5 @@ class InputBar(Input):
         event.stop()
 
     def refresh_prompt(self) -> None:
-        """Update the placeholder after a project change."""
-        self.placeholder = self._build_prompt()
+        """Rebuild the suggester after a project change."""
+        self.suggester = self._build_suggester()

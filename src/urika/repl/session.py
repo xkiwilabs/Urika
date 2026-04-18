@@ -65,6 +65,11 @@ class ReplSession:
     agent_error: str = ""
     _agent_lock: threading.Lock = field(default_factory=threading.Lock)
 
+    # Processing-time accumulator. Only ticks while agent_running is
+    # True. Updated by set_agent_running / set_agent_idle.
+    _processing_start: float = 0.0
+    total_processing_ms: int = 0
+
     @property
     def has_project(self) -> bool:
         return self.project_path is not None
@@ -72,6 +77,16 @@ class ReplSession:
     @property
     def elapsed_ms(self) -> int:
         return int((time.monotonic() - self.session_start) * 1000)
+
+    @property
+    def processing_ms(self) -> int:
+        """Total time spent processing (agents running). Only ticks
+        while ``agent_running`` is True. Returns accumulated time
+        from previous runs + the current run's elapsed time."""
+        total = self.total_processing_ms
+        if self._processing_start > 0:
+            total += int((time.monotonic() - self._processing_start) * 1000)
+        return total
 
     @property
     def has_queued_input(self) -> bool:
@@ -153,6 +168,7 @@ class ReplSession:
             self.agent_activity = activity or "Working\u2026"
             self.agent_turn = ""
             self.agent_error = ""
+            self._processing_start = time.monotonic()
 
     def set_agent_active(self, command: str) -> None:
         """Mark an agent command as active."""
@@ -163,6 +179,12 @@ class ReplSession:
     def set_agent_idle(self, error: str = "") -> None:
         """Mark the agent as finished (called from background thread)."""
         with self._agent_lock:
+            # Accumulate processing time
+            if self._processing_start > 0:
+                self.total_processing_ms += int(
+                    (time.monotonic() - self._processing_start) * 1000
+                )
+                self._processing_start = 0.0
             self.agent_running = False
             self.agent_name = ""
             self.agent_activity = ""

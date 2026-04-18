@@ -28,35 +28,28 @@ class TestInputBar:
             assert bar.has_focus
 
     @pytest.mark.asyncio
-    async def test_prompt_shows_urika(self) -> None:
+    async def test_input_bar_has_no_placeholder(self) -> None:
+        """InputBar has no placeholder text — project/urika info is
+        shown in the StatusBar below, not duplicated in the input."""
         app = UrikaApp()
         async with app.run_test():
             bar = app.query_one("InputBar")
-            assert "urika" in bar.placeholder.lower()
+            assert bar.placeholder == ""
 
     @pytest.mark.asyncio
-    async def test_prompt_shows_project_name(self, tmp_path) -> None:
-        session = ReplSession()
-        session.load_project(path=tmp_path, name="my-study")
-        app = UrikaApp(session=session)
-        async with app.run_test():
-            bar = app.query_one("InputBar")
-            assert "my-study" in bar.placeholder
-
-    @pytest.mark.asyncio
-    async def test_refresh_prompt_after_project_change(self, tmp_path) -> None:
+    async def test_refresh_prompt_rebuilds_suggester(self, tmp_path) -> None:
+        """refresh_prompt rebuilds the suggester so the completion
+        pool reflects the current project's command set."""
         session = ReplSession()
         app = UrikaApp(session=session)
         async with app.run_test() as pilot:
             await pilot.pause()
             bar = app.query_one("InputBar")
-            assert "urika>" in bar.placeholder
-            # Minimum-diagnostic build: refresh_prompt only touches
-            # the placeholder now. The suggester rebuild assertion
-            # will return once the suggester is restored.
+            suggester_before = bar.suggester
             session.load_project(path=tmp_path, name="my-study")
             bar.refresh_prompt()
-            assert "my-study" in bar.placeholder
+            assert bar.suggester is not None
+            assert bar.suggester is not suggester_before
 
     @pytest.mark.asyncio
     async def test_submit_emits_command_and_clears(self) -> None:
@@ -156,10 +149,6 @@ class TestInputBar:
                 f"space after refocus should append, got {bar.value!r}"
             )
 
-    @pytest.mark.skip(
-        reason="Suggester removed in minimum-diagnostic build while chasing "
-        "space-key eating bug. Re-enable once InputBar is back to full feature set."
-    )
     @pytest.mark.asyncio
     async def test_suggester_built_from_commands(self) -> None:
         app = UrikaApp()
@@ -168,9 +157,6 @@ class TestInputBar:
             bar = app.query_one("InputBar")
             assert bar.suggester is not None
 
-    @pytest.mark.skip(
-        reason="Suggester removed in minimum-diagnostic build; re-enable later."
-    )
     @pytest.mark.asyncio
     async def test_suggester_completes_commands(self) -> None:
         """The contextual suggester returns real commands for a
@@ -185,9 +171,6 @@ class TestInputBar:
             # No leading slash → no suggestion (free text path).
             assert await bar.suggester.get_suggestion("hello") is None
 
-    @pytest.mark.skip(
-        reason="Tab completion removed in minimum-diagnostic build; re-enable later."
-    )
     @pytest.mark.asyncio
     async def test_tab_accepts_command_suggestion(self) -> None:
         """Pressing Tab on a partial slash command must replace the
@@ -206,9 +189,6 @@ class TestInputBar:
             assert bar.value == "/help "
             assert bar.cursor_position == len("/help ")
 
-    @pytest.mark.skip(
-        reason="Suggester removed in minimum-diagnostic build; re-enable later."
-    )
     @pytest.mark.asyncio
     async def test_suggester_completes_project_argument(
         self, tmp_path

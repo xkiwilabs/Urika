@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from urika.repl.session import ReplSession
@@ -32,14 +30,15 @@ class TestStatusBar:
             assert "my-study" in text
 
     @pytest.mark.asyncio
-    async def test_shows_elapsed_time(self) -> None:
+    async def test_shows_processing_time(self) -> None:
+        """Processing time is shown last in line 2. It starts at 0ms
+        and only ticks while agent_running is True — not session
+        uptime. At mount time with no agent running, it reads 0ms."""
         app = UrikaApp()
         async with app.run_test():
             bar = app.query_one("StatusBar")
             text = bar.render_line2()
-            # _format_duration produces one of: "Nms", "N.Ns", "Nm Ns" — assert
-            # the actual format pattern rather than substring-matching "s"/"ms"
-            # which matches letters in words like "urika"/"tokens".
-            assert re.search(r"\b\d+(ms|\.\d+s|m \d+s|s)\b", text), (
-                f"elapsed-time format not found in line 2: {text!r}"
+            # With no agent run yet, processing time is 0ms.
+            assert "0ms" in text, (
+                f"expected '0ms' in line 2 when idle: {text!r}"
             )

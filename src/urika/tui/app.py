@@ -12,6 +12,7 @@ from urika.orchestrator.chat import OrchestratorChat
 from urika.repl.session import ReplSession
 from urika.tui.agent_worker import run_command_in_worker
 from urika.tui.capture import OutputCapture
+from urika.tui.widgets.activity_bar import ActivityBar
 from urika.tui.widgets.input_bar import InputBar
 from urika.tui.widgets.output_panel import OutputPanel
 from urika.tui.widgets.status_bar import StatusBar
@@ -93,6 +94,7 @@ class UrikaApp(App):
         yield OutputPanel()
         with Vertical(id="bottom-stack"):
             yield InputBar(self.session)
+            yield ActivityBar(self.session)
             yield StatusBar(self.session)
 
     def on_mount(self) -> None:

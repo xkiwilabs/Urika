@@ -365,21 +365,19 @@ class TestCommandDispatch:
             assert "simulated orchestrator failure" in _panel_text(panel)
 
     @pytest.mark.asyncio
-    async def test_prompt_refreshed_after_command(self, tmp_path: Path) -> None:
-        """After a command runs, the input bar's placeholder is refreshed
-        so it tracks project state changes.
-
-        Minimum-diagnostic build: the suggester rebuild assertion has
-        been dropped (the suggester is absent in this build). Will be
-        restored when the suggester comes back.
-        """
+    async def test_suggester_refreshed_after_command(self, tmp_path: Path) -> None:
+        """After a command runs, the input bar's suggester is rebuilt
+        so the completion pool reflects any project state changes.
+        (Placeholder is now always empty — project info is in the
+        StatusBar.)"""
         session = ReplSession()
         app = UrikaApp(session=session)
         async with app.run_test() as pilot:
             await pilot.pause()
             bar = app.query_one("InputBar")
+            suggester_before = bar.suggester
             session.load_project(path=tmp_path, name="refresh-study")
             bar.value = "/help"
             await pilot.press("enter")
             await pilot.pause()
-            assert "refresh-study" in bar.placeholder
+            assert bar.suggester is not suggester_before

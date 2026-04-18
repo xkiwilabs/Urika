@@ -59,7 +59,7 @@ class StatusBar(Static):
         return " · ".join(parts)
 
     def render_line2(self) -> str:
-        """Build line 2: model · tokens · cost · elapsed."""
+        """Build line 2: model · tokens · cost · processing time."""
         parts: list[str] = []
         if self.session.model:
             parts.append(self.session.model)
@@ -69,8 +69,8 @@ class StatusBar(Static):
             parts.append(f"{tok_str} tokens")
         if self.session.total_cost_usd > 0:
             parts.append(f"~${self.session.total_cost_usd:.2f}")
-        elapsed = _format_duration(self.session.elapsed_ms)
-        parts.append(elapsed)
+        processing = _format_duration(self.session.processing_ms)
+        parts.append(processing)
         return " · ".join(parts)
 
     def render(self) -> Text:
@@ -141,13 +141,12 @@ class StatusBar(Static):
                     Text(self.session.agent_activity, style=DIM)
                 )
 
-        # ── Line 2: model · elapsed · tokens · cost ──
+        # ── Line 2: model · tokens · cost · processing time ──
+        # Timer is LAST, shows PROCESSING time (only ticks while an
+        # agent is running, freezes when idle). Not session uptime.
         line2_parts: list[Text] = []
         if self.session.model:
             line2_parts.append(Text(self.session.model, style=CYAN))
-
-        elapsed = _format_duration(self.session.elapsed_ms)
-        line2_parts.append(Text(elapsed, style=MAGENTA))
 
         tokens = self.session.total_tokens_in + self.session.total_tokens_out
         tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
@@ -161,6 +160,9 @@ class StatusBar(Static):
             )
         else:
             line2_parts.append(Text("$0.00", style=DIM))
+
+        processing = _format_duration(self.session.processing_ms)
+        line2_parts.append(Text(processing, style=MAGENTA))
 
         out = Text()
         out.append(_join(line1_parts))
