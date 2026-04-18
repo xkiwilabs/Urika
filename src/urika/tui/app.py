@@ -40,6 +40,12 @@ _BLOCKING_COMMANDS = frozenset(
 # a future cancellation path (Task 8's action_cancel_agent is the stub).
 _ALWAYS_ALLOWED_COMMANDS = frozenset({"quit", "stop"})
 
+# Commands that use click.prompt / asyncio.run / interactive stdin and
+# can't work inside a Textual app (Textual owns stdin in raw mode, and
+# the event loop is already running). Show a helpful message instead of
+# crashing with a confusing asyncio error or a hung prompt.
+_INTERACTIVE_COMMANDS = frozenset({"config", "notifications", "new", "setup"})
+
 
 class UrikaApp(App):
     """Urika TUI — three-zone interactive interface."""
@@ -331,9 +337,18 @@ class UrikaApp(App):
           :meth:`_run_with_panel_output` which picks the right
           capture strategy based on runtime state.
         """
+        from rich.text import Text
+
         parts = text[1:].split(" ", 1)
         cmd_name = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
+
+        # Echo the slash command into the panel so the user can see
+        # what they typed, with a blank line above for visual
+        # separation from the previous output block.
+        panel = self.query_one(OutputPanel)
+        panel.write_line("")
+        panel.write_line(Text(f"> {text}", style="bold #4a9eff"))
 
         # /quit is handled inline — there is no "quit" in repl.commands
         # (the old REPL handled it in its main loop). Always available.
@@ -361,6 +376,27 @@ class UrikaApp(App):
                 self._run_with_panel_output(lambda: print_error(busy_hint))
                 return
             # Escape hatch path (/stop): fall through to normal dispatch.
+
+        # Interactive commands (config, notifications, new) use
+        # click.prompt or asyncio.run internally, which can't work
+        # in the Textual TUI. Show the output-only variant if the
+        # command supports --show, otherwise guide the user to the
+        # classic REPL.
+        if cmd_name in _INTERACTIVE_COMMANDS:
+            # Allow read-only flags through (e.g. /config --show)
+            if args.strip() in ("--show", "-s", "show"):
+                pass  # fall through to normal dispatch
+            else:
+                panel.write_line(
+                    Text(
+                        f"  /{cmd_name} is interactive and requires "
+                        f"the classic REPL.\n"
+                        f"  Use: urika --classic, then /{cmd_name}\n"
+                        f"  Or try: /{cmd_name} --show (read-only view)",
+                        style="dim",
+                    )
+                )
+                return
 
         all_cmds = get_all_commands(self.session)
         if cmd_name not in all_cmds:
@@ -459,14 +495,11 @@ class UrikaApp(App):
             self.session.set_agent_running(agent_name="orchestrator")
             panel = self.query_one(OutputPanel)
 
-            # Echo the user's message into the panel so chat history
-            # is visible in scrollback. Also serves as a diagnostic:
-            # if the user types "hello world" and this line shows
-            # "hello world" faithfully, then spaces are surviving
-            # the input→dispatch path — any missing spaces in the
-            # response would then be on the orchestrator side.
+            # Echo the user's message with a blank line above for
+            # visual separation from the previous output block.
             from rich.text import Text
 
+            panel.write_line("")
             panel.write_line(Text(f"> {text}", style="bold #4a9eff"))
 
             # Create-or-reuse orchestrator. Reset when the project
