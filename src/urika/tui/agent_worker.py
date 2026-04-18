@@ -61,7 +61,13 @@ class _TuiStdinReader:
         return True  # click needs this to show prompts
 
     def fileno(self) -> int:
-        raise OSError("TUI stdin reader has no file descriptor")
+        # Some code paths (click internals, terminal detection) call
+        # sys.stdin.fileno(). Return the real stdin's fd so they
+        # don't crash. We don't actually read from this fd — all
+        # reads go through our queue-based readline().
+        import sys as _sys
+
+        return _sys.__stdin__.fileno() if _sys.__stdin__ else 0
 
     @property
     def closed(self) -> bool:
