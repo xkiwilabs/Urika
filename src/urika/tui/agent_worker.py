@@ -3,22 +3,20 @@
 Two execution modes for slash commands:
 
 1. **Worker mode** — for long-running agent commands (``/run``,
-   ``/finalize``, ``/evaluate``, etc.) that invoke Claude agents.
-   Runs the handler in a Textual thread-based Worker so the TUI
-   stays responsive. Output is captured to the OutputPanel.
+   ``/finalize``, etc.) that invoke Claude agents. Output captured
+   to the OutputPanel. Interactive stdin is bridged so
+   ``click.prompt`` / ``input()`` read from the InputBar.
 
-2. **Suspend mode** — for interactive commands (``/config``,
-   ``/notifications``, ``/new``) that use ``click.prompt`` /
-   ``input()`` for user interaction. Textual's ``app.suspend()``
-   temporarily releases the terminal so the command runs with real
-   stdin/stdout. When the command finishes, Textual resumes and the
-   TUI is redrawn. No fake stdin, no queue bridging, no escape
-   sequence leaking.
+2. **Suspend mode** — fallback for commands that absolutely need raw
+   terminal access beyond what the stdin bridge provides.
 """
 
 from __future__ import annotations
 
+import os
+import queue
 import sys
+import threading
 from typing import TYPE_CHECKING, Callable
 
 from textual.worker import Worker
@@ -31,17 +29,103 @@ if TYPE_CHECKING:
 CommandHandler = Callable[["ReplSession", str], None]
 
 
+class _TuiStdinReader:
+    """A file-like stdin replacement for worker threads.
+
+    When a command handler calls ``input()`` or ``click.prompt()``,
+    the call chains to ``sys.stdin.readline()``. This reader blocks
+    on a queue until the InputBar feeds a line into it.
+
+    Uses an OS pipe for ``fileno()`` so that click's terminal
+    detection (which calls ``os.isatty(stdin.fileno())``) gets a
+    real fd instead of crashing. We write fed text to BOTH the
+    queue (for our readline) AND the pipe (for any code that reads
+    from the raw fd). The pipe is separate from the terminal fd so
+    there's no conflict with Textual's driver.
+    """
+
+    def __init__(self) -> None:
+        self._queue: queue.Queue[str] = queue.Queue()
+        self._pipe_r, self._pipe_w = os.pipe()
+        self.encoding = "utf-8"
+
+    def readline(self, limit: int = -1) -> str:
+        """Block until the InputBar sends a line."""
+        return self._queue.get()
+
+    def read(self, size: int = -1) -> str:
+        return self.readline()
+
+    def feed(self, line: str) -> None:
+        """Called by the InputBar when the user submits text while
+        a worker is waiting for input."""
+        text = line + "\n"
+        self._queue.put(text)
+        # Also write to the pipe fd for any code that reads via
+        # os.read(fileno()) instead of our readline().
+        try:
+            os.write(self._pipe_w, text.encode("utf-8"))
+        except OSError:
+            pass
+
+    def isatty(self) -> bool:
+        # click needs this to show prompts instead of falling back
+        # to non-interactive mode.
+        return True
+
+    def fileno(self) -> int:
+        # Return the pipe's reader end — a real fd that satisfies
+        # os.isatty() checks (returns False for a pipe, but that's
+        # OK because our isatty() method returns True and click
+        # uses stream.isatty() not os.isatty(fileno())).
+        return self._pipe_r
+
+    @property
+    def closed(self) -> bool:
+        return False
+
+    def close(self) -> None:
+        """Unblock any waiting readline and close the pipe."""
+        self._queue.put("\n")
+        try:
+            os.close(self._pipe_w)
+        except OSError:
+            pass
+        try:
+            os.close(self._pipe_r)
+        except OSError:
+            pass
+
+    def flush(self) -> None:
+        pass
+
+    def writable(self) -> bool:
+        return False
+
+    def readable(self) -> bool:
+        return True
+
+
+# Module-level reference so the InputBar can feed it.
+_active_stdin_reader: _TuiStdinReader | None = None
+
+
+def get_active_stdin_reader() -> _TuiStdinReader | None:
+    """Return the currently active stdin reader, or None."""
+    return _active_stdin_reader
+
+
 def run_command_in_worker(
     app: UrikaApp,
     handler: CommandHandler,
     args: str,
     cmd_name: str,
 ) -> Worker:
-    """Run a sync command handler in a background Textual Worker.
+    """Run a command handler in a background Textual Worker.
 
-    For long-running agent commands. Output is captured to the
-    OutputPanel via OutputCapture. The handler runs in a background
-    thread so the TUI stays responsive.
+    Installs OutputCapture (stdout → panel) and _TuiStdinReader
+    (stdin ← InputBar queue) so the handler can use print(),
+    click.echo(), click.prompt(), and input() unchanged.
     """
     from urika.cli_display import print_error
     from urika.tui.capture import OutputCapture
@@ -57,6 +141,13 @@ def run_command_in_worker(
         input_bar.refresh_prompt()
 
     def _work() -> None:
+        global _active_stdin_reader
+
+        stdin_reader = _TuiStdinReader()
+        old_stdin = sys.stdin
+        sys.stdin = stdin_reader  # type: ignore[assignment]
+        _active_stdin_reader = stdin_reader
+
         app.session.set_agent_running(agent_name=cmd_name)
         try:
             with OutputCapture(app):
@@ -68,6 +159,9 @@ def run_command_in_worker(
                 except Exception as exc:
                     print_error(f"Error: {exc}")
         finally:
+            sys.stdin = old_stdin  # type: ignore[assignment]
+            _active_stdin_reader = None
+            stdin_reader.close()
             app.session.set_agent_idle()
             try:
                 app.call_from_thread(_post_command_refresh)
@@ -75,79 +169,3 @@ def run_command_in_worker(
                 pass
 
     return app.run_worker(_work, thread=True, name=f"agent:{cmd_name}")
-
-
-def run_command_suspended(
-    app: UrikaApp,
-    handler: CommandHandler,
-    args: str,
-    cmd_name: str,
-) -> None:
-    """Run an interactive command with full terminal access.
-
-    Uses ``app.suspend()`` to temporarily release the terminal from
-    Textual, giving the command real stdin/stdout. The handler runs
-    in a **thread** inside the suspend block — this is critical
-    because ``app.suspend()`` releases the terminal but NOT the
-    event loop. If the handler ran directly on the event loop
-    thread, any ``asyncio.run()`` call inside it would crash with
-    "cannot be called from a running event loop". The thread has
-    no event loop, so ``asyncio.run()`` works. And since we're
-    inside ``suspend()``, ``click.prompt()`` / ``input()`` read
-    from the real terminal.
-
-    ``thread.join()`` blocks until the handler finishes, keeping
-    the suspend block open. When the thread exits, we prompt
-    "Press Enter to return to the TUI..." so the user can read
-    the output, then the suspend block closes and Textual resumes.
-    """
-    import threading
-
-    from urika.cli_display import print_error
-
-    from urika.tui.widgets.output_panel import OutputPanel
-
-    error_holder: list[str] = []
-    success = False
-
-    try:
-        with app.suspend():
-            print()
-
-            def _run() -> None:
-                nonlocal success
-                try:
-                    handler(app.session, args)
-                    success = True
-                except SystemExit:
-                    app.session.save_usage()
-                    success = True
-                except Exception as exc:
-                    error_holder.append(str(exc))
-                    print_error(f"Error: {exc}")
-
-            thread = threading.Thread(target=_run, daemon=True)
-            thread.start()
-            thread.join()
-            # Auto-resume — no "Press Enter" needed. Textual redraws
-            # the TUI immediately when the suspend block exits.
-    except Exception:
-        pass
-
-    # After TUI resumes, echo a summary to the panel so the user
-    # has context about what just happened (the interactive output
-    # went to the raw terminal, not the panel).
-    try:
-        from rich.text import Text
-
-        panel = app.query_one(OutputPanel)
-        if error_holder:
-            panel.write_line(
-                Text(f"  /{cmd_name} error: {error_holder[0]}", style="red")
-            )
-        elif success:
-            panel.write_line(
-                Text(f"  /{cmd_name} completed.", style="dim")
-            )
-    except Exception:
-        pass

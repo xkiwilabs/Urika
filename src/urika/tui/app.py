@@ -10,7 +10,7 @@ from textual.containers import Vertical
 
 from urika.orchestrator.chat import OrchestratorChat
 from urika.repl.session import ReplSession
-from urika.tui.agent_worker import run_command_in_worker, run_command_suspended
+from urika.tui.agent_worker import run_command_in_worker
 from urika.tui.capture import OutputCapture
 from urika.tui.widgets.activity_bar import ActivityBar
 from urika.tui.widgets.input_bar import InputBar
@@ -21,26 +21,17 @@ from urika.tui.widgets.status_bar import StatusBar
 # on a background thread-worker so the TUI stays responsive. Kept as a
 # module constant so tests and future dispatch code share one source of
 # truth. Order doesn't matter — membership check only.
-_BLOCKING_COMMANDS = frozenset(
+# Commands that run in a background worker thread. The worker
+# installs OutputCapture (stdout → panel) and _TuiStdinReader
+# (stdin ← InputBar) so click.prompt / input / asyncio.run all
+# work unchanged. User types answers in the InputBar — text feeds
+# the worker's stdin queue automatically.
+_WORKER_COMMANDS = frozenset(
     {
-        "run",
-        "finalize",
-        "evaluate",
-        "plan",
-        "advisor",
-        "present",
-        "report",
-        "build-tool",
+        "run", "finalize", "evaluate", "plan", "advisor",
+        "present", "report", "build-tool", "resume",
+        "new", "config", "notifications", "setup",
     }
-)
-
-# Commands that use click.prompt / input() for interactive user
-# input. These run via app.suspend() which temporarily releases
-# the terminal so the command gets real stdin/stdout — exactly
-# like the classic REPL. When the command finishes, Textual
-# resumes and redraws the TUI.
-_INTERACTIVE_COMMANDS = frozenset(
-    {"config", "notifications", "new", "setup"}
 )
 
 # Escape hatches that remain usable even while an agent is running.
@@ -292,10 +283,22 @@ class UrikaApp(App):
         if text.startswith("/"):
             self._dispatch_command(text)
         elif self.session.agent_running:
-            # A worker is running — queue the text for later.
-            self.session.queue_input(text)
-            panel = self.query_one(OutputPanel)
-            panel.write_line(f"  [queued] {text}")
+            # A worker is running. If it has a stdin reader active
+            # (waiting for click.prompt / input), feed the text to
+            # it so the blocking call unblocks. Otherwise queue it.
+            from urika.tui.agent_worker import get_active_stdin_reader
+
+            reader = get_active_stdin_reader()
+            if reader is not None:
+                reader.feed(text)
+                panel = self.query_one(OutputPanel)
+                from rich.text import Text
+
+                panel.write_line(Text(f"  > {text}", style="dim"))
+            else:
+                self.session.queue_input(text)
+                panel = self.query_one(OutputPanel)
+                panel.write_line(f"  [queued] {text}")
         else:
             self._dispatch_free_text(text)
 
@@ -395,54 +398,31 @@ class UrikaApp(App):
 
         handler = all_cmds[cmd_name]["func"]
 
-        # Interactive commands (config, notifications, new) use
-        # click.prompt / input() and need real terminal access.
-        # Textual's app.suspend() temporarily releases the terminal,
-        # letting the command run with real stdin/stdout. When it
-        # finishes, the TUI resumes and redraws.
-        if cmd_name in _INTERACTIVE_COMMANDS:
-            run_command_suspended(self, handler, args, cmd_name)
-            input_bar = self.query_one(InputBar)
-            input_bar.refresh_prompt()
-            return
-
-        # Blocking commands run on a background thread worker. The
-        # worker manages its own OutputCapture, session.agent_running
-        # lifecycle, and prompt refresh — so we just hand off and return.
-        #
-        # Defense in depth: reject a second blocking dispatch while
-        # one is already live. action_cancel_agent doesn't actually
-        # kill the worker thread, so a second worker would race to
-        # install a second OutputCapture and crash.
-        if cmd_name in _BLOCKING_COMMANDS:
+        # Worker commands run in a background thread with OutputCapture
+        # (stdout → panel) and _TuiStdinReader (stdin ← InputBar).
+        # This handles both long-running agents AND interactive prompts
+        # (click.prompt / input) — user types answers in the InputBar
+        # and they flow to the worker's stdin queue.
+        if cmd_name in _WORKER_COMMANDS:
             if self.session.agent_running:
                 self._run_with_panel_output(lambda: print_error(busy_hint))
                 return
             run_command_in_worker(self, handler, args, cmd_name)
             return
 
-        # Non-blocking inline path. ``_run_with_panel_output`` handles
-        # the capture question: if a worker is already running (sys.
-        # stdout is _TuiWriter), it runs direct; otherwise it enters
-        # self._capture. Safe either way.
+        # Non-worker inline path — instant commands like /help, /list,
+        # /tools, /status, /project, etc.
         def _run_handler_inline() -> None:
             try:
                 handler(self.session, args)
             except SystemExit:
-                # A handler calling sys.exit() should close the app
-                # rather than propagate and crash the event loop.
                 self.session.save_usage()
                 self.exit()
             except Exception as exc:
-                # Not a silent swallow — the error is printed through
-                # whichever capture path is active.
                 print_error(f"Error: {exc}")
 
         self._run_with_panel_output(_run_handler_inline)
 
-        # A command like /project mutates session.project_name, which
-        # changes the prompt text and the suggester list. Refresh
-        # unconditionally — cheap and keeps state consistent.
         input_bar = self.query_one(InputBar)
         input_bar.refresh_prompt()
 
