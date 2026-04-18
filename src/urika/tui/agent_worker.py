@@ -86,31 +86,45 @@ def run_command_suspended(
     """Run an interactive command with full terminal access.
 
     Uses ``app.suspend()`` to temporarily release the terminal from
-    Textual, giving the command real stdin/stdout. The command can
-    use ``click.prompt()``, ``input()``, or any other interactive
-    terminal I/O. When it finishes, Textual resumes and redraws.
+    Textual, giving the command real stdin/stdout. The handler runs
+    in a **thread** inside the suspend block — this is critical
+    because ``app.suspend()`` releases the terminal but NOT the
+    event loop. If the handler ran directly on the event loop
+    thread, any ``asyncio.run()`` call inside it would crash with
+    "cannot be called from a running event loop". The thread has
+    no event loop, so ``asyncio.run()`` works. And since we're
+    inside ``suspend()``, ``click.prompt()`` / ``input()`` read
+    from the real terminal.
 
-    Runs synchronously on the Textual event loop thread (NOT a
-    worker), because suspend/resume must happen on the main thread.
-    The TUI is frozen while the command runs — that's fine for
-    short interactive flows like config prompts.
+    ``thread.join()`` blocks until the handler finishes, keeping
+    the suspend block open. When the thread exits, we prompt
+    "Press Enter to return to the TUI..." so the user can read
+    the output, then the suspend block closes and Textual resumes.
     """
+    import threading
+
     from urika.cli_display import print_error
 
     try:
         with app.suspend():
-            # Inside suspend, Textual has released the terminal.
-            # The command has real stdin/stdout access.
-            print()  # blank line for visual separation
-            try:
-                handler(app.session, args)
-            except SystemExit:
-                app.session.save_usage()
-            except Exception as exc:
-                print_error(f"Error: {exc}")
-            print()  # blank line before TUI resumes
+            print()
+
+            error_holder: list[str] = []
+
+            def _run() -> None:
+                try:
+                    handler(app.session, args)
+                except SystemExit:
+                    app.session.save_usage()
+                except Exception as exc:
+                    error_holder.append(str(exc))
+                    print_error(f"Error: {exc}")
+
+            thread = threading.Thread(target=_run, daemon=True)
+            thread.start()
+            thread.join()
+
+            print()
             input("Press Enter to return to the TUI...")
-    except Exception as exc:
-        # If suspend itself fails, fall back to showing an error
-        # in the panel when the TUI is back.
+    except Exception:
         pass
