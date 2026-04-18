@@ -159,16 +159,86 @@ class UrikaApp(App):
                 f"{stats['sdk']}"
             )
         except (OSError, KeyError, ImportError) as exc:
-            # Fresh install / missing stats files / partial import.
-            # Log rather than silently swallow so real bugs surface.
             self.log.warning(f"welcome stats lookup failed: {exc}")
 
+        # ── Recent projects ──────────────────────────────────────
+        try:
+            from datetime import datetime
+
+            from urika.core.experiment import list_experiments
+            from urika.core.registry import ProjectRegistry
+
+            reg = ProjectRegistry()
+            projects = reg.list_all()
+            if projects:
+                recent: list[tuple[str, int, str]] = []
+                for name, path in projects.items():
+                    try:
+                        mtime = path.stat().st_mtime if path.exists() else 0
+                        n_exps = len(list_experiments(path))
+                        dt = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+                        recent.append((name, n_exps, dt))
+                    except (OSError, ValueError):
+                        recent.append((name, 0, ""))
+                recent.sort(key=lambda x: x[2], reverse=True)
+
+                panel.write_line("")
+                panel.write_line(
+                    Text("  Recent projects:", style="bold")
+                )
+                for name, n_exps, dt in recent[:5]:
+                    line = Text()
+                    line.append(f"    /project ", style="dim")
+                    line.append(name, style="#00d7ff")
+                    if n_exps:
+                        line.append(f"  {n_exps} experiments", style="dim")
+                    if dt:
+                        line.append(f"  ({dt})", style="dim")
+                    panel.write_line(line)
+        except (OSError, ImportError) as exc:
+            self.log.warning(f"recent projects lookup failed: {exc}")
+
+        # ── Getting started ──────────────────────────────────────
         panel.write_line("")
+        panel.write_line(Text("  Getting started:", style="bold"))
         panel.write_line(
-            "  Type /help for commands, or just type to talk to the advisor."
+            Text.assemble(
+                ("    /project ", "dim"),
+                ("<name>", "#00d7ff"),
+                ("  — load a project", "dim"),
+            )
         )
         panel.write_line(
-            "  Press Ctrl+Q to quit. Hold Shift+drag to copy text from the panel."
+            Text.assemble(
+                ("    /new ", "dim"),
+                ("<name>", "#00d7ff"),
+                ("  — create a new project", "dim"),
+            )
+        )
+        panel.write_line(
+            Text.assemble(
+                ("    /config", "dim"),
+                ("  — view or change settings", "dim"),
+            )
+        )
+        panel.write_line(
+            Text.assemble(
+                ("    /help", "dim"),
+                ("  — all available commands", "dim"),
+            )
+        )
+        panel.write_line("")
+        panel.write_line(
+            Text(
+                "  Or just type your question — the orchestrator will help.",
+                style="dim",
+            )
+        )
+        panel.write_line(
+            Text(
+                "  Ctrl+Q to quit · Shift+drag to copy",
+                style="dim #666666",
+            )
         )
         panel.write_line("")
 
@@ -392,7 +462,7 @@ class UrikaApp(App):
             # before the try and the finally never ran if early
             # setup exploded, leaving agent_running pinned True and
             # trapping every subsequent message in the queue branch.
-            self.session.set_agent_running(agent_name="chat")
+            self.session.set_agent_running(agent_name="orchestrator")
             panel = self.query_one(OutputPanel)
 
             # Echo the user's message into the panel so chat history

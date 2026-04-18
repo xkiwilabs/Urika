@@ -33,7 +33,7 @@ class TestWelcomeScreen:
             panel = app.query_one("OutputPanel")
             text = _panel_text(panel)
             assert "/help" in text
-            assert "advisor" in text.lower()
+            assert "orchestrator" in text.lower()
 
     @pytest.mark.asyncio
     async def test_shows_global_stats_or_fails_gracefully(self) -> None:
