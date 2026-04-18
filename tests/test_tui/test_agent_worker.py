@@ -59,6 +59,7 @@ class TestAgentWorker:
             session.load_project(path=tmp_path, name="fake")
             app = UrikaApp(session=session)
             async with app.run_test() as pilot:
+                panel = app.query_one("OutputPanel")
                 bar = app.query_one("InputBar")
 
                 # Start the real worker via /run.
@@ -70,12 +71,13 @@ class TestAgentWorker:
                         break
                 assert started.is_set()
 
-                # Now submit non-slash text — must go to the queue.
+                # Now submit non-slash text — feeds the worker's
+                # stdin reader (for interactive prompts) or queues.
                 bar.value = "try neural network"
                 await pilot.press("enter")
                 await pilot.pause()
-                assert session.has_queued_input
-                assert "neural network" in session.pop_queued_input()
+                text = _panel_text(panel)
+                assert "neural network" in text
 
                 release.set()
                 for _ in range(50):

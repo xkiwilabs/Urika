@@ -188,15 +188,14 @@ class TestCommandDispatch:
                 assert started.is_set()
                 assert session.agent_running is True
 
-                # Now submit non-slash text — goes to the queue branch.
+                # Now submit non-slash text — feeds the worker's
+                # stdin reader (for interactive prompts like
+                # click.prompt) or queues if no reader is active.
                 bar.value = "an extra note"
                 await pilot.press("enter")
                 await pilot.pause()
                 text = _panel_text(panel)
-                assert "queued" in text
                 assert "an extra note" in text
-                # And the message actually landed in the session queue.
-                assert session.has_queued_input
 
                 # Drain the worker.
                 release.set()

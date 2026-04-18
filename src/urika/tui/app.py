@@ -32,6 +32,12 @@ _BLOCKING_COMMANDS = frozenset(
         "report",
         "build-tool",
         "new",
+        # Interactive commands that use click.prompt / input() —
+        # they need a worker thread so the stdin reader can bridge
+        # the InputBar to the blocking prompt call.
+        "config",
+        "notifications",
+        "setup",
     }
 )
 
@@ -284,11 +290,25 @@ class UrikaApp(App):
         if text.startswith("/"):
             self._dispatch_command(text)
         elif self.session.agent_running:
-            # Task 8 drains this queue when the worker picks up the
-            # next turn. For now, just confirm receipt in the panel.
-            self.session.queue_input(text)
-            panel = self.query_one(OutputPanel)
-            panel.write_line(f"  [queued] {text}")
+            # A worker is running. If it's waiting for interactive
+            # input (click.prompt / input()), feed the text to the
+            # stdin reader so the blocking call unblocks. Otherwise
+            # queue it for later processing.
+            from rich.text import Text
+
+            from urika.tui.agent_worker import get_active_stdin_reader
+
+            reader = get_active_stdin_reader()
+            if reader is not None:
+                reader.feed(text)
+                panel = self.query_one(OutputPanel)
+                panel.write_line(
+                    Text(f"  > {text}", style="dim")
+                )
+            else:
+                self.session.queue_input(text)
+                panel = self.query_one(OutputPanel)
+                panel.write_line(f"  [queued] {text}")
         else:
             self._dispatch_free_text(text)
 

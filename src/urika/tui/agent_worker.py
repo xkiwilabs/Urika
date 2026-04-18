@@ -1,20 +1,22 @@
 """Background agent execution via Textual Workers.
 
-Task 8: Blocking slash-command handlers (``/run``, ``/finalize``,
-``/evaluate``, etc.) call Claude agents synchronously and can take
-minutes. Running them on Textual's event-loop thread would freeze the
-entire UI. :func:`run_command_in_worker` wraps such handlers in a
-thread-based Textual Worker so the input bar, status bar, and output
-panel all stay live while the agent runs.
+Blocking slash-command handlers run on a Textual thread-based Worker
+so the TUI stays responsive. The worker installs:
 
-The free-text path (user typing non-slash text with a project loaded)
-is NOT routed through this function — it uses an async worker coroutine
-in :mod:`urika.tui.app` because the orchestrator exposes an async
-``chat()``. See :meth:`UrikaApp._dispatch_free_text` for that path.
+1. ``OutputCapture`` — routes ``print()`` / ``click.echo()`` to the
+   OutputPanel.
+2. ``_TuiStdinReader`` — replaces ``sys.stdin`` so that ``input()``
+   and ``click.prompt()`` read from a queue fed by the InputBar.
+   When the user types while a worker is active, the text goes to
+   the queue instead of the normal dispatch path, unblocking the
+   thread.
 """
 
 from __future__ import annotations
 
+import sys
+import queue
+import threading
 from typing import TYPE_CHECKING, Callable
 
 from textual.worker import Worker
@@ -24,8 +26,60 @@ if TYPE_CHECKING:
     from urika.tui.app import UrikaApp
 
 
-# Type alias — handlers follow the REPL's ``(session, args)`` signature.
 CommandHandler = Callable[["ReplSession", str], None]
+
+
+class _TuiStdinReader:
+    """A file-like object that replaces ``sys.stdin`` in worker threads.
+
+    When a command handler calls ``input()`` or ``click.prompt()``,
+    the call chains to ``sys.stdin.readline()``. This reader blocks
+    on a ``threading.Queue`` until the InputBar feeds a line into it.
+
+    The prompt text (``"Choice: "`` etc.) reaches the OutputPanel
+    via ``OutputCapture``'s stdout redirection, so the user sees the
+    question and can type their answer in the InputBar.
+    """
+
+    def __init__(self) -> None:
+        self._queue: queue.Queue[str] = queue.Queue()
+        self.encoding = "utf-8"
+
+    def readline(self, limit: int = -1) -> str:
+        """Block until the InputBar sends a line."""
+        return self._queue.get()
+
+    def read(self, size: int = -1) -> str:
+        return self.readline()
+
+    def feed(self, line: str) -> None:
+        """Called by the InputBar when the user submits text while
+        a worker is waiting for input."""
+        self._queue.put(line + "\n")
+
+    def isatty(self) -> bool:
+        return True  # click needs this to show prompts
+
+    def fileno(self) -> int:
+        raise OSError("TUI stdin reader has no file descriptor")
+
+    @property
+    def closed(self) -> bool:
+        return False
+
+    def close(self) -> None:
+        # Unblock any waiting readline by feeding an empty line.
+        self._queue.put("\n")
+
+
+# Module-level reference so the InputBar can feed it.
+_active_stdin_reader: _TuiStdinReader | None = None
+
+
+def get_active_stdin_reader() -> _TuiStdinReader | None:
+    """Return the currently active stdin reader, or None if no worker
+    is waiting for input."""
+    return _active_stdin_reader
 
 
 def run_command_in_worker(
@@ -38,42 +92,18 @@ def run_command_in_worker(
 
     The worker:
 
-    1. Marks ``session.agent_running=True`` (with ``agent_name=cmd_name``)
-       so the status bar shows activity and ``_on_command``'s queue
-       branch intercepts user input while the handler runs.
-    2. Enters a fresh :class:`OutputCapture` so the handler's ``print``
-       and ``click.echo`` land in the :class:`OutputPanel`.
-    3. Invokes ``handler(app.session, args)``. ``SystemExit`` routes to
-       a clean ``app.exit()``; any other ``Exception`` is printed via
-       ``print_error`` (which is still inside the capture, so the
-       message lands in the panel, not on real stdout).
-    4. On completion — success or failure — runs ``set_agent_idle()``
-       and refreshes the input bar prompt via ``call_from_thread``.
-
-    Two correctness notes worth preserving:
-
-    * The capture context is NOT reentrant. Task 8's dispatch rejects
-      new blocking commands while ``session.agent_running`` is True, so
-      the main thread and the worker thread never race to install
-      overlapping captures. See
-      :meth:`urika.tui.app.UrikaApp._dispatch_command`.
-
-    * The ``agent_running`` lifecycle runs in ``try/finally`` around
-      the capture block, not outside the whole function, so an
-      exception in :class:`OutputCapture.__enter__` (e.g. the nested-
-      capture guard firing) still leaves the session in a clean idle
-      state.
+    1. Sets ``session.agent_running = True``.
+    2. Installs ``OutputCapture`` (stdout/stderr → OutputPanel).
+    3. Installs ``_TuiStdinReader`` (stdin ← InputBar queue).
+    4. Invokes ``handler(session, args)``.
+    5. On completion — success or failure — clears the agent flag,
+       restores stdin, and refreshes the InputBar.
     """
     from urika.cli_display import print_error
     from urika.tui.capture import OutputCapture
     from urika.tui.widgets.input_bar import InputBar
 
     def _post_command_refresh() -> None:
-        """Refresh input prompt on the Textual thread.
-
-        Wrapped in NoMatches/AttributeError guards because this runs
-        during app shutdown too — the widget tree may already be gone.
-        """
         from textual.css.query import NoMatches
 
         try:
@@ -83,30 +113,30 @@ def run_command_in_worker(
         input_bar.refresh_prompt()
 
     def _work() -> None:
+        global _active_stdin_reader
+
+        stdin_reader = _TuiStdinReader()
+        old_stdin = sys.stdin
+        sys.stdin = stdin_reader  # type: ignore[assignment]
+        _active_stdin_reader = stdin_reader
+
         app.session.set_agent_running(agent_name=cmd_name)
         try:
             with OutputCapture(app):
                 try:
                     handler(app.session, args)
                 except SystemExit:
-                    # A handler invoking sys.exit() should close the
-                    # app cleanly rather than crash the worker. Mirror
-                    # the inline path's save_usage call so usage stats
-                    # from a quitting handler aren't lost.
                     app.session.save_usage()
                     app.call_from_thread(app.exit)
                 except Exception as exc:
-                    # Not swallowed — print_error runs inside the
-                    # capture block, so the message lands in the panel.
                     print_error(f"Error: {exc}")
         finally:
+            sys.stdin = old_stdin  # type: ignore[assignment]
+            _active_stdin_reader = None
             app.session.set_agent_idle()
-            # Schedule the prompt refresh on the event loop thread.
             try:
                 app.call_from_thread(_post_command_refresh)
             except RuntimeError:
-                # Event loop already gone (app shutting down).
-                # Nothing more to refresh.
                 pass
 
     return app.run_worker(_work, thread=True, name=f"agent:{cmd_name}")
