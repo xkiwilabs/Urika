@@ -1,0 +1,828 @@
+"""RPC method registry — maps JSON-RPC method names to handler functions."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any, Callable
+
+from urika.rpc.protocol import Registry
+
+
+def build_registry() -> Registry:
+    """Build and return the complete RPC method registry.
+
+    Each handler takes a ``params: dict`` and returns a JSON-serializable result.
+    Path strings in params are converted to ``pathlib.Path`` objects automatically.
+    Dataclass results are converted via ``.to_dict()`` where applicable.
+    """
+    return {
+        "project.list": _project_list,
+        "project.load_config": _project_load_config,
+        "experiment.create": _experiment_create,
+        "experiment.list": _experiment_list,
+        "experiment.load": _experiment_load,
+        "progress.append_run": _progress_append_run,
+        "progress.load": _progress_load,
+        "progress.get_best_run": _progress_get_best_run,
+        "session.start": _session_start,
+        "session.pause": _session_pause,
+        "session.resume": _session_resume,
+        "criteria.load": _criteria_load,
+        "criteria.append": _criteria_append,
+        "methods.register": _methods_register,
+        "methods.list": _methods_list,
+        "usage.record": _usage_record,
+        "tools.list": _tools_list,
+        "tools.run": _tools_run,
+        "code.execute": _code_execute,
+        "data.profile": _data_profile,
+        "knowledge.ingest": _knowledge_ingest,
+        "knowledge.search": _knowledge_search,
+        "knowledge.list": _knowledge_list,
+        "labbook.update_notes": _labbook_update_notes,
+        "labbook.generate_summary": _labbook_generate_summary,
+        "report.results_summary": _report_results_summary,
+        "report.key_findings": _report_key_findings,
+        "project.summarize": _project_summarize,
+        "experiment.run": _experiment_run,
+        "experiment.pause": _experiment_pause,
+        "agent.run": _agent_run,
+        "orchestrator.chat": _orchestrator_chat,
+        "orchestrator.set_project": _orchestrator_set_project,
+        "orchestrator.get_messages": _orchestrator_get_messages,
+        "orchestrator.set_messages": _orchestrator_set_messages,
+        "orchestrator.clear": _orchestrator_clear,
+        "sessions.save": _sessions_save,
+        "sessions.load": _sessions_load,
+        "sessions.list": _sessions_list,
+        "sessions.most_recent": _sessions_most_recent,
+        "sessions.delete": _sessions_delete,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _path(params: dict[str, Any], key: str = "project_dir") -> Path:
+    """Extract a Path from params, converting from string."""
+    return Path(params[key])
+
+
+# ---------------------------------------------------------------------------
+# project.*
+# ---------------------------------------------------------------------------
+
+
+def _project_list(params: dict[str, Any]) -> list[dict[str, Any]]:
+    from urika.core.registry import ProjectRegistry
+
+    registry = ProjectRegistry()
+    projects = registry.list_all()
+    return [{"name": name, "path": str(path)} for name, path in projects.items()]
+
+
+def _project_summarize(params: dict[str, Any]) -> dict[str, Any]:
+    """Aggregate project state into a concise summary — no LLM, pure data."""
+    from urika.core.experiment import list_experiments
+    from urika.core.progress import load_progress
+    from urika.core.criteria import load_criteria
+    from urika.core.method_registry import load_methods
+    from urika.core.workspace import load_project_config
+
+    project_dir = _path(params)
+    config = load_project_config(project_dir)
+
+    # Experiments summary
+    experiments = list_experiments(project_dir)
+    exp_summaries = []
+    total_runs = 0
+    for exp in experiments:
+        progress = load_progress(project_dir, exp.experiment_id)
+        runs = progress.get("runs", [])
+        total_runs += len(runs)
+        status = progress.get("status", "unknown")
+        best_metrics: dict[str, float] = {}
+        for run in runs:
+            for k, v in run.get("metrics", {}).items():
+                if not isinstance(v, (int, float)):
+                    continue
+                cur = best_metrics.get(k)
+                if cur is None or v > cur:
+                    best_metrics[k] = v
+        exp_summaries.append({
+            "id": exp.experiment_id,
+            "name": exp.name,
+            "status": status,
+            "runs": len(runs),
+            "best_metrics": best_metrics,
+        })
+
+    # Methods summary — top 5 by first metric
+    methods = load_methods(project_dir)
+    def _best_numeric(m: dict) -> float:
+        vals = [v for v in m.get("metrics", {}).values() if isinstance(v, (int, float))]
+        return max(vals) if vals else 0.0
+
+    top_methods = sorted(methods, key=_best_numeric, reverse=True)[:5]
+
+    # Criteria
+    criteria_version = load_criteria(project_dir)
+    criteria_summary = criteria_version.to_dict() if criteria_version else None
+
+    return {
+        "project": config.name if hasattr(config, "name") else str(project_dir),
+        "question": config.question if hasattr(config, "question") else "",
+        "total_experiments": len(experiments),
+        "total_runs": total_runs,
+        "completed_experiments": sum(
+            1 for e in exp_summaries if e["status"] == "completed"
+        ),
+        "experiments": exp_summaries[:10],  # first 10 only
+        "top_methods": [
+            {"name": m.get("name"), "metrics": m.get("metrics")}
+            for m in top_methods
+        ],
+        "criteria": criteria_summary,
+        "total_methods": len(methods),
+    }
+
+
+def _experiment_run(
+    params: dict[str, Any],
+    notify: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Run an experiment via the deterministic Python orchestrator loop.
+
+    This runs the full pipeline: planning -> task -> evaluator -> advisor,
+    with progress tracking, labbook updates, and report generation.
+
+    If `notify` is provided, streams progress events as JSON-RPC notifications
+    so the TUI can display what's happening in real-time.
+
+    The handler creates a pause flag file that the TUI can write to via
+    a separate RPC call to trigger a graceful pause between turns.
+    """
+    import asyncio
+
+    from urika.agents.runner import get_runner
+    from urika.orchestrator.loop import run_experiment
+    from urika.orchestrator.pause import PauseController
+
+    project_dir = _path(params)
+    experiment_id = params["experiment_id"]
+    max_turns = params.get("max_turns", 10)
+    instructions = params.get("instructions", "")
+    resume = params.get("resume", False)
+
+    runner = get_runner()
+
+    # Create a PauseController that checks a flag file
+    # The TUI can request a pause by calling experiment.pause RPC
+    pause_ctrl = PauseController()
+    pause_flag = project_dir / ".urika" / "pause_requested"
+    pause_flag.parent.mkdir(parents=True, exist_ok=True)
+    # Clean up any stale flag
+    if pause_flag.exists():
+        pause_flag.unlink()
+
+    # Wrap PauseController to also check the flag file
+    _orig_is_pause = pause_ctrl.is_pause_requested
+    def _check_pause() -> bool:
+        if pause_flag.exists():
+            return True
+        return _orig_is_pause()
+    pause_ctrl.is_pause_requested = _check_pause  # type: ignore[assignment]
+
+    # Wire progress + message callbacks to notify
+    def on_progress(event: str, detail: str = "") -> None:
+        if notify:
+            try:
+                notify("experiment.progress", {"event": event, "detail": detail})
+            except Exception:
+                pass
+
+    def on_message(msg: Any) -> None:
+        if not notify:
+            return
+        # Extract useful fields from SDK messages
+        try:
+            msg_type = getattr(msg, "__class__", type(msg)).__name__
+            text = ""
+            if hasattr(msg, "content"):
+                content = msg.content
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, list):
+                    for block in content:
+                        if hasattr(block, "text"):
+                            text += block.text
+            elif hasattr(msg, "text"):
+                text = msg.text
+            if text:
+                notify("experiment.message", {"type": msg_type, "text": text[:2000]})
+        except Exception:
+            pass
+
+    result = asyncio.run(
+        run_experiment(
+            project_dir,
+            experiment_id,
+            runner,
+            max_turns=max_turns,
+            instructions=instructions,
+            resume=resume,
+            on_progress=on_progress,
+            on_message=on_message,
+            pause_controller=pause_ctrl,
+        )
+    )
+
+    # Clean up pause flag
+    if pause_flag.exists():
+        pause_flag.unlink()
+
+    return result
+
+
+def _experiment_pause(params: dict[str, Any]) -> dict[str, Any]:
+    """Request a pause for a running experiment.
+
+    Creates a flag file that the running experiment checks between turns.
+    The experiment will pause after the current subagent finishes.
+    """
+    project_dir = _path(params)
+    pause_flag = project_dir / ".urika" / "pause_requested"
+    pause_flag.parent.mkdir(parents=True, exist_ok=True)
+    pause_flag.write_text("pause", encoding="utf-8")
+    return {"ok": True, "message": "Pause requested — will pause after current subagent finishes."}
+
+
+def _agent_run(
+    params: dict[str, Any],
+    notify: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Run a specific agent role with full SDK tools.
+
+    This is how the TUI invokes individual agents (advisor, evaluator,
+    planning_agent, etc.) with the same Claude Agent SDK capabilities
+    they have in the CLI — Read, Write, Bash, Glob, Grep.
+
+    Params:
+        project_dir: Project directory path
+        agent_name: Agent role name (e.g. "advisor_agent", "evaluator", "task_agent")
+        prompt: The prompt/instructions for the agent
+        experiment_id: Optional experiment ID for experiment-scoped agents
+    """
+    import asyncio
+
+    from urika.agents.registry import AgentRegistry
+    from urika.agents.runner import get_runner
+
+    project_dir = _path(params)
+    agent_name = params["agent_name"]
+    prompt = params["prompt"]
+    experiment_id = params.get("experiment_id", "")
+
+    # Discover agent roles
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get(agent_name)
+    if role is None:
+        raise ValueError(
+            f"Agent role not found: {agent_name}. "
+            f"Available: {', '.join(r.name for r in registry.list_all())}"
+        )
+
+    # Build config with full tools, prompts, privacy settings
+    config = role.build_config(
+        project_dir=project_dir,
+        experiment_id=experiment_id,
+    )
+
+    # Get the runner (Claude SDK by default)
+    runner = get_runner()
+
+    # Notify progress
+    if notify:
+        try:
+            notify("agent.started", {"agent": agent_name, "prompt_preview": prompt[:100]})
+        except Exception:
+            pass
+
+    def on_message(msg: Any) -> None:
+        """Stream agent messages back as notifications."""
+        if not notify:
+            return
+        try:
+            text = ""
+            if hasattr(msg, "content"):
+                content = msg.content
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, list):
+                    for block in content:
+                        if hasattr(block, "text"):
+                            text += block.text
+            if text:
+                notify("agent.message", {"agent": agent_name, "text": text[:2000]})
+        except Exception:
+            pass
+
+    # Run the agent
+    result = asyncio.run(runner.run(config, prompt, on_message=on_message))
+
+    if notify:
+        try:
+            notify("agent.completed", {
+                "agent": agent_name,
+                "success": result.success,
+                "tokens_in": result.tokens_in,
+                "tokens_out": result.tokens_out,
+                "cost_usd": result.cost_usd,
+            })
+        except Exception:
+            pass
+
+    return {
+        "success": result.success,
+        "text_output": result.text_output,
+        "tokens_in": result.tokens_in,
+        "tokens_out": result.tokens_out,
+        "cost_usd": result.cost_usd or 0,
+        "model": result.model,
+        "error": result.error,
+    }
+
+
+# ---------------------------------------------------------------------------
+# orchestrator.*  (conversational orchestrator — TUI chat backend)
+# ---------------------------------------------------------------------------
+
+
+def _orchestrator_chat(
+    params: dict[str, Any],
+    notify: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Send a message to the orchestrator and get a response.
+
+    The orchestrator maintains conversation state across calls.
+    Streams progress via notifications.
+    """
+    import asyncio
+
+    from urika.orchestrator.chat import get_orchestrator
+
+    orch = get_orchestrator()
+    message = params["message"]
+
+    result = asyncio.run(orch.chat(message, notify=notify))
+
+    return {
+        **result,
+        "message_count": len(orch.get_messages()),
+    }
+
+
+def _orchestrator_set_project(params: dict[str, Any]) -> dict[str, Any]:
+    """Switch the orchestrator to a new project."""
+    from urika.orchestrator.chat import get_orchestrator
+
+    orch = get_orchestrator()
+    project_dir = _path(params)
+    orch.set_project(project_dir)
+    return {"ok": True}
+
+
+def _orchestrator_get_messages(params: dict[str, Any]) -> list[dict[str, Any]]:
+    """Get the orchestrator's conversation history."""
+    from urika.orchestrator.chat import get_orchestrator
+
+    return get_orchestrator().get_messages()
+
+
+def _orchestrator_set_messages(params: dict[str, Any]) -> dict[str, Any]:
+    """Replace the orchestrator's conversation history (for resume)."""
+    from urika.orchestrator.chat import get_orchestrator
+
+    orch = get_orchestrator()
+    orch.set_messages(params.get("messages", []))
+    return {"ok": True, "count": len(orch.get_messages())}
+
+
+def _orchestrator_clear(params: dict[str, Any]) -> dict[str, Any]:
+    """Clear the orchestrator's conversation history."""
+    from urika.orchestrator.chat import get_orchestrator
+
+    get_orchestrator().clear()
+    return {"ok": True}
+
+
+def _project_load_config(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.workspace import load_project_config
+
+    config = load_project_config(_path(params))
+    return {
+        "name": config.name,
+        "question": config.question,
+        "mode": config.mode,
+        "description": config.description,
+        "data_paths": config.data_paths,
+        "success_criteria": config.success_criteria,
+        "audience": config.audience,
+    }
+
+
+# ---------------------------------------------------------------------------
+# experiment.*
+# ---------------------------------------------------------------------------
+
+
+def _experiment_create(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.experiment import create_experiment
+
+    exp = create_experiment(
+        _path(params),
+        name=params["name"],
+        hypothesis=params["hypothesis"],
+        builds_on=params.get("builds_on"),
+    )
+    return exp.to_dict()
+
+
+def _experiment_list(params: dict[str, Any]) -> list[dict[str, Any]]:
+    from urika.core.experiment import list_experiments
+
+    experiments = list_experiments(_path(params))
+    return [e.to_dict() for e in experiments]
+
+
+def _experiment_load(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.experiment import load_experiment
+
+    exp = load_experiment(_path(params), params["experiment_id"])
+    return exp.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# progress.*
+# ---------------------------------------------------------------------------
+
+
+def _progress_append_run(params: dict[str, Any]) -> None:
+    from urika.core.models import RunRecord
+    from urika.core.progress import append_run
+
+    run = RunRecord.from_dict(params["run"])
+    append_run(_path(params), params["experiment_id"], run)
+    return None
+
+
+def _progress_load(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.progress import load_progress
+
+    # load_progress already returns a plain dict
+    return load_progress(_path(params), params["experiment_id"])
+
+
+def _progress_get_best_run(params: dict[str, Any]) -> dict[str, Any] | None:
+    from urika.core.progress import get_best_run
+
+    # get_best_run already returns a plain dict or None
+    return get_best_run(
+        _path(params),
+        params["experiment_id"],
+        metric=params["metric"],
+        direction=params["direction"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# session.*
+# ---------------------------------------------------------------------------
+
+
+def _session_start(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.session import start_session
+
+    state = start_session(
+        _path(params),
+        params["experiment_id"],
+        max_turns=params.get("max_turns"),
+    )
+    return state.to_dict()
+
+
+def _session_pause(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.session import pause_session
+
+    state = pause_session(_path(params), params["experiment_id"])
+    return state.to_dict()
+
+
+def _session_resume(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.session import resume_session
+
+    state = resume_session(_path(params), params["experiment_id"])
+    return state.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# criteria.*
+# ---------------------------------------------------------------------------
+
+
+def _criteria_load(params: dict[str, Any]) -> dict[str, Any] | None:
+    from urika.core.criteria import load_criteria
+
+    cv = load_criteria(_path(params))
+    if cv is None:
+        return None
+    return cv.to_dict()
+
+
+def _criteria_append(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.criteria import append_criteria
+
+    cv = append_criteria(
+        _path(params),
+        params["criteria"],
+        set_by=params["set_by"],
+        turn=params["turn"],
+        rationale=params["rationale"],
+    )
+    return cv.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# methods.*
+# ---------------------------------------------------------------------------
+
+
+def _methods_register(params: dict[str, Any]) -> None:
+    from urika.core.method_registry import register_method
+
+    register_method(
+        _path(params),
+        name=params["name"],
+        description=params["description"],
+        script=params["script"],
+        experiment=params["experiment"],
+        turn=params["turn"],
+        metrics=params["metrics"],
+        status=params.get("status", "active"),
+    )
+    return None
+
+
+def _methods_list(params: dict[str, Any]) -> list[dict[str, Any]]:
+    from urika.core.method_registry import load_methods
+
+    # load_methods already returns list[dict]
+    return load_methods(_path(params))
+
+
+# ---------------------------------------------------------------------------
+# usage.*
+# ---------------------------------------------------------------------------
+
+
+def _usage_record(params: dict[str, Any]) -> None:
+    from urika.core.usage import record_session
+
+    record_session(
+        _path(params),
+        started=params["started"],
+        ended=params["ended"],
+        duration_ms=params["duration_ms"],
+        tokens_in=params.get("tokens_in", 0),
+        tokens_out=params.get("tokens_out", 0),
+        cost_usd=params.get("cost_usd", 0.0),
+        agent_calls=params.get("agent_calls", 0),
+        experiments_run=params.get("experiments_run", 0),
+    )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# tools.*
+# ---------------------------------------------------------------------------
+
+
+def _tools_list(params: dict[str, Any]) -> list[str]:
+    from urika.tools.registry import ToolRegistry
+
+    reg = ToolRegistry()
+    reg.discover()
+    project_dir = params.get("project_dir")
+    if project_dir:
+        reg.discover_project(Path(project_dir) / "tools")
+    return reg.list_all()
+
+
+def _tools_run(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.data.loader import load_dataset
+    from urika.tools.registry import ToolRegistry
+
+    reg = ToolRegistry()
+    reg.discover()
+    project_dir = params.get("project_dir")
+    if project_dir:
+        reg.discover_project(Path(project_dir) / "tools")
+
+    tool = reg.get(params["name"])
+    if tool is None:
+        raise ValueError(f"Tool not found: {params['name']}")
+
+    data_path = Path(params["data_path"])
+    dataset = load_dataset(data_path)
+    tool_params = params.get("params", {})
+
+    result = tool.run(dataset, tool_params)
+    return {
+        "outputs": result.outputs,
+        "artifacts": result.artifacts,
+        "metrics": result.metrics,
+        "valid": result.valid,
+        "error": result.error,
+    }
+
+
+# ---------------------------------------------------------------------------
+# code.*
+# ---------------------------------------------------------------------------
+
+
+def _code_execute(params: dict[str, Any]) -> dict[str, Any]:
+    code = params["code"]
+    timeout = params.get("timeout", 30)
+    cwd = params.get("cwd")
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write(code)
+        f.flush()
+        script_path = f.name
+
+    try:
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=cwd,
+        )
+        return {
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "exit_code": -1,
+            "stdout": "",
+            "stderr": f"Execution timed out after {timeout}s",
+        }
+    finally:
+        Path(script_path).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# data.*
+# ---------------------------------------------------------------------------
+
+
+def _data_profile(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.data.loader import load_dataset
+
+    path = Path(params["path"])
+    name = params.get("name")
+    dataset = load_dataset(path, name=name)
+
+    summary = dataset.summary
+    return {
+        "name": dataset.spec.name,
+        "format": dataset.spec.format,
+        "n_rows": summary.n_rows,
+        "n_columns": summary.n_columns,
+        "columns": summary.columns,
+        "dtypes": summary.dtypes,
+        "missing_counts": summary.missing_counts,
+        "numeric_stats": summary.numeric_stats,
+    }
+
+
+# ---------------------------------------------------------------------------
+# knowledge.*
+# ---------------------------------------------------------------------------
+
+
+def _knowledge_ingest(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(_path(params))
+    entry = store.ingest(
+        params["source"],
+        source_type=params.get("source_type"),
+    )
+    return entry.to_dict()
+
+
+def _knowledge_search(params: dict[str, Any]) -> list[dict[str, Any]]:
+    from urika.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(_path(params))
+    entries = store.search(params["query"])
+    return [e.to_dict() for e in entries]
+
+
+def _knowledge_list(params: dict[str, Any]) -> list[dict[str, Any]]:
+    from urika.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(_path(params))
+    entries = store.list_all()
+    return [e.to_dict() for e in entries]
+
+
+# ---------------------------------------------------------------------------
+# labbook.*
+# ---------------------------------------------------------------------------
+
+
+def _labbook_update_notes(params: dict[str, Any]) -> None:
+    from urika.core.labbook import update_experiment_notes
+
+    update_experiment_notes(_path(params), params["experiment_id"])
+    return None
+
+
+def _labbook_generate_summary(params: dict[str, Any]) -> None:
+    from urika.core.labbook import generate_experiment_summary
+
+    generate_experiment_summary(_path(params), params["experiment_id"])
+    return None
+
+
+# ---------------------------------------------------------------------------
+# report.*
+# ---------------------------------------------------------------------------
+
+
+def _report_results_summary(params: dict[str, Any]) -> None:
+    from urika.core.labbook import generate_results_summary
+
+    generate_results_summary(_path(params))
+    return None
+
+
+def _report_key_findings(params: dict[str, Any]) -> None:
+    from urika.core.labbook import generate_key_findings
+
+    generate_key_findings(_path(params))
+    return None
+
+
+# ---------------------------------------------------------------------------
+# sessions.*  (orchestrator conversation history)
+# ---------------------------------------------------------------------------
+
+
+def _sessions_save(params: dict[str, Any]) -> dict[str, Any]:
+    from urika.core.orchestrator_sessions import OrchestratorSession, save_session
+
+    session = OrchestratorSession.from_dict(params["session"])
+    save_session(_path(params), session)
+    return session.to_dict()
+
+
+def _sessions_load(params: dict[str, Any]) -> dict[str, Any] | None:
+    from urika.core.orchestrator_sessions import load_session
+
+    session = load_session(_path(params), params["session_id"])
+    if session is None:
+        return None
+    return session.to_dict()
+
+
+def _sessions_list(params: dict[str, Any]) -> list[dict[str, Any]]:
+    from urika.core.orchestrator_sessions import list_sessions
+
+    return list_sessions(_path(params), limit=params.get("limit", 20))
+
+
+def _sessions_most_recent(params: dict[str, Any]) -> dict[str, Any] | None:
+    from urika.core.orchestrator_sessions import get_most_recent
+
+    session = get_most_recent(_path(params))
+    if session is None:
+        return None
+    return session.to_dict()
+
+
+def _sessions_delete(params: dict[str, Any]) -> bool:
+    from urika.core.orchestrator_sessions import delete_session
+
+    return delete_session(_path(params), params["session_id"])

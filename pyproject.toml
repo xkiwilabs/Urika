@@ -47,6 +47,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+tui = [
+    "textual>=0.90",
+]
 dl = [
     "torch>=2.0",
     "transformers>=4.30",
@@ -57,6 +60,7 @@ dl = [
 ]
 all = [
     "urika[dl]",
+    "urika[tui]",
 ]
 dev = [
     "urika[all]",

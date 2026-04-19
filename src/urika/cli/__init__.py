@@ -34,6 +34,7 @@ from urika.cli.agents import (  # noqa: F401
     finalize,
     build_tool,
     criteria,
+    summarize,
     _run_report_agent,
 )
 
@@ -61,6 +62,10 @@ from urika.cli.data import (  # noqa: F401
     venv_create,
     venv_status,
 )
+
+# TUI command
+import urika.cli.tui  # noqa: F401
+from urika.cli.tui import tui  # noqa: F401
 
 # Helpers — re-export for backward compatibility
 from urika.cli._helpers import (  # noqa: F401

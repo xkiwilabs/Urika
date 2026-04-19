@@ -138,6 +138,12 @@ def cmd_project(session: ReplSession, args: str) -> None:
 
     session.load_project(path, name)
 
+    # Sync chat orchestrator to new project (if active)
+    from urika.repl.main import _orchestrator
+
+    if _orchestrator is not None:
+        _orchestrator.set_project(path)
+
     # Start notification bus for this project
     try:
         from urika.notifications import build_bus
@@ -195,6 +201,21 @@ def cmd_project(session: ReplSession, args: str) -> None:
             session._private_endpoint_ok = False
     else:
         session._private_endpoint_ok = True  # open mode, no restriction
+
+    # After project is loaded, check for recent sessions
+    try:
+        from urika.core.orchestrator_sessions import get_most_recent
+
+        recent = get_most_recent(session.project_path)
+        if recent:
+            from datetime import datetime
+
+            updated = datetime.fromisoformat(recent.updated).strftime("%Y-%m-%d %H:%M")
+            click.echo(
+                f"  Previous session from {updated} available. Type /resume-session to reload."
+            )
+    except Exception:
+        pass
 
     click.echo()
 
@@ -416,6 +437,40 @@ def cmd_tools(session: ReplSession, args: str) -> None:
         if tool is not None:
             click.echo(f"    {tool.name()}  [{tool.category()}]  {tool.description()}")
     click.echo()
+
+
+@command("stop", requires_project=True, description="Stop the running agent/experiment")
+def cmd_stop(session: ReplSession, args: str) -> None:
+    """Stop the currently running agent or experiment immediately."""
+    if not session.agent_active:
+        click.echo("  No agent is currently running.")
+        return
+
+    # Write stop flag for run_experiment's PauseController
+    if session.project_path:
+        flag = session.project_path / ".urika" / "pause_requested"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text("stop", encoding="utf-8")
+
+    active = session.active_command
+    session.set_agent_inactive()
+    click.echo(f"  Stopped {active}.")
+
+
+@command("pause", requires_project=True, description="Pause experiment after current subagent")
+def cmd_pause(session: ReplSession, args: str) -> None:
+    """Pause the running experiment after the current subagent finishes."""
+    if not session.agent_active:
+        click.echo("  No agent is currently running.")
+        return
+
+    if session.project_path:
+        flag = session.project_path / ".urika" / "pause_requested"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text("pause", encoding="utf-8")
+
+    click.echo("  Pausing after current subagent finishes...")
+    click.echo("  Type /resume to continue.")
 
 
 # ── Project-specific commands ───────────────────────────────
@@ -909,6 +964,76 @@ def cmd_criteria(session: ReplSession, args: str) -> None:
             f"  Primary: {primary.get('metric')} {primary.get('direction', '>')} {primary.get('target')}"
         )
     click.echo()
+
+
+@command("resume-session", requires_project=True, description="Resume previous orchestrator session")
+def cmd_resume_session(session: ReplSession, args: str) -> None:
+    """Resume a previous orchestrator conversation."""
+    from urika.core.orchestrator_sessions import list_sessions, load_session
+
+    sessions = list_sessions(session.project_path)
+    if not sessions:
+        click.echo("  No saved sessions for this project.")
+        return
+
+    if not args:
+        # Show numbered list
+        click.echo()
+        click.echo("  Recent sessions:")
+        click.echo()
+        for i, s in enumerate(sessions[:10]):
+            from datetime import datetime
+
+            try:
+                dt = datetime.fromisoformat(s["updated"]).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                dt = s.get("updated", "?")
+            preview = (s.get("preview") or "(empty)")[:60]
+            turns = s.get("turn_count", 0)
+            click.echo(f"    {i + 1}. {dt} \u00b7 {turns} turns")
+            click.echo(f"       {preview}")
+        click.echo()
+        click.echo("  Type /resume-session <number> to resume.")
+        click.echo()
+        return
+
+    # Resume by number
+    try:
+        num = int(args)
+    except ValueError:
+        click.echo(f"  Invalid number: {args}")
+        return
+
+    if num < 1 or num > len(sessions):
+        click.echo("  Invalid session number. Use /resume-session to see the list.")
+        return
+
+    entry = sessions[num - 1]
+    loaded = load_session(session.project_path, entry["session_id"])
+    if not loaded:
+        click.echo(f"  Session not found: {entry['session_id']}")
+        return
+
+    # Restore conversation to the orchestrator
+    from urika.repl.main import _get_orchestrator
+
+    orchestrator = _get_orchestrator(session)
+    orchestrator.set_messages(loaded.recent_messages)
+    session._orch_session = loaded
+
+    turns = len(loaded.recent_messages) // 2
+    click.echo(f"  Resumed session ({turns} turns)")
+
+
+@command("new-session", requires_project=True, description="Start a new orchestrator conversation")
+def cmd_new_session(session: ReplSession, args: str) -> None:
+    """Clear the orchestrator conversation and start fresh."""
+    from urika.repl.main import _get_orchestrator
+
+    orchestrator = _get_orchestrator(session)
+    orchestrator.clear()
+    session._orch_session = None
+    click.echo("  Started a new session. Previous conversation archived.")
 
 
 # Register imported agent commands

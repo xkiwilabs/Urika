@@ -8,11 +8,11 @@ the input loop during execution (Phase B will add async input).
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import threading
 import time
+from typing import TYPE_CHECKING
 
 import click
 from prompt_toolkit import PromptSession
@@ -25,7 +25,6 @@ from urika.cli_display import (
     _C,
     _format_duration,
     format_agent_output,
-    print_agent,
     print_error,
     print_header,
 )
@@ -46,6 +45,9 @@ from urika.repl.commands import (
     get_project_names,
 )
 from urika.repl.session import ReplSession
+
+if TYPE_CHECKING:
+    from urika.orchestrator.chat import OrchestratorChat
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +98,135 @@ class UrikaCompleter(Completer):
                             yield Completion(eid, start_position=-len(arg))
 
 
+AGENT_COMMANDS = {
+    "run", "evaluate", "plan", "advisor", "report",
+    "present", "finalize", "build-tool", "resume",
+}
+
+# Commands that use interactive prompts and need their own thread
+# (they call asyncio.run or prompt_toolkit internally)
+INTERACTIVE_COMMANDS = {
+    "config", "setup", "update", "new",
+}
+
+
+async def _async_repl_loop(
+    session: ReplSession,
+    prompt_session: PromptSession,
+    _drain_remote_queue,
+) -> None:
+    """Async REPL main loop — allows background threads to print.
+
+    Agent commands (those in AGENT_COMMANDS) run in background threads
+    so the user can continue typing while they execute. Free text typed
+    while an agent is running is queued for injection into the next call.
+    """
+    while True:
+        try:
+            if session.has_project:
+                prompt_text = f"urika:{session.project_name}> "
+            else:
+                prompt_text = "urika> "
+
+            _drain_remote_queue(session)
+
+            user_input = (await prompt_session.prompt_async(prompt_text)).strip()
+
+            if not user_input:
+                continue
+
+            if user_input.startswith("/"):
+                parts = user_input[1:].split(" ", 1)
+                cmd_name = parts[0].lower()
+
+                if cmd_name in AGENT_COMMANDS:
+                    if session.agent_active:
+                        click.echo(
+                            "  An agent is already running. "
+                            "Use /stop to cancel."
+                        )
+                        continue
+                    # Run agent command in a background thread
+                    def _run_agent(cmd=user_input):
+                        try:
+                            _handle_command(session, cmd)
+                        finally:
+                            session.set_agent_inactive()
+
+                    session.set_agent_active(cmd_name)
+                    thread = threading.Thread(
+                        target=_run_agent, daemon=True
+                    )
+                    thread.start()
+                elif cmd_name in INTERACTIVE_COMMANDS:
+                    # Interactive commands need their own thread
+                    def _run_interactive(cmd=user_input):
+                        _handle_command(session, cmd)
+
+                    thread = threading.Thread(
+                        target=_run_interactive, daemon=True
+                    )
+                    thread.start()
+                    thread.join()
+                else:
+                    # Instant commands run on the main thread
+                    _handle_command(session, user_input)
+            else:
+                # Free text
+                if session.agent_active:
+                    # Agent is running — queue input for injection
+                    session.queue_input(user_input)
+                    click.echo(
+                        f"  > {user_input} "
+                        f"(queued for {session.active_command})"
+                    )
+                else:
+                    # Run chat in background thread so prompt stays active
+                    def _run_chat(msg=user_input):
+                        try:
+                            _handle_free_text(session, msg)
+                        finally:
+                            session.set_agent_inactive()
+
+                    session.set_agent_active("chat")
+                    thread = threading.Thread(
+                        target=_run_chat, daemon=True
+                    )
+                    thread.start()
+
+            _drain_remote_queue(session)
+
+        except (EOFError, KeyboardInterrupt):
+            if session.notification_bus is not None:
+                try:
+                    session.notification_bus.stop()
+                except Exception:
+                    pass
+            session.save_usage()
+            click.echo("\n  Goodbye.")
+            break
+        except SystemExit:
+            if session.notification_bus is not None:
+                try:
+                    session.notification_bus.stop()
+                except Exception:
+                    pass
+            session.save_usage()
+            break
+
+
 def run_repl() -> None:
     """Main REPL entry point."""
     session = ReplSession()
+
+    # Set default model from SDK so the footer shows it from startup
+    try:
+        from urika.agents.runner import get_runner
+        runner = get_runner()
+        session.model = getattr(runner, "default_model", "") or "claude-agent-sdk"
+    except Exception:
+        session.model = "claude-agent-sdk"
+
     history = InMemoryHistory()
     completer = UrikaCompleter(session)
 
@@ -147,39 +275,89 @@ def run_repl() -> None:
                 _privacy_cache[key] = "open"
         return _privacy_cache[key]
 
+    # Spinner for the toolbar — rotates when agent is active
+    _spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    _spinner_idx = [0]
+
+    # Activity verbs that rotate during agent work
+    _activity_verbs = [
+        "Thinking", "Reasoning", "Analyzing", "Processing",
+        "Exploring", "Evaluating", "Considering", "Reviewing",
+    ]
+    _verb_idx = [0]
+    _last_verb_time = [0.0]
+
     def _bottom_toolbar():
         try:
             cols = os.get_terminal_size().columns
         except OSError:
             cols = 80
 
-        parts = []
-        parts.append("\033[2m" + "\u2500" * cols + "\033[0m\n")
-        parts.append(" \033[34;1murika\033[0m")
+        D = "\033[2m"   # dim
+        R = "\033[0m"   # reset
+        sep = f"{D} \u2502 {R}"  # │ separator
+
+        lines = []
+
+        # ── Line 1: Activity line ──
+        line1_parts = [f"{D}" + "\u2500" * cols + f"{R}\n"]
+
+        if session.agent_active:
+            # Spinner
+            frame = _spinner_frames[_spinner_idx[0] % len(_spinner_frames)]
+            _spinner_idx[0] += 1
+
+            # Rotate verb every 3 seconds
+            now = time.monotonic()
+            if now - _last_verb_time[0] > 3.0:
+                _verb_idx[0] = (_verb_idx[0] + 1) % len(_activity_verbs)
+                _last_verb_time[0] = now
+            verb = _activity_verbs[_verb_idx[0]]
+
+            agent_name = session.active_command or "agent"
+            line1_parts.append(f" \033[36m{frame}\033[0m")
+            line1_parts.append(f" \033[33;1m{agent_name}\033[0m")
+            line1_parts.append(f" {D}\u2014 {verb}\u2026{R}")
+
+            if session.agent_name:
+                line1_parts.append(f"{sep}\033[33m{session.agent_name}\033[0m")
+            if hasattr(session, "experiment_id") and session.experiment_id:
+                line1_parts.append(f"{sep}{D}{session.experiment_id}{R}")
+        else:
+            line1_parts.append(f" {D}ready{R}")
+
+        lines.append("".join(line1_parts))
+
+        # ── Line 2: Status line (always shown) ──
+        line2_parts = []
+        line2_parts.append(" \033[34;1murika\033[0m")
+
         if session.has_project:
-            parts.append(f" \033[2m\u00b7 {session.project_name}\033[0m")
+            line2_parts.append(f"{sep}\033[36m{session.project_name}\033[0m")
             privacy = _get_privacy(session.project_path)
-            parts.append(f" \033[33m\u00b7 {privacy}\033[0m")
+            line2_parts.append(f"{sep}\033[33m{privacy}\033[0m")
+
         if session.model:
             from urika.cli_display import format_model_source
-
             model_display = format_model_source(
-                session.model,
-                project_dir=session.project_path,
+                session.model, project_dir=session.project_path,
             )
-            parts.append(f" \033[36m\u00b7 {model_display}\033[0m")
+            line2_parts.append(f"{sep}\033[36m{model_display}\033[0m")
+
         elapsed = _format_duration(session.elapsed_ms)
-        parts.append(f" \033[31m\u00b7 {elapsed}\033[0m")
-        if session.agent_calls > 0:
-            tokens = session.total_tokens_in + session.total_tokens_out
-            tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
-            parts.append(
-                f" \033[2m\u00b7 {tok_str} tokens"
-                f" \u00b7 {session.agent_calls} calls\033[0m"
-            )
-            if session.total_cost_usd > 0:
-                parts.append(f" \033[32m\u00b7 ~${session.total_cost_usd:.2f}\033[0m")
-        return ANSI("".join(parts))
+        line2_parts.append(f"{sep}\033[35m{elapsed}\033[0m")
+
+        tokens = session.total_tokens_in + session.total_tokens_out
+        tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
+        line2_parts.append(f"{sep}{D}{tok_str} tokens \u00b7 {session.agent_calls} calls{R}")
+        if session.total_cost_usd > 0:
+            line2_parts.append(f"{sep}\033[32m~${session.total_cost_usd:.2f}\033[0m")
+        else:
+            line2_parts.append(f"{sep}{D}$0.00{R}")
+
+        lines.append("".join(line2_parts))
+
+        return ANSI("\n".join(lines))
 
     custom_style = Style.from_dict({"bottom-toolbar": "noreverse"})
 
@@ -190,6 +368,19 @@ def run_repl() -> None:
         bottom_toolbar=_bottom_toolbar,
         style=custom_style,
     )
+
+    # Background thread to refresh the toolbar spinner when agent is active
+    def _toolbar_refresh():
+        while True:
+            time.sleep(0.2)  # 5 Hz refresh
+            if session.agent_active and prompt_session.app:
+                try:
+                    prompt_session.app.invalidate()
+                except Exception:
+                    pass
+
+    _refresh_thread = threading.Thread(target=_toolbar_refresh, daemon=True)
+    _refresh_thread.start()
 
     def _drain_remote_queue(session: ReplSession) -> None:
         """Execute any queued remote commands from Telegram/Slack."""
@@ -205,45 +396,12 @@ def run_repl() -> None:
     # Start background thread to drain remote commands while agent is idle
     _start_remote_drain_thread(session)
 
-    # ── Main loop ────────────────────────────────────────
-    while True:
-        try:
-            if session.has_project:
-                prompt_text = f"urika:{session.project_name}> "
-            else:
-                prompt_text = "urika> "
-
-            _drain_remote_queue(session)
-
-            user_input = prompt_session.prompt(prompt_text).strip()
-
-            if not user_input:
-                continue
-
-            if user_input.startswith("/"):
-                _handle_command(session, user_input)
-            else:
-                _handle_free_text(session, user_input)
-
-            _drain_remote_queue(session)
-
-        except (EOFError, KeyboardInterrupt):
-            if session.notification_bus is not None:
-                try:
-                    session.notification_bus.stop()
-                except Exception:
-                    pass
-            session.save_usage()
-            click.echo("\n  Goodbye.")
-            break
-        except SystemExit:
-            if session.notification_bus is not None:
-                try:
-                    session.notification_bus.stop()
-                except Exception:
-                    pass
-            session.save_usage()
-            break
+    # ── Main loop (async for concurrent input/output) ────
+    try:
+        asyncio.run(_async_repl_loop(session, prompt_session, _drain_remote_queue))
+    except (EOFError, KeyboardInterrupt):
+        session.save_usage()
+        click.echo("\n  Goodbye.")
 
 
 def _handle_command(session: ReplSession, text: str) -> None:
@@ -288,12 +446,23 @@ def _handle_command(session: ReplSession, text: str) -> None:
         print_error(f"Error: {exc}")
 
 
-def _handle_free_text(session: ReplSession, text: str) -> None:
-    """Send free text to the advisor agent."""
-    if not session.has_project:
-        click.echo("  Load a project first: /project <name>")
-        return
+_orchestrator: "OrchestratorChat | None" = None
 
+
+def _get_orchestrator(session: ReplSession) -> "OrchestratorChat":
+    """Get or create the chat orchestrator, synced to current project."""
+    global _orchestrator
+    if _orchestrator is None:
+        from urika.orchestrator.chat import OrchestratorChat
+
+        _orchestrator = OrchestratorChat(project_dir=session.project_path)
+    elif session.project_path and _orchestrator.project_dir != session.project_path:
+        _orchestrator.set_project(session.project_path)
+    return _orchestrator
+
+
+def _handle_free_text(session: ReplSession, text: str) -> None:
+    """Send free text to the chat orchestrator."""
     if not session._private_endpoint_ok:
         click.echo(
             "  \u2717 Agent commands disabled \u2014 local model unreachable "
@@ -301,150 +470,59 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         )
         return
 
+    orchestrator = _get_orchestrator(session)
+
     try:
-        from urika.agents.registry import AgentRegistry
-        from urika.agents.runner import get_runner
-        from urika.cli import _make_on_message
-        from urika.cli_display import Spinner
+        # Already running in a background thread (from _async_repl_loop)
+        # so we can use asyncio.run() safely here
+        from urika.cli_display import print_tool_use
 
-        runner = get_runner()
-        registry = AgentRegistry()
-        registry.discover()
+        def _stream_output(kind: str, content: str) -> None:
+            """Print agent activity as it streams — same style as CLI agents."""
+            if kind == "tool":
+                # Show tool use: Read, Bash, Glob, Grep — real-time
+                parts = content.split(": ", 1)
+                tool_name = parts[0]
+                detail = parts[1] if len(parts) > 1 else ""
+                print_tool_use(tool_name, detail)
 
-        advisor = registry.get("advisor_agent")
-        if advisor is None:
-            print_error("Advisor agent not found.")
-            return
+        result = asyncio.run(orchestrator.chat(text, on_output=_stream_output))
+        response = result.get("response", "")
 
-        # Build context — inject rolling summary from previous sessions
-        from urika.core.advisor_memory import load_context_summary
+        # Update session usage stats (shown in toolbar)
+        session.total_tokens_in += result.get("tokens_in", 0)
+        session.total_tokens_out += result.get("tokens_out", 0)
+        session.total_cost_usd += result.get("cost_usd", 0)
+        session.agent_calls += 1
+        if result.get("model"):
+            session.model = result["model"]
 
-        context = f"Project: {session.project_name}\n"
-        context_summary = load_context_summary(session.project_path)
-        if context_summary:
-            context += (
-                f"\n## Research Context (from previous sessions)\n\n"
-                f"{context_summary}\n\n"
-            )
-        conv = session.get_conversation_context()
-        if conv:
-            context += f"\nPrevious conversation:\n{conv}\n"
-        context += f"\nUser: {text}\n"
+        click.echo()
+        click.echo(format_agent_output(response))
+        click.echo()
 
-        # Load project state
-        methods_path = session.project_path / "methods.json"
-        if methods_path.exists():
+        # Update session conversation for context
+        session.add_message("user", text)
+        session.add_message("assistant", response[:500])
+
+        # Save session
+        if session.project_path:
             try:
-                mdata = json.loads(methods_path.read_text(encoding="utf-8"))
-                mlist = mdata.get("methods", [])
-                context += f"\n{len(mlist)} methods tried.\n"
-            except Exception:
-                pass
-
-        config = advisor.build_config(
-            project_dir=session.project_path, experiment_id=""
-        )
-        config.max_turns = 25  # Standalone chat needs more turns than in-loop advisor
-
-        _on_msg = _make_on_message()
-
-        print_agent("advisor_agent")
-        session.set_agent_active("advisor")
-        try:
-            session_info = {
-                "project": session.project_name or "",
-                "model": session.model or "",
-                "cost": session.total_cost_usd,
-            }
-            with Spinner("Thinking", session_info=session_info) as sp:
-
-                def _on_msg_with_footer(msg):
-                    _on_msg(msg)
-                    model = getattr(msg, "model", None)
-                    if model:
-                        sp.update_session(model=model)
-
-                result = asyncio.run(
-                    runner.run(
-                        config,
-                        context,
-                        on_message=_on_msg_with_footer,
-                    )
+                from urika.core.orchestrator_sessions import (
+                    save_session,
+                    create_new_session,
                 )
-        finally:
-            session.set_agent_idle()
 
-        # Track usage
-        session.record_agent_call(
-            tokens_in=getattr(result, "tokens_in", 0) or 0,
-            tokens_out=getattr(result, "tokens_out", 0) or 0,
-            cost_usd=result.cost_usd or 0.0,
-            model=getattr(result, "model", "") or "",
-        )
-
-        if result.success and result.text_output:
-            click.echo(format_agent_output(result.text_output))
-            session.add_message("user", text)
-            session.add_message("advisor", result.text_output.strip())
-
-            # Save to persistent advisor history
-            from urika.core.advisor_memory import append_exchange
-
-            advisor_text = result.text_output.strip()
-            append_exchange(
-                session.project_path, role="user", text=text, source="repl"
-            )
-
-            # Parse suggestions for saving alongside advisor response
-            from urika.orchestrator.parsing import parse_suggestions
-
-            parsed = parse_suggestions(advisor_text)
-            parsed_suggestions = (
-                parsed["suggestions"]
-                if parsed and parsed.get("suggestions")
-                else None
-            )
-            append_exchange(
-                session.project_path,
-                role="advisor",
-                text=advisor_text,
-                source="repl",
-                suggestions=parsed_suggestions,
-            )
-
-            # Update rolling context summary in a separate thread
-            # (avoids event loop issues from sequential asyncio.run calls)
-            try:
-                import concurrent.futures
-                from urika.core.advisor_memory import update_context_summary
-
-                def _do_summary_update():
-                    return asyncio.run(
-                        update_context_summary(
-                            session.project_path, runner, registry
-                        )
-                    )
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
-                    _pool.submit(_do_summary_update).result(timeout=120)
-            except Exception as _summary_exc:
-                logger.warning("Context summary update failed: %s", _summary_exc)
-
-            # Send advisor response to remote channel if applicable
-            if session._is_remote_command and session._remote_respond:
-                from urika.notifications.bus import _split_message
-                clean_text = _strip_json_blocks(advisor_text)
-                for chunk in _split_message(clean_text, max_len=4000):
-                    session._remote_respond(chunk)
-
-            # Parse suggestions and offer to run them (skip for remote)
-            if not session._is_remote_command:
-                _offer_to_run_suggestions(session, result.text_output)
-        else:
-            print_error(f"Advisor error: {result.error}")
-
-    except ImportError:
-        print_error("Claude Agent SDK not installed.")
+                # Get or create session data
+                if not hasattr(session, "_orch_session") or session._orch_session is None:
+                    session._orch_session = create_new_session()
+                orch_session = session._orch_session
+                orch_session.recent_messages = orchestrator.get_messages()
+                if not orch_session.preview:
+                    orch_session.preview = text[:80]
+                save_session(session.project_path, orch_session)
+            except Exception:
+                pass  # Session persistence is best-effort
     except Exception as exc:
         print_error(f"Error: {exc}")
 

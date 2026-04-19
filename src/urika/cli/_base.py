@@ -21,9 +21,15 @@ class _UrikaCLI(click.Group):
 
 
 @click.group(cls=_UrikaCLI, invoke_without_command=True)
+@click.option(
+    "--classic",
+    is_flag=True,
+    hidden=True,
+    help="Use classic prompt_toolkit REPL instead of the Textual TUI.",
+)
 @click.version_option(package_name="urika")
 @click.pass_context
-def cli(ctx) -> None:
+def cli(ctx, classic: bool) -> None:
     """Urika: Agentic scientific analysis platform."""
     # Load credentials from ~/.urika/secrets.env
     from urika.core.secrets import load_secrets
@@ -47,6 +53,20 @@ def cli(ctx) -> None:
         pass
 
     if ctx.invoked_subcommand is None:
-        from urika.repl import run_repl
+        # Default path: launch the Textual TUI. Falls back to the
+        # classic prompt_toolkit REPL if Textual isn't installed
+        # (the [tui] extra is optional) or if the user passed
+        # --classic explicitly.
+        if classic:
+            from urika.repl import run_repl
 
-        run_repl()
+            run_repl()
+            return
+        try:
+            from urika.tui import run_tui
+        except ImportError:
+            from urika.repl import run_repl
+
+            run_repl()
+            return
+        run_tui()

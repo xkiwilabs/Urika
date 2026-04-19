@@ -1,0 +1,50 @@
+/* Urika TUI theme — vertical container for the bottom strip.
+ *
+ * Visual stack, top→bottom:
+ *   OutputPanel   (1fr)  fills remaining height, scrollable
+ *   #bottom-stack        Vertical container, docked bottom
+ *     ├─ InputBar   (3)  caret row + border
+ *     ├─ ActivityBar (0-1) animated spinner (visible only when busy)
+ *     └─ StatusBar  (2)  project · model · tokens · cost
+ *
+ * We DO NOT put ``dock: bottom`` on the individual bottom widgets.
+ * Textual docks don't stack — each widget claims the screen's bottom
+ * independently and they overlap. The Vertical wrapper is the only
+ * docked element; its children flow naturally within it.
+ */
+
+Screen {
+    background: $background;
+}
+
+OutputPanel {
+    height: 1fr;
+    scrollbar-size-vertical: 1;
+    scrollbar-size-horizontal: 0;
+    padding: 0 1;
+}
+
+#bottom-stack {
+    dock: bottom;
+    /* InputBar 3 + ActivityBar 1 + StatusBar 1 = 5. Always fixed. */
+    height: 5;
+}
+
+InputBar {
+    margin: 0;
+    height: 3;
+    padding: 0 1;
+    border: round #4a9eff;
+    border-title-color: #4a9eff;
+}
+
+InputBar:focus {
+    border: round #4a9eff;
+}
+
+StatusBar {
+    height: 1;
+    background: $surface;
+    color: $text-muted;
+    padding: 0 1;
+}
