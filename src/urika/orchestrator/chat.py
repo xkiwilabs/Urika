@@ -248,10 +248,23 @@ class OrchestratorChat:
             env = build_agent_env_for_endpoint(
                 self.project_dir, "orchestrator", runtime_config
             )
+            # Strip Claude Code session markers so Bash-invoked urika
+            # commands can spawn their own Claude Code agents. Without
+            # this, the child inherits CLAUDECODE=1 from os.environ
+            # and the Claude CLI refuses to nest. Setting to "" makes
+            # it falsy for `os.getenv("CLAUDECODE")` checks while
+            # keeping the var present (some code checks existence).
+            if env is None:
+                env = {}
+            env["CLAUDECODE"] = ""
+            env["CLAUDE_CODE_SSE_PORT"] = ""
+            env["CLAUDE_CODE_ENTRYPOINT"] = ""
+
             readable_dirs = [self.project_dir]
             # Allow only urika CLI commands via Bash — for quick
             # subagent queries (advisor, evaluate, plan, inspect).
-            allowed_bash = ["urika "]
+            # Both with and without the CLAUDECODE= prefix.
+            allowed_bash = ["urika ", "CLAUDECODE= urika "]
 
         return AgentConfig(
             name="orchestrator",

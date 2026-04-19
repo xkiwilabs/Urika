@@ -24,19 +24,19 @@ Use these for targeted questions. The subagent runs, returns its analysis, and y
 
 ```bash
 # Get strategic advice on next steps
-urika advisor "{project_name}" "What should we try next given our current results?"
+CLAUDECODE= urika advisor "{project_name}" "What should we try next given our current results?"
 
 # Quick evaluation assessment
-urika evaluate "{project_name}" --experiment <exp-id>
+CLAUDECODE= urika evaluate "{project_name}" --experiment <exp-id>
 
 # Planning assessment for a new approach
-urika plan "{project_name}" --experiment <exp-id>
+CLAUDECODE= urika plan "{project_name}" --experiment <exp-id>
 
 # Data summary (safe in all privacy modes — reads the pre-computed profile, not raw data)
-urika inspect "{project_name}"
+CLAUDECODE= urika inspect "{project_name}"
 ```
 
-**IMPORTANT**: Always quote the project name and any user text in Bash commands.
+**IMPORTANT**: Always prefix with `CLAUDECODE= ` (sets it to empty) so the child process can spawn its own Claude Code agent. Always quote the project name and any user text.
 
 ## Recommend Slash Commands
 
