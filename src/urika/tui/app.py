@@ -488,6 +488,12 @@ class UrikaApp(App):
             # Stream both tool use AND text output to the panel so
             # the user can see what the orchestrator is doing in
             # real-time — reading files, calling subagents, thinking.
+            #
+            # NOTE: _run_free_text is an async coroutine on the event
+            # loop thread, NOT a worker thread. So _on_output is also
+            # called on the event loop thread. call_from_thread would
+            # FAIL (raises RuntimeError from the same thread, silently
+            # caught). Write to the panel directly instead.
             def _on_output(kind: str, content: str) -> None:
                 try:
                     if kind == "tool":
@@ -499,20 +505,15 @@ class UrikaApp(App):
                             if len(detail) > 120
                             else detail
                         )
-                        self.call_from_thread(
-                            panel.write_line,
+                        panel.write_line(
                             Text(
                                 f"  ▸ {tool_name} {short}",
                                 style="dim #4a9eff",
-                            ),
+                            )
                         )
                     elif kind == "text" and content.strip():
-                        # Stream orchestrator's reasoning/text as it
-                        # arrives, so the user sees progress.
-                        self.call_from_thread(
-                            panel.write_line, content
-                        )
-                except RuntimeError:
+                        panel.write_line(content)
+                except Exception:
                     pass
 
             result = await orch.chat(text, on_output=_on_output)
