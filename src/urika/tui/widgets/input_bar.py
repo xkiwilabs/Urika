@@ -17,15 +17,27 @@ class _UrikaSuggester(Suggester):
     """Context-aware completion for the Urika TUI input bar.
 
     * No leading ``/`` — no suggestion (free text).
-    * ``/<partial>`` (no space) — suggest available slash commands.
-    * ``/cmd <partial>`` — suggest command arguments (project names,
-      experiment IDs).
+    * ``/<partial>`` (no space) — suggest slash commands, ordered by
+      frequency of use (most common first, not alphabetical).
+    * ``/cmd <partial>`` — suggest command arguments (project names
+      sorted by most recently used, experiment IDs).
     """
 
     _PROJECT_ARG_COMMANDS = frozenset({"project", "resume", "resume-session"})
     _EXPERIMENT_ARG_COMMANDS = frozenset(
         {"present", "logs", "evaluate", "report", "plan", "results"}
     )
+
+    # Commands ordered by how often they're used, not alphabetically.
+    # Most common first so /p suggests /project, not /pause or /plan.
+    _COMMAND_PRIORITY = [
+        "project", "run", "new", "list", "help", "status", "results",
+        "config", "notifications", "experiments", "methods", "advisor",
+        "evaluate", "plan", "report", "present", "finalize", "resume",
+        "build-tool", "tools", "inspect", "criteria", "logs",
+        "knowledge", "dashboard", "usage", "update", "stop", "pause",
+        "new-session", "resume-session", "quit",
+    ]
 
     def __init__(self, session: ReplSession) -> None:
         super().__init__(use_cache=False, case_sensitive=True)
@@ -48,17 +60,43 @@ class _UrikaSuggester(Suggester):
     def _suggest_command(self, prefix: str) -> str | None:
         from urika.repl.commands import get_command_names
 
-        for name in get_command_names(self.session):
-            if name.startswith(prefix):
+        # Get available commands (respects global vs project scope)
+        available = set(get_command_names(self.session))
+        # Iterate in priority order — first match wins
+        for name in self._COMMAND_PRIORITY:
+            if name in available and name.startswith(prefix):
+                return "/" + name
+        # Fallback for any command not in priority list
+        for name in sorted(available):
+            if name.startswith(prefix) and name not in self._COMMAND_PRIORITY:
                 return "/" + name
         return None
 
     def _suggest_project(self, cmd: str, arg_prefix: str) -> str | None:
-        from urika.repl.commands import get_project_names
+        """Suggest project names sorted by most recently modified."""
+        from urika.core.registry import ProjectRegistry
 
-        for name in get_project_names():
-            if name.startswith(arg_prefix):
-                return f"/{cmd} {name}"
+        try:
+            reg = ProjectRegistry()
+            projects = reg.list_all()
+            # Sort by directory mtime (most recent first)
+            recent = sorted(
+                projects.items(),
+                key=lambda kv: kv[1].stat().st_mtime
+                if kv[1].exists()
+                else 0,
+                reverse=True,
+            )
+            for name, _path in recent:
+                if name.startswith(arg_prefix):
+                    return f"/{cmd} {name}"
+        except (OSError, ImportError):
+            # Fall back to unsorted
+            from urika.repl.commands import get_project_names
+
+            for name in get_project_names():
+                if name.startswith(arg_prefix):
+                    return f"/{cmd} {name}"
         return None
 
     def _suggest_experiment(self, cmd: str, arg_prefix: str) -> str | None:

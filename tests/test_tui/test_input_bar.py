@@ -194,34 +194,56 @@ class TestInputBar:
         self, tmp_path
     ) -> None:
         """After ``/project <space>``, the suggester switches modes
-        and returns project names rather than command names.
+        and returns project names sorted by most recently modified.
 
-        Uses monkeypatch on get_project_names so the test doesn't
-        depend on whatever projects happen to exist in the user's
-        real ~/.urika registry.
+        Monkeypatches ProjectRegistry.list_all to return fake
+        projects with controlled mtimes so the test doesn't depend
+        on the user's real ~/.urika registry.
         """
-        import urika.repl.commands as rcmd
+        from pathlib import Path
+        from unittest.mock import patch
 
-        fake_projects = ["alpha-study", "beta-study", "gamma-study"]
-        orig = rcmd.get_project_names
-        rcmd.get_project_names = lambda: fake_projects
-        try:
+        # Fake projects with controlled mtimes via tmp_path dirs
+        (tmp_path / "alpha").mkdir()
+        (tmp_path / "beta").mkdir()
+        (tmp_path / "gamma").mkdir()
+        import os
+        import time
+
+        # Set mtimes: gamma most recent, alpha oldest
+        t = time.time()
+        os.utime(tmp_path / "alpha", (t - 300, t - 300))
+        os.utime(tmp_path / "beta", (t - 200, t - 200))
+        os.utime(tmp_path / "gamma", (t - 100, t - 100))
+
+        fake_registry = {
+            "alpha-study": tmp_path / "alpha",
+            "beta-study": tmp_path / "beta",
+            "gamma-study": tmp_path / "gamma",
+        }
+
+        with patch(
+            "urika.core.registry.ProjectRegistry.list_all",
+            return_value=fake_registry,
+        ):
+
             app = UrikaApp()
             async with app.run_test() as pilot:
                 await pilot.pause()
                 bar = app.query_one("InputBar")
 
-                # Empty argument → first project.
+                # Empty argument → most recent project (gamma).
                 assert (
                     await bar.suggester.get_suggestion("/project ")
-                    == "/project alpha-study"
+                    == "/project gamma-study"
                 )
-                # Partial match → first matching project.
+                # Partial match → first matching by recency.
                 assert (
                     await bar.suggester.get_suggestion("/project be")
                     == "/project beta-study"
                 )
                 # No match → None.
-                assert await bar.suggester.get_suggestion("/project zzz") is None
-        finally:
-            rcmd.get_project_names = orig
+                assert (
+                    await bar.suggester.get_suggestion("/project zzz")
+                    is None
+                )
