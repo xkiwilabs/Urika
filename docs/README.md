@@ -17,5 +17,5 @@
 | [13 Configuration](13-configuration.md) | urika.toml, criteria, environment variables |
 | [14 Project Structure](14-project-structure.md) | File layout and what each file does |
 | [15 CLI Reference](15-cli-reference.md) | Every command with full options and examples |
-| [16 Interactive REPL](16-interactive-repl.md) | Slash commands, tab completion, conversation mode |
+| [16 Interactive TUI](16-interactive-tui.md) | TUI interface, slash commands, tab completion, orchestrator chat |
 | [17 Notifications](17-notifications.md) | Email, Slack, Telegram alerts and remote pause/stop |

@@ -44,12 +44,12 @@ dependencies = [
     # Notifications (Slack, Telegram)
     "slack-sdk>=3.0",
     "python-telegram-bot>=20.0",
+    # TUI (Textual terminal interface — default entry point)
+    "textual>=0.90",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
-tui = [
-    "textual>=0.90",
-]
 dl = [
     "torch>=2.0",
     "transformers>=4.30",
@@ -60,7 +60,6 @@ dl = [
 ]
 all = [
     "urika[dl]",
-    "urika[tui]",
 ]
 dev = [
     "urika[all]",

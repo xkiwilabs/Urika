@@ -2,7 +2,7 @@
 
 Complete reference for all Urika CLI commands. Run `urika --help` for a summary, or `urika <command> --help` for any individual command.
 
-Running `urika` with no subcommand launches the interactive REPL (see [Interactive REPL](16-interactive-repl.md)).
+Running `urika` with no subcommand launches the interactive TUI (see [Interactive TUI](16-interactive-tui.md)). Use `urika --classic` for the classic prompt-toolkit REPL.
 
 
 ## Scriptable by Design
@@ -277,7 +277,7 @@ Proceed?
   4. Skip
 ```
 
-This dialog is skipped when any flag is provided or when called from the REPL.
+This dialog is skipped when any flag is provided or when called from the TUI.
 
 **Experiment selection logic** (when `--experiment` is not provided):
 1. If there are pending (non-completed) experiments, resumes the most recent one
@@ -785,4 +785,4 @@ urika --version
 
 ---
 
-**Next:** [Interactive REPL](16-interactive-repl.md)
+**Next:** [Interactive TUI](16-interactive-tui.md)

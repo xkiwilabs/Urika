@@ -405,14 +405,20 @@ def run(
         if choice.startswith("Skip"):
             return
         elif choice.startswith("Run multiple"):
-            max_experiments = int(
-                interactive_prompt("How many experiments?", default="3")
-            )
+            try:
+                max_experiments = int(
+                    interactive_prompt("How many experiments?", default="3")
+                )
+            except ValueError:
+                max_experiments = 3
             auto = True
         elif choice.startswith("Custom"):
-            max_turns = int(
-                interactive_prompt("Max turns per experiment", default=str(max_turns))
-            )
+            try:
+                max_turns = int(
+                    interactive_prompt("Max turns per experiment", default=str(max_turns))
+                )
+            except ValueError:
+                pass  # keep existing max_turns
 
         # Show settings summary before starting
         click.echo()

@@ -26,7 +26,14 @@ class ProjectRegistry:
 
     def _load(self) -> dict[str, str]:
         if self._path.exists():
-            return json.loads(self._path.read_text(encoding="utf-8"))
+            try:
+                return json.loads(self._path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, ValueError) as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Corrupt JSON in %s: %s — starting fresh", self._path, exc
+                )
+                return {}
         return {}
 
     def _save(self) -> None:

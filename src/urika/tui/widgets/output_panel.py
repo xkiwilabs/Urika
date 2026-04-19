@@ -26,6 +26,7 @@ class OutputPanel(RichLog):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("wrap", True)
+        kwargs.setdefault("max_lines", 10_000)
         super().__init__(*args, **kwargs)
 
     def write_line(self, content: str | Text) -> None:

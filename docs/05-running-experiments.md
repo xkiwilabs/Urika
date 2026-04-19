@@ -306,7 +306,7 @@ When enabled:
 3. If the advisor decides the bar should be raised (e.g., results far exceed targets, stronger methods haven't been tried), it updates the criteria and the experiment **continues**
 4. If the advisor confirms the criteria are appropriate, the experiment **completes** normally
 
-In the REPL, this option appears under custom settings when running `/run`:
+In the TUI, this option appears under custom settings when running `/run`:
 
 ```
 Re-evaluate criteria if met?

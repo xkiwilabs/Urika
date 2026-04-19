@@ -17,7 +17,7 @@ The quickest way to browse all project outputs. Opens a browser-based dashboard 
 
 Experiments are listed newest-first and collapsed by default. Presentations open in a new tab. Light/dark mode toggle in the header.
 
-In the REPL: `/dashboard` to start, `/dashboard stop` to shut down.
+In the TUI: `/dashboard` to start, `/dashboard stop` to shut down.
 
 
 ## Results and Leaderboard

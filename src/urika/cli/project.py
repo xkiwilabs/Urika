@@ -492,7 +492,10 @@ def new(
             max_experiments=None,
         )
     elif choice.startswith("Run multiple"):
-        max_exp = int(interactive_prompt("How many experiments?", default="3"))
+        try:
+            max_exp = int(interactive_prompt("How many experiments?", default="3"))
+        except ValueError:
+            max_exp = 3
         exp = create_experiment(
             project_dir,
             name=exp_name_default,

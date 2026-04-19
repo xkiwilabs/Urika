@@ -19,6 +19,7 @@ from urika.cli._helpers import (
     _ensure_project,
     _prompt_numbered,
 )
+from urika.cli.run import _offer_to_run_advisor_suggestions
 
 
 def _run_report_agent(

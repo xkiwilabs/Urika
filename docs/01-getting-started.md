@@ -161,7 +161,7 @@ The advisor will route to the tool builder, which will `pip install mne` and cre
 urika build-tool my-project "install mne and create an EEG epoch extraction tool"
 urika build-tool my-project "install lifelines and build a survival analysis tool"
 
-# REPL
+# TUI
 /build-tool install networkx and create a graph analysis tool
 /build-tool install geopandas and build a spatial clustering tool
 ```
@@ -172,12 +172,14 @@ The tool builder installs the package, creates a reusable tool that wraps it, an
 
 Urika has two interfaces that share the same commands and produce identical results:
 
-- **Interactive REPL** — Run `urika` with no arguments. Gives you a prompt with tab completion, `/help`, conversation history, and a bottom status bar. Best for learning the system and exploratory work.
+- **Interactive TUI** — Run `urika` with no arguments. A full-screen Textual terminal interface with an output panel, input bar with tab completion, animated activity bar, and status bar. Type slash commands (`/help`, `/run`, `/project`) or ask questions in plain text — the orchestrator coordinates agents for you. Best for learning the system and exploratory work.
 - **CLI commands** — Run `urika <command>` directly from your shell. Every command is fully scriptable with `--json` output for custom tooling. Best for scripting, automation, batch processing, and building custom workflows on top of Urika.
 
-If you're new to Urika, **start with the REPL** — you can discover all commands with tab completion and `/help`, and ask the advisor agent questions in plain text without needing to know any commands at all.
+If you're new to Urika, **start with the TUI** — you can discover all commands with tab completion and `/help`, and ask the orchestrator questions in plain text without needing to know any commands at all.
 
-See [CLI Reference](15-cli-reference.md) and [Interactive REPL](16-interactive-repl.md) for full details on each interface.
+A classic prompt-toolkit REPL is also available via `urika --classic` if you prefer a simpler interface.
+
+See [CLI Reference](15-cli-reference.md) and [Interactive TUI](16-interactive-tui.md) for full details on each interface.
 
 ## Quickstart
 
@@ -189,13 +191,13 @@ urika new my-study --data /path/to/data.csv
 
 Urika prompts for a research question, investigation mode, and description. The project builder agent asks clarifying questions, proposes initial experiments, and writes the project files.
 
-### 2. Launch the REPL (recommended for first-time users)
+### 2. Launch the TUI (recommended for first-time users)
 
 ```bash
 urika
 ```
 
-This opens the interactive shell. Load your project and explore:
+This opens the interactive TUI. Load your project and explore:
 
 ```
 urika> /project my-study
@@ -220,7 +222,7 @@ urika present my-study          # generate presentation
 urika dashboard my-study        # browse everything in your browser
 ```
 
-Every REPL slash command has a matching CLI command and vice versa.
+Every slash command has a matching CLI command and vice versa.
 
 ## Project location
 

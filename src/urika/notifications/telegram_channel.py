@@ -193,6 +193,10 @@ class TelegramChannel(NotificationChannel):
 
         # Single handler for all /commands — routed through the bus
         app.add_handler(MessageHandler(filters.COMMAND, self._handle_command))
+        # Free text — routed to the orchestrator via the bus
+        app.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_free_text)
+        )
         # Callback queries (inline buttons)
         app.add_handler(CallbackQueryHandler(self._handle_callback))
 
@@ -225,7 +229,7 @@ class TelegramChannel(NotificationChannel):
         if not text.startswith("/"):
             return
 
-        parts = text[1:].split(None, 1)  # Remove / and split command from args
+        parts = text[1:].split(None, 1)
         command = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
 
@@ -264,6 +268,41 @@ class TelegramChannel(NotificationChannel):
             elif command == "stop":
                 self._controller.request_stop()
                 await update.message.reply_text("Stop requested \u23f9")
+
+    async def _handle_free_text(self, update: Any, context: Any) -> None:
+        """Route plain text messages to the orchestrator via the bus."""
+        if not update.message or not update.message.text:
+            return
+
+        # Verify sender
+        if self._chat_id and str(update.message.chat_id) != str(self._chat_id):
+            return
+
+        text = update.message.text.strip()
+        if not text or self._bus is None:
+            return
+
+        chat_id = update.message.chat_id
+
+        def _send_reply(resp: str) -> None:
+            try:
+                import urllib.request
+                import json as _json
+
+                url = f"https://api.telegram.org/bot{self._token}/sendMessage"
+                payload = _json.dumps(
+                    {"chat_id": chat_id, "text": resp}
+                ).encode("utf-8")
+                req = urllib.request.Request(
+                    url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                urllib.request.urlopen(req, timeout=10)
+            except Exception as exc:
+                logger.warning("Telegram reply failed: %s", exc)
+
+        self._bus.handle_remote_command("ask", text, respond=_send_reply)
 
     async def _handle_callback(self, update: Any, context: Any) -> None:
         """Handle inline keyboard button presses — route through the bus."""

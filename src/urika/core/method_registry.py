@@ -98,11 +98,13 @@ def update_method_status(
     superseded_by: str | None = None,
 ) -> None:
     """Update a method's status."""
-    methods = load_methods(project_dir)
-    for m in methods:
-        if m["name"] == name:
-            m["status"] = status
-            if superseded_by is not None:
-                m["superseded_by"] = superseded_by
-            _save_methods(project_dir, methods)
-            return
+    path = _methods_path(project_dir)
+    with locked_json_update(path):
+        methods = load_methods(project_dir)
+        for m in methods:
+            if m["name"] == name:
+                m["status"] = status
+                if superseded_by is not None:
+                    m["superseded_by"] = superseded_by
+                _save_methods(project_dir, methods)
+                return

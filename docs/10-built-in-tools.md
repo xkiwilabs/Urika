@@ -365,7 +365,7 @@ urika build-tool my-project "install xarray and create a NetCDF climate data loa
 ```
 
 ```
-# REPL examples
+# TUI examples
 /build-tool create a correlation heatmap tool using seaborn
 /build-tool build a data loader for our custom HDF5 format
 /build-tool install spacy and create a named entity extraction tool

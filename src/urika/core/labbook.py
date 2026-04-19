@@ -26,7 +26,9 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
     figure_names = {f.stem.lower(): f for f in all_figures}
 
     for run in progress.get("runs", []):
-        lines.append(f"## {run['run_id']}: {run['method']}")
+        run_id = run.get("run_id", "unknown")
+        method = run.get("method", "unknown")
+        lines.append(f"## {run_id}: {method}")
         lines.append("")
 
         metrics = run.get("metrics", {})

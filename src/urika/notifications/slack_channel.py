@@ -198,6 +198,44 @@ class SlackChannel(NotificationChannel):
                                 controller.request_stop()
                                 _ack_action(client, req, "Stop requested.")
                             return
+                # Handle text messages (free text or /commands from chat).
+                # Only process plain messages (no subtype) from humans
+                # (no bot_id). Skip edits, deletes, joins, etc.
+                event = payload.get("event", {})
+                if (
+                    event.get("type") == "message"
+                    and not event.get("bot_id")
+                    and not event.get("subtype")
+                ):
+                    msg_text = event.get("text", "").strip()
+                    channel = event.get("channel", "")
+                    if msg_text and self._bus is not None:
+                        def _slack_respond(text: str) -> None:
+                            try:
+                                self._client.chat_postMessage(
+                                    channel=channel or self._channel,
+                                    text=text,
+                                )
+                            except Exception as exc:
+                                logger.debug("Slack reply failed: %s", exc)
+
+                        if msg_text.startswith("/"):
+                            parts = msg_text[1:].split(None, 1)
+                            cmd = parts[0].lower()
+                            args = parts[1] if len(parts) > 1 else ""
+                            self._bus.handle_remote_command(
+                                cmd, args, respond=_slack_respond
+                            )
+                        else:
+                            # Free text → orchestrator
+                            self._bus.handle_remote_command(
+                                "ask", msg_text, respond=_slack_respond
+                            )
+                        client.send_socket_mode_response(
+                            SocketModeResponse(envelope_id=req.envelope_id)
+                        )
+                        return
+
                 # Acknowledge anything we don't handle to avoid Slack retries
                 client.send_socket_mode_response(
                     SocketModeResponse(envelope_id=req.envelope_id)

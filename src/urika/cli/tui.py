@@ -62,7 +62,7 @@ def tui(project: str | None) -> None:
     """Launch the interactive Urika TUI."""
     from urika.cli_display import print_error, print_step
 
-    project_dir = _resolve_project(project) if project else None
+    project_dir, _config = _resolve_project(project) if project else (None, None)
 
     binary = _find_tui_binary()
 

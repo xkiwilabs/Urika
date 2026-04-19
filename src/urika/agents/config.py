@@ -147,7 +147,11 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
             privacy_mode=privacy.get("mode", "open"),
             endpoints=endpoints,
         )
-    except Exception:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Failed to load runtime config from %s: %s — using defaults", toml_path, exc
+        )
         return RuntimeConfig()
 
 

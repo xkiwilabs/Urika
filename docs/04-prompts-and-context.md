@@ -113,7 +113,7 @@ processing.
 
 ## Writing Instructions for Agents
 
-Beyond the project description, you can guide agents at runtime using instructions. These can be passed via the `--instructions` flag on `urika run`, typed into the REPL, or provided during the interactive setup.
+Beyond the project description, you can guide agents at runtime using instructions. These can be passed via the `--instructions` flag on `urika run`, typed into the TUI, or provided during the interactive setup.
 
 ### Steering the Advisor Agent
 
@@ -130,7 +130,7 @@ urika run my-project --instructions "focus on non-parametric methods, the data v
 
 ### Steering Experiment Runs
 
-Within the REPL or via `--instructions`, you can guide specific aspects of analysis:
+Within the TUI or via `--instructions`, you can guide specific aspects of analysis:
 
 - "Use leave-one-subject-out cross-validation since we have repeated measures"
 - "Try both frequentist and Bayesian approaches for the hypothesis test"
@@ -193,7 +193,7 @@ urika run my-project --instructions "Review the ingested papers, especially Smit
 You don't need to ingest everything upfront. Add knowledge as you discover what the agents need:
 
 ```
-# During an experiment run, in the REPL:
+# During an experiment run, in the TUI:
 urika:my-project> The results look strange for the interaction effect.
                    Can you look at the Smith 2024 paper methodology?
 
@@ -221,7 +221,7 @@ The task agent receives the planning agent's method plan plus the full project c
 
 ### What the Advisor Sees
 
-The advisor reviews all run results, the evaluator's scores, and the full project context when proposing next steps. Instructions you provide via `--instructions` or the REPL are incorporated into the advisor's prompt. Referencing specific papers or methods by name lets the advisor make targeted suggestions.
+The advisor reviews all run results, the evaluator's scores, and the full project context when proposing next steps. Instructions you provide via `--instructions` or the TUI are incorporated into the advisor's prompt. Referencing specific papers or methods by name lets the advisor make targeted suggestions.
 
 ### Knowledge Context
 

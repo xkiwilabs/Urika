@@ -1,9 +1,17 @@
-# Interactive REPL
+# Interactive TUI
 
-The Urika REPL is an interactive shell for managing projects, running experiments, and conversing with the advisor agent -- all without leaving the terminal.
+The Urika TUI is a full-screen Textual terminal interface for managing projects, running experiments, and conversing with the orchestrator -- all without leaving the terminal.
 
+## Layout
 
-## Launching the REPL
+The TUI has four zones:
+
+- **Output Panel** — scrollable area showing all agent output, command results, and orchestrator responses
+- **Input Bar** — type slash commands or free-text questions, with contextual tab completion
+- **Activity Bar** — animated spinner showing what the system is doing (agent name, activity verb)
+- **Status Bar** — persistent single-line bar showing: project name, model, token count, cost, and processing time
+
+## Launching the TUI
 
 Run `urika` with no subcommand:
 
@@ -11,10 +19,12 @@ Run `urika` with no subcommand:
 urika
 ```
 
-On launch, Urika displays the ASCII header and a summary of global stats (projects, experiments, methods, SDK version), then drops into the prompt:
+On launch, Urika displays the ASCII header, a list of recent projects, and getting-started guidance in the output panel.
 
-```
-urika>
+A classic prompt-toolkit REPL is also available:
+
+```bash
+urika --classic
 ```
 
 
@@ -40,58 +50,75 @@ Loading a project clears any previous conversation history. Only one project can
 
 ## Tab Completion
 
-The REPL provides tab completion for:
+The TUI provides tab completion for:
 
 - **Slash commands** -- type `/` and press Tab to see all available commands
 - **Project names** -- after `/project `, Tab completes registered project names
 - **Experiment IDs** -- after commands that accept experiments (`/present`, `/logs`, `/evaluate`, `/report`, `/plan`, `/results`, `/resume`), Tab completes experiment IDs from the loaded project
 
 
-## Bottom Toolbar
+## Status Bar
 
-A persistent bottom toolbar displays session state:
+A persistent status bar at the bottom displays session state in colored text:
 
 ```
-────────────────────────────────────────────────────────────────────────────────
- urika - my-project - claude-sonnet-4-20250514 - 12m 34s - 82K tokens - 8 calls - ~$0.41
+urika │ my-project │ claude-sonnet-4-20250514 │ 82K tokens · 8 calls │ ~$0.41 │ 12m 34s
 ```
 
-The toolbar updates in real time and shows:
+The status bar updates every 250ms and shows:
 
 | Field | Description |
 |-------|-------------|
 | Project name | Currently loaded project |
 | Model | The Claude model used in the most recent agent call |
-| Elapsed time | Time since the REPL session started |
-| Tokens | Total tokens consumed (input + output) |
-| Agent calls | Number of agent invocations in this session |
+| Tokens · Calls | Total tokens consumed and number of agent invocations |
 | Cost | Estimated cost at API rates |
+| Processing time | Time spent processing (only ticks while an agent is running) |
+
+## Activity Bar
+
+Between the input bar and status bar, the activity bar shows what the system is doing:
+
+```
+ ⠹ orchestrator — Thinking…
+```
+
+When idle it displays a dim "ready" label. When an agent is running, it shows an animated spinner, the agent name, and a rotating activity verb.
 
 
 ## Free-Text Input
 
-Any input that does not start with `/` is sent to the **advisor agent** as a conversational message. This lets you ask questions, discuss results, and get guidance without running a formal command:
+Any input that does not start with `/` is sent to the **orchestrator** as a conversational message. The orchestrator can answer questions about your project, call subagents (advisor, evaluator, data inspector) for quick queries, and recommend slash commands for longer operations:
 
 ```
-urika:my-project> What methods should I try next given the current results?
+> What methods should I try next given the current results?
 
-  [advisor_agent]
-  Based on your current results showing linear models plateauing at r2=0.51,
-  I recommend trying tree-based approaches...
+  ▸ Read progress.json
+  ▸ Bash: CLAUDECODE= urika advisor "my-project" "What should we try next?"
+
+Based on your current results showing linear models plateauing at r2=0.51,
+I recommend trying tree-based approaches. Type /run to start the next experiment.
 ```
 
-The advisor receives context about your project including the loaded project name, methods tried, and previous conversation history.
-
+The orchestrator has access to project state files (progress, methods, criteria, labbook) and can call subagents via Bash for targeted questions. For long-running operations, it recommends the appropriate slash command.
 
 ## Conversation History
 
-The REPL maintains a rolling conversation history between you and the advisor agent. Each exchange (your message and the advisor's response) is tracked. When you send a new free-text message, the last 10 exchanges are included as context, giving the advisor continuity across the conversation.
+The TUI maintains a rolling conversation history between you and the orchestrator. Each exchange (your message and the orchestrator's response) is tracked. When you send a new message, the last 20 exchanges are included as context, giving the orchestrator continuity across the conversation.
 
 Conversation history is cleared when you load a different project.
 
-The conversation context is also available to the `/run` command -- if you have been discussing strategy with the advisor, those instructions are automatically passed to the orchestrator when you start a run.
-
 For a detailed guide on advisor conversations, the suggestion-to-run flow, and how to use instructions to steer agents, see [Advisor Chat and Instructions](06-advisor-and-instructions.md).
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Accept the current tab completion suggestion |
+| `Ctrl+C` | Cancel a running agent, or quit if idle |
+| `Ctrl+Q` | Quit the TUI |
+| `Ctrl+D` | Quit the TUI |
+| `Enter` | Submit input; when an agent is waiting for input (click.prompt), submits the response |
 
 
 ## Slash Commands
@@ -106,7 +133,7 @@ Available at all times, regardless of whether a project is loaded.
 | `/list` | List all registered projects. The currently loaded project is marked with a diamond. |
 | `/new` | Create a new project using the same interactive builder flow as `urika new`. |
 | `/project <name>` | Load a project by name. Shows project mode, experiment count, and completion status. |
-| `/quit` | Save session usage data and exit the REPL. |
+| `/quit` | Save session usage data and exit. |
 | `/tools` | List all available analysis tools. If a project is loaded, also includes project-specific tools. |
 | `/usage` | Show usage stats. With a loaded project: current session and historical totals. Without: usage across all projects. |
 
@@ -171,7 +198,7 @@ Choosing **Custom settings** lets you configure:
 
 ## Session Usage Tracking
 
-The REPL tracks usage throughout the session:
+The TUI tracks usage throughout the session:
 - Total tokens consumed (input + output)
 - Estimated cost at API rates
 - Number of agent calls
@@ -182,7 +209,7 @@ Usage is saved to the project's `usage.json` when you exit (via `/quit`, Ctrl+C,
 
 ## Tips
 
-- Use free-text conversation to discuss strategy with the advisor, then `/run` to execute -- the REPL passes your conversation context as instructions to the orchestrator.
+- Use free-text conversation to discuss strategy with the orchestrator, then `/run` to execute.
 - Use `/results` frequently to check the leaderboard during iterative runs.
-- The REPL supports standard readline shortcuts (Ctrl+A, Ctrl+E, arrow keys, command history with up/down arrows).
-- Exit cleanly with `/quit` or Ctrl+D to ensure usage data is saved.
+- Tab completion suggests commands by frequency of use (most common first), project names by most recently modified, and experiment IDs for relevant commands.
+- Exit cleanly with `/quit`, Ctrl+Q, or Ctrl+D to ensure usage data is saved.

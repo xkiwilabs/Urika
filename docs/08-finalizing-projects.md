@@ -33,7 +33,7 @@ Autonomous mode can also trigger finalization automatically when all experiments
 urika finalize my-project
 ```
 
-### From the REPL
+### From the TUI
 
 ```
 urika:my-project> /finalize
@@ -174,7 +174,7 @@ urika finalize my-project --draft --audience novice
 urika finalize my-project --draft --instructions "focus on the baseline results"
 ```
 
-From the REPL:
+From the TUI:
 
 ```
 urika:my-project> /finalize --draft

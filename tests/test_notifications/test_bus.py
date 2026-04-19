@@ -296,7 +296,7 @@ class TestHandleRemoteCommand:
         bus = NotificationBus()
         responses = []
         bus.handle_remote_command("run", respond=responses.append)
-        assert "No active REPL session" in responses[0]
+        assert "No active session" in responses[0]
 
     def test_agent_queued_while_busy(self):
         bus = NotificationBus()

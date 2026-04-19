@@ -117,7 +117,7 @@ def _run_single_agent(
         session.record_agent_call(
             tokens_in=getattr(result, "tokens_in", 0) or 0,
             tokens_out=getattr(result, "tokens_out", 0) or 0,
-            cost_usd=result.cost_usd or 0.0,
+            cost_usd=getattr(result, "cost_usd", 0.0) or 0.0,
             model=getattr(result, "model", "") or "",
         )
 

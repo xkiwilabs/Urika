@@ -47,10 +47,10 @@ presentation_theme = "light"
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `max_turns_per_experiment` | integer | `5` | Maximum orchestrator turns per experiment run |
-| `auto_mode` | string | `"checkpoint"` | How the REPL runs experiments: `"checkpoint"` (pause for confirmation), `"unlimited"` (run all turns), or `"capped"` (run up to max turns) |
+| `auto_mode` | string | `"checkpoint"` | How the TUI runs experiments: `"checkpoint"` (pause for confirmation), `"unlimited"` (run all turns), or `"capped"` (run up to max turns) |
 | `presentation_theme` | string | `"light"` | Reveal.js theme for generated presentations |
 
-These preferences can be overridden at runtime via CLI flags or REPL prompts.
+These preferences can be overridden at runtime via CLI flags or TUI prompts.
 
 ### [runtime] and [privacy] sections
 
