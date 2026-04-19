@@ -485,7 +485,28 @@ class UrikaApp(App):
                 )
             orch = self._orchestrator
 
-            result = await orch.chat(text)
+            # Stream tool use events to the panel so the user can
+            # see what the orchestrator is doing — reading files,
+            # calling subagents via Bash, searching with Glob/Grep.
+            def _on_output(kind: str, content: str) -> None:
+                if kind == "tool":
+                    parts = content.split(": ", 1)
+                    tool_name = parts[0]
+                    detail = parts[1] if len(parts) > 1 else ""
+                    # Truncate long details (Bash command output)
+                    short = detail[:120] + "…" if len(detail) > 120 else detail
+                    try:
+                        self.call_from_thread(
+                            panel.write_line,
+                            Text(
+                                f"  ▸ {tool_name} {short}",
+                                style="dim #4a9eff",
+                            ),
+                        )
+                    except RuntimeError:
+                        pass
+
+            result = await orch.chat(text, on_output=_on_output)
             response = result.get("response", "") or ""
 
             # Update session stats for the status bar.
