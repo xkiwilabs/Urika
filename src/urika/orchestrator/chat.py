@@ -172,8 +172,14 @@ class OrchestratorChat:
         }
 
     def _build_config(self) -> AgentConfig:
-        """Build the orchestrator's AgentConfig."""
-        # Load project-specific variables
+        """Build the orchestrator's AgentConfig.
+
+        The orchestrator has:
+        - Read/Glob/Grep — for reading project state files (progress,
+          methods, criteria, labbook). NOT raw data files.
+        - Bash — restricted to ``urika`` CLI commands for quick
+          subagent queries (advisor, evaluate, plan, inspect).
+        """
         variables = {
             "project_name": "",
             "question": "",
@@ -182,78 +188,94 @@ class OrchestratorChat:
             "experiment_id": "",
             "current_state": (
                 "No project loaded. The user can:\n"
-                "- /project <name> — load an existing project\n"
-                "- /list — see all available projects\n"
-                "- /new <name> -q \"research question\" --data <path> — create a new project\n"
-                "- /config — view or change global settings (privacy mode, model, endpoints)\n"
-                "- /config --show — show current configuration\n"
-                "- /help — see all available commands\n"
+                "- `/project <name>` — load an existing project\n"
+                "- `/list` — see all available projects\n"
+                "- `/new` — create a new project (interactive setup)\n"
+                "- `/config` — view or change settings "
+                "(privacy mode, model, endpoints)\n"
+                "- `/notifications` — set up email, Slack, or "
+                "Telegram notifications\n"
+                "- `/help` — see all available commands\n"
                 "\n"
-                "Tell the user about these options when they first connect. "
-                "Also mention they can describe their research question and you can help set things up.\n"
+                "Tell the user about these options. Also mention "
+                "they can describe their research question and you "
+                "can help set things up.\n"
                 "\n"
-                "IMPORTANT: You are a conversational agent with Read/Glob/Grep tools for "
-                "reading project state. You CANNOT run experiments directly. When the user "
-                "wants to run an experiment, tell them to use the /run command:\n"
-                "  /run                    — run the next suggested experiment\n"
-                "  /run --experiment exp-035  — run a specific experiment\n"
-                "  /evaluate exp-035       — evaluate an experiment\n"
-                "  /finalize               — finalize the project\n"
-                "You can help them decide WHAT to run, but they execute via slash commands."
+                "You do NOT have any Bash or agent tools at the "
+                "global level. Once a project is loaded, you gain "
+                "the ability to call subagents and read project state."
             ),
         }
 
         if self.project_dir and self.project_dir.exists():
             try:
                 from urika.core.workspace import load_project_config
+
                 config = load_project_config(self.project_dir)
                 variables["project_name"] = config.name or ""
                 variables["question"] = config.question or ""
                 variables["mode"] = config.mode or "exploratory"
                 variables["data_dir"] = str(self.project_dir / "data")
                 variables["current_state"] = (
-                    "Project loaded. Awaiting instructions.\n\n"
-                    "IMPORTANT: You can read project files to answer questions. "
-                    "When the user wants to RUN an experiment, tell them to use:\n"
-                    "  /run --experiment <exp-id>  — run a specific experiment\n"
-                    "  /run                        — run the next suggested experiment\n"
-                    "  /evaluate <exp-id>          — evaluate an experiment\n"
-                    "  /finalize                   — finalize the project\n"
-                    "You help decide WHAT to do. Execution uses slash commands."
+                    "Project loaded. You can read project state files "
+                    "and call subagents for quick queries. For "
+                    "long-running or interactive operations, recommend "
+                    "the specific slash command to the user."
                 )
             except Exception:
                 pass
 
-        # Load the orchestrator prompt
+        # Load the orchestrator prompt template
         try:
             system_prompt = load_prompt(
                 _PROMPTS_DIR / "orchestrator_system.md",
                 variables=variables,
             )
         except Exception:
-            system_prompt = f"You are the Urika Orchestrator. Project: {variables['project_name']}."
+            system_prompt = (
+                "You are the Urika Orchestrator. "
+                f"Project: {variables['project_name']}."
+            )
 
-        # Orchestrator gets Read, Glob, Grep for reading project state
-        # (it doesn't write or execute — that's what subagents are for)
         env = None
         model = None
+        readable_dirs = []
+        allowed_bash = []
+
         if self.project_dir:
             runtime_config = load_runtime_config(self.project_dir)
             model = get_agent_model("orchestrator", runtime_config)
             env = build_agent_env_for_endpoint(
                 self.project_dir, "orchestrator", runtime_config
             )
+            readable_dirs = [self.project_dir]
+            # Allow only urika CLI commands via Bash — for quick
+            # subagent queries (advisor, evaluate, plan, inspect).
+            allowed_bash = ["urika "]
 
         return AgentConfig(
             name="orchestrator",
             system_prompt=system_prompt,
-            allowed_tools=["Read", "Glob", "Grep"],
+            # Bash is only included when a project is loaded —
+            # at the global level the orchestrator just chats and
+            # recommends slash commands.
+            allowed_tools=(
+                ["Read", "Glob", "Grep", "Bash"]
+                if self.project_dir
+                else ["Read", "Glob", "Grep"]
+            ),
             disallowed_tools=[],
             security=SecurityPolicy(
                 writable_dirs=[],
-                readable_dirs=[self.project_dir] if self.project_dir else [],
-                allowed_bash_prefixes=[],
-                blocked_bash_patterns=[],
+                readable_dirs=readable_dirs,
+                allowed_bash_prefixes=allowed_bash,
+                blocked_bash_patterns=[
+                    # Block raw data reads via Bash (cat, head, etc.)
+                    "cat */data/",
+                    "head */data/",
+                    "tail */data/",
+                    "less */data/",
+                ],
             ),
             max_turns=25,
             cwd=self.project_dir,
