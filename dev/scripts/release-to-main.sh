@@ -43,9 +43,16 @@ git checkout dev -- .gitignore
 git checkout dev -- .github/ 2>/dev/null || true
 git checkout dev -- CHANGELOG.md 2>/dev/null || true
 
-# Remove dev-only files that came along with docs/
+# Remove dev-only files/dirs that should NEVER be on main/public.
+# Everything dev-only lives under dev/ on the dev branch. These
+# explicit removals are a safety net in case anything leaks through
+# the checkout step above (e.g. old directories that were once
+# tracked at the root level).
+git rm -rq dev/ 2>/dev/null || true
 git rm -rq docs/tutorials/ 2>/dev/null || true
 git rm -rq docs/plans/ 2>/dev/null || true
+git rm -rq packages/ 2>/dev/null || true
+git rm -rq tui/ 2>/dev/null || true
 
 # Stage everything
 git add -A
