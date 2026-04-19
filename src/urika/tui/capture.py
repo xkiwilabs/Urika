@@ -24,6 +24,11 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 # separators, the buffer would grow unbounded. Force-flush beyond this.
 _MAX_BUFFER_BYTES = 64 * 1024
 
+# Detects click.prompt's default-value pattern: ``Some text [default_val]:``
+# Only fires when a stdin reader is active (a command is waiting for input).
+# Captures the default value inside the brackets.
+_PROMPT_DEFAULT_RE = re.compile(r"\[([^\]]+)\]\s*:\s*$")
+
 
 def _strip_ansi(text: str) -> str:
     """Remove ANSI CSI escape sequences from text."""
@@ -105,6 +110,21 @@ class _TuiWriter:
         """
         clean = _strip_ansi(line)
 
+        # Detect click.prompt defaults and pre-fill the InputBar.
+        # Only when a worker is waiting for input (stdin reader active).
+        from urika.tui.agent_worker import get_active_stdin_reader
+
+        if get_active_stdin_reader() is not None:
+            match = _PROMPT_DEFAULT_RE.search(clean)
+            if match:
+                default_val = match.group(1)
+                try:
+                    self._app.call_from_thread(
+                        self._prefill_input, default_val
+                    )
+                except (RuntimeError, Exception):
+                    pass
+
         # Path 1: cross-thread dispatch. Raises RuntimeError if the
         # caller is on the same thread as the event loop, or if the
         # loop isn't running.
@@ -138,6 +158,22 @@ class _TuiWriter:
             # OSError: underlying stream closed. ValueError: I/O on
             # closed file. Nothing more we can do — log and drop.
             log.warning("OutputCapture fallback write failed: %s", exc)
+
+    def _prefill_input(self, default_value: str) -> None:
+        """Pre-fill the InputBar with a detected default value.
+
+        Called on the Textual thread via ``call_from_thread``. Sets
+        the InputBar's value to the default so the user can press
+        Enter to accept or modify it, without having to retype.
+        """
+        try:
+            from urika.tui.widgets.input_bar import InputBar
+
+            input_bar = self._app.query_one(InputBar)
+            input_bar.value = default_value
+            input_bar.cursor_position = len(default_value)
+        except Exception:
+            pass  # InputBar not mounted or query failed — skip
 
     def _write_to_panel(self, text: str) -> None:
         """Write to the output panel (called on the Textual thread)."""
