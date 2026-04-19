@@ -199,7 +199,7 @@ You can add papers at any time — just drop PDF files into your project's `know
 urika knowledge ingest my-project /path/to/paper.pdf
 ```
 
-Or from the REPL, use the advisor in plain text:
+Or from the TUI, use the advisor in plain text:
 
 ```
 urika:my-project> I've added some papers to the knowledge folder, please review them

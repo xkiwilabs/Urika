@@ -8,7 +8,7 @@
   <a href="docs/12-models-and-privacy.md">Models &amp; Privacy</a> &middot;
   <a href="docs/17-notifications.md">Notifications</a> &middot;
   <a href="docs/15-cli-reference.md">CLI Reference</a> &middot;
-  <a href="docs/16-interactive-repl.md">Interactive REPL</a> &middot;
+  <a href="docs/16-interactive-tui.md">Interactive TUI</a> &middot;
   <a href="docs/07-viewing-results.md#project-dashboard">Dashboard</a>
 </p>
 
@@ -54,7 +54,7 @@ To update, just `git pull` from the repo.
 pip install urika
 ```
 
-The default install includes visualization, ML, statistics, knowledge pipeline, and notification support. Deep learning (torch, transformers) is optional: `pip install "urika[dl]"`.
+The default install includes the Textual TUI, visualization, ML, statistics, knowledge pipeline, and notification support. Deep learning (torch, transformers) is optional: `pip install "urika[dl]"`.
 
 See [Getting Started](docs/01-getting-started.md) for full details.
 
@@ -64,7 +64,8 @@ See [Getting Started](docs/01-getting-started.md) for full details.
 urika new my-study --data ./my_data.csv    # create a project (interactive)
 urika run my-study                          # run experiments
 urika finalize my-study                     # produce final report
-urika                                       # or use the interactive REPL
+urika                                       # launch the interactive TUI
+urika --classic                             # or use the classic REPL
 ```
 
 See the [Getting Started](docs/01-getting-started.md) guide for a full walkthrough.
@@ -173,7 +174,7 @@ See [Models and Privacy](docs/12-models-and-privacy.md) for configuration detail
 | [Configuration](docs/13-configuration.md) | urika.toml, criteria, preferences |
 | [Project Structure](docs/14-project-structure.md) | File layout and what each file does |
 | [CLI Reference](docs/15-cli-reference.md) | Every command with full options |
-| [Interactive REPL](docs/16-interactive-repl.md) | Slash commands, tab completion, conversation mode |
+| [Interactive TUI](docs/16-interactive-tui.md) | TUI interface, slash commands, tab completion, orchestrator chat |
 | [Notifications](docs/17-notifications.md) | Email, Slack, Telegram alerts and remote commands |
 
 ## Citation

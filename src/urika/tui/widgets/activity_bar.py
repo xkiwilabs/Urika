@@ -3,7 +3,7 @@
 Sits between the InputBar and StatusBar. When an agent is running it
 shows a spinner + rotating verb (Thinking, Reasoning, Analyzing, ...)
 so the TUI doesn't look static during long orchestrator calls.
-When idle, the widget is invisible (height 0).
+When idle, shows a dim "ready" label.
 """
 
 from __future__ import annotations
@@ -34,9 +34,8 @@ class ActivityBar(Static):
     """Animated spinner + verb shown while an agent is working.
 
     Refreshes at 4 Hz (250 ms) via a timer started on mount. When
-    ``session.agent_running`` is False the widget collapses to zero
-    height so it takes no screen space when idle. When True it
-    expands to one row and shows e.g.::
+    ``session.agent_running`` is False a dim "ready" label is shown.
+    When True it expands to show e.g.::
 
         ⠹ chat — Thinking…
 

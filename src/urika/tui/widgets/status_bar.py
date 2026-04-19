@@ -1,4 +1,4 @@
-"""Persistent 2-line status bar showing session state."""
+"""Single-line status bar showing session state."""
 
 from __future__ import annotations
 
@@ -22,7 +22,6 @@ class StatusBar(Static):
     DEFAULT_CSS = """
     StatusBar {
         height: 1;
-        dock: bottom;
         background: $surface;
         color: $text-muted;
         padding: 0 1;
@@ -35,45 +34,6 @@ class StatusBar(Static):
     def __init__(self, session: ReplSession, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self.session = session
-
-    def render_line1(self) -> str:
-        """Build line 1: urika · project · privacy · agent."""
-        parts = ["urika"]
-        if self.session.has_project:
-            parts.append(self.session.project_name)
-            # Privacy mode — failures here must not crash the render path,
-            # but we narrow to I/O and parse errors only. AttributeError /
-            # TypeError from a renamed session field should propagate so
-            # bugs surface loudly in tests instead of silently blanking the
-            # privacy badge forever.
-            try:
-                from urika.agents.config import load_runtime_config
-
-                rc = load_runtime_config(self.session.project_path)
-                if rc.privacy_mode != "open":
-                    parts.append(rc.privacy_mode)
-            except (OSError, ValueError, KeyError) as exc:
-                self.log.warning(f"privacy-mode lookup failed: {exc}")
-        if self.session.agent_running:
-            parts.append(self.session.agent_name or "working")
-            if self.session.agent_activity:
-                parts.append(self.session.agent_activity)
-        return " · ".join(parts)
-
-    def render_line2(self) -> str:
-        """Build line 2: model · tokens · cost · processing time."""
-        parts: list[str] = []
-        if self.session.model:
-            parts.append(self.session.model)
-        tokens = self.session.total_tokens_in + self.session.total_tokens_out
-        if tokens > 0:
-            tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
-            parts.append(f"{tok_str} tokens")
-        if self.session.total_cost_usd > 0:
-            parts.append(f"~${self.session.total_cost_usd:.2f}")
-        processing = _format_duration(self.session.processing_ms)
-        parts.append(processing)
-        return " · ".join(parts)
 
     def render(self) -> Text:
         """Single-line colored Rich Text.

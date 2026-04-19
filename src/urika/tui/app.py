@@ -242,6 +242,10 @@ class UrikaApp(App):
         )
         panel.write_line("")
 
+        # Start the remote command drain timer so Slack/Telegram
+        # commands are processed when a project is loaded.
+        self._start_remote_drain()
+
     def _heal_stale_agent_running(self) -> None:
         """Clear ``session.agent_running`` if no worker is actually alive.
 
@@ -435,6 +439,12 @@ class UrikaApp(App):
         With a project, it answers questions about the data, plans
         experiments, and coordinates agents.
         """
+        # Guard: if agent_running is already set (race between two
+        # rapid submissions before set_agent_running fires in the
+        # first worker), queue instead of spawning a second worker.
+        if self.session.agent_running:
+            self.session.queue_input(text)
+            return
         self.run_worker(self._run_free_text(text), name="free_text")
 
     async def _run_free_text(self, text: str) -> None:
@@ -590,7 +600,182 @@ class UrikaApp(App):
             "  Cancel requested \u2014 agent will stop at next checkpoint."
         )
 
+    # ── Remote command drain (Slack / Telegram) ────────────
+
+    def _start_remote_drain(self) -> None:
+        """Start a 2-second timer to drain remote commands from
+        Slack/Telegram. The notification bus queues commands into
+        ``session._remote_queue``; this timer dispatches them through
+        the same handlers as terminal slash commands.
+        """
+        self.set_interval(2.0, self._drain_remote_queue)
+
+    def _drain_remote_queue(self) -> None:
+        """Process one queued remote command per tick.
+
+        Skipped when an agent is already running — commands stay
+        queued until idle. Free-text commands (no slash prefix) go
+        to the orchestrator.
+        """
+        if self.session.agent_running:
+            return
+        if not self.session.has_remote_command:
+            return
+
+        item = self.session.pop_remote_command()
+        if item is None:
+            return
+
+        cmd, args, respond = item
+        from rich.text import Text
+
+        panel = self.query_one(OutputPanel)
+
+        # "ask" is free text from Slack/Telegram — route to orchestrator.
+        # Set agent_running synchronously BEFORE spawning the worker
+        # to prevent the next drain tick from spawning a second one.
+        if cmd == "ask":
+            short = args[:60] + "…" if len(args) > 60 else args
+            panel.write_line("")
+            panel.write_line(
+                Text(f"  [Remote] {short}", style="bold #ffcc66")
+            )
+            self.session.set_agent_running(agent_name="orchestrator")
+            self._dispatch_remote_free_text(args, respond)
+            return
+
+        cmd_text = f"/{cmd} {args}".strip()
+        panel.write_line("")
+        panel.write_line(
+            Text(f"  [Remote] {cmd_text}", style="bold #ffcc66")
+        )
+
+        # Route through the normal TUI dispatch path. Worker commands
+        # run in a background thread; read-only ones run inline.
+        from urika.repl.commands import get_all_commands
+
+        all_cmds = get_all_commands(self.session)
+        if cmd not in all_cmds:
+            msg = f"Unknown remote command: /{cmd}"
+            panel.write_line(f"  {msg}")
+            if respond:
+                respond(msg)
+            return
+
+        handler = all_cmds[cmd]["func"]
+
+        # Set remote flags so handlers skip interactive prompts
+        self.session._is_remote_command = True
+        self.session._remote_respond = respond
+
+        if cmd in _WORKER_COMMANDS:
+            # Set agent_running BEFORE spawning the worker to prevent
+            # the drain timer from spawning a second one in the gap.
+            self.session.set_agent_running(agent_name=cmd)
+
+            def _remote_worker_done() -> None:
+                self.session._is_remote_command = False
+                self.session._remote_respond = None
+                if respond:
+                    respond(f"/{cmd} completed.")
+
+            def _remote_handler(session, a):
+                try:
+                    handler(session, a)
+                finally:
+                    try:
+                        self.call_from_thread(_remote_worker_done)
+                    except RuntimeError:
+                        self.session._is_remote_command = False
+                        self.session._remote_respond = None
+
+            run_command_in_worker(self, _remote_handler, args, cmd)
+        else:
+            # Inline (read-only commands like /status, /results)
+            try:
+                self._run_with_panel_output(
+                    lambda: handler(self.session, args)
+                )
+                if respond:
+                    respond(f"/{cmd} completed.")
+            except Exception as exc:
+                if respond:
+                    respond(f"/{cmd} error: {exc}")
+            finally:
+                self.session._is_remote_command = False
+                self.session._remote_respond = None
+
+    def _dispatch_remote_free_text(self, text: str, respond) -> None:
+        """Send remote free text to the orchestrator, reply via channel.
+
+        Runs as an async worker (like local free text) but sends the
+        orchestrator's response back to Slack/Telegram.
+        """
+
+        async def _run_remote_chat() -> None:
+            # agent_running is set by the caller (_drain_remote_queue)
+            # BEFORE this worker is spawned, to prevent the drain timer
+            # from spawning a second worker in the gap.
+            try:
+                if (
+                    self._orchestrator is None
+                    or self._orchestrator.project_dir != self.session.project_path
+                ):
+                    self._orchestrator = OrchestratorChat(
+                        project_dir=self.session.project_path
+                    )
+                orch = self._orchestrator
+                panel = self.query_one(OutputPanel)
+
+                def _on_output(kind: str, content: str) -> None:
+                    try:
+                        if kind == "text" and content.strip():
+                            panel.write_line(content)
+                    except Exception:
+                        pass
+
+                result = await orch.chat(text, on_output=_on_output)
+                response = result.get("response", "") or ""
+
+                self.session.total_tokens_in += result.get("tokens_in", 0) or 0
+                self.session.total_tokens_out += result.get("tokens_out", 0) or 0
+                self.session.total_cost_usd += result.get("cost_usd", 0) or 0
+                self.session.agent_calls += 1
+
+                # Save conversation history so follow-up questions
+                # from the same remote user have context.
+                self.session.add_message("user", text)
+                self.session.add_message("assistant", response[:500])
+
+                from urika.cli_display import format_agent_output
+
+                panel.write_line("")
+                panel.write_line(format_agent_output(response))
+
+                # Send response back to Slack/Telegram
+                if respond and response:
+                    reply = response[:4000]
+                    respond(reply)
+            except Exception as exc:
+                try:
+                    self.query_one(OutputPanel).write_line(
+                        f"  \u2717 Remote chat error: {exc}"
+                    )
+                except Exception:
+                    pass
+                if respond:
+                    respond(f"Error: {exc}")
+            finally:
+                self.session.set_agent_idle()
+
+        self.run_worker(_run_remote_chat(), name="free_text")
+
     def action_quit_app(self) -> None:
-        """Quit on Ctrl+D."""
+        """Quit cleanly — stop notification bus, save usage."""
+        if self.session.notification_bus is not None:
+            try:
+                self.session.notification_bus.stop()
+            except Exception:
+                pass
         self.session.save_usage()
         self.exit()

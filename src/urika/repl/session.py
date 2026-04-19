@@ -121,7 +121,8 @@ class ReplSession:
         self.agent_calls = 0
         self.experiments_run = 0
         # Reset command activity and remote queue
-        self._remote_queue = []
+        with self._remote_lock:
+            self._remote_queue.clear()
         self.agent_active = False
         self.active_command = ""
 

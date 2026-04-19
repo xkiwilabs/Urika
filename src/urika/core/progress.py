@@ -80,6 +80,8 @@ def update_experiment_status(
     project_dir: Path, experiment_id: str, status: str
 ) -> None:
     """Update the status field in progress.json."""
-    data = load_progress(project_dir, experiment_id)
-    data["status"] = status
-    _save_progress(project_dir, experiment_id, data)
+    path = _progress_path(project_dir, experiment_id)
+    with locked_json_update(path):
+        data = load_progress(project_dir, experiment_id)
+        data["status"] = status
+        _save_progress(project_dir, experiment_id, data)

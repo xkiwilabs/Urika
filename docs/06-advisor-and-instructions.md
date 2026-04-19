@@ -9,7 +9,7 @@ This guide covers both roles and shows how to use instructions to steer agents e
 
 You can chat with the advisor whenever a project is loaded. The advisor sees your full project context -- data profile, methods tried, run results, criteria, and knowledge base -- so it can give informed, specific guidance.
 
-### In the REPL
+### In the TUI
 
 Any text that does not start with `/` is sent to the advisor:
 
@@ -36,7 +36,7 @@ You can also use the explicit command:
 urika:my-project> /advisor Should I try neural networks given only 500 samples?
 ```
 
-The REPL maintains a rolling conversation history (last 10 exchanges), so the advisor remembers what you discussed earlier in the session.
+The TUI maintains a rolling conversation history (last 10 exchanges), so the advisor remembers what you discussed earlier in the session.
 
 ### From the CLI
 
@@ -125,9 +125,9 @@ urika:my-project> Summarize what we've learned so far across all experiments.
 
 ## Running Advisor Suggestions
 
-When the advisor proposes experiments, Urika offers to run them immediately. This applies in both the REPL and CLI.
+When the advisor proposes experiments, Urika offers to run them immediately. This applies in both the TUI and CLI.
 
-### In the REPL
+### In the TUI
 
 After the advisor responds with suggestions:
 
@@ -167,15 +167,15 @@ Instructions are free-text guidance that steer what agents do. They can be provi
 |-----------------|-------------------------------|-----------------|
 | `urika run --instructions TEXT` | `--instructions` flag | The planning agent's method design for the next experiment |
 | `urika finalize --instructions TEXT` | `--instructions` flag | Which methods the finalizer emphasizes and how it structures deliverables |
-| `/run` in the REPL | Custom settings prompt, or automatically from conversation context | The planning agent, carried through the full experiment loop |
-| Free text in the REPL | Type naturally | The advisor's suggestions, which feed into the next `/run` |
+| `/run` in the TUI | Custom settings prompt, or automatically from conversation context | The planning agent, carried through the full experiment loop |
+| Free text in the TUI | Type naturally | The advisor's suggestions, which feed into the next `/run` |
 | `urika advisor PROJECT TEXT` | The text argument | The advisor's analysis and suggestions |
 | `/build-tool TEXT` | The text argument | What tool the tool builder creates |
 | `/advisor TEXT` | The text argument | The advisor's response |
 
 ### How Instructions Flow Through Experiments
 
-When you provide instructions (via `--instructions`, REPL conversation, or the advisor's suggestions), they flow through the full experiment loop:
+When you provide instructions (via `--instructions`, TUI conversation, or the advisor's suggestions), they flow through the full experiment loop:
 
 ```
 Your instructions
@@ -198,9 +198,9 @@ Your instructions
 
 Instructions do **not** change the evaluation criteria. They steer *what* is tried, not *what counts as success*. To change criteria, chat with the advisor and ask it to update them.
 
-### REPL Conversation as Instructions
+### Conversation as Instructions
 
-In the REPL, your conversation with the advisor automatically becomes context for the next `/run`. This is one of the most powerful features:
+In the TUI, your conversation with the advisor automatically becomes context for the next `/run`. This is one of the most powerful features:
 
 ```
 urika:my-project> I think we should focus on tree-based models and avoid
@@ -218,7 +218,7 @@ urika:my-project> Also, make sure to use stratified k-fold since the
 urika:my-project> /run
 ```
 
-When you type `/run`, the REPL passes your conversation history as context to the orchestrator. The planning agent sees "focus on tree-based models, avoid neural networks, use stratified k-fold" without you needing to repeat it.
+When you type `/run`, the TUI passes your conversation history as context to the orchestrator. The planning agent sees "focus on tree-based models, avoid neural networks, use stratified k-fold" without you needing to repeat it.
 
 ### Instructions for Autonomous Runs
 
@@ -230,7 +230,7 @@ urika run my-project --max-experiments 5 --instructions "focus on interpretable 
 ```
 
 ```
-# REPL: discuss strategy first, then launch autonomous run
+# TUI: discuss strategy first, then launch autonomous run
 urika:my-project> For the next batch of experiments, I want to focus on
                    ensemble methods. Try bagging, boosting, and stacking.
                    Use 10-fold CV and report both RMSE and R-squared.
@@ -293,7 +293,7 @@ urika advisor sleep-quality "The linear model only got r2=0.35. Should I try fea
 # (advisor offers to run -- accept)
 ```
 
-### Example 2: REPL Session with Strategy Discussion
+### Example 2: TUI Session with Strategy Discussion
 
 ```
 urika> /project eeg-analysis
@@ -344,7 +344,7 @@ urika:customer-churn> /run
 
 ## Persistent Memory
 
-The advisor remembers conversations across REPL sessions, CLI invocations, and Telegram interactions.
+The advisor remembers conversations across sessions, CLI invocations, and Telegram interactions.
 
 **How it works:**
 
@@ -357,11 +357,11 @@ The rolling summary includes:
 - Next steps (planned experiments)
 - Key insights (findings that should inform future work)
 
-**Pending suggestions** — When you discuss experiments with the advisor (via REPL, CLI, or Telegram), the suggested experiments are saved to `suggestions/pending.json`. The next `/run` or `/run --multi` automatically picks up these suggestions instead of calling the advisor fresh.
+**Pending suggestions** — When you discuss experiments with the advisor (via TUI, CLI, or Telegram), the suggested experiments are saved to `suggestions/pending.json`. The next `/run` or `/run --multi` automatically picks up these suggestions instead of calling the advisor fresh.
 
 This means you can:
 1. Chat with the advisor about what to try next
-2. Close the REPL or step away
+2. Close the TUI or step away
 3. Come back later (or send `/run` from Telegram)
 4. The experiments you discussed will run automatically
 

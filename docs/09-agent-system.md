@@ -86,7 +86,7 @@ Scores experiment results against the project's success criteria. The evaluator 
 
 Acts as a research advisor. After the evaluator scores results, the advisor reviews everything and proposes what to try next. It can suggest new methods, parameter adjustments, feature engineering ideas, or entirely new experimental directions. It can also propose updates to the success criteria based on what has been learned.
 
-The advisor agent is also used for interactive conversation in the REPL and via `urika advisor`.
+The advisor agent is also used for interactive conversation in the TUI and via `urika advisor`.
 
 | Property | Value |
 |----------|-------|
@@ -102,7 +102,7 @@ The advisor agent is also used for interactive conversation in the REPL and via 
 
 Creates reusable project-specific tools when the planning agent identifies a need that existing built-in tools do not cover. Tool builder writes Python modules that implement the `ITool` interface and saves them to the project's `tools/` directory, where they are discoverable by subsequent runs.
 
-You can also request tools directly. From the REPL, ask the advisor:
+You can also request tools directly. From the TUI, ask the advisor:
 
 ```
 urika:my-project> I need a tool that computes inter-rater reliability (Cohen's kappa and ICC)
@@ -264,7 +264,7 @@ Agents do not communicate directly. All state is persisted to the filesystem, an
 | `experiments/<id>/artifacts/` | Task agent | Report, Presentation agents | Figures, plots, saved models |
 | `experiments/<id>/methods/` | Task agent | Planning agent | Python scripts for each method |
 | `knowledge/` | Literature agent, knowledge ingest | Literature agent, Planning agent | Ingested documents and search index |
-| `usage.json` | REPL session, CLI | Usage display | Session-level token and cost tracking |
+| `usage.json` | Session, CLI | Usage display | Session-level token and cost tracking |
 
 
 ## Security Boundaries

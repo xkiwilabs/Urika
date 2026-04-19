@@ -162,8 +162,10 @@ _AGENT_COMMANDS = frozenset(
 
 
 def classify_remote_command(command: str) -> str:
-    """Classify a remote command: read_only, run_control, agent, or rejected."""
+    """Classify a remote command: read_only, run_control, agent, ask, or rejected."""
     cmd = command.lower().strip().replace("/", "")
+    if cmd == "ask":
+        return "ask"
     if cmd in _READ_ONLY_COMMANDS:
         return "read_only"
     if cmd in _RUN_CONTROL_COMMANDS:
@@ -356,6 +358,11 @@ class NotificationBus:
             _respond(f"/{command} is not available remotely. Use the terminal.")
             return
 
+        if category == "ask":
+            # Free text for the orchestrator — queue as "ask" command
+            self._queue_agent_command("ask", args, _respond)
+            return
+
         if category == "read_only":
             text = self._execute_read_only(command, args)
             for chunk in _split_message(text, max_len=4000):
@@ -428,13 +435,13 @@ class NotificationBus:
                 respond("Cannot resume right now.")
 
     def _queue_agent_command(self, command: str, args: str, respond) -> None:
-        """Queue an agent command for REPL execution.
+        """Queue an agent command for TUI/REPL execution.
 
-        All agent commands are queued for the REPL's auto-drain thread,
+        All agent commands are queued for the drain mechanism,
         which executes them with full terminal output.
         """
         if self._session is None:
-            respond("No active REPL session.")
+            respond("No active session.")
             return
 
         if (
@@ -445,155 +452,22 @@ class NotificationBus:
             respond("Run in progress. Stop first to start a new run.")
             return
 
-        # All agent commands queue through the REPL
         self._session.queue_remote_command(command, args, respond)
         if self._session.agent_active:
-            respond(
-                f"/{command} queued \u2014 will run after"
-                f" {self._session.active_command} finishes."
-            )
+            if command == "ask":
+                respond(
+                    f"Question queued \u2014 will answer after"
+                    f" {self._session.active_command} finishes."
+                )
+            else:
+                respond(
+                    f"/{command} queued \u2014 will run after"
+                    f" {self._session.active_command} finishes."
+                )
         else:
-            respond(f"/{command} queued \u2014 executing shortly...")
+            if command == "ask":
+                respond("Thinking…")
+            else:
+                respond(f"/{command} queued \u2014 executing shortly...")
 
-    def _run_remote_advisor(self, question: str) -> str:
-        """Run the advisor agent and return its text response.
-
-        Includes conversation history from the REPL session and saves
-        the exchange so the next call has context.
-        """
-        import asyncio
-        import json as _json
-
-        try:
-            from urika.agents.registry import AgentRegistry
-            from urika.agents.runner import get_runner
-        except ImportError:
-            return "Agent SDK not available."
-
-        runner = get_runner()
-        registry = AgentRegistry()
-        registry.discover()
-        advisor = registry.get("advisor_agent")
-        if advisor is None:
-            return "Advisor agent not found."
-
-        config = advisor.build_config(project_dir=self._project_path, experiment_id="")
-        config.max_turns = 25
-
-        # Build context — inject rolling summary from previous sessions
-        from urika.core.advisor_memory import load_context_summary
-
-        context = f"Project: {self.project_name}\n"
-        context_summary = load_context_summary(self._project_path)
-        if context_summary:
-            context += (
-                f"\n## Research Context (from previous sessions)\n\n"
-                f"{context_summary}\n\n"
-            )
-        if self._session is not None:
-            conv = getattr(self._session, "get_conversation_context", lambda: "")()
-            if conv:
-                context += f"\nPrevious conversation:\n{conv}\n"
-
-        # Add project state summary
-        methods_path = self._project_path / "methods.json"
-        if methods_path.exists():
-            try:
-                mdata = _json.loads(methods_path.read_text(encoding="utf-8"))
-                mlist = mdata.get("methods", [])
-                context += f"\n{len(mlist)} methods tried.\n"
-            except Exception:
-                pass
-
-        context += f"\nUser: {question}\n"
-
-        try:
-            # Run in a separate thread to avoid conflicting with
-            # the Telegram/Slack event loop in the current thread.
-            import concurrent.futures
-
-            def _run_advisor():
-                return asyncio.run(runner.run(config, context))
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                result = pool.submit(_run_advisor).result()
-
-            if result.success and result.text_output:
-                text = result.text_output.strip()
-                # Save to conversation history so next call has context
-                if self._session is not None:
-                    add_msg = getattr(self._session, "add_message", None)
-                    if add_msg:
-                        add_msg("user", question)
-                        add_msg("advisor", text)
-                # Save suggestions to file so /run subprocess can find them
-                parsed_suggestions = None
-                try:
-                    from urika.orchestrator.parsing import parse_suggestions
-
-                    parsed = parse_suggestions(text)
-                    if parsed and parsed.get("suggestions"):
-                        parsed_suggestions = parsed["suggestions"]
-                        suggestions_dir = self._project_path / "suggestions"
-                        suggestions_dir.mkdir(exist_ok=True)
-                        pending_path = suggestions_dir / "pending.json"
-                        import tempfile
-
-                        # Atomic write
-                        tmp_fd, tmp_path = tempfile.mkstemp(
-                            dir=str(suggestions_dir), suffix=".tmp"
-                        )
-                        try:
-                            with os.fdopen(tmp_fd, "w") as f:
-                                import json as _json2
-
-                                _json2.dump(parsed, f)
-                            Path(tmp_path).rename(pending_path)
-                        except Exception:
-                            Path(tmp_path).unlink(missing_ok=True)
-                except Exception:
-                    pass  # Best-effort — don't break advisor response
-
-                # Save to persistent advisor history
-                try:
-                    from urika.core.advisor_memory import append_exchange
-
-                    append_exchange(
-                        self._project_path,
-                        role="user",
-                        text=question,
-                        source="telegram",
-                    )
-                    append_exchange(
-                        self._project_path,
-                        role="advisor",
-                        text=text,
-                        source="telegram",
-                        suggestions=parsed_suggestions,
-                    )
-                except Exception:
-                    pass
-
-                # Update rolling context summary (best-effort)
-                try:
-                    from urika.core.advisor_memory import (
-                        update_context_summary,
-                    )
-
-                    def _update_summary():
-                        return asyncio.run(
-                            update_context_summary(
-                                self._project_path, runner, registry
-                            )
-                        )
-
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
-                        _pool.submit(_update_summary).result(timeout=120)
-                except Exception:
-                    pass
-
-                return text
-            return f"Advisor error: {result.error or 'no response'}"
-        except Exception as exc:
-            return f"Advisor error: {exc}"
 

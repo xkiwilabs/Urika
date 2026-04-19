@@ -236,16 +236,16 @@ This overrides the global chat ID for this project only. The bot token still com
 
 ## Remote Commands
 
-When the REPL is running with a project loaded, Slack and Telegram become interactive -- you can send commands and get responses.
+When Urika is running with a project loaded, Slack and Telegram become interactive -- you can send commands and get responses.
 
 ### How it works
 
-1. Start the REPL: `urika`
+1. Launch Urika: `urika`
 2. Load a project: `/project my-study`
 3. The bot starts listening
 4. Send commands from Telegram/Slack
 5. Bot responds with results
-6. Bot stops when you exit the REPL or switch projects
+6. Bot stops when you exit Urika or switch projects
 
 ### Available commands
 
@@ -295,9 +295,9 @@ These require interactive terminal input: `/new`, `/project`, `/config`, `/notif
 
 ### When the bot is offline
 
-The bot only listens when the REPL is running with a project loaded. If you send a command while the REPL is closed, the bot won't respond. Start the REPL and load the project to bring the bot online.
+The bot only listens when Urika is running with a project loaded. If you send a command while Urika is closed, the bot won't respond. Launch Urika and load the project to bring the bot online.
 
-All remote commands are shown in the REPL terminal with a `[Remote]` tag so you can see what's happening.
+All remote commands are shown in the TUI terminal with a `[Remote]` tag so you can see what's happening.
 
 
 ## What Gets Notified
