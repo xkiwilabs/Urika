@@ -485,17 +485,20 @@ class UrikaApp(App):
                 )
             orch = self._orchestrator
 
-            # Stream tool use events to the panel so the user can
-            # see what the orchestrator is doing — reading files,
-            # calling subagents via Bash, searching with Glob/Grep.
+            # Stream both tool use AND text output to the panel so
+            # the user can see what the orchestrator is doing in
+            # real-time — reading files, calling subagents, thinking.
             def _on_output(kind: str, content: str) -> None:
-                if kind == "tool":
-                    parts = content.split(": ", 1)
-                    tool_name = parts[0]
-                    detail = parts[1] if len(parts) > 1 else ""
-                    # Truncate long details (Bash command output)
-                    short = detail[:120] + "…" if len(detail) > 120 else detail
-                    try:
+                try:
+                    if kind == "tool":
+                        parts = content.split(": ", 1)
+                        tool_name = parts[0]
+                        detail = parts[1] if len(parts) > 1 else ""
+                        short = (
+                            detail[:120] + "…"
+                            if len(detail) > 120
+                            else detail
+                        )
                         self.call_from_thread(
                             panel.write_line,
                             Text(
@@ -503,8 +506,14 @@ class UrikaApp(App):
                                 style="dim #4a9eff",
                             ),
                         )
-                    except RuntimeError:
-                        pass
+                    elif kind == "text" and content.strip():
+                        # Stream orchestrator's reasoning/text as it
+                        # arrives, so the user sees progress.
+                        self.call_from_thread(
+                            panel.write_line, content
+                        )
+                except RuntimeError:
+                    pass
 
             result = await orch.chat(text, on_output=_on_output)
             response = result.get("response", "") or ""
@@ -535,6 +544,15 @@ class UrikaApp(App):
                 self.log.error(f"chat error (panel unavailable): {exc}")
         finally:
             self.session.set_agent_idle()
+            # Drain any messages queued while the orchestrator was
+            # busy. Process them as new free-text dispatches.
+            while self.session.has_queued_input:
+                queued = self.session.pop_queued_input()
+                if queued and queued.strip():
+                    self.run_worker(
+                        self._run_free_text(queued), name="free_text"
+                    )
+                    break  # one at a time — next will drain on finish
 
     def action_cancel_agent(self) -> None:
         """Ctrl+C handler.
