@@ -20,6 +20,32 @@ from urika.cli._helpers import (
 )
 
 
+def _update_repl_activity(event: str, detail: str) -> None:
+    """Push orchestrator progress events to the REPL session's activity bar.
+
+    Called from _on_progress callbacks so the TUI's ActivityBar shows
+    the current subagent (e.g. "run — planning_agent — Thinking…").
+    """
+    if not os.environ.get("URIKA_REPL"):
+        return
+    try:
+        from urika.repl_commands import _get_repl_session
+
+        session = _get_repl_session()
+        if session is None:
+            return
+        if event == "agent":
+            # detail = "Planning agent — designing method"
+            agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
+            session.update_agent_activity(activity=agent_key)
+        elif event == "turn":
+            session.update_agent_activity(turn=detail)
+        elif event == "phase":
+            session.update_agent_activity(activity=detail)
+    except Exception:
+        pass
+
+
 def _determine_next_experiment(
     project_path: Path,
     project_name: str,
@@ -540,6 +566,7 @@ def run(
             if json_output:
 
                 def _on_progress(event: str, detail: str = "") -> None:
+                    _update_repl_activity(event, detail)
                     if notif_bus is not None:
                         notif_bus.on_progress(event, detail)
 
@@ -549,6 +576,7 @@ def run(
             else:
 
                 def _on_progress(event: str, detail: str = "") -> None:
+                    _update_repl_activity(event, detail)
                     if event == "turn":
                         print_step(detail)
                         panel.update(turn=detail, activity=thinking_phrase())
@@ -855,6 +883,7 @@ def run(
         if json_output:
 
             def _on_progress(event: str, detail: str = "") -> None:
+                _update_repl_activity(event, detail)
                 if notif_bus is not None:
                     notif_bus.on_progress(event, detail)
 
@@ -864,6 +893,7 @@ def run(
         else:
 
             def _on_progress(event: str, detail: str = "") -> None:
+                _update_repl_activity(event, detail)
                 if event == "turn":
                     print_step(detail)
                     panel.update(turn=detail, activity=thinking_phrase())

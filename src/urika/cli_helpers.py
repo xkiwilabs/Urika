@@ -38,10 +38,12 @@ def _pt_prompt(message: str, **kwargs: Any) -> str:
     """Thin wrapper around prompt_toolkit's prompt() for mocking.
 
     Falls back to built-in input() when stdin is not a TTY
-    (e.g. inside Click's CliRunner during tests, or piped input).
+    (e.g. inside Click's CliRunner during tests, or piped input)
+    or when running inside the Textual TUI worker (prompt_toolkit
+    fights with Textual over terminal control and hangs).
     """
-    if not sys.stdin.isatty():
-        # prompt_toolkit doesn't work with non-TTY stdin
+    if not sys.stdin.isatty() or getattr(sys.stdin, "_tui_bridge", False):
+        # prompt_toolkit doesn't work with non-TTY stdin or TUI bridge
         return input(message)
 
     from prompt_toolkit import prompt as pt_prompt

@@ -303,11 +303,9 @@ class TestAgentWorker:
     async def test_action_cancel_agent_writes_flag_and_notifies(
         self, tmp_path: Path
     ) -> None:
-        """action_cancel_agent is a cooperative cancel: writes the
-        pause-request flag file that PauseController polls, prints a
-        cancel notice, and does NOT flip ``agent_running`` (the
-        worker's finally block owns that flag — flipping it externally
-        would let a second worker spawn and collide on OutputCapture)."""
+        """action_cancel_agent cancels the active worker: writes the
+        pause-request flag file, resets agent_running, and prints a
+        stop notice."""
         session = ReplSession()
         session.load_project(path=tmp_path, name="fake")
         session.set_agent_running(agent_name="task_agent")
@@ -323,13 +321,12 @@ class TestAgentWorker:
             assert flag_file.exists()
             assert flag_file.read_text(encoding="utf-8") == "stop"
 
-            # agent_running is NOT cleared — the worker's finally owns it.
-            assert session.agent_running is True
+            # agent_running IS cleared — immediate cancel.
+            assert session.agent_running is False
 
             panel = app.query_one("OutputPanel")
             text = _panel_text(panel)
-            assert "Cancel requested" in text
-            assert "checkpoint" in text
+            assert "Stopped" in text
 
     @pytest.mark.asyncio
     async def test_action_cancel_agent_quits_when_idle(self) -> None:

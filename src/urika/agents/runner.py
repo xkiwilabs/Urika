@@ -21,6 +21,7 @@ class AgentResult:
     duration_ms: int = -1
     cost_usd: float | None = None
     error: str | None = None
+    error_category: str = ""  # "rate_limit", "auth", "billing", or ""
     tokens_in: int = 0
     tokens_out: int = 0
     model: str = ""

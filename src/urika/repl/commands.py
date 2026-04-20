@@ -55,6 +55,11 @@ def _get_repl_bus():
     return None
 
 
+def _get_repl_session():
+    """Return the active REPL session, or None."""
+    return _repl_session_ref
+
+
 def command(name: str, requires_project: bool = False, description: str = ""):
     """Decorator to register a REPL command."""
 
@@ -246,8 +251,10 @@ def cmd_new(session: ReplSession, args: str) -> None:
             data_path=None,
             description=None,
         )
-    except SystemExit:
+    except (SystemExit, EOFError, KeyboardInterrupt):
         pass
+    except Exception as exc:
+        click.echo(f"  Error during project creation: {exc}")
     finally:
         _os.environ.pop("URIKA_REPL", None)
 
@@ -439,10 +446,10 @@ def cmd_tools(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-@command("stop", requires_project=True, description="Stop the running agent/experiment")
+@command("stop", description="Stop the running agent/experiment")
 def cmd_stop(session: ReplSession, args: str) -> None:
     """Stop the currently running agent or experiment immediately."""
-    if not session.agent_active:
+    if not session.agent_running and not session.agent_active:
         click.echo("  No agent is currently running.")
         return
 
@@ -452,9 +459,9 @@ def cmd_stop(session: ReplSession, args: str) -> None:
         flag.parent.mkdir(parents=True, exist_ok=True)
         flag.write_text("stop", encoding="utf-8")
 
-    active = session.active_command
-    session.set_agent_inactive()
-    click.echo(f"  Stopped {active}.")
+    active = session.agent_name or session.active_command or "command"
+    session.set_agent_idle()
+    click.echo(f"  Stopped /{active}.")
 
 
 @command("pause", requires_project=True, description="Pause experiment after current subagent")

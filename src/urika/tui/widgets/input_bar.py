@@ -146,6 +146,7 @@ class InputBar(Input):
             select_on_focus=False,
             **kwargs,
         )
+        self.cursor_blink = False
 
     def _build_suggester(self) -> _UrikaSuggester:
         return _UrikaSuggester(self.session)

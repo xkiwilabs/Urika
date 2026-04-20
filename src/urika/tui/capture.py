@@ -110,21 +110,6 @@ class _TuiWriter:
         """
         clean = _strip_ansi(line)
 
-        # Detect click.prompt defaults and pre-fill the InputBar.
-        # Only when a worker is waiting for input (stdin reader active).
-        from urika.tui.agent_worker import get_active_stdin_reader
-
-        if get_active_stdin_reader() is not None:
-            match = _PROMPT_DEFAULT_RE.search(clean)
-            if match:
-                default_val = match.group(1)
-                try:
-                    self._app.call_from_thread(
-                        self._prefill_input, default_val
-                    )
-                except (RuntimeError, Exception):
-                    pass
-
         # Path 1: cross-thread dispatch. Raises RuntimeError if the
         # caller is on the same thread as the event loop, or if the
         # loop isn't running.

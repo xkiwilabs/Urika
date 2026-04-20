@@ -76,8 +76,9 @@ class TestToolRegistry:
         registry = ToolRegistry()
         registry.discover()
         names = registry.list_all()
-        assert len(names) == 18
+        assert len(names) == 24
         expected = [
+            "cluster_analysis",
             "correlation_analysis",
             "cross_validation",
             "data_profiler",
@@ -86,14 +87,19 @@ class TestToolRegistry:
             "gradient_boosting",
             "group_split",
             "hypothesis_tests",
+            "linear_mixed_model",
             "linear_regression",
             "logistic_regression",
             "mann_whitney_u",
             "one_way_anova",
             "outlier_detection",
             "paired_t_test",
+            "pca",
+            "polynomial_regression",
             "random_forest",
             "random_forest_classifier",
+            "regularized_regression",
+            "time_series_decomposition",
             "train_val_test_split",
             "visualization",
         ]

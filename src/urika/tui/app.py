@@ -274,6 +274,73 @@ class UrikaApp(App):
             "agent_running was stale (no live worker found) — self-healed"
         )
 
+    @staticmethod
+    def _is_path_not_command(text: str) -> bool:
+        """Distinguish file paths from slash commands.
+
+        ``/run baseline`` → first token is ``run`` (no slash) → command.
+        ``/home/user/data`` → first token is ``home/user/data`` → path.
+        """
+        after_slash = text[1:]
+        first_token = after_slash.split()[0] if after_slash.strip() else ""
+        return "/" in first_token
+
+    def _cancel_active_worker(self) -> None:
+        """Cancel the active agent worker and reset state.
+
+        Unblocks the stdin reader (so the worker thread isn't stuck
+        on queue.get), cancels Textual workers, and resets the
+        session's agent_running flag. This makes /stop work reliably
+        even during interactive prompts like /new.
+        """
+        from textual.worker import WorkerState
+
+        from urika.tui.agent_worker import get_active_stdin_reader
+
+        if not self.session.agent_running:
+            self._run_with_panel_output(
+                lambda: print("  No agent is currently running.")
+            )
+            return
+
+        agent = self.session.agent_name or "command"
+
+        # Unblock the stdin reader first — the worker thread may be
+        # stuck on _queue.get() waiting for user input.
+        reader = get_active_stdin_reader()
+        if reader is not None:
+            reader.cancel()
+
+        # Cancel any live agent/free_text workers.
+        live_states = {WorkerState.PENDING, WorkerState.RUNNING}
+        for worker in self.workers:
+            name = worker.name or ""
+            if name == "free_text" or name.startswith("agent:"):
+                if worker.state in live_states:
+                    worker.cancel()
+
+        # Write stop flag for run_experiment's PauseController
+        if self.session.project_path:
+            flag = self.session.project_path / ".urika" / "pause_requested"
+            flag.parent.mkdir(parents=True, exist_ok=True)
+            flag.write_text("stop", encoding="utf-8")
+
+        # Reset session state (the worker's finally clause will also
+        # try this, but we do it eagerly so the UI unblocks now).
+        self.session.set_agent_idle()
+
+        self._run_with_panel_output(
+            lambda: print(f"  Stopped /{agent}.")
+        )
+
+        # Refresh the input bar prompt
+        from urika.tui.widgets.input_bar import InputBar as IB
+
+        try:
+            self.query_one(IB).refresh_prompt()
+        except Exception:
+            pass
+
     @on(InputBar.CommandSubmitted)
     def _on_command(self, event: InputBar.CommandSubmitted) -> None:
         """Dispatch user input to command handlers, queue, or free-text path."""
@@ -284,7 +351,7 @@ class UrikaApp(App):
         # worker exited without running its finally clause.
         self._heal_stale_agent_running()
 
-        if text.startswith("/"):
+        if text.startswith("/") and not self._is_path_not_command(text):
             self._dispatch_command(text)
         elif self.session.agent_running:
             # A worker is running. If it has a stdin reader active
@@ -366,6 +433,14 @@ class UrikaApp(App):
             self.exit()
             return
 
+        # /stop — cancel the active worker, unblock its stdin reader,
+        # and reset agent state. Handled here (not via the command
+        # registry) because it needs direct access to workers and the
+        # stdin reader, and must work even without a project loaded.
+        if cmd_name == "stop":
+            self._cancel_active_worker()
+            return
+
         from urika.cli_display import print_error
         from urika.repl.commands import PROJECT_COMMANDS, get_all_commands
 
@@ -384,7 +459,7 @@ class UrikaApp(App):
             if cmd_name not in _ALWAYS_ALLOWED_COMMANDS:
                 self._run_with_panel_output(lambda: print_error(busy_hint))
                 return
-            # Escape hatch path (/stop): fall through to normal dispatch.
+            # Escape hatch path: fall through to normal dispatch.
 
         all_cmds = get_all_commands(self.session)
         if cmd_name not in all_cmds:
@@ -568,37 +643,20 @@ class UrikaApp(App):
     def action_cancel_agent(self) -> None:
         """Ctrl+C handler.
 
-        When an agent is running: cooperative cancel — write the
-        ``.urika/pause_requested`` flag file that ``PauseController``
-        polls between subagents. Do NOT flip ``session.agent_running``
-        externally — the worker's ``finally`` block owns that flag,
-        and flipping it here would let a second worker spawn while
-        the first still holds its ``OutputCapture``, colliding on
-        ``sys.stdout``.
+        When an agent is running: cancel the worker immediately —
+        unblocks the stdin reader, cancels Textual workers, resets
+        agent state. Works for both interactive commands (/new stuck
+        on a prompt) and long-running agents (/run between subagents).
 
         When no agent is running: treat Ctrl+C as a quit request.
         Otherwise users with no visible keybindings get trapped in
         the TUI with Ctrl+C as a silent no-op.
         """
         if not self.session.agent_running:
-            # Fall through to quit so Ctrl+C is never a dead key.
             self.action_quit_app()
             return
 
-        panel = self.query_one(OutputPanel)
-        # Cooperative stop: write the same pause-flag file /stop uses
-        # so experiment runners notice at their next checkpoint.
-        if self.session.project_path is not None:
-            try:
-                flag_dir = self.session.project_path / ".urika"
-                flag_dir.mkdir(parents=True, exist_ok=True)
-                (flag_dir / "pause_requested").write_text("stop", encoding="utf-8")
-            except OSError as exc:
-                panel.write_line(f"  \u2717 Cancel-flag write failed: {exc}")
-                return
-        panel.write_line(
-            "  Cancel requested \u2014 agent will stop at next checkpoint."
-        )
+        self._cancel_active_worker()
 
     # ── Remote command drain (Slack / Telegram) ────────────
 
