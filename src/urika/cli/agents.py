@@ -665,7 +665,8 @@ def finalize(
     if json_output:
 
         def _on_progress(event: str, detail: str = "") -> None:
-            pass
+            from urika.cli.run import _update_repl_activity
+            _update_repl_activity(event, detail)
 
         def _on_message(msg: object) -> None:
             pass
@@ -696,6 +697,8 @@ def finalize(
         panel.start_spinner()
 
         def _on_progress(event: str, detail: str = "") -> None:
+            from urika.cli.run import _update_repl_activity
+            _update_repl_activity(event, detail)
             if event == "agent":
                 agent_key = detail.split("\u2014")[0].strip().lower().replace(" ", "_")
                 print_agent(agent_key)

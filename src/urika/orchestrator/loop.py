@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from urika.agents.config import load_runtime_config
 from urika.agents.registry import AgentRegistry
-from urika.agents.runner import AgentRunner
+from urika.agents.runner import AgentResult, AgentRunner
 from urika.core.progress import append_run, load_progress
 from urika.core.session import (
     complete_session,
@@ -31,6 +31,48 @@ from urika.orchestrator.parsing import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Categories that should pause instead of fail — the experiment can
+# be resumed once the transient issue resolves.
+_PAUSABLE_ERRORS = frozenset({"rate_limit", "billing"})
+
+
+def _check_result(
+    result: AgentResult,
+    agent_label: str,
+    project_dir: Path,
+    experiment_id: str,
+    progress: Callable[..., Any],
+) -> str | None:
+    """Check an agent result. Returns None if OK, or an error string.
+
+    On rate-limit or billing errors the session is **paused** (not
+    failed) so it can be resumed later. On auth errors or unknown
+    failures the session is failed. The progress callback receives a
+    human-readable message in all cases.
+    """
+    if result.success:
+        return None
+
+    error_msg = result.error or f"{agent_label} failed"
+    category = getattr(result, "error_category", "") or ""
+
+    if category in _PAUSABLE_ERRORS:
+        # Pause instead of fail — experiment can be resumed.
+        progress("result", error_msg)
+        try:
+            pause_session(project_dir, experiment_id)
+        except Exception:
+            pass
+        return error_msg
+
+    # Auth or unknown errors — fail the session.
+    progress("result", error_msg)
+    try:
+        fail_session(project_dir, experiment_id, error=error_msg)
+    except Exception:
+        pass
+    return error_msg
 
 
 # Metrics where lower values are better (errors, losses, p-values)
@@ -651,17 +693,13 @@ async def run_experiment(
                 _total_cost_usd += plan_result.cost_usd or 0.0
                 _total_agent_calls += 1
 
-                if not plan_result.success:
-                    fail_session(
-                        project_dir,
-                        experiment_id,
-                        error=plan_result.error or "planning_agent failed",
-                    )
-                    return _usage_dict(
-                        "failed",
-                        turn,
-                        error=plan_result.error or "planning_agent failed",
-                    )
+                _err = _check_result(
+                    plan_result, "planning_agent",
+                    project_dir, experiment_id, progress,
+                )
+                if _err:
+                    _status = "paused" if plan_result.error_category in _PAUSABLE_ERRORS else "failed"
+                    return _usage_dict(_status, turn, error=_err)
 
                 method_plan = parse_method_plan(plan_result.text_output)
 
@@ -742,6 +780,8 @@ async def run_experiment(
                 _total_agent_calls += 1
 
                 if not data_result.success:
+                    # Data agent failure in private/hybrid mode is
+                    # always a hard fail — not rate-limit related.
                     _data_error = (
                         "Data Agent failed — cannot proceed in "
                         f"{runtime_config.privacy_mode} mode. "
@@ -783,17 +823,13 @@ async def run_experiment(
             _total_cost_usd += task_result.cost_usd or 0.0
             _total_agent_calls += 1
 
-            if not task_result.success:
-                fail_session(
-                    project_dir,
-                    experiment_id,
-                    error=task_result.error or "task_agent failed",
-                )
-                return _usage_dict(
-                    "failed",
-                    turn,
-                    error=task_result.error or "task_agent failed",
-                )
+            _err = _check_result(
+                task_result, "task_agent",
+                project_dir, experiment_id, progress,
+            )
+            if _err:
+                _status = "paused" if task_result.error_category in _PAUSABLE_ERRORS else "failed"
+                return _usage_dict(_status, turn, error=_err)
 
             # Parse and record runs
             runs = parse_run_records(task_result.text_output)
@@ -860,17 +896,13 @@ async def run_experiment(
             _total_cost_usd += eval_result.cost_usd or 0.0
             _total_agent_calls += 1
 
-            if not eval_result.success:
-                fail_session(
-                    project_dir,
-                    experiment_id,
-                    error=eval_result.error or "evaluator failed",
-                )
-                return _usage_dict(
-                    "failed",
-                    turn,
-                    error=eval_result.error or "evaluator failed",
-                )
+            _err = _check_result(
+                eval_result, "evaluator",
+                project_dir, experiment_id, progress,
+            )
+            if _err:
+                _status = "paused" if eval_result.error_category in _PAUSABLE_ERRORS else "failed"
+                return _usage_dict(_status, turn, error=_err)
 
             evaluation = parse_evaluation(eval_result.text_output)
             if evaluation and evaluation.get("criteria_met"):
@@ -1006,17 +1038,13 @@ async def run_experiment(
             _total_cost_usd += suggest_result.cost_usd or 0.0
             _total_agent_calls += 1
 
-            if not suggest_result.success:
-                fail_session(
-                    project_dir,
-                    experiment_id,
-                    error=suggest_result.error or "advisor_agent failed",
-                )
-                return _usage_dict(
-                    "failed",
-                    turn,
-                    error=suggest_result.error or "advisor_agent failed",
-                )
+            _err = _check_result(
+                suggest_result, "advisor_agent",
+                project_dir, experiment_id, progress,
+            )
+            if _err:
+                _status = "paused" if suggest_result.error_category in _PAUSABLE_ERRORS else "failed"
+                return _usage_dict(_status, turn, error=_err)
 
             suggestions = parse_suggestions(suggest_result.text_output)
 

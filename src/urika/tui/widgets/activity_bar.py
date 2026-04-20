@@ -8,6 +8,7 @@ When idle, shows a dim "ready" label.
 
 from __future__ import annotations
 
+import random
 import time
 
 from rich.text import Text
@@ -37,12 +38,11 @@ class ActivityBar(Static):
     ``session.agent_running`` is False a dim "ready" label is shown.
     When True it expands to show e.g.::
 
-        ⠹ chat — Thinking…
+        ⠹ run — planning_agent — Thinking…
 
-    The verb rotates every 5 seconds. If the session's
-    ``agent_activity`` is set (e.g. "Reading progress.json"), it
-    replaces the generic verb — this lets subagents describe their
-    actual work.
+    The verb rotates at randomized intervals (3–8 s). If the
+    session's ``agent_activity`` is set to a subagent name (e.g.
+    "planning_agent"), it appears between the command and the verb.
     """
 
     DEFAULT_CSS = """
@@ -62,6 +62,7 @@ class ActivityBar(Static):
         self._frame_idx = 0
         self._verb_idx = 0
         self._last_verb_change = 0.0
+        self._next_verb_interval = random.uniform(3.0, 8.0)
 
     def on_mount(self) -> None:
         """Start the animation timer."""
@@ -82,20 +83,29 @@ class ActivityBar(Static):
         frame = _SPINNER_FRAMES[self._frame_idx % len(_SPINNER_FRAMES)]
         self._frame_idx += 1
 
-        # Agent name
-        agent_name = self.session.agent_name or self.session.active_command or "agent"
+        # Command name (e.g. "run", "new", "finalize")
+        cmd_name = self.session.agent_name or self.session.active_command or "agent"
 
-        # Verb — use agent_activity if set, otherwise rotate generics
-        activity = self.session.agent_activity
-        if not activity or activity == "Working…":
-            now = time.monotonic()
-            if now - self._last_verb_change > 5.0:
-                self._verb_idx = (self._verb_idx + 1) % len(_ACTIVITY_VERBS)
-                self._last_verb_change = now
-            activity = _ACTIVITY_VERBS[self._verb_idx]
+        # Subagent — agent_activity is set to the current subagent key
+        # (e.g. "planning_agent", "evaluator") by the orchestrator's
+        # progress callback. Generic values are not subagents.
+        subagent = self.session.agent_activity
+        _generic = {"", "Working…"}
+        is_subagent = subagent and subagent not in _generic
+
+        # Verb — rotate through generic verbs at randomized intervals
+        now = time.monotonic()
+        if now - self._last_verb_change > self._next_verb_interval:
+            self._verb_idx = (self._verb_idx + 1) % len(_ACTIVITY_VERBS)
+            self._last_verb_change = now
+            self._next_verb_interval = random.uniform(3.0, 8.0)
+        verb = _ACTIVITY_VERBS[self._verb_idx]
 
         text = Text()
         text.append(f" {frame} ", style="bold #4a9eff")
-        text.append(agent_name, style="bold #ffcc66")
-        text.append(f" — {activity}…", style="dim")
+        text.append(cmd_name, style="bold #ffcc66")
+        if is_subagent:
+            text.append(" — ", style="dim")
+            text.append(subagent, style="#cc99ff")
+        text.append(f" — {verb}…", style="dim")
         return text

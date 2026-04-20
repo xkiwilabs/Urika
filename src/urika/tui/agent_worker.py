@@ -44,14 +44,24 @@ class _TuiStdinReader:
     there's no conflict with Textual's driver.
     """
 
+    # Marker so prompt helpers (e.g. _pt_prompt in cli_helpers.py) can
+    # detect they're running inside the TUI worker and fall back to
+    # input() instead of prompt_toolkit.prompt() — prompt_toolkit
+    # fights with Textual over terminal control and hangs/crashes.
+    _tui_bridge = True
+
     def __init__(self) -> None:
         self._queue: queue.Queue[str] = queue.Queue()
         self._pipe_r, self._pipe_w = os.pipe()
         self.encoding = "utf-8"
+        self._cancelled = False
 
     def readline(self, limit: int = -1) -> str:
         """Block until the InputBar sends a line."""
-        return self._queue.get()
+        line = self._queue.get()
+        if self._cancelled:
+            raise EOFError("cancelled")
+        return line
 
     def read(self, size: int = -1) -> str:
         return self.readline()
@@ -83,6 +93,11 @@ class _TuiStdinReader:
     @property
     def closed(self) -> bool:
         return False
+
+    def cancel(self) -> None:
+        """Signal cancellation — unblocks readline with an EOFError."""
+        self._cancelled = True
+        self._queue.put("\n")  # unblock the waiting get()
 
     def close(self) -> None:
         """Unblock any waiting readline and close the pipe."""
@@ -156,6 +171,10 @@ def run_command_in_worker(
                 except SystemExit:
                     app.session.save_usage()
                     app.call_from_thread(app.exit)
+                except EOFError:
+                    # Raised by _TuiStdinReader when cancelled via /stop
+                    # or Ctrl+C — exit silently, cleanup in finally.
+                    pass
                 except Exception as exc:
                     print_error(f"Error: {exc}")
         finally:
