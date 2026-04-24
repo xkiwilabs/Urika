@@ -13,7 +13,7 @@ from urika.core.experiment import create_experiment, list_experiments
 from urika.core.progress import load_progress
 
 from urika.cli._helpers import (
-    _make_on_message,
+    _agent_run_start,
     _resolve_project,
     _ensure_project,
     _prompt_numbered,
@@ -637,10 +637,7 @@ def run(
         if _is_main_thread:
             signal.signal(signal.SIGINT, _cleanup_meta)
 
-        from datetime import datetime, timezone
-
-        start_ms = int(time.monotonic() * 1000)
-        start_iso = datetime.now(timezone.utc).isoformat()
+        start_ms, start_iso = _agent_run_start()
         sdk_runner = get_runner()
 
         try:
@@ -781,6 +778,8 @@ def run(
 
         # Record usage for this CLI session
         try:
+            from datetime import datetime, timezone
+
             from urika.core.usage import record_session
 
             record_session(
@@ -952,10 +951,7 @@ def run(
     if _is_main_thread:
         signal.signal(signal.SIGINT, _cleanup_on_interrupt)
 
-    from datetime import datetime, timezone
-
-    start_ms = int(time.monotonic() * 1000)
-    start_iso = datetime.now(timezone.utc).isoformat()
+    start_ms, start_iso = _agent_run_start()
 
     sdk_runner = get_runner()
 
@@ -1153,6 +1149,8 @@ def run(
 
     # Record usage for this CLI session
     try:
+        from datetime import datetime, timezone
+
         from urika.core.usage import record_session
 
         record_session(

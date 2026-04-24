@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
 import click
@@ -14,6 +13,7 @@ from urika.core.experiment import list_experiments
 from urika.core.progress import load_progress
 
 from urika.cli._helpers import (
+    _agent_run_start,
     _make_on_message,
     _record_agent_usage,
     _resolve_project,
@@ -294,9 +294,7 @@ def report(
 def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     """Ask the advisor agent a question about the project."""
     import asyncio
-    import time
 
-    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -354,8 +352,7 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         except Exception:
             pass
 
-    _start_ms = int(time.monotonic() * 1000)
-    _start_iso = datetime.now(timezone.utc).isoformat()
+    _start_ms, _start_iso = _agent_run_start()
 
     try:
         with Spinner("Thinking"):
@@ -444,9 +441,7 @@ def evaluate(
 ) -> None:
     """Run the evaluator agent on an experiment."""
     import asyncio
-    import time
 
-    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -486,8 +481,7 @@ def evaluate(
     if instructions:
         prompt = f"User instructions: {instructions}\n\n{prompt}"
 
-    _start_ms = int(time.monotonic() * 1000)
-    _start_iso = datetime.now(timezone.utc).isoformat()
+    _start_ms, _start_iso = _agent_run_start()
 
     if not json_output:
         click.echo(f"  Evaluating {experiment_id}...")
@@ -538,9 +532,7 @@ def plan(
 ) -> None:
     """Run the planning agent to design the next method."""
     import asyncio
-    import time
 
-    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -580,8 +572,7 @@ def plan(
     if instructions:
         prompt = f"User instructions: {instructions}\n\n{prompt}"
 
-    _start_ms = int(time.monotonic() * 1000)
-    _start_iso = datetime.now(timezone.utc).isoformat()
+    _start_ms, _start_iso = _agent_run_start()
 
     if not json_output:
         click.echo(f"  Planning for {experiment_id}...")
@@ -679,8 +670,7 @@ def finalize(
         )
 
     runner = get_runner()
-    _start_ms = int(time.monotonic() * 1000)
-    _start_iso = datetime.now(timezone.utc).isoformat()
+    _start_ms, _start_iso = _agent_run_start()
 
     if json_output:
 
@@ -838,9 +828,7 @@ def build_tool(
       urika build-tool my-project "install librosa and create an audio feature extractor"
     """
     import asyncio
-    import time
 
-    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
     from urika.cli_helpers import interactive_prompt
@@ -877,8 +865,7 @@ def build_tool(
         print_agent("tool_builder")
     config = role.build_config(project_dir=project_path)
 
-    _start_ms = int(time.monotonic() * 1000)
-    _start_iso = datetime.now(timezone.utc).isoformat()
+    _start_ms, _start_iso = _agent_run_start()
 
     try:
         with Spinner("Building tool"):
@@ -977,8 +964,7 @@ def present(
 
         choice = _prompt_numbered("\n  Select:", options, default=1)
 
-    _start_ms = int(time.monotonic() * 1000)
-    _start_iso = datetime.now(timezone.utc).isoformat()
+    _start_ms, _start_iso = _agent_run_start()
     _pres_tokens_in = 0
     _pres_tokens_out = 0
     _pres_cost = 0.0
@@ -1104,9 +1090,7 @@ def present(
 def summarize(project: str | None, json_output: bool) -> None:
     """Summarize the current state of a project."""
     import asyncio
-    import time
 
-    from datetime import datetime, timezone
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -1138,8 +1122,7 @@ def summarize(project: str | None, json_output: bool) -> None:
 
     prompt = "Summarize the current state of this project."
 
-    _start_ms = int(time.monotonic() * 1000)
-    _start_iso = datetime.now(timezone.utc).isoformat()
+    _start_ms, _start_iso = _agent_run_start()
 
     try:
         with Spinner("Summarizing"):

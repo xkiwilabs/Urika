@@ -39,6 +39,22 @@ def _make_on_message() -> object:
     return _on_msg
 
 
+def _agent_run_start() -> tuple[int, str]:
+    """Return (start_ms, start_iso) for timing and recording an agent call.
+
+    Every CLI agent-invocation command needs both: a monotonic start time
+    for elapsed-ms math, and a wall-clock ISO string for usage records.
+    Returning the pair from one place kills the duplicated two-liner
+    that used to open almost every agent command.
+    """
+    import time
+    from datetime import datetime, timezone
+
+    start_ms = int(time.monotonic() * 1000)
+    start_iso = datetime.now(timezone.utc).isoformat()
+    return start_ms, start_iso
+
+
 def _record_agent_usage(
     project_path: Path,
     result: object,
