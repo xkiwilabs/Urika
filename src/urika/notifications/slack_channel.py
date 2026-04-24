@@ -143,19 +143,15 @@ class SlackChannel(NotificationChannel):
     # Authorization
     # ------------------------------------------------------------------
 
-    def _is_authorized(self, payload: dict[str, Any]) -> bool:
-        """Check whether an inbound interaction payload is allowed.
+    @staticmethod
+    def _extract_ids(payload: dict[str, Any]) -> tuple[str | None, str | None]:
+        """Extract (channel_id, user_id) from a Slack interaction payload.
 
-        Back-compat: if neither ``allowed_channels`` nor ``allowed_users`` is
-        configured, all payloads are allowed. Otherwise we extract the
-        channel id (payload["channel"]["id"] or payload["event"]["channel"])
-        and user id (payload["user"]["id"] or payload["event"]["user"]) and
-        fail closed if the corresponding list is set but the id is missing
-        or not allowlisted.
+        Button clicks put the ids under ``payload["channel"]["id"]`` /
+        ``payload["user"]["id"]``; Event-API wrappers put them under
+        ``payload["event"]["channel"]`` / ``payload["event"]["user"]``.
+        We try the button-click shape first, fall back to the event shape.
         """
-        if self._allowed_channels is None and self._allowed_users is None:
-            return True
-
         channel_id: str | None = None
         chan = payload.get("channel")
         if isinstance(chan, dict):
@@ -177,6 +173,20 @@ class SlackChannel(NotificationChannel):
                 ev_user = event.get("user")
                 if isinstance(ev_user, str):
                     user_id = ev_user
+
+        return channel_id, user_id
+
+    def _is_authorized(self, payload: dict[str, Any]) -> bool:
+        """Check whether an inbound interaction payload is allowed.
+
+        Back-compat: if neither ``allowed_channels`` nor ``allowed_users`` is
+        configured, all payloads are allowed. Otherwise fail closed if the
+        corresponding list is set but the id is missing or not allowlisted.
+        """
+        if self._allowed_channels is None and self._allowed_users is None:
+            return True
+
+        channel_id, user_id = self._extract_ids(payload)
 
         if self._allowed_channels is not None:
             if channel_id is None or channel_id not in self._allowed_channels:
@@ -215,18 +225,7 @@ class SlackChannel(NotificationChannel):
                 # channels/users before any command dispatch.
                 payload = req.payload or {}
                 if not self._is_authorized(payload):
-                    chan = payload.get("channel")
-                    chan_id = chan.get("id") if isinstance(chan, dict) else None
-                    if chan_id is None:
-                        ev = payload.get("event")
-                        if isinstance(ev, dict):
-                            chan_id = ev.get("channel")
-                    user = payload.get("user")
-                    user_id = user.get("id") if isinstance(user, dict) else None
-                    if user_id is None:
-                        ev = payload.get("event")
-                        if isinstance(ev, dict):
-                            user_id = ev.get("user")
+                    chan_id, user_id = self._extract_ids(payload)
                     logger.warning(
                         "Slack interaction from unauthorized channel/user "
                         "dropped: channel=%s user=%s",
