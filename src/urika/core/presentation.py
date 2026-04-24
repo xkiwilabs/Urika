@@ -64,6 +64,8 @@ def render_presentation(
             slides_html += _render_figure_slide(slide, figures_dir, experiment_dir)
         elif slide_type == "figure-text":
             slides_html += _render_two_col_slide(slide, figures_dir, experiment_dir)
+        elif slide_type == "explainer":
+            slides_html += _render_explainer_slide(slide)
         else:
             slides_html += _render_bullets_slide(slide)
 
@@ -108,6 +110,7 @@ def _render_bullets_slide(slide: dict[str, Any]) -> str:
                 <ul>
 {items}
                 </ul>
+                {_render_notes(slide)}
             </section>
 """
 
@@ -130,6 +133,7 @@ def _render_stat_slide(slide: dict[str, Any]) -> str:
                 <div class="big-number">{_escape(stat)}</div>
                 <div class="stat-label">{_escape(label)}</div>
                 {items}
+                {_render_notes(slide)}
             </section>
 """
 
@@ -169,6 +173,7 @@ def _render_figure_slide(
                     {cap}
                 </div>
                 {items}
+                {_render_notes(slide)}
             </section>
 """
 
@@ -214,8 +219,36 @@ def _render_two_col_slide(
                     </div>
                 </div>
                 {bot}
+                {_render_notes(slide)}
             </section>
 """
+
+
+def _render_explainer_slide(slide: dict[str, Any]) -> str:
+    """Render an explainer slide: a lead sentence plus a short body paragraph.
+
+    Intended for method-introduction slides that orient the audience before
+    showing results.
+    """
+    title = slide.get("title", "")
+    lead = slide.get("lead", "")
+    body = slide.get("body", "")
+    return f"""
+            <section class="slide-explainer">
+                <h2>{_escape(title)}</h2>
+                <p class="lead">{_escape(lead)}</p>
+                <p class="body">{_escape(body)}</p>
+                {_render_notes(slide)}
+            </section>
+"""
+
+
+def _render_notes(slide: dict[str, Any]) -> str:
+    """Render reveal.js speaker notes aside, if the slide has a notes field."""
+    notes = slide.get("notes", "")
+    if not notes:
+        return ""
+    return f'<aside class="notes">{_escape(notes)}</aside>'
 
 
 def _escape(text: str) -> str:

@@ -110,3 +110,75 @@ class TestRenderPresentation:
         output = render_presentation(slide_data, tmp_path / "pres", theme="dark")
         html = (output / "index.html").read_text()
         assert "theme-dark" in html
+
+
+class TestSpeakerNotes:
+    def test_notes_render_as_reveal_aside(self, tmp_path: Path) -> None:
+        data = {
+            "title": "T",
+            "subtitle": "S",
+            "slides": [
+                {
+                    "type": "bullets",
+                    "title": "Slide",
+                    "bullets": ["a"],
+                    "notes": "Hello notes.",
+                },
+                {
+                    "type": "stat",
+                    "title": "K",
+                    "stat": "99%",
+                    "stat_label": "label",
+                    "notes": "Stat notes.",
+                },
+            ],
+        }
+        out = render_presentation(data, tmp_path)
+        html = (out / "index.html").read_text()
+        assert '<aside class="notes">Hello notes.</aside>' in html
+        assert '<aside class="notes">Stat notes.</aside>' in html
+
+    def test_notes_are_html_escaped(self, tmp_path: Path) -> None:
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "bullets",
+                    "title": "x",
+                    "bullets": [],
+                    "notes": "<script>x</script>",
+                },
+            ],
+        }
+        out = render_presentation(data, tmp_path)
+        html = (out / "index.html").read_text()
+        # The notes content must be escaped, so the raw <script> tag does not
+        # appear inside any notes aside. Other parts of the template may
+        # legitimately have unrelated <script> tags for reveal.js itself, so
+        # assert on the escaped form.
+        assert (
+            '<aside class="notes">&lt;script&gt;x&lt;/script&gt;</aside>' in html
+        )
+
+
+class TestExplainerSlide:
+    def test_explainer_slide_type(self, tmp_path: Path) -> None:
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "explainer",
+                    "title": "What is LOSO?",
+                    "lead": "Leave-one-session-out cross-validation.",
+                    "body": "Each session is held out in turn, training on the others.",
+                    "notes": "Explainer notes.",
+                },
+            ],
+        }
+        out = render_presentation(data, tmp_path)
+        html = (out / "index.html").read_text()
+        assert "Leave-one-session-out" in html
+        assert "training on the others" in html
+        assert '<aside class="notes">Explainer notes.</aside>' in html
