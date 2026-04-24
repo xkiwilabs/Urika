@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from urika.core.errors import ConfigError, ValidationError
 from urika.core.models import ProjectConfig
 from urika.core.registry import ProjectRegistry
 from urika.core.workspace import load_project_config
@@ -84,8 +85,9 @@ def _sanitize_project_name(name: str) -> str:
     name = re.sub(r"[^a-zA-Z0-9 _.\-]", "", name)
     name = name.strip(".-")
     if not name:
-        raise click.ClickException(
-            "Invalid project name: nothing left after sanitization."
+        raise ValidationError(
+            "Invalid project name: nothing left after sanitization.",
+            hint="Use letters, digits, hyphens, underscores, or periods.",
         )
     return name
 
@@ -99,15 +101,21 @@ def _projects_dir() -> Path:
 
 
 def _resolve_project(name: str) -> tuple[Path, ProjectConfig]:
-    """Look up project by name. Raises ClickException on error."""
+    """Look up project by name. Raises ConfigError on error."""
     registry = ProjectRegistry()
     project_path = registry.get(name)
     if project_path is None:
-        raise click.ClickException(f"Project '{name}' not found in registry.")
+        raise ConfigError(
+            f"Project '{name}' not found in registry.",
+            hint="List registered projects with: urika list",
+        )
     try:
         config = load_project_config(project_path)
     except FileNotFoundError:
-        raise click.ClickException(f"Project directory missing at {project_path}")
+        raise ConfigError(
+            f"Project directory missing at {project_path}",
+            hint="The project was moved or deleted. Re-register or remove: urika list",
+        )
     return project_path, config
 
 
@@ -118,7 +126,10 @@ def _ensure_project(project: str | None) -> str:
     registry = ProjectRegistry()
     projects = registry.list_all()
     if not projects:
-        raise click.ClickException("No projects registered. Create one with: urika new")
+        raise ConfigError(
+            "No projects registered.",
+            hint="Create one with: urika new <name>",
+        )
     names = list(projects.keys())
     if len(names) == 1:
         return names[0]

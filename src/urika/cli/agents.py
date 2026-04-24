@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from urika.cli._base import cli
+from urika.core.errors import ConfigError
 from urika.core.experiment import list_experiments
 from urika.core.progress import load_progress
 
@@ -311,8 +312,9 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
-        raise click.ClickException(
-            "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
+        raise ConfigError(
+            "Claude Agent SDK not installed.",
+            hint="Run: pip install claude-agent-sdk",
         )
 
     runner = get_runner()
@@ -320,7 +322,10 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     registry.discover()
     role = registry.get("advisor_agent")
     if role is None:
-        raise click.ClickException("Advisor agent not found.")
+        raise ConfigError(
+            "Advisor agent not found in registry.",
+            hint="Reinstall urika to restore the built-in agent registry.",
+        )
 
     if not json_output:
         print_agent("advisor_agent")
@@ -458,14 +463,20 @@ def evaluate(
         from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
-        raise click.ClickException("Claude Agent SDK not installed.")
+        raise ConfigError(
+            "Claude Agent SDK not installed.",
+            hint="Run: pip install claude-agent-sdk",
+        )
 
     runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("evaluator")
     if role is None:
-        raise click.ClickException("Evaluator agent not found.")
+        raise ConfigError(
+            "Evaluator agent not found in registry.",
+            hint="Reinstall urika to restore the built-in agent registry.",
+        )
 
     if not json_output:
         print_agent("evaluator")
@@ -546,14 +557,20 @@ def plan(
         from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
-        raise click.ClickException("Claude Agent SDK not installed.")
+        raise ConfigError(
+            "Claude Agent SDK not installed.",
+            hint="Run: pip install claude-agent-sdk",
+        )
 
     runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("planning_agent")
     if role is None:
-        raise click.ClickException("Planning agent not found.")
+        raise ConfigError(
+            "Planning agent not found in registry.",
+            hint="Reinstall urika to restore the built-in agent registry.",
+        )
 
     if not json_output:
         print_agent("planning_agent")
@@ -656,7 +673,10 @@ def finalize(
         from urika.agents.runner import get_runner
         from urika.orchestrator.finalize import finalize_project
     except ImportError:
-        raise click.ClickException("Claude Agent SDK not installed.")
+        raise ConfigError(
+            "Claude Agent SDK not installed.",
+            hint="Run: pip install claude-agent-sdk",
+        )
 
     runner = get_runner()
     _start_ms = int(time.monotonic() * 1000)
@@ -838,14 +858,20 @@ def build_tool(
         from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
-        raise click.ClickException("Claude Agent SDK not installed.")
+        raise ConfigError(
+            "Claude Agent SDK not installed.",
+            hint="Run: pip install claude-agent-sdk",
+        )
 
     runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("tool_builder")
     if role is None:
-        raise click.ClickException("Tool builder agent not found.")
+        raise ConfigError(
+            "Tool builder agent not found in registry.",
+            hint="Reinstall urika to restore the built-in agent registry.",
+        )
 
     if not json_output:
         print_agent("tool_builder")
@@ -926,7 +952,10 @@ def present(
         from urika.agents.runner import get_runner
         from urika.orchestrator.loop import _generate_presentation, _noop_callback
     except ImportError:
-        raise click.ClickException("Claude Agent SDK not installed.")
+        raise ConfigError(
+            "Claude Agent SDK not installed.",
+            hint="Run: pip install claude-agent-sdk",
+        )
 
     runner = get_runner()
     on_msg = (lambda m: None) if json_output else _make_on_message()
@@ -1088,8 +1117,9 @@ def summarize(project: str | None, json_output: bool) -> None:
         from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
     except ImportError:
-        raise click.ClickException(
-            "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
+        raise ConfigError(
+            "Claude Agent SDK not installed.",
+            hint="Run: pip install claude-agent-sdk",
         )
 
     runner = get_runner()
@@ -1097,7 +1127,10 @@ def summarize(project: str | None, json_output: bool) -> None:
     registry.discover()
     role = registry.get("project_summarizer")
     if role is None:
-        raise click.ClickException("Project summarizer agent not found.")
+        raise ConfigError(
+            "Project summarizer agent not found in registry.",
+            hint="Reinstall urika to restore the built-in agent registry.",
+        )
 
     if not json_output:
         print_agent("project_summarizer")

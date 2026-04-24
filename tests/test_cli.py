@@ -989,3 +989,30 @@ class TestLogsCommand:
         result = runner.invoke(cli, ["logs", "nope"], env=urika_env)
         assert result.exit_code != 0
         assert "not found" in result.output
+
+
+class TestErrorHandlerIntegration:
+    """The top-level CLI group renders UrikaError subclasses as
+    message + optional hint, exits 2, and never leaks a traceback.
+    This replaces the older ClickException rendering for migrated sites."""
+
+    def test_config_error_from_resolve_project_renders_with_hint(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(cli, ["logs", "nonexistent-project"], env=urika_env)
+        assert result.exit_code == 2, result.output
+        assert "not found in registry" in result.output
+        assert "urika list" in result.output  # hint mentions the remediation
+        # No traceback leaked.
+        assert "Traceback" not in result.output
+
+    def test_config_error_from_ensure_project_renders_with_hint(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        # No projects registered; an ambiguous invocation should hit _ensure_project.
+        # Use a command that accepts no args and requires a project.
+        result = runner.invoke(cli, ["logs"], env=urika_env)
+        assert result.exit_code == 2, result.output
+        assert "No projects registered" in result.output
+        assert "urika new" in result.output  # hint
+        assert "Traceback" not in result.output
