@@ -72,10 +72,14 @@ class TestPresentationAgentRole:
         config = role.build_config(tmp_path, experiment_id="exp-001", audience="expert")
         assert "domain expertise" in config.system_prompt
 
-    def test_default_audience_is_expert(self, tmp_path: Path) -> None:
+    def test_default_audience_is_standard(self, tmp_path: Path) -> None:
         role = get_role()
         config = role.build_config(tmp_path, experiment_id="exp-001")
-        assert "domain expertise" in config.system_prompt
+        # 'standard' audience (the new default) emphasises verbose speaker
+        # notes over concise bullets — contrast against 'expert' which says
+        # "domain expertise" / "concise".
+        assert "Notes are where the real explanation lives" in config.system_prompt
+        assert "domain expertise" not in config.system_prompt
 
     def test_discoverable_by_registry(self) -> None:
         registry = AgentRegistry()

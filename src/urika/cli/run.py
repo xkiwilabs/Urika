@@ -381,9 +381,9 @@ def _determine_next_experiment(
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 @click.option(
     "--audience",
-    type=click.Choice(["novice", "expert"]),
+    type=click.Choice(["novice", "standard", "expert"]),
     default=None,
-    help="Output audience level (default: from project config or expert).",
+    help="Output audience level (default: standard).",
 )
 @click.option(
     "--legacy",

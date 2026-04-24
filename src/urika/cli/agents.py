@@ -81,9 +81,9 @@ def _run_report_agent(
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 @click.option(
     "--audience",
-    type=click.Choice(["novice", "expert"]),
+    type=click.Choice(["novice", "standard", "expert"]),
     default=None,
-    help="Output audience level (default: from project config or expert).",
+    help="Output audience level (default: standard).",
 )
 def report(
     project: str,
@@ -611,9 +611,9 @@ def plan(
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 @click.option(
     "--audience",
-    type=click.Choice(["novice", "expert"]),
+    type=click.Choice(["novice", "standard", "expert"]),
     default=None,
-    help="Output audience level (default: from project config or expert).",
+    help="Output audience level (default: standard).",
 )
 @click.option(
     "--draft",
@@ -896,9 +896,9 @@ def build_tool(
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 @click.option(
     "--audience",
-    type=click.Choice(["novice", "expert"]),
+    type=click.Choice(["novice", "standard", "expert"]),
     default=None,
-    help="Output audience level (default: from project config or expert).",
+    help="Output audience level (default: standard).",
 )
 def present(
     project: str | None, instructions: str, json_output: bool, audience: str | None = None
