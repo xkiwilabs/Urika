@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 
 import pytest
 
 from urika.repl.session import ReplSession
-from urika.tui.agent_worker import run_command_in_worker  # noqa: F401
+from urika.tui.agent_worker import _run_with_timeout, run_command_in_worker  # noqa: F401
 from urika.tui.app import UrikaApp
 
 
@@ -354,3 +355,70 @@ class TestAgentWorker:
             # HACK: private Textual attribute — matches the HACK
             # annotations in test_command_dispatch.py.
             assert app._exit is True
+
+
+class TestRunWithTimeout:
+    """Opt-in per-command timeout helper for the TUI worker."""
+
+    def test_runs_handler_synchronously_when_no_timeout(self) -> None:
+        called = {"ran": False}
+
+        def handler(sess, args):
+            called["ran"] = True
+
+        result = _run_with_timeout(handler, session=None, args="", timeout_s=None)
+        assert result == {"timed_out": False, "error": None}
+        assert called["ran"] is True
+
+    def test_runs_handler_synchronously_when_timeout_zero_or_negative(self) -> None:
+        called = {"count": 0}
+
+        def handler(sess, args):
+            called["count"] += 1
+
+        r1 = _run_with_timeout(handler, session=None, args="", timeout_s=0)
+        r2 = _run_with_timeout(handler, session=None, args="", timeout_s=-1)
+        assert r1["timed_out"] is False
+        assert r2["timed_out"] is False
+        assert called["count"] == 2
+
+    def test_respects_timeout(self) -> None:
+        def slow_handler(sess, args):
+            time.sleep(3)
+
+        start = time.monotonic()
+        result = _run_with_timeout(slow_handler, session=None, args="", timeout_s=0.2)
+        elapsed = time.monotonic() - start
+        assert result["timed_out"] is True
+        assert result["error"] is None
+        # Should return promptly after timeout — well under 3 seconds.
+        assert elapsed < 1.0
+
+    def test_fast_handler_under_timeout_returns_normally(self) -> None:
+        def handler(sess, args):
+            time.sleep(0.05)
+
+        result = _run_with_timeout(handler, session=None, args="", timeout_s=2.0)
+        assert result["timed_out"] is False
+        assert result["error"] is None
+
+    def test_handler_exception_without_timeout_propagates(self) -> None:
+        def handler(sess, args):
+            raise ValueError("boom")
+
+        with pytest.raises(ValueError, match="boom"):
+            _run_with_timeout(handler, session=None, args="", timeout_s=None)
+
+    def test_handler_exception_with_timeout_captured_in_result(self) -> None:
+        def handler(sess, args):
+            raise ValueError("boom")
+
+        result = _run_with_timeout(handler, session=None, args="", timeout_s=2.0)
+        assert result["timed_out"] is False
+        assert "boom" in (result["error"] or "")
+
+    def test_command_timeouts_default_empty_dict(self) -> None:
+        """Default is no timeouts → zero regression for existing behavior."""
+        from urika.tui.agent_worker import _COMMAND_TIMEOUTS
+
+        assert _COMMAND_TIMEOUTS == {}
