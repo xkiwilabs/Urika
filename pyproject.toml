@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "claude-agent-sdk>=0.1",
+    "claude-agent-sdk>=0.1,<1.0",
     "click>=8.0",
     "numpy>=1.24",
     "pandas>=2.0",
@@ -45,7 +45,7 @@ dependencies = [
     "slack-sdk>=3.0",
     "python-telegram-bot>=20.0",
     # TUI (Textual terminal interface — default entry point)
-    "textual>=0.90",
+    "textual>=8.0,<9.0",
     "rich>=13.0",
 ]
 
