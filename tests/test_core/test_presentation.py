@@ -251,3 +251,71 @@ class TestExplainerSlide:
         assert "Leave-one-session-out" in html
         assert "training on the others" in html
         assert '<aside class="notes">Explainer notes.</aside>' in html
+
+
+class TestEndToEndDeck:
+    """Smoke test: a realistic deck with every current slide type renders
+    cleanly, all notes land in <aside class="notes">, figure slides use the
+    real <img>/placeholder split, and nothing is silently dropped.
+    """
+
+    def test_full_deck_with_all_slide_types_and_notes(self, tmp_path: Path) -> None:
+        experiment_dir = tmp_path / "exp"
+        (experiment_dir / "artifacts").mkdir(parents=True)
+        (experiment_dir / "artifacts" / "chart.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        data = {
+            "title": "DHT Target Selection",
+            "subtitle": "Project · 2026-04-24",
+            "slides": [
+                {
+                    "type": "bullets",
+                    "title": "Motivation",
+                    "bullets": ["Study of goal-directed reaching", "35 participants"],
+                    "notes": "Notes for motivation slide.",
+                },
+                {
+                    "type": "explainer",
+                    "title": "What is LOSO?",
+                    "lead": "Leave-one-session-out cross-validation.",
+                    "body": "Each session is held out and the model trains on the others.",
+                    "notes": "Narrated version of LOSO.",
+                },
+                {
+                    "type": "figure",
+                    "title": "Model comparison",
+                    "figure": "artifacts/chart.png",
+                    "figure_caption": "AUC by model family",
+                    "notes": "Figure-slide notes.",
+                },
+                {
+                    "type": "stat",
+                    "title": "Headline",
+                    "stat": "92.4%",
+                    "stat_label": "AUC on held-out sessions",
+                    "notes": "Headline-slide notes.",
+                },
+            ],
+        }
+        out = render_presentation(data, tmp_path / "deck", experiment_dir=experiment_dir)
+        html = (out / "index.html").read_text()
+
+        # Every slide's notes appeared as a speaker-notes aside.
+        for note in (
+            "Notes for motivation slide.",
+            "Narrated version of LOSO.",
+            "Figure-slide notes.",
+            "Headline-slide notes.",
+        ):
+            assert f'<aside class="notes">{note}</aside>' in html, (
+                f"missing speaker notes: {note}"
+            )
+
+        # Figure landed as a real <img>, not a placeholder.
+        assert '<img src="figures/chart.png"' in html
+        assert "figure-missing" not in html
+
+        # Explainer body text is visible on-slide.
+        assert "Each session is held out" in html
+
+        # Stat slide carries the headline number.
+        assert "92.4%" in html
