@@ -46,6 +46,66 @@ def _update_repl_activity(event: str, detail: str) -> None:
         pass
 
 
+def _print_dry_run_plan(
+    *,
+    project: str,
+    project_path: Path,
+    experiment_id: str | None,
+    max_turns: int | None,
+    max_experiments: int | None,
+    instructions: str,
+    resume: bool,
+) -> None:
+    """Print the planned pipeline without touching any agent or creating dirs.
+
+    Called when ``urika run --dry-run`` is invoked. Must not import or
+    instantiate AgentRunner, orchestrator, or create experiment directories.
+    """
+    from urika.cli_display import print_step, print_success
+
+    click.echo()
+    click.echo("  Urika dry run — no agents will be invoked.")
+    click.echo()
+    print_step("Project:", project)
+    print_step("Path:", str(project_path))
+    print_step("Experiment:", experiment_id or "(auto — will be selected at run time)")
+    if max_experiments is not None:
+        print_step(
+            "Mode:",
+            f"meta-orchestrator (up to {max_experiments} experiments)",
+        )
+    else:
+        print_step("Mode:", "single experiment")
+    if max_turns is not None:
+        print_step("Max turns:", str(max_turns))
+    if resume:
+        print_step("Resume:", "yes")
+    if instructions:
+        preview = (
+            instructions[:80] + "..." if len(instructions) > 80 else instructions
+        )
+        print_step("Instructions:", preview)
+    click.echo()
+    click.echo("  Pipeline stages (per experiment):")
+    click.echo("    planning  →  task  →  evaluator  →  advisor")
+    click.echo()
+    click.echo("  Writable directories agents will touch:")
+    click.echo(f"    {project_path / 'experiments'}/         (experiment records)")
+    click.echo(
+        f"    {project_path / 'experiments'}/<exp>/code/  (task-agent Python code)"
+    )
+    click.echo(f"    {project_path / 'methods'}/            (agent-authored methods)")
+    click.echo(f"    {project_path / 'progress.jsonl'}       (append-only run log)")
+    click.echo(f"    {project_path / 'methods.json'}         (method registry)")
+    click.echo()
+    click.echo(
+        "  Note: the task agent writes and executes Python under"
+        " experiments/<exp>/code/."
+    )
+    click.echo()
+    print_success("Remove --dry-run to execute.")
+
+
 def _determine_next_experiment(
     project_path: Path,
     project_name: str,
@@ -295,6 +355,13 @@ def _determine_next_experiment(
     help="Fully autonomous — no confirmation prompts.",
 )
 @click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    default=False,
+    help="Print the planned pipeline (agents, tools, writable dirs) without executing.",
+)
+@click.option(
     "--instructions",
     default="",
     help="Guide the next experiment (e.g. 'focus on FOV-constrained models').",
@@ -331,6 +398,7 @@ def run(
     resume: bool,
     quiet: bool,
     auto: bool,
+    dry_run: bool,
     instructions: str,
     max_experiments: int | None,
     review_criteria: bool,
@@ -382,6 +450,19 @@ def run(
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
+
+    # Dry-run: print planned pipeline and exit WITHOUT any agent setup.
+    if dry_run:
+        _print_dry_run_plan(
+            project=project,
+            project_path=project_path,
+            experiment_id=experiment_id,
+            max_turns=max_turns,
+            max_experiments=max_experiments,
+            instructions=instructions,
+            resume=resume,
+        )
+        return
 
     # Resolve audience from project config if not explicitly provided
     if audience is None:
@@ -1179,6 +1260,7 @@ def _offer_to_run_advisor_suggestions(
         resume=False,
         quiet=False,
         auto=False,
+        dry_run=False,
         instructions=description,
         max_experiments=None,
         review_criteria=False,

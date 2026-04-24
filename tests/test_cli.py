@@ -532,6 +532,56 @@ class TestRunCommand:
         result = runner.invoke(cli, ["run", "nope"], env=urika_env)
         assert result.exit_code != 0
 
+    def test_run_dry_run_prints_plan_without_executing(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """--dry-run outputs the planned pipeline and returns 0 without calling any runner."""
+        _create_project(runner, urika_env)
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        with (
+            patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner") as mock_sdk,
+            patch(
+                "urika.orchestrator.run_experiment", new_callable=AsyncMock
+            ) as mock_run,
+            patch(
+                "urika.orchestrator.run_project", new_callable=AsyncMock
+            ) as mock_run_project,
+        ):
+            result = runner.invoke(
+                cli, ["run", "test-proj", "--dry-run"], env=urika_env
+            )
+        assert result.exit_code == 0, result.output
+        # Runner must not have been invoked.
+        mock_run.assert_not_called()
+        mock_run_project.assert_not_called()
+        mock_sdk.assert_not_called()
+        # Output should identify this as a dry run.
+        assert (
+            "dry run" in result.output.lower()
+            or "would run" in result.output.lower()
+        )
+        # Output should mention the pipeline stages.
+        out_lower = result.output.lower()
+        assert "planning" in out_lower
+        assert "task" in out_lower
+        assert "evaluator" in out_lower
+        assert "advisor" in out_lower
+        # Should tell user how to actually execute.
+        assert "--dry-run" in result.output
+
+    def test_run_dry_run_missing_project_errors(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """--dry-run still validates the project exists."""
+        result = runner.invoke(
+            cli, ["run", "not-a-project", "--dry-run"], env=urika_env
+        )
+        assert result.exit_code != 0
+
 
 class TestRunContinueFlag:
     def test_continue_passes_resume_true(
