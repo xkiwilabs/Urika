@@ -70,6 +70,12 @@ class ReplSession:
     _processing_start: float = 0.0
     total_processing_ms: int = 0
 
+    # Ring buffer of recent output-panel lines for the /copy slash command.
+    # Capped because agents can produce thousands of lines per run — we only
+    # need enough history for "copy what's on screen / just scrolled past".
+    recent_output_lines: list[str] = field(default_factory=list)
+    _recent_output_cap: int = 1000
+
     @property
     def has_project(self) -> bool:
         return self.project_path is not None
@@ -156,6 +162,21 @@ class ReplSession:
         self.total_cost_usd += cost_usd
         if model:
             self.model = model
+
+    def record_output_line(self, line: str) -> None:
+        """Append a rendered output line to the recent-output buffer.
+
+        Called from the TUI's output capture so the /copy slash command
+        can read back the last N lines as a clipboard fallback for
+        terminals that don't forward Shift+drag.
+        """
+        self.recent_output_lines.append(line)
+        if len(self.recent_output_lines) > self._recent_output_cap:
+            # Drop the oldest lines in a single slice — cheaper than
+            # popleft-in-a-loop and avoids importing deque for what is
+            # really just a cap-and-trim.
+            overflow = len(self.recent_output_lines) - self._recent_output_cap
+            del self.recent_output_lines[:overflow]
 
     def set_agent_running(
         self,

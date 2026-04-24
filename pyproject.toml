@@ -47,6 +47,8 @@ dependencies = [
     # TUI (Textual terminal interface — default entry point)
     "textual>=8.0,<9.0",
     "rich>=13.0",
+    # Clipboard integration for /copy slash command (terminal-agnostic fallback)
+    "pyperclip>=1.8",
 ]
 
 [project.optional-dependencies]

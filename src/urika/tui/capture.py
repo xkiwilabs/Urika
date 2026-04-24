@@ -169,6 +169,11 @@ class _TuiWriter:
             # Drop silently — there's no panel to receive the line.
             return
         panel.write_line(text)
+        # Buffer the line for the /copy slash command. Best-effort: if the
+        # app doesn't expose a session (e.g. in tests), silently skip.
+        session = getattr(self._app, "session", None)
+        if session is not None and hasattr(session, "record_output_line"):
+            session.record_output_line(text)
 
     def flush(self) -> None:
         """Flush any remaining buffered content.

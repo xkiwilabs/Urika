@@ -274,6 +274,55 @@ def cmd_quit(session: ReplSession, args: str) -> None:
     raise SystemExit(0)
 
 
+@command("copy", description="Copy the last N output lines to the clipboard")
+def cmd_copy(session: ReplSession, args: str) -> None:
+    """Clipboard fallback for terminals that don't forward Shift+drag.
+
+    Usage:
+        /copy        copy the last 40 output lines
+        /copy 100    copy the last 100 output lines
+    """
+    from urika.cli_display import print_error, print_success, print_warning
+
+    arg = args.strip()
+    if arg:
+        try:
+            n = int(arg)
+        except ValueError:
+            print_error("Usage: /copy [N]  — copies the last N output lines (default 40).")
+            return
+        if n <= 0:
+            print_error("N must be a positive integer.")
+            return
+    else:
+        n = 40
+
+    lines = session.recent_output_lines[-n:]
+    if not lines:
+        print_warning("No output to copy yet.")
+        return
+
+    text = "\n".join(lines)
+    try:
+        import pyperclip
+
+        pyperclip.copy(text)
+    except pyperclip.PyperclipException as exc:
+        # Happens on headless Linux without xclip/xsel. Don't crash — tell
+        # the user what to install and fall back to printing the text.
+        print_error(
+            f"Clipboard copy failed ({exc}). On Linux, install xclip or "
+            "xsel. The text is printed below so you can copy it manually:"
+        )
+        print(text)
+        return
+    except Exception as exc:
+        print_error(f"Clipboard copy failed: {exc}")
+        return
+
+    print_success(f"Copied last {len(lines)} output lines ({len(text)} chars) to clipboard.")
+
+
 @command("config", description="Configure privacy mode and models")
 def cmd_config(session: ReplSession, args: str) -> None:
     from urika.cli import config_command
