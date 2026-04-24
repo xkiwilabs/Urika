@@ -138,6 +138,33 @@ def _render_stat_slide(slide: dict[str, Any]) -> str:
 """
 
 
+def _copy_figure_or_placeholder(
+    figure_path: str,
+    figures_dir: Path,
+    experiment_dir: Path | None,
+    caption: str,
+) -> str:
+    """Try to copy the figure to the output; return an <img> tag if it landed,
+    or a visible ``figure-missing`` placeholder if the source doesn't exist.
+
+    The placeholder shows the intended path so the presenter can see exactly
+    which reference failed — silently emitting a broken <img> used to mean
+    the problem only became obvious when the deck was opened.
+    """
+    fig_name = Path(figure_path).name
+    if experiment_dir and figure_path:
+        src = experiment_dir / figure_path
+        if src.exists():
+            figures_dir.mkdir(exist_ok=True)
+            shutil.copy2(src, figures_dir / fig_name)
+            return f'<img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">'
+    return (
+        f'<div class="figure-missing">'
+        f'Figure missing: {_escape(figure_path)}'
+        f'</div>'
+    )
+
+
 def _render_figure_slide(
     slide: dict[str, Any],
     figures_dir: Path,
@@ -149,14 +176,9 @@ def _render_figure_slide(
     caption = slide.get("figure_caption", "")
     bullets = slide.get("bullets", [])
 
-    # Copy figure to presentation/figures/
-    fig_name = Path(figure_path).name
-    if experiment_dir and figure_path:
-        src = experiment_dir / figure_path
-        if src.exists():
-            figures_dir.mkdir(exist_ok=True)
-            shutil.copy2(src, figures_dir / fig_name)
-
+    fig_html = _copy_figure_or_placeholder(
+        figure_path, figures_dir, experiment_dir, caption
+    )
     cap = f'<p class="caption">{_escape(caption)}</p>' if caption else ""
     items = ""
     if bullets:
@@ -169,7 +191,7 @@ def _render_figure_slide(
             <section class="slide-figure">
                 <h2>{_escape(title)}</h2>
                 <div class="slide-figure">
-                    <img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">
+                    {fig_html}
                     {cap}
                 </div>
                 {items}
@@ -190,13 +212,9 @@ def _render_two_col_slide(
     bullets = slide.get("bullets", [])
     bottom = slide.get("bottom_text", "")
 
-    fig_name = Path(figure_path).name
-    if experiment_dir and figure_path:
-        src = experiment_dir / figure_path
-        if src.exists():
-            figures_dir.mkdir(exist_ok=True)
-            shutil.copy2(src, figures_dir / fig_name)
-
+    fig_html = _copy_figure_or_placeholder(
+        figure_path, figures_dir, experiment_dir, caption
+    )
     cap = f'<p class="caption">{_escape(caption)}</p>' if caption else ""
     items = ""
     if bullets:
@@ -211,7 +229,7 @@ def _render_two_col_slide(
                 <h2>{_escape(title)}</h2>
                 <div class="columns">
                     <div class="col-figure slide-figure">
-                        <img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">
+                        {fig_html}
                         {cap}
                     </div>
                     <div class="col-text">

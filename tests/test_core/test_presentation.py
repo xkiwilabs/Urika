@@ -162,6 +162,75 @@ class TestSpeakerNotes:
         )
 
 
+class TestMissingFigurePlaceholder:
+    def test_missing_figure_renders_placeholder(self, tmp_path: Path) -> None:
+        """Agent-referenced figure that doesn't exist → visible placeholder, not broken <img>."""
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "figure",
+                    "title": "Results",
+                    "figure": "artifacts/does_not_exist.png",
+                    "figure_caption": "cap",
+                    "notes": "n",
+                },
+            ],
+        }
+        out = render_presentation(data, tmp_path, experiment_dir=tmp_path / "nowhere")
+        html = (out / "index.html").read_text()
+        # Placeholder must be visible (not a broken image tag).
+        assert "figure-missing" in html
+        # The referenced path should be shown so the user can see what went wrong.
+        assert "does_not_exist.png" in html
+        # No <img> tag pointing at the missing figure.
+        assert '<img src="figures/does_not_exist.png"' not in html
+
+    def test_missing_figure_in_two_col_renders_placeholder(self, tmp_path: Path) -> None:
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "figure-text",
+                    "title": "Res",
+                    "figure": "artifacts/nope.png",
+                    "figure_caption": "cap",
+                    "bullets": ["a"],
+                    "notes": "n",
+                },
+            ],
+        }
+        out = render_presentation(data, tmp_path, experiment_dir=tmp_path / "nowhere")
+        html = (out / "index.html").read_text()
+        assert "figure-missing" in html
+        assert "nope.png" in html
+
+    def test_existing_figure_still_renders_as_img(self, tmp_path: Path) -> None:
+        """Regression guard — existing figures must still produce <img>."""
+        experiment_dir = tmp_path / "exp"
+        (experiment_dir / "artifacts").mkdir(parents=True)
+        (experiment_dir / "artifacts" / "real.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "figure",
+                    "title": "Results",
+                    "figure": "artifacts/real.png",
+                    "figure_caption": "cap",
+                    "notes": "n",
+                },
+            ],
+        }
+        out = render_presentation(data, tmp_path / "out", experiment_dir=experiment_dir)
+        html = (out / "index.html").read_text()
+        assert '<img src="figures/real.png"' in html
+        assert "figure-missing" not in html
+
+
 class TestExplainerSlide:
     def test_explainer_slide_type(self, tmp_path: Path) -> None:
         data = {
