@@ -6,12 +6,12 @@
 {% block breadcrumb %}
   <nav class="breadcrumb">
     <a href="/projects">Projects</a>
-    <span class="breadcrumb-sep">/</span>
+    <span class="breadcrumb-separator">/</span>
     <a href="/projects/{{ project.name }}">{{ project.name }}</a>
-    <span class="breadcrumb-sep">/</span>
+    <span class="breadcrumb-separator">/</span>
     <a href="/projects/{{ project.name }}/experiments">Experiments</a>
-    <span class="breadcrumb-sep">/</span>
-    <span>{{ experiment.experiment_id }}</span>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">{{ experiment.experiment_id }}</span>
   </nav>
 {% endblock %}
 
@@ -29,19 +29,19 @@
     <h2 class="section-title">Resources</h2>
     <div class="button-row">
       {% if has_report %}
-        <a class="btn"
+        <a class="btn btn--secondary"
            href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/report">
           Report
         </a>
       {% endif %}
       {% if has_presentation %}
-        <a class="btn"
+        <a class="btn btn--secondary"
            href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/presentation">
           Presentation
         </a>
       {% endif %}
       {% if has_log %}
-        <a class="btn"
+        <a class="btn btn--secondary"
            href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/log">
           Log
         </a>
