@@ -87,3 +87,22 @@ def get_default_preferences() -> dict[str, Any]:
     """Get default preferences for new projects."""
     settings = load_settings()
     return settings.get("preferences", {})
+
+
+def get_default_notifications_auto_enable() -> dict[str, bool]:
+    """For each channel, return whether new projects should auto-enable it.
+
+    Read from ``[notifications.<channel>].auto_enable``. Defaults to
+    ``False`` per channel when the flag is missing or no settings file
+    exists. The flag is a creation-time hint only — the runtime
+    notification loader does not consult it.
+    """
+    settings = load_settings()
+    notif = settings.get("notifications", {})
+    out: dict[str, bool] = {}
+    for channel in ("email", "slack", "telegram"):
+        ch_cfg = notif.get(channel, {})
+        if not isinstance(ch_cfg, dict):
+            ch_cfg = {}
+        out[channel] = bool(ch_cfg.get("auto_enable", False))
+    return out
