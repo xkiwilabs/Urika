@@ -7,7 +7,7 @@ import json
 import tomllib
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from urika.core.experiment import create_experiment
 from urika.core.models import VALID_AUDIENCES, VALID_MODES
@@ -647,6 +647,12 @@ async def api_project_run_post(name: str, request: Request):
                 "pid": pid,
             }
         )
+    # The "+ New experiment" modal posts via HTMX; on success we want the
+    # browser to navigate the whole page to the live log. HTMX honours an
+    # HX-Redirect response header by doing a full-page navigation.
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/experiments/{exp.experiment_id}/log"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
     return HTMLResponse(
         content=(
             f'<a class="btn btn--primary" '

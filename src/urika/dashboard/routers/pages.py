@@ -47,21 +47,6 @@ ENDPOINT_CHOICES = ["inherit", "open", "private"]
 router = APIRouter(tags=["pages"])
 
 
-def _active_experiment(project_path: Path) -> str | None:
-    """Return the experiment_id of the currently running experiment, if any.
-
-    A run is considered active when any subdirectory under
-    ``<project>/experiments/`` contains a ``.lock`` file.
-    """
-    exp_root = project_path / "experiments"
-    if not exp_root.exists():
-        return None
-    for exp_dir in sorted(exp_root.iterdir(), reverse=True):
-        if exp_dir.is_dir() and (exp_dir / ".lock").exists():
-            return exp_dir.name
-    return None
-
-
 def _experiment_runs_summary(
     exp_dir: Path, exp: ExperimentConfig
 ) -> tuple[int, str, str]:
@@ -311,6 +296,8 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
             "request": request,
             "project": summary,
             "experiments": rows,
+            "valid_modes": sorted(VALID_MODES),
+            "valid_audiences": sorted(VALID_AUDIENCES),
         },
     )
 
@@ -490,23 +477,17 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     )
 
 
-@router.get("/projects/{name}/run", response_class=HTMLResponse)
-def project_run(request: Request, name: str) -> HTMLResponse:
-    registry = ProjectRegistry().list_all()
-    summary = load_project_summary(name, registry)
-    if summary is None or summary.missing:
-        raise HTTPException(status_code=404, detail="Unknown project")
-    active_exp = _active_experiment(summary.path)
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "run.html",
-        {
-            "request": request,
-            "project": summary,
-            "active_experiment_id": active_exp,
-            "valid_modes": sorted(VALID_MODES),
-            "valid_audiences": sorted(VALID_AUDIENCES),
-        },
+@router.get("/projects/{name}/run")
+def project_run_redirect(name: str) -> RedirectResponse:
+    """Back-compat redirect for the old standalone Run page.
+
+    The /run page has been replaced by a "+ New experiment" modal on the
+    experiments list. We keep this URL working for anyone who bookmarked
+    it: the redirect lands on the experiments page with ``?new=1``, which
+    Alpine reads on init to auto-open the modal.
+    """
+    return RedirectResponse(
+        url=f"/projects/{name}/experiments?new=1", status_code=307
     )
 
 

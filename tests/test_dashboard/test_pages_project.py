@@ -359,7 +359,15 @@ def _make_project_minimal(root: Path, name: str) -> Path:
 
 
 @pytest.fixture
-def client_run_no_active(tmp_path: Path, monkeypatch) -> TestClient:
+def client_run_log(tmp_path: Path, monkeypatch) -> TestClient:
+    """Minimal client used by the live-log-page tests below.
+
+    The old client_run_no_active / client_run_active fixtures distinguished
+    between "no run is in flight" vs "a run is in flight" — relevant only
+    for the now-deleted /run page that toggled between a form and a
+    'view live log' link. The /log page itself doesn't care, so a single
+    minimal fixture is all the remaining tests need.
+    """
     _make_project_minimal(tmp_path, "alpha")
     home = tmp_path / "home"
     home.mkdir()
@@ -369,50 +377,52 @@ def client_run_no_active(tmp_path: Path, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
-@pytest.fixture
-def client_run_active(tmp_path: Path, monkeypatch) -> TestClient:
-    proj = _make_project_minimal(tmp_path, "alpha")
-    # Fabricate a running experiment
-    exp_dir = proj / "experiments" / "exp-001"
-    exp_dir.mkdir(parents=True)
-    (exp_dir / ".lock").write_text("12345")  # PID, contents not important
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("URIKA_HOME", str(home))
-    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
-    app = create_app(project_root=tmp_path)
-    return TestClient(app)
+def test_run_page_redirects_to_experiments_with_new_flag(client_with_projects):
+    """The standalone /run page is gone; the URL now redirects to the
+    experiments list with ``?new=1`` so Alpine auto-opens the modal."""
+    r = client_with_projects.get("/projects/alpha/run", follow_redirects=False)
+    assert r.status_code in (302, 307)
+    assert r.headers["location"] == "/projects/alpha/experiments?new=1"
 
 
-def test_run_page_returns_form_when_no_active_experiment(client_run_no_active):
-    r = client_run_no_active.get("/projects/alpha/run")
+def test_run_page_redirect_404_unknown_project(client_with_projects):
+    """The redirect is purely a URL rewrite — it doesn't validate the
+    project name. Following the redirect lands on the experiments page
+    which does the 404."""
+    r = client_with_projects.get(
+        "/projects/nonexistent/run", follow_redirects=True
+    )
+    assert r.status_code == 404
+
+
+def test_experiments_page_includes_new_experiment_modal(client_with_projects):
+    r = client_with_projects.get("/projects/alpha/experiments")
     assert r.status_code == 200
     body = r.text
-    assert 'name="name"' in body
+    assert "+ New experiment" in body
+    assert "modal-backdrop" in body
     assert 'name="hypothesis"' in body
+    assert 'name="name"' in body
     assert 'name="mode"' in body
     assert 'name="audience"' in body
     assert 'name="max_turns"' in body
     assert 'hx-post="/api/projects/alpha/run"' in body
 
 
-def test_run_page_shows_view_live_link_when_active(client_run_active):
-    r = client_run_active.get("/projects/alpha/run")
-    assert r.status_code == 200
+def test_experiments_page_modal_includes_mode_and_audience_options(
+    client_with_projects,
+):
+    """The modal needs valid_modes / valid_audiences from the route."""
+    r = client_with_projects.get("/projects/alpha/experiments")
     body = r.text
-    assert "exp-001" in body
-    assert "/projects/alpha/experiments/exp-001/log" in body
-    # Form should NOT be shown
-    assert 'hx-post="/api/projects/alpha/run"' not in body
+    # The fixture sets mode=exploratory and audience=expert; both must
+    # show up as <option> values in the dropdowns.
+    assert 'value="exploratory"' in body
+    assert 'value="expert"' in body
 
 
-def test_run_page_404_unknown_project(client_run_no_active):
-    r = client_run_no_active.get("/projects/nonexistent/run")
-    assert r.status_code == 404
-
-
-def test_run_log_page_returns_200_and_has_eventsource(client_run_active):
-    r = client_run_active.get("/projects/alpha/experiments/exp-001/log")
+def test_run_log_page_returns_200_and_has_eventsource(client_run_log):
+    r = client_run_log.get("/projects/alpha/experiments/exp-001/log")
     assert r.status_code == 200
     body = r.text
     assert "EventSource" in body
@@ -422,15 +432,15 @@ def test_run_log_page_returns_200_and_has_eventsource(client_run_active):
     assert 'id="log"' in body
 
 
-def test_run_log_page_404_unknown_project(client_run_active):
-    r = client_run_active.get("/projects/nonexistent/experiments/exp-001/log")
+def test_run_log_page_404_unknown_project(client_run_log):
+    r = client_run_log.get("/projects/nonexistent/experiments/exp-001/log")
     assert r.status_code == 404
 
 
-def test_run_log_page_works_without_existing_experiment(client_run_no_active):
+def test_run_log_page_works_without_existing_experiment(client_run_log):
     """Loading the log page right after a POST /api/projects/.../run is
     valid even before the experiment dir has any output."""
-    r = client_run_no_active.get("/projects/alpha/experiments/exp-future/log")
+    r = client_run_log.get("/projects/alpha/experiments/exp-future/log")
     # Project exists; the page itself doesn't validate the experiment id —
     # SSE handles the no-data case.
     assert r.status_code == 200

@@ -110,6 +110,30 @@ def test_run_post_returns_html_fragment_by_default(run_client):
     assert "View live log" in r.text
 
 
+def test_run_post_returns_hx_redirect_when_htmx_request(run_client):
+    """The "+ New experiment" modal posts via HTMX. On success the API
+    must respond with HX-Redirect so the browser navigates the whole
+    page to the live log instead of swapping a fragment into the modal.
+    """
+    client, _, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"hx-request": "true"},
+        data={
+            "name": "test",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+        },
+    )
+    assert r.status_code == 200
+    redirect = r.headers.get("hx-redirect", "")
+    assert redirect.startswith("/projects/alpha/experiments/")
+    assert redirect.endswith("/log")
+
+
 def test_run_post_404_unknown_project(run_client):
     client, _, _ = run_client
     r = client.post(
