@@ -25,6 +25,21 @@ VALID_PRIVACY_MODES = ["private", "open", "university"]
 router = APIRouter(tags=["pages"])
 
 
+def _active_experiment(project_path: Path) -> str | None:
+    """Return the experiment_id of the currently running experiment, if any.
+
+    A run is considered active when any subdirectory under
+    ``<project>/experiments/`` contains a ``.lock`` file.
+    """
+    exp_root = project_path / "experiments"
+    if not exp_root.exists():
+        return None
+    for exp_dir in sorted(exp_root.iterdir(), reverse=True):
+        if exp_dir.is_dir() and (exp_dir / ".lock").exists():
+            return exp_dir.name
+    return None
+
+
 def _experiment_runs_summary(
     exp_dir: Path, exp: ExperimentConfig
 ) -> tuple[int, str]:
@@ -178,6 +193,26 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
         {
             "request": request,
             "project": summary,
+            "valid_modes": sorted(VALID_MODES),
+            "valid_audiences": sorted(VALID_AUDIENCES),
+        },
+    )
+
+
+@router.get("/projects/{name}/run", response_class=HTMLResponse)
+def project_run(request: Request, name: str) -> HTMLResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    active_exp = _active_experiment(summary.path)
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "run.html",
+        {
+            "request": request,
+            "project": summary,
+            "active_experiment_id": active_exp,
             "valid_modes": sorted(VALID_MODES),
             "valid_audiences": sorted(VALID_AUDIENCES),
         },

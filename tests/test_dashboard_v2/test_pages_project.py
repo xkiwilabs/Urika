@@ -303,3 +303,66 @@ def test_knowledge_page_empty_state(client_with_projects):
 def test_knowledge_page_404_unknown_project(client_with_knowledge):
     r = client_with_knowledge.get("/projects/nonexistent/knowledge")
     assert r.status_code == 404
+
+
+def _make_project_minimal(root: Path, name: str) -> Path:
+    proj = root / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    return proj
+
+
+@pytest.fixture
+def client_run_no_active(tmp_path: Path, monkeypatch) -> TestClient:
+    _make_project_minimal(tmp_path, "alpha")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)
+
+
+@pytest.fixture
+def client_run_active(tmp_path: Path, monkeypatch) -> TestClient:
+    proj = _make_project_minimal(tmp_path, "alpha")
+    # Fabricate a running experiment
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / ".lock").write_text("12345")  # PID, contents not important
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)
+
+
+def test_run_page_returns_form_when_no_active_experiment(client_run_no_active):
+    r = client_run_no_active.get("/projects/alpha/run")
+    assert r.status_code == 200
+    body = r.text
+    assert 'name="name"' in body
+    assert 'name="hypothesis"' in body
+    assert 'name="mode"' in body
+    assert 'name="audience"' in body
+    assert 'name="max_turns"' in body
+    assert 'hx-post="/api/projects/alpha/run"' in body
+
+
+def test_run_page_shows_view_live_link_when_active(client_run_active):
+    r = client_run_active.get("/projects/alpha/run")
+    assert r.status_code == 200
+    body = r.text
+    assert "exp-001" in body
+    assert "/projects/alpha/experiments/exp-001/log" in body
+    # Form should NOT be shown
+    assert 'hx-post="/api/projects/alpha/run"' not in body
+
+
+def test_run_page_404_unknown_project(client_run_no_active):
+    r = client_run_no_active.get("/projects/nonexistent/run")
+    assert r.status_code == 404
