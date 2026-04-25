@@ -1,0 +1,36 @@
+{% extends "_base.html" %}
+
+{% block title %}Tools · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Tools{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Tools</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+{% if tools %}
+  <ul class="list">
+    {% for t in tools %}
+      <li class="list-item">
+        <div class="list-item-main">
+          <div class="list-item-title">{{ t.name | humanize }}</div>
+          <div class="list-item-subtitle">{{ t.description }}</div>
+        </div>
+        <div class="list-item-meta">
+          <span class="tag">{{ t.category }}</span>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="empty-state">
+    <p>No tools registered.</p>
+  </div>
+{% endif %}
+{% endblock %}

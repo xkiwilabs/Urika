@@ -307,6 +307,69 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     )
 
 
+@router.get("/projects/{name}/tools", response_class=HTMLResponse)
+def project_tools(name: str, request: Request) -> HTMLResponse:
+    """List every registered tool (built-in + project-local).
+
+    Walks :class:`urika.tools.registry.ToolRegistry` after both
+    ``discover()`` (built-ins from ``urika.tools.*``) and
+    ``discover_project(<project>/tools)`` have run. Each row carries the
+    tool's name, description, and category — read-only; tool authoring
+    happens at the agent layer.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    from urika.tools.registry import ToolRegistry
+
+    tool_registry = ToolRegistry()
+    tool_registry.discover()
+    project_tools_dir = summary.path / "tools"
+    tool_registry.discover_project(project_tools_dir)
+    tools = []
+    for tool_name in tool_registry.list_all():
+        tool = tool_registry.get(tool_name)
+        if tool is None:
+            continue
+        tools.append(
+            {
+                "name": tool.name(),
+                "description": tool.description(),
+                "category": tool.category(),
+            }
+        )
+    return request.app.state.templates.TemplateResponse(
+        "tools.html",
+        {"request": request, "project": summary, "tools": tools},
+    )
+
+
+@router.get("/projects/{name}/criteria", response_class=HTMLResponse)
+def project_criteria(name: str, request: Request) -> HTMLResponse:
+    """Render ``[project].success_criteria`` from urika.toml.
+
+    Read-only viewer — editing is done from the project Settings page's
+    Data tab (success_criteria is one of the structured fields handled
+    by ``_apply_structured_settings``). When the block is empty or
+    missing we render an empty state pointing at settings.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    toml_path = summary.path / "urika.toml"
+    criteria: dict = {}
+    if toml_path.exists():
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        criteria = data.get("project", {}).get("success_criteria", {}) or {}
+    return request.app.state.templates.TemplateResponse(
+        "criteria.html",
+        {"request": request, "project": summary, "criteria": criteria},
+    )
+
+
 @router.get("/projects/{name}/methods", response_class=HTMLResponse)
 def project_methods(request: Request, name: str) -> HTMLResponse:
     registry = ProjectRegistry().list_all()
