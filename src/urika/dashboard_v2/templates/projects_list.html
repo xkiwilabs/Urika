@@ -1,0 +1,36 @@
+{% extends "_base.html" %}
+
+{% block title %}Projects · Urika{% endblock %}
+{% block heading %}Projects{% endblock %}
+
+{% block content %}
+  {% if projects %}
+    <ul class="list">
+      {% for p in projects %}
+        <li class="list-item {{ 'list-item--missing' if p.missing else '' }}">
+          <a href="/projects/{{ p.name }}" class="list-item-link">
+            <div class="list-item-main">
+              <div class="list-item-title">{{ p.name }}</div>
+              {% if p.question %}
+                <div class="list-item-subtitle">{{ p.question }}</div>
+              {% endif %}
+            </div>
+            <div class="list-item-meta">
+              {% if p.missing %}
+                <span class="tag tag--failed">missing</span>
+              {% else %}
+                <span class="text-muted">{{ p.experiment_count }} experiments</span>
+                <span class="tag">{{ p.mode }}</span>
+              {% endif %}
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <p>No projects yet.</p>
+      <p class="text-muted">Create one with: <code>urika new &lt;name&gt;</code></p>
+    </div>
+  {% endif %}
+{% endblock %}
