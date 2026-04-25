@@ -13,8 +13,8 @@ from urika.core.models import VALID_AUDIENCES, VALID_MODES
 from urika.core.registry import ProjectRegistry
 from urika.core.revisions import update_project_field
 from urika.core.settings import load_settings, save_settings
-from urika.dashboard_v2.projects import list_project_summaries, load_project_summary
-from urika.dashboard_v2.runs import (
+from urika.dashboard.projects import list_project_summaries, load_project_summary
+from urika.dashboard.runs import (
     spawn_experiment_run,
     spawn_finalize,
     spawn_present,

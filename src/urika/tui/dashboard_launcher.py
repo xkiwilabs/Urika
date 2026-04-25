@@ -63,7 +63,7 @@ def start_dashboard_server(
     """
     import uvicorn
 
-    from urika.dashboard_v2.app import create_app
+    from urika.dashboard.app import create_app
 
     if port is None:
         port = _find_free_port()

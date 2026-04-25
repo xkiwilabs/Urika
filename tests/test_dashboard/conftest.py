@@ -1,69 +1,38 @@
-"""Dashboard test fixtures."""
+from pathlib import Path
 import json
+
 import pytest
+from fastapi.testclient import TestClient
+
+from urika.dashboard.app import create_app
 
 
 @pytest.fixture
-def dashboard_project(tmp_path):
-    """Create a minimal project structure for dashboard tests."""
-    # urika.toml
-    toml_content = '[project]\nname = "test-project"\nquestion = "Test question"\nmode = "exploratory"\n'
-    (tmp_path / "urika.toml").write_text(toml_content)
-
-    # experiments
-    exp_dir = tmp_path / "experiments" / "exp-001-baseline"
-    (exp_dir / "labbook").mkdir(parents=True)
-    (exp_dir / "artifacts").mkdir(parents=True)
-    (exp_dir / "presentation").mkdir(parents=True)
-    (exp_dir / "labbook" / "notes.md").write_text("# Notes\n\nSome notes here.\n")
-    (exp_dir / "labbook" / "summary.md").write_text("# Summary\n\nBaseline results.\n")
-    (exp_dir / "artifacts" / "results.png").write_bytes(b"fake-png")
-    (exp_dir / "experiment.json").write_text('{"name": "baseline"}')
-    (exp_dir / "progress.json").write_text(
-        json.dumps(
-            {
-                "runs": [{"method": "linear", "metrics": {"r2": 0.73}}],
-                "status": "completed",
-            }
+def client_with_projects(tmp_path: Path, monkeypatch) -> TestClient:
+    """A dashboard whose registry is forced to point at tmp projects."""
+    # Fabricate two projects on disk
+    for name in ("alpha", "beta"):
+        proj = tmp_path / name
+        proj.mkdir()
+        (proj / "urika.toml").write_text(
+            f'[project]\n'
+            f'name = "{name}"\n'
+            f'question = "q for {name}"\n'
+            f'mode = "exploratory"\n'
+            f'description = ""\n'
+            f'\n'
+            f'[preferences]\n'
+            f'audience = "expert"\n'
         )
-    )
 
-    # projectbook
-    pb = tmp_path / "projectbook"
-    pb.mkdir()
-    (pb / "key-findings.md").write_text("# Key Findings\n\nBest r2: 0.73\n")
-    (pb / "results-summary.md").write_text(
-        "# Results\n\n| Method | R2 |\n|---|---|\n| linear | 0.73 |\n"
-    )
+    # Force the ProjectRegistry to read from a tmp file
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({
+        "alpha": str(tmp_path / "alpha"),
+        "beta": str(tmp_path / "beta"),
+    }))
 
-    # methods.json
-    (tmp_path / "methods.json").write_text(
-        json.dumps(
-            {
-                "methods": [
-                    {
-                        "name": "linear_regression",
-                        "status": "tested",
-                        "metrics": {"r2": 0.73},
-                        "experiment_id": "exp-001-baseline",
-                    }
-                ]
-            }
-        )
-    )
-
-    # criteria.json
-    (tmp_path / "criteria.json").write_text(
-        json.dumps(
-            {
-                "versions": [
-                    {"version": 1, "criteria": {"threshold": {"r2": {"min": 0.7}}}}
-                ]
-            }
-        )
-    )
-
-    # data dir
-    (tmp_path / "data").mkdir()
-
-    return tmp_path
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)

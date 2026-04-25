@@ -491,7 +491,7 @@ class TestUpdateCommand:
 
 class TestDashboardCommand:
     """The dashboard CLI now uses urika.tui.dashboard_launcher and
-    the FastAPI dashboard_v2 app. Tests stub uvicorn.Server so no
+    the FastAPI dashboard app. Tests stub uvicorn.Server so no
     real port is bound and webbrowser.open just records the URL.
     """
 

@@ -14,7 +14,7 @@ from urika.core.models import VALID_AUDIENCES, VALID_MODES, ExperimentConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
 from urika.core.settings import load_settings
-from urika.dashboard_v2.projects import (
+from urika.dashboard.projects import (
     list_project_summaries,
     load_project_summary,
 )

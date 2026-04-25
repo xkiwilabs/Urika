@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from urika.dashboard_v2.app import create_app
+from urika.dashboard.app import create_app
 
 
 def test_root_redirects_to_projects(client_with_projects: TestClient):

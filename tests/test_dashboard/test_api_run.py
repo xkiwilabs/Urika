@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from urika.dashboard_v2 import runs as runs_module
-from urika.dashboard_v2.app import create_app
+from urika.dashboard import runs as runs_module
+from urika.dashboard.app import create_app
 
 
 def _make_project(tmp_path: Path, name: str = "alpha") -> Path:
@@ -55,7 +55,7 @@ def run_client(tmp_path: Path, monkeypatch) -> tuple[TestClient, list[dict], Pat
 
     monkeypatch.setattr(runs_module, "spawn_experiment_run", fake_spawn)
     # Also patch the symbol where the API router imported it from
-    from urika.dashboard_v2.routers import api as api_module
+    from urika.dashboard.routers import api as api_module
 
     monkeypatch.setattr(api_module, "spawn_experiment_run", fake_spawn)
 

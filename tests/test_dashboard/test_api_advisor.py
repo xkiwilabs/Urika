@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from urika.dashboard_v2.app import create_app
-from urika.dashboard_v2.routers import api as api_module
+from urika.dashboard.app import create_app
+from urika.dashboard.routers import api as api_module
 
 
 def _make_project(tmp_path: Path, name: str = "alpha") -> Path:

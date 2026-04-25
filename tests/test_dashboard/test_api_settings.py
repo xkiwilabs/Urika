@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from urika.dashboard_v2.app import create_app
+from urika.dashboard.app import create_app
 
 
 def _write_project(tmp_path: Path, name: str = "alpha") -> Path:

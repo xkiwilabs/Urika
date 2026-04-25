@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from urika.dashboard_v2.app import create_app
+from urika.dashboard.app import create_app
 
 
 def _make_project_with_log(

@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from urika.dashboard_v2.app import create_app
+from urika.dashboard.app import create_app
 
 
 def test_app_serves_static_css():
