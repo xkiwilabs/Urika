@@ -1,0 +1,89 @@
+{% extends "_base.html" %}
+
+{% block title %}Live log · {{ experiment_id }} · {{ project.name }} · Urika{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a class="breadcrumb-item" href="/projects">Projects</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name }}</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}/experiments">Experiments</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}/experiments/{{ experiment_id }}">{{ experiment_id }}</a>
+  <span class="breadcrumb-separator">/</span>
+  <span class="breadcrumb-current">Log</span>
+</nav>
+{% endblock %}
+
+{% block heading %}Live log: {{ experiment_id }}{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div id="log-status" class="text-muted">Connecting…</div>
+  <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
+
+  <div id="log-completion" style="display: none; margin-top: var(--space-4);">
+    <p>Run complete.</p>
+    <a class="btn btn--primary"
+       href="/projects/{{ project.name }}/experiments/{{ experiment_id }}">
+      View experiment →
+    </a>
+    <a class="btn btn--secondary"
+       href="/projects/{{ project.name }}/experiments/{{ experiment_id }}/report"
+       id="link-report" style="display: none;">
+      View report
+    </a>
+    <a class="btn btn--secondary"
+       href="/projects/{{ project.name }}/experiments/{{ experiment_id }}/presentation"
+       id="link-presentation" style="display: none;">
+      View presentation
+    </a>
+  </div>
+</div>
+
+<script>
+(function () {
+  const url = "/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stream";
+  const logEl = document.getElementById("log");
+  const statusEl = document.getElementById("log-status");
+  const completionEl = document.getElementById("log-completion");
+
+  const es = new EventSource(url);
+
+  es.onopen = function () {
+    statusEl.textContent = "Streaming…";
+  };
+
+  es.onmessage = function (e) {
+    const line = document.createElement("div");
+    line.textContent = e.data;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  es.addEventListener("status", function (e) {
+    let payload = {};
+    try { payload = JSON.parse(e.data); } catch (_) {}
+    statusEl.textContent = payload.status === "completed" ? "Completed." : `Status: ${payload.status || "unknown"}`;
+    completionEl.style.display = "";
+    es.close();
+
+    // Probe for report / presentation existence so the buttons only
+    // appear when the artifact has actually been written.
+    fetch("/api/projects/{{ project.name }}/experiments/{{ experiment_id }}/artifacts")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        if (data.has_report) document.getElementById("link-report").style.display = "";
+        if (data.has_presentation) document.getElementById("link-presentation").style.display = "";
+      })
+      .catch(() => {});
+  });
+
+  es.onerror = function () {
+    statusEl.textContent = "Connection lost.";
+  };
+})();
+</script>
+{% endblock %}

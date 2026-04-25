@@ -240,6 +240,27 @@ async def api_project_run_post(name: str, request: Request):
     )
 
 
+@router.get("/projects/{name}/experiments/{exp_id}/artifacts")
+def api_experiment_artifacts(name: str, exp_id: str):
+    """Report which artifact files exist for a given experiment.
+
+    Cheap on-disk probe — just three ``Path.exists`` checks. Used by
+    the live log page to decide whether to reveal "view report" /
+    "view presentation" buttons once a run completes, and useful from
+    any other page that needs the same kind of existence flags.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    exp_dir = summary.path / "experiments" / exp_id
+    return {
+        "has_report": (exp_dir / "report.md").exists(),
+        "has_presentation": (exp_dir / "presentation.html").exists(),
+        "has_log": (exp_dir / "run.log").exists(),
+    }
+
+
 @router.get("/projects/{name}/runs/{exp_id}/stream")
 async def api_run_stream(name: str, exp_id: str):
     """Server-sent-events tail of an experiment's ``run.log``.
@@ -282,16 +303,12 @@ async def api_run_stream(name: str, exp_id: str):
             if not lock_path.exists():
                 # Lock gone — run has finished. Emit completion and close.
                 yield (
-                    f"event: status\n"
-                    f"data: {json.dumps({'status': 'completed'})}\n\n"
+                    f"event: status\ndata: {json.dumps({'status': 'completed'})}\n\n"
                 )
                 return
             await asyncio.sleep(0.5)
 
         # Reached only when both log and lock were missing from the start.
-        yield (
-            f"event: status\n"
-            f"data: {json.dumps({'status': 'no_log'})}\n\n"
-        )
+        yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

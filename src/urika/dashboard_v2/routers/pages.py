@@ -40,9 +40,7 @@ def _active_experiment(project_path: Path) -> str | None:
     return None
 
 
-def _experiment_runs_summary(
-    exp_dir: Path, exp: ExperimentConfig
-) -> tuple[int, str]:
+def _experiment_runs_summary(exp_dir: Path, exp: ExperimentConfig) -> tuple[int, str]:
     """Return ``(runs_count, last_touched_iso)`` for an experiment."""
     progress_path = exp_dir / "progress.json"
     if not progress_path.exists():
@@ -171,9 +169,7 @@ def global_settings(request: Request) -> HTMLResponse:
                 "default_endpoint_url": endpoint.get("base_url", ""),
                 "default_endpoint_key_env": endpoint.get("api_key_env", ""),
                 "default_audience": prefs.get("audience", "expert"),
-                "default_max_turns": prefs.get(
-                    "max_turns_per_experiment", 10
-                ),
+                "default_max_turns": prefs.get("max_turns_per_experiment", 10),
             },
             "valid_modes": VALID_PRIVACY_MODES,
             "valid_audiences": sorted(VALID_AUDIENCES),
@@ -242,9 +238,7 @@ def project_knowledge(request: Request, name: str) -> HTMLResponse:
     "/projects/{name}/knowledge/{entry_id}",
     response_class=HTMLResponse,
 )
-def project_knowledge_entry(
-    request: Request, name: str, entry_id: str
-) -> HTMLResponse:
+def project_knowledge_entry(request: Request, name: str, entry_id: str) -> HTMLResponse:
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
@@ -265,11 +259,38 @@ def project_knowledge_entry(
 
 
 @router.get(
-    "/projects/{name}/experiments/{exp_id}", response_class=HTMLResponse
+    "/projects/{name}/experiments/{exp_id}/log",
+    response_class=HTMLResponse,
 )
-def experiment_detail(
-    request: Request, name: str, exp_id: str
-) -> HTMLResponse:
+def project_experiment_log(request: Request, name: str, exp_id: str) -> HTMLResponse:
+    """Render the live log page for an experiment.
+
+    The page itself is static HTML — its inline ``<script>`` opens an
+    ``EventSource`` against the SSE endpoint
+    (``/api/projects/<name>/runs/<exp_id>/stream``) and appends each
+    incoming line to a ``<pre>``. We intentionally do *not* validate
+    that the experiment dir exists, so the page can be loaded the
+    instant ``POST /api/projects/<name>/run`` returns — before the
+    orchestrator has flushed any output. The SSE endpoint tolerates
+    that case and emits an ``event: status`` ``no_log`` event.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "run_log.html",
+        {
+            "request": request,
+            "project": summary,
+            "experiment_id": exp_id,
+        },
+    )
+
+
+@router.get("/projects/{name}/experiments/{exp_id}", response_class=HTMLResponse)
+def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
@@ -277,9 +298,7 @@ def experiment_detail(
     try:
         exp = load_experiment(summary.path, exp_id)
     except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=404, detail="Unknown experiment"
-        ) from exc
+        raise HTTPException(status_code=404, detail="Unknown experiment") from exc
     progress = load_progress(summary.path, exp_id)
     runs = progress.get("runs", []) or []
 

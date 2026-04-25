@@ -11,26 +11,30 @@ def _make_project_with_experiments(root: Path, name: str, n_exps: int):
     proj = root / name
     proj.mkdir(parents=True)
     (proj / "urika.toml").write_text(
-        f'[project]\n'
+        f"[project]\n"
         f'name = "{name}"\n'
         f'question = "q for {name}"\n'
         f'mode = "exploratory"\n'
         f'description = ""\n'
-        f'\n'
-        f'[preferences]\n'
+        f"\n"
+        f"[preferences]\n"
         f'audience = "expert"\n'
     )
     for i in range(n_exps):
-        exp_id = f"exp-{i+1:03d}"
+        exp_id = f"exp-{i + 1:03d}"
         exp_dir = proj / "experiments" / exp_id
         exp_dir.mkdir(parents=True)
-        (exp_dir / "experiment.json").write_text(json.dumps({
-            "experiment_id": exp_id,
-            "name": f"experiment {i+1}",
-            "hypothesis": f"hypothesis {i+1}",
-            "status": "completed",
-            "created_at": f"2026-04-{i+1:02d}T00:00:00Z",
-        }))
+        (exp_dir / "experiment.json").write_text(
+            json.dumps(
+                {
+                    "experiment_id": exp_id,
+                    "name": f"experiment {i + 1}",
+                    "hypothesis": f"hypothesis {i + 1}",
+                    "status": "completed",
+                    "created_at": f"2026-04-{i + 1:02d}T00:00:00Z",
+                }
+            )
+        )
     return proj
 
 
@@ -116,29 +120,37 @@ def _make_project_with_runs(root: Path, name: str, exp_id: str, n_runs: int) -> 
     )
     exp_dir = proj / "experiments" / exp_id
     exp_dir.mkdir(parents=True)
-    (exp_dir / "experiment.json").write_text(json.dumps({
-        "experiment_id": exp_id,
-        "name": "baseline",
-        "hypothesis": "linear models will fit",
-        "status": "completed",
-        "created_at": "2026-04-25T00:00:00Z",
-    }))
+    (exp_dir / "experiment.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": exp_id,
+                "name": "baseline",
+                "hypothesis": "linear models will fit",
+                "status": "completed",
+                "created_at": "2026-04-25T00:00:00Z",
+            }
+        )
+    )
     runs = [
         {
-            "run_id": f"run-{i+1:03d}",
+            "run_id": f"run-{i + 1:03d}",
             "method": "ols",
             "params": {},
             "metrics": {"r2": 0.5 + i * 0.01},
-            "observation": f"observation for run {i+1}",
+            "observation": f"observation for run {i + 1}",
             "timestamp": f"2026-04-25T0{i}:00:00Z",
         }
         for i in range(n_runs)
     ]
-    (exp_dir / "progress.json").write_text(json.dumps({
-        "experiment_id": exp_id,
-        "status": "completed",
-        "runs": runs,
-    }))
+    (exp_dir / "progress.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": exp_id,
+                "status": "completed",
+                "runs": runs,
+            }
+        )
+    )
     return proj
 
 
@@ -192,10 +204,24 @@ def _make_project_with_methods(root: Path, name: str, methods: list[dict]) -> Pa
 @pytest.fixture
 def client_with_methods(tmp_path: Path, monkeypatch) -> TestClient:
     methods = [
-        {"name": "ols", "description": "linear", "script": "ols.py",
-         "experiment": "exp-001", "turn": 1, "metrics": {"r2": 0.5}, "status": "active"},
-        {"name": "rf",  "description": "forest", "script": "rf.py",
-         "experiment": "exp-001", "turn": 2, "metrics": {"r2": 0.8}, "status": "active"},
+        {
+            "name": "ols",
+            "description": "linear",
+            "script": "ols.py",
+            "experiment": "exp-001",
+            "turn": 1,
+            "metrics": {"r2": 0.5},
+            "status": "active",
+        },
+        {
+            "name": "rf",
+            "description": "forest",
+            "script": "rf.py",
+            "experiment": "exp-001",
+            "turn": 2,
+            "metrics": {"r2": 0.8},
+            "status": "active",
+        },
     ]
     _make_project_with_methods(tmp_path, "alpha", methods)
     home = tmp_path / "home"
@@ -366,3 +392,28 @@ def test_run_page_shows_view_live_link_when_active(client_run_active):
 def test_run_page_404_unknown_project(client_run_no_active):
     r = client_run_no_active.get("/projects/nonexistent/run")
     assert r.status_code == 404
+
+
+def test_run_log_page_returns_200_and_has_eventsource(client_run_active):
+    r = client_run_active.get("/projects/alpha/experiments/exp-001/log")
+    assert r.status_code == 200
+    body = r.text
+    assert "EventSource" in body
+    # SSE URL embedded in the inline script
+    assert "/api/projects/alpha/runs/exp-001/stream" in body
+    # Pre element to receive log lines
+    assert 'id="log"' in body
+
+
+def test_run_log_page_404_unknown_project(client_run_active):
+    r = client_run_active.get("/projects/nonexistent/experiments/exp-001/log")
+    assert r.status_code == 404
+
+
+def test_run_log_page_works_without_existing_experiment(client_run_no_active):
+    """Loading the log page right after a POST /api/projects/.../run is
+    valid even before the experiment dir has any output."""
+    r = client_run_no_active.get("/projects/alpha/experiments/exp-future/log")
+    # Project exists; the page itself doesn't validate the experiment id —
+    # SSE handles the no-data case.
+    assert r.status_code == 200
