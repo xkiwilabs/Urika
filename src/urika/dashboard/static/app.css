@@ -553,6 +553,12 @@ h4 {
   border-color: color-mix(in srgb, var(--success) 30%, transparent);
 }
 
+.tag--pending {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
 .tag--paused {
   background: color-mix(in srgb, var(--warn) 12%, transparent);
   color: var(--warn);

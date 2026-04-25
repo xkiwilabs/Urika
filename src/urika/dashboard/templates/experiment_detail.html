@@ -19,7 +19,7 @@
   <div class="card">
     <div class="card-title">{{ experiment.hypothesis }}</div>
     <div class="card-meta">
-      <span class="tag tag--{{ experiment_status }}">{{ experiment_status }}</span>
+      <span class="tag tag--{{ experiment_status | tag_status }}">{{ experiment_status }}</span>
       <span class="text-muted">{{ experiment.experiment_id }}</span>
       <span class="text-muted">{{ experiment.created_at }}</span>
     </div>

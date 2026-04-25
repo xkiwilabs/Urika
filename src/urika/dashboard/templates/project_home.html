@@ -62,7 +62,7 @@
                 <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
               </div>
               <div class="list-item-meta">
-                <span class="tag tag--{{ exp.status }}">{{ exp.status }}</span>
+                <span class="tag tag--{{ exp.status | tag_status }}">{{ exp.status }}</span>
               </div>
             </a>
           </li>

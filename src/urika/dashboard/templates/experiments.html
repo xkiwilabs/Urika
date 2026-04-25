@@ -27,7 +27,7 @@
               <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
             </div>
             <div class="list-item-meta">
-              <span class="tag tag--{{ exp.status }}">{{ exp.status }}</span>
+              <span class="tag tag--{{ exp.status | tag_status }}">{{ exp.status }}</span>
               <span class="text-muted">{{ exp.runs_count }} run{{ '' if exp.runs_count == 1 else 's' }}</span>
               <span class="text-muted">{{ exp.last_touched }}</span>
             </div>
