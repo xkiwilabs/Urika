@@ -348,6 +348,18 @@ def test_knowledge_page_404_unknown_project(client_with_knowledge):
     assert r.status_code == 404
 
 
+def test_knowledge_page_has_add_button_and_modal(client_with_projects):
+    """Task 11E.3: knowledge page exposes a '+ Add knowledge' button and
+    a modal form posting via HTMX to the API."""
+    r = client_with_projects.get("/projects/alpha/knowledge")
+    assert r.status_code == 200
+    body = r.text
+    assert "+ Add knowledge" in body
+    assert "modal-backdrop" in body
+    assert 'hx-post="/api/projects/alpha/knowledge"' in body
+    assert 'name="source"' in body
+
+
 def _make_project_minimal(root: Path, name: str) -> Path:
     proj = root / name
     proj.mkdir(parents=True)

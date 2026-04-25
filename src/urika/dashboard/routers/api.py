@@ -1148,6 +1148,39 @@ async def _run_advisor_inline(project_path, project_name: str, question: str) ->
     return (result.text_output or "").strip()
 
 
+@router.post("/projects/{name}/knowledge")
+async def api_knowledge_add(name: str, request: Request):
+    """Ingest a knowledge source (URL or local file path) via the form.
+
+    Wraps :class:`urika.knowledge.store.KnowledgeStore.ingest`, which
+    auto-detects the source type (URL / PDF / text) and writes the new
+    entry to ``<project>/knowledge/index.json``. Returns ``HX-Redirect``
+    back to the knowledge page when invoked from the modal so the new
+    entry appears in the list immediately.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    body = await request.form()
+    source = (body.get("source") or "").strip()
+    if not source:
+        raise HTTPException(status_code=422, detail="source is required")
+    from urika.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(summary.path)
+    try:
+        entry = store.ingest(source)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Ingest failed: {exc}")
+    if request.headers.get("hx-request") == "true":
+        return Response(
+            status_code=201,
+            headers={"HX-Redirect": f"/projects/{name}/knowledge"},
+        )
+    return JSONResponse({"id": entry.id, "title": entry.title}, status_code=201)
+
+
 @router.post("/projects/{name}/runs/{exp_id}/stop")
 def api_run_stop(name: str, exp_id: str) -> dict:
     """Request a graceful stop of an in-flight experiment run.
