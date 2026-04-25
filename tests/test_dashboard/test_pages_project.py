@@ -1022,6 +1022,27 @@ def test_project_home_has_finalize_button(client_with_projects):
     assert 'hx-post="/api/projects/alpha/finalize"' in body
 
 
+def test_finalize_button_says_re_finalize_when_artifacts_exist(client_with_runs):
+    """When report.md AND a presentation exist in projectbook/, the
+    Finalize button label flips to 'Re-finalize project' so users
+    know it will overwrite the existing artifacts."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "report.md").write_text("done")
+    (book / "presentation.html").write_text("<html></html>")
+    r = client_with_runs.get("/projects/alpha")
+    assert r.status_code == 200
+    assert "Re-finalize project" in r.text
+
+
+def test_finalize_button_says_finalize_when_no_artifacts(client_with_runs):
+    r = client_with_runs.get("/projects/alpha")
+    assert r.status_code == 200
+    assert "Finalize project" in r.text
+    assert "Re-finalize project" not in r.text
+
+
 def test_finalize_log_page_returns_200_and_has_eventsource(client_with_projects):
     r = client_with_projects.get("/projects/alpha/finalize/log")
     assert r.status_code == 200

@@ -27,7 +27,9 @@
       hx-target="#finalize-feedback"
       hx-swap="innerHTML"
     >
-      <button type="submit" class="btn btn--secondary">Finalize project</button>
+      <button type="submit" class="btn btn--secondary">
+        {% if final_outputs.has_report and final_outputs.has_presentation %}Re-finalize project{% else %}Finalize project{% endif %}
+      </button>
       <span id="finalize-feedback" class="text-muted"></span>
     </form>
   </section>
