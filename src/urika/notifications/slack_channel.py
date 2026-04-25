@@ -56,11 +56,20 @@ class SlackChannel(NotificationChannel):
         token = os.environ.get(token_env, "")
         self._client = WebClient(token=token)
         self._app_token_env: str = config.get("app_token_env", "")
+        self._allowed_channels: list[str] | None = config.get("allowed_channels", None)
+        self._allowed_users: list[str] | None = config.get("allowed_users", None)
         self._bus: object = None  # NotificationBus reference
         self._project_path: Path | None = None
         self._listener_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._socket_client: Any = None
+
+        if self._allowed_channels is None and self._allowed_users is None:
+            logger.warning(
+                "Slack channel configured without allowed_channels or "
+                "allowed_users — any user in the workspace can trigger "
+                "actions. Set one to restrict."
+            )
 
     # ------------------------------------------------------------------
     # Outbound
@@ -131,6 +140,63 @@ class SlackChannel(NotificationChannel):
             self._listener_thread = None
 
     # ------------------------------------------------------------------
+    # Authorization
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_ids(payload: dict[str, Any]) -> tuple[str | None, str | None]:
+        """Extract (channel_id, user_id) from a Slack interaction payload.
+
+        Button clicks put the ids under ``payload["channel"]["id"]`` /
+        ``payload["user"]["id"]``; Event-API wrappers put them under
+        ``payload["event"]["channel"]`` / ``payload["event"]["user"]``.
+        We try the button-click shape first, fall back to the event shape.
+        """
+        channel_id: str | None = None
+        chan = payload.get("channel")
+        if isinstance(chan, dict):
+            channel_id = chan.get("id")
+        if channel_id is None:
+            event = payload.get("event")
+            if isinstance(event, dict):
+                ev_chan = event.get("channel")
+                if isinstance(ev_chan, str):
+                    channel_id = ev_chan
+
+        user_id: str | None = None
+        user = payload.get("user")
+        if isinstance(user, dict):
+            user_id = user.get("id")
+        if user_id is None:
+            event = payload.get("event")
+            if isinstance(event, dict):
+                ev_user = event.get("user")
+                if isinstance(ev_user, str):
+                    user_id = ev_user
+
+        return channel_id, user_id
+
+    def _is_authorized(self, payload: dict[str, Any]) -> bool:
+        """Check whether an inbound interaction payload is allowed.
+
+        Back-compat: if neither ``allowed_channels`` nor ``allowed_users`` is
+        configured, all payloads are allowed. Otherwise fail closed if the
+        corresponding list is set but the id is missing or not allowlisted.
+        """
+        if self._allowed_channels is None and self._allowed_users is None:
+            return True
+
+        channel_id, user_id = self._extract_ids(payload)
+
+        if self._allowed_channels is not None:
+            if channel_id is None or channel_id not in self._allowed_channels:
+                return False
+        if self._allowed_users is not None:
+            if user_id is None or user_id not in self._allowed_users:
+                return False
+        return True
+
+    # ------------------------------------------------------------------
     # Socket Mode internals
     # ------------------------------------------------------------------
 
@@ -155,14 +221,23 @@ class SlackChannel(NotificationChannel):
             def _handle_interaction(
                 client: SocketModeClient, req: SocketModeRequest
             ) -> None:
-                # TODO: Restrict interactions to authorized users/channels.
-                # Slack's architecture routes button clicks through Slack's
-                # servers, making sender verification harder than Telegram.
-                # Consider checking payload.user.id or payload.channel.id
-                # against an allow-list in future.
+                # Optional allowlist: drop interactions from unauthorized
+                # channels/users before any command dispatch.
+                payload = req.payload or {}
+                if not self._is_authorized(payload):
+                    chan_id, user_id = self._extract_ids(payload)
+                    logger.warning(
+                        "Slack interaction from unauthorized channel/user "
+                        "dropped: channel=%s user=%s",
+                        chan_id,
+                        user_id,
+                    )
+                    client.send_socket_mode_response(
+                        SocketModeResponse(envelope_id=req.envelope_id)
+                    )
+                    return
 
                 # Block Kit button clicks arrive as events with actions in the payload
-                payload = req.payload or {}
                 actions = payload.get("actions", [])
                 if actions:
                     for action in actions:

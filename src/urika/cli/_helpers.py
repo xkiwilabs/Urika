@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from urika.core.errors import ConfigError, ValidationError
 from urika.core.models import ProjectConfig
 from urika.core.registry import ProjectRegistry
 from urika.core.workspace import load_project_config
@@ -36,6 +37,22 @@ def _make_on_message() -> object:
             pass
 
     return _on_msg
+
+
+def _agent_run_start() -> tuple[int, str]:
+    """Return (start_ms, start_iso) for timing and recording an agent call.
+
+    Every CLI agent-invocation command needs both: a monotonic start time
+    for elapsed-ms math, and a wall-clock ISO string for usage records.
+    Returning the pair from one place kills the duplicated two-liner
+    that used to open almost every agent command.
+    """
+    import time
+    from datetime import datetime, timezone
+
+    start_ms = int(time.monotonic() * 1000)
+    start_iso = datetime.now(timezone.utc).isoformat()
+    return start_ms, start_iso
 
 
 def _record_agent_usage(
@@ -84,8 +101,9 @@ def _sanitize_project_name(name: str) -> str:
     name = re.sub(r"[^a-zA-Z0-9 _.\-]", "", name)
     name = name.strip(".-")
     if not name:
-        raise click.ClickException(
-            "Invalid project name: nothing left after sanitization."
+        raise ValidationError(
+            "Invalid project name: nothing left after sanitization.",
+            hint="Use letters, digits, hyphens, underscores, or periods.",
         )
     return name
 
@@ -99,15 +117,21 @@ def _projects_dir() -> Path:
 
 
 def _resolve_project(name: str) -> tuple[Path, ProjectConfig]:
-    """Look up project by name. Raises ClickException on error."""
+    """Look up project by name. Raises ConfigError on error."""
     registry = ProjectRegistry()
     project_path = registry.get(name)
     if project_path is None:
-        raise click.ClickException(f"Project '{name}' not found in registry.")
+        raise ConfigError(
+            f"Project '{name}' not found in registry.",
+            hint="List registered projects with: urika list",
+        )
     try:
         config = load_project_config(project_path)
     except FileNotFoundError:
-        raise click.ClickException(f"Project directory missing at {project_path}")
+        raise ConfigError(
+            f"Project directory missing at {project_path}",
+            hint="The project was moved or deleted. Re-register or remove: urika list",
+        )
     return project_path, config
 
 
@@ -118,7 +142,10 @@ def _ensure_project(project: str | None) -> str:
     registry = ProjectRegistry()
     projects = registry.list_all()
     if not projects:
-        raise click.ClickException("No projects registered. Create one with: urika new")
+        raise ConfigError(
+            "No projects registered.",
+            hint="Create one with: urika new <name>",
+        )
     names = list(projects.keys())
     if len(names) == 1:
         return names[0]

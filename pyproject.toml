@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "urika"
-version = "0.1.2"
+version = "0.2.0"
 description = "Multi-agent scientific analysis platform"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "claude-agent-sdk>=0.1",
+    "claude-agent-sdk>=0.1,<1.0",
     "click>=8.0",
     "numpy>=1.24",
     "pandas>=2.0",
@@ -45,8 +45,10 @@ dependencies = [
     "slack-sdk>=3.0",
     "python-telegram-bot>=20.0",
     # TUI (Textual terminal interface — default entry point)
-    "textual>=0.90",
+    "textual>=8.0,<9.0",
     "rich>=13.0",
+    # Clipboard integration for /copy slash command (terminal-agnostic fallback)
+    "pyperclip>=1.8",
 ]
 
 [project.optional-dependencies]

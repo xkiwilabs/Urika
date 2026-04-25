@@ -123,6 +123,34 @@ For Pause/Stop/Status/Results buttons in Slack messages:
 
 Without this step, you still get all notification messages -- you just won't have clickable buttons.
 
+#### Restricting who can control the bot
+
+By default, **any user in your Slack workspace** who can see the Urika channel can click the Pause/Stop/Status/Results buttons or send `/commands` to the bot. For most solo researchers this is fine, but for shared workspaces you'll want to restrict control to specific channels or people.
+
+Add `allowed_channels` and/or `allowed_users` to the Slack section of `~/.urika/settings.toml`:
+
+```toml
+[notifications.slack]
+channel = "#urika-results"
+bot_token_env = "SLACK_BOT_TOKEN"
+app_token_env = "SLACK_APP_TOKEN"
+
+# Only accept interactions from these channel IDs
+allowed_channels = ["C0123456789"]
+
+# Only accept interactions from these user IDs
+allowed_users = ["U0ABCDEFGHI"]
+```
+
+Rules:
+- If both keys are **unset**, all interactions are accepted (back-compat) and a warning is logged at startup.
+- If `allowed_channels` is set, interactions from any other channel are dropped.
+- If `allowed_users` is set, interactions from any other user are dropped.
+- If both are set, both must match.
+- Drops are fail-closed: a payload missing the relevant id is rejected when the corresponding list is set. Rejected interactions are logged as warnings and never dispatched.
+
+You can find channel and user IDs in Slack: right-click a channel or user -> **View channel details** / **View profile** -> the ID is in the footer (starts with `C` for channels, `U` for users).
+
 #### Step 6: Enable for a project
 
 ```bash

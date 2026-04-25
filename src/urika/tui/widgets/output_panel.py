@@ -30,5 +30,13 @@ class OutputPanel(RichLog):
         super().__init__(*args, **kwargs)
 
     def write_line(self, content: str | Text) -> None:
-        """Write a line to the output panel with word-wrapping."""
+        """Write a line to the output panel with word-wrapping.
+
+        ``str`` content with ANSI escape codes is converted to Rich Text
+        so the per-agent colours from cli_display (e.g. the
+        "──── Finalizer ────" headers) render in colour. Plain strings
+        without escapes are unaffected — Text.from_ansi handles both.
+        """
+        if isinstance(content, str) and "\x1b" in content:
+            content = Text.from_ansi(content)
         self.write(content, expand=True)

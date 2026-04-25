@@ -19,3 +19,4 @@
 | [15 CLI Reference](15-cli-reference.md) | Every command with full options and examples |
 | [16 Interactive TUI](16-interactive-tui.md) | TUI interface, slash commands, tab completion, orchestrator chat |
 | [17 Notifications](17-notifications.md) | Email, Slack, Telegram alerts and remote pause/stop |
+| [18 Security Model](18-security.md) | Agent-generated code, permission boundaries, secrets, dashboard/notifications security |

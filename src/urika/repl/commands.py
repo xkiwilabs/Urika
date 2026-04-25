@@ -1,8 +1,6 @@
 """Slash command handlers for the REPL."""
 
 from __future__ import annotations
-import asyncio
-from pathlib import Path
 import click
 from urika.cli_display import _C
 from urika.repl.session import ReplSession
@@ -36,9 +34,13 @@ from urika.repl.cmd_agents import (  # noqa: F401
 )
 
 
-# Registry of commands
-GLOBAL_COMMANDS = {}
-PROJECT_COMMANDS = {}
+# Registry of commands — re-exported from commands_registry so external
+# callers (helpers, TUI) can keep importing them from this module.
+from urika.repl.commands_registry import (  # noqa: E402
+    GLOBAL_COMMANDS,
+    PROJECT_COMMANDS,
+    command,
+)
 
 # Module-level callback for passing queued user input into the orchestrator.
 # Set before invoking the CLI run command from the REPL, cleared after.
@@ -58,20 +60,6 @@ def _get_repl_bus():
 def _get_repl_session():
     """Return the active REPL session, or None."""
     return _repl_session_ref
-
-
-def command(name: str, requires_project: bool = False, description: str = ""):
-    """Decorator to register a REPL command."""
-
-    def decorator(func):
-        entry = {"func": func, "description": description}
-        if requires_project:
-            PROJECT_COMMANDS[name] = entry
-        else:
-            GLOBAL_COMMANDS[name] = entry
-        return func
-
-    return decorator
 
 
 # ── Global commands ─────────────────────────────────────────
@@ -272,6 +260,55 @@ def cmd_new(session: ReplSession, args: str) -> None:
 def cmd_quit(session: ReplSession, args: str) -> None:
     session.save_usage()
     raise SystemExit(0)
+
+
+@command("copy", description="Copy the last N output lines to the clipboard")
+def cmd_copy(session: ReplSession, args: str) -> None:
+    """Clipboard fallback for terminals that don't forward Shift+drag.
+
+    Usage:
+        /copy        copy the last 40 output lines
+        /copy 100    copy the last 100 output lines
+    """
+    from urika.cli_display import print_error, print_success, print_warning
+
+    arg = args.strip()
+    if arg:
+        try:
+            n = int(arg)
+        except ValueError:
+            print_error("Usage: /copy [N]  — copies the last N output lines (default 40).")
+            return
+        if n <= 0:
+            print_error("N must be a positive integer.")
+            return
+    else:
+        n = 40
+
+    lines = session.recent_output_lines[-n:]
+    if not lines:
+        print_warning("No output to copy yet.")
+        return
+
+    text = "\n".join(lines)
+    try:
+        import pyperclip
+
+        pyperclip.copy(text)
+    except pyperclip.PyperclipException as exc:
+        # Happens on headless Linux without xclip/xsel. Don't crash — tell
+        # the user what to install and fall back to printing the text.
+        print_error(
+            f"Clipboard copy failed ({exc}). On Linux, install xclip or "
+            "xsel. The text is printed below so you can copy it manually:"
+        )
+        print(text)
+        return
+    except Exception as exc:
+        print_error(f"Clipboard copy failed: {exc}")
+        return
+
+    print_success(f"Copied last {len(lines)} output lines ({len(text)} chars) to clipboard.")
 
 
 @command("config", description="Configure privacy mode and models")
@@ -492,321 +529,6 @@ def cmd_status(session: ReplSession, args: str) -> None:
     ctx.invoke(cli_status, name=session.project_name)
 
 
-@command("run", requires_project=True, description="Run next experiment")
-def cmd_run(session: ReplSession, args: str) -> None:
-    import click as _click
-    from urika.cli_display import print_warning
-    from urika.core.experiment import list_experiments
-
-    is_remote = session._is_remote_command
-
-    # Parse remote args: /run, /run 3, /run --multi 5, /run --resume, /run try trees
-    remote_parsed = _parse_remote_run_args(args) if is_remote else None
-
-    # Handle --resume via remote
-    if remote_parsed and remote_parsed.get("resume"):
-        cmd_resume(session, "")
-        return
-
-    # Check if any experiment is already running (lockfile exists)
-    experiments = list_experiments(session.project_path)
-    for exp in experiments:
-        lock = session.project_path / "experiments" / exp.experiment_id / ".lock"
-        if lock.exists():
-            # Check if the owning process is still alive
-            import os as _os
-            try:
-                pid_str = lock.read_text().strip()
-                if pid_str:
-                    _os.kill(int(pid_str), 0)
-                    # Process alive — lock is valid
-                else:
-                    # Empty lock (legacy) — treat as valid conservatively
-                    pass
-            except (ValueError, ProcessLookupError):
-                # PID dead or invalid — stale lock, clean it up
-                click.echo(f"  Cleaned stale lock on {exp.experiment_id}")
-                lock.unlink(missing_ok=True)
-                continue
-            except PermissionError:
-                pass  # Process exists, can't signal — treat as valid
-
-            if is_remote:
-                click.echo(
-                    f"  Experiment '{exp.experiment_id}' locked — stopping stale lock."
-                )
-                try:
-                    from urika.core.session import stop_session
-
-                    stop_session(
-                        session.project_path,
-                        exp.experiment_id,
-                        reason="Stopped by remote run",
-                    )
-                except Exception:
-                    lock.unlink(missing_ok=True)
-                break
-
-            print_warning(f"Experiment '{exp.experiment_id}' is currently running.")
-            choice = _prompt_numbered(
-                "  What would you like to do?",
-                [
-                    "Wait for it to complete (recommended)",
-                    "Stop it and start a new run",
-                    "Cancel",
-                ],
-                default=1,
-            )
-            if choice.startswith("Wait"):
-                click.echo("  Waiting is recommended. Check back after it completes.")
-                return
-            if choice.startswith("Cancel"):
-                return
-            # Stop it
-            try:
-                from urika.core.session import stop_session
-
-                stop_session(
-                    session.project_path,
-                    exp.experiment_id,
-                    reason="Stopped by user from REPL",
-                )
-                click.echo(f"  Stopped {exp.experiment_id}")
-            except Exception:
-                lock.unlink(missing_ok=True)
-            break
-
-    defaults = _load_run_defaults(session)
-
-    if is_remote:
-        # Remote: skip all interactive prompts, use defaults + parsed args
-        max_turns = remote_parsed.get("max_turns") or defaults["max_turns"]
-        auto_mode = defaults["auto_mode"]
-        max_experiments = remote_parsed.get("max_experiments")
-        run_instructions = remote_parsed.get("instructions", "")
-        review_criteria = False
-
-        # Show summary
-        click.echo("\n  Run settings (remote):")
-        click.echo(f"    Max turns:    {max_turns}")
-        if max_experiments:
-            click.echo(f"    Experiments:  up to {max_experiments}")
-        if run_instructions:
-            instr_preview = (
-                run_instructions[:80] + "..."
-                if len(run_instructions) > 80
-                else run_instructions
-            )
-            click.echo(f"    Instructions: {instr_preview}")
-        click.echo()
-    else:
-        # Interactive: show defaults, offer custom
-        click.echo("\n  Run settings:")
-        click.echo(f"    Max turns: {defaults['max_turns']}")
-        click.echo(f"    Auto mode: {defaults['auto_mode']}")
-        instructions = (
-            session.get_conversation_context() if session.conversation else "(none)"
-        )
-        click.echo(
-            f"    Instructions: {instructions[:80]}{'...' if len(instructions) > 80 else ''}"
-        )
-
-        choice = _prompt_numbered(
-            "\n  Proceed?",
-            ["Run with defaults", "Custom settings", "Skip"],
-            default=1,
-        )
-
-        if choice == "Skip":
-            return
-
-        max_turns = defaults["max_turns"]
-        auto_mode = defaults["auto_mode"]
-        max_experiments = None
-        run_instructions = ""
-        review_criteria = False
-
-        if choice == "Custom settings":
-            try:
-                max_turns = int(
-                    _click.prompt("  Max turns", default=str(defaults["max_turns"]))
-                )
-            except ValueError:
-                pass  # keep default max_turns
-            auto_mode = _prompt_numbered(
-                "\n  Auto mode:",
-                [
-                    "Checkpoint \u2014 pause between experiments for review",
-                    "Capped \u2014 run up to max experiments with no pauses",
-                    "Unlimited \u2014 run until criteria met or advisor says done",
-                ],
-                default={"checkpoint": 1, "capped": 2, "unlimited": 3}.get(
-                    defaults["auto_mode"], 1
-                ),
-            )
-            # Map back to short name
-            auto_mode = {
-                "Checkpoint": "checkpoint",
-                "Capped": "capped",
-                "Unlimited": "unlimited",
-            }.get(auto_mode.split("\u2014")[0].strip(), "checkpoint")
-            if auto_mode == "capped":
-                try:
-                    max_experiments = int(_click.prompt("  Max experiments", default="10"))
-                except ValueError:
-                    max_experiments = 10
-            elif auto_mode == "unlimited":
-                max_experiments = 50  # safety cap
-            run_instructions = _click.prompt(
-                "  Instructions (optional, enter to skip)", default=""
-            )
-            rc_choice = _prompt_numbered(
-                "\n  Re-evaluate criteria if met?",
-                [
-                    "No \u2014 complete when criteria met (default)",
-                    "Yes \u2014 advisor reviews criteria, may raise the bar",
-                ],
-                default=1,
-            )
-            review_criteria = rc_choice.startswith("Yes")
-
-        # Show settings summary
-        click.echo()
-        click.echo("  Run settings:")
-        click.echo(f"    Max turns:    {max_turns}")
-        if max_experiments:
-            click.echo(f"    Experiments:  up to {max_experiments}")
-            click.echo(f"    Auto mode:    {auto_mode}")
-        else:
-            click.echo("    Auto mode:    single experiment")
-        if run_instructions:
-            instr_preview = (
-                run_instructions[:80] + "..."
-                if len(run_instructions) > 80
-                else run_instructions
-            )
-            click.echo(f"    Instructions: {instr_preview}")
-        if review_criteria:
-            click.echo("    Review criteria: yes")
-        click.echo()
-
-    # Use conversation context as instructions if none provided
-    if not run_instructions and session.conversation:
-        run_instructions = session.get_conversation_context()
-
-    # If we have pending suggestions from advisor, create the experiment
-    # directly instead of having cli_run call the advisor again from scratch
-    use_experiment_id = None
-    if session.pending_suggestions:
-        suggestion = session.pending_suggestions[0]
-        exp_name = (
-            suggestion.get("name", "advisor-experiment").replace(" ", "-").lower()
-        )
-        description = suggestion.get("method", suggestion.get("description", ""))
-        if run_instructions and description:
-            description = f"{run_instructions}\n\n{description}"
-        elif run_instructions:
-            description = run_instructions
-
-        try:
-            from urika.core.experiment import create_experiment
-
-            exp = create_experiment(
-                session.project_path,
-                name=exp_name,
-                hypothesis=description[:500] if description else "",
-            )
-            use_experiment_id = exp.experiment_id
-            click.echo(
-                f"  Created experiment from advisor suggestion: {use_experiment_id}"
-            )
-            # Use description as instructions for the experiment run
-            if description:
-                run_instructions = description
-            # Pop the used suggestion, keep the rest for subsequent runs
-            session.pending_suggestions = session.pending_suggestions[1:]
-        except Exception as exc:
-            click.echo(f"  Could not create experiment: {exc}")
-            # Fall through to normal flow
-
-    # Run directly without going through CLI (avoids duplicate header)
-    import os
-
-    global _user_input_callback, _repl_session_ref  # noqa: PLW0603
-
-    def _get_user_input() -> str:
-        return session.pop_queued_input()
-
-    os.environ["URIKA_REPL"] = "1"
-    _user_input_callback = _get_user_input
-    _repl_session_ref = session
-    session.set_agent_active("run")
-    try:
-        from urika.cli import run as cli_run
-
-        ctx = click.Context(cli_run)
-        ctx.invoke(
-            cli_run,
-            project=session.project_name,
-            experiment_id=use_experiment_id,
-            max_turns=max_turns,
-            resume=False,
-            quiet=False,
-            auto=(is_remote or auto_mode != "checkpoint"),
-            instructions=run_instructions,
-            max_experiments=max_experiments,
-            review_criteria=review_criteria,
-        )
-        session.experiments_run += 1
-    finally:
-        session.set_agent_idle()
-        _user_input_callback = None
-        _repl_session_ref = None
-        os.environ.pop("URIKA_REPL", None)
-
-
-def _parse_remote_run_args(args: str) -> dict:
-    """Parse remote /run arguments into a settings dict.
-
-    Supported formats:
-      /run               -> defaults
-      /run 3             -> max_turns=3
-      /run --multi 5     -> max_experiments=5
-      /run --resume      -> resume=True
-      /run try trees     -> instructions="try trees"
-      /run --multi 3 focus on features -> max_experiments=3, instructions="focus on features"
-    """
-    result: dict = {
-        "max_turns": None,
-        "max_experiments": None,
-        "resume": False,
-        "instructions": "",
-    }
-
-    args_stripped = args.strip()
-    if not args_stripped:
-        return result
-
-    parts = args_stripped.split()
-    if parts[0] == "--resume":
-        result["resume"] = True
-    elif parts[0] == "--multi" and len(parts) > 1:
-        try:
-            result["max_experiments"] = int(parts[1])
-            if len(parts) > 2:
-                result["instructions"] = " ".join(parts[2:])
-        except ValueError:
-            result["instructions"] = args_stripped
-    else:
-        try:
-            result["max_turns"] = int(parts[0])
-            if len(parts) > 1:
-                result["instructions"] = " ".join(parts[1:])
-        except ValueError:
-            result["instructions"] = args_stripped
-
-    return result
-
 
 @command("experiments", requires_project=True, description="List experiments")
 def cmd_experiments(session: ReplSession, args: str) -> None:
@@ -894,71 +616,6 @@ def cmd_results(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-@command(
-    "resume",
-    requires_project=True,
-    description="Resume a paused/stopped/failed experiment",
-)
-def cmd_resume(session: ReplSession, args: str) -> None:
-    from urika.core.experiment import list_experiments
-    from urika.core.progress import load_progress
-
-    experiments = list_experiments(session.project_path)
-    resumable = []
-    for exp in experiments:
-        progress = load_progress(session.project_path, exp.experiment_id)
-        status = progress.get("status", "pending")
-        if status in ("paused", "stopped", "failed"):
-            resumable.append((exp, status))
-
-    if not resumable:
-        click.echo("  No paused, stopped, or failed experiments to resume.")
-        return
-
-    # If multiple, let user pick; if one or remote, use most recent directly
-    if len(resumable) == 1 or session._is_remote_command:
-        exp, status = resumable[-1]  # Most recent resumable
-        click.echo(f"  Resuming {exp.experiment_id} [{status}]...")
-    else:
-        options = [f"{exp.experiment_id} [{status}]" for exp, status in resumable]
-        choice = _prompt_numbered(
-            "\n  Select experiment to resume:", options, default=1
-        )
-        exp_id = choice.split(" [")[0]
-        click.echo(f"  Resuming {exp_id}...")
-        # Find matching exp
-        exp = next(e for e, _s in resumable if e.experiment_id == exp_id)
-
-    import os
-
-    is_remote = session._is_remote_command
-
-    global _repl_session_ref  # noqa: PLW0603
-
-    os.environ["URIKA_REPL"] = "1"
-    _repl_session_ref = session
-    session.set_agent_active("run")
-    try:
-        from urika.cli import run as cli_run
-
-        ctx = click.Context(cli_run)
-        defaults = _load_run_defaults(session)
-        ctx.invoke(
-            cli_run,
-            project=session.project_name,
-            experiment_id=exp.experiment_id,
-            max_turns=defaults["max_turns"],
-            resume=True,
-            quiet=False,
-            auto=(is_remote or defaults["auto_mode"] != "checkpoint"),
-            instructions="",
-            max_experiments=None,
-        )
-    finally:
-        session.set_agent_idle()
-        _repl_session_ref = None
-        os.environ.pop("URIKA_REPL", None)
-
 
 @command("criteria", requires_project=True, description="Show current criteria")
 def cmd_criteria(session: ReplSession, args: str) -> None:
@@ -979,74 +636,6 @@ def cmd_criteria(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-@command("resume-session", requires_project=True, description="Resume previous orchestrator session")
-def cmd_resume_session(session: ReplSession, args: str) -> None:
-    """Resume a previous orchestrator conversation."""
-    from urika.core.orchestrator_sessions import list_sessions, load_session
-
-    sessions = list_sessions(session.project_path)
-    if not sessions:
-        click.echo("  No saved sessions for this project.")
-        return
-
-    if not args:
-        # Show numbered list
-        click.echo()
-        click.echo("  Recent sessions:")
-        click.echo()
-        for i, s in enumerate(sessions[:10]):
-            from datetime import datetime
-
-            try:
-                dt = datetime.fromisoformat(s["updated"]).strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                dt = s.get("updated", "?")
-            preview = (s.get("preview") or "(empty)")[:60]
-            turns = s.get("turn_count", 0)
-            click.echo(f"    {i + 1}. {dt} \u00b7 {turns} turns")
-            click.echo(f"       {preview}")
-        click.echo()
-        click.echo("  Type /resume-session <number> to resume.")
-        click.echo()
-        return
-
-    # Resume by number
-    try:
-        num = int(args)
-    except ValueError:
-        click.echo(f"  Invalid number: {args}")
-        return
-
-    if num < 1 or num > len(sessions):
-        click.echo("  Invalid session number. Use /resume-session to see the list.")
-        return
-
-    entry = sessions[num - 1]
-    loaded = load_session(session.project_path, entry["session_id"])
-    if not loaded:
-        click.echo(f"  Session not found: {entry['session_id']}")
-        return
-
-    # Restore conversation to the orchestrator
-    from urika.repl.main import _get_orchestrator
-
-    orchestrator = _get_orchestrator(session)
-    orchestrator.set_messages(loaded.recent_messages)
-    session._orch_session = loaded
-
-    turns = len(loaded.recent_messages) // 2
-    click.echo(f"  Resumed session ({turns} turns)")
-
-
-@command("new-session", requires_project=True, description="Start a new orchestrator conversation")
-def cmd_new_session(session: ReplSession, args: str) -> None:
-    """Clear the orchestrator conversation and start fresh."""
-    from urika.repl.main import _get_orchestrator
-
-    orchestrator = _get_orchestrator(session)
-    orchestrator.clear()
-    session._orch_session = None
-    click.echo("  Started a new session. Previous conversation archived.")
 
 
 # Register imported agent commands
@@ -1223,3 +812,15 @@ def cmd_dashboard(session: ReplSession, args: str) -> None:
     webbrowser.open(url)
     click.echo(f"  Dashboard running at {url}")
     click.echo("  /dashboard stop to shut down, /dashboard to restart")
+
+
+# ── Sibling-module imports (Phase 8 split) ─────────────────────────
+# Importing these registers the @command decorators they declare so
+# the slash commands defined there appear in GLOBAL_COMMANDS /
+# PROJECT_COMMANDS exactly as if they had been declared here.
+from urika.repl.commands_run import cmd_run  # noqa: E402, F401
+from urika.repl.commands_session import (  # noqa: E402, F401
+    cmd_resume,
+    cmd_resume_session,
+    cmd_new_session,
+)

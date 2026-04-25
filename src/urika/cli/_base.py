@@ -6,7 +6,13 @@ import click
 
 
 class _UrikaCLI(click.Group):
-    """Custom CLI group that catches UserCancelled globally."""
+    """Custom CLI group that catches UserCancelled + UrikaError globally.
+
+    UrikaError subclasses (ConfigError, AgentError, ValidationError) are
+    rendered as a message line plus an optional hint line, then exit 2.
+    No traceback for these — they are user-facing by definition. Anything
+    else falls through to Click's default handling.
+    """
 
     def invoke(self, ctx: click.Context) -> object:
         try:
@@ -17,6 +23,16 @@ class _UrikaCLI(click.Group):
             # Catch UserCancelled from any command — exit cleanly
             if type(exc).__name__ == "UserCancelled":
                 raise SystemExit(0)
+            # UrikaError — render message + hint without traceback
+            from urika.core.errors import UrikaError
+
+            if isinstance(exc, UrikaError):
+                from urika.cli_display import print_error
+
+                print_error(str(exc))
+                if exc.hint:
+                    click.echo(f"  hint: {exc.hint}", err=True)
+                raise SystemExit(2)
             raise
 
 

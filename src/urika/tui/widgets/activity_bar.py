@@ -15,6 +15,7 @@ from rich.text import Text
 from textual.reactive import reactive
 from textual.widgets import Static
 
+from urika.cli_display import rich_color_for_command
 from urika.repl.session import ReplSession
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -101,11 +102,15 @@ class ActivityBar(Static):
             self._next_verb_interval = random.uniform(3.0, 8.0)
         verb = _ACTIVITY_VERBS[self._verb_idx]
 
+        # Per-command / per-subagent colours — same palette as the CLI
+        # so users see one colour language across all three surfaces.
+        cmd_style = f"bold {rich_color_for_command(cmd_name)}"
         text = Text()
         text.append(f" {frame} ", style="bold #4a9eff")
-        text.append(cmd_name, style="bold #ffcc66")
+        text.append(cmd_name, style=cmd_style)
         if is_subagent:
+            sub_style = rich_color_for_command(subagent)
             text.append(" — ", style="dim")
-            text.append(subagent, style="#cc99ff")
+            text.append(subagent, style=sub_style)
         text.append(f" — {verb}…", style="dim")
         return text

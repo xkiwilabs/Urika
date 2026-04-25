@@ -130,6 +130,70 @@ def get_active_stdin_reader() -> _TuiStdinReader | None:
     return _active_stdin_reader
 
 
+# Opt-in per-command timeouts. Maps command name (e.g. "run",
+# "literature") → timeout in seconds. Empty by default so current
+# behavior is 100% unchanged; add entries here (or programmatically
+# at runtime) to guard specific commands against non-stdin blocking
+# (hung subprocess, network call without a timeout, etc).
+_COMMAND_TIMEOUTS: dict[str, float] = {}
+
+
+def _run_with_timeout(
+    handler: CommandHandler,
+    session: "ReplSession | None",
+    args: str,
+    timeout_s: float | None,
+) -> dict:
+    """Run ``handler(session, args)`` with an optional timeout.
+
+    Returns a dict ``{"timed_out": bool, "error": str | None}``.
+
+    If ``timeout_s`` is None or ≤ 0, the handler runs synchronously
+    in the calling thread and any exception propagates to the caller
+    unchanged — this preserves the existing SystemExit / EOFError /
+    Exception handling semantics of ``run_command_in_worker``.
+
+    If ``timeout_s`` > 0, the handler runs inside a **daemon thread**
+    behind a ``threading.Event``. Exceptions are captured and
+    returned as ``error`` (stringified) so the worker's finally
+    block still runs. On timeout, ``timed_out`` is True and the
+    daemon thread is abandoned.
+
+    Tradeoff: Python threads cannot be killed cleanly, so a timed-out
+    handler thread leaks until the process exits. That's acceptable
+    here — the whole point of this helper is to rescue the TUI from
+    handlers stuck on resources that neither Ctrl+C nor /stop can
+    unblock (e.g. sockets without read timeouts). The leaked thread
+    dies with the process.
+    """
+    if timeout_s is None or timeout_s <= 0:
+        handler(session, args)  # type: ignore[arg-type]
+        return {"timed_out": False, "error": None}
+
+    done = threading.Event()
+    result: dict = {"timed_out": False, "error": None}
+
+    def _target() -> None:
+        try:
+            handler(session, args)  # type: ignore[arg-type]
+        except BaseException as exc:  # noqa: BLE001
+            # Capture everything (including SystemExit) into the
+            # result so the worker's finally block still runs. The
+            # timeout path is the rescue path — we never want an
+            # uncaught exception on a daemon thread to take down
+            # the TUI.
+            result["error"] = f"{type(exc).__name__}: {exc}"
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_target, name="urika-worker-timeout", daemon=True)
+    t.start()
+    if not done.wait(timeout=timeout_s):
+        # Thread leaks — see module comment above. Dies with process.
+        result["timed_out"] = True
+    return result
+
+
 def run_command_in_worker(
     app: UrikaApp,
     handler: CommandHandler,
@@ -166,8 +230,29 @@ def run_command_in_worker(
         app.session.set_agent_running(agent_name=cmd_name)
         try:
             with OutputCapture(app):
+                timeout_s = _COMMAND_TIMEOUTS.get(cmd_name)
                 try:
-                    handler(app.session, args)
+                    if timeout_s is None or timeout_s <= 0:
+                        # No timeout: preserve the existing exception
+                        # flow exactly (SystemExit → exit app, EOFError
+                        # → silent cancel, everything else → log).
+                        handler(app.session, args)
+                    else:
+                        outcome = _run_with_timeout(
+                            handler, app.session, args, timeout_s
+                        )
+                        if outcome["timed_out"]:
+                            print_error(
+                                f"Command '/{cmd_name}' exceeded its "
+                                f"{timeout_s}s timeout — canceling."
+                            )
+                            # Unblock anything the handler might still
+                            # be waiting on via our stdin bridge.
+                            stdin_reader.cancel()
+                        elif outcome["error"]:
+                            # Re-raise so the existing except/finally
+                            # path below logs and cleans up normally.
+                            raise RuntimeError(outcome["error"])
                 except SystemExit:
                     app.session.save_usage()
                     app.call_from_thread(app.exit)

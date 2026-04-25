@@ -108,13 +108,17 @@ class _TuiWriter:
         3. App not running (shutdown / not yet started) → write to the
            original stdout so the line is not lost.
         """
-        clean = _strip_ansi(line)
+        # The line is passed through with ANSI codes intact. The panel
+        # converts them to Rich styling via Text.from_ansi() so the
+        # per-agent colours from cli_display.print_agent (the
+        # "──── Finalizer ────" headers) survive the trip and look the
+        # same in the TUI as they do in the CLI / classic REPL.
 
         # Path 1: cross-thread dispatch. Raises RuntimeError if the
         # caller is on the same thread as the event loop, or if the
         # loop isn't running.
         try:
-            self._app.call_from_thread(self._write_to_panel, clean)
+            self._app.call_from_thread(self._write_to_panel, line)
             return
         except RuntimeError:
             pass
@@ -132,7 +136,7 @@ class _TuiWriter:
         loop = getattr(self._app, "_loop", None)
         loop_running = loop is not None and loop.is_running()
         if same_thread and loop_running:
-            self._write_to_panel(clean)
+            self._write_to_panel(line)
             return
 
         # Path 3: fallback to the original stream.
@@ -161,7 +165,12 @@ class _TuiWriter:
             pass  # InputBar not mounted or query failed — skip
 
     def _write_to_panel(self, text: str) -> None:
-        """Write to the output panel (called on the Textual thread)."""
+        """Write to the output panel (called on the Textual thread).
+
+        ``text`` may contain ANSI escape codes; the panel parses them
+        via Text.from_ansi(). The /copy buffer stores the ANSI-stripped
+        version so what lands on the user's clipboard is plain text.
+        """
         try:
             panel = self._app.query_one("OutputPanel")
         except NoMatches:
@@ -169,6 +178,11 @@ class _TuiWriter:
             # Drop silently — there's no panel to receive the line.
             return
         panel.write_line(text)
+        # Buffer the line for the /copy slash command. Best-effort: if the
+        # app doesn't expose a session (e.g. in tests), silently skip.
+        session = getattr(self._app, "session", None)
+        if session is not None and hasattr(session, "record_output_line"):
+            session.record_output_line(_strip_ansi(text))
 
     def flush(self) -> None:
         """Flush any remaining buffered content.
