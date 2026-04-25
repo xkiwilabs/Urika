@@ -384,3 +384,135 @@ def test_settings_put_notifications_records_one_revision(settings_client, tmp_pa
     ]
     fields = [r["field"] for r in revisions]
     assert fields == ["notifications"]
+
+
+# ---- Privacy tab: inherit / open / private / hybrid -------------------------
+
+
+def _basics(**extra) -> dict:
+    """Common required form fields for PUT /api/projects/<name>/settings."""
+    base = {
+        "question": "original q",
+        "description": "orig desc",
+        "mode": "exploratory",
+        "audience": "expert",
+    }
+    base.update(extra)
+    return base
+
+
+def test_settings_put_privacy_inherit_writes_no_section(settings_client, tmp_path):
+    """project_privacy_mode=inherit → no [privacy] block in urika.toml."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(project_privacy_mode="inherit"),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert "privacy" not in toml
+
+
+def test_settings_put_privacy_private_writes_full_block(settings_client, tmp_path):
+    """project_privacy_mode=private + url + model → [privacy] + endpoint subblock."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="private",
+            project_privacy_private_url="http://localhost:11434",
+            project_privacy_private_key_env="MY_KEY",
+            project_privacy_private_model="qwen3:14b",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["privacy"]["mode"] == "private"
+    assert (
+        toml["privacy"]["endpoints"]["private"]["base_url"]
+        == "http://localhost:11434"
+    )
+    assert toml["privacy"]["endpoints"]["private"]["api_key_env"] == "MY_KEY"
+
+
+def test_settings_put_privacy_open_writes_mode_only(settings_client, tmp_path):
+    """project_privacy_mode=open writes [privacy].mode='open' (no endpoints)."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="open",
+            project_privacy_open_model="claude-sonnet-4-5",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["privacy"]["mode"] == "open"
+
+
+def test_settings_put_privacy_hybrid_writes_both(settings_client, tmp_path):
+    """Hybrid writes mode + private endpoint."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="hybrid",
+            project_privacy_hybrid_cloud_model="claude-sonnet-4-5",
+            project_privacy_hybrid_private_url="http://localhost:11434",
+            project_privacy_hybrid_private_key_env="",
+            project_privacy_hybrid_private_model="qwen3:14b",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["privacy"]["mode"] == "hybrid"
+    assert (
+        toml["privacy"]["endpoints"]["private"]["base_url"]
+        == "http://localhost:11434"
+    )
+
+
+def test_settings_put_privacy_switch_back_to_inherit_clears_block(
+    settings_client, tmp_path
+):
+    """Setting an override then switching to inherit removes [privacy] entirely."""
+    # First write a private override
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="private",
+            project_privacy_private_url="http://localhost:11434",
+            project_privacy_private_model="qwen3:14b",
+        ),
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert "privacy" in toml
+
+    # Now switch back to inherit — block should be removed
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(project_privacy_mode="inherit"),
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert "privacy" not in toml
+
+
+def test_settings_put_privacy_invalid_mode_returns_422(settings_client):
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(project_privacy_mode="bogus"),
+    )
+    assert r.status_code == 422
+
+
+def test_settings_put_privacy_records_revision(settings_client, tmp_path):
+    """Switching project privacy records exactly one revision entry."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="private",
+            project_privacy_private_url="http://localhost:11434",
+            project_privacy_private_model="qwen3:14b",
+        ),
+    )
+    revisions = json.loads((tmp_path / "alpha" / "revisions.json").read_text())[
+        "revisions"
+    ]
+    fields = [r["field"] for r in revisions]
+    assert "privacy" in fields

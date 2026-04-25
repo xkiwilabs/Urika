@@ -33,10 +33,20 @@
   .models-grid th { font-weight: var(--fw-semibold); color: var(--text-muted); font-size: var(--fs-xs); }
   .models-grid td input,
   .models-grid td select { width: 100%; font: inherit; padding: 0.3rem; }
-  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
   .privacy-summary { padding: var(--space-3); background: var(--bg-elevated); border-radius: 6px; }
   .privacy-summary dt { font-weight: var(--fw-semibold); margin-top: var(--space-2); }
   .privacy-summary dd { margin: 0 0 var(--space-2) 0; color: var(--text-muted); }
+  .privacy-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-top: var(--space-3);
+    background: var(--bg-elevated);
+  }
+  .privacy-block h4 { margin-top: 0; }
+  .radio-group { display: flex; flex-direction: column; gap: 0.25rem; }
+  .radio-group label { font-weight: normal; }
 </style>
 
 <form
@@ -148,34 +158,119 @@
       <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.</span>
     </div>
 
-    {# ---- Privacy tab (read-only) ------------------------------------- #}
-    <div class="tab-panel" x-show="active === 'privacy'" x-cloak>
-      <dl class="privacy-summary">
-        <dt>Inherited global mode</dt>
-        <dd><code>{{ global_privacy_mode }}</code></dd>
+    {# ---- Privacy tab (editable, with inherit) ------------------------ #}
+    <div class="tab-panel" x-show="active === 'privacy'" x-cloak
+         x-data="{ pmode: '{{ project_privacy_mode }}' }">
+      <div class="form-row">
+        <label>Privacy mode for this project</label>
+        <div class="radio-group">
+          <label class="checkbox-row">
+            <input type="radio" name="project_privacy_mode" value="inherit"
+                   x-model="pmode"
+                   {% if project_privacy_mode == "inherit" %}checked{% endif %}>
+            <span>Inherit from global ({{ global_privacy_mode }})</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="radio" name="project_privacy_mode" value="open"
+                   x-model="pmode"
+                   {% if project_privacy_mode == "open" %}checked{% endif %}>
+            <span>Open</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="radio" name="project_privacy_mode" value="private"
+                   x-model="pmode"
+                   {% if project_privacy_mode == "private" %}checked{% endif %}>
+            <span>Private</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="radio" name="project_privacy_mode" value="hybrid"
+                   x-model="pmode"
+                   {% if project_privacy_mode == "hybrid" %}checked{% endif %}>
+            <span>Hybrid</span>
+          </label>
+        </div>
+        <span class="form-help">
+          When <em>inherit</em> is selected, this project uses the global
+          privacy settings. Picking any other mode writes a project-local
+          <code>[privacy]</code> override into <code>urika.toml</code>.
+        </span>
+      </div>
 
-        <dt>Project override</dt>
-        {% if project_privacy %}
-          <dd>
-            {% if project_privacy.mode %}
-              <code>mode = "{{ project_privacy.mode }}"</code>
-            {% else %}
-              <em>(no mode override)</em>
-            {% endif %}
-          </dd>
-          {% if project_privacy.endpoints %}
-            <dt>Project endpoints</dt>
-            <dd><code>{{ project_privacy.endpoints }}</code></dd>
-          {% endif %}
-        {% else %}
-          <dd><em>None — project inherits global privacy settings.</em></dd>
-        {% endif %}
-      </dl>
+      {# Open block #}
+      <div class="privacy-block" x-show="pmode === 'open'" x-cloak>
+        <h4>Open mode</h4>
+        <div class="form-row">
+          <label for="project_privacy_open_model">Cloud model</label>
+          <select id="project_privacy_open_model" name="project_privacy_open_model">
+            {% for m in cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == project_privacy_open_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
 
-      <p class="form-help" style="margin-top: 1rem;">
-        Privacy editing is global-only for now.
-        <a href="/settings">Configure privacy globally →</a>
-      </p>
+      {# Private block #}
+      <div class="privacy-block" x-show="pmode === 'private'" x-cloak>
+        <h4>Private mode</h4>
+        <div class="form-row">
+          <label for="project_privacy_private_url">Endpoint URL</label>
+          <input type="text" id="project_privacy_private_url"
+                 name="project_privacy_private_url"
+                 value="{{ project_privacy_private_url }}"
+                 placeholder="http://localhost:11434">
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_private_key_env">API key env var</label>
+          <input type="text" id="project_privacy_private_key_env"
+                 name="project_privacy_private_key_env"
+                 value="{{ project_privacy_private_key_env }}"
+                 placeholder="(optional)">
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_private_model">Model name</label>
+          <input type="text" id="project_privacy_private_model"
+                 name="project_privacy_private_model"
+                 value="{{ project_privacy_private_model }}"
+                 placeholder="qwen3:14b">
+        </div>
+      </div>
+
+      {# Hybrid block #}
+      <div class="privacy-block" x-show="pmode === 'hybrid'" x-cloak>
+        <h4>Hybrid mode</h4>
+        <div class="form-row">
+          <label for="project_privacy_hybrid_cloud_model">Cloud model (most agents)</label>
+          <select id="project_privacy_hybrid_cloud_model"
+                  name="project_privacy_hybrid_cloud_model">
+            {% for m in cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == project_privacy_hybrid_cloud_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_hybrid_private_url">Private endpoint URL (data agents)</label>
+          <input type="text" id="project_privacy_hybrid_private_url"
+                 name="project_privacy_hybrid_private_url"
+                 value="{{ project_privacy_hybrid_private_url }}"
+                 placeholder="http://localhost:11434">
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_hybrid_private_key_env">Private API key env var</label>
+          <input type="text" id="project_privacy_hybrid_private_key_env"
+                 name="project_privacy_hybrid_private_key_env"
+                 value="{{ project_privacy_hybrid_private_key_env }}"
+                 placeholder="(optional)">
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_hybrid_private_model">Private model name</label>
+          <input type="text" id="project_privacy_hybrid_private_model"
+                 name="project_privacy_hybrid_private_model"
+                 value="{{ project_privacy_hybrid_private_model }}"
+                 placeholder="qwen3:14b">
+        </div>
+      </div>
     </div>
 
     {# ---- Notifications tab ------------------------------------------- #}

@@ -448,16 +448,31 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             }
         )
 
-    # Privacy tab: read-only summary of the inherited global mode plus the
-    # project-local [privacy] override, if one exists.
+    # Privacy tab: editable with "Inherit from global" semantics.
+    # When the project has no [privacy] block in urika.toml, the radio
+    # snaps to "inherit" and the per-mode fields are blank. When a block
+    # exists, the radio reflects [privacy].mode and the per-mode fields
+    # pull from [privacy.endpoints.private] and [runtime].
     global_settings = load_settings()
     global_privacy_mode = global_settings.get("privacy", {}).get("mode", "open")
     project_privacy = toml_data.get("privacy", {}) or {}
+    project_privacy_endpoints = project_privacy.get("endpoints", {}) or {}
+    project_privacy_private_ep = project_privacy_endpoints.get("private", {}) or {}
+    project_privacy_mode = project_privacy.get("mode") if project_privacy else "inherit"
+    if not project_privacy_mode:
+        project_privacy_mode = "inherit"
+
+    # Hybrid mode wires the data_agent override to the private model — mirror
+    # the global page so we can re-populate the "private model" field.
+    hybrid_data_agent = runtime_models.get("data_agent", {}) or {}
 
     # Stringify list/dict-valued project-section fields for textarea display.
     data_paths_text = "\n".join(project_section.get("data_paths", []) or [])
     success_criteria = project_section.get("success_criteria", {}) or {}
     success_criteria_text = "\n".join(f"{k}={v}" for k, v in success_criteria.items())
+
+    # Suggested cloud-model dropdown values; mirrors the global settings page.
+    cloud_models = ["claude-sonnet-4-5", "claude-opus-4-6", "claude-haiku-4-5"]
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -475,6 +490,42 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "success_criteria_text": success_criteria_text,
             "global_privacy_mode": global_privacy_mode,
             "project_privacy": project_privacy,
+            "project_privacy_mode": project_privacy_mode,
+            "project_privacy_open_model": (
+                runtime_section.get("model", "")
+                if project_privacy_mode == "open"
+                else ""
+            ),
+            "project_privacy_private_url": project_privacy_private_ep.get(
+                "base_url", ""
+            ),
+            "project_privacy_private_key_env": project_privacy_private_ep.get(
+                "api_key_env", ""
+            ),
+            "project_privacy_private_model": (
+                runtime_section.get("model", "")
+                if project_privacy_mode == "private"
+                else ""
+            ),
+            "project_privacy_hybrid_cloud_model": (
+                runtime_section.get("model", "")
+                if project_privacy_mode == "hybrid"
+                else ""
+            ),
+            "project_privacy_hybrid_private_url": (
+                project_privacy_private_ep.get("base_url", "")
+                if project_privacy_mode == "hybrid"
+                else ""
+            ),
+            "project_privacy_hybrid_private_key_env": (
+                project_privacy_private_ep.get("api_key_env", "")
+                if project_privacy_mode == "hybrid"
+                else ""
+            ),
+            "project_privacy_hybrid_private_model": hybrid_data_agent.get(
+                "model", ""
+            ),
+            "cloud_models": cloud_models,
             "notifications": notifications,
             "notif_channels": notifications.get("channels", []) or [],
             "notif_suppress_level": notifications.get("suppress_level", ""),

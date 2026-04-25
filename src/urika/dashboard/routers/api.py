@@ -178,7 +178,9 @@ async def api_project_settings_put(name: str, request: Request):
       (written under ``[runtime.models.<agent>]``).
     * **Notifications**: ``channels`` (multi-checkbox list) and
       ``suppress_level`` written under ``[notifications]``.
-    * **Privacy**: read-only on this page; not handled here.
+    * **Privacy**: ``project_privacy_mode`` ∈ {inherit, open, private,
+      hybrid}; non-inherit values write a project-local ``[privacy]``
+      override (mode + optional ``[privacy.endpoints.private]``).
 
     Validates ``mode`` and ``audience`` against the canonical core sets;
     only writes fields whose value actually changed. For the structured
@@ -372,6 +374,59 @@ def _apply_structured_settings(project_path, form) -> None:
                     f"{len(new_models)} agents",
                 )
             )
+
+    # ---- privacy (Task 11D.1) ----
+    # The Privacy tab posts ``project_privacy_mode`` ∈ {inherit, open,
+    # private, hybrid}. ``inherit`` removes any [privacy] block — the
+    # project falls back to the global config. The other three write a
+    # project-local override.
+    if "project_privacy_mode" in form:
+        new_mode = (form.get("project_privacy_mode") or "").strip()
+        if new_mode not in {"inherit", "open", "private", "hybrid"}:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "project_privacy_mode must be one of "
+                    "{'inherit', 'open', 'private', 'hybrid'}"
+                ),
+            )
+
+        old_privacy = data.get("privacy", {}) or {}
+        old_mode = old_privacy.get("mode") if old_privacy else "inherit"
+        if not old_mode:
+            old_mode = "inherit"
+
+        if new_mode == "inherit":
+            if "privacy" in data:
+                del data["privacy"]
+                revisions.append(("privacy", old_mode, "inherit"))
+        else:
+            new_privacy: dict = {"mode": new_mode}
+            if new_mode == "private":
+                ep = {
+                    "base_url": (
+                        form.get("project_privacy_private_url") or ""
+                    ).strip(),
+                    "api_key_env": (
+                        form.get("project_privacy_private_key_env") or ""
+                    ).strip(),
+                }
+                new_privacy["endpoints"] = {"private": ep}
+            elif new_mode == "hybrid":
+                ep = {
+                    "base_url": (
+                        form.get("project_privacy_hybrid_private_url") or ""
+                    ).strip(),
+                    "api_key_env": (
+                        form.get("project_privacy_hybrid_private_key_env") or ""
+                    ).strip(),
+                }
+                new_privacy["endpoints"] = {"private": ep}
+            # 'open' has no endpoint metadata — mode alone is the override.
+
+            if new_privacy != old_privacy:
+                data["privacy"] = new_privacy
+                revisions.append(("privacy", old_mode, new_mode))
 
     # ---- notifications ----
     # The form posts notifications fields whenever the user is on that tab.

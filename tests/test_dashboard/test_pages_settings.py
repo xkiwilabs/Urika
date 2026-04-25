@@ -71,10 +71,39 @@ def test_project_settings_models_tab_has_per_agent_rows(client_with_projects):
         assert f'name="endpoint[{agent}]"' in body
 
 
-def test_project_settings_privacy_tab_links_to_global_settings(client_with_projects):
-    """Privacy tab is read-only and links to /settings for editing."""
+def test_project_settings_privacy_tab_renders_inherit_radio(client_with_projects):
+    """Privacy tab is now editable: a radio group with 'inherit' default."""
     body = client_with_projects.get("/projects/alpha/settings").text
-    assert 'href="/settings"' in body
+    # Radio group named project_privacy_mode with all four options
+    assert 'name="project_privacy_mode"' in body
+    for value in ("inherit", "open", "private", "hybrid"):
+        assert f'value="{value}"' in body
+
+
+def test_project_settings_privacy_tab_has_per_mode_fields(client_with_projects):
+    """Privacy tab renders per-mode fields for open / private / hybrid."""
+    body = client_with_projects.get("/projects/alpha/settings").text
+    # Open block
+    assert 'name="project_privacy_open_model"' in body
+    # Private block
+    assert 'name="project_privacy_private_url"' in body
+    assert 'name="project_privacy_private_key_env"' in body
+    assert 'name="project_privacy_private_model"' in body
+    # Hybrid block
+    assert 'name="project_privacy_hybrid_cloud_model"' in body
+    assert 'name="project_privacy_hybrid_private_url"' in body
+    assert 'name="project_privacy_hybrid_private_key_env"' in body
+    assert 'name="project_privacy_hybrid_private_model"' in body
+
+
+def test_project_settings_privacy_tab_shows_global_mode_in_inherit_label(
+    client_with_projects,
+):
+    """Inherit radio label surfaces the current global mode."""
+    body = client_with_projects.get("/projects/alpha/settings").text
+    # The label for the inherit radio includes the global mode name so
+    # the user knows what they'd be inheriting.
+    assert "Inherit from global" in body
 
 
 def test_project_settings_notifications_tab_has_channels(client_with_projects):
