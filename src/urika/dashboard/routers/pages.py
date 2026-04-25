@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from urika.core.experiment import list_experiments, load_experiment
 from urika.core.method_registry import load_methods
@@ -317,6 +317,24 @@ def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
             "body_html": body_html,
         },
     )
+
+
+@router.get("/projects/{name}/experiments/{exp_id}/presentation")
+def experiment_presentation(name: str, exp_id: str) -> FileResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    exp_dir = summary.path / "experiments" / exp_id
+    # presentation.html OR presentation/index.html — try both
+    for candidate in (
+        exp_dir / "presentation.html",
+        exp_dir / "presentation" / "index.html",
+    ):
+        if candidate.exists():
+            return FileResponse(candidate, media_type="text/html")
+    raise HTTPException(status_code=404, detail="No presentation for this experiment")
 
 
 @router.get("/projects/{name}/experiments/{exp_id}", response_class=HTMLResponse)

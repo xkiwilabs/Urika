@@ -439,3 +439,21 @@ def test_report_view_404_when_no_report(client_with_runs):
 def test_report_view_404_unknown_experiment(client_with_runs):
     r = client_with_runs.get("/projects/alpha/experiments/exp-999/report")
     assert r.status_code == 404
+
+
+def test_presentation_view_serves_html_file(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    exp_dir = proj / "experiments" / "exp-001"
+    (exp_dir / "presentation.html").write_text(
+        "<!DOCTYPE html><html><body>fake reveal deck</body></html>"
+    )
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/presentation")
+    assert r.status_code == 200
+    assert "fake reveal deck" in r.text
+    # Served as text/html, not wrapped in our base template
+    assert "<aside class=\"sidebar\"" not in r.text
+
+
+def test_presentation_view_404_when_missing(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/presentation")
+    assert r.status_code == 404
