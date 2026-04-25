@@ -36,16 +36,22 @@ The dashboard is a multi-page app. Each route is a server-rendered Jinja templat
 | Route | Description |
 |-------|-------------|
 | `/projects` | Registered projects with mode, question, recent activity. |
-| `/projects/<name>` | Project home: summary card, recent experiments, quick links. |
+| `/projects/<name>` | Project home: summary card, recent experiments, final outputs. |
 | `/projects/<name>/experiments` | All experiments for the project, with status and run counts. |
-| `/projects/<name>/experiments/<id>` | Experiment detail: hypotheses, runs, links to report/presentation/log. |
-| `/projects/<name>/methods` | Project methods registry sorted by metric. |
+| `/projects/<name>/experiments/<id>` | Experiment detail: hypotheses, runs, report/presentation viewers, files. |
+| `/projects/<name>/experiments/<id>/report` | Rendered experiment report (`report.md` → HTML). |
+| `/projects/<name>/experiments/<id>/presentation` | Rendered experiment presentation (reveal.js). |
+| `/projects/<name>/experiments/<id>/files/<path>` | Single experiment artifact viewer (text, image, or download). |
+| `/projects/<name>/methods` | Project methods registry sorted by metric (client-side sortable table). |
+| `/projects/<name>/findings` | Project findings: title, summary, metrics table (formatted, not JSON). |
+| `/projects/<name>/report` | Project-level report (`projectbook/report.md` → HTML). |
+| `/projects/<name>/presentation` | Project-level presentation (reveal.js). |
 | `/projects/<name>/knowledge` | Knowledge base entries for the project. |
 | `/projects/<name>/knowledge/<id>` | A single knowledge entry. |
 | `/projects/<name>/run` | Run launcher form (see below). |
 | `/projects/<name>/experiments/<id>/log` | Live log streaming via SSE (see below). |
-| `/projects/<name>/settings` | Project settings: privacy mode, audience, model overrides. |
-| `/settings` | Global defaults (`~/.urika/settings.toml`): privacy, audience, max turns. |
+| `/projects/<name>/settings` | Project settings (tabbed: basics / data / models / privacy / notifications). |
+| `/settings` | Global defaults (tabbed: privacy / models / preferences / notifications). |
 | `/healthz` | Liveness probe. Always returns `{"status":"ok"}`. |
 
 `/` redirects to `/projects`.
@@ -78,12 +84,55 @@ The log page opens an `EventSource` against `GET /api/projects/<name>/runs/<id>/
 Finalization is streamed the same way at `GET /api/projects/<name>/finalize/stream`.
 
 
+## Sidebar navigation
+
+The sidebar is **mode-aware** — it shows different links depending on whether the user is inside a project or browsing globally.
+
+- **Global mode** (active on `/projects` and `/settings`):
+  - Projects (registry list)
+  - Global settings
+  - Theme toggle
+- **Project mode** (active on any `/projects/<name>/...` route):
+  - A "← Back to projects" link returns the user to the registry.
+  - Project-scoped links: Home, Experiments, Methods, Findings, Knowledge, Run, Settings.
+
+The mode is determined server-side from the request path; there is no client-side state. The same base template renders both — the project-mode links are conditional on a `project` template variable being set by the project routes.
+
+
+## Artifact viewers
+
+Reports, presentations, findings, and uploaded files are all served as **rendered HTML pages**, not as raw file downloads. The principle is:
+
+> **JSON is for agents and scripts; pages render formatted views.**
+
+This applies across the dashboard:
+
+- **Experiment reports** (`/projects/<name>/experiments/<id>/report`) — `report.md` is rendered through the dashboard's markdown helper into the same theme as the rest of the UI. If no report exists, the experiment detail page shows a "Generate report" button that POSTs to the finalize endpoint and streams the log.
+- **Experiment presentations** (`/projects/<name>/experiments/<id>/presentation`) — the reveal.js HTML produced by the presentation agent is served inside an iframe with the standard navigation bar; opening in a new tab gives full-screen reveal.
+- **Experiment files** (`/projects/<name>/experiments/<id>/files/<path>`) — uploaded artifacts (CSVs, plots, JSON snapshots) are listed on the experiment detail page. Text files and images render inline; everything else gets a download link with content-type set correctly.
+- **Project findings** (`/projects/<name>/findings`) — `findings.json` is parsed and rendered as a structured page: title, summary prose, metrics in a sortable table, references as a list. The raw JSON is still available at `/api/projects/<name>/findings` for agents.
+- **Project report and presentation** — same pattern as the experiment-level versions, served from `projectbook/report.md` and `projectbook/presentation.html`.
+
+The experiment detail page composes all of these into a single view: hypotheses, runs, an embedded report viewer (or "Generate" button), an embedded presentation link (or "Generate" button), and the file list.
+
+The project home page surfaces the same artifacts as **"Final outputs"** cards — they appear whenever the corresponding file exists on disk. Each card links to the rendered page, never to the JSON.
+
+
 ## Settings UI
 
-Two settings pages share the same form-based pattern:
+Two settings pages share the same tabbed form pattern. Tabs are a small Alpine.js primitive — no router, no URL fragments — so saving a tab's form does not navigate away.
 
-- **Project settings** (`/projects/<name>/settings`) -- writes to that project's `urika.toml`.
-- **Global settings** (`/settings`) -- writes to `~/.urika/settings.toml` and seeds new projects.
+- **Project settings** (`/projects/<name>/settings`) — writes to that project's `urika.toml`. Five tabs:
+  - **Basics**: name, mode, audience, research question.
+  - **Data**: dataset path, target column, feature columns. Saving appends a new entry to `revisions.json` so changes are auditable.
+  - **Models**: per-agent model overrides (planning, task, evaluator, advisor, etc.).
+  - **Privacy**: privacy mode (`local`, `hybrid`, `cloud`) and any path allow-listing.
+  - **Notifications**: per-event notification toggles (run finished, finalize finished, advisor cleared).
+- **Global settings** (`/settings`) — writes to `~/.urika/settings.toml` and seeds new projects. Four tabs:
+  - **Privacy**: default privacy mode for new projects.
+  - **Models**: default per-agent model assignments.
+  - **Preferences**: default audience, max turns, theme preference.
+  - **Notifications**: default notification configuration.
 
 Both pages POST to a `PUT /api/...` endpoint that validates the payload and saves through the same `_write_toml` helper used by the CLI's `urika config`. See [Configuration](13-configuration.md) for the underlying file formats.
 
