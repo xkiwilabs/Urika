@@ -337,6 +337,29 @@ def experiment_presentation(name: str, exp_id: str) -> FileResponse:
     raise HTTPException(status_code=404, detail="No presentation for this experiment")
 
 
+@router.get("/projects/{name}/experiments/{exp_id}/artifacts/{filename}")
+def experiment_artifact_file(name: str, exp_id: str, filename: str) -> FileResponse:
+    """Serve a single file from ``<exp>/artifacts/`` for the dashboard.
+
+    Used by the experiment detail page to render clickable
+    thumbnails / links for figures, tables, and other artifact files
+    written by the run. We resist path-traversal by rejecting any
+    filename that contains a slash or ``..``; FastAPI URL-decodes
+    path params before they reach the handler, so an encoded
+    ``%2F`` shows up here as a literal ``/``.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    artifact_path = summary.path / "experiments" / exp_id / "artifacts" / filename
+    if not artifact_path.exists() or not artifact_path.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return FileResponse(artifact_path)
+
+
 @router.get("/projects/{name}/experiments/{exp_id}", response_class=HTMLResponse)
 def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
     registry = ProjectRegistry().list_all()

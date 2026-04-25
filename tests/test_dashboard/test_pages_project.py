@@ -457,3 +457,22 @@ def test_presentation_view_serves_html_file(client_with_runs):
 def test_presentation_view_404_when_missing(client_with_runs):
     r = client_with_runs.get("/projects/alpha/experiments/exp-001/presentation")
     assert r.status_code == 404
+
+
+def test_artifact_file_viewer_serves_png(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    artifacts_dir = proj / "experiments" / "exp-001" / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "fig.png").write_bytes(b"\x89PNGfake")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/artifacts/fig.png")
+    assert r.status_code == 200
+    assert r.content.startswith(b"\x89PNG")
+
+
+def test_artifact_file_viewer_rejects_traversal(client_with_runs):
+    r = client_with_runs.get(
+        "/projects/alpha/experiments/exp-001/artifacts/..%2F..%2Fetc%2Fpasswd"
+    )
+    # FastAPI URL-decodes path params, so this becomes "../../etc/passwd"
+    # but our slash/.. check rejects it.
+    assert r.status_code in (400, 404)

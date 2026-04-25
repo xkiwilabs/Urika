@@ -106,3 +106,17 @@ def test_artifacts_endpoint_detects_written_files(tmp_path: Path, monkeypatch):
     assert data["has_report"] is True
     assert data["has_presentation"] is True
     assert data["has_log"] is True
+
+
+def test_artifacts_endpoint_lists_files_in_artifacts_dir(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    artifacts_dir = proj / "experiments" / "exp-001" / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "fig1.png").write_bytes(b"fakepng")
+    (artifacts_dir / "table.csv").write_text("a,b\n1,2\n")
+
+    r = client_with_runs.get("/api/projects/alpha/experiments/exp-001/artifacts")
+    assert r.status_code == 200
+    data = r.json()
+    files = {f["name"] for f in data["files"]}
+    assert files == {"fig1.png", "table.csv"}

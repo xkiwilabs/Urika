@@ -262,10 +262,29 @@ def api_experiment_artifacts(name: str, exp_id: str):
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
     exp_dir = summary.path / "experiments" / exp_id
+
+    artifacts_dir = exp_dir / "artifacts"
+    files = []
+    if artifacts_dir.exists():
+        for p in sorted(artifacts_dir.iterdir()):
+            if p.is_file():
+                files.append(
+                    {
+                        "name": p.name,
+                        "size": p.stat().st_size,
+                        "url": (
+                            f"/projects/{name}/experiments/{exp_id}"
+                            f"/artifacts/{p.name}"
+                        ),
+                    }
+                )
+
     return {
         "has_report": (exp_dir / "report.md").exists(),
-        "has_presentation": (exp_dir / "presentation.html").exists(),
+        "has_presentation": (exp_dir / "presentation.html").exists()
+        or (exp_dir / "presentation" / "index.html").exists(),
         "has_log": (exp_dir / "run.log").exists(),
+        "files": files,
     }
 
 
