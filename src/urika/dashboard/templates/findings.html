@@ -1,0 +1,277 @@
+{% extends "_base.html" %}
+
+{% block title %}Findings · {{ project.name }} · Urika{% endblock %}
+{% block heading %}Findings{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Findings</span>
+  </nav>
+{% endblock %}
+
+{# -- Helpers ---------------------------------------------------------- #}
+{# Render a single value (string, list, or dict) without ever emitting
+   raw JSON. Used by the "More" block for unknown keys. #}
+{% macro render_value(value) -%}
+  {% if value is mapping -%}
+    <dl class="findings-dl">
+      {% for k, v in value.items() %}
+        <dt>{{ k }}</dt>
+        <dd>
+          {% if v is mapping or (v is iterable and v is not string) %}
+            {{ render_value(v) }}
+          {% else %}
+            {{ v }}
+          {% endif %}
+        </dd>
+      {% endfor %}
+    </dl>
+  {%- elif value is iterable and value is not string -%}
+    <ul class="findings-list">
+      {% for item in value %}
+        <li>
+          {% if item is mapping or (item is iterable and item is not string) %}
+            {{ render_value(item) }}
+          {% else %}
+            {{ item }}
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {%- else -%}
+    <p>{{ value }}</p>
+  {%- endif %}
+{%- endmacro %}
+
+{% macro humanise(key) -%}
+  {{ key.replace('_', ' ') | capitalize }}
+{%- endmacro %}
+
+{% block content %}
+<style>
+  .findings-question {
+    font-style: italic;
+    color: var(--text-muted, #888);
+    border-left: 3px solid var(--border, #444);
+    padding-left: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+  .findings-answer {
+    font-size: 1.05rem;
+    line-height: 1.55;
+    margin-bottom: 1.5rem;
+  }
+  .findings-section {
+    margin-top: 1.75rem;
+  }
+  .findings-section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  .findings-method-card {
+    border: 1px solid var(--border, #333);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .findings-method-card .method-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+  }
+  .findings-method-card .method-name {
+    font-weight: 600;
+    font-family: var(--font-mono, monospace);
+  }
+  .findings-method-card .method-role {
+    font-size: 0.85rem;
+    color: var(--text-muted, #888);
+  }
+  .findings-method-card .method-summary {
+    margin: 0.25rem 0 0.5rem;
+  }
+  .findings-method-card .metric-pill {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    margin-right: 0.25rem;
+    border-radius: 999px;
+    background: var(--surface-2, rgba(127, 127, 127, 0.12));
+    font-size: 0.85rem;
+    font-family: var(--font-mono, monospace);
+  }
+  .findings-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+  }
+  .findings-table th, .findings-table td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border, #333);
+  }
+  .findings-list, .findings-dl {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+  .findings-dl dt {
+    font-weight: 600;
+    margin-top: 0.3rem;
+  }
+  .findings-dl dd {
+    margin: 0 0 0.3rem 1rem;
+  }
+  .findings-criteria-tag {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .findings-criteria-tag.met {
+    background: rgba(60, 160, 90, 0.18);
+    color: rgb(60, 160, 90);
+  }
+  .findings-criteria-tag.unmet {
+    background: rgba(190, 90, 90, 0.18);
+    color: rgb(190, 90, 90);
+  }
+  .findings-more {
+    margin-top: 2rem;
+  }
+  .findings-more summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .findings-more-key {
+    margin-top: 1rem;
+    font-weight: 600;
+  }
+</style>
+
+{# -- Question (italic lead) --------------------------------------------- #}
+{% if findings.question %}
+  <div class="findings-question">{{ findings.question }}</div>
+{% endif %}
+
+{# -- Answer (primary paragraph) ----------------------------------------- #}
+{% if findings.answer %}
+  <div class="findings-answer">{{ findings.answer }}</div>
+{% endif %}
+
+{# -- Final methods ------------------------------------------------------ #}
+{% if findings.final_methods %}
+  <section class="findings-section">
+    <h2 class="findings-section-title">Final methods</h2>
+    {% for m in findings.final_methods %}
+      <div class="findings-method-card">
+        <div class="method-head">
+          <span class="method-name">{{ m.name }}</span>
+          {% if m.role %}<span class="method-role">{{ m.role }}</span>{% endif %}
+        </div>
+        {% if m.summary %}
+          <div class="method-summary">{{ m.summary }}</div>
+        {% endif %}
+        {% if m.key_metrics %}
+          <div>
+            {% for k, v in m.key_metrics.items() %}
+              <span class="metric-pill">{{ k }}={% if v is number %}{{ '%.3f' | format(v) }}{% else %}{{ v }}{% endif %}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if m.script %}
+          <div class="text-muted" style="font-size: 0.85rem; margin-top: 0.4rem; font-family: var(--font-mono, monospace);">{{ m.script }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </section>
+{% endif %}
+
+{# -- Criteria status ---------------------------------------------------- #}
+{% if findings.criteria_status %}
+  <section class="findings-section">
+    <h2 class="findings-section-title">Criteria</h2>
+    {% if findings.criteria_status.met is defined %}
+      <span class="findings-criteria-tag {{ 'met' if findings.criteria_status.met else 'unmet' }}">
+        {{ 'Met' if findings.criteria_status.met else 'Not met' }}
+      </span>
+    {% endif %}
+    {% if findings.criteria_status.details %}
+      <p>{{ findings.criteria_status.details }}</p>
+    {% endif %}
+  </section>
+{% endif %}
+
+{# -- Progression -------------------------------------------------------- #}
+{% if findings.progression %}
+  <section class="findings-section">
+    <h2 class="findings-section-title">Progression</h2>
+    <p>{{ findings.progression }}</p>
+  </section>
+{% endif %}
+
+{# -- Experiments summary ----------------------------------------------- #}
+{% if findings.experiments_summary %}
+  <section class="findings-section">
+    <h2 class="findings-section-title">Experiments</h2>
+    <table class="findings-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Focus</th>
+          <th>Key finding</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in findings.experiments_summary %}
+          <tr>
+            <td><code>{{ e.id }}</code></td>
+            <td>{{ e.focus }}</td>
+            <td>{{ e.key_finding }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endif %}
+
+{# -- Limitations ------------------------------------------------------- #}
+{% if findings.limitations %}
+  <section class="findings-section">
+    <h2 class="findings-section-title">Limitations</h2>
+    <ul class="findings-list">
+      {% for item in findings.limitations %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+
+{# -- Future work ------------------------------------------------------- #}
+{% if findings.future_work %}
+  <section class="findings-section">
+    <h2 class="findings-section-title">Future work</h2>
+    <ul class="findings-list">
+      {% for item in findings.future_work %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+
+{# -- "More" block: any non-well-known keys, formatted (never JSON) ----- #}
+{% if extras %}
+  <details class="findings-more">
+    <summary>More</summary>
+    {% for key, value in extras.items() %}
+      <div class="findings-more-key">{{ humanise(key) }}</div>
+      {{ render_value(value) }}
+    {% endfor %}
+  </details>
+{% endif %}
+{% endblock %}

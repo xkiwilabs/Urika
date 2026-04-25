@@ -21,6 +21,16 @@
     {% endif %}
   </div>
 
+  {% if has_findings %}
+    <section class="section">
+      <h2 class="section-title">Final outputs</h2>
+      <a class="card card--linked" href="/projects/{{ project.name }}/findings">
+        <div class="card-title">Findings</div>
+        <div class="card-body">View final findings &rarr;</div>
+      </a>
+    </section>
+  {% endif %}
+
   <section class="section">
     <h2 class="section-title">Recent experiments</h2>
     {% if recent_experiments %}

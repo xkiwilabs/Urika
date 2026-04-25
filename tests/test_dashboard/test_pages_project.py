@@ -468,7 +468,7 @@ def test_presentation_view_serves_html_file(client_with_runs):
     assert r.status_code == 200
     assert "fake reveal deck" in r.text
     # Served as text/html, not wrapped in our base template
-    assert "<aside class=\"sidebar\"" not in r.text
+    assert '<aside class="sidebar"' not in r.text
 
 
 def test_presentation_view_404_when_missing(client_with_runs):
@@ -505,7 +505,9 @@ def test_experiment_detail_shows_report_button_when_present(client_with_runs):
     assert "/projects/alpha/experiments/exp-001/report" in body
 
 
-def test_experiment_detail_shows_generate_buttons_when_artifacts_missing(client_with_runs):
+def test_experiment_detail_shows_generate_buttons_when_artifacts_missing(
+    client_with_runs,
+):
     """When report.md / presentation.html aren't there, show 'Generate'
     buttons that POST to the relevant agent endpoint."""
     r = client_with_runs.get("/projects/alpha/experiments/exp-001")
@@ -533,9 +535,116 @@ def test_experiment_detail_presentation_link_opens_new_tab(client_with_runs):
     body = r.text
     # The presentation link must open in a new tab
     import re
+
     m = re.search(
         r'<a[^>]*href="/projects/alpha/experiments/exp-001/presentation"[^>]*>',
         body,
     )
     assert m is not None
     assert 'target="_blank"' in m.group(0)
+
+
+def test_findings_page_renders_well_known_fields(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "findings.json").write_text(
+        json.dumps(
+            {
+                "question": "Which features predict X?",
+                "answer": "Linear models fit best.",
+                "final_methods": [
+                    {
+                        "name": "ols",
+                        "role": "primary_prediction",
+                        "script": "methods/final_ols.py",
+                        "key_metrics": {"r2": 0.9},
+                        "summary": "Linear regression.",
+                    },
+                    {
+                        "name": "rf",
+                        "role": "robustness",
+                        "script": "methods/final_rf.py",
+                        "key_metrics": {"r2": 0.8},
+                        "summary": "Random forest.",
+                    },
+                ],
+                "limitations": ["Small sample size"],
+            }
+        )
+    )
+    r = client_with_runs.get("/projects/alpha/findings")
+    assert r.status_code == 200
+    body = r.text
+    assert "Linear models fit best." in body
+    assert "Which features predict X?" in body
+    assert "ols" in body
+    assert "Small sample size" in body
+    # NO JSON dump of well-known keys.
+    assert '"answer":' not in body
+    assert '"final_methods":' not in body
+    assert '"limitations":' not in body
+
+
+def test_findings_page_renders_unknown_keys_as_more_block(client_with_runs):
+    """Keys not in the well-known set still render — but as formatted
+    HTML inside a 'More' details block, never as raw JSON."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "findings.json").write_text(
+        json.dumps(
+            {
+                "answer": "OK.",
+                "weird_string": "a custom note",
+                "weird_list": ["alpha", "beta"],
+                "weird_dict": {"k1": "v1", "k2": "v2"},
+            }
+        )
+    )
+    r = client_with_runs.get("/projects/alpha/findings")
+    assert r.status_code == 200
+    body = r.text
+    # Well-known answer rendered as a paragraph.
+    assert "OK." in body
+    # Unknown key values appear as text (not JSON).
+    assert "a custom note" in body
+    assert "alpha" in body
+    assert "beta" in body
+    assert "v1" in body
+    assert "v2" in body
+    # Key labels are humanised in the More block.
+    assert "weird_string" in body or "Weird string" in body
+    # NEVER raw JSON.
+    assert '"weird_string":' not in body
+    assert '"weird_list":' not in body
+    assert '"weird_dict":' not in body
+    # The More block is a <details> element.
+    assert "<details" in body
+
+
+def test_findings_page_404_when_no_findings(client_with_runs):
+    """exp-001 has no findings.json by default in this fixture."""
+    r = client_with_runs.get("/projects/alpha/findings")
+    assert r.status_code == 404
+
+
+def test_findings_page_404_unknown_project(client_with_runs):
+    r = client_with_runs.get("/projects/nonexistent/findings")
+    assert r.status_code == 404
+
+
+def test_project_home_links_to_findings_when_present(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "findings.json").write_text(json.dumps({"answer": "done"}))
+    r = client_with_runs.get("/projects/alpha")
+    assert r.status_code == 200
+    assert "/projects/alpha/findings" in r.text
+
+
+def test_project_home_does_not_link_to_findings_when_absent(client_with_runs):
+    r = client_with_runs.get("/projects/alpha")
+    assert r.status_code == 200
+    assert "/projects/alpha/findings" not in r.text

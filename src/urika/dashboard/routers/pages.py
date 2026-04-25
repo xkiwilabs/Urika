@@ -102,6 +102,7 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
     recent = list_experiments(summary.path)[-5:][::-1]
+    has_findings = (summary.path / "projectbook" / "findings.json").exists()
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "project_home.html",
@@ -109,6 +110,62 @@ def project_home(request: Request, name: str) -> HTMLResponse:
             "request": request,
             "project": summary,
             "recent_experiments": recent,
+            "has_findings": has_findings,
+        },
+    )
+
+
+# Keys finalize.json is documented to emit (see
+# src/urika/agents/roles/prompts/finalizer_system.md). Each well-known key
+# gets its own block in the template. Anything else lands in a "More"
+# collapsible — but never as raw JSON.
+WELL_KNOWN_FINDINGS_KEYS = {
+    "question",
+    "answer",
+    "final_methods",
+    "experiments_summary",
+    "criteria_status",
+    "progression",
+    "limitations",
+    "future_work",
+}
+
+
+@router.get("/projects/{name}/findings", response_class=HTMLResponse)
+def project_findings(request: Request, name: str) -> HTMLResponse:
+    """Render ``projectbook/findings.json`` as structured HTML.
+
+    finalize writes a documented schema (question / answer /
+    final_methods / experiments_summary / criteria_status / progression
+    / limitations / future_work). Each well-known key gets its own
+    block. Anything outside that set goes into a collapsible "More"
+    block as plain text / list / dl — we never dump raw JSON.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    findings_path = summary.path / "projectbook" / "findings.json"
+    if not findings_path.exists():
+        raise HTTPException(status_code=404, detail="No findings yet")
+    try:
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=500, detail="findings.json is malformed"
+        ) from exc
+    if not isinstance(findings, dict):
+        raise HTTPException(status_code=500, detail="findings.json must be an object")
+
+    extras = {k: v for k, v in findings.items() if k not in WELL_KNOWN_FINDINGS_KEYS}
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "findings.html",
+        {
+            "request": request,
+            "project": summary,
+            "findings": findings,
+            "extras": extras,
         },
     )
 
