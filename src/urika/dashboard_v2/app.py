@@ -31,6 +31,10 @@ def create_app(project_root: Path | None) -> FastAPI:
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
+    from urika.dashboard_v2.routers import pages, api
+    app.include_router(pages.router)
+    app.include_router(api.router)
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
