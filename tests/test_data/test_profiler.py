@@ -34,7 +34,10 @@ class TestProfileDataset:
         result = profile_dataset(df)
         assert result.dtypes["a"] == "int64"
         assert result.dtypes["b"] == "float64"
-        assert result.dtypes["c"] == "object"
+        # pandas 3.0 introduced a dedicated 'str' dtype for string columns
+        # that was previously reported as 'object'. Accept either so the
+        # test runs cleanly across pandas 2.x and 3.x.
+        assert result.dtypes["c"] in ("object", "str")
 
     def test_missing_counts(self) -> None:
         df = pd.DataFrame({"a": [1, None, 3], "b": [None, None, "x"]})
