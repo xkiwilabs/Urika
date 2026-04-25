@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from urika.core.experiment import create_experiment
 from urika.core.models import VALID_AUDIENCES, VALID_MODES
@@ -235,3 +238,60 @@ async def api_project_run_post(name: str, request: Request):
             f"View live log →</a>"
         )
     )
+
+
+@router.get("/projects/{name}/runs/{exp_id}/stream")
+async def api_run_stream(name: str, exp_id: str):
+    """Server-sent-events tail of an experiment's ``run.log``.
+
+    Emits each existing log line as ``data: <line>\\n\\n``, then polls
+    every 0.5s for new content. When the ``.lock`` file disappears
+    (the run has finished), flushes any remaining lines and emits an
+    ``event: status\\ndata: {"status":"completed"}\\n\\n`` event before
+    closing the connection.
+
+    The browser-side EventSource (Task 6.5) consumes this stream.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    log_path = summary.path / "experiments" / exp_id / "run.log"
+    lock_path = summary.path / "experiments" / exp_id / ".lock"
+
+    async def event_stream():
+        # Initial backlog — drain whatever's already on disk.
+        position = 0
+        if log_path.exists():
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    yield f"data: {line.rstrip()}\n\n"
+                position = f.tell()
+
+        # Poll for new lines until the lockfile disappears.
+        while lock_path.exists() or log_path.exists():
+            new_data = ""
+            if log_path.exists():
+                with open(log_path, "r", encoding="utf-8") as f:
+                    f.seek(position)
+                    new_data = f.read()
+                    position = f.tell()
+            if new_data:
+                for line in new_data.splitlines():
+                    yield f"data: {line}\n\n"
+            if not lock_path.exists():
+                # Lock gone — run has finished. Emit completion and close.
+                yield (
+                    f"event: status\n"
+                    f"data: {json.dumps({'status': 'completed'})}\n\n"
+                )
+                return
+            await asyncio.sleep(0.5)
+
+        # Reached only when both log and lock were missing from the start.
+        yield (
+            f"event: status\n"
+            f"data: {json.dumps({'status': 'no_log'})}\n\n"
+        )
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
