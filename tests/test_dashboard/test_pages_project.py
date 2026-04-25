@@ -98,6 +98,16 @@ def test_experiments_page_returns_200_and_shows_experiments(client_with_experime
         assert f"exp-{i:03d}" in body
 
 
+def test_experiments_page_renders_sort_dropdown(client_with_experiments):
+    r = client_with_experiments.get("/projects/alpha/experiments")
+    body = r.text
+    assert 'class="list-sort"' in body
+    assert "Newest first" in body
+    assert "Oldest first" in body
+    # Each row carries the data attribute the client-side sort reads.
+    assert "data-last-touched" in body
+
+
 def test_experiments_page_404_for_unknown(client_with_projects):
     r = client_with_projects.get("/projects/nonexistent/experiments")
     assert r.status_code == 404

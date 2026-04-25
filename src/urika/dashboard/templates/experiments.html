@@ -41,9 +41,21 @@
   </div>
 
   {% if experiments %}
-    <ul class="list">
+    {# Newest-first by default — matches the order rows arrive in from
+       the route. Filtering not needed here; experiment counts per
+       project are usually small. #}
+    <div class="list-controls" x-data="{ sort: 'newest' }">
+      <select class="list-sort" x-model="sort" style="margin-left: auto;">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+      </select>
+    </div>
+
+    <ul class="list" id="experiments-list">
       {% for exp in experiments %}
-        <li class="list-item">
+        <li class="list-item"
+            data-experiment-id="{{ exp.experiment_id }}"
+            data-last-touched="{{ exp.last_touched }}">
           <a
             href="/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}"
             class="list-item-link"
@@ -61,6 +73,28 @@
         </li>
       {% endfor %}
     </ul>
+
+    <script>
+      (function() {
+        const root = document.querySelector('.list-controls');
+        const list = document.getElementById('experiments-list');
+        if (!root || !list) return;
+        const items = Array.from(list.children);
+        function applySort() {
+          const ctx = (window.Alpine && Alpine.$data) ? Alpine.$data(root) : { sort: 'newest' };
+          const sort = ctx.sort || 'newest';
+          const sorted = items.slice().sort((a, b) => {
+            const av = a.dataset.lastTouched || '';
+            const bv = b.dataset.lastTouched || '';
+            if (sort === 'oldest') return av.localeCompare(bv);
+            return bv.localeCompare(av);
+          });
+          sorted.forEach(it => list.appendChild(it));
+        }
+        root.addEventListener('change', applySort);
+        applySort();
+      })();
+    </script>
   {% else %}
     <div class="empty-state">
       <p>No experiments yet. Click <strong>+ New experiment</strong> above to start one.</p>
