@@ -752,66 +752,63 @@ def cmd_update(session: ReplSession, args: str) -> None:
         os.environ.pop("URIKA_REPL", None)
 
 
-_dashboard_server = None
-
-
 @command(
     "dashboard",
-    requires_project=True,
-    description="Open project dashboard in browser",
+    description="Open the project dashboard in your browser",
 )
 def cmd_dashboard(session: ReplSession, args: str) -> None:
-    import threading
+    """Open the dashboard for the current project (or projects list).
 
-    from urika.dashboard.server import DashboardServer
+    Starts the FastAPI dashboard on a random free port in a daemon
+    thread, opens the browser at the right URL, and stashes the
+    server reference on the session so it can be shut down on app
+    exit.
 
-    global _dashboard_server
+    Usage::
+
+        /dashboard         open dashboard (current project, or
+                           projects list if none loaded)
+        /dashboard stop    shut down all running dashboards
+    """
+    from urika.tui.dashboard_launcher import start_dashboard_server
 
     parts = args.strip().split()
 
-    # /dashboard stop — shut down running server
+    # /dashboard stop — shut down running servers
     if parts and parts[0] in ("stop", "--stop"):
-        if _dashboard_server is not None:
-            _dashboard_server.shutdown()
-            _dashboard_server = None
-            click.echo("  Dashboard stopped.")
-        else:
+        servers = getattr(session, "_dashboard_servers", None) or []
+        if not servers:
             click.echo("  No dashboard running.")
+            return
+        for srv in servers:
+            try:
+                srv.should_exit = True
+            except Exception:
+                pass
+        session._dashboard_servers = []
+        click.echo(f"  Stopped {len(servers)} dashboard(s).")
         return
 
-    # If already running, stop it first (restart)
-    if _dashboard_server is not None:
-        _dashboard_server.shutdown()
-        _dashboard_server = None
-
-    # Parse --port from args
-    port = 8420
-    for i, part in enumerate(parts):
-        if part == "--port" and i + 1 < len(parts):
-            try:
-                port = int(parts[i + 1])
-            except ValueError:
-                click.echo("  Invalid port number.")
-                return
+    open_path = "/projects"
+    if session.has_project and session.project_name:
+        open_path = f"/projects/{session.project_name}"
 
     try:
-        server = DashboardServer(session.project_path, port=port)
-    except OSError as e:
-        click.echo(f"  Cannot start dashboard: {e}")
+        server, _thread, port = start_dashboard_server(open_path=open_path)
+    except Exception as exc:
+        click.echo(f"  Cannot start dashboard: {exc}")
         return
 
-    _dashboard_server = server
-    actual_port = server.server_address[1]
-    url = f"http://127.0.0.1:{actual_port}"
+    # Stash on session so app shutdown can stop it
+    if hasattr(session, "_dashboard_servers") and isinstance(
+        session._dashboard_servers, list
+    ):
+        session._dashboard_servers.append(server)
+    else:
+        session._dashboard_servers = [server]
 
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-
-    import webbrowser
-
-    webbrowser.open(url)
-    click.echo(f"  Dashboard running at {url}")
-    click.echo("  /dashboard stop to shut down, /dashboard to restart")
+    click.echo(f"  Dashboard at http://127.0.0.1:{port}{open_path}")
+    click.echo("  /dashboard stop to shut down")
 
 
 # ── Sibling-module imports (Phase 8 split) ─────────────────────────
