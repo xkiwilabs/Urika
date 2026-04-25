@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from urika.core.experiment import list_experiments, load_experiment
 from urika.core.method_registry import load_methods
-from urika.core.models import ExperimentConfig
+from urika.core.models import VALID_AUDIENCES, VALID_MODES, ExperimentConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
 from urika.dashboard_v2.projects import (
@@ -127,6 +127,24 @@ def project_methods(request: Request, name: str) -> HTMLResponse:
             "project": summary,
             "methods": methods,
             "metric_keys": metric_keys,
+        },
+    )
+
+
+@router.get("/projects/{name}/settings", response_class=HTMLResponse)
+def project_settings(request: Request, name: str) -> HTMLResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "project_settings.html",
+        {
+            "request": request,
+            "project": summary,
+            "valid_modes": sorted(VALID_MODES),
+            "valid_audiences": sorted(VALID_AUDIENCES),
         },
     )
 

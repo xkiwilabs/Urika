@@ -1,0 +1,63 @@
+{% extends "_base.html" %}
+
+{% block title %}Settings · {{ project.name }} · Urika{% endblock %}
+{% block heading %}Settings{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-sep">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>Settings</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+  .form-row label { font-weight: 600; }
+  .form-row textarea, .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+</style>
+
+<form
+  hx-put="/api/projects/{{ project.name }}/settings"
+  hx-target="#settings-feedback"
+  hx-swap="innerHTML"
+  class="card"
+>
+  <div class="form-row">
+    <label for="question">Research question</label>
+    <textarea id="question" name="question" rows="2">{{ project.question }}</textarea>
+  </div>
+
+  <div class="form-row">
+    <label for="description">Description</label>
+    <textarea id="description" name="description" rows="3">{{ project.description }}</textarea>
+  </div>
+
+  <div class="form-row">
+    <label for="mode">Mode</label>
+    <select id="mode" name="mode">
+      {% for m in valid_modes %}
+        <option value="{{ m }}" {% if m == project.mode %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-row">
+    <label for="audience">Audience</label>
+    <select id="audience" name="audience">
+      {% for a in valid_audiences %}
+        <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn--primary">Save</button>
+    <span id="settings-feedback" class="text-muted"></span>
+  </div>
+</form>
+{% endblock %}
