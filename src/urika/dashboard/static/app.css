@@ -168,6 +168,10 @@ h4 {
   background: var(--bg-elevated);
   border-right: 1px solid var(--border);
   padding: var(--space-5) var(--space-4);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
