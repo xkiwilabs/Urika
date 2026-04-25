@@ -583,28 +583,16 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
         "claude-haiku-4-5",
     ]
 
-    # ---- Notifications tab: per-channel inherit / enabled / disabled --------
-    # The project's [notifications] block, when present, overrides the global
-    # one. Each known channel resolves to a per-channel state:
-    #   * inherit  — channel absent from any project override
-    #   * enabled  — channel listed in [notifications].channels
-    #   * disabled — project explicitly excluded the channel (sentinel)
-    # The disabled-sentinel is encoded as a key under [notifications._disabled]
-    # so we can round-trip it without polluting the channels list.
-    has_project_notifications = bool(notifications)
-    project_disabled = (
-        (notifications.get("_disabled", []) or []) if notifications else []
-    )
+    # ---- Notifications tab: 2-state (enabled / disabled) per channel -------
+    # The project's [notifications].channels list is the authority — a
+    # channel listed there is on, anything else is off. New projects are
+    # seeded from the global ``auto_enable`` flags at creation time
+    # (see POST /api/projects). Per-channel overrides
+    # (extra_to for email, override_chat_id for telegram) keep working.
     project_channels_explicit = notifications.get("channels", []) or []
 
-    def _channel_state(channel: str) -> str:
-        if not has_project_notifications:
-            return "inherit"
-        if channel in project_channels_explicit:
-            return "enabled"
-        if channel in project_disabled:
-            return "disabled"
-        return "inherit"
+    def _channel_enabled(channel: str) -> bool:
+        return channel in project_channels_explicit
 
     notif_email = (notifications.get("email", {}) or {}) if notifications else {}
     notif_slack = (notifications.get("slack", {}) or {}) if notifications else {}
@@ -667,10 +655,11 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "notifications": notifications,
             "notif_channels": notifications.get("channels", []) or [],
             "notif_suppress_level": notifications.get("suppress_level", ""),
-            # New per-channel inherit/enable/disable state for 11D.2
-            "notif_email_state": _channel_state("email"),
-            "notif_slack_state": _channel_state("slack"),
-            "notif_telegram_state": _channel_state("telegram"),
+            # 2-state per-channel enabled/disabled for the project
+            # Notifications tab. The channels list is the authority.
+            "notif_email_enabled": _channel_enabled("email"),
+            "notif_slack_enabled": _channel_enabled("slack"),
+            "notif_telegram_enabled": _channel_enabled("telegram"),
             "notif_email": notif_email,
             "notif_slack": notif_slack,
             "notif_telegram": notif_telegram,

@@ -280,30 +280,25 @@
       </div>
     </div>
 
-    {# ---- Notifications tab (per-channel inherit/override) ------------ #}
+    {# ---- Notifications tab (2-state: enabled / disabled) ------------- #}
     <div class="tab-panel" x-show="active === 'notifications'" x-cloak>
       <p class="form-help" style="margin-bottom: var(--space-3);">
-        For each channel, choose whether this project follows the global
-        configuration, explicitly enables, or explicitly disables it. Channel
-        config (recipients, override chat IDs) lives alongside the radio.
+        Tick a channel to enable it for this project. New projects are
+        pre-seeded from the global Notifications settings (each channel
+        with <em>Auto-enable on new projects</em> turned on starts ticked
+        here). Channel connection details — SMTP host, Slack channel, etc.
+        — are shared globally.
       </p>
 
       {# Email #}
       <div class="channel-block">
         <h4>Email</h4>
-        <div class="radio-group" style="margin-bottom: var(--space-2);">
-          {% for state in ["inherit", "enabled", "disabled"] %}
-            <label class="checkbox-row">
-              <input type="radio" name="project_notif_email_state"
-                     value="{{ state }}"
-                     {% if state == notif_email_state %}checked{% endif %}>
-              <span>
-                {% if state == "inherit" %}Inherit from global{% endif %}
-                {% if state == "enabled" %}Enabled for this project{% endif %}
-                {% if state == "disabled" %}Disabled for this project{% endif %}
-              </span>
-            </label>
-          {% endfor %}
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="project_notif_email_enabled" value="on"
+                   {% if notif_email_enabled %}checked{% endif %}>
+            <span>Enabled for this project</span>
+          </label>
         </div>
         <div class="form-row">
           <label for="project_notif_email_extra_to">Extra recipients (comma-separated)</label>
@@ -318,38 +313,24 @@
       {# Slack #}
       <div class="channel-block">
         <h4>Slack</h4>
-        <div class="radio-group">
-          {% for state in ["inherit", "enabled", "disabled"] %}
-            <label class="checkbox-row">
-              <input type="radio" name="project_notif_slack_state"
-                     value="{{ state }}"
-                     {% if state == notif_slack_state %}checked{% endif %}>
-              <span>
-                {% if state == "inherit" %}Inherit from global{% endif %}
-                {% if state == "enabled" %}Enabled for this project{% endif %}
-                {% if state == "disabled" %}Disabled for this project{% endif %}
-              </span>
-            </label>
-          {% endfor %}
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="project_notif_slack_enabled" value="on"
+                   {% if notif_slack_enabled %}checked{% endif %}>
+            <span>Enabled for this project</span>
+          </label>
         </div>
       </div>
 
       {# Telegram #}
       <div class="channel-block">
         <h4>Telegram</h4>
-        <div class="radio-group" style="margin-bottom: var(--space-2);">
-          {% for state in ["inherit", "enabled", "disabled"] %}
-            <label class="checkbox-row">
-              <input type="radio" name="project_notif_telegram_state"
-                     value="{{ state }}"
-                     {% if state == notif_telegram_state %}checked{% endif %}>
-              <span>
-                {% if state == "inherit" %}Inherit from global{% endif %}
-                {% if state == "enabled" %}Enabled for this project{% endif %}
-                {% if state == "disabled" %}Disabled for this project{% endif %}
-              </span>
-            </label>
-          {% endfor %}
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="project_notif_telegram_enabled" value="on"
+                   {% if notif_telegram_enabled %}checked{% endif %}>
+            <span>Enabled for this project</span>
+          </label>
         </div>
         <div class="form-row">
           <label for="project_notif_telegram_override_chat_id">Override chat ID</label>

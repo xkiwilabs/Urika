@@ -106,18 +106,25 @@ def test_project_settings_privacy_tab_shows_global_mode_in_inherit_label(
     assert "Inherit from global" in body
 
 
-def test_project_settings_notifications_tab_has_per_channel_state(
+def test_project_settings_notifications_tab_has_per_channel_enabled_checkbox(
     client_with_projects,
 ):
-    """Notifications tab exposes inherit/enable/disable per channel + per-channel fields."""
+    """Notifications tab exposes a single enabled checkbox per channel
+    plus the per-channel override fields. The legacy 3-state radios
+    (``project_notif_<ch>_state``) and the ``_disabled`` sentinel are
+    gone — global ``auto_enable`` covers the inherit case at creation
+    time."""
     body = client_with_projects.get("/projects/alpha/settings").text
-    # Per-channel state radios
+    # Per-channel enabled checkboxes (NEW 2-state model)
     for ch in ("email", "slack", "telegram"):
-        assert f'name="project_notif_{ch}_state"' in body
+        assert f'name="project_notif_{ch}_enabled"' in body
     # Email-specific extra_to
     assert 'name="project_notif_email_extra_to"' in body
     # Telegram-specific override_chat_id
     assert 'name="project_notif_telegram_override_chat_id"' in body
+    # Legacy state radios are gone
+    for ch in ("email", "slack", "telegram"):
+        assert f'name="project_notif_{ch}_state"' not in body
 
 
 def test_project_settings_uses_tabs_macro(client_with_projects):
