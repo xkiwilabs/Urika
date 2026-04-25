@@ -31,10 +31,11 @@ git checkout main
 
 # Clean public-facing directories on main before syncing from dev.
 # This ensures renamed/deleted files don't linger on main.
-git rm -rq src/ docs/ 2>/dev/null || true
+git rm -rq src/ docs/ tests/ 2>/dev/null || true
 
 # Checkout all public-facing files from dev
 git checkout dev -- src/
+git checkout dev -- tests/ 2>/dev/null || true
 git checkout dev -- docs/ 2>/dev/null || true
 git checkout dev -- pyproject.toml
 git checkout dev -- README.md
