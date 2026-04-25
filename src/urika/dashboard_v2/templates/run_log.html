@@ -23,6 +23,10 @@
   <div id="log-status" class="text-muted">Connecting…</div>
   <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
 
+  <div style="margin-top: var(--space-4);">
+    <button class="btn btn--secondary" id="stop-btn">Stop run</button>
+  </div>
+
   <div id="log-completion" style="display: none; margin-top: var(--space-4);">
     <p>Run complete.</p>
     <a class="btn btn--primary"
@@ -67,6 +71,7 @@
     try { payload = JSON.parse(e.data); } catch (_) {}
     statusEl.textContent = payload.status === "completed" ? "Completed." : `Status: ${payload.status || "unknown"}`;
     completionEl.style.display = "";
+    document.getElementById("stop-btn").style.display = "none";
     es.close();
 
     // Probe for report / presentation existence so the buttons only
@@ -84,6 +89,14 @@
   es.onerror = function () {
     statusEl.textContent = "Connection lost.";
   };
+
+  document.getElementById("stop-btn").addEventListener("click", function () {
+    fetch("/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stop", {
+      method: "POST",
+    }).then(() => {
+      statusEl.textContent = "Stop requested. Waiting for current step to finish…";
+    });
+  });
 })();
 </script>
 {% endblock %}

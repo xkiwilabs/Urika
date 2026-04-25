@@ -312,3 +312,26 @@ async def api_run_stream(name: str, exp_id: str):
         yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/projects/{name}/runs/{exp_id}/stop")
+def api_run_stop(name: str, exp_id: str) -> dict:
+    """Request a graceful stop of an in-flight experiment run.
+
+    Writes ``"stop"`` to ``<project>/.urika/pause_requested``; the
+    orchestrator's PauseController polls that file and tears the run
+    down at the next safe checkpoint. The flag is project-level
+    (only one active run per project today), so ``exp_id`` is echoed
+    back for symmetry with the streaming/launcher URLs but does not
+    influence the file path.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    flag_dir = summary.path / ".urika"
+    flag_dir.mkdir(parents=True, exist_ok=True)
+    (flag_dir / "pause_requested").write_text("stop", encoding="utf-8")
+
+    return {"status": "stop_requested", "experiment_id": exp_id}

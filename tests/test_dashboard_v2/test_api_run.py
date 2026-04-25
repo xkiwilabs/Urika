@@ -204,3 +204,30 @@ def test_run_post_missing_required_fields(run_client):
         },
     )
     assert r.status_code == 422
+
+
+def test_run_stop_writes_flag(run_client):
+    client, _, proj = run_client
+    r = client.post("/api/projects/alpha/runs/exp-001/stop")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "stop_requested"
+    assert body["experiment_id"] == "exp-001"
+    flag_path = proj / ".urika" / "pause_requested"
+    assert flag_path.exists()
+    assert flag_path.read_text() == "stop"
+
+
+def test_run_stop_404_unknown_project(run_client):
+    client, _, _ = run_client
+    r = client.post("/api/projects/nonexistent/runs/exp-001/stop")
+    assert r.status_code == 404
+
+
+def test_run_stop_creates_dotdir_if_missing(run_client):
+    """The .urika dir doesn't exist by default; the endpoint must mkdir it."""
+    client, _, proj = run_client
+    assert not (proj / ".urika").exists()
+    r = client.post("/api/projects/alpha/runs/exp-001/stop")
+    assert r.status_code == 200
+    assert (proj / ".urika").is_dir()
