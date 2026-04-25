@@ -1,0 +1,95 @@
+{% extends "_base.html" %}
+
+{% block title %}{{ experiment.name }} · Urika{% endblock %}
+{% block heading %}{{ experiment.name }}{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-sep">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <span class="breadcrumb-sep">/</span>
+    <a href="/projects/{{ project.name }}/experiments">Experiments</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>{{ experiment.experiment_id }}</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <div class="card-title">{{ experiment.hypothesis }}</div>
+    <div class="card-meta">
+      <span class="tag tag--{{ experiment.status }}">{{ experiment.status }}</span>
+      <span class="text-muted">{{ experiment.experiment_id }}</span>
+      <span class="text-muted">{{ experiment.created_at }}</span>
+    </div>
+  </div>
+
+  <section class="section">
+    <h2 class="section-title">Resources</h2>
+    <div class="button-row">
+      {% if has_report %}
+        <a class="btn"
+           href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/report">
+          Report
+        </a>
+      {% endif %}
+      {% if has_presentation %}
+        <a class="btn"
+           href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/presentation">
+          Presentation
+        </a>
+      {% endif %}
+      {% if has_log %}
+        <a class="btn"
+           href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/log">
+          Log
+        </a>
+      {% endif %}
+      {% if not (has_report or has_presentation or has_log) %}
+        <span class="text-muted">No artifacts yet.</span>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Runs</h2>
+    {% if runs %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Method</th>
+            <th>Metrics</th>
+            <th>Observation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in runs %}
+            <tr>
+              <td>{{ run.run_id }}</td>
+              <td>{{ run.method }}</td>
+              <td>
+                {% set metric_items = (run.metrics or {}).items() | list %}
+                {% if metric_items %}
+                  {% for key, value in metric_items %}
+                    {{ key }}={% if value is number %}{{ '%.3f' | format(value) }}{% else %}{{ value }}{% endif %}{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {{ (run.observation or '')[:80] }}{% if run.observation and run.observation|length > 80 %}…{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <p>No runs yet.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -104,3 +104,75 @@ def test_experiments_page_empty_state(client_with_projects):
     assert r.status_code == 200
     body = r.text
     assert "No experiments yet" in body or "no experiments" in body.lower()
+
+
+def _make_project_with_runs(root: Path, name: str, exp_id: str, n_runs: int) -> Path:
+    proj = root / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q for {name}"\n'
+        f'mode = "exploratory"\ndescription = ""\n\n'
+        f'[preferences]\naudience = "expert"\n'
+    )
+    exp_dir = proj / "experiments" / exp_id
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "experiment.json").write_text(json.dumps({
+        "experiment_id": exp_id,
+        "name": "baseline",
+        "hypothesis": "linear models will fit",
+        "status": "completed",
+        "created_at": "2026-04-25T00:00:00Z",
+    }))
+    runs = [
+        {
+            "run_id": f"run-{i+1:03d}",
+            "method": "ols",
+            "params": {},
+            "metrics": {"r2": 0.5 + i * 0.01},
+            "observation": f"observation for run {i+1}",
+            "timestamp": f"2026-04-25T0{i}:00:00Z",
+        }
+        for i in range(n_runs)
+    ]
+    (exp_dir / "progress.json").write_text(json.dumps({
+        "experiment_id": exp_id,
+        "status": "completed",
+        "runs": runs,
+    }))
+    return proj
+
+
+@pytest.fixture
+def client_with_runs(tmp_path: Path, monkeypatch) -> TestClient:
+    _make_project_with_runs(tmp_path, "alpha", "exp-001", 3)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)
+
+
+def test_experiment_detail_returns_200_and_shows_hypothesis(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    assert r.status_code == 200
+    body = r.text
+    assert "linear models will fit" in body
+    assert "exp-001" in body
+
+
+def test_experiment_detail_lists_runs(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "ols" in body  # method name
+    assert "run-001" in body or "observation for run 1" in body
+
+
+def test_experiment_detail_404_for_unknown_experiment(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-999")
+    assert r.status_code == 404
+
+
+def test_experiment_detail_404_for_unknown_project(client_with_runs):
+    r = client_with_runs.get("/projects/nonexistent/experiments/exp-001")
+    assert r.status_code == 404

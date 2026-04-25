@@ -8,8 +8,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from urika.core.experiment import list_experiments
+from urika.core.experiment import list_experiments, load_experiment
 from urika.core.models import ExperimentConfig
+from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
 from urika.dashboard_v2.projects import (
     list_project_summaries,
@@ -103,5 +104,44 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
             "request": request,
             "project": summary,
             "experiments": rows,
+        },
+    )
+
+
+@router.get(
+    "/projects/{name}/experiments/{exp_id}", response_class=HTMLResponse
+)
+def experiment_detail(
+    request: Request, name: str, exp_id: str
+) -> HTMLResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    try:
+        exp = load_experiment(summary.path, exp_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="Unknown experiment"
+        ) from exc
+    progress = load_progress(summary.path, exp_id)
+    runs = progress.get("runs", []) or []
+
+    exp_dir = summary.path / "experiments" / exp_id
+    has_report = (exp_dir / "report.md").exists()
+    has_presentation = (exp_dir / "presentation.html").exists()
+    has_log = (exp_dir / "run.log").exists()
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "experiment_detail.html",
+        {
+            "request": request,
+            "project": summary,
+            "experiment": exp,
+            "runs": runs,
+            "has_report": has_report,
+            "has_presentation": has_presentation,
+            "has_log": has_log,
         },
     )
