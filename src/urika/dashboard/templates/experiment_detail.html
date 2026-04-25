@@ -25,31 +25,84 @@
     </div>
   </div>
 
-  <section class="section">
-    <h2 class="section-title">Resources</h2>
-    <div class="button-row">
-      {% if has_report %}
-        <a class="btn btn--secondary"
-           href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/report">
-          Report
-        </a>
-      {% endif %}
-      {% if has_presentation %}
-        <a class="btn btn--secondary"
-           href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/presentation">
-          Presentation
-        </a>
-      {% endif %}
-      {% if has_log %}
-        <a class="btn btn--secondary"
-           href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/log">
-          Log
-        </a>
-      {% endif %}
-      {% if not (has_report or has_presentation or has_log) %}
-        <span class="text-muted">No artifacts yet.</span>
-      {% endif %}
+  <section class="artifacts">
+    <h2 class="section-heading">Outputs</h2>
+
+    <div class="artifact-row">
+      <div class="artifact-row-label">Report</div>
+      <div class="artifact-row-actions">
+        {% if has_report %}
+          <a class="btn btn--primary"
+             href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/report">
+            View report
+          </a>
+        {% else %}
+          <form
+            hx-post="/api/projects/{{ project.name }}/finalize"
+            hx-target="#finalize-feedback"
+            hx-swap="innerHTML"
+            style="display:inline"
+          >
+            <button class="btn btn--secondary" type="submit">Generate report (run finalize)</button>
+            <span id="finalize-feedback" class="text-muted"></span>
+          </form>
+        {% endif %}
+      </div>
     </div>
+
+    <div class="artifact-row">
+      <div class="artifact-row-label">Presentation</div>
+      <div class="artifact-row-actions">
+        {% if has_presentation %}
+          <a class="btn btn--primary"
+             href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/presentation"
+             target="_blank" rel="noopener">
+            Open presentation &#8599;
+          </a>
+        {% else %}
+          <form
+            hx-post="/api/projects/{{ project.name }}/present"
+            hx-target="#present-feedback"
+            hx-swap="innerHTML"
+            style="display:inline"
+          >
+            <input type="hidden" name="experiment_id" value="{{ experiment.experiment_id }}">
+            <button class="btn btn--secondary" type="submit">Generate presentation</button>
+            <span id="present-feedback" class="text-muted"></span>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="artifact-row">
+      <div class="artifact-row-label">Run log</div>
+      <div class="artifact-row-actions">
+        {% if has_log %}
+          <a class="btn btn--secondary"
+             href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/log">
+            View live log
+          </a>
+        {% else %}
+          <span class="text-muted">No log yet — start a run</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if artifact_files %}
+      <div class="artifact-row">
+        <div class="artifact-row-label">Files</div>
+        <div class="artifact-row-actions">
+          <ul class="artifact-files">
+            {% for f in artifact_files %}
+              <li>
+                <a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.name }}</a>
+                <span class="text-muted">{{ f.size }} bytes</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% endif %}
   </section>
 
   <section class="section">

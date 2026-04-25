@@ -378,6 +378,19 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
     has_presentation = (exp_dir / "presentation.html").exists()
     has_log = (exp_dir / "run.log").exists()
 
+    artifacts_dir = exp_dir / "artifacts"
+    artifact_files: list[dict] = []
+    if artifacts_dir.exists():
+        for p in sorted(artifacts_dir.iterdir()):
+            if p.is_file():
+                artifact_files.append(
+                    {
+                        "name": p.name,
+                        "url": f"/projects/{name}/experiments/{exp_id}/artifacts/{p.name}",
+                        "size": p.stat().st_size,
+                    }
+                )
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "experiment_detail.html",
@@ -389,5 +402,6 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
             "has_report": has_report,
             "has_presentation": has_presentation,
             "has_log": has_log,
+            "artifact_files": artifact_files,
         },
     )

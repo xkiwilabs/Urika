@@ -476,3 +476,49 @@ def test_artifact_file_viewer_rejects_traversal(client_with_runs):
     # FastAPI URL-decodes path params, so this becomes "../../etc/passwd"
     # but our slash/.. check rejects it.
     assert r.status_code in (400, 404)
+
+
+def test_experiment_detail_shows_report_button_when_present(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    exp_dir = proj / "experiments" / "exp-001"
+    (exp_dir / "report.md").write_text("# Findings")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "View report" in body
+    assert "/projects/alpha/experiments/exp-001/report" in body
+
+
+def test_experiment_detail_shows_generate_buttons_when_artifacts_missing(client_with_runs):
+    """When report.md / presentation.html aren't there, show 'Generate'
+    buttons that POST to the relevant agent endpoint."""
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "Generate report" in body or "Run finalize" in body
+    assert "Generate presentation" in body or "Run present" in body
+
+
+def test_experiment_detail_lists_artifacts(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    artifacts_dir = proj / "experiments" / "exp-001" / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "fig1.png").write_bytes(b"fake")
+    (artifacts_dir / "table.csv").write_text("a,b")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "fig1.png" in body
+    assert "table.csv" in body
+
+
+def test_experiment_detail_presentation_link_opens_new_tab(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    (proj / "experiments" / "exp-001" / "presentation.html").write_text("<html></html>")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    # The presentation link must open in a new tab
+    import re
+    m = re.search(
+        r'<a[^>]*href="/projects/alpha/experiments/exp-001/presentation"[^>]*>',
+        body,
+    )
+    assert m is not None
+    assert 'target="_blank"' in m.group(0)
