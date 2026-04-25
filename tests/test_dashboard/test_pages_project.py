@@ -476,6 +476,114 @@ def test_presentation_view_404_when_missing(client_with_runs):
     assert r.status_code == 404
 
 
+def test_report_view_rewrites_relative_image_paths(client_with_runs):
+    """Markdown like ``![](fig.png)`` should resolve to the artifact viewer URL."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    exp_dir = proj / "experiments" / "exp-001"
+    artifacts_dir = exp_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "fig.png").write_bytes(b"\x89PNGfake")
+    (exp_dir / "report.md").write_text(
+        "# Findings\n\n![Figure 1](fig.png)\n\n![Figure 2](artifacts/fig.png)\n"
+    )
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/report")
+    assert r.status_code == 200
+    body = r.text
+    # Both forms should resolve to the same absolute artifact URL.
+    assert (
+        'src="/projects/alpha/experiments/exp-001/artifacts/fig.png"' in body
+    )
+    # The unrewritten relative forms should NOT be in the page.
+    assert 'src="fig.png"' not in body
+    assert 'src="artifacts/fig.png"' not in body
+
+
+def test_report_view_leaves_absolute_urls_alone(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    exp_dir = proj / "experiments" / "exp-001"
+    (exp_dir / "report.md").write_text(
+        "[Link](https://example.com/page)\n\n"
+        "![Remote](https://example.com/x.png)\n"
+    )
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/report")
+    body = r.text
+    assert 'href="https://example.com/page"' in body
+    assert 'src="https://example.com/x.png"' in body
+
+
+def test_experiment_presentation_serves_reveal_css(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "experiments" / "exp-001" / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text("<html></html>")
+    (pres_dir / "reveal.css").write_text("body { color: red }")
+    r = client_with_runs.get(
+        "/projects/alpha/experiments/exp-001/presentation/reveal.css"
+    )
+    assert r.status_code == 200
+    assert "color: red" in r.text
+
+
+def test_experiment_presentation_serves_reveal_js(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "experiments" / "exp-001" / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text("<html></html>")
+    (pres_dir / "reveal.min.js").write_text("// reveal js content")
+    r = client_with_runs.get(
+        "/projects/alpha/experiments/exp-001/presentation/reveal.min.js"
+    )
+    assert r.status_code == 200
+    assert "reveal js content" in r.text
+
+
+def test_experiment_presentation_serves_subdirectory_figures(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "experiments" / "exp-001" / "presentation"
+    figures = pres_dir / "figures"
+    figures.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text("<html></html>")
+    (figures / "fig.png").write_bytes(b"\x89PNGdata")
+    r = client_with_runs.get(
+        "/projects/alpha/experiments/exp-001/presentation/figures/fig.png"
+    )
+    assert r.status_code == 200
+    assert r.content.startswith(b"\x89PNG")
+
+
+def test_experiment_presentation_rejects_traversal(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "experiments" / "exp-001" / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text("<html></html>")
+    r = client_with_runs.get(
+        "/projects/alpha/experiments/exp-001/presentation/..%2F..%2Fetc%2Fpasswd"
+    )
+    assert r.status_code in (400, 404)
+
+
+def test_projectbook_presentation_serves_assets(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "projectbook" / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text("<html></html>")
+    (pres_dir / "reveal.css").write_text("body{}")
+    r = client_with_runs.get("/projects/alpha/projectbook/presentation/reveal.css")
+    assert r.status_code == 200
+    assert "body{}" in r.text
+
+
+def test_existing_presentation_root_still_works(client_with_runs):
+    """The bare ``/presentation`` route should still serve ``index.html``."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "experiments" / "exp-001" / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text("<html><body>deck</body></html>")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/presentation")
+    assert r.status_code == 200
+    assert "deck" in r.text
+
+
 def test_artifact_file_viewer_serves_png(client_with_runs):
     proj = client_with_runs.app.state.project_root / "alpha"
     artifacts_dir = proj / "experiments" / "exp-001" / "artifacts"

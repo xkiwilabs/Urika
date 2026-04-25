@@ -216,6 +216,12 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="No final report")
     from urika.dashboard.render import render_markdown
 
+    # TODO: figures referenced from the project-level report (typically
+    # under projectbook/artifacts/ or projectbook/figures/) currently
+    # render broken in the dashboard. We don't yet have an artifact-viewer
+    # route under projectbook to rewrite ``base_url`` to. The per-experiment
+    # surface (where figures are actually used most) is fixed; this is a
+    # follow-up.
     return request.app.state.templates.TemplateResponse(
         "report_view.html",
         {
@@ -226,6 +232,31 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
             "title_override": "Final report",
         },
     )
+
+
+@router.get("/projects/{name}/projectbook/presentation/{rest:path}")
+def projectbook_presentation_asset(name: str, rest: str) -> FileResponse:
+    """Serve sibling assets (CSS/JS/images) for the project-level deck.
+
+    Without this, ``index.html`` loads but its relative
+    ``<link rel="stylesheet" href="reveal.css">`` and
+    ``<script src="reveal.min.js">`` references 404, and the deck
+    renders as a single vertically-stacked page instead of slide-by-slide.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not rest or ".." in rest or rest.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    pres_root = (summary.path / "projectbook" / "presentation").resolve()
+    asset_path = pres_root / rest
+    if not asset_path.exists() or not asset_path.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found")
+    # Ensure we did not escape the presentation dir.
+    if not asset_path.resolve().is_relative_to(pres_root):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return FileResponse(asset_path)
 
 
 @router.get("/projects/{name}/projectbook/presentation")
@@ -568,7 +599,10 @@ def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
 
     from urika.dashboard.render import render_markdown
 
-    body_html = render_markdown(report_path.read_text(encoding="utf-8"))
+    body_html = render_markdown(
+        report_path.read_text(encoding="utf-8"),
+        base_url=f"/projects/{name}/experiments/{exp_id}/artifacts",
+    )
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "report_view.html",
@@ -579,6 +613,40 @@ def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
             "body_html": body_html,
         },
     )
+
+
+# NOTE: must be registered BEFORE the bare ``/presentation`` route so
+# FastAPI matches the asset variant when a sub-path is present. The
+# ``{rest:path}`` converter requires a non-empty match (we enforce this
+# with an explicit ``not rest`` check), so the bare-``/presentation``
+# route below remains reachable.
+@router.get("/projects/{name}/experiments/{exp_id}/presentation/{rest:path}")
+def experiment_presentation_asset(
+    name: str, exp_id: str, rest: str
+) -> FileResponse:
+    """Serve sibling assets (CSS/JS/images) for the per-experiment deck.
+
+    Without this, ``index.html`` loads but its relative
+    ``<link rel="stylesheet" href="reveal.css">`` and
+    ``<script src="reveal.min.js">`` references 404, and the deck
+    renders as a single vertically-stacked page instead of slide-by-slide.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not rest or ".." in rest or rest.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    pres_root = (
+        summary.path / "experiments" / exp_id / "presentation"
+    ).resolve()
+    asset_path = pres_root / rest
+    if not asset_path.exists() or not asset_path.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found")
+    # Ensure we did not escape the presentation dir.
+    if not asset_path.resolve().is_relative_to(pres_root):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return FileResponse(asset_path)
 
 
 @router.get("/projects/{name}/experiments/{exp_id}/presentation")
