@@ -1,9 +1,29 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import modal %}
 
 {% block title %}Projects · Urika{% endblock %}
 {% block heading %}Projects{% endblock %}
 
 {% block content %}
+<style>
+  .page-actions { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
+  .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+  .form-row label { font-weight: 600; }
+  .form-row input, .form-row textarea, .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
+  .form-row--inline { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+  .form-row--inline label { font-weight: 600; }
+  .form-row--inline input, .form-row--inline select { width: auto; }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+</style>
+
+  <div class="page-actions">
+    <button
+      class="btn btn--primary"
+      @click="$dispatch('open-modal', { id: 'new-project' })"
+      type="button"
+    >+ New project</button>
+  </div>
+
   {% if projects %}
     <ul class="list">
       {% for p in projects %}
@@ -29,8 +49,60 @@
     </ul>
   {% else %}
     <div class="empty-state">
-      <p>No projects yet.</p>
-      <p class="text-muted">Create one with: <code>urika new &lt;name&gt;</code></p>
+      <p>No projects yet. Click <strong>+ New project</strong> above to create one.</p>
     </div>
   {% endif %}
+
+  {% call modal('new-project', 'New project') %}
+    <form
+      hx-post="/api/projects"
+      hx-target="#new-project-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="np-name">Project name</label>
+        <input id="np-name" name="name" type="text"
+               pattern="[a-z0-9][a-z0-9-]*" required
+               placeholder="e.g. dht-target-selection">
+      </div>
+
+      <div class="form-row">
+        <label for="np-question">Research question</label>
+        <textarea id="np-question" name="question" rows="2" required></textarea>
+      </div>
+
+      <div class="form-row">
+        <label for="np-description">Description (optional)</label>
+        <textarea id="np-description" name="description" rows="2"></textarea>
+      </div>
+
+      <div class="form-row">
+        <label for="np-data-paths">Data path(s) (one per line)</label>
+        <textarea id="np-data-paths" name="data_paths" rows="3"
+                  placeholder="/path/to/data.csv"></textarea>
+      </div>
+
+      <div class="form-row form-row--inline">
+        <label for="np-mode">Mode</label>
+        <select id="np-mode" name="mode">
+          {% for m in valid_modes %}
+            <option value="{{ m }}" {% if m == "exploratory" %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="np-audience">Audience</label>
+        <select id="np-audience" name="audience">
+          {% for a in valid_audiences %}
+            <option value="{{ a }}" {% if a == "expert" %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Create project</button>
+        <span id="new-project-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
 {% endblock %}

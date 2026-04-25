@@ -30,3 +30,26 @@ def test_projects_list_empty_state(tmp_path: Path, monkeypatch):
     r = client.get("/projects")
     assert r.status_code == 200
     assert "No projects" in r.text or "No projects yet" in r.text
+
+
+def test_projects_list_has_new_project_button_and_modal(
+    client_with_projects: TestClient,
+):
+    """The /projects page exposes a + New project action that opens a
+    modal carrying the create-project form.
+    """
+    body = client_with_projects.get("/projects").text
+    # Top-right action button
+    assert "+ New project" in body
+    assert "open-modal" in body
+    assert "'id': 'new-project'" in body or '"id": "new-project"' in body or (
+        "id: 'new-project'" in body
+    )
+    # Modal posts to the create endpoint via HTMX
+    assert 'hx-post="/api/projects"' in body
+    # Required form fields
+    for field_name in ("name", "question", "description", "data_paths", "mode", "audience"):
+        assert f'name="{field_name}"' in body, f"missing form field: {field_name}"
+    # Mode and audience dropdowns are populated from valid_modes / valid_audiences
+    assert ">exploratory<" in body
+    assert ">expert<" in body

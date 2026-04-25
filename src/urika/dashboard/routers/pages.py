@@ -84,7 +84,12 @@ def projects_list(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "projects_list.html",
-        {"request": request, "projects": summaries},
+        {
+            "request": request,
+            "projects": summaries,
+            "valid_modes": sorted(VALID_MODES),
+            "valid_audiences": sorted(VALID_AUDIENCES),
+        },
     )
 
 
