@@ -447,6 +447,86 @@ async def api_project_present(name: str, request: Request):
     )
 
 
+@router.post("/projects/{name}/advisor")
+async def api_project_advisor(name: str, request: Request):
+    """Run the advisor agent inline and return the response markdown.
+
+    Unlike finalize/present (which spawn subprocesses for long-running
+    work), the advisor is short and we call it synchronously inside
+    the request handler. The advisor agent's runner uses asyncio so
+    the route is async too — no threadpool hop needed.
+
+    Returns ``{"response": <markdown_str>}`` on success. The browser
+    typically renders this in a modal or appends it to a chat panel.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    body = await request.form()
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(status_code=422, detail="question is required")
+
+    try:
+        response_md = await _run_advisor_inline(summary.path, name, question)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"response": response_md}
+
+
+async def _run_advisor_inline(
+    project_path, project_name: str, question: str
+) -> str:
+    """Build advisor config + context, await ``runner.run``, return text.
+
+    Pulled out of the route so tests can stub this single function
+    instead of mocking the whole agent stack. Mirrors the in-process
+    pattern used by ``urika.cli.agents.advisor`` but trimmed for the
+    dashboard's request/response cycle (no rolling-summary update,
+    no suggestion offer, no usage recording).
+    """
+    try:
+        from urika.agents.runner import get_runner
+        from urika.agents.registry import AgentRegistry
+    except ImportError as exc:
+        raise RuntimeError(
+            "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
+        ) from exc
+
+    runner = get_runner()
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get("advisor_agent")
+    if role is None:
+        raise RuntimeError("Advisor agent not found in registry.")
+
+    config = role.build_config(project_dir=project_path, experiment_id="")
+    config.max_turns = 25  # Standalone chat needs more turns than in-loop advisor.
+
+    context = f"Project: {project_name}\n"
+    try:
+        from urika.core.advisor_memory import load_context_summary
+
+        summary_text = load_context_summary(project_path)
+        if summary_text:
+            context += (
+                f"\n## Research Context (from previous sessions)\n\n"
+                f"{summary_text}\n\n"
+            )
+    except Exception:
+        pass
+    context += f"\nUser: {question}\n"
+
+    result = await runner.run(config, context, on_message=lambda m: None)
+
+    if not result.success:
+        raise RuntimeError(result.error or "Advisor failed")
+    return (result.text_output or "").strip()
+
+
 @router.post("/projects/{name}/runs/{exp_id}/stop")
 def api_run_stop(name: str, exp_id: str) -> dict:
     """Request a graceful stop of an in-flight experiment run.
