@@ -107,6 +107,50 @@ def test_seed_no_urika_toml_returns_empty(urika_home, tmp_path):
     assert seeded == []
 
 
+def test_global_setup_auto_enable_persists_through_settings(urika_home):
+    """The interactive global setup writes ``auto_enable`` under each
+    channel section. We exercise the helper indirectly: write the same
+    shape the CLI flow produces and confirm
+    ``get_default_notifications_auto_enable`` reads it back unchanged.
+
+    Driving the actual interactive prompt is infrastructure-heavy, so
+    this test stands in for the CLI prompt — Commit 1 already covered
+    the helper round-trip, this just locks in the file shape.
+    """
+    from urika.core.settings import (
+        get_default_notifications_auto_enable,
+        save_settings,
+    )
+
+    save_settings(
+        {
+            "notifications": {
+                "email": {
+                    "smtp_server": "smtp.gmail.com",
+                    "smtp_port": 587,
+                    "from_addr": "x@y.com",
+                    "username": "x@y.com",
+                    "to": ["alice@x.com"],
+                    "password_env": "URIKA_EMAIL_PASSWORD",
+                    "auto_enable": True,
+                },
+                "slack": {
+                    "channel": "#urika",
+                    "bot_token_env": "SLACK_BOT_TOKEN",
+                    "auto_enable": False,
+                },
+                "telegram": {
+                    "chat_id": "123",
+                    "bot_token_env": "TELEGRAM_BOT_TOKEN",
+                    "auto_enable": True,
+                },
+            }
+        }
+    )
+    out = get_default_notifications_auto_enable()
+    assert out == {"email": True, "slack": False, "telegram": True}
+
+
 def test_seed_preserves_existing_notifications_section(urika_home, tmp_path):
     """If the project already has a [notifications] block (e.g. with
     per-channel overrides), seeding only sets the channels list."""

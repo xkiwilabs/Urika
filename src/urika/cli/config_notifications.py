@@ -463,6 +463,14 @@ def _notifications_global_setup(*, settings, project_path):
                 save_secret("URIKA_EMAIL_PASSWORD", password)
                 click.echo("  Saved! Password stored in ~/.urika/secrets.env")
 
+            # Ask about auto-enabling for new projects. Default True
+            # because the most common case (user sets up email globally
+            # → wants new projects to use it) needs no extra typing.
+            auto_enable = interactive_confirm(
+                "Auto-enable for new projects?",
+                default=bool(email_cfg.get("auto_enable", True)),
+            )
+
             notif.setdefault("email", {}).update(
                 {
                     "smtp_server": smtp_server,
@@ -471,6 +479,7 @@ def _notifications_global_setup(*, settings, project_path):
                     "username": from_addr,
                     "to": to_addrs,
                     "password_env": "URIKA_EMAIL_PASSWORD",
+                    "auto_enable": auto_enable,
                 }
             )
             settings["notifications"] = notif
@@ -507,11 +516,17 @@ def _notifications_global_setup(*, settings, project_path):
             if app_token:
                 save_secret("SLACK_APP_TOKEN", app_token)
 
+            auto_enable = interactive_confirm(
+                "Auto-enable for new projects?",
+                default=bool(slack_cfg.get("auto_enable", True)),
+            )
+
             notif.setdefault("slack", {}).update(
                 {
                     "channel": channel,
                     "bot_token_env": "SLACK_BOT_TOKEN",
                     "app_token_env": "SLACK_APP_TOKEN" if app_token else "",
+                    "auto_enable": auto_enable,
                 }
             )
             settings["notifications"] = notif
@@ -548,10 +563,16 @@ def _notifications_global_setup(*, settings, project_path):
                 save_secret("TELEGRAM_BOT_TOKEN", bot_token)
                 click.echo("  Saved! Token stored in ~/.urika/secrets.env")
 
+            auto_enable = interactive_confirm(
+                "Auto-enable for new projects?",
+                default=bool(telegram_cfg.get("auto_enable", True)),
+            )
+
             notif.setdefault("telegram", {}).update(
                 {
                     "chat_id": chat_id,
                     "bot_token_env": "TELEGRAM_BOT_TOKEN",
+                    "auto_enable": auto_enable,
                 }
             )
             settings["notifications"] = notif
