@@ -36,3 +36,14 @@ def client_with_projects(tmp_path: Path, monkeypatch) -> TestClient:
 
     app = create_app(project_root=tmp_path)
     return TestClient(app)
+
+
+@pytest.fixture
+def settings_client(tmp_path: Path, monkeypatch) -> TestClient:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    # Empty registry — settings page doesn't need projects.
+    (home / "projects.json").write_text("{}")
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)

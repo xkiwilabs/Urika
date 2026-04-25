@@ -2,24 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-from fastapi.testclient import TestClient
-
-from urika.dashboard.app import create_app
-
-
-@pytest.fixture
-def settings_client(tmp_path: Path, monkeypatch) -> TestClient:
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("URIKA_HOME", str(home))
-    # Empty registry — settings page doesn't need projects.
-    (home / "projects.json").write_text("{}")
-    app = create_app(project_root=tmp_path)
-    return TestClient(app)
-
 
 def test_global_settings_page_returns_200_and_renders_form(settings_client):
     r = settings_client.get("/settings")

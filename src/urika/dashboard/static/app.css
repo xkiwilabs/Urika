@@ -239,6 +239,13 @@ h4 {
   font-weight: var(--fw-medium);
 }
 
+.sidebar-link--back {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  margin-bottom: var(--space-3);
+}
+.sidebar-link--back:hover { color: var(--text); }
+
 .main {
   flex: 1;
   padding: var(--space-6) var(--space-7);

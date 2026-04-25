@@ -3,9 +3,8 @@
     <span class="wordmark">Urika</span>
   </a>
   <nav class="sidebar-nav">
-    <a class="sidebar-link" href="/projects">Projects</a>
-    <a class="sidebar-link" href="/settings">Settings</a>
     {% if project %}
+      <a class="sidebar-link sidebar-link--back" href="/projects">← Back to projects</a>
       <div class="sidebar-section">
         <div class="sidebar-section-label">{{ project.name }}</div>
         <a class="sidebar-link" href="/projects/{{ project.name }}">Home</a>
@@ -15,6 +14,9 @@
         <a class="sidebar-link" href="/projects/{{ project.name }}/run">Run</a>
         <a class="sidebar-link" href="/projects/{{ project.name }}/settings">Settings</a>
       </div>
+    {% else %}
+      <a class="sidebar-link" href="/projects">Projects</a>
+      <a class="sidebar-link" href="/settings">Settings</a>
     {% endif %}
   </nav>
 </aside>
