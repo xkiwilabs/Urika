@@ -1,10 +1,15 @@
 name: CI
 
+# Runs on `dev` only. Tests are intentionally excluded from `main` (the
+# public release branch) by the pre-push hook in dev/scripts/setup-hooks.sh,
+# so a CI run on main would have nothing meaningful to test against.
+# Anything released to main has already passed CI on dev — the
+# release-to-main.sh script is a deterministic file copy, not a build.
 on:
   push:
-    branches: [main, dev]
+    branches: [dev]
   pull_request:
-    branches: [main, dev]
+    branches: [dev]
 
 # Cancel in-flight CI runs when a new commit is pushed to the same branch.
 # Saves CI minutes when several commits land in quick succession.
@@ -33,9 +38,9 @@ jobs:
 
       - name: Install package + dev tooling
         # The `dev` extra pulls in `all` -> `dl` (torch, transformers).
-        # Skip the heavy DL extras in CI — no tests require them and
-        # they roughly double install time.
-        run: pip install -e . pytest pytest-asyncio ruff
+        # Skip the heavy DL extras in CI — no tests need them and they
+        # roughly double install time.
+        run: pip install -e . pytest pytest-asyncio pyperclip ruff
 
       - name: Ruff check
         run: ruff check src/ tests/
