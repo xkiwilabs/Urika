@@ -88,21 +88,50 @@ class TestStdoutCapture:
             assert "memoryview line" in text
 
     @pytest.mark.asyncio
-    async def test_ansi_stripped(self) -> None:
+    async def test_ansi_preserved_for_panel_styling(self) -> None:
+        """ANSI escapes flow through to the panel so per-agent colours
+        from cli_display.print_agent render in the TUI the same as in
+        the CLI/REPL. The panel converts them to Rich Text via
+        Text.from_ansi() — so the visible characters are the bare text,
+        but the rendered Text object carries colour spans."""
         app = UrikaApp()
         async with app.run_test() as pilot:
             panel = app.query_one("OutputPanel")
             from urika.tui.capture import OutputCapture
 
             with OutputCapture(app):
-                # Bold red, reset — should appear as plain text.
+                # Bold red, reset.
                 print("\x1b[1;31mred\x1b[0m word")
             await pilot.pause()
 
             text = _panel_text(panel)
-            assert "red word" in text
-            # ESC should not survive through to the panel.
+            # The visible text contains both words with escape sequences
+            # resolved into Rich style metadata. The styled "red" and
+            # the unstyled " word" render as separate segments, so check
+            # they're both present rather than matching a single span.
+            # The bold-red colour shows up in the segment metadata.
+            assert "red" in text
+            assert "word" in text
+            assert "bold=True" in text  # rich style applied
             assert "\x1b" not in text
+
+    @pytest.mark.asyncio
+    async def test_copy_buffer_strips_ansi(self) -> None:
+        """The /copy ring buffer holds plain text — ANSI codes from the
+        coloured CLI helpers must not land on the user's clipboard."""
+        app = UrikaApp()
+        async with app.run_test() as pilot:
+            from urika.tui.capture import OutputCapture
+
+            with OutputCapture(app):
+                print("\x1b[1;31mred\x1b[0m word")
+            await pilot.pause()
+
+            recorded = list(app.session.recent_output_lines)
+            assert recorded, "expected a recorded output line"
+            joined = "\n".join(recorded)
+            assert "red word" in joined
+            assert "\x1b" not in joined
 
     @pytest.mark.asyncio
     async def test_worker_thread_write(self) -> None:

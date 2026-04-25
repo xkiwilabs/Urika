@@ -101,6 +101,57 @@ _AGENT_LABELS: dict[str, str] = {
 }
 
 
+# Rich-flavour version of _AGENT_COLORS for the TUI — same hue per agent
+# as the CLI's ANSI palette, expressed as Rich style strings. Kept in
+# lockstep with _AGENT_COLORS so the user sees one project-wide colour
+# language whether they're in the CLI, classic REPL, or Textual TUI.
+_AGENT_COLORS_RICH: dict[str, str] = {
+    "project_builder": "#5b9bd5",            # blue
+    "planning_agent": "#33b9b9",             # cyan
+    "task_agent": "#5cb85c",                 # green
+    "evaluator": "#ffcc66",                  # yellow
+    "advisor_agent": "#cc99ff",              # magenta
+    "tool_builder": "#ff8c42",               # orange
+    "literature_agent": "bold #5b9bd5",
+    "report_agent": "#dddddd",
+    "presentation_agent": "bold #5cb85c",
+    "data_agent": "bold #33b9b9",
+    "finalizer": "bold #cc99ff",
+}
+
+# Top-level commands map to a primary agent for colouring purposes.
+# The "run" loop touches several agents; we colour it as planning since
+# planning kicks each turn off. Unknown commands fall back to brand blue.
+_COMMAND_COLORS_RICH: dict[str, str] = {
+    "run": "#33b9b9",                        # planning_agent (cyan)
+    "finalize": "bold #cc99ff",              # finalizer
+    "new": "#5b9bd5",                        # project_builder
+    "advisor": "#cc99ff",                    # advisor_agent
+    "evaluate": "#ffcc66",                   # evaluator
+    "plan": "#33b9b9",                       # planning_agent
+    "report": "#dddddd",                     # report_agent
+    "present": "bold #5cb85c",               # presentation_agent
+    "build-tool": "#ff8c42",                 # tool_builder
+    "summarize": "#dddddd",                  # report_agent
+}
+
+_BRAND_COLOR_RICH = "#4a9eff"
+
+
+def rich_color_for_command(name: str) -> str:
+    """Return a Rich style string for a command or agent name.
+
+    Looks up agents first (so subagent names like ``evaluator`` resolve
+    correctly even when used as a command via ``urika evaluate``), then
+    commands, then falls back to brand blue.
+    """
+    if name in _AGENT_COLORS_RICH:
+        return _AGENT_COLORS_RICH[name]
+    if name in _COMMAND_COLORS_RICH:
+        return _COMMAND_COLORS_RICH[name]
+    return _BRAND_COLOR_RICH
+
+
 # ── Spinner frames ───────────────────────────────────────────────
 
 _SPINNER = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"  # braille dots
