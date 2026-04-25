@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="{{ theme | default('light') }}">
+<html lang="en" data-theme="{{ theme | default('dark') }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@
   <script src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
 </head>
 <body
-  x-data="{ theme: localStorage.getItem('urika-theme') || 'light' }"
+  x-data="{ theme: localStorage.getItem('urika-theme') || 'dark' }"
   x-init="document.documentElement.dataset.theme = theme"
   :data-theme="theme"
 >
