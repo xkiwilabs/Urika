@@ -53,3 +53,24 @@ def test_projects_list_has_new_project_button_and_modal(
     # Mode and audience dropdowns are populated from valid_modes / valid_audiences
     assert ">exploratory<" in body
     assert ">expert<" in body
+
+
+def test_projects_list_renders_search_and_sort(client_with_projects: TestClient):
+    r = client_with_projects.get("/projects")
+    body = r.text
+    assert 'class="list-search"' in body
+    assert 'class="list-sort"' in body
+    assert "Recent activity" in body
+
+
+def test_project_summary_has_last_activity(tmp_path: Path):
+    from urika.dashboard.projects import list_project_summaries
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    summaries = list_project_summaries({"alpha": proj})
+    assert summaries[0].last_activity != ""
+    assert "T" in summaries[0].last_activity  # ISO format

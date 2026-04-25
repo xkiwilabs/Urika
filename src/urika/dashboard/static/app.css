@@ -454,6 +454,23 @@ h4 {
   overflow-wrap: anywhere;
 }
 
+/* ---------- List controls (search + sort above a list) ---------- */
+.list-controls {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.list-search, .list-sort {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.list-search { flex: 1; }
+.list-sort { min-width: 160px; }
+
 /* ---------- 3. List item ---------- */
 .list-item {
   display: block;

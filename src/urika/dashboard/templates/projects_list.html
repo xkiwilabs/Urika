@@ -25,9 +25,30 @@
   </div>
 
   {% if projects %}
-    <ul class="list">
+    {# Live filter + sort over the rendered DOM. "newest" and "recent"
+       both sort by last_activity desc — when a separate created_at field
+       exists they could diverge. #}
+    <div class="list-controls" x-data="{ filter: '', sort: 'recent' }">
+      <input
+        type="text"
+        class="list-search"
+        placeholder="Search projects…"
+        x-model.debounce.150ms="filter"
+      >
+      <select class="list-sort" x-model="sort">
+        <option value="recent">Recent activity</option>
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="name">Name A–Z</option>
+      </select>
+    </div>
+
+    <ul class="list" id="projects-list">
       {% for p in projects %}
-        <li class="list-item {{ 'list-item--missing' if p.missing else '' }}">
+        <li class="list-item {{ 'list-item--missing' if p.missing else '' }}"
+            data-name="{{ p.name }}"
+            data-question="{{ p.question }}"
+            data-last-activity="{{ p.last_activity }}">
           <a href="/projects/{{ p.name }}" class="list-item-link">
             <div class="list-item-main">
               <div class="list-item-title">{{ p.name | humanize }}</div>
@@ -47,6 +68,39 @@
         </li>
       {% endfor %}
     </ul>
+
+    <script>
+      (function() {
+        const root = document.querySelector('.list-controls');
+        const list = document.getElementById('projects-list');
+        if (!root || !list) return;
+        const items = Array.from(list.children);
+        function applyFilter() {
+          const ctx = (window.Alpine && Alpine.$data) ? Alpine.$data(root) : { filter: '', sort: 'recent' };
+          const q = (ctx.filter || '').toLowerCase();
+          const sort = ctx.sort || 'recent';
+          items.forEach(it => {
+            const haystack = (it.dataset.name + ' ' + it.dataset.question).toLowerCase();
+            it.style.display = haystack.includes(q) ? '' : 'none';
+          });
+          const visible = items.filter(it => it.style.display !== 'none');
+          visible.sort((a, b) => {
+            if (sort === 'name') return a.dataset.name.localeCompare(b.dataset.name);
+            if (sort === 'newest' || sort === 'recent') {
+              return (b.dataset.lastActivity || '').localeCompare(a.dataset.lastActivity || '');
+            }
+            if (sort === 'oldest') {
+              return (a.dataset.lastActivity || '').localeCompare(b.dataset.lastActivity || '');
+            }
+            return 0;
+          });
+          visible.forEach(it => list.appendChild(it));
+        }
+        root.addEventListener('change', applyFilter);
+        root.addEventListener('input', applyFilter);
+        applyFilter();
+      })();
+    </script>
   {% else %}
     <div class="empty-state">
       <p>No projects yet. Click <strong>+ New project</strong> above to create one.</p>
