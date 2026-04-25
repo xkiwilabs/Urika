@@ -615,3 +615,37 @@ h4 {
 .log-line--muted {
   color: var(--text-muted);
 }
+
+/* ---------- Markdown body (report viewer, knowledge entries) ---------- */
+.markdown-body { line-height: var(--lh-body); }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-3);
+}
+.markdown-body h1 { font-size: var(--fs-xl); }
+.markdown-body h2 { font-size: var(--fs-lg); }
+.markdown-body h3 { font-size: var(--fs-md); }
+.markdown-body p { margin-bottom: var(--space-3); }
+.markdown-body code {
+  font-family: var(--font-mono);
+  background: var(--bg-code);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.markdown-body pre {
+  background: var(--bg-code);
+  padding: var(--space-3);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.markdown-body pre code { background: transparent; padding: 0; }
+.markdown-body table {
+  border-collapse: collapse;
+  margin: var(--space-3) 0;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+}
+.markdown-body th { background: var(--bg-elevated); }

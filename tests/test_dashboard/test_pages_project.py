@@ -417,3 +417,25 @@ def test_run_log_page_works_without_existing_experiment(client_run_no_active):
     # Project exists; the page itself doesn't validate the experiment id —
     # SSE handles the no-data case.
     assert r.status_code == 200
+
+
+def test_report_view_renders_markdown(client_with_runs):
+    # Fabricate report.md
+    proj = client_with_runs.app.state.project_root / "alpha"
+    exp_dir = proj / "experiments" / "exp-001"
+    (exp_dir / "report.md").write_text("# Findings\n\nLinear models fit best.")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/report")
+    assert r.status_code == 200
+    assert "<h1>Findings</h1>" in r.text
+    assert "Linear models fit best." in r.text
+
+
+def test_report_view_404_when_no_report(client_with_runs):
+    """exp-001 has no report.md by default in this fixture."""
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/report")
+    assert r.status_code == 404
+
+
+def test_report_view_404_unknown_experiment(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-999/report")
+    assert r.status_code == 404

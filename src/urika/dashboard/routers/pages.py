@@ -289,6 +289,36 @@ def project_experiment_log(request: Request, name: str, exp_id: str) -> HTMLResp
     )
 
 
+@router.get(
+    "/projects/{name}/experiments/{exp_id}/report",
+    response_class=HTMLResponse,
+)
+def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    report_path = summary.path / "experiments" / exp_id / "report.md"
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=404, detail="No report for this experiment"
+        )
+
+    from urika.dashboard.render import render_markdown
+
+    body_html = render_markdown(report_path.read_text(encoding="utf-8"))
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "report_view.html",
+        {
+            "request": request,
+            "project": summary,
+            "experiment_id": exp_id,
+            "body_html": body_html,
+        },
+    )
+
+
 @router.get("/projects/{name}/experiments/{exp_id}", response_class=HTMLResponse)
 def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
     registry = ProjectRegistry().list_all()
