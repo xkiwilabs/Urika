@@ -52,6 +52,10 @@
     textarea.value = '';
     textarea.disabled = true;
 
+    // Append italic "Thinking…" placeholder while the request runs
+    const thinking = appendMessage('advisor', 'Thinking…');
+    thinking.classList.add('message--thinking');
+
     try {
       const data = new FormData();
       data.append('question', question);
@@ -61,12 +65,22 @@
       });
       if (r.ok) {
         const body = await r.json();
-        appendMessage('advisor', body.response || body.answer || JSON.stringify(body));
+        thinking.classList.remove('message--thinking');
+        thinking.textContent = body.response || body.answer || JSON.stringify(body);
       } else {
-        appendMessage('advisor', `Error: ${r.status}`);
+        thinking.classList.remove('message--thinking');
+        thinking.classList.add('message--error');
+        let detail = `Error ${r.status}`;
+        try {
+          const errBody = await r.json();
+          if (errBody && errBody.detail) detail = `Error: ${errBody.detail}`;
+        } catch (_) {}
+        thinking.textContent = detail;
       }
     } catch (err) {
-      appendMessage('advisor', `Error: ${err.message}`);
+      thinking.classList.remove('message--thinking');
+      thinking.classList.add('message--error');
+      thinking.textContent = `Error: ${err.message}`;
     } finally {
       textarea.disabled = false;
       textarea.focus();
@@ -79,6 +93,7 @@
     div.textContent = text;
     transcript.appendChild(div);
     transcript.scrollTop = transcript.scrollHeight;
+    return div;
   }
 })();
 </script>

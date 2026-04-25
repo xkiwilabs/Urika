@@ -794,6 +794,14 @@ h4 {
   background: var(--bg-elevated);
   align-self: flex-start;
 }
+.message--thinking {
+  opacity: 0.7;
+  font-style: italic;
+}
+.message--error {
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  color: var(--error);
+}
 .advisor-form textarea {
   width: 100%;
   min-height: 80px;
