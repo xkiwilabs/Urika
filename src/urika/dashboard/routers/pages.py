@@ -474,6 +474,35 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     # Suggested cloud-model dropdown values; mirrors the global settings page.
     cloud_models = ["claude-sonnet-4-5", "claude-opus-4-6", "claude-haiku-4-5"]
 
+    # ---- Notifications tab: per-channel inherit / enabled / disabled --------
+    # The project's [notifications] block, when present, overrides the global
+    # one. Each known channel resolves to a per-channel state:
+    #   * inherit  — channel absent from any project override
+    #   * enabled  — channel listed in [notifications].channels
+    #   * disabled — project explicitly excluded the channel (sentinel)
+    # The disabled-sentinel is encoded as a key under [notifications._disabled]
+    # so we can round-trip it without polluting the channels list.
+    has_project_notifications = bool(notifications)
+    project_disabled = (
+        (notifications.get("_disabled", []) or []) if notifications else []
+    )
+    project_channels_explicit = notifications.get("channels", []) or []
+
+    def _channel_state(channel: str) -> str:
+        if not has_project_notifications:
+            return "inherit"
+        if channel in project_channels_explicit:
+            return "enabled"
+        if channel in project_disabled:
+            return "disabled"
+        return "inherit"
+
+    notif_email = (notifications.get("email", {}) or {}) if notifications else {}
+    notif_slack = (notifications.get("slack", {}) or {}) if notifications else {}
+    notif_telegram = (
+        (notifications.get("telegram", {}) or {}) if notifications else {}
+    )
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "project_settings.html",
@@ -529,6 +558,13 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "notifications": notifications,
             "notif_channels": notifications.get("channels", []) or [],
             "notif_suppress_level": notifications.get("suppress_level", ""),
+            # New per-channel inherit/enable/disable state for 11D.2
+            "notif_email_state": _channel_state("email"),
+            "notif_slack_state": _channel_state("slack"),
+            "notif_telegram_state": _channel_state("telegram"),
+            "notif_email": notif_email,
+            "notif_slack": notif_slack,
+            "notif_telegram": notif_telegram,
         },
     )
 

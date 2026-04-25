@@ -106,12 +106,18 @@ def test_project_settings_privacy_tab_shows_global_mode_in_inherit_label(
     assert "Inherit from global" in body
 
 
-def test_project_settings_notifications_tab_has_channels(client_with_projects):
-    """Notifications tab exposes channel checkboxes and suppress level."""
+def test_project_settings_notifications_tab_has_per_channel_state(
+    client_with_projects,
+):
+    """Notifications tab exposes inherit/enable/disable per channel + per-channel fields."""
     body = client_with_projects.get("/projects/alpha/settings").text
-    assert 'name="channels"' in body
-    # Suppress level lets users gate which event severities are sent.
-    assert 'name="suppress_level"' in body
+    # Per-channel state radios
+    for ch in ("email", "slack", "telegram"):
+        assert f'name="project_notif_{ch}_state"' in body
+    # Email-specific extra_to
+    assert 'name="project_notif_email_extra_to"' in body
+    # Telegram-specific override_chat_id
+    assert 'name="project_notif_telegram_override_chat_id"' in body
 
 
 def test_project_settings_uses_tabs_macro(client_with_projects):

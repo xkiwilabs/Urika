@@ -306,7 +306,7 @@ def test_settings_put_skips_empty_per_agent_rows(settings_client, tmp_path):
 
 
 def test_settings_put_notifications_channels_writes_section(settings_client, tmp_path):
-    """[notifications].channels list is written from checkbox selection."""
+    """[notifications].channels list is written from per-channel state radios."""
     settings_client.put(
         "/api/projects/alpha/settings",
         data={
@@ -314,13 +314,13 @@ def test_settings_put_notifications_channels_writes_section(settings_client, tmp
             "description": "orig desc",
             "mode": "exploratory",
             "audience": "expert",
-            "channels": ["ntfy", "email"],
-            "suppress_level": "warn",
+            "project_notif_email_state": "enabled",
+            "project_notif_slack_state": "enabled",
+            "project_notif_telegram_state": "inherit",
         },
     )
     toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
-    assert toml["notifications"]["channels"] == ["ntfy", "email"]
-    assert toml["notifications"]["suppress_level"] == "warn"
+    assert sorted(toml["notifications"]["channels"]) == ["email", "slack"]
 
 
 # ---- Revision counts: one entry per top-level field changed -----------------
@@ -375,8 +375,9 @@ def test_settings_put_notifications_records_one_revision(settings_client, tmp_pa
             "description": "orig desc",
             "mode": "exploratory",
             "audience": "expert",
-            "channels": ["email"],
-            "suppress_level": "warn",
+            "project_notif_email_state": "enabled",
+            "project_notif_slack_state": "inherit",
+            "project_notif_telegram_state": "inherit",
         },
     )
     revisions = json.loads((tmp_path / "alpha" / "revisions.json").read_text())[
@@ -516,3 +517,126 @@ def test_settings_put_privacy_records_revision(settings_client, tmp_path):
     ]
     fields = [r["field"] for r in revisions]
     assert "privacy" in fields
+
+
+# ---- Notifications tab: per-channel inherit / enable / disable --------------
+
+
+def test_settings_put_notifications_all_inherit_no_section(settings_client, tmp_path):
+    """All channels inherit → no [notifications] block in urika.toml."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_notif_email_state="inherit",
+            project_notif_slack_state="inherit",
+            project_notif_telegram_state="inherit",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert "notifications" not in toml
+
+
+def test_settings_put_notifications_email_enabled_writes_channel(
+    settings_client, tmp_path
+):
+    """Email enabled at project level → [notifications].channels = ['email']."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_notif_email_state="enabled",
+            project_notif_slack_state="inherit",
+            project_notif_telegram_state="inherit",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["notifications"]["channels"] == ["email"]
+
+
+def test_settings_put_notifications_extra_to_writes_email_table(
+    settings_client, tmp_path
+):
+    """Email override with extra_to writes [notifications.email] with extra_to list."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_notif_email_state="enabled",
+            project_notif_email_extra_to="alice@example.com, bob@example.com",
+            project_notif_slack_state="inherit",
+            project_notif_telegram_state="inherit",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["notifications"]["email"]["extra_to"] == [
+        "alice@example.com",
+        "bob@example.com",
+    ]
+
+
+def test_settings_put_notifications_telegram_chat_id_override(
+    settings_client, tmp_path
+):
+    """Telegram override with override_chat_id writes [notifications.telegram]."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_notif_email_state="inherit",
+            project_notif_slack_state="inherit",
+            project_notif_telegram_state="enabled",
+            project_notif_telegram_override_chat_id="999",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["notifications"]["telegram"]["override_chat_id"] == "999"
+
+
+def test_settings_put_notifications_disabled_excludes_channel(
+    settings_client, tmp_path
+):
+    """Channel set to 'disabled' must NOT appear in channels list."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_notif_email_state="disabled",
+            project_notif_slack_state="inherit",
+            project_notif_telegram_state="inherit",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    notifs = toml.get("notifications", {})
+    # Email is disabled (override saying "off") and shouldn't be in channels.
+    assert "email" not in notifs.get("channels", [])
+    # The block exists since we wrote a disabled override.
+    assert "notifications" in toml
+
+
+def test_settings_put_notifications_switch_back_to_inherit_clears_block(
+    settings_client, tmp_path
+):
+    """Setting an override then switching all to inherit removes [notifications]."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_notif_email_state="enabled",
+            project_notif_email_extra_to="alice@example.com",
+            project_notif_slack_state="inherit",
+            project_notif_telegram_state="inherit",
+        ),
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert "notifications" in toml
+
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_notif_email_state="inherit",
+            project_notif_slack_state="inherit",
+            project_notif_telegram_state="inherit",
+        ),
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert "notifications" not in toml

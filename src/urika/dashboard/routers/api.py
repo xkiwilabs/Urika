@@ -176,8 +176,13 @@ async def api_project_settings_put(name: str, request: Request):
     * **Models**: ``runtime_model`` (sets ``[runtime].model``) and
       bracketed ``model[<agent>]`` / ``endpoint[<agent>]`` pairs
       (written under ``[runtime.models.<agent>]``).
-    * **Notifications**: ``channels`` (multi-checkbox list) and
-      ``suppress_level`` written under ``[notifications]``.
+    * **Notifications**: per-channel ``project_notif_<ch>_state``
+      ∈ {inherit, enabled, disabled} for email/slack/telegram. When all
+      three are "inherit", the project has no override and the
+      ``[notifications]`` block is removed; otherwise we write a project-
+      local override with ``channels`` (enabled list) plus optional
+      ``[notifications.email].extra_to`` and
+      ``[notifications.telegram].override_chat_id``.
     * **Privacy**: ``project_privacy_mode`` ∈ {inherit, open, private,
       hybrid}; non-inherit values write a project-local ``[privacy]``
       override (mode + optional ``[privacy.endpoints.private]``).
@@ -428,41 +433,71 @@ def _apply_structured_settings(project_path, form) -> None:
                 data["privacy"] = new_privacy
                 revisions.append(("privacy", old_mode, new_mode))
 
-    # ---- notifications ----
-    # The form posts notifications fields whenever the user is on that tab.
-    # We treat "channels missing entirely AND suppress_level missing" as
-    # "user didn't touch the tab" — otherwise apply.
-    has_notif_fields = "channels" in form or "suppress_level" in form
-    if has_notif_fields:
-        new_channels = form.getlist("channels")
-        new_channels = [c for c in new_channels if c]
-        new_suppress = (form.get("suppress_level") or "").strip()
+    # ---- notifications (Task 11D.2) ----
+    # Per-channel state radios: ``project_notif_<ch>_state`` ∈ {inherit,
+    # enabled, disabled}. When *every* channel is "inherit", the project
+    # has no [notifications] override at all and we remove the block.
+    has_new_notif = any(
+        f"project_notif_{ch}_state" in form
+        for ch in ("email", "slack", "telegram")
+    )
+    if has_new_notif:
+        states = {
+            ch: (form.get(f"project_notif_{ch}_state") or "inherit").strip()
+            for ch in ("email", "slack", "telegram")
+        }
+        all_inherit = all(s == "inherit" for s in states.values())
 
         old_notif = data.get("notifications", {}) or {}
-        old_channels = old_notif.get("channels", []) or []
-        old_suppress = old_notif.get("suppress_level", "")
 
-        if new_channels != old_channels or new_suppress != old_suppress:
-            notif: dict = {}
-            if new_channels:
-                notif["channels"] = new_channels
-            if new_suppress:
-                notif["suppress_level"] = new_suppress
-            # Preserve any other keys we don't surface in the form
-            for k, v in old_notif.items():
-                if k not in {"channels", "suppress_level"}:
-                    notif.setdefault(k, v)
-            if notif:
-                data["notifications"] = notif
-            elif "notifications" in data:
+        if all_inherit:
+            if "notifications" in data:
                 del data["notifications"]
-            revisions.append(
-                (
-                    "notifications",
-                    f"channels={old_channels}, level={old_suppress!r}",
-                    f"channels={new_channels}, level={new_suppress!r}",
+                revisions.append(("notifications", "override", "inherit"))
+        else:
+            new_notif: dict = {}
+            channels: list[str] = []
+            disabled: list[str] = []
+            for ch, state in states.items():
+                if state == "enabled":
+                    channels.append(ch)
+                elif state == "disabled":
+                    disabled.append(ch)
+            new_notif["channels"] = channels
+            if disabled:
+                # Sentinel: track explicitly-disabled channels so the page
+                # can re-render the radio with the right value. Kept under
+                # an underscore-prefixed key so it doesn't collide with a
+                # real channel name.
+                new_notif["_disabled"] = disabled
+
+            # Per-channel overrides. We always pull these from the form
+            # so the user can stash extras alongside an inherit/disable
+            # choice (preferred over forcing them to leave the field blank).
+            email_extra = (
+                form.get("project_notif_email_extra_to") or ""
+            ).strip()
+            email_extra_list = [
+                a.strip() for a in email_extra.split(",") if a.strip()
+            ]
+            if email_extra_list:
+                new_notif["email"] = {"extra_to": email_extra_list}
+
+            telegram_chat = (
+                form.get("project_notif_telegram_override_chat_id") or ""
+            ).strip()
+            if telegram_chat:
+                new_notif["telegram"] = {"override_chat_id": telegram_chat}
+
+            if new_notif != old_notif:
+                data["notifications"] = new_notif
+                revisions.append(
+                    (
+                        "notifications",
+                        str(old_notif),
+                        str(new_notif),
+                    )
                 )
-            )
 
     # Clean up empty runtime section so we don't litter urika.toml.
     if not runtime_section:

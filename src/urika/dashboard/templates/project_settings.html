@@ -45,6 +45,13 @@
     background: var(--bg-elevated);
   }
   .privacy-block h4 { margin-top: 0; }
+  .channel-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .channel-block h4 { margin: 0 0 var(--space-2) 0; }
   .radio-group { display: flex; flex-direction: column; gap: 0.25rem; }
   .radio-group label { font-weight: normal; }
 </style>
@@ -273,31 +280,84 @@
       </div>
     </div>
 
-    {# ---- Notifications tab ------------------------------------------- #}
+    {# ---- Notifications tab (per-channel inherit/override) ------------ #}
     <div class="tab-panel" x-show="active === 'notifications'" x-cloak>
-      <div class="form-row">
-        <label>Channels</label>
-        {% for ch in ["ntfy", "email", "slack", "console"] %}
-          <label class="checkbox-row">
-            <input type="checkbox" name="channels" value="{{ ch }}"
-                   {% if ch in notif_channels %}checked{% endif %}>
-            <span>{{ ch }}</span>
-          </label>
-        {% endfor %}
-        <span class="form-help">Mirrors the <code>urika notifications</code> interactive setup.</span>
+      <p class="form-help" style="margin-bottom: var(--space-3);">
+        For each channel, choose whether this project follows the global
+        configuration, explicitly enables, or explicitly disables it. Channel
+        config (recipients, override chat IDs) lives alongside the radio.
+      </p>
+
+      {# Email #}
+      <div class="channel-block">
+        <h4>Email</h4>
+        <div class="radio-group" style="margin-bottom: var(--space-2);">
+          {% for state in ["inherit", "enabled", "disabled"] %}
+            <label class="checkbox-row">
+              <input type="radio" name="project_notif_email_state"
+                     value="{{ state }}"
+                     {% if state == notif_email_state %}checked{% endif %}>
+              <span>
+                {% if state == "inherit" %}Inherit from global{% endif %}
+                {% if state == "enabled" %}Enabled for this project{% endif %}
+                {% if state == "disabled" %}Disabled for this project{% endif %}
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="form-row">
+          <label for="project_notif_email_extra_to">Extra recipients (comma-separated)</label>
+          <input type="text" id="project_notif_email_extra_to"
+                 name="project_notif_email_extra_to"
+                 value="{{ notif_email.get('extra_to', []) | join(', ') if notif_email.get('extra_to') else '' }}"
+                 placeholder="alice@example.com, bob@example.com">
+          <span class="form-help">Project-specific addresses appended to the global <code>to</code> list.</span>
+        </div>
       </div>
 
-      <div class="form-row">
-        <label for="suppress_level">Suppress level</label>
-        <select id="suppress_level" name="suppress_level">
-          {% for lvl in ["", "info", "warn", "error"] %}
-            <option value="{{ lvl }}"
-                    {% if lvl == notif_suppress_level %}selected{% endif %}>
-              {{ lvl or "(none)" }}
-            </option>
+      {# Slack #}
+      <div class="channel-block">
+        <h4>Slack</h4>
+        <div class="radio-group">
+          {% for state in ["inherit", "enabled", "disabled"] %}
+            <label class="checkbox-row">
+              <input type="radio" name="project_notif_slack_state"
+                     value="{{ state }}"
+                     {% if state == notif_slack_state %}checked{% endif %}>
+              <span>
+                {% if state == "inherit" %}Inherit from global{% endif %}
+                {% if state == "enabled" %}Enabled for this project{% endif %}
+                {% if state == "disabled" %}Disabled for this project{% endif %}
+              </span>
+            </label>
           {% endfor %}
-        </select>
-        <span class="form-help">Events at or below this level are suppressed.</span>
+        </div>
+      </div>
+
+      {# Telegram #}
+      <div class="channel-block">
+        <h4>Telegram</h4>
+        <div class="radio-group" style="margin-bottom: var(--space-2);">
+          {% for state in ["inherit", "enabled", "disabled"] %}
+            <label class="checkbox-row">
+              <input type="radio" name="project_notif_telegram_state"
+                     value="{{ state }}"
+                     {% if state == notif_telegram_state %}checked{% endif %}>
+              <span>
+                {% if state == "inherit" %}Inherit from global{% endif %}
+                {% if state == "enabled" %}Enabled for this project{% endif %}
+                {% if state == "disabled" %}Disabled for this project{% endif %}
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="form-row">
+          <label for="project_notif_telegram_override_chat_id">Override chat ID</label>
+          <input type="text" id="project_notif_telegram_override_chat_id"
+                 name="project_notif_telegram_override_chat_id"
+                 value="{{ notif_telegram.get('override_chat_id', '') }}"
+                 placeholder="(use a different chat than the global one)">
+        </div>
       </div>
     </div>
 
