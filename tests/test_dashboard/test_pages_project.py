@@ -606,6 +606,35 @@ def test_existing_presentation_root_still_works(client_with_runs):
     assert "deck" in r.text
 
 
+def test_experiment_presentation_injects_base_tag(client_with_runs):
+    """The bare ``/presentation`` URL needs a <base> so relative
+    ``reveal.css`` / ``reveal.min.js`` resolve under the
+    sub-path route instead of the parent path."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "experiments" / "exp-001" / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text(
+        "<!DOCTYPE html><html><head><title>x</title></head><body>deck</body></html>"
+    )
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/presentation")
+    assert r.status_code == 200
+    assert '<base href="/projects/alpha/experiments/exp-001/presentation/"' in r.text
+    assert "deck" in r.text
+
+
+def test_projectbook_presentation_injects_base_tag(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "projectbook" / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text(
+        "<!DOCTYPE html><html><head><title>x</title></head><body>final</body></html>"
+    )
+    r = client_with_runs.get("/projects/alpha/projectbook/presentation")
+    assert r.status_code == 200
+    assert '<base href="/projects/alpha/projectbook/presentation/"' in r.text
+    assert "final" in r.text
+
+
 def test_artifact_file_viewer_serves_png(client_with_runs):
     proj = client_with_runs.app.state.project_root / "alpha"
     artifacts_dir = proj / "experiments" / "exp-001" / "artifacts"

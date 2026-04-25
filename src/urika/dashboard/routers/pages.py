@@ -250,11 +250,18 @@ def projectbook_presentation_asset(name: str, rest: str) -> FileResponse:
 
 
 @router.get("/projects/{name}/projectbook/presentation")
-def projectbook_presentation(name: str) -> FileResponse:
+def projectbook_presentation(name: str) -> HTMLResponse:
     """Serve the project-level final presentation.
 
     Accepts either ``projectbook/presentation.html`` or the directory
     form ``projectbook/presentation/index.html``.
+
+    Injects a ``<base href=".../presentation/">`` tag so that relative
+    ``<link href="reveal.css">`` and ``<script src="reveal.min.js">``
+    references resolve under the existing
+    ``/presentation/{rest:path}`` sub-path route. Without the base,
+    the bare URL (no trailing slash) causes the browser to resolve
+    relative URLs against the parent path, 404'ing the assets.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -266,8 +273,25 @@ def projectbook_presentation(name: str) -> FileResponse:
         book / "presentation" / "index.html",
     ):
         if candidate.exists():
-            return FileResponse(candidate, media_type="text/html")
+            html = candidate.read_text(encoding="utf-8")
+            base_url = f"/projects/{name}/projectbook/presentation/"
+            html = _inject_base_tag(html, base_url)
+            return HTMLResponse(content=html)
     raise HTTPException(status_code=404, detail="No final presentation")
+
+
+def _inject_base_tag(html: str, base_url: str) -> str:
+    """Inject ``<base href="{base_url}">`` into ``<head>`` if present."""
+    base_tag = f'<base href="{base_url}">'
+    if "<head>" in html:
+        return html.replace("<head>", f"<head>\n  {base_tag}", 1)
+    import re
+
+    if re.search(r"<head[^>]*>", html):
+        return re.sub(
+            r"(<head[^>]*>)", r"\1\n  " + base_tag, html, count=1
+        )
+    return base_tag + html
 
 
 @router.get("/projects/{name}/experiments", response_class=HTMLResponse)
@@ -831,7 +855,16 @@ def experiment_presentation_asset(
 
 
 @router.get("/projects/{name}/experiments/{exp_id}/presentation")
-def experiment_presentation(name: str, exp_id: str) -> FileResponse:
+def experiment_presentation(name: str, exp_id: str) -> HTMLResponse:
+    """Serve the per-experiment presentation.
+
+    Injects a ``<base href=".../presentation/">`` tag so that relative
+    ``<link href="reveal.css">`` and ``<script src="reveal.min.js">``
+    references resolve under the existing
+    ``/presentation/{rest:path}`` sub-path route. Without the base,
+    the bare URL (no trailing slash) causes the browser to resolve
+    relative URLs against the parent path, 404'ing the assets.
+    """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
@@ -844,7 +877,10 @@ def experiment_presentation(name: str, exp_id: str) -> FileResponse:
         exp_dir / "presentation" / "index.html",
     ):
         if candidate.exists():
-            return FileResponse(candidate, media_type="text/html")
+            html = candidate.read_text(encoding="utf-8")
+            base_url = f"/projects/{name}/experiments/{exp_id}/presentation/"
+            html = _inject_base_tag(html, base_url)
+            return HTMLResponse(content=html)
     raise HTTPException(status_code=404, detail="No presentation for this experiment")
 
 
