@@ -680,6 +680,11 @@ h4 {
 .artifact-files li { padding: var(--space-1) 0; }
 
 /* ---------- Tabs ---------- */
+/* Hide tab panels gated by x-cloak until Alpine boots, so non-active
+   panels don't flash on initial page load. Alpine removes the attribute
+   during init and the rule then no longer applies. */
+[x-cloak] { display: none !important; }
+
 .tabs { margin-top: var(--space-3); }
 .tab-list {
   display: flex;

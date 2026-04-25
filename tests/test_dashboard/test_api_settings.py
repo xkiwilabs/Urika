@@ -16,13 +16,13 @@ def _write_project(tmp_path: Path, name: str = "alpha") -> Path:
     proj = tmp_path / name
     proj.mkdir(parents=True)
     (proj / "urika.toml").write_text(
-        f'[project]\n'
+        f"[project]\n"
         f'name = "{name}"\n'
         f'question = "original q"\n'
         f'mode = "exploratory"\n'
         f'description = "orig desc"\n'
-        f'\n'
-        f'[preferences]\n'
+        f"\n"
+        f"[preferences]\n"
         f'audience = "expert"\n'
     )
     return proj
@@ -146,3 +146,241 @@ def test_settings_put_only_updates_changed_fields_records_revisions(
     revisions = json.loads(revisions_path.read_text())["revisions"]
     fields_changed = [r["field"] for r in revisions]
     assert fields_changed == ["question"]
+
+
+# ---- Data tab: data_paths + success_criteria --------------------------------
+
+
+def test_settings_put_data_paths_writes_list(settings_client, tmp_path):
+    """data_paths textarea (one per line) becomes a TOML list under [project]."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "data/one.csv\ndata/two.csv\n",
+        },
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["project"]["data_paths"] == ["data/one.csv", "data/two.csv"]
+
+
+def test_settings_put_data_paths_records_one_revision(settings_client, tmp_path):
+    """Saving data_paths records exactly one revision entry."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "a.csv\nb.csv",
+        },
+    )
+    revisions = json.loads((tmp_path / "alpha" / "revisions.json").read_text())[
+        "revisions"
+    ]
+    fields = [r["field"] for r in revisions]
+    assert fields == ["data_paths"]
+
+
+def test_settings_put_data_paths_skips_blanks(settings_client, tmp_path):
+    """Empty lines in the textarea are stripped, not written as ''."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "data/x.csv\n\n  \ndata/y.csv\n",
+        },
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["project"]["data_paths"] == ["data/x.csv", "data/y.csv"]
+
+
+def test_settings_put_success_criteria_parses_key_value(settings_client, tmp_path):
+    """success_criteria textarea (key=value per line) → TOML inline table."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "success_criteria": "rmse_max=0.5\nr2_min=0.8\n",
+        },
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    sc = toml["project"]["success_criteria"]
+    # Values are stored as strings (we don't try to coerce numeric types)
+    assert sc["rmse_max"] == "0.5"
+    assert sc["r2_min"] == "0.8"
+
+
+# ---- Models tab: per-agent overrides ---------------------------------------
+
+
+def test_settings_put_runtime_model_writes_under_runtime(settings_client, tmp_path):
+    """Project-wide [runtime].model override."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "runtime_model": "claude-sonnet-4-5",
+        },
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["runtime"]["model"] == "claude-sonnet-4-5"
+
+
+def test_settings_put_per_agent_model_writes_under_runtime_models(
+    settings_client, tmp_path
+):
+    """[runtime.models.task_agent].model + endpoint overrides."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "model[task_agent]": "qwen3-coder",
+            "endpoint[task_agent]": "private",
+        },
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["runtime"]["models"]["task_agent"]["model"] == "qwen3-coder"
+    assert toml["runtime"]["models"]["task_agent"]["endpoint"] == "private"
+
+
+def test_settings_put_per_agent_skips_inherit_endpoint(settings_client, tmp_path):
+    """endpoint=inherit means 'no override' — don't write it to disk."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "model[task_agent]": "qwen3-coder",
+            "endpoint[task_agent]": "inherit",
+        },
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    agent = toml["runtime"]["models"]["task_agent"]
+    assert agent["model"] == "qwen3-coder"
+    assert "endpoint" not in agent
+
+
+def test_settings_put_skips_empty_per_agent_rows(settings_client, tmp_path):
+    """Agent rows with empty model + inherit endpoint produce no TOML entry."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "model[task_agent]": "",
+            "endpoint[task_agent]": "inherit",
+            "model[evaluator]": "claude-haiku",
+            "endpoint[evaluator]": "open",
+        },
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    models = toml.get("runtime", {}).get("models", {})
+    assert "task_agent" not in models
+    assert models["evaluator"]["model"] == "claude-haiku"
+    assert models["evaluator"]["endpoint"] == "open"
+
+
+# ---- Notifications tab ------------------------------------------------------
+
+
+def test_settings_put_notifications_channels_writes_section(settings_client, tmp_path):
+    """[notifications].channels list is written from checkbox selection."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "channels": ["ntfy", "email"],
+            "suppress_level": "warn",
+        },
+    )
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["notifications"]["channels"] == ["ntfy", "email"]
+    assert toml["notifications"]["suppress_level"] == "warn"
+
+
+# ---- Revision counts: one entry per top-level field changed -----------------
+
+
+def test_settings_put_records_one_revision_per_top_level_field(
+    settings_client, tmp_path
+):
+    """Saving data_paths + a model override → exactly 2 revision entries."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "x.csv",
+            "model[task_agent]": "qwen3-coder",
+            "endpoint[task_agent]": "private",
+        },
+    )
+    revisions = json.loads((tmp_path / "alpha" / "revisions.json").read_text())[
+        "revisions"
+    ]
+    fields = sorted(r["field"] for r in revisions)
+    assert fields == ["data_paths", "runtime.models"]
+
+
+def test_settings_put_no_changes_no_revisions(settings_client, tmp_path):
+    """Submitting all-unchanged values writes no revisions."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+        },
+    )
+    revisions_path = tmp_path / "alpha" / "revisions.json"
+    if revisions_path.exists():
+        revisions = json.loads(revisions_path.read_text())["revisions"]
+        assert revisions == []
+
+
+def test_settings_put_notifications_records_one_revision(settings_client, tmp_path):
+    """Saving notifications changes records exactly one revision entry."""
+    settings_client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "original q",
+            "description": "orig desc",
+            "mode": "exploratory",
+            "audience": "expert",
+            "channels": ["email"],
+            "suppress_level": "warn",
+        },
+    )
+    revisions = json.loads((tmp_path / "alpha" / "revisions.json").read_text())[
+        "revisions"
+    ]
+    fields = [r["field"] for r in revisions]
+    assert fields == ["notifications"]

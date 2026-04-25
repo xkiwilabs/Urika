@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tomllib
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -11,14 +12,34 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from urika.core.experiment import create_experiment
 from urika.core.models import VALID_AUDIENCES, VALID_MODES
 from urika.core.registry import ProjectRegistry
-from urika.core.revisions import update_project_field
+from urika.core.revisions import record_revision, update_project_field
 from urika.core.settings import load_settings, save_settings
+from urika.core.workspace import _write_toml
 from urika.dashboard.projects import list_project_summaries, load_project_summary
 from urika.dashboard.runs import (
     spawn_experiment_run,
     spawn_finalize,
     spawn_present,
 )
+
+# Hardcoded list of agent roles whose model/endpoint can be overridden.
+# Mirrors KNOWN_AGENTS in dashboard/routers/pages.py — kept duplicated to
+# avoid the api → pages import (pages already imports from api in some
+# call paths). If the list ever grows, update both places.
+_KNOWN_AGENTS = {
+    "planning_agent",
+    "task_agent",
+    "evaluator",
+    "advisor_agent",
+    "tool_builder",
+    "literature_agent",
+    "presentation_agent",
+    "report_agent",
+    "project_builder",
+    "data_agent",
+    "finalizer",
+}
+_VALID_ENDPOINTS = {"open", "private"}  # 'inherit' means "no override".
 
 # Finalize CLI accepts a wider audience set than core/models VALID_AUDIENCES.
 # See ``src/urika/cli/agents_finalize.py`` --audience choices.
@@ -47,19 +68,30 @@ def api_projects() -> list[dict]:
 
 
 @router.put("/projects/{name}/settings")
-def api_project_settings_put(
-    name: str,
-    request: Request,
-    question: str = Form(""),
-    description: str = Form(""),
-    mode: str = Form(...),
-    audience: str = Form(...),
-):
+async def api_project_settings_put(name: str, request: Request):
     """Atomically update project settings and record per-field revisions.
 
+    Handles five families of fields posted by the tabbed settings form:
+
+    * **Basics**: ``question``, ``description``, ``mode``, ``audience`` —
+      written via :func:`update_project_field` (one revision entry per
+      changed field).
+    * **Data**: ``data_paths`` (newline-separated → list under
+      ``[project]``) and ``success_criteria`` (``key=value`` lines →
+      string-valued inline table under ``[project]``).
+    * **Models**: ``runtime_model`` (sets ``[runtime].model``) and
+      bracketed ``model[<agent>]`` / ``endpoint[<agent>]`` pairs
+      (written under ``[runtime.models.<agent>]``).
+    * **Notifications**: ``channels`` (multi-checkbox list) and
+      ``suppress_level`` written under ``[notifications]``.
+    * **Privacy**: read-only on this page; not handled here.
+
     Validates ``mode`` and ``audience`` against the canonical core sets;
-    only writes fields whose value actually changed (so revisions.json
-    stays a faithful record of edits).
+    only writes fields whose value actually changed. For the structured
+    families (data_paths, success_criteria, runtime_model, models,
+    notifications) we load → mutate → ``_write_toml`` once per family
+    and record exactly one :func:`record_revision` entry per top-level
+    field touched.
 
     Returns an HTML fragment for HTMX swap, or JSON if the client sets
     ``Accept: application/json``.
@@ -68,6 +100,12 @@ def api_project_settings_put(
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    question = (form.get("question") or "").strip()
+    description = (form.get("description") or "").strip()
+    mode = form.get("mode") or ""
+    audience = form.get("audience") or ""
 
     if mode not in VALID_MODES:
         raise HTTPException(
@@ -80,9 +118,10 @@ def api_project_settings_put(
             detail=f"audience must be one of {sorted(VALID_AUDIENCES)}",
         )
 
+    # ---- Basics fields (one revision per changed field) -----------------
     new_values = {
-        "question": question.strip(),
-        "description": description.strip(),
+        "question": question,
+        "description": description,
         "mode": mode,
         "audience": audience,
     }
@@ -95,6 +134,9 @@ def api_project_settings_put(
     for field, new_v in new_values.items():
         if new_v != current.get(field, ""):
             update_project_field(summary.path, field=field, new_value=new_v)
+
+    # ---- Structured fields: re-load TOML, mutate, write once ------------
+    _apply_structured_settings(summary.path, form)
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
@@ -109,6 +151,186 @@ def api_project_settings_put(
             }
         )
     return HTMLResponse(content='<span class="text-success">Saved</span>')
+
+
+def _apply_structured_settings(project_path, form) -> None:
+    """Apply the Data / Models / Notifications form fields to urika.toml.
+
+    Loads the current TOML, mutates only the sections whose form fields
+    were submitted, writes once via :func:`_write_toml`, and records one
+    :func:`record_revision` entry per top-level field that actually
+    changed.
+
+    The "top-level field" labels used in revisions.json are intentionally
+    coarse (``data_paths``, ``success_criteria``, ``runtime.model``,
+    ``runtime.models``, ``notifications``) so the audit log stays
+    readable — we don't enumerate every per-agent override or every
+    channel checkbox.
+    """
+    toml_path = project_path / "urika.toml"
+    if not toml_path.exists():
+        return
+
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+
+    project_section = data.setdefault("project", {})
+    runtime_section = data.setdefault("runtime", {})
+
+    # Track top-level fields that changed; emit one revision each at end.
+    revisions: list[tuple[str, str, str]] = []
+
+    # ---- data_paths ----
+    if "data_paths" in form:
+        raw = form.get("data_paths") or ""
+        new_paths = [line.strip() for line in raw.splitlines() if line.strip()]
+        old_paths = project_section.get("data_paths", [])
+        if new_paths != old_paths:
+            if new_paths:
+                project_section["data_paths"] = new_paths
+            elif "data_paths" in project_section:
+                del project_section["data_paths"]
+            revisions.append(
+                (
+                    "data_paths",
+                    f"{len(old_paths)} paths",
+                    f"{len(new_paths)} paths",
+                )
+            )
+
+    # ---- success_criteria ----
+    if "success_criteria" in form:
+        raw = form.get("success_criteria") or ""
+        new_sc: dict[str, str] = {}
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip()
+            if k:
+                new_sc[k] = v
+        old_sc = project_section.get("success_criteria", {}) or {}
+        if new_sc != old_sc:
+            if new_sc:
+                project_section["success_criteria"] = new_sc
+            elif "success_criteria" in project_section:
+                del project_section["success_criteria"]
+            revisions.append(
+                (
+                    "success_criteria",
+                    f"{len(old_sc)} keys",
+                    f"{len(new_sc)} keys",
+                )
+            )
+
+    # ---- runtime.model (project-wide override) ----
+    if "runtime_model" in form:
+        new_rm = (form.get("runtime_model") or "").strip()
+        old_rm = runtime_section.get("model", "")
+        if new_rm != old_rm:
+            if new_rm:
+                runtime_section["model"] = new_rm
+            elif "model" in runtime_section:
+                del runtime_section["model"]
+            revisions.append(("runtime.model", old_rm, new_rm))
+
+    # ---- runtime.models.<agent> (per-agent overrides) ----
+    # Pull bracketed form fields. Form keys arrive as e.g. "model[task_agent]".
+    new_models: dict[str, dict[str, str]] = {}
+    has_model_fields = False
+    for key in form.keys():
+        if key.startswith("model[") and key.endswith("]"):
+            has_model_fields = True
+            agent = key[len("model[") : -1]
+            if agent not in _KNOWN_AGENTS:
+                continue
+            model_val = (form.get(key) or "").strip()
+            endpoint_val = (form.get(f"endpoint[{agent}]") or "").strip()
+            row: dict[str, str] = {}
+            if model_val:
+                row["model"] = model_val
+            if endpoint_val and endpoint_val != "inherit":
+                if endpoint_val not in _VALID_ENDPOINTS:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"endpoint[{agent}] must be one of "
+                            f"{sorted(_VALID_ENDPOINTS | {'inherit'})}"
+                        ),
+                    )
+                row["endpoint"] = endpoint_val
+            if row:
+                new_models[agent] = row
+
+    if has_model_fields:
+        old_models = runtime_section.get("models", {}) or {}
+        if new_models != old_models:
+            if new_models:
+                runtime_section["models"] = new_models
+            elif "models" in runtime_section:
+                del runtime_section["models"]
+            revisions.append(
+                (
+                    "runtime.models",
+                    f"{len(old_models)} agents",
+                    f"{len(new_models)} agents",
+                )
+            )
+
+    # ---- notifications ----
+    # The form posts notifications fields whenever the user is on that tab.
+    # We treat "channels missing entirely AND suppress_level missing" as
+    # "user didn't touch the tab" — otherwise apply.
+    has_notif_fields = "channels" in form or "suppress_level" in form
+    if has_notif_fields:
+        new_channels = form.getlist("channels")
+        new_channels = [c for c in new_channels if c]
+        new_suppress = (form.get("suppress_level") or "").strip()
+
+        old_notif = data.get("notifications", {}) or {}
+        old_channels = old_notif.get("channels", []) or []
+        old_suppress = old_notif.get("suppress_level", "")
+
+        if new_channels != old_channels or new_suppress != old_suppress:
+            notif: dict = {}
+            if new_channels:
+                notif["channels"] = new_channels
+            if new_suppress:
+                notif["suppress_level"] = new_suppress
+            # Preserve any other keys we don't surface in the form
+            for k, v in old_notif.items():
+                if k not in {"channels", "suppress_level"}:
+                    notif.setdefault(k, v)
+            if notif:
+                data["notifications"] = notif
+            elif "notifications" in data:
+                del data["notifications"]
+            revisions.append(
+                (
+                    "notifications",
+                    f"channels={old_channels}, level={old_suppress!r}",
+                    f"channels={new_channels}, level={new_suppress!r}",
+                )
+            )
+
+    # Clean up empty runtime section so we don't litter urika.toml.
+    if not runtime_section:
+        data.pop("runtime", None)
+
+    if not revisions:
+        return  # No structured changes — leave the file alone.
+
+    _write_toml(toml_path, data)
+
+    for field, old_value, new_value in revisions:
+        record_revision(
+            project_path,
+            field=field,
+            old_value=str(old_value),
+            new_value=str(new_value),
+        )
 
 
 @router.put("/settings")
@@ -273,8 +495,7 @@ def api_experiment_artifacts(name: str, exp_id: str):
                         "name": p.name,
                         "size": p.stat().st_size,
                         "url": (
-                            f"/projects/{name}/experiments/{exp_id}"
-                            f"/artifacts/{p.name}"
+                            f"/projects/{name}/experiments/{exp_id}/artifacts/{p.name}"
                         ),
                     }
                 )
@@ -496,9 +717,7 @@ async def api_project_advisor(name: str, request: Request):
     return {"response": response_md}
 
 
-async def _run_advisor_inline(
-    project_path, project_name: str, question: str
-) -> str:
+async def _run_advisor_inline(project_path, project_name: str, question: str) -> str:
     """Build advisor config + context, await ``runner.run``, return text.
 
     Pulled out of the route so tests can stub this single function
@@ -532,8 +751,7 @@ async def _run_advisor_inline(
         summary_text = load_context_summary(project_path)
         if summary_text:
             context += (
-                f"\n## Research Context (from previous sessions)\n\n"
-                f"{summary_text}\n\n"
+                f"\n## Research Context (from previous sessions)\n\n{summary_text}\n\n"
             )
     except Exception:
         pass

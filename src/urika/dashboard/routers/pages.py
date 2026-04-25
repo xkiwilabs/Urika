@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -21,6 +22,27 @@ from urika.dashboard.projects import (
 from urika.knowledge.store import KnowledgeStore
 
 VALID_PRIVACY_MODES = ["private", "open", "university"]
+
+# The eleven agent roles whose model/endpoint can be overridden per-project.
+# Hardcoded (rather than discovered from the AgentRegistry) so the dashboard
+# stays decoupled from the agent loading machinery.
+KNOWN_AGENTS = [
+    "planning_agent",
+    "task_agent",
+    "evaluator",
+    "advisor_agent",
+    "tool_builder",
+    "literature_agent",
+    "presentation_agent",
+    "report_agent",
+    "project_builder",
+    "data_agent",
+    "finalizer",
+]
+
+# Endpoint choices for per-agent overrides on the Models tab.
+# 'inherit' is the no-override sentinel; the API handler skips writing it.
+ENDPOINT_CHOICES = ["inherit", "open", "private"]
 
 router = APIRouter(tags=["pages"])
 
@@ -183,6 +205,47 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
+
+    # Load the full urika.toml so the template can render the structured
+    # tabs (Data, Models, Privacy, Notifications) which need fields the
+    # ProjectSummary dataclass doesn't expose.
+    toml_path = summary.path / "urika.toml"
+    try:
+        with open(toml_path, "rb") as f:
+            toml_data = tomllib.load(f)
+    except FileNotFoundError:
+        toml_data = {}
+
+    project_section = toml_data.get("project", {})
+    runtime_section = toml_data.get("runtime", {}) or {}
+    runtime_models = runtime_section.get("models", {}) or {}
+    notifications = toml_data.get("notifications", {}) or {}
+
+    # Pre-shape per-agent rows for the Models tab so the template stays
+    # logic-light. Each row carries the existing override (if any) so the
+    # form re-populates after a save.
+    model_rows = []
+    for agent in KNOWN_AGENTS:
+        row = runtime_models.get(agent, {}) or {}
+        model_rows.append(
+            {
+                "agent": agent,
+                "model": row.get("model", ""),
+                "endpoint": row.get("endpoint", "inherit"),
+            }
+        )
+
+    # Privacy tab: read-only summary of the inherited global mode plus the
+    # project-local [privacy] override, if one exists.
+    global_settings = load_settings()
+    global_privacy_mode = global_settings.get("privacy", {}).get("mode", "open")
+    project_privacy = toml_data.get("privacy", {}) or {}
+
+    # Stringify list/dict-valued project-section fields for textarea display.
+    data_paths_text = "\n".join(project_section.get("data_paths", []) or [])
+    success_criteria = project_section.get("success_criteria", {}) or {}
+    success_criteria_text = "\n".join(f"{k}={v}" for k, v in success_criteria.items())
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "project_settings.html",
@@ -191,6 +254,17 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "project": summary,
             "valid_modes": sorted(VALID_MODES),
             "valid_audiences": sorted(VALID_AUDIENCES),
+            "known_agents": KNOWN_AGENTS,
+            "endpoint_choices": ENDPOINT_CHOICES,
+            "model_rows": model_rows,
+            "runtime_model": runtime_section.get("model", ""),
+            "data_paths_text": data_paths_text,
+            "success_criteria_text": success_criteria_text,
+            "global_privacy_mode": global_privacy_mode,
+            "project_privacy": project_privacy,
+            "notifications": notifications,
+            "notif_channels": notifications.get("channels", []) or [],
+            "notif_suppress_level": notifications.get("suppress_level", ""),
         },
     )
 
@@ -300,9 +374,7 @@ def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="Unknown project")
     report_path = summary.path / "experiments" / exp_id / "report.md"
     if not report_path.exists():
-        raise HTTPException(
-            status_code=404, detail="No report for this experiment"
-        )
+        raise HTTPException(status_code=404, detail="No report for this experiment")
 
     from urika.dashboard.render import render_markdown
 

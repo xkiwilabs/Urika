@@ -1,4 +1,5 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import tabs %}
 
 {% block title %}Settings · {{ project.name }} · Urika{% endblock %}
 {% block heading %}Settings{% endblock %}
@@ -17,8 +18,25 @@
 <style>
   .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
   .form-row label { font-weight: 600; }
-  .form-row textarea, .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
-  .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+  .form-row input[type="text"],
+  .form-row textarea,
+  .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
+  .form-help { color: var(--text-muted); font-size: var(--fs-xs); }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+  .models-grid { width: 100%; border-collapse: collapse; }
+  .models-grid th, .models-grid td {
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: middle;
+  }
+  .models-grid th { font-weight: var(--fw-semibold); color: var(--text-muted); font-size: var(--fs-xs); }
+  .models-grid td input,
+  .models-grid td select { width: 100%; font: inherit; padding: 0.3rem; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; }
+  .privacy-summary { padding: var(--space-3); background: var(--bg-elevated); border-radius: 6px; }
+  .privacy-summary dt { font-weight: var(--fw-semibold); margin-top: var(--space-2); }
+  .privacy-summary dd { margin: 0 0 var(--space-2) 0; color: var(--text-muted); }
 </style>
 
 <form
@@ -27,33 +45,168 @@
   hx-swap="innerHTML"
   class="card"
 >
-  <div class="form-row">
-    <label for="question">Research question</label>
-    <textarea id="question" name="question" rows="2">{{ project.question }}</textarea>
-  </div>
+  {% call(active) tabs("project-settings", [
+    {"id": "basics", "label": "Basics"},
+    {"id": "data", "label": "Data"},
+    {"id": "models", "label": "Models"},
+    {"id": "privacy", "label": "Privacy"},
+    {"id": "notifications", "label": "Notifications"}
+  ]) %}
 
-  <div class="form-row">
-    <label for="description">Description</label>
-    <textarea id="description" name="description" rows="3">{{ project.description }}</textarea>
-  </div>
+    {# ---- Basics tab ---------------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'basics'">
+      <div class="form-row">
+        <label>Project name</label>
+        <input type="text" value="{{ project.name }}" disabled>
+        <span class="form-help">Project name is immutable.</span>
+      </div>
 
-  <div class="form-row">
-    <label for="mode">Mode</label>
-    <select id="mode" name="mode">
-      {% for m in valid_modes %}
-        <option value="{{ m }}" {% if m == project.mode %}selected{% endif %}>{{ m }}</option>
-      {% endfor %}
-    </select>
-  </div>
+      <div class="form-row">
+        <label for="question">Research question</label>
+        <textarea id="question" name="question" rows="2">{{ project.question }}</textarea>
+      </div>
 
-  <div class="form-row">
-    <label for="audience">Audience</label>
-    <select id="audience" name="audience">
-      {% for a in valid_audiences %}
-        <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
-      {% endfor %}
-    </select>
-  </div>
+      <div class="form-row">
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="3">{{ project.description }}</textarea>
+      </div>
+
+      <div class="form-row">
+        <label for="mode">Mode</label>
+        <select id="mode" name="mode">
+          {% for m in valid_modes %}
+            <option value="{{ m }}" {% if m == project.mode %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="audience">Audience</label>
+        <select id="audience" name="audience">
+          {% for a in valid_audiences %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    {# ---- Data tab ----------------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'data'" x-cloak>
+      <div class="form-row">
+        <label for="data_paths">Data paths</label>
+        <textarea id="data_paths" name="data_paths" rows="4"
+                  placeholder="data/file1.csv&#10;data/file2.parquet">{{ data_paths_text }}</textarea>
+        <span class="form-help">One path per line. Stored under <code>[project].data_paths</code>.</span>
+      </div>
+
+      <div class="form-row">
+        <label for="success_criteria">Success criteria</label>
+        <textarea id="success_criteria" name="success_criteria" rows="4"
+                  placeholder="rmse_max=0.5&#10;r2_min=0.8">{{ success_criteria_text }}</textarea>
+        <span class="form-help">One <code>key=value</code> pair per line. Values stored as strings.</span>
+      </div>
+    </div>
+
+    {# ---- Models tab --------------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'models'" x-cloak>
+      <div class="form-row">
+        <label for="runtime_model">Project-wide model override</label>
+        <input type="text" id="runtime_model" name="runtime_model"
+               value="{{ runtime_model }}"
+               placeholder="claude-sonnet-4-5">
+        <span class="form-help">Sets <code>[runtime].model</code>. Leave blank to inherit from global settings.</span>
+      </div>
+
+      <table class="models-grid">
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>Model</th>
+            <th>Endpoint</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in model_rows %}
+          <tr>
+            <td><code>{{ row.agent }}</code></td>
+            <td>
+              <input type="text" name="model[{{ row.agent }}]"
+                     value="{{ row.model }}" placeholder="(inherit)">
+            </td>
+            <td>
+              <select name="endpoint[{{ row.agent }}]">
+                {% for choice in endpoint_choices %}
+                  <option value="{{ choice }}"
+                          {% if choice == row.endpoint %}selected{% endif %}>{{ choice }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.</span>
+    </div>
+
+    {# ---- Privacy tab (read-only) ------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'privacy'" x-cloak>
+      <dl class="privacy-summary">
+        <dt>Inherited global mode</dt>
+        <dd><code>{{ global_privacy_mode }}</code></dd>
+
+        <dt>Project override</dt>
+        {% if project_privacy %}
+          <dd>
+            {% if project_privacy.mode %}
+              <code>mode = "{{ project_privacy.mode }}"</code>
+            {% else %}
+              <em>(no mode override)</em>
+            {% endif %}
+          </dd>
+          {% if project_privacy.endpoints %}
+            <dt>Project endpoints</dt>
+            <dd><code>{{ project_privacy.endpoints }}</code></dd>
+          {% endif %}
+        {% else %}
+          <dd><em>None — project inherits global privacy settings.</em></dd>
+        {% endif %}
+      </dl>
+
+      <p class="form-help" style="margin-top: 1rem;">
+        Privacy editing is global-only for now.
+        <a href="/settings">Configure privacy globally →</a>
+      </p>
+    </div>
+
+    {# ---- Notifications tab ------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'notifications'" x-cloak>
+      <div class="form-row">
+        <label>Channels</label>
+        {% for ch in ["ntfy", "email", "slack", "console"] %}
+          <label class="checkbox-row">
+            <input type="checkbox" name="channels" value="{{ ch }}"
+                   {% if ch in notif_channels %}checked{% endif %}>
+            <span>{{ ch }}</span>
+          </label>
+        {% endfor %}
+        <span class="form-help">Mirrors the <code>urika notifications</code> interactive setup.</span>
+      </div>
+
+      <div class="form-row">
+        <label for="suppress_level">Suppress level</label>
+        <select id="suppress_level" name="suppress_level">
+          {% for lvl in ["", "info", "warn", "error"] %}
+            <option value="{{ lvl }}"
+                    {% if lvl == notif_suppress_level %}selected{% endif %}>
+              {{ lvl or "(none)" }}
+            </option>
+          {% endfor %}
+        </select>
+        <span class="form-help">Events at or below this level are suppressed.</span>
+      </div>
+    </div>
+
+  {% endcall %}
 
   <div class="form-actions">
     <button type="submit" class="btn btn--primary">Save</button>
