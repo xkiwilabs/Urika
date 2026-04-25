@@ -94,22 +94,27 @@ def test_global_settings_venv_checkbox_unset_means_unchecked(settings_client):
 
 
 def test_global_settings_notifications_tab_has_channels(settings_client):
-    """Notifications tab exposes per-channel enable + config fields."""
+    """Notifications tab exposes per-channel CONNECTION fields only.
+
+    Enable/disable checkboxes were removed — channel enablement is a
+    per-project decision, not a global one.
+    """
     body = settings_client.get("/settings").text
-    # Email
-    assert 'name="notifications_email_enabled"' in body
+    # Email — connection details
     assert 'name="notifications_email_from"' in body
     assert 'name="notifications_email_to"' in body
     assert 'name="notifications_email_smtp_host"' in body
     assert 'name="notifications_email_smtp_port"' in body
-    # Slack
-    assert 'name="notifications_slack_enabled"' in body
+    # Slack — connection details
     assert 'name="notifications_slack_channel"' in body
     assert 'name="notifications_slack_token_env"' in body
-    # Telegram
-    assert 'name="notifications_telegram_enabled"' in body
+    # Telegram — connection details
     assert 'name="notifications_telegram_chat_id"' in body
     assert 'name="notifications_telegram_bot_token_env"' in body
+    # Enable checkboxes are NOT on the global form
+    assert 'name="notifications_email_enabled"' not in body
+    assert 'name="notifications_slack_enabled"' not in body
+    assert 'name="notifications_telegram_enabled"' not in body
 
 
 # ---- Privacy tab round-trips -----------------------------------------------
@@ -356,7 +361,11 @@ def test_global_settings_put_invalid_max_turns_returns_422(settings_client):
 def test_global_settings_put_notifications_email_writes_section(
     settings_client, tmp_path
 ):
-    """Email channel enabled + populated fields → [notifications.email] table."""
+    """Email connection details → [notifications.email] table.
+
+    Channel enablement is per-project (handled elsewhere); the global
+    form only persists connection details.
+    """
     r = settings_client.put(
         "/api/settings",
         data={
@@ -364,7 +373,6 @@ def test_global_settings_put_notifications_email_writes_section(
             "privacy_open_model": "claude-sonnet-4-5",
             "default_audience": "expert",
             "default_max_turns": "10",
-            "notifications_email_enabled": "on",
             "notifications_email_from": "bot@example.com",
             "notifications_email_to": "alice@example.com, bob@example.com",
             "notifications_email_smtp_host": "smtp.example.com",
@@ -375,7 +383,6 @@ def test_global_settings_put_notifications_email_writes_section(
     )
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert "email" in s["notifications"]["channels"]
     email = s["notifications"]["email"]
     assert email["from_addr"] == "bot@example.com"
     assert email["to"] == ["alice@example.com", "bob@example.com"]
@@ -393,14 +400,12 @@ def test_global_settings_put_notifications_slack_writes_section(
             "privacy_open_model": "claude-sonnet-4-5",
             "default_audience": "expert",
             "default_max_turns": "10",
-            "notifications_slack_enabled": "on",
             "notifications_slack_channel": "#urika",
             "notifications_slack_token_env": "SLACK_TOKEN",
         },
     )
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert "slack" in s["notifications"]["channels"]
     assert s["notifications"]["slack"]["channel"] == "#urika"
     assert s["notifications"]["slack"]["token_env"] == "SLACK_TOKEN"
 
@@ -415,22 +420,21 @@ def test_global_settings_put_notifications_telegram_writes_section(
             "privacy_open_model": "claude-sonnet-4-5",
             "default_audience": "expert",
             "default_max_turns": "10",
-            "notifications_telegram_enabled": "on",
             "notifications_telegram_chat_id": "12345",
             "notifications_telegram_bot_token_env": "TG_TOKEN",
         },
     )
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert "telegram" in s["notifications"]["channels"]
     assert s["notifications"]["telegram"]["chat_id"] == "12345"
     assert s["notifications"]["telegram"]["bot_token_env"] == "TG_TOKEN"
 
 
-def test_global_settings_put_notifications_disabled_no_channel(
+def test_global_settings_put_notifications_does_not_write_channels(
     settings_client, tmp_path
 ):
-    """A channel without the enabled checkbox is not written into [channels]."""
+    """The global form never writes [notifications].channels — that
+    list is per-project and managed elsewhere."""
     r = settings_client.put(
         "/api/settings",
         data={
@@ -438,14 +442,15 @@ def test_global_settings_put_notifications_disabled_no_channel(
             "privacy_open_model": "claude-sonnet-4-5",
             "default_audience": "expert",
             "default_max_turns": "10",
-            # Email fields filled in, but the enable checkbox is not on
             "notifications_email_from": "bot@example.com",
             "notifications_email_to": "alice@example.com",
         },
     )
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert "email" not in s.get("notifications", {}).get("channels", [])
+    # Email section is written (connection details set) but no channels list.
+    assert "email" in s.get("notifications", {})
+    assert "channels" not in s.get("notifications", {})
 
 
 # ---- Response shape --------------------------------------------------------

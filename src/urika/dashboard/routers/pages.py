@@ -489,8 +489,8 @@ def global_settings(request: Request) -> HTMLResponse:
             "web_search": bool(prefs.get("web_search", False)),
             # venv default is OFF: use the global urika venv, not per-project.
             "venv": bool(prefs.get("venv", False)),
-            # Notifications tab
-            "notif_channels": notifications.get("channels", []) or [],
+            # Notifications tab — connection details only. Per-channel
+            # enablement is a per-project decision; not exposed here.
             "notif_email": notifications.get("email", {}) or {},
             "notif_slack": notifications.get("slack", {}) or {},
             "notif_telegram": notifications.get("telegram", {}) or {},

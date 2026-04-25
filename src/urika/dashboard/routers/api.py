@@ -687,12 +687,11 @@ async def api_global_settings_put(request: Request):
     prefs["venv"] = form.get("venv") == "on"
 
     # ---- Notifications tab --------------------------------------------
-    new_channels: list[str] = []
+    # Globally we only persist connection details. Per-channel
+    # enablement is a per-project decision (see project settings).
     notifications = s.setdefault("notifications", {})
 
     # Email
-    if form.get("notifications_email_enabled") == "on":
-        new_channels.append("email")
     email_to_raw = (form.get("notifications_email_to") or "").strip()
     email_to = [a.strip() for a in email_to_raw.split(",") if a.strip()]
     smtp_port_raw = (form.get("notifications_email_smtp_port") or "").strip()
@@ -711,46 +710,40 @@ async def api_global_settings_put(request: Request):
         ).strip(),
     }
     # Only persist the section if something is set; otherwise drop it.
-    if (
-        any(v for k, v in email_section.items() if k != "smtp_port" or v != 587)
-        or "email" in new_channels
-    ):
+    if any(v for k, v in email_section.items() if k != "smtp_port" or v != 587):
         notifications["email"] = email_section
     elif "email" in notifications:
         del notifications["email"]
 
     # Slack
-    if form.get("notifications_slack_enabled") == "on":
-        new_channels.append("slack")
     slack_section = {
         "channel": (form.get("notifications_slack_channel") or "").strip(),
         "token_env": (form.get("notifications_slack_token_env") or "").strip(),
     }
-    if any(slack_section.values()) or "slack" in new_channels:
+    if any(slack_section.values()):
         notifications["slack"] = slack_section
     elif "slack" in notifications:
         del notifications["slack"]
 
     # Telegram
-    if form.get("notifications_telegram_enabled") == "on":
-        new_channels.append("telegram")
     telegram_section = {
         "chat_id": (form.get("notifications_telegram_chat_id") or "").strip(),
         "bot_token_env": (
             form.get("notifications_telegram_bot_token_env") or ""
         ).strip(),
     }
-    if any(telegram_section.values()) or "telegram" in new_channels:
+    if any(telegram_section.values()):
         notifications["telegram"] = telegram_section
     elif "telegram" in notifications:
         del notifications["telegram"]
 
-    notifications["channels"] = new_channels
-    if (
-        not any(notifications.get(k) for k in ("email", "slack", "telegram"))
-        and not new_channels
-    ):
-        s.pop("notifications", None)
+    # Drop the notifications block entirely if no connection details
+    # remain. Any pre-existing 'channels' list is left untouched —
+    # global form does not write it.
+    if not any(notifications.get(k) for k in ("email", "slack", "telegram")):
+        # Preserve channels if a project relied on it
+        if not notifications.get("channels"):
+            s.pop("notifications", None)
 
     save_settings(s)
 

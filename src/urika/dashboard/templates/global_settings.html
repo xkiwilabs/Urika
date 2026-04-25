@@ -230,14 +230,9 @@
 
     {# ---- Notifications tab ------------------------------------------- #}
     <div class="tab-panel" x-show="active === 'notifications'" x-cloak>
-      {# Email #}
+      {# Email — connection details only. Enabling is per-project. #}
       <div class="channel-block">
         <h4>Email</h4>
-        <label class="checkbox-row">
-          <input type="checkbox" name="notifications_email_enabled" value="on"
-                 {% if 'email' in notif_channels %}checked{% endif %}>
-          <span>Enable email notifications</span>
-        </label>
         <div class="form-row">
           <label for="notifications_email_from">From address</label>
           <input type="text" id="notifications_email_from" name="notifications_email_from"
@@ -278,14 +273,9 @@
         </div>
       </div>
 
-      {# Slack #}
+      {# Slack — connection details only. Enabling is per-project. #}
       <div class="channel-block">
         <h4>Slack</h4>
-        <label class="checkbox-row">
-          <input type="checkbox" name="notifications_slack_enabled" value="on"
-                 {% if 'slack' in notif_channels %}checked{% endif %}>
-          <span>Enable Slack notifications</span>
-        </label>
         <div class="form-row">
           <label for="notifications_slack_channel">Channel</label>
           <input type="text" id="notifications_slack_channel"
@@ -302,14 +292,9 @@
         </div>
       </div>
 
-      {# Telegram #}
+      {# Telegram — connection details only. Enabling is per-project. #}
       <div class="channel-block">
         <h4>Telegram</h4>
-        <label class="checkbox-row">
-          <input type="checkbox" name="notifications_telegram_enabled" value="on"
-                 {% if 'telegram' in notif_channels %}checked{% endif %}>
-          <span>Enable Telegram notifications</span>
-        </label>
         <div class="form-row">
           <label for="notifications_telegram_chat_id">Chat ID</label>
           <input type="text" id="notifications_telegram_chat_id"
