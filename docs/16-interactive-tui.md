@@ -166,7 +166,7 @@ These require a project to be loaded first. Running them without a project shows
 | `/config show` | Show current configuration (project or global). |
 | `/config global` | Configure global defaults (used for new projects). |
 | `/config global show` | Show global defaults. |
-| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. |
+| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](19-dashboard.md) for pages, run launcher, and auth. |
 
 
 ## Run Settings
