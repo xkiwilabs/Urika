@@ -19,4 +19,13 @@
       <a class="sidebar-link" href="/settings">Settings</a>
     {% endif %}
   </nav>
+  <div class="sidebar-footer">
+    <button
+      class="btn btn--ghost theme-toggle"
+      @click="document.dispatchEvent(new CustomEvent('urika:toggle-theme'))"
+      aria-label="Toggle theme"
+    >
+      <span x-data x-text="document.documentElement.dataset.theme === 'dark' ? '☀ Light' : '☾ Dark'"></span>
+    </button>
+  </div>
 </aside>

@@ -10,7 +10,14 @@
 </head>
 <body
   x-data="{ theme: localStorage.getItem('urika-theme') || 'dark' }"
-  x-init="document.documentElement.dataset.theme = theme"
+  x-init="
+    document.documentElement.dataset.theme = theme;
+    document.addEventListener('urika:toggle-theme', () => {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('urika-theme', theme);
+      document.documentElement.dataset.theme = theme;
+    });
+  "
   :data-theme="theme"
 >
   <div class="app-shell">
@@ -19,12 +26,6 @@
       <header class="page-header">
         {% block breadcrumb %}{% endblock %}
         <h1 class="page-title">{% block heading %}{% endblock %}</h1>
-        <button
-          class="btn btn--ghost theme-toggle"
-          @click="theme = theme === 'light' ? 'dark' : 'light'; localStorage.setItem('urika-theme', theme)"
-          x-text="theme === 'light' ? 'Dark' : 'Light'"
-          aria-label="Toggle theme"
-        ></button>
       </header>
       {% block content %}{% endblock %}
     </main>

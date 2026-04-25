@@ -229,3 +229,22 @@ def test_app_css_defines_dark_theme_swap():
     body = r.text
     assert ":root" in body
     assert '[data-theme="dark"]' in body
+
+
+def test_theme_toggle_lives_in_sidebar_not_header(audit_client):
+    r = audit_client.get("/projects")
+    body = r.text
+    # The theme toggle button has the .theme-toggle class.
+    # It must appear inside the <aside class="sidebar"> block, not
+    # inside <header class="page-header">.
+    sidebar_match = re.search(
+        r'<aside class="sidebar"[^>]*>(.*?)</aside>', body, re.DOTALL
+    )
+    assert sidebar_match is not None
+    assert 'theme-toggle' in sidebar_match.group(1)
+    # And NOT in the page-header
+    header_match = re.search(
+        r'<header class="page-header"[^>]*>(.*?)</header>', body, re.DOTALL
+    )
+    if header_match:
+        assert 'theme-toggle' not in header_match.group(1)
