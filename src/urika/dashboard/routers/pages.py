@@ -171,30 +171,84 @@ def project_methods(request: Request, name: str) -> HTMLResponse:
 
 @router.get("/settings", response_class=HTMLResponse)
 def global_settings(request: Request) -> HTMLResponse:
-    """Render the global user-defaults settings page.
+    """Render the global user-defaults settings page (4 tabs).
 
     Reads ``~/.urika/settings.toml`` (or the URIKA_HOME equivalent) and
-    surfaces five fields the form posts back to ``PUT /api/settings``.
+    surfaces the full settings tree across four tabs (Privacy / Models /
+    Preferences / Notifications). The form PUTs the entire config back
+    to ``PUT /api/settings`` in a single payload.
     """
     s = load_settings()
     privacy = s.get("privacy", {})
     mode = privacy.get("mode", "open")
-    endpoint = privacy.get("endpoints", {}).get(mode, {})
-    prefs = s.get("preferences", {})
+    endpoints = privacy.get("endpoints", {}) or {}
+    private_ep = endpoints.get("private", {}) or {}
+    runtime = s.get("runtime", {}) or {}
+    runtime_models = runtime.get("models", {}) or {}
+    prefs = s.get("preferences", {}) or {}
+    notifications = s.get("notifications", {}) or {}
+
+    # Suggested cloud-model dropdown values; mirrors the interactive CLI.
+    cloud_models = ["claude-sonnet-4-5", "claude-opus-4-6", "claude-haiku-4-5"]
+
+    # In hybrid mode the data_agent override carries the private model.
+    hybrid_data_agent = runtime_models.get("data_agent", {}) or {}
+
+    # Per-agent rows for the Models tab, mirroring the project settings page.
+    model_rows = []
+    for agent in KNOWN_AGENTS:
+        row = runtime_models.get(agent, {}) or {}
+        model_rows.append(
+            {
+                "agent": agent,
+                "model": row.get("model", ""),
+                "endpoint": row.get("endpoint", "inherit"),
+            }
+        )
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "global_settings.html",
         {
             "request": request,
-            "values": {
-                "default_privacy_mode": mode,
-                "default_endpoint_url": endpoint.get("base_url", ""),
-                "default_endpoint_key_env": endpoint.get("api_key_env", ""),
-                "default_audience": prefs.get("audience", "expert"),
-                "default_max_turns": prefs.get("max_turns_per_experiment", 10),
-            },
+            # Privacy tab values
+            "privacy_mode": mode,
+            "privacy_open_model": runtime.get("model", "") if mode == "open" else "",
+            "privacy_private_url": private_ep.get("base_url", ""),
+            "privacy_private_key_env": private_ep.get("api_key_env", ""),
+            "privacy_private_model": (
+                runtime.get("model", "") if mode == "private" else ""
+            ),
+            "privacy_hybrid_cloud_model": (
+                runtime.get("model", "") if mode == "hybrid" else ""
+            ),
+            "privacy_hybrid_private_url": (
+                private_ep.get("base_url", "") if mode == "hybrid" else ""
+            ),
+            "privacy_hybrid_private_key_env": (
+                private_ep.get("api_key_env", "") if mode == "hybrid" else ""
+            ),
+            "privacy_hybrid_private_model": hybrid_data_agent.get("model", ""),
+            # Models tab
+            "runtime_model": runtime.get("model", ""),
+            "model_rows": model_rows,
+            # Preferences tab
+            "default_audience": prefs.get("audience", "expert"),
+            "default_max_turns": prefs.get("max_turns_per_experiment", 10),
+            "web_search": bool(prefs.get("web_search", False)),
+            "venv": bool(prefs.get("venv", True)),
+            # Notifications tab
+            "notif_channels": notifications.get("channels", []) or [],
+            "notif_email": notifications.get("email", {}) or {},
+            "notif_slack": notifications.get("slack", {}) or {},
+            "notif_telegram": notifications.get("telegram", {}) or {},
+            # Choices
             "valid_modes": VALID_PRIVACY_MODES,
+            "valid_privacy_modes": ["open", "private", "hybrid"],
             "valid_audiences": sorted(VALID_AUDIENCES),
+            "cloud_models": cloud_models,
+            "known_agents": KNOWN_AGENTS,
+            "endpoint_choices": ENDPOINT_CHOICES,
         },
     )
 

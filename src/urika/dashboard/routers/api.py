@@ -6,7 +6,7 @@ import asyncio
 import json
 import tomllib
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from urika.core.experiment import create_experiment
@@ -333,31 +333,50 @@ def _apply_structured_settings(project_path, form) -> None:
         )
 
 
-@router.put("/settings")
-def api_global_settings_put(
-    request: Request,
-    default_privacy_mode: str = Form(...),
-    default_endpoint_url: str = Form(""),
-    default_endpoint_key_env: str = Form(""),
-    default_audience: str = Form(...),
-    default_max_turns: str = Form(...),
-):
-    """Atomically rewrite ``~/.urika/settings.toml`` with the five
-    global default fields.
+_VALID_PRIVACY_MODES = {"open", "private", "hybrid"}
 
-    Endpoint URL/key are scoped under the chosen privacy mode in TOML;
-    other modes' endpoint configs are preserved untouched.
+
+@router.put("/settings")
+async def api_global_settings_put(request: Request):
+    """Atomically rewrite ``~/.urika/settings.toml`` from the 4-tab form.
+
+    The page posts the full settings tree across four tabs (Privacy,
+    Models, Preferences, Notifications). This handler:
+
+    1. Validates required fields per privacy mode.
+    2. Loads existing settings via :func:`load_settings`.
+    3. Mutates the keys the user touched, preserving anything else.
+    4. Calls :func:`save_settings` to write the merged dict.
+
+    Validation:
+      * ``privacy_mode`` ∈ ``{"open", "private", "hybrid"}``
+      * ``default_audience`` ∈ ``VALID_AUDIENCES``
+      * ``default_max_turns`` is a positive int
+      * ``private`` mode requires endpoint URL + model
+      * ``hybrid`` mode requires private endpoint URL + private model
 
     Returns an HTML fragment for HTMX swap, or JSON if the client sets
     ``Accept: application/json``.
     """
+    form = await request.form()
+
+    # ---- Validate privacy mode + audience + max_turns ------------------
+    privacy_mode = (form.get("privacy_mode") or "").strip()
+    if privacy_mode not in _VALID_PRIVACY_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"privacy_mode must be one of {sorted(_VALID_PRIVACY_MODES)}",
+        )
+
+    default_audience = (form.get("default_audience") or "").strip()
     if default_audience not in VALID_AUDIENCES:
         raise HTTPException(
             status_code=422,
             detail=f"audience must be one of {sorted(VALID_AUDIENCES)}",
         )
+
     try:
-        max_turns = int(default_max_turns)
+        max_turns = int(form.get("default_max_turns") or "")
     except ValueError as exc:
         raise HTTPException(
             status_code=422,
@@ -369,16 +388,185 @@ def api_global_settings_put(
             detail="default_max_turns must be > 0",
         )
 
+    # ---- Privacy-mode-specific required fields -------------------------
+    private_url = (form.get("privacy_private_url") or "").strip()
+    private_key_env = (form.get("privacy_private_key_env") or "").strip()
+    private_model = (form.get("privacy_private_model") or "").strip()
+    open_model = (form.get("privacy_open_model") or "").strip()
+    hybrid_cloud_model = (form.get("privacy_hybrid_cloud_model") or "").strip()
+    hybrid_private_url = (form.get("privacy_hybrid_private_url") or "").strip()
+    hybrid_private_key_env = (form.get("privacy_hybrid_private_key_env") or "").strip()
+    hybrid_private_model = (form.get("privacy_hybrid_private_model") or "").strip()
+
+    if privacy_mode == "private":
+        if not private_url:
+            raise HTTPException(
+                status_code=422, detail="private mode requires privacy_private_url"
+            )
+        if not private_model:
+            raise HTTPException(
+                status_code=422, detail="private mode requires privacy_private_model"
+            )
+    elif privacy_mode == "hybrid":
+        if not hybrid_private_url:
+            raise HTTPException(
+                status_code=422,
+                detail="hybrid mode requires privacy_hybrid_private_url",
+            )
+        if not hybrid_private_model:
+            raise HTTPException(
+                status_code=422,
+                detail="hybrid mode requires privacy_hybrid_private_model",
+            )
+
+    # ---- Load existing settings and mutate -----------------------------
     s = load_settings()
-    s.setdefault("privacy", {})["mode"] = default_privacy_mode
-    s["privacy"].setdefault("endpoints", {}).setdefault(default_privacy_mode, {})[
-        "base_url"
-    ] = default_endpoint_url
-    s["privacy"]["endpoints"][default_privacy_mode]["api_key_env"] = (
-        default_endpoint_key_env
-    )
-    s.setdefault("preferences", {})["audience"] = default_audience
-    s["preferences"]["max_turns_per_experiment"] = max_turns
+
+    # Privacy section
+    privacy = s.setdefault("privacy", {})
+    privacy["mode"] = privacy_mode
+    endpoints = privacy.setdefault("endpoints", {})
+
+    runtime = s.setdefault("runtime", {})
+    runtime_models = runtime.setdefault("models", {})
+
+    if privacy_mode == "open":
+        # Cloud model goes to [runtime].model. Clear any private endpoint
+        # entry to keep the file tidy (matches the CLI behavior).
+        if open_model:
+            runtime["model"] = open_model
+        # Don't blow away other endpoints — just leave the section as-is.
+
+    elif privacy_mode == "private":
+        ep = endpoints.setdefault("private", {})
+        ep["base_url"] = private_url
+        ep["api_key_env"] = private_key_env
+        if private_model:
+            runtime["model"] = private_model
+
+    elif privacy_mode == "hybrid":
+        if hybrid_cloud_model:
+            runtime["model"] = hybrid_cloud_model
+        ep = endpoints.setdefault("private", {})
+        ep["base_url"] = hybrid_private_url
+        ep["api_key_env"] = hybrid_private_key_env
+        # Wire data_agent → private model (mirrors the CLI hybrid setup).
+        runtime_models["data_agent"] = {
+            "model": hybrid_private_model,
+            "endpoint": "private",
+        }
+
+    # ---- Models tab: top-level runtime_model + per-agent overrides ----
+    runtime_model_field = (form.get("runtime_model") or "").strip()
+    if runtime_model_field:
+        # Explicit override of the privacy-block-computed model.
+        runtime["model"] = runtime_model_field
+
+    for key in form.keys():
+        if key.startswith("model[") and key.endswith("]"):
+            agent = key[len("model[") : -1]
+            if agent not in _KNOWN_AGENTS:
+                continue
+            model_val = (form.get(key) or "").strip()
+            endpoint_val = (form.get(f"endpoint[{agent}]") or "").strip()
+            row: dict[str, str] = {}
+            if model_val:
+                row["model"] = model_val
+            if endpoint_val and endpoint_val != "inherit":
+                if endpoint_val not in _VALID_ENDPOINTS:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"endpoint[{agent}] must be one of "
+                            f"{sorted(_VALID_ENDPOINTS | {'inherit'})}"
+                        ),
+                    )
+                row["endpoint"] = endpoint_val
+            if row:
+                runtime_models[agent] = row
+            elif agent in runtime_models and agent != "data_agent":
+                # User cleared the row — drop the override (but don't blow
+                # away the data_agent row we just wrote in hybrid mode).
+                del runtime_models[agent]
+
+    # Clean up empty containers so the TOML stays tidy.
+    if not runtime_models:
+        runtime.pop("models", None)
+    if not runtime:
+        s.pop("runtime", None)
+
+    # ---- Preferences tab ----------------------------------------------
+    prefs = s.setdefault("preferences", {})
+    prefs["audience"] = default_audience
+    prefs["max_turns_per_experiment"] = max_turns
+    prefs["web_search"] = form.get("web_search") == "on"
+    prefs["venv"] = form.get("venv") == "on"
+
+    # ---- Notifications tab --------------------------------------------
+    new_channels: list[str] = []
+    notifications = s.setdefault("notifications", {})
+
+    # Email
+    if form.get("notifications_email_enabled") == "on":
+        new_channels.append("email")
+    email_to_raw = (form.get("notifications_email_to") or "").strip()
+    email_to = [a.strip() for a in email_to_raw.split(",") if a.strip()]
+    smtp_port_raw = (form.get("notifications_email_smtp_port") or "").strip()
+    try:
+        smtp_port = int(smtp_port_raw) if smtp_port_raw else 587
+    except ValueError:
+        smtp_port = 587
+    email_section = {
+        "from_addr": (form.get("notifications_email_from") or "").strip(),
+        "to": email_to,
+        "smtp_host": (form.get("notifications_email_smtp_host") or "").strip(),
+        "smtp_port": smtp_port,
+        "smtp_user": (form.get("notifications_email_smtp_user") or "").strip(),
+        "smtp_password_env": (
+            form.get("notifications_email_smtp_password_env") or ""
+        ).strip(),
+    }
+    # Only persist the section if something is set; otherwise drop it.
+    if (
+        any(v for k, v in email_section.items() if k != "smtp_port" or v != 587)
+        or "email" in new_channels
+    ):
+        notifications["email"] = email_section
+    elif "email" in notifications:
+        del notifications["email"]
+
+    # Slack
+    if form.get("notifications_slack_enabled") == "on":
+        new_channels.append("slack")
+    slack_section = {
+        "channel": (form.get("notifications_slack_channel") or "").strip(),
+        "token_env": (form.get("notifications_slack_token_env") or "").strip(),
+    }
+    if any(slack_section.values()) or "slack" in new_channels:
+        notifications["slack"] = slack_section
+    elif "slack" in notifications:
+        del notifications["slack"]
+
+    # Telegram
+    if form.get("notifications_telegram_enabled") == "on":
+        new_channels.append("telegram")
+    telegram_section = {
+        "chat_id": (form.get("notifications_telegram_chat_id") or "").strip(),
+        "bot_token_env": (
+            form.get("notifications_telegram_bot_token_env") or ""
+        ).strip(),
+    }
+    if any(telegram_section.values()) or "telegram" in new_channels:
+        notifications["telegram"] = telegram_section
+    elif "telegram" in notifications:
+        del notifications["telegram"]
+
+    notifications["channels"] = new_channels
+    if (
+        not any(notifications.get(k) for k in ("email", "slack", "telegram"))
+        and not new_channels
+    ):
+        s.pop("notifications", None)
 
     save_settings(s)
 
@@ -386,9 +574,7 @@ def api_global_settings_put(
     if "application/json" in accept:
         return JSONResponse(
             {
-                "default_privacy_mode": default_privacy_mode,
-                "default_endpoint_url": default_endpoint_url,
-                "default_endpoint_key_env": default_endpoint_key_env,
+                "privacy_mode": privacy_mode,
                 "default_audience": default_audience,
                 "default_max_turns": max_turns,
             }

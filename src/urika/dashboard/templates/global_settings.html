@@ -1,4 +1,5 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import tabs %}
 
 {% block title %}Settings · Urika{% endblock %}
 {% block heading %}Global settings{% endblock %}
@@ -15,9 +16,37 @@
 <style>
   .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
   .form-row label { font-weight: 600; }
-  .form-row input, .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
-  .form-row .help { font-size: 0.85em; color: var(--text-muted, #888); }
-  .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+  .form-row input[type="text"],
+  .form-row input[type="number"],
+  .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
+  .form-help { color: var(--text-muted); font-size: var(--fs-xs); }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+  .models-grid { width: 100%; border-collapse: collapse; }
+  .models-grid th, .models-grid td {
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: middle;
+  }
+  .models-grid th { font-weight: var(--fw-semibold); color: var(--text-muted); font-size: var(--fs-xs); }
+  .models-grid td input,
+  .models-grid td select { width: 100%; font: inherit; padding: 0.3rem; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+  .privacy-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-top: var(--space-3);
+    background: var(--bg-elevated);
+  }
+  .privacy-block h4 { margin-top: 0; }
+  .channel-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .channel-block h4 { margin: 0 0 var(--space-2) 0; }
 </style>
 
 <form
@@ -26,58 +55,278 @@
   hx-swap="innerHTML"
   class="card"
 >
-  <div class="form-row">
-    <label for="default_privacy_mode">Default privacy mode</label>
-    <select id="default_privacy_mode" name="default_privacy_mode">
-      {% for m in valid_modes %}
-        <option value="{{ m }}" {% if m == values.default_privacy_mode %}selected{% endif %}>{{ m }}</option>
-      {% endfor %}
-    </select>
-    <span class="help">Endpoint URL and key below apply to this mode.</span>
-  </div>
+  {% call(active) tabs("global-settings", [
+    {"id": "privacy", "label": "Privacy"},
+    {"id": "models", "label": "Models"},
+    {"id": "preferences", "label": "Preferences"},
+    {"id": "notifications", "label": "Notifications"}
+  ]) %}
 
-  <div class="form-row">
-    <label for="default_endpoint_url">Default endpoint URL</label>
-    <input
-      type="text"
-      id="default_endpoint_url"
-      name="default_endpoint_url"
-      value="{{ values.default_endpoint_url }}"
-      placeholder="http://localhost:11434"
-    >
-  </div>
+    {# ---- Privacy tab -------------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'privacy'"
+         x-data="{ mode: '{{ privacy_mode }}' }">
+      <div class="form-row">
+        <label for="privacy_mode">Privacy mode</label>
+        <select id="privacy_mode" name="privacy_mode" x-model="mode">
+          {% for m in valid_privacy_modes %}
+            <option value="{{ m }}" {% if m == privacy_mode %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+        <span class="form-help">
+          <strong>open</strong> — all agents use the cloud API.
+          <strong>private</strong> — all agents use a local/self-hosted endpoint.
+          <strong>hybrid</strong> — most agents on cloud, data agents private.
+        </span>
+      </div>
 
-  <div class="form-row">
-    <label for="default_endpoint_key_env">Default endpoint API key env var</label>
-    <input
-      type="text"
-      id="default_endpoint_key_env"
-      name="default_endpoint_key_env"
-      value="{{ values.default_endpoint_key_env }}"
-      placeholder="MY_API_KEY"
-    >
-  </div>
+      {# Open block — visible only when mode == 'open' #}
+      <div class="privacy-block" x-show="mode === 'open'" x-cloak>
+        <h4>Open mode</h4>
+        <div class="form-row">
+          <label for="privacy_open_model">Default cloud model</label>
+          <select id="privacy_open_model" name="privacy_open_model">
+            {% for m in cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == privacy_open_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
 
-  <div class="form-row">
-    <label for="default_audience">Default audience</label>
-    <select id="default_audience" name="default_audience">
-      {% for a in valid_audiences %}
-        <option value="{{ a }}" {% if a == values.default_audience %}selected{% endif %}>{{ a }}</option>
-      {% endfor %}
-    </select>
-  </div>
+      {# Private block #}
+      <div class="privacy-block" x-show="mode === 'private'" x-cloak>
+        <h4>Private mode</h4>
+        <div class="form-row">
+          <label for="privacy_private_url">Endpoint URL</label>
+          <input type="text" id="privacy_private_url" name="privacy_private_url"
+                 value="{{ privacy_private_url }}"
+                 placeholder="http://localhost:11434">
+        </div>
+        <div class="form-row">
+          <label for="privacy_private_key_env">API key env var</label>
+          <input type="text" id="privacy_private_key_env" name="privacy_private_key_env"
+                 value="{{ privacy_private_key_env }}"
+                 placeholder="(optional, e.g. INFERENCE_HUB_KEY)">
+        </div>
+        <div class="form-row">
+          <label for="privacy_private_model">Model name</label>
+          <input type="text" id="privacy_private_model" name="privacy_private_model"
+                 value="{{ privacy_private_model }}"
+                 placeholder="qwen3:14b">
+        </div>
+      </div>
 
-  <div class="form-row">
-    <label for="default_max_turns">Default max turns per experiment</label>
-    <input
-      type="number"
-      id="default_max_turns"
-      name="default_max_turns"
-      value="{{ values.default_max_turns }}"
-      min="1"
-      step="1"
-    >
-  </div>
+      {# Hybrid block #}
+      <div class="privacy-block" x-show="mode === 'hybrid'" x-cloak>
+        <h4>Hybrid mode</h4>
+        <div class="form-row">
+          <label for="privacy_hybrid_cloud_model">Cloud model (most agents)</label>
+          <select id="privacy_hybrid_cloud_model" name="privacy_hybrid_cloud_model">
+            {% for m in cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == privacy_hybrid_cloud_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="privacy_hybrid_private_url">Private endpoint URL (data agents)</label>
+          <input type="text" id="privacy_hybrid_private_url" name="privacy_hybrid_private_url"
+                 value="{{ privacy_hybrid_private_url }}"
+                 placeholder="http://localhost:11434">
+        </div>
+        <div class="form-row">
+          <label for="privacy_hybrid_private_key_env">Private API key env var</label>
+          <input type="text" id="privacy_hybrid_private_key_env"
+                 name="privacy_hybrid_private_key_env"
+                 value="{{ privacy_hybrid_private_key_env }}"
+                 placeholder="(optional)">
+        </div>
+        <div class="form-row">
+          <label for="privacy_hybrid_private_model">Private model name</label>
+          <input type="text" id="privacy_hybrid_private_model"
+                 name="privacy_hybrid_private_model"
+                 value="{{ privacy_hybrid_private_model }}"
+                 placeholder="qwen3:14b">
+        </div>
+      </div>
+    </div>
+
+    {# ---- Models tab --------------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'models'" x-cloak>
+      <div class="form-row">
+        <label for="runtime_model">Default runtime model</label>
+        <input type="text" id="runtime_model" name="runtime_model"
+               value="{{ runtime_model }}"
+               placeholder="claude-sonnet-4-5">
+        <span class="form-help">Sets <code>[runtime].model</code>. Overrides the privacy block's model if set.</span>
+      </div>
+
+      <table class="models-grid">
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>Model</th>
+            <th>Endpoint</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in model_rows %}
+          <tr>
+            <td><code>{{ row.agent }}</code></td>
+            <td>
+              <input type="text" name="model[{{ row.agent }}]"
+                     value="{{ row.model }}" placeholder="(inherit)">
+            </td>
+            <td>
+              <select name="endpoint[{{ row.agent }}]">
+                {% for choice in endpoint_choices %}
+                  <option value="{{ choice }}"
+                          {% if choice == row.endpoint %}selected{% endif %}>{{ choice }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.</span>
+    </div>
+
+    {# ---- Preferences tab --------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'preferences'" x-cloak>
+      <div class="form-row">
+        <label for="default_audience">Default audience</label>
+        <select id="default_audience" name="default_audience">
+          {% for a in valid_audiences %}
+            <option value="{{ a }}" {% if a == default_audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="default_max_turns">Default max turns per experiment</label>
+        <input type="number" id="default_max_turns" name="default_max_turns"
+               value="{{ default_max_turns }}" min="1" step="1">
+      </div>
+
+      <div class="form-row">
+        <label class="checkbox-row">
+          <input type="checkbox" name="web_search" value="on"
+                 {% if web_search %}checked{% endif %}>
+          <span>Enable web search</span>
+        </label>
+        <span class="form-help">Lets agents call the WebSearch tool when available.</span>
+      </div>
+
+      <div class="form-row">
+        <label class="checkbox-row">
+          <input type="checkbox" name="venv" value="on"
+                 {% if venv %}checked{% endif %}>
+          <span>Use project virtualenv</span>
+        </label>
+        <span class="form-help">Run agents inside the project's <code>.venv/</code>.</span>
+      </div>
+    </div>
+
+    {# ---- Notifications tab ------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'notifications'" x-cloak>
+      {# Email #}
+      <div class="channel-block">
+        <h4>Email</h4>
+        <label class="checkbox-row">
+          <input type="checkbox" name="notifications_email_enabled" value="on"
+                 {% if 'email' in notif_channels %}checked{% endif %}>
+          <span>Enable email notifications</span>
+        </label>
+        <div class="form-row">
+          <label for="notifications_email_from">From address</label>
+          <input type="text" id="notifications_email_from" name="notifications_email_from"
+                 value="{{ notif_email.get('from_addr', '') }}"
+                 placeholder="bot@example.com">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_to">To (comma-separated)</label>
+          <input type="text" id="notifications_email_to" name="notifications_email_to"
+                 value="{{ notif_email.get('to', []) | join(', ') if notif_email.get('to') else '' }}"
+                 placeholder="alice@example.com, bob@example.com">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_smtp_host">SMTP host</label>
+          <input type="text" id="notifications_email_smtp_host"
+                 name="notifications_email_smtp_host"
+                 value="{{ notif_email.get('smtp_host', '') }}"
+                 placeholder="smtp.example.com">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_smtp_port">SMTP port</label>
+          <input type="number" id="notifications_email_smtp_port"
+                 name="notifications_email_smtp_port"
+                 value="{{ notif_email.get('smtp_port', 587) }}" min="1" step="1">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_smtp_user">SMTP user</label>
+          <input type="text" id="notifications_email_smtp_user"
+                 name="notifications_email_smtp_user"
+                 value="{{ notif_email.get('smtp_user', '') }}">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_smtp_password_env">SMTP password env var</label>
+          <input type="text" id="notifications_email_smtp_password_env"
+                 name="notifications_email_smtp_password_env"
+                 value="{{ notif_email.get('smtp_password_env', '') }}"
+                 placeholder="SMTP_PASSWORD">
+        </div>
+      </div>
+
+      {# Slack #}
+      <div class="channel-block">
+        <h4>Slack</h4>
+        <label class="checkbox-row">
+          <input type="checkbox" name="notifications_slack_enabled" value="on"
+                 {% if 'slack' in notif_channels %}checked{% endif %}>
+          <span>Enable Slack notifications</span>
+        </label>
+        <div class="form-row">
+          <label for="notifications_slack_channel">Channel</label>
+          <input type="text" id="notifications_slack_channel"
+                 name="notifications_slack_channel"
+                 value="{{ notif_slack.get('channel', '') }}"
+                 placeholder="#urika">
+        </div>
+        <div class="form-row">
+          <label for="notifications_slack_token_env">Bot token env var</label>
+          <input type="text" id="notifications_slack_token_env"
+                 name="notifications_slack_token_env"
+                 value="{{ notif_slack.get('token_env', '') }}"
+                 placeholder="SLACK_BOT_TOKEN">
+        </div>
+      </div>
+
+      {# Telegram #}
+      <div class="channel-block">
+        <h4>Telegram</h4>
+        <label class="checkbox-row">
+          <input type="checkbox" name="notifications_telegram_enabled" value="on"
+                 {% if 'telegram' in notif_channels %}checked{% endif %}>
+          <span>Enable Telegram notifications</span>
+        </label>
+        <div class="form-row">
+          <label for="notifications_telegram_chat_id">Chat ID</label>
+          <input type="text" id="notifications_telegram_chat_id"
+                 name="notifications_telegram_chat_id"
+                 value="{{ notif_telegram.get('chat_id', '') }}">
+        </div>
+        <div class="form-row">
+          <label for="notifications_telegram_bot_token_env">Bot token env var</label>
+          <input type="text" id="notifications_telegram_bot_token_env"
+                 name="notifications_telegram_bot_token_env"
+                 value="{{ notif_telegram.get('bot_token_env', '') }}"
+                 placeholder="TELEGRAM_BOT_TOKEN">
+        </div>
+      </div>
+    </div>
+
+  {% endcall %}
 
   <div class="form-actions">
     <button type="submit" class="btn btn--primary">Save</button>
