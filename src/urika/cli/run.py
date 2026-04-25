@@ -55,7 +55,6 @@ def _update_repl_activity(event: str, detail: str) -> None:
         pass
 
 
-
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option(
@@ -249,7 +248,9 @@ def run(
         elif choice.startswith("Custom"):
             try:
                 max_turns = int(
-                    interactive_prompt("Max turns per experiment", default=str(max_turns))
+                    interactive_prompt(
+                        "Max turns per experiment", default=str(max_turns)
+                    )
                 )
             except ValueError:
                 pass  # keep existing max_turns
@@ -264,9 +265,7 @@ def run(
             click.echo("    Mode:         single experiment")
         if instructions:
             instr_preview = (
-                instructions[:80] + "..."
-                if len(instructions) > 80
-                else instructions
+                instructions[:80] + "..." if len(instructions) > 80 else instructions
             )
             click.echo(f"    Instructions: {instr_preview}")
         click.echo()
@@ -754,22 +753,26 @@ def run(
                         # Text block — agent is thinking
                         panel.set_thinking("Thinking\u2026")
 
-        result = asyncio.run(
-            run_experiment(
-                project_path,
-                experiment_id,
-                sdk_runner,
-                max_turns=max_turns,
-                resume=resume,
-                review_criteria=review_criteria,
-                on_progress=_on_progress,
-                on_message=_on_message,
-                instructions=instructions,
-                get_user_input=_get_user_input,
-                pause_controller=pause_ctrl,
-                audience=audience,
+        from urika.orchestrator.run_log import OrchestratorLogger
+
+        run_log_path = project_path / "experiments" / experiment_id / "run.log"
+        with OrchestratorLogger(run_log_path):
+            result = asyncio.run(
+                run_experiment(
+                    project_path,
+                    experiment_id,
+                    sdk_runner,
+                    max_turns=max_turns,
+                    resume=resume,
+                    review_criteria=review_criteria,
+                    on_progress=_on_progress,
+                    on_message=_on_message,
+                    instructions=instructions,
+                    get_user_input=_get_user_input,
+                    pause_controller=pause_ctrl,
+                    audience=audience,
+                )
             )
-        )
 
     finally:
         if _owns_bus and notif_bus is not None:
@@ -827,9 +830,13 @@ def run(
                                         best_method = r["method"]
                     if best_val is not None:
                         if 0 <= best_val <= 1:
-                            summary_text += f"Best: {best_method} ({best_metric}={best_val:.1%})"
+                            summary_text += (
+                                f"Best: {best_method} ({best_metric}={best_val:.1%})"
+                            )
                         else:
-                            summary_text += f"Best: {best_method} ({best_metric}={best_val:.4g})"
+                            summary_text += (
+                                f"Best: {best_method} ({best_metric}={best_val:.4g})"
+                            )
             except Exception:
                 pass
 
@@ -921,9 +928,6 @@ def run(
         print_step(f"Experiment finished with status: {run_status} ({turns} turns)")
 
     print_footer(duration_ms=elapsed_ms, turns=turns, status=run_status)
-
-
-
 
 
 # ── Re-exports from sibling modules (Phase 8 split) ───────────────
