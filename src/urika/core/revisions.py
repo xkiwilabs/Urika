@@ -66,7 +66,8 @@ def update_project_field(
 ) -> dict[str, Any]:
     """Update a project config field and record the revision.
 
-    Supported fields: 'description', 'question', 'mode'.
+    Supported fields: 'description', 'question', 'mode' (in [project]),
+    'audience' (in [preferences]).
     Updates urika.toml and records the change in revisions.json.
 
     Returns the revision entry.
@@ -75,9 +76,11 @@ def update_project_field(
 
     from urika.core.workspace import _write_toml
 
-    valid_fields = {"description", "question", "mode"}
-    if field not in valid_fields:
-        msg = f"Cannot update field '{field}'. Valid: {valid_fields}"
+    project_fields = {"description", "question", "mode"}
+    preference_fields = {"audience"}
+    if field not in project_fields | preference_fields:
+        valid = sorted(project_fields | preference_fields)
+        msg = f"Cannot update field '{field}'. Valid: {valid}"
         raise ValueError(msg)
 
     toml_path = project_dir / "urika.toml"
@@ -88,8 +91,12 @@ def update_project_field(
     with open(toml_path, "rb") as f:
         data = tomllib.load(f)
 
-    old_value = data.get("project", {}).get(field, "")
-    data.setdefault("project", {})[field] = new_value
+    if field in project_fields:
+        old_value = data.get("project", {}).get(field, "")
+        data.setdefault("project", {})[field] = new_value
+    else:
+        old_value = data.get("preferences", {}).get(field, "")
+        data.setdefault("preferences", {})[field] = new_value
 
     # Preserve non-project sections (privacy, runtime, etc.)
     # by reading raw content and only updating the project section
