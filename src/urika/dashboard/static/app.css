@@ -192,7 +192,7 @@ h4 {
 .brand {
   display: flex;
   justify-content: center;
-  padding: var(--space-5) 0 var(--space-4);
+  padding: 0 0 var(--space-4);
   border-bottom: 1px solid var(--border);
   margin-bottom: var(--space-4);
 }
