@@ -22,3 +22,20 @@ def test_tabs_macro_renders_tab_buttons():
     assert ">B</button>" in out
     assert "panel-a" in out
     assert "active === 'a'" in out
+
+
+def test_modal_macro_renders(tmp_path):
+    from jinja2 import Environment, FileSystemLoader
+    from pathlib import Path
+    env = Environment(loader=FileSystemLoader("src/urika/dashboard/templates"))
+    src = (
+        '{% from "_macros.html" import modal %}'
+        '{% call modal("test-modal", "Test") %}'
+        '<p>body content</p>'
+        '{% endcall %}'
+    )
+    out = env.from_string(src).render()
+    assert "modal-backdrop" in out
+    assert "modal-title" in out
+    assert ">Test</h2>" in out
+    assert "body content" in out

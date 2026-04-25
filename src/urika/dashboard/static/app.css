@@ -737,3 +737,32 @@ h4 {
   border-bottom-color: var(--accent);
 }
 .tab-panel { padding: var(--space-3) 0; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: min(560px, 90vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.modal-close { font-size: 1.4em; }
+.modal-body { padding: var(--space-5); }
