@@ -435,7 +435,12 @@ def global_settings(request: Request) -> HTMLResponse:
     notifications = s.get("notifications", {}) or {}
 
     # Suggested cloud-model dropdown values; mirrors the interactive CLI.
-    cloud_models = ["claude-sonnet-4-5", "claude-opus-4-6", "claude-haiku-4-5"]
+    cloud_models = [
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+    ]
 
     # In hybrid mode the data_agent override carries the private model.
     hybrid_data_agent = runtime_models.get("data_agent", {}) or {}
@@ -479,10 +484,11 @@ def global_settings(request: Request) -> HTMLResponse:
             "runtime_model": runtime.get("model", ""),
             "model_rows": model_rows,
             # Preferences tab
-            "default_audience": prefs.get("audience", "expert"),
+            "default_audience": prefs.get("audience", "novice"),
             "default_max_turns": prefs.get("max_turns_per_experiment", 10),
             "web_search": bool(prefs.get("web_search", False)),
-            "venv": bool(prefs.get("venv", True)),
+            # venv default is OFF: use the global urika venv, not per-project.
+            "venv": bool(prefs.get("venv", False)),
             # Notifications tab
             "notif_channels": notifications.get("channels", []) or [],
             "notif_email": notifications.get("email", {}) or {},
@@ -559,7 +565,12 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     success_criteria_text = "\n".join(f"{k}={v}" for k, v in success_criteria.items())
 
     # Suggested cloud-model dropdown values; mirrors the global settings page.
-    cloud_models = ["claude-sonnet-4-5", "claude-opus-4-6", "claude-haiku-4-5"]
+    cloud_models = [
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+    ]
 
     # ---- Notifications tab: per-channel inherit / enabled / disabled --------
     # The project's [notifications] block, when present, overrides the global

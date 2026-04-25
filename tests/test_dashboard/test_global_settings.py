@@ -81,6 +81,18 @@ def test_global_settings_preferences_tab_has_expected_fields(settings_client):
     assert 'name="venv"' in body
 
 
+def test_global_settings_venv_checkbox_unset_means_unchecked(settings_client):
+    """venv default is OFF — when settings.toml has no venv preference,
+    the checkbox renders unchecked. (The default is to use the global
+    urika venv, not per-project.)"""
+    import re
+
+    body = settings_client.get("/settings").text
+    m = re.search(r'<input[^>]*name="venv"[^>]*>', body)
+    assert m is not None, "venv checkbox not found"
+    assert "checked" not in m.group(0)
+
+
 def test_global_settings_notifications_tab_has_channels(settings_client):
     """Notifications tab exposes per-channel enable + config fields."""
     body = settings_client.get("/settings").text
