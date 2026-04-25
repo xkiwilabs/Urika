@@ -573,4 +573,36 @@ def _save_notification_settings(settings, is_project, project_path):
         save_settings(settings)
 
 
+def seed_project_notifications_from_global(project_path: Path) -> list[str]:
+    """Seed a freshly created project's [notifications].channels list
+    from the global per-channel ``auto_enable`` flags.
+
+    Non-interactive — used by ``urika new`` (and mirrors the dashboard's
+    POST /api/projects). Channels with ``auto_enable=true`` get added
+    to the new project's channels list; channels with ``auto_enable=false``
+    (or unset) stay out, and the user can opt-in later via
+    ``urika notifications --project <name>``.
+
+    Returns the list of channels that were seeded (empty list if none).
+    """
+    import tomllib
+
+    from urika.core.settings import get_default_notifications_auto_enable
+    from urika.core.workspace import _write_toml
+
+    auto = get_default_notifications_auto_enable()
+    auto_channels = [ch for ch, on in auto.items() if on]
+    if not auto_channels:
+        return []
+
+    toml_path = project_path / "urika.toml"
+    if not toml_path.exists():
+        return []
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+    data.setdefault("notifications", {})["channels"] = auto_channels
+    _write_toml(toml_path, data)
+    return auto_channels
+
+
 

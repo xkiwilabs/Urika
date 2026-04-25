@@ -273,6 +273,14 @@ def new(
     # JSON mode: fast path — just write project and return
     if json_output:
         project_dir = builder.write_project()
+        # Seed notifications channels from global auto_enable flags so
+        # JSON-mode projects match interactive ``urika new`` and the
+        # dashboard's POST /api/projects.
+        from urika.cli.config_notifications import (
+            seed_project_notifications_from_global,
+        )
+
+        seed_project_notifications_from_global(project_dir)
         registry = ProjectRegistry()
         registry.register(name, project_dir)
         from urika.cli_helpers import output_json
@@ -313,6 +321,18 @@ def new(
     # Write project files first so knowledge can be ingested
     with Spinner("Writing project files"):
         project_dir = builder.write_project()
+
+    # Seed notifications channels from global auto_enable flags. No
+    # interactive prompts here — the user configures auto_enable once
+    # via 'urika notifications' and every subsequent project picks it
+    # up. Mirrors the dashboard's POST /api/projects.
+    from urika.cli.config_notifications import seed_project_notifications_from_global
+
+    seeded_channels = seed_project_notifications_from_global(project_dir)
+    if seeded_channels and not json_output:
+        print_success(
+            f"Notifications auto-enabled: {', '.join(seeded_channels)}"
+        )
 
     # Ingest knowledge BEFORE agent Q&A — agents benefit from domain context
     if data_path and scan_result and has_knowledge:
