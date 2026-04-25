@@ -28,6 +28,12 @@ from urika.core.progress import load_progress
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option(
+    "--experiment",
+    "experiment_id",
+    default=None,
+    help="Experiment ID (skips interactive prompt). Use 'project' for project-level, 'all' for every experiment.",
+)
+@click.option(
     "--instructions",
     default="",
     help="Guide the presentation (e.g. 'emphasize ensemble results').",
@@ -41,6 +47,7 @@ from urika.core.progress import load_progress
 )
 def present(
     project: str | None,
+    experiment_id: str | None,
     instructions: str,
     json_output: bool,
     audience: str | None = None,
@@ -71,7 +78,23 @@ def present(
     runner = get_runner()
     on_msg = (lambda m: None) if json_output else _make_on_message()
 
-    if json_output:
+    if experiment_id is not None:
+        # Non-interactive selection — used by dashboard subprocess spawn.
+        if experiment_id.lower() == "all":
+            choice = "All experiments (generate for each)"
+        elif experiment_id.lower() == "project":
+            choice = "Project level (one overarching presentation)"
+        else:
+            valid_ids = {e.experiment_id for e in experiments}
+            if experiment_id not in valid_ids:
+                raise click.ClickException(
+                    f"Unknown experiment: {experiment_id}"
+                )
+            progress = load_progress(project_path, experiment_id)
+            exp_status = progress.get("status", "pending")
+            runs = len(progress.get("runs", []))
+            choice = f"{experiment_id} [{exp_status}, {runs} runs]"
+    elif json_output:
         # JSON mode: default to most recent experiment, no interactive prompt
         choice = f"{experiments[-1].experiment_id} [auto]"
     else:

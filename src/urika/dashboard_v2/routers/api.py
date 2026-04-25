@@ -17,6 +17,7 @@ from urika.dashboard_v2.projects import list_project_summaries, load_project_sum
 from urika.dashboard_v2.runs import (
     spawn_experiment_run,
     spawn_finalize,
+    spawn_present,
 )
 
 # Finalize CLI accepts a wider audience set than core/models VALID_AUDIENCES.
@@ -398,6 +399,52 @@ async def api_finalize_stream(name: str):
         yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/projects/{name}/present")
+async def api_project_present(name: str, request: Request):
+    """Spawn ``urika present <project> --experiment <id>`` for an experiment.
+
+    Mirrors the ``/run`` endpoint shape: validates the project and the
+    experiment dir, then hands off to ``spawn_present`` which Popens
+    the CLI and detaches a daemon thread to drain its stdout into
+    ``<exp>/present.log``. Returns JSON with the spawned PID and
+    experiment ID.
+
+    ``audience`` follows the present CLI's allow-list (the same one
+    finalize uses), which is wider than the core/models VALID_AUDIENCES set.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    body = await request.form()
+    experiment_id = (body.get("experiment_id") or "").strip()
+    if not experiment_id:
+        raise HTTPException(status_code=422, detail="experiment_id is required")
+    if not (summary.path / "experiments" / experiment_id).is_dir():
+        raise HTTPException(status_code=422, detail="Unknown experiment")
+
+    instructions = (body.get("instructions") or "").strip()
+    audience_raw = (body.get("audience") or "").strip()
+    audience = audience_raw or None
+    if audience and audience not in _FINALIZE_AUDIENCES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
+        )
+
+    pid = spawn_present(
+        name,
+        summary.path,
+        experiment_id,
+        instructions=instructions,
+        audience=audience,
+    )
+    return JSONResponse(
+        {"status": "started", "pid": pid, "experiment_id": experiment_id}
+    )
 
 
 @router.post("/projects/{name}/runs/{exp_id}/stop")

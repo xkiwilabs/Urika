@@ -151,3 +151,57 @@ def spawn_finalize(
     lock_path.write_text(str(proc.pid), encoding="utf-8")
     _start_drainer(proc, log_path, lock_path)
     return proc.pid
+
+
+def spawn_present(
+    project_name: str,
+    project_path: Path,
+    experiment_id: str,
+    *,
+    instructions: str = "",
+    audience: str | None = None,
+    executable: str | None = None,
+) -> int:
+    """Spawn ``urika present <project> --experiment <id>`` as a subprocess.
+
+    Writes the PID to ``<exp>/.present.lock`` and tees stdout to
+    ``<exp>/present.log``. The lock is removed when the subprocess
+    exits. Returns the PID.
+
+    The ``--experiment`` flag bypasses the present CLI's interactive
+    prompt; the dashboard always supplies an explicit experiment ID
+    (or the special tokens ``"project"`` / ``"all"``).
+    """
+    exp_dir = project_path / "experiments" / experiment_id
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    log_path = exp_dir / "present.log"
+    lock_path = exp_dir / ".present.lock"
+
+    cmd = [
+        executable or sys.executable,
+        "-m",
+        "urika",
+        "present",
+        project_name,
+        "--experiment",
+        experiment_id,
+        "--json",
+    ]
+    if instructions:
+        cmd.extend(["--instructions", instructions])
+    if audience:
+        cmd.extend(["--audience", audience])
+
+    env = os.environ.copy()
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+        env=env,
+    )
+    lock_path.write_text(str(proc.pid), encoding="utf-8")
+    _start_drainer(proc, log_path, lock_path)
+    return proc.pid
