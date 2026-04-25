@@ -910,7 +910,7 @@ async def api_run_stream(name: str, exp_id: str):
         if log_path.exists():
             with open(log_path, "r", encoding="utf-8") as f:
                 for line in f:
-                    yield f"data: {line.rstrip()}\n\n"
+                    yield _format_log_line(line.rstrip())
                 position = f.tell()
 
         # Poll for new lines until the lockfile disappears.
@@ -923,7 +923,7 @@ async def api_run_stream(name: str, exp_id: str):
                     position = f.tell()
             if new_data:
                 for line in new_data.splitlines():
-                    yield f"data: {line}\n\n"
+                    yield _format_log_line(line)
             if not lock_path.exists():
                 # Lock gone — run has finished. Emit completion and close.
                 yield (
@@ -936,6 +936,27 @@ async def api_run_stream(name: str, exp_id: str):
         yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+_PROMPT_PREFIX = "URIKA-PROMPT:"
+
+
+def _format_log_line(line: str) -> str:
+    """Format a single run.log line as an SSE event.
+
+    Lines beginning with ``URIKA-PROMPT:`` are emitted as ``event: prompt``
+    SSE events with the trailing JSON payload as the data line, so the
+    browser can render an inline answer form. All other lines are emitted
+    as plain ``data:`` events.
+
+    The orchestrator-side emission of ``URIKA-PROMPT:`` markers is
+    deferred to Phase 12 — this consumer is shipped first so the
+    dashboard side can be tested with a fabricated log line.
+    """
+    if line.startswith(_PROMPT_PREFIX):
+        payload = line[len(_PROMPT_PREFIX):].strip()
+        return f"event: prompt\ndata: {payload}\n\n"
+    return f"data: {line}\n\n"
 
 
 @router.post("/projects/{name}/finalize")

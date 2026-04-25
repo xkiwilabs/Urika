@@ -23,6 +23,8 @@
   <div id="log-status" class="text-muted">Connecting…</div>
   <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
 
+  <div id="log-prompts" style="margin-top: var(--space-4);"></div>
+
   <div style="margin-top: var(--space-4);">
     <button class="btn btn--secondary" id="stop-btn">Stop run</button>
   </div>
@@ -65,6 +67,68 @@
     logEl.appendChild(line);
     logEl.scrollTop = logEl.scrollHeight;
   };
+
+  const promptHost = document.getElementById("log-prompts");
+
+  es.addEventListener("prompt", function (e) {
+    let payload = {};
+    try { payload = JSON.parse(e.data); } catch (_) { return; }
+    if (!payload.prompt_id || !payload.question) return;
+
+    // Build the inline answer form via DOM methods (no innerHTML) so
+    // the prompt question is rendered as text, not parsed as HTML.
+    const form = document.createElement("form");
+    form.className = "prompt-form card";
+
+    const question = document.createElement("p");
+    question.className = "prompt-question";
+    question.textContent = payload.question;
+    form.appendChild(question);
+
+    const textarea = document.createElement("textarea");
+    textarea.name = "answer";
+    textarea.rows = 2;
+    textarea.required = true;
+    form.appendChild(textarea);
+
+    const actions = document.createElement("div");
+    actions.className = "form-actions";
+    actions.style.marginTop = "var(--space-2)";
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className = "btn btn--primary";
+    submit.textContent = "Send";
+    actions.appendChild(submit);
+    form.appendChild(actions);
+
+    function showError(msg) {
+      const note = document.createElement("span");
+      note.className = "text-muted";
+      note.textContent = " " + msg;
+      actions.appendChild(note);
+    }
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const data = new FormData(form);
+      data.append("prompt_id", payload.prompt_id);
+      try {
+        const r = await fetch(
+          "/api/projects/{{ project.name }}/runs/{{ experiment_id }}/respond",
+          { method: "POST", body: data }
+        );
+        if (r.ok) {
+          form.remove();
+        } else {
+          showError("Error " + r.status);
+        }
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    promptHost.appendChild(form);
+  });
 
   es.addEventListener("status", function (e) {
     let payload = {};

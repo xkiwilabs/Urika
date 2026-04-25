@@ -109,3 +109,55 @@ def test_stream_includes_new_lines_then_completes(stream_client_running):
     assert "data: midway" in body
     assert "event: status" in body
     assert '"completed"' in body
+
+
+def test_stream_emits_prompt_event_for_urika_prompt_line(
+    tmp_path: Path, monkeypatch
+):
+    """A URIKA-PROMPT: line in run.log should be emitted as an SSE
+    'prompt' event with the trailing JSON payload as the data line —
+    not as an ordinary data: event with the raw prefix in it.
+    """
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    log_content = (
+        "normal log line\n"
+        'URIKA-PROMPT: {"prompt_id": "p-001", "question": "Which baseline?", '
+        '"type": "text"}\n'
+        "another normal line\n"
+    )
+    (exp_dir / "run.log").write_text(log_content)
+    # No lock file → the stream sees the backlog and exits via "completed".
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    with client.stream(
+        "GET", "/api/projects/alpha/runs/exp-001/stream"
+    ) as r:
+        assert r.status_code == 200
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+
+    # Normal lines should be data: events
+    assert "data: normal log line" in body
+    assert "data: another normal line" in body
+    # The URIKA-PROMPT line should be a prompt event with the JSON payload
+    assert "event: prompt" in body
+    assert '"prompt_id": "p-001"' in body
+    assert '"question": "Which baseline?"' in body
+    # The literal "URIKA-PROMPT:" prefix should NOT appear in any data: event
+    assert "data: URIKA-PROMPT:" not in body
+    # Should reach completion (no lock file)
+    assert "event: status" in body
+    assert '"completed"' in body
