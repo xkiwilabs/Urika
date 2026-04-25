@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ theme | default('light') }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Urika{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+  <script src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
+</head>
+<body
+  x-data="{ theme: localStorage.getItem('urika-theme') || 'light' }"
+  x-init="document.documentElement.dataset.theme = theme"
+  :data-theme="theme"
+>
+  <div class="app-shell">
+    {% include '_sidebar.html' %}
+    <main class="main">
+      <header class="page-header">
+        {% block breadcrumb %}{% endblock %}
+        <h1 class="page-title">{% block heading %}{% endblock %}</h1>
+        <button
+          class="btn btn--ghost theme-toggle"
+          @click="theme = theme === 'light' ? 'dark' : 'light'; localStorage.setItem('urika-theme', theme)"
+          x-text="theme === 'light' ? 'Dark' : 'Light'"
+          aria-label="Toggle theme"
+        ></button>
+      </header>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

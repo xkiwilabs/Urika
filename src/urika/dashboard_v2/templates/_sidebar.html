@@ -1,0 +1,20 @@
+<aside class="sidebar" x-data="{ open: true }" :aria-expanded="open">
+  <a class="brand" href="/">
+    <span class="wordmark">Urika</span>
+  </a>
+  <nav class="sidebar-nav">
+    <a class="sidebar-link" href="/projects">Projects</a>
+    <a class="sidebar-link" href="/settings">Settings</a>
+    {% if project %}
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">{{ project.name }}</div>
+        <a class="sidebar-link" href="/projects/{{ project.name }}">Home</a>
+        <a class="sidebar-link" href="/projects/{{ project.name }}/experiments">Experiments</a>
+        <a class="sidebar-link" href="/projects/{{ project.name }}/methods">Methods</a>
+        <a class="sidebar-link" href="/projects/{{ project.name }}/knowledge">Knowledge</a>
+        <a class="sidebar-link" href="/projects/{{ project.name }}/run">Run</a>
+        <a class="sidebar-link" href="/projects/{{ project.name }}/settings">Settings</a>
+      </div>
+    {% endif %}
+  </nav>
+</aside>
