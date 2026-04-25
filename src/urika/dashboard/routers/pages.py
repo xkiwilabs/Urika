@@ -102,7 +102,15 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
     recent = list_experiments(summary.path)[-5:][::-1]
-    has_findings = (summary.path / "projectbook" / "findings.json").exists()
+    book = summary.path / "projectbook"
+    final_outputs = {
+        "has_findings": (book / "findings.json").exists(),
+        "has_report": (book / "report.md").exists(),
+        "has_presentation": (
+            (book / "presentation.html").exists()
+            or (book / "presentation" / "index.html").exists()
+        ),
+    }
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "project_home.html",
@@ -110,7 +118,7 @@ def project_home(request: Request, name: str) -> HTMLResponse:
             "request": request,
             "project": summary,
             "recent_experiments": recent,
-            "has_findings": has_findings,
+            "final_outputs": final_outputs,
         },
     )
 
@@ -168,6 +176,56 @@ def project_findings(request: Request, name: str) -> HTMLResponse:
             "extras": extras,
         },
     )
+
+
+@router.get("/projects/{name}/projectbook/report", response_class=HTMLResponse)
+def projectbook_report(name: str, request: Request) -> HTMLResponse:
+    """Render the project-level final report at ``projectbook/report.md``.
+
+    Reuses ``report_view.html`` with an empty ``experiment_id`` and a
+    ``title_override`` so the breadcrumb chain ends at the project,
+    not an experiment.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    report_path = summary.path / "projectbook" / "report.md"
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail="No final report")
+    from urika.dashboard.render import render_markdown
+
+    return request.app.state.templates.TemplateResponse(
+        "report_view.html",
+        {
+            "request": request,
+            "project": summary,
+            "experiment_id": "",  # template handles empty
+            "body_html": render_markdown(report_path.read_text(encoding="utf-8")),
+            "title_override": "Final report",
+        },
+    )
+
+
+@router.get("/projects/{name}/projectbook/presentation")
+def projectbook_presentation(name: str) -> FileResponse:
+    """Serve the project-level final presentation.
+
+    Accepts either ``projectbook/presentation.html`` or the directory
+    form ``projectbook/presentation/index.html``.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    book = summary.path / "projectbook"
+    for candidate in (
+        book / "presentation.html",
+        book / "presentation" / "index.html",
+    ):
+        if candidate.exists():
+            return FileResponse(candidate, media_type="text/html")
+    raise HTTPException(status_code=404, detail="No final presentation")
 
 
 @router.get("/projects/{name}/experiments", response_class=HTMLResponse)

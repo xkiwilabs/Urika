@@ -21,13 +21,29 @@
     {% endif %}
   </div>
 
-  {% if has_findings %}
-    <section class="section">
-      <h2 class="section-title">Final outputs</h2>
-      <a class="card card--linked" href="/projects/{{ project.name }}/findings">
-        <div class="card-title">Findings</div>
-        <div class="card-body">View final findings &rarr;</div>
-      </a>
+  {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation %}
+    <section class="final-outputs">
+      <h2 class="section-heading">Final outputs</h2>
+      <div class="final-outputs-grid">
+        {% if final_outputs.has_findings %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/findings">
+            <div class="card-title">Findings</div>
+            <div class="card-body text-muted">Best method, key metrics, ranking.</div>
+          </a>
+        {% endif %}
+        {% if final_outputs.has_report %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/report">
+            <div class="card-title">Report</div>
+            <div class="card-body text-muted">Full narrative write-up.</div>
+          </a>
+        {% endif %}
+        {% if final_outputs.has_presentation %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/presentation" target="_blank" rel="noopener">
+            <div class="card-title">Presentation &#8599;</div>
+            <div class="card-body text-muted">Reveal.js slide deck.</div>
+          </a>
+        {% endif %}
+      </div>
     </section>
   {% endif %}
 

@@ -648,3 +648,99 @@ def test_project_home_does_not_link_to_findings_when_absent(client_with_runs):
     r = client_with_runs.get("/projects/alpha")
     assert r.status_code == 200
     assert "/projects/alpha/findings" not in r.text
+
+
+def test_project_home_shows_final_outputs_when_present(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "findings.json").write_text("{}")
+    (book / "report.md").write_text("# Final report")
+    (book / "presentation.html").write_text("<html></html>")
+    r = client_with_runs.get("/projects/alpha")
+    body = r.text
+    assert "Final outputs" in body
+    assert "/projects/alpha/findings" in body
+    assert "/projects/alpha/projectbook/report" in body or "Final report" in body
+    assert "/projects/alpha/projectbook/presentation" in body or "presentation" in body
+
+
+def test_project_home_final_outputs_card_omitted_when_no_artifacts(client_with_runs):
+    """When none of findings/report/presentation exist, the section is hidden."""
+    r = client_with_runs.get("/projects/alpha")
+    assert r.status_code == 200
+    assert "Final outputs" not in r.text
+
+
+def test_project_home_final_outputs_renders_only_present_cards(client_with_runs):
+    """Only cards for artifacts that exist should render."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    # Only findings.json is present.
+    (book / "findings.json").write_text("{}")
+    r = client_with_runs.get("/projects/alpha")
+    body = r.text
+    assert "Final outputs" in body
+    assert "/projects/alpha/findings" in body
+    # Report and presentation cards should NOT be rendered.
+    assert "/projects/alpha/projectbook/report" not in body
+    assert "/projects/alpha/projectbook/presentation" not in body
+
+
+def test_projectbook_report_renders_markdown(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "report.md").write_text("# Final write-up\n\nProject summary here.")
+    r = client_with_runs.get("/projects/alpha/projectbook/report")
+    assert r.status_code == 200
+    assert "<h1>Final write-up</h1>" in r.text
+    assert "Project summary here." in r.text
+
+
+def test_projectbook_report_404_when_missing(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/projectbook/report")
+    assert r.status_code == 404
+
+
+def test_projectbook_report_404_unknown_project(client_with_runs):
+    r = client_with_runs.get("/projects/nonexistent/projectbook/report")
+    assert r.status_code == 404
+
+
+def test_projectbook_presentation_serves_html(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "presentation.html").write_text(
+        "<!DOCTYPE html><html><body>final deck</body></html>"
+    )
+    r = client_with_runs.get("/projects/alpha/projectbook/presentation")
+    assert r.status_code == 200
+    assert "final deck" in r.text
+    # Served raw, not wrapped in our base template.
+    assert '<aside class="sidebar"' not in r.text
+
+
+def test_projectbook_presentation_serves_directory_index(client_with_runs):
+    """Also accept presentation/index.html (directory form)."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    pres_dir = proj / "projectbook" / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text(
+        "<!DOCTYPE html><html><body>dir-form deck</body></html>"
+    )
+    r = client_with_runs.get("/projects/alpha/projectbook/presentation")
+    assert r.status_code == 200
+    assert "dir-form deck" in r.text
+
+
+def test_projectbook_presentation_404_when_missing(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/projectbook/presentation")
+    assert r.status_code == 404
+
+
+def test_projectbook_presentation_404_unknown_project(client_with_runs):
+    r = client_with_runs.get("/projects/nonexistent/projectbook/presentation")
+    assert r.status_code == 404

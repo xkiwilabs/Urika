@@ -679,6 +679,27 @@ h4 {
 .artifact-files { list-style: none; padding: 0; }
 .artifact-files li { padding: var(--space-1) 0; }
 
+/* ---------- Final outputs grid (project home) ---------- */
+.final-outputs {
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.final-outputs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+.card--linked {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: 150ms ease;
+}
+.card--linked:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0,0,0,.08);
+}
+
 /* ---------- Tabs ---------- */
 /* Hide tab panels gated by x-cloak until Alpine boots, so non-active
    panels don't flash on initial page load. Alpine removes the attribute
