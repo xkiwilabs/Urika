@@ -150,6 +150,24 @@ async def api_create_project(request: Request):
     from urika.core.workspace import create_project_workspace
 
     create_project_workspace(project_dir, cfg)
+
+    # Seed the new project's [notifications].channels list from the
+    # global per-channel ``auto_enable`` flags. Channels with
+    # ``auto_enable=true`` start ON for new projects; the rest stay
+    # off and the user can opt-in later from the project Notifications
+    # tab. Mirrors the CLI behavior so dashboard + ``urika new`` stay
+    # in lockstep.
+    from urika.core.settings import get_default_notifications_auto_enable
+
+    auto = get_default_notifications_auto_enable()
+    auto_channels = [ch for ch, on in auto.items() if on]
+    if auto_channels:
+        toml_path = project_dir / "urika.toml"
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        data.setdefault("notifications", {})["channels"] = auto_channels
+        _write_toml(toml_path, data)
+
     registry.register(name, project_dir)
 
     if request.headers.get("hx-request") == "true":

@@ -192,6 +192,82 @@ def test_create_project_missing_question_returns_422(create_client):
 # ---- Conflict / duplicate --------------------------------------------------
 
 
+# ---- Notifications auto_enable seeding ------------------------------------
+
+
+def test_create_project_seeds_auto_enabled_channels(tmp_path: Path, monkeypatch):
+    """Channels with global ``auto_enable=true`` get seeded into the new
+    project's [notifications].channels list. Channels with
+    ``auto_enable=false`` (or unset) stay out."""
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text("{}")
+
+    projects_root = tmp_path / "projects"
+    projects_root.mkdir()
+
+    settings_toml = home / "settings.toml"
+    settings_toml.write_text(
+        f'projects_root = "{projects_root}"\n\n'
+        "[notifications.email]\n"
+        'from_addr = "x@y.com"\n'
+        "auto_enable = true\n\n"
+        "[notifications.slack]\n"
+        'channel = "#x"\n'
+        "auto_enable = false\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "auto-test",
+            "question": "Q?",
+            "description": "",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "",
+        },
+    )
+    assert r.status_code == 201
+    proj_toml = tomllib.loads(
+        (projects_root / "auto-test" / "urika.toml").read_text(encoding="utf-8")
+    )
+    assert proj_toml["notifications"]["channels"] == ["email"]
+    assert "slack" not in proj_toml["notifications"]["channels"]
+
+
+def test_create_project_no_auto_enable_no_notifications_block(create_client):
+    """When no channel has ``auto_enable=true`` (the default), the new
+    project's urika.toml has no [notifications] block at all."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "no-notif",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+        },
+    )
+    assert r.status_code == 201
+    proj_toml = tomllib.loads(
+        (projects_root / "no-notif" / "urika.toml").read_text(encoding="utf-8")
+    )
+    # No global auto_enable flags → no channels seeded.
+    assert "notifications" not in proj_toml or "channels" not in proj_toml.get(
+        "notifications", {}
+    )
+
+
 def test_create_project_duplicate_name_returns_409(create_client):
     """A second create with the same name fails after the registry sees it."""
     client, _ = create_client
