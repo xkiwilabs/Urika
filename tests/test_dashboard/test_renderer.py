@@ -32,3 +32,33 @@ class TestRenderFileContent:
     def test_empty_content(self):
         html = render_file_content("", "test.md")
         assert isinstance(html, str)
+
+    def test_markdown_fenced_code_block(self):
+        """Fenced code blocks in markdown render as <pre><code>."""
+        md = "```python\ndef foo():\n    return 42\n```"
+        html = render_file_content(md, "test.md")
+        assert "<pre>" in html
+        assert "<code" in html
+        assert "def foo" in html
+
+    def test_markdown_relative_image_rewritten_to_api_raw(self):
+        """Relative image src in rendered markdown is rewritten to /api/raw."""
+        md = "![caption](artifacts/plot.png)"
+        html = render_file_content(md, "test.md", base_dir="experiments/exp-001")
+        # Image should be rewritten; absolute links left alone
+        assert "/api/raw?path=" in html
+        assert "experiments/exp-001/artifacts/plot.png" in html.replace("%2F", "/")
+
+    def test_invalid_json_falls_back_to_pre(self):
+        """Malformed JSON renders as a plain <pre> block, not a crash."""
+        html = render_file_content("{not valid json", "test.json")
+        assert "<pre>" in html
+        assert "not valid json" in html
+        # Must not contain the language-json code block wrapper when invalid
+        assert "language-json" not in html
+
+    def test_escape_html_in_plain_file(self):
+        """Angle brackets in plain files are escaped so they don't inject HTML."""
+        html = render_file_content("<script>alert(1)</script>", "test.txt")
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html

@@ -143,3 +143,124 @@ class TestGenerateKeyFindings:
         path = project_dir / "projectbook" / "key-findings.md"
         content = path.read_text()
         assert "test-project" in content or "Key Findings" in content
+
+
+class TestInlineFigureLinking:
+    def test_figures_in_artifacts_dir_appear_in_notes(
+        self, project_dir: Path, experiment_with_runs: str
+    ) -> None:
+        """Figures whose stem matches the method name get inlined in notes.md."""
+        artifacts = (
+            project_dir / "experiments" / experiment_with_runs / "artifacts"
+        )
+        # Create two PNG artifacts whose names overlap with the run method names
+        (artifacts / "linear_regression.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (artifacts / "ridge_regression_plot.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        update_experiment_notes(project_dir, experiment_with_runs)
+
+        notes = (
+            project_dir
+            / "experiments"
+            / experiment_with_runs
+            / "labbook"
+            / "notes.md"
+        ).read_text()
+
+        # Both figures inline with the expected relative path (../artifacts/)
+        assert "![Linear regression](../artifacts/linear_regression.png)" in notes
+        assert (
+            "![Ridge regression plot](../artifacts/ridge_regression_plot.png)"
+            in notes
+        )
+
+    def test_summary_embeds_figures_section(
+        self, project_dir: Path, experiment_with_runs: str
+    ) -> None:
+        """generate_experiment_summary collects figures into a Figures section."""
+        artifacts = (
+            project_dir / "experiments" / experiment_with_runs / "artifacts"
+        )
+        (artifacts / "residuals.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        generate_experiment_summary(project_dir, experiment_with_runs)
+
+        summary = (
+            project_dir
+            / "experiments"
+            / experiment_with_runs
+            / "labbook"
+            / "summary.md"
+        ).read_text()
+        assert "## Figures" in summary
+        assert "![Residuals](../artifacts/residuals.png)" in summary
+
+
+class TestMissingExperimentHandling:
+    def test_update_notes_raises_for_missing_experiment(
+        self, project_dir: Path
+    ) -> None:
+        """Calling update_experiment_notes for a non-existent experiment raises."""
+        with pytest.raises(FileNotFoundError):
+            update_experiment_notes(project_dir, "exp-999-does-not-exist")
+
+    def test_results_summary_handles_empty_project(
+        self, project_dir: Path
+    ) -> None:
+        """Projects with no experiments still produce a valid results-summary.md."""
+        generate_results_summary(project_dir)
+        path = project_dir / "projectbook" / "results-summary.md"
+        content = path.read_text()
+        assert "# Results Summary" in content
+        assert "No experiments completed yet." in content
+
+
+class TestBestRunLogic:
+    def test_best_run_respects_lower_is_better_metrics(
+        self, project_dir: Path
+    ) -> None:
+        """When the first metric is rmse, the lowest-rmse run is picked as best."""
+        exp = create_experiment(
+            project_dir, name="direction-test", hypothesis="test"
+        )
+        eid = exp.experiment_id
+
+        # Order metrics dicts so rmse is first — that's the metric that
+        # drives direction.  The best run is the one with the lowest rmse.
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-001",
+                method="method_a",
+                params={},
+                metrics={"rmse": 0.50, "r2": 0.60},
+            ),
+        )
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-002",
+                method="method_b",
+                params={},
+                metrics={"rmse": 0.10, "r2": 0.30},
+            ),
+        )
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-003",
+                method="method_c",
+                params={},
+                metrics={"rmse": 0.30, "r2": 0.80},
+            ),
+        )
+
+        generate_experiment_summary(project_dir, eid)
+        summary = (
+            project_dir / "experiments" / eid / "labbook" / "summary.md"
+        ).read_text()
+        # Best run is run-002 (lowest rmse) even though its r2 is the worst
+        assert "Best run**: run-002 (method_b)" in summary
