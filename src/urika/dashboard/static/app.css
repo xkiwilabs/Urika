@@ -431,6 +431,15 @@ h4 {
   font-size: var(--fs-sm);
 }
 
+/* Research question + description preserve newlines and wrap fully
+   (rather than collapsing \n to whitespace and visually showing as
+   a single line). */
+.project-question,
+.project-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- 3. List item ---------- */
 .list-item {
   display: block;

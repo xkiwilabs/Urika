@@ -14,10 +14,10 @@
 {% block content %}
   <div class="card">
     {% if project.question %}
-      <div class="card-title">{{ project.question }}</div>
+      <div class="card-title project-question">{{ project.question }}</div>
     {% endif %}
     {% if project.description %}
-      <div class="card-body text-muted">{{ project.description }}</div>
+      <div class="card-body text-muted project-description">{{ project.description }}</div>
     {% endif %}
   </div>
 

@@ -1022,6 +1022,35 @@ def test_project_home_has_finalize_button(client_with_projects):
     assert 'hx-post="/api/projects/alpha/finalize"' in body
 
 
+def test_project_home_shows_full_multi_line_question(client_with_runs):
+    """A multi-line research question should render in full — not be
+    clamped to a single visual line. Newlines must survive (the
+    container uses white-space: pre-wrap)."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    long_q = "Line one of the question.\nLine two with more details.\nLine three."
+    # Rewrite urika.toml directly with a multi-line question.
+    toml_path = proj / "urika.toml"
+    toml_path.write_text(
+        '[project]\n'
+        f'name = "alpha"\n'
+        f'question = "{long_q.replace(chr(10), "\\n")}"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+    )
+    r = client_with_runs.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    assert "Line one of the question." in body
+    assert "Line two with more details." in body
+    assert "Line three." in body
+    # The container that holds the question must preserve newlines —
+    # the .project-question class is the marker the CSS targets.
+    assert "project-question" in body
+
+
 def test_finalize_button_says_re_finalize_when_artifacts_exist(client_with_runs):
     """When report.md AND a presentation exist in projectbook/, the
     Finalize button label flips to 'Re-finalize project' so users
