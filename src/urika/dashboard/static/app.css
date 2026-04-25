@@ -8,8 +8,8 @@
 :root {
   /* Surfaces */
   --bg: #ffffff;
-  --bg-elevated: #f8fafc;
-  --bg-hover: #f1f5f9;
+  --bg-elevated: #f1f5f9;
+  --bg-hover: #e2e8f0;
   --bg-code: #f1f5f9;
 
   /* Borders */
@@ -75,8 +75,8 @@
 /* ---------- Tokens (dark) ---------- */
 [data-theme="dark"] {
   --bg: #0a0a0a;
-  --bg-elevated: #161616;
-  --bg-hover: #1f1f1f;
+  --bg-elevated: #1c1c1c;
+  --bg-hover: #262626;
   --bg-code: #161616;
 
   --border: #262626;
@@ -453,16 +453,20 @@ h4 {
 /* ---------- 3. List item ---------- */
 .list-item {
   display: block;
-  border-bottom: 1px solid var(--border);
-  transition: background var(--transition);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+  transition: background var(--transition), border-color var(--transition);
 }
 
 .list-item:last-child {
-  border-bottom: 0;
+  margin-bottom: 0;
 }
 
 .list-item:hover {
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .list-item--missing {
