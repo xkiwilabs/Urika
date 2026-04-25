@@ -678,3 +678,28 @@ h4 {
 }
 .artifact-files { list-style: none; padding: 0; }
 .artifact-files li { padding: var(--space-1) 0; }
+
+/* ---------- Tabs ---------- */
+.tabs { margin-top: var(--space-3); }
+.tab-list {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
+}
+.tab-button {
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  border-bottom: 2px solid transparent;
+  transition: 150ms ease;
+}
+.tab-button:hover { color: var(--text); }
+.tab-button--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.tab-panel { padding: var(--space-3) 0; }

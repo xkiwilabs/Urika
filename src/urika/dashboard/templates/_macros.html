@@ -1,0 +1,20 @@
+{# src/urika/dashboard/templates/_macros.html #}
+
+{% macro tabs(name, panels) %}
+{# panels = list of {id, label} dicts; the caller supplies the panel
+   bodies as Jinja blocks named after the panel ids. #}
+<div x-data="{ active: '{{ panels[0].id }}' }" class="tabs">
+  <div class="tab-list" role="tablist">
+    {% for p in panels %}
+      <button
+        class="tab-button"
+        :class="{ 'tab-button--active': active === '{{ p.id }}' }"
+        @click="active = '{{ p.id }}'"
+        role="tab"
+        type="button"
+      >{{ p.label }}</button>
+    {% endfor %}
+  </div>
+  {{ caller(active='') }}
+</div>
+{% endmacro %}
