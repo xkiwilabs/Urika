@@ -8,7 +8,6 @@ from pathlib import Path
 
 import click
 
-from urika.cli_display import _C
 from urika.repl.session import ReplSession
 
 

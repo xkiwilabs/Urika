@@ -200,7 +200,6 @@ class TestInputBar:
         projects with controlled mtimes so the test doesn't depend
         on the user's real ~/.urika registry.
         """
-        from pathlib import Path
         from unittest.mock import patch
 
         # Fake projects with controlled mtimes via tmp_path dirs

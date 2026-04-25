@@ -1,6 +1,5 @@
 """Tests for privacy endpoint check utility."""
 
-from pathlib import Path
 
 from urika.core.privacy import check_private_endpoint, requires_private_endpoint
 

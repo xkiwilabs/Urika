@@ -945,7 +945,7 @@ class TestCriteriaCommand:
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
         """JSON output includes version and set_by in the criteria object."""
-        project_dir = _create_project(runner, urika_env)
+        _create_project(runner, urika_env)
         # Builder seeds v1; verify it appears in JSON
         result = runner.invoke(
             cli, ["criteria", "test-proj", "--json"], env=urika_env

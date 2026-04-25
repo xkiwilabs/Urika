@@ -188,7 +188,7 @@ class UrikaApp(App):
                 )
                 for name, n_exps, dt in recent[:5]:
                     line = Text()
-                    line.append(f"    /project ", style="dim")
+                    line.append("    /project ", style="dim")
                     line.append(name, style="#00d7ff")
                     if n_exps:
                         line.append(f"  {n_exps} experiments", style="dim")

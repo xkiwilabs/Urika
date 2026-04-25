@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+# Cancel in-flight CI runs when a new commit is pushed to the same branch.
+# Saves CI minutes when several commits land in quick succession.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev tooling
+        # The `dev` extra pulls in `all` -> `dl` (torch, transformers).
+        # Skip the heavy DL extras in CI — no tests require them and
+        # they roughly double install time.
+        run: pip install -e . pytest pytest-asyncio ruff
+
+      - name: Ruff check
+        run: ruff check src/ tests/
+
+      - name: Pytest
+        run: pytest -q

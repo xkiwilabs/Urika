@@ -166,7 +166,10 @@ class TestReplSession:
 
     def test_queue_remote_command_with_respond(self) -> None:
         session = ReplSession()
-        cb = lambda t: None
+
+        def cb(t: str) -> None:
+            return None
+
         session.queue_remote_command("run", "exp-1", respond=cb)
         assert session.has_remote_command is True
         cmd = session.pop_remote_command()
