@@ -14,6 +14,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from urika.dashboard.filters import humanize
+
 _PKG_DIR = Path(__file__).parent
 _TEMPLATES_DIR = _PKG_DIR / "templates"
 _STATIC_DIR = _PKG_DIR / "static"
@@ -57,6 +59,7 @@ def create_app(
     app.state.project_root = project_root
     app.state.auth_token = auth_token
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+    app.state.templates.env.filters["humanize"] = humanize
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     # /healthz is registered before the authenticated routers so it

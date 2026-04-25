@@ -1,13 +1,13 @@
 {% extends "_base.html" %}
 
-{% block title %}{{ experiment.name }} · Urika{% endblock %}
-{% block heading %}{{ experiment.name }}{% endblock %}
+{% block title %}{{ experiment.name | humanize }} · Urika{% endblock %}
+{% block heading %}{{ experiment.name | humanize }}{% endblock %}
 
 {% block breadcrumb %}
   <nav class="breadcrumb">
     <a href="/projects">Projects</a>
     <span class="breadcrumb-separator">/</span>
-    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
     <span class="breadcrumb-separator">/</span>
     <a href="/projects/{{ project.name }}/experiments">Experiments</a>
     <span class="breadcrumb-separator">/</span>
@@ -19,7 +19,7 @@
   <div class="card">
     <div class="card-title">{{ experiment.hypothesis }}</div>
     <div class="card-meta">
-      <span class="tag tag--{{ experiment.status }}">{{ experiment.status }}</span>
+      <span class="tag tag--{{ experiment_status }}">{{ experiment_status }}</span>
       <span class="text-muted">{{ experiment.experiment_id }}</span>
       <span class="text-muted">{{ experiment.created_at }}</span>
     </div>

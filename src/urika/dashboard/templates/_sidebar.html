@@ -6,7 +6,7 @@
     {% if project %}
       <a class="sidebar-link sidebar-link--back" href="/projects">← Back to projects</a>
       <div class="sidebar-section">
-        <div class="sidebar-section-label">{{ project.name }}</div>
+        <div class="sidebar-section-label">{{ project.name | humanize }}</div>
         <a class="sidebar-link" href="/projects/{{ project.name }}">Home</a>
         <a class="sidebar-link" href="/projects/{{ project.name }}/experiments">Experiments</a>
         <a class="sidebar-link" href="/projects/{{ project.name }}/methods">Methods</a>

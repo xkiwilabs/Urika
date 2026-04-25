@@ -10,7 +10,7 @@
         <li class="list-item {{ 'list-item--missing' if p.missing else '' }}">
           <a href="/projects/{{ p.name }}" class="list-item-link">
             <div class="list-item-main">
-              <div class="list-item-title">{{ p.name }}</div>
+              <div class="list-item-title">{{ p.name | humanize }}</div>
               {% if p.question %}
                 <div class="list-item-subtitle">{{ p.question }}</div>
               {% endif %}

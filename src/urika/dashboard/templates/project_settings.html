@@ -1,14 +1,14 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import tabs %}
 
-{% block title %}Settings · {{ project.name }} · Urika{% endblock %}
+{% block title %}Settings · {{ project.name | humanize }} · Urika{% endblock %}
 {% block heading %}Settings{% endblock %}
 
 {% block breadcrumb %}
   <nav class="breadcrumb">
     <a href="/projects">Projects</a>
     <span class="breadcrumb-separator">/</span>
-    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
     <span class="breadcrumb-separator">/</span>
     <span class="breadcrumb-current">Settings</span>
   </nav>

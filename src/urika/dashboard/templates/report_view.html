@@ -7,7 +7,7 @@
 <nav class="breadcrumb">
   <a class="breadcrumb-item" href="/projects">Projects</a>
   <span class="breadcrumb-separator">/</span>
-  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name }}</a>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
   {% if experiment_id %}
     <span class="breadcrumb-separator">/</span>
     <a class="breadcrumb-item" href="/projects/{{ project.name }}/experiments">Experiments</a>

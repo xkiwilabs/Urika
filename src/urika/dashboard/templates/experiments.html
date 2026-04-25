@@ -1,13 +1,13 @@
 {% extends "_base.html" %}
 
-{% block title %}Experiments · {{ project.name }} · Urika{% endblock %}
+{% block title %}Experiments · {{ project.name | humanize }} · Urika{% endblock %}
 {% block heading %}Experiments{% endblock %}
 
 {% block breadcrumb %}
   <nav class="breadcrumb">
     <a href="/projects">Projects</a>
     <span class="breadcrumb-separator">/</span>
-    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
     <span class="breadcrumb-separator">/</span>
     <span class="breadcrumb-current">Experiments</span>
   </nav>
@@ -23,7 +23,7 @@
             class="list-item-link"
           >
             <div class="list-item-main">
-              <div class="list-item-title">{{ exp.name }}</div>
+              <div class="list-item-title">{{ exp.name | humanize }}</div>
               <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
             </div>
             <div class="list-item-meta">

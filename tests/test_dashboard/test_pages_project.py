@@ -744,3 +744,106 @@ def test_projectbook_presentation_404_when_missing(client_with_runs):
 def test_projectbook_presentation_404_unknown_project(client_with_runs):
     r = client_with_runs.get("/projects/nonexistent/projectbook/presentation")
     assert r.status_code == 404
+
+
+# --- Bug 1: live status overlay (progress.json wins over experiment.json) ---
+
+def _make_project_with_pending_exp(root: Path, name: str, exp_id: str) -> Path:
+    """Fixture helper: experiment.json says 'pending' (the default), but
+    progress.json says 'completed' — what the live state actually is."""
+    proj = root / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q for {name}"\n'
+        f'mode = "exploratory"\ndescription = ""\n\n'
+        f'[preferences]\naudience = "expert"\n'
+    )
+    exp_dir = proj / "experiments" / exp_id
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "experiment.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": exp_id,
+                "name": "baseline",
+                "hypothesis": "h",
+                "status": "pending",  # default, never overwritten
+                "created_at": "2026-04-25T00:00:00Z",
+            }
+        )
+    )
+    (exp_dir / "progress.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": exp_id,
+                "status": "completed",  # the live status
+                "runs": [
+                    {
+                        "run_id": "run-001",
+                        "method": "ols",
+                        "params": {},
+                        "metrics": {"r2": 0.5},
+                        "observation": "obs",
+                        "timestamp": "2026-04-25T00:00:00Z",
+                    }
+                ],
+            }
+        )
+    )
+    return proj
+
+
+@pytest.fixture
+def client_with_pending_exp(tmp_path: Path, monkeypatch) -> TestClient:
+    _make_project_with_pending_exp(tmp_path, "alpha", "exp-001")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)
+
+
+def test_experiments_list_uses_progress_status_when_present(client_with_pending_exp):
+    """progress.json's status overrides experiment.json's pending default."""
+    r = client_with_pending_exp.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    # The live status should be visible
+    assert "completed" in body
+    # The stale 'pending' from experiment.json must NOT leak through
+    assert 'tag tag--pending' not in body
+
+
+def test_experiment_detail_uses_progress_status_when_present(client_with_pending_exp):
+    r = client_with_pending_exp.get("/projects/alpha/experiments/exp-001")
+    assert r.status_code == 200
+    body = r.text
+    assert "completed" in body
+    assert 'tag tag--pending' not in body
+
+
+# --- Bug 2: directory-form presentation detection ---
+
+def test_experiment_detail_recognizes_directory_form_presentation(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    exp_dir = proj / "experiments" / "exp-001"
+    pres_dir = exp_dir / "presentation"
+    pres_dir.mkdir(parents=True, exist_ok=True)
+    (pres_dir / "index.html").write_text("<html></html>")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    assert r.status_code == 200
+    body = r.text
+    # Should show "Open presentation" (artifact present), not "Generate presentation"
+    assert "Open presentation" in body
+    assert "Generate presentation" not in body
+
+
+# --- Bug 3: humanize filter applied in templates ---
+
+def test_experiments_list_humanizes_experiment_names(client_with_runs):
+    """Experiment 'baseline' should appear humanized as 'Baseline' in the list."""
+    r = client_with_runs.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    # client_with_runs fixture creates name="baseline" — humanize → "Baseline"
+    assert "Baseline" in body

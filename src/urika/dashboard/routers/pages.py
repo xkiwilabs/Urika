@@ -62,21 +62,29 @@ def _active_experiment(project_path: Path) -> str | None:
     return None
 
 
-def _experiment_runs_summary(exp_dir: Path, exp: ExperimentConfig) -> tuple[int, str]:
-    """Return ``(runs_count, last_touched_iso)`` for an experiment."""
+def _experiment_runs_summary(
+    exp_dir: Path, exp: ExperimentConfig
+) -> tuple[int, str, str]:
+    """Return ``(runs_count, last_touched_iso, status)`` for an experiment.
+
+    ``status`` is the live status from ``progress.json`` when present,
+    otherwise the static ``experiment.status`` (which is initialized to
+    ``"pending"`` at experiment creation and rarely overwritten).
+    """
     progress_path = exp_dir / "progress.json"
     if not progress_path.exists():
-        return 0, exp.created_at
+        return 0, exp.created_at, exp.status
     try:
         progress = json.loads(progress_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return 0, exp.created_at
+        return 0, exp.created_at, exp.status
+    status = progress.get("status") or exp.status
     runs = progress.get("runs", []) or []
     if not runs:
-        return 0, exp.created_at
+        return 0, exp.created_at, status
     timestamps = [r.get("timestamp", "") for r in runs if r.get("timestamp")]
     last = max(timestamps) if timestamps else exp.created_at
-    return len(runs), last
+    return len(runs), last, status
 
 
 @router.get("/", response_class=RedirectResponse)
@@ -101,7 +109,20 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    recent = list_experiments(summary.path)[-5:][::-1]
+    recent_raw = list_experiments(summary.path)[-5:][::-1]
+    # Overlay live status from progress.json on top of the static
+    # experiment.json so 'pending' defaults don't mask completed runs.
+    recent = []
+    for exp in recent_raw:
+        exp_dir = summary.path / "experiments" / exp.experiment_id
+        _, _, status = _experiment_runs_summary(exp_dir, exp)
+        recent.append(
+            {
+                "experiment_id": exp.experiment_id,
+                "name": exp.name,
+                "status": status,
+            }
+        )
     book = summary.path / "projectbook"
     final_outputs = {
         "has_findings": (book / "findings.json").exists(),
@@ -239,12 +260,12 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     rows = []
     for exp in experiments:
         exp_dir = summary.path / "experiments" / exp.experiment_id
-        runs_count, last_touched = _experiment_runs_summary(exp_dir, exp)
+        runs_count, last_touched, status = _experiment_runs_summary(exp_dir, exp)
         rows.append(
             {
                 "experiment_id": exp.experiment_id,
                 "name": exp.name,
-                "status": exp.status,
+                "status": status,
                 "runs_count": runs_count,
                 "last_touched": last_touched,
             }
@@ -613,10 +634,18 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="Unknown experiment") from exc
     progress = load_progress(summary.path, exp_id)
     runs = progress.get("runs", []) or []
+    # Live status overlays the static experiment.status default.
+    experiment_status = progress.get("status") or exp.status
 
     exp_dir = summary.path / "experiments" / exp_id
     has_report = (exp_dir / "report.md").exists()
-    has_presentation = (exp_dir / "presentation.html").exists()
+    # Presentation may be a single file (presentation.html) or a directory
+    # containing index.html — accept both forms (matches the actual
+    # presentation_agent output and the existing serve route).
+    has_presentation = (
+        (exp_dir / "presentation.html").exists()
+        or (exp_dir / "presentation" / "index.html").exists()
+    )
     has_log = (exp_dir / "run.log").exists()
 
     artifacts_dir = exp_dir / "artifacts"
@@ -639,6 +668,7 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
             "request": request,
             "project": summary,
             "experiment": exp,
+            "experiment_status": experiment_status,
             "runs": runs,
             "has_report": has_report,
             "has_presentation": has_presentation,

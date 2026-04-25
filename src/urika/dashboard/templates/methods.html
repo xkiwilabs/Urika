@@ -1,13 +1,13 @@
 {% extends "_base.html" %}
 
-{% block title %}Methods · {{ project.name }} · Urika{% endblock %}
+{% block title %}Methods · {{ project.name | humanize }} · Urika{% endblock %}
 {% block heading %}Methods{% endblock %}
 
 {% block breadcrumb %}
   <nav class="breadcrumb">
     <a href="/projects">Projects</a>
     <span class="breadcrumb-separator">/</span>
-    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
     <span class="breadcrumb-separator">/</span>
     <span class="breadcrumb-current">Methods</span>
   </nav>
@@ -56,7 +56,7 @@
           data-sort-name="{{ m.name }}"
           {% for k, v in m.metrics.items() %}data-sort-{{ k }}="{{ v }}"{% endfor %}>
         <div class="list-item-main">
-          <div class="list-item-title">{{ m.name }}</div>
+          <div class="list-item-title">{{ m.name | humanize }}</div>
           <div class="list-item-subtitle">{{ m.description }}</div>
         </div>
         <div class="list-item-meta">
