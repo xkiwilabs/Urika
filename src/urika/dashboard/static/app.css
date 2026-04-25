@@ -275,6 +275,16 @@ h4 {
   letter-spacing: -0.02em;
   color: var(--text);
 }
+.page-title::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 0.8em;
+  background: var(--accent);
+  margin-right: var(--space-3);
+  vertical-align: -2px;
+  border-radius: 2px;
+}
 
 .sidebar-footer {
   margin-top: auto;
@@ -686,6 +696,7 @@ h4 {
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
   margin-bottom: var(--space-3);
+  color: var(--accent);
 }
 .artifact-row {
   display: flex;
