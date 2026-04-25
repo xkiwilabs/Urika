@@ -62,13 +62,14 @@ See [Getting Started](docs/01-getting-started.md) for full details.
 
 ```bash
 urika new my-study --data ./my_data.csv    # create a project (interactive)
+urika run my-study --dry-run                # preview the planned pipeline first
 urika run my-study                          # run experiments
 urika finalize my-study                     # produce final report
 urika                                       # launch the interactive TUI
 urika --classic                             # or use the classic REPL
 ```
 
-See the [Getting Started](docs/01-getting-started.md) guide for a full walkthrough.
+See the [Getting Started](docs/01-getting-started.md) guide for a full walkthrough. **Agent-generated code runs as you** — see [Security Model](docs/18-security.md) before running unfamiliar projects.
 
 ## How It Works
 
@@ -176,6 +177,7 @@ See [Models and Privacy](docs/12-models-and-privacy.md) for configuration detail
 | [CLI Reference](docs/15-cli-reference.md) | Every command with full options |
 | [Interactive TUI](docs/16-interactive-tui.md) | TUI interface, slash commands, tab completion, orchestrator chat |
 | [Notifications](docs/17-notifications.md) | Email, Slack, Telegram alerts and remote commands |
+| [Security Model](docs/18-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
 
 ## Citation
 

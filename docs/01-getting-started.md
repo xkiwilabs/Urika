@@ -214,6 +214,7 @@ urika:my-study> what approaches should I try for this dataset?
 ### 3. Or use CLI commands directly
 
 ```bash
+urika run my-study --dry-run    # preview the planned pipeline (no agents invoked)
 urika run my-study              # run the next experiment
 urika status my-study           # check progress
 urika results my-study          # view leaderboard
@@ -223,6 +224,8 @@ urika dashboard my-study        # browse everything in your browser
 ```
 
 Every slash command has a matching CLI command and vice versa.
+
+> **Heads up:** Urika's task agent writes Python code into your project and executes it. `--dry-run` lets you preview the planned pipeline (which agents will run, which directories they can write to) before any code executes. See [Security Model](18-security.md) for the full agent-execution model.
 
 ## Project location
 
