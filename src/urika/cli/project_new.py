@@ -545,6 +545,25 @@ def new(
             max_experiments=None,
         )
 
+    # Offer to open the dashboard (interactive only — never in --json mode
+    # and never when stdout is not a TTY, e.g. inside CliRunner tests
+    # or piped stdout).
+    import sys
+
+    if not json_output and sys.stdout.isatty() and sys.stdin.isatty():
+        try:
+            if interactive_confirm("Open the dashboard now?", default=True):
+                import subprocess
+
+                subprocess.Popen(
+                    [sys.executable, "-m", "urika", "dashboard", name],
+                    start_new_session=True,
+                )
+                click.echo("  Dashboard launching in a new browser tab...")
+        except Exception:
+            # Don't let dashboard prompt failures block project creation flow
+            pass
+
 
 def _run_builder_agent_loop(
     builder: object,
