@@ -1,0 +1,43 @@
+{% extends "_base.html" %}
+
+{% block title %}Experiments · {{ project.name }} · Urika{% endblock %}
+{% block heading %}Experiments{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-sep">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>Experiments</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  {% if experiments %}
+    <ul class="list">
+      {% for exp in experiments %}
+        <li class="list-item">
+          <a
+            href="/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}"
+            class="list-item-link"
+          >
+            <div class="list-item-main">
+              <div class="list-item-title">{{ exp.name }}</div>
+              <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
+            </div>
+            <div class="list-item-meta">
+              <span class="tag tag--{{ exp.status }}">{{ exp.status }}</span>
+              <span class="text-muted">{{ exp.runs_count }} run{{ '' if exp.runs_count == 1 else 's' }}</span>
+              <span class="text-muted">{{ exp.last_touched }}</span>
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <p>No experiments yet. Start one from the <a href="/projects/{{ project.name }}/run">Run page</a>.</p>
+    </div>
+  {% endif %}
+{% endblock %}

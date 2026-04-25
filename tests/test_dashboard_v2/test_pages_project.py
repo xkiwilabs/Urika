@@ -82,3 +82,25 @@ def test_project_home_sidebar_shows_project_links(client_with_projects):
     assert "/projects/alpha/knowledge" in body
     assert "/projects/alpha/run" in body
     assert "/projects/alpha/settings" in body
+
+
+def test_experiments_page_returns_200_and_shows_experiments(client_with_experiments):
+    r = client_with_experiments.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    # All 7 experiments visible (this page shows the full list, not just top 5)
+    for i in range(1, 8):
+        assert f"exp-{i:03d}" in body
+
+
+def test_experiments_page_404_for_unknown(client_with_projects):
+    r = client_with_projects.get("/projects/nonexistent/experiments")
+    assert r.status_code == 404
+
+
+def test_experiments_page_empty_state(client_with_projects):
+    """alpha in client_with_projects has no experiment dirs."""
+    r = client_with_projects.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    assert "No experiments yet" in body or "no experiments" in body.lower()

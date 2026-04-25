@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from urika.core.experiment import list_experiments
+from urika.core.models import ExperimentConfig
 from urika.core.registry import ProjectRegistry
 from urika.dashboard_v2.projects import (
     list_project_summaries,
@@ -13,6 +17,25 @@ from urika.dashboard_v2.projects import (
 )
 
 router = APIRouter(tags=["pages"])
+
+
+def _experiment_runs_summary(
+    exp_dir: Path, exp: ExperimentConfig
+) -> tuple[int, str]:
+    """Return ``(runs_count, last_touched_iso)`` for an experiment."""
+    progress_path = exp_dir / "progress.json"
+    if not progress_path.exists():
+        return 0, exp.created_at
+    try:
+        progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0, exp.created_at
+    runs = progress.get("runs", []) or []
+    if not runs:
+        return 0, exp.created_at
+    timestamps = [r.get("timestamp", "") for r in runs if r.get("timestamp")]
+    last = max(timestamps) if timestamps else exp.created_at
+    return len(runs), last
 
 
 @router.get("/", response_class=RedirectResponse)
@@ -45,5 +68,40 @@ def project_home(request: Request, name: str) -> HTMLResponse:
             "request": request,
             "project": summary,
             "recent_experiments": recent,
+        },
+    )
+
+
+@router.get("/projects/{name}/experiments", response_class=HTMLResponse)
+def project_experiments(request: Request, name: str) -> HTMLResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    experiments = list_experiments(summary.path)
+    rows = []
+    for exp in experiments:
+        exp_dir = summary.path / "experiments" / exp.experiment_id
+        runs_count, last_touched = _experiment_runs_summary(exp_dir, exp)
+        rows.append(
+            {
+                "experiment_id": exp.experiment_id,
+                "name": exp.name,
+                "status": exp.status,
+                "runs_count": runs_count,
+                "last_touched": last_touched,
+            }
+        )
+    # Newest-first for display (list_experiments returns oldest-first by ID).
+    rows.reverse()
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "experiments.html",
+        {
+            "request": request,
+            "project": summary,
+            "experiments": rows,
         },
     )
