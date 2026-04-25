@@ -470,7 +470,7 @@ h4 {
 
 .list-item:hover {
   background: var(--bg-hover);
-  border-color: var(--border-strong);
+  border-color: var(--accent);
 }
 
 .list-item--missing {
