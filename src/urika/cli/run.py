@@ -755,8 +755,9 @@ def run(
 
         from urika.orchestrator.run_log import OrchestratorLogger
 
-        run_log_path = project_path / "experiments" / experiment_id / "run.log"
-        with OrchestratorLogger(run_log_path):
+        if os.environ.get("URIKA_NO_TEE"):
+            # Dashboard owns run.log writes when spawning us — skip the
+            # orchestrator-side tee so we don't double-write.
             result = asyncio.run(
                 run_experiment(
                     project_path,
@@ -773,6 +774,25 @@ def run(
                     audience=audience,
                 )
             )
+        else:
+            run_log_path = project_path / "experiments" / experiment_id / "run.log"
+            with OrchestratorLogger(run_log_path):
+                result = asyncio.run(
+                    run_experiment(
+                        project_path,
+                        experiment_id,
+                        sdk_runner,
+                        max_turns=max_turns,
+                        resume=resume,
+                        review_criteria=review_criteria,
+                        on_progress=_on_progress,
+                        on_message=_on_message,
+                        instructions=instructions,
+                        get_user_input=_get_user_input,
+                        pause_controller=pause_ctrl,
+                        audience=audience,
+                    )
+                )
 
     finally:
         if _owns_bus and notif_bus is not None:

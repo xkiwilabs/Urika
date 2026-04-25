@@ -5,11 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from urika.core.experiment import create_experiment
 from urika.core.models import VALID_AUDIENCES, VALID_MODES
 from urika.core.registry import ProjectRegistry
 from urika.core.revisions import update_project_field
 from urika.core.settings import load_settings, save_settings
 from urika.dashboard_v2.projects import list_project_summaries, load_project_summary
+from urika.dashboard_v2.runs import spawn_experiment_run
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -136,12 +138,12 @@ def api_global_settings_put(
 
     s = load_settings()
     s.setdefault("privacy", {})["mode"] = default_privacy_mode
-    s["privacy"].setdefault("endpoints", {}).setdefault(
-        default_privacy_mode, {}
-    )["base_url"] = default_endpoint_url
-    s["privacy"]["endpoints"][default_privacy_mode][
-        "api_key_env"
-    ] = default_endpoint_key_env
+    s["privacy"].setdefault("endpoints", {}).setdefault(default_privacy_mode, {})[
+        "base_url"
+    ] = default_endpoint_url
+    s["privacy"]["endpoints"][default_privacy_mode]["api_key_env"] = (
+        default_endpoint_key_env
+    )
     s.setdefault("preferences", {})["audience"] = default_audience
     s["preferences"]["max_turns_per_experiment"] = max_turns
 
@@ -159,3 +161,77 @@ def api_global_settings_put(
             }
         )
     return HTMLResponse(content='<span class="text-success">Saved</span>')
+
+
+@router.post("/projects/{name}/run")
+async def api_project_run_post(name: str, request: Request):
+    """Materialize a new experiment and spawn ``urika run`` for it.
+
+    Validates the form fields, calls ``create_experiment`` to lay
+    down the experiment dir, then hands off to
+    ``spawn_experiment_run`` which Popens the CLI and detaches a
+    daemon thread to drain its stdout into ``run.log``. The
+    dashboard process keeps running; the subprocess outlives the
+    HTTP request.
+
+    Returns JSON when ``Accept: application/json``, otherwise an
+    HTMX-friendly HTML fragment linking to the live log.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    # Read the form directly to avoid the path-param/form-field name collision.
+    form = await request.form()
+    name_field = (form.get("name") or "").strip()
+    hypothesis = (form.get("hypothesis") or "").strip()
+    mode = form.get("mode") or ""
+    audience = form.get("audience") or ""
+    max_turns = form.get("max_turns") or "10"
+    # ``instructions`` is accepted but currently unused at spawn time —
+    # the CLI picks up its own instructions from project state.
+    _ = form.get("instructions") or ""
+
+    if mode not in VALID_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"mode must be one of {sorted(VALID_MODES)}",
+        )
+    if audience not in VALID_AUDIENCES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"audience must be one of {sorted(VALID_AUDIENCES)}",
+        )
+    try:
+        max_turns_int = int(max_turns)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422, detail="max_turns must be an integer"
+        ) from exc
+    if max_turns_int <= 0:
+        raise HTTPException(status_code=422, detail="max_turns must be > 0")
+    if not name_field:
+        raise HTTPException(status_code=422, detail="name is required")
+    if not hypothesis:
+        raise HTTPException(status_code=422, detail="hypothesis is required")
+
+    exp = create_experiment(summary.path, name=name_field, hypothesis=hypothesis)
+    pid = spawn_experiment_run(name, summary.path, exp.experiment_id)
+
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept:
+        return JSONResponse(
+            {
+                "experiment_id": exp.experiment_id,
+                "status": "started",
+                "pid": pid,
+            }
+        )
+    return HTMLResponse(
+        content=(
+            f'<a class="btn btn--primary" '
+            f'href="/projects/{name}/experiments/{exp.experiment_id}/log">'
+            f"View live log →</a>"
+        )
+    )
