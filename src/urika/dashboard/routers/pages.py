@@ -569,6 +569,30 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     )
 
 
+@router.get("/projects/{name}/advisor", response_class=HTMLResponse)
+def project_advisor(name: str, request: Request) -> HTMLResponse:
+    """Render the advisor chat panel.
+
+    Reads ``projectbook/advisor-history.json`` (via
+    :func:`urika.core.advisor_memory.load_history`) and renders one
+    message bubble per entry plus an input form. The form submits via
+    inline JS to the existing ``POST /api/projects/<n>/advisor``
+    endpoint and appends the response to the transcript without
+    reloading the page.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    from urika.core.advisor_memory import load_history
+
+    history = load_history(summary.path)
+    return request.app.state.templates.TemplateResponse(
+        "advisor_chat.html",
+        {"request": request, "project": summary, "history": history},
+    )
+
+
 @router.get("/projects/{name}/run")
 def project_run_redirect(name: str) -> RedirectResponse:
     """Back-compat redirect for the old standalone Run page.

@@ -20,6 +20,9 @@
            :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/knowledge') }"
            href="/projects/{{ project.name }}/knowledge">Knowledge</a>
         <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname === '/projects/{{ project.name }}/advisor' }"
+           href="/projects/{{ project.name }}/advisor">Advisor</a>
+        <a class="sidebar-link"
            :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/run') }"
            href="/projects/{{ project.name }}/run">Run</a>
         <a class="sidebar-link"
