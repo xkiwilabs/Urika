@@ -37,53 +37,57 @@
 </style>
 
 {% if methods %}
-<div x-data="{
-  sortBy: 'name',
-  desc: true,
-  methods: {{ methods | tojson }}
-}">
+<div x-data="{ sortBy: 'name', desc: true }">
   <div class="methods-controls">
     <label>Sort by:
-      <select x-model="sortBy" class="select">
+      <select x-model="sortBy" @change="sortRows()" class="select">
         <option value="name">Name</option>
         {% for k in metric_keys %}
           <option value="{{ k }}">{{ k }}</option>
         {% endfor %}
       </select>
     </label>
-    <button class="btn btn--ghost" @click="desc = !desc" x-text="desc ? '↓' : '↑'"></button>
+    <button class="btn btn--ghost" @click="desc = !desc; sortRows()" x-text="desc ? '↓' : '↑'"></button>
   </div>
 
-  <ul class="list">
-    <template
-      x-for="m in methods.slice().sort((a, b) => {
-        const av = sortBy === 'name' ? a.name : (a.metrics ?? {})[sortBy];
-        const bv = sortBy === 'name' ? b.name : (b.metrics ?? {})[sortBy];
-        if (av === undefined && bv === undefined) return 0;
-        if (av === undefined) return 1;
-        if (bv === undefined) return -1;
-        if (av < bv) return desc ? 1 : -1;
-        if (av > bv) return desc ? -1 : 1;
-        return 0;
-      })"
-      :key="m.name"
-    >
-      <li class="list-item">
+  <ul class="list" id="methods-list">
+    {% for m in methods %}
+      <li class="list-item"
+          data-sort-name="{{ m.name }}"
+          {% for k, v in m.metrics.items() %}data-sort-{{ k }}="{{ v }}"{% endfor %}>
         <div class="list-item-main">
-          <div class="list-item-title" x-text="m.name"></div>
-          <div class="list-item-subtitle" x-text="m.description"></div>
+          <div class="list-item-title">{{ m.name }}</div>
+          <div class="list-item-subtitle">{{ m.description }}</div>
         </div>
         <div class="list-item-meta">
-          <span class="text-muted">
-            <template x-for="(v, k) in m.metrics ?? {}" :key="k">
-              <span class="metric-pill" x-text="k + '=' + (typeof v === 'number' ? v.toFixed(3) : v)"></span>
-            </template>
-          </span>
-          <span class="tag" x-text="m.status"></span>
+          {% for k, v in m.metrics.items() %}
+            <span class="metric-pill">{{ k }}={% if v is number %}{{ "%.3f"|format(v) }}{% else %}{{ v }}{% endif %}</span>
+          {% endfor %}
+          <span class="tag">{{ m.status }}</span>
         </div>
       </li>
-    </template>
+    {% endfor %}
   </ul>
+
+  <script>
+    function sortRows() {
+      const list = document.getElementById('methods-list');
+      const rows = Array.from(list.children);
+      const ctx = Alpine.$data(list.parentElement);
+      const key = `data-sort-${ctx.sortBy}`;
+      rows.sort((a, b) => {
+        const av = a.getAttribute(key);
+        const bv = b.getAttribute(key);
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        const an = parseFloat(av), bn = parseFloat(bv);
+        if (!isNaN(an) && !isNaN(bn)) return ctx.desc ? bn - an : an - bn;
+        return ctx.desc ? bv.localeCompare(av) : av.localeCompare(bv);
+      });
+      rows.forEach(r => list.appendChild(r));
+    }
+  </script>
 </div>
 {% else %}
 <div class="empty-state">

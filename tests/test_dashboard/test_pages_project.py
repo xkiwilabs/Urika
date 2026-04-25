@@ -236,10 +236,27 @@ def test_methods_page_returns_200_and_lists_methods(client_with_methods):
     r = client_with_methods.get("/projects/alpha/methods")
     assert r.status_code == 200
     body = r.text
-    # Method names are JSON-embedded for Alpine, then rendered client-side
-    # but the JSON itself is in the page source.
+    # Methods are server-rendered into the DOM, no JSON dump.
     assert "ols" in body
     assert "rf" in body
+
+
+def test_methods_page_does_not_embed_raw_json(client_with_methods):
+    """The methods page must not leak a JSON dump of the methods list.
+
+    Previously the template embedded ``{{ methods | tojson }}`` so Alpine
+    could sort client-side; that put the entire methods list as JSON in
+    page source. The replacement server-renders rows with data-sort-*
+    attributes, so no JSON dump should appear.
+    """
+    r = client_with_methods.get("/projects/alpha/methods")
+    assert r.status_code == 200
+    body = r.text
+    # Distinctive substrings only present in a JSON dump of the methods.
+    assert '"description":' not in body
+    assert '"metrics":' not in body
+    assert '"script":' not in body
+    assert '"experiment":' not in body
 
 
 def test_methods_page_404_unknown_project(client_with_methods):
