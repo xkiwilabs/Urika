@@ -13,8 +13,8 @@
   --bg-code: #f1f5f9;
 
   /* Borders */
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
+  --border: #cbd5e1;
+  --border-strong: #94a3b8;
 
   /* Text */
   --text: #0f172a;
@@ -79,8 +79,8 @@
   --bg-hover: #262626;
   --bg-code: #161616;
 
-  --border: #262626;
-  --border-strong: #404040;
+  --border: #3a3a3a;
+  --border-strong: #525252;
 
   --text: #fafafa;
   --text-muted: #a3a3a3;
