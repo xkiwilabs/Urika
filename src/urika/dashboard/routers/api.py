@@ -709,6 +709,14 @@ async def api_global_settings_put(request: Request):
     # enablement is a per-project decision (see project settings).
     notifications = s.setdefault("notifications", {})
 
+    # Each channel block also carries an ``auto_enable`` checkbox —
+    # creation-time hint read by ``urika new`` and POST /api/projects
+    # to seed the new project's channels list. The runtime notification
+    # loader does NOT read this flag.
+    email_auto_enable = form.get("notifications_email_auto_enable") == "on"
+    slack_auto_enable = form.get("notifications_slack_auto_enable") == "on"
+    telegram_auto_enable = form.get("notifications_telegram_auto_enable") == "on"
+
     # Email
     email_to_raw = (form.get("notifications_email_to") or "").strip()
     email_to = [a.strip() for a in email_to_raw.split(",") if a.strip()]
@@ -726,9 +734,18 @@ async def api_global_settings_put(request: Request):
         "smtp_password_env": (
             form.get("notifications_email_smtp_password_env") or ""
         ).strip(),
+        "auto_enable": email_auto_enable,
     }
     # Only persist the section if something is set; otherwise drop it.
-    if any(v for k, v in email_section.items() if k != "smtp_port" or v != 587):
+    # ``auto_enable`` and ``smtp_port`` alone aren't enough — those are
+    # defaults that would survive even when the user hasn't entered any
+    # connection details.
+    has_email_data = any(
+        v
+        for k, v in email_section.items()
+        if k not in ("smtp_port", "auto_enable")
+    ) or (smtp_port != 587)
+    if has_email_data or email_auto_enable:
         notifications["email"] = email_section
     elif "email" in notifications:
         del notifications["email"]
@@ -737,8 +754,12 @@ async def api_global_settings_put(request: Request):
     slack_section = {
         "channel": (form.get("notifications_slack_channel") or "").strip(),
         "token_env": (form.get("notifications_slack_token_env") or "").strip(),
+        "auto_enable": slack_auto_enable,
     }
-    if any(slack_section.values()):
+    has_slack_data = any(
+        v for k, v in slack_section.items() if k != "auto_enable"
+    )
+    if has_slack_data or slack_auto_enable:
         notifications["slack"] = slack_section
     elif "slack" in notifications:
         del notifications["slack"]
@@ -749,8 +770,12 @@ async def api_global_settings_put(request: Request):
         "bot_token_env": (
             form.get("notifications_telegram_bot_token_env") or ""
         ).strip(),
+        "auto_enable": telegram_auto_enable,
     }
-    if any(telegram_section.values()):
+    has_telegram_data = any(
+        v for k, v in telegram_section.items() if k != "auto_enable"
+    )
+    if has_telegram_data or telegram_auto_enable:
         notifications["telegram"] = telegram_section
     elif "telegram" in notifications:
         del notifications["telegram"]

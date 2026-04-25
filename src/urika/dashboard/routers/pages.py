@@ -489,11 +489,22 @@ def global_settings(request: Request) -> HTMLResponse:
             "web_search": bool(prefs.get("web_search", False)),
             # venv default is OFF: use the global urika venv, not per-project.
             "venv": bool(prefs.get("venv", False)),
-            # Notifications tab — connection details only. Per-channel
-            # enablement is a per-project decision; not exposed here.
+            # Notifications tab — connection details + per-channel
+            # ``auto_enable`` flag. ``auto_enable`` is a creation-time
+            # hint (read by ``urika new`` and POST /api/projects); the
+            # runtime notification loader does not consult it.
             "notif_email": notifications.get("email", {}) or {},
             "notif_slack": notifications.get("slack", {}) or {},
             "notif_telegram": notifications.get("telegram", {}) or {},
+            "notif_email_auto_enable": bool(
+                (notifications.get("email", {}) or {}).get("auto_enable", False)
+            ),
+            "notif_slack_auto_enable": bool(
+                (notifications.get("slack", {}) or {}).get("auto_enable", False)
+            ),
+            "notif_telegram_auto_enable": bool(
+                (notifications.get("telegram", {}) or {}).get("auto_enable", False)
+            ),
             # Choices
             "valid_modes": VALID_PRIVACY_MODES,
             "valid_privacy_modes": ["open", "private", "hybrid"],

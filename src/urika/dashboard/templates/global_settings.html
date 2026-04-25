@@ -230,9 +230,23 @@
 
     {# ---- Notifications tab ------------------------------------------- #}
     <div class="tab-panel" x-show="active === 'notifications'" x-cloak>
-      {# Email — connection details only. Enabling is per-project. #}
+      <p class="form-help" style="margin-bottom: var(--space-3);">
+        Connection details are shared across all projects. Tick
+        <em>Auto-enable on new projects</em> to opt every freshly
+        created project into a channel — existing projects are
+        unaffected and can still toggle the channel from their own
+        Notifications tab.
+      </p>
+      {# Email — connection details + auto-enable hint. #}
       <div class="channel-block">
         <h4>Email</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="notifications_email_auto_enable" value="on"
+                   {% if notif_email_auto_enable %}checked{% endif %}>
+            <span>Auto-enable on new projects</span>
+          </label>
+        </div>
         <div class="form-row">
           <label for="notifications_email_from">From address</label>
           <input type="text" id="notifications_email_from" name="notifications_email_from"
@@ -273,9 +287,16 @@
         </div>
       </div>
 
-      {# Slack — connection details only. Enabling is per-project. #}
+      {# Slack — connection details + auto-enable hint. #}
       <div class="channel-block">
         <h4>Slack</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="notifications_slack_auto_enable" value="on"
+                   {% if notif_slack_auto_enable %}checked{% endif %}>
+            <span>Auto-enable on new projects</span>
+          </label>
+        </div>
         <div class="form-row">
           <label for="notifications_slack_channel">Channel</label>
           <input type="text" id="notifications_slack_channel"
@@ -292,9 +313,16 @@
         </div>
       </div>
 
-      {# Telegram — connection details only. Enabling is per-project. #}
+      {# Telegram — connection details + auto-enable hint. #}
       <div class="channel-block">
         <h4>Telegram</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="notifications_telegram_auto_enable" value="on"
+                   {% if notif_telegram_auto_enable %}checked{% endif %}>
+            <span>Auto-enable on new projects</span>
+          </label>
+        </div>
         <div class="form-row">
           <label for="notifications_telegram_chat_id">Chat ID</label>
           <input type="text" id="notifications_telegram_chat_id"

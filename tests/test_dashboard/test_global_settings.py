@@ -94,10 +94,10 @@ def test_global_settings_venv_checkbox_unset_means_unchecked(settings_client):
 
 
 def test_global_settings_notifications_tab_has_channels(settings_client):
-    """Notifications tab exposes per-channel CONNECTION fields only.
-
-    Enable/disable checkboxes were removed — channel enablement is a
-    per-project decision, not a global one.
+    """Notifications tab exposes per-channel CONNECTION fields plus
+    a per-channel ``auto_enable`` checkbox that decides whether new
+    projects start with the channel turned on. Per-project run-time
+    enablement still lives on the project Notifications tab.
     """
     body = settings_client.get("/settings").text
     # Email — connection details
@@ -111,10 +111,43 @@ def test_global_settings_notifications_tab_has_channels(settings_client):
     # Telegram — connection details
     assert 'name="notifications_telegram_chat_id"' in body
     assert 'name="notifications_telegram_bot_token_env"' in body
-    # Enable checkboxes are NOT on the global form
+    # Per-channel auto_enable checkboxes (NEW)
+    assert 'name="notifications_email_auto_enable"' in body
+    assert 'name="notifications_slack_auto_enable"' in body
+    assert 'name="notifications_telegram_auto_enable"' in body
+    # The legacy per-channel "enabled" checkboxes are still NOT on the
+    # global form — channel enablement is per-project.
     assert 'name="notifications_email_enabled"' not in body
     assert 'name="notifications_slack_enabled"' not in body
     assert 'name="notifications_telegram_enabled"' not in body
+
+
+def test_global_settings_auto_enable_checkbox_reflects_saved_value(
+    settings_client, tmp_path
+):
+    """When ``[notifications.email].auto_enable`` is true in settings.toml,
+    the checkbox renders pre-checked."""
+    import re
+
+    (tmp_path / "home" / "settings.toml").write_text(
+        "[notifications.email]\n"
+        'from_addr = "x@y.com"\n'
+        "auto_enable = true\n",
+        encoding="utf-8",
+    )
+    body = settings_client.get("/settings").text
+    m = re.search(
+        r'<input[^>]*name="notifications_email_auto_enable"[^>]*>', body
+    )
+    assert m is not None, "email auto_enable checkbox not found"
+    assert "checked" in m.group(0)
+
+    # Slack/telegram unset → unchecked.
+    m_slack = re.search(
+        r'<input[^>]*name="notifications_slack_auto_enable"[^>]*>', body
+    )
+    assert m_slack is not None
+    assert "checked" not in m_slack.group(0)
 
 
 # ---- Privacy tab round-trips -----------------------------------------------
@@ -428,6 +461,88 @@ def test_global_settings_put_notifications_telegram_writes_section(
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
     assert s["notifications"]["telegram"]["chat_id"] == "12345"
     assert s["notifications"]["telegram"]["bot_token_env"] == "TG_TOKEN"
+
+
+def test_global_settings_put_email_auto_enable_writes_flag(
+    settings_client, tmp_path
+):
+    """``notifications_email_auto_enable=on`` round-trips to
+    ``[notifications.email].auto_enable = true``."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "privacy_mode": "open",
+            "privacy_open_model": "claude-sonnet-4-5",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_email_from": "bot@example.com",
+            "notifications_email_to": "alice@example.com",
+            "notifications_email_auto_enable": "on",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert s["notifications"]["email"]["auto_enable"] is True
+
+
+def test_global_settings_put_slack_auto_enable_writes_flag(
+    settings_client, tmp_path
+):
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "privacy_mode": "open",
+            "privacy_open_model": "claude-sonnet-4-5",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_slack_channel": "#urika",
+            "notifications_slack_auto_enable": "on",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert s["notifications"]["slack"]["auto_enable"] is True
+
+
+def test_global_settings_put_telegram_auto_enable_writes_flag(
+    settings_client, tmp_path
+):
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "privacy_mode": "open",
+            "privacy_open_model": "claude-sonnet-4-5",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_telegram_chat_id": "12345",
+            "notifications_telegram_auto_enable": "on",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert s["notifications"]["telegram"]["auto_enable"] is True
+
+
+def test_global_settings_put_auto_enable_unchecked_writes_false(
+    settings_client, tmp_path
+):
+    """Omitting ``notifications_<ch>_auto_enable`` from the form (i.e.
+    unchecked checkbox) writes ``auto_enable = false``."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "privacy_mode": "open",
+            "privacy_open_model": "claude-sonnet-4-5",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_email_from": "bot@example.com",
+            "notifications_email_to": "alice@example.com",
+            # email auto_enable intentionally omitted
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert s["notifications"]["email"]["auto_enable"] is False
 
 
 def test_global_settings_put_notifications_does_not_write_channels(
