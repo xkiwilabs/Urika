@@ -14,7 +14,14 @@ from urika.core.registry import ProjectRegistry
 from urika.core.revisions import update_project_field
 from urika.core.settings import load_settings, save_settings
 from urika.dashboard_v2.projects import list_project_summaries, load_project_summary
-from urika.dashboard_v2.runs import spawn_experiment_run
+from urika.dashboard_v2.runs import (
+    spawn_experiment_run,
+    spawn_finalize,
+)
+
+# Finalize CLI accepts a wider audience set than core/models VALID_AUDIENCES.
+# See ``src/urika/cli/agents_finalize.py`` --audience choices.
+_FINALIZE_AUDIENCES = {"novice", "standard", "expert"}
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -309,6 +316,85 @@ async def api_run_stream(name: str, exp_id: str):
             await asyncio.sleep(0.5)
 
         # Reached only when both log and lock were missing from the start.
+        yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/projects/{name}/finalize")
+async def api_project_finalize(name: str, request: Request):
+    """Spawn ``urika finalize <project> --json`` for a project.
+
+    Mirrors the ``/run`` endpoint shape: validates the project exists,
+    pulls form fields (instructions, audience), and hands off to
+    ``spawn_finalize`` which Popens the CLI and detaches a daemon thread
+    to drain its stdout into ``projectbook/finalize.log``. Returns JSON
+    with the spawned PID.
+
+    ``audience`` follows the finalize CLI allow-list
+    (``{"novice", "standard", "expert"}``), which differs from the core
+    ``VALID_AUDIENCES`` set.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    body = await request.form()
+    instructions = (body.get("instructions") or "").strip()
+    audience_raw = (body.get("audience") or "").strip()
+    audience = audience_raw or None
+    if audience and audience not in _FINALIZE_AUDIENCES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
+        )
+
+    pid = spawn_finalize(
+        name, summary.path, instructions=instructions, audience=audience
+    )
+    return JSONResponse({"status": "started", "pid": pid})
+
+
+@router.get("/projects/{name}/finalize/stream")
+async def api_finalize_stream(name: str):
+    """Server-sent-events tail of ``projectbook/finalize.log``.
+
+    Same shape as ``/runs/<exp>/stream`` but reads from the project
+    book and watches ``.finalize.lock`` for completion.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    log_path = summary.path / "projectbook" / "finalize.log"
+    lock_path = summary.path / "projectbook" / ".finalize.lock"
+
+    async def event_stream():
+        position = 0
+        if log_path.exists():
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    yield f"data: {line.rstrip()}\n\n"
+                position = f.tell()
+
+        while lock_path.exists() or log_path.exists():
+            new_data = ""
+            if log_path.exists():
+                with open(log_path, "r", encoding="utf-8") as f:
+                    f.seek(position)
+                    new_data = f.read()
+                    position = f.tell()
+            if new_data:
+                for line in new_data.splitlines():
+                    yield f"data: {line}\n\n"
+            if not lock_path.exists():
+                yield (
+                    f"event: status\ndata: {json.dumps({'status': 'completed'})}\n\n"
+                )
+                return
+            await asyncio.sleep(0.5)
+
         yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
