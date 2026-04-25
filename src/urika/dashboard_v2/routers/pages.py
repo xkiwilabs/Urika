@@ -13,11 +13,14 @@ from urika.core.method_registry import load_methods
 from urika.core.models import VALID_AUDIENCES, VALID_MODES, ExperimentConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
+from urika.core.settings import load_settings
 from urika.dashboard_v2.projects import (
     list_project_summaries,
     load_project_summary,
 )
 from urika.knowledge.store import KnowledgeStore
+
+VALID_PRIVACY_MODES = ["private", "open", "university"]
 
 router = APIRouter(tags=["pages"])
 
@@ -127,6 +130,38 @@ def project_methods(request: Request, name: str) -> HTMLResponse:
             "project": summary,
             "methods": methods,
             "metric_keys": metric_keys,
+        },
+    )
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def global_settings(request: Request) -> HTMLResponse:
+    """Render the global user-defaults settings page.
+
+    Reads ``~/.urika/settings.toml`` (or the URIKA_HOME equivalent) and
+    surfaces five fields the form posts back to ``PUT /api/settings``.
+    """
+    s = load_settings()
+    privacy = s.get("privacy", {})
+    mode = privacy.get("mode", "open")
+    endpoint = privacy.get("endpoints", {}).get(mode, {})
+    prefs = s.get("preferences", {})
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "global_settings.html",
+        {
+            "request": request,
+            "values": {
+                "default_privacy_mode": mode,
+                "default_endpoint_url": endpoint.get("base_url", ""),
+                "default_endpoint_key_env": endpoint.get("api_key_env", ""),
+                "default_audience": prefs.get("audience", "expert"),
+                "default_max_turns": prefs.get(
+                    "max_turns_per_experiment", 10
+                ),
+            },
+            "valid_modes": VALID_PRIVACY_MODES,
+            "valid_audiences": sorted(VALID_AUDIENCES),
         },
     )
 

@@ -1,0 +1,87 @@
+{% extends "_base.html" %}
+
+{% block title %}Settings · Urika{% endblock %}
+{% block heading %}Global settings{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>Settings</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+  .form-row label { font-weight: 600; }
+  .form-row input, .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
+  .form-row .help { font-size: 0.85em; color: var(--text-muted, #888); }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+</style>
+
+<form
+  hx-put="/api/settings"
+  hx-target="#settings-feedback"
+  hx-swap="innerHTML"
+  class="card"
+>
+  <div class="form-row">
+    <label for="default_privacy_mode">Default privacy mode</label>
+    <select id="default_privacy_mode" name="default_privacy_mode">
+      {% for m in valid_modes %}
+        <option value="{{ m }}" {% if m == values.default_privacy_mode %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+    <span class="help">Endpoint URL and key below apply to this mode.</span>
+  </div>
+
+  <div class="form-row">
+    <label for="default_endpoint_url">Default endpoint URL</label>
+    <input
+      type="text"
+      id="default_endpoint_url"
+      name="default_endpoint_url"
+      value="{{ values.default_endpoint_url }}"
+      placeholder="http://localhost:11434"
+    >
+  </div>
+
+  <div class="form-row">
+    <label for="default_endpoint_key_env">Default endpoint API key env var</label>
+    <input
+      type="text"
+      id="default_endpoint_key_env"
+      name="default_endpoint_key_env"
+      value="{{ values.default_endpoint_key_env }}"
+      placeholder="MY_API_KEY"
+    >
+  </div>
+
+  <div class="form-row">
+    <label for="default_audience">Default audience</label>
+    <select id="default_audience" name="default_audience">
+      {% for a in valid_audiences %}
+        <option value="{{ a }}" {% if a == values.default_audience %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-row">
+    <label for="default_max_turns">Default max turns per experiment</label>
+    <input
+      type="number"
+      id="default_max_turns"
+      name="default_max_turns"
+      value="{{ values.default_max_turns }}"
+      min="1"
+      step="1"
+    >
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn--primary">Save</button>
+    <span id="settings-feedback" class="text-muted"></span>
+  </div>
+</form>
+{% endblock %}

@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from urika.core.models import VALID_AUDIENCES, VALID_MODES
 from urika.core.registry import ProjectRegistry
 from urika.core.revisions import update_project_field
+from urika.core.settings import load_settings, save_settings
 from urika.dashboard_v2.projects import list_project_summaries, load_project_summary
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -92,6 +93,69 @@ def api_project_settings_put(
                 "description": updated.description,
                 "mode": updated.mode,
                 "audience": updated.audience,
+            }
+        )
+    return HTMLResponse(content='<span class="text-success">Saved</span>')
+
+
+@router.put("/settings")
+def api_global_settings_put(
+    request: Request,
+    default_privacy_mode: str = Form(...),
+    default_endpoint_url: str = Form(""),
+    default_endpoint_key_env: str = Form(""),
+    default_audience: str = Form(...),
+    default_max_turns: str = Form(...),
+):
+    """Atomically rewrite ``~/.urika/settings.toml`` with the five
+    global default fields.
+
+    Endpoint URL/key are scoped under the chosen privacy mode in TOML;
+    other modes' endpoint configs are preserved untouched.
+
+    Returns an HTML fragment for HTMX swap, or JSON if the client sets
+    ``Accept: application/json``.
+    """
+    if default_audience not in VALID_AUDIENCES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"audience must be one of {sorted(VALID_AUDIENCES)}",
+        )
+    try:
+        max_turns = int(default_max_turns)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="default_max_turns must be an integer",
+        ) from exc
+    if max_turns <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="default_max_turns must be > 0",
+        )
+
+    s = load_settings()
+    s.setdefault("privacy", {})["mode"] = default_privacy_mode
+    s["privacy"].setdefault("endpoints", {}).setdefault(
+        default_privacy_mode, {}
+    )["base_url"] = default_endpoint_url
+    s["privacy"]["endpoints"][default_privacy_mode][
+        "api_key_env"
+    ] = default_endpoint_key_env
+    s.setdefault("preferences", {})["audience"] = default_audience
+    s["preferences"]["max_turns_per_experiment"] = max_turns
+
+    save_settings(s)
+
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept:
+        return JSONResponse(
+            {
+                "default_privacy_mode": default_privacy_mode,
+                "default_endpoint_url": default_endpoint_url,
+                "default_endpoint_key_env": default_endpoint_key_env,
+                "default_audience": default_audience,
+                "default_max_turns": max_turns,
             }
         )
     return HTMLResponse(content='<span class="text-success">Saved</span>')
