@@ -176,3 +176,52 @@ def test_experiment_detail_404_for_unknown_experiment(client_with_runs):
 def test_experiment_detail_404_for_unknown_project(client_with_runs):
     r = client_with_runs.get("/projects/nonexistent/experiments/exp-001")
     assert r.status_code == 404
+
+
+def _make_project_with_methods(root: Path, name: str, methods: list[dict]) -> Path:
+    proj = root / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    (proj / "methods.json").write_text(json.dumps({"methods": methods}))
+    return proj
+
+
+@pytest.fixture
+def client_with_methods(tmp_path: Path, monkeypatch) -> TestClient:
+    methods = [
+        {"name": "ols", "description": "linear", "script": "ols.py",
+         "experiment": "exp-001", "turn": 1, "metrics": {"r2": 0.5}, "status": "active"},
+        {"name": "rf",  "description": "forest", "script": "rf.py",
+         "experiment": "exp-001", "turn": 2, "metrics": {"r2": 0.8}, "status": "active"},
+    ]
+    _make_project_with_methods(tmp_path, "alpha", methods)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)
+
+
+def test_methods_page_returns_200_and_lists_methods(client_with_methods):
+    r = client_with_methods.get("/projects/alpha/methods")
+    assert r.status_code == 200
+    body = r.text
+    # Method names are JSON-embedded for Alpine, then rendered client-side
+    # but the JSON itself is in the page source.
+    assert "ols" in body
+    assert "rf" in body
+
+
+def test_methods_page_404_unknown_project(client_with_methods):
+    r = client_with_methods.get("/projects/nonexistent/methods")
+    assert r.status_code == 404
+
+
+def test_methods_page_empty_state(client_with_projects):
+    r = client_with_projects.get("/projects/alpha/methods")
+    assert r.status_code == 200
+    assert "No methods registered yet" in r.text or "no methods" in r.text.lower()

@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from urika.core.experiment import list_experiments, load_experiment
+from urika.core.method_registry import load_methods
 from urika.core.models import ExperimentConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
@@ -104,6 +105,27 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
             "request": request,
             "project": summary,
             "experiments": rows,
+        },
+    )
+
+
+@router.get("/projects/{name}/methods", response_class=HTMLResponse)
+def project_methods(request: Request, name: str) -> HTMLResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    methods = load_methods(summary.path)
+    # Collect the union of metric keys for the sort dropdown.
+    metric_keys = sorted({k for m in methods for k in m.get("metrics", {})})
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "methods.html",
+        {
+            "request": request,
+            "project": summary,
+            "methods": methods,
+            "metric_keys": metric_keys,
         },
     )
 

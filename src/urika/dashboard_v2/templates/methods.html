@@ -1,0 +1,94 @@
+{% extends "_base.html" %}
+
+{% block title %}Methods · {{ project.name }} · Urika{% endblock %}
+{% block heading %}Methods{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-sep">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>Methods</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .methods-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .methods-controls .select {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.95rem;
+  }
+  .metric-pill {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    margin-right: 0.25rem;
+    border-radius: 999px;
+    background: var(--surface-2, rgba(127, 127, 127, 0.12));
+    font-size: 0.85rem;
+    font-family: var(--font-mono, monospace);
+  }
+</style>
+
+{% if methods %}
+<div x-data="{
+  sortBy: 'name',
+  desc: true,
+  methods: {{ methods | tojson }}
+}">
+  <div class="methods-controls">
+    <label>Sort by:
+      <select x-model="sortBy" class="select">
+        <option value="name">Name</option>
+        {% for k in metric_keys %}
+          <option value="{{ k }}">{{ k }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn btn--ghost" @click="desc = !desc" x-text="desc ? '↓' : '↑'"></button>
+  </div>
+
+  <ul class="list">
+    <template
+      x-for="m in methods.slice().sort((a, b) => {
+        const av = sortBy === 'name' ? a.name : (a.metrics ?? {})[sortBy];
+        const bv = sortBy === 'name' ? b.name : (b.metrics ?? {})[sortBy];
+        if (av === undefined && bv === undefined) return 0;
+        if (av === undefined) return 1;
+        if (bv === undefined) return -1;
+        if (av < bv) return desc ? 1 : -1;
+        if (av > bv) return desc ? -1 : 1;
+        return 0;
+      })"
+      :key="m.name"
+    >
+      <li class="list-item">
+        <div class="list-item-main">
+          <div class="list-item-title" x-text="m.name"></div>
+          <div class="list-item-subtitle" x-text="m.description"></div>
+        </div>
+        <div class="list-item-meta">
+          <span class="text-muted">
+            <template x-for="(v, k) in m.metrics ?? {}" :key="k">
+              <span class="metric-pill" x-text="k + '=' + (typeof v === 'number' ? v.toFixed(3) : v)"></span>
+            </template>
+          </span>
+          <span class="tag" x-text="m.status"></span>
+        </div>
+      </li>
+    </template>
+  </ul>
+</div>
+{% else %}
+<div class="empty-state">
+  <p>No methods registered yet.</p>
+  <p class="text-muted">Methods will appear here once experiments register them.</p>
+</div>
+{% endif %}
+{% endblock %}
