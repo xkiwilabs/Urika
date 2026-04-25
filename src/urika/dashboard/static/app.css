@@ -475,17 +475,17 @@ h4 {
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap long unbroken strings (method names, tool ids without
+     spaces) within the column instead of overflowing right. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .list-item-subtitle {
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .list-item-meta {
