@@ -217,12 +217,12 @@ class TestCmdRunWithPendingSuggestions:
             invoked_kwargs.update(kwargs)
 
         with (
-            patch("urika.repl_commands._prompt_numbered", return_value="Run with defaults"),
-            patch("urika.repl_commands._load_run_defaults", return_value={
+            patch("urika.repl.commands_run._prompt_numbered", return_value="Run with defaults"),
+            patch("urika.repl.commands_run._load_run_defaults", return_value={
                 "max_turns": 5, "auto_mode": "checkpoint"
             }),
             patch("urika.core.experiment.create_experiment", return_value=mock_exp) as mock_create,
-            patch("urika.repl_commands.click.Context") as mock_ctx_cls,
+            patch("urika.repl.commands_run.click.Context") as mock_ctx_cls,
             patch("urika.core.experiment.list_experiments", return_value=[]),
         ):
             mock_ctx = MagicMock()
@@ -262,11 +262,11 @@ class TestCmdRunWithPendingSuggestions:
             invoked_kwargs.update(kwargs)
 
         with (
-            patch("urika.repl_commands._prompt_numbered", return_value="Run with defaults"),
-            patch("urika.repl_commands._load_run_defaults", return_value={
+            patch("urika.repl.commands_run._prompt_numbered", return_value="Run with defaults"),
+            patch("urika.repl.commands_run._load_run_defaults", return_value={
                 "max_turns": 5, "auto_mode": "checkpoint"
             }),
-            patch("urika.repl_commands.click.Context") as mock_ctx_cls,
+            patch("urika.repl.commands_run.click.Context") as mock_ctx_cls,
             patch("urika.core.experiment.list_experiments", return_value=[]),
         ):
             mock_ctx = MagicMock()
