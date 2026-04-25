@@ -1,0 +1,51 @@
+{% extends "_base.html" %}
+
+{% block title %}{{ project.name }} · Urika{% endblock %}
+{% block heading %}{{ project.name }}{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>{{ project.name }}</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <div class="card">
+    {% if project.question %}
+      <div class="card-title">{{ project.question }}</div>
+    {% endif %}
+    {% if project.description %}
+      <div class="card-body text-muted">{{ project.description }}</div>
+    {% endif %}
+  </div>
+
+  <section class="section">
+    <h2 class="section-title">Recent experiments</h2>
+    {% if recent_experiments %}
+      <ul class="list">
+        {% for exp in recent_experiments %}
+          <li class="list-item">
+            <a
+              href="/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}"
+              class="list-item-link"
+            >
+              <div class="list-item-main">
+                <div class="list-item-title">{{ exp.name }}</div>
+                <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
+              </div>
+              <div class="list-item-meta">
+                <span class="tag tag--{{ exp.status }}">{{ exp.status }}</span>
+              </div>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty-state">
+        <p>No experiments yet. Start one from the Run page.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}
