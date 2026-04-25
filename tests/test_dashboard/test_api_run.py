@@ -255,3 +255,59 @@ def test_run_stop_creates_dotdir_if_missing(run_client):
     r = client.post("/api/projects/alpha/runs/exp-001/stop")
     assert r.status_code == 200
     assert (proj / ".urika").is_dir()
+
+
+# ---- POST /api/projects/<n>/runs/<exp_id>/respond (Task 11F.2) ------------
+
+
+def test_run_respond_writes_answer_file(run_client):
+    client, _, proj = run_client
+    r = client.post(
+        "/api/projects/alpha/runs/exp-001/respond",
+        data={"prompt_id": "p-001", "answer": "Use OLS"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "answer_recorded"
+    assert body["prompt_id"] == "p-001"
+    answer_path = proj / "experiments" / "exp-001" / ".prompts" / "p-001.answer"
+    assert answer_path.exists()
+    assert answer_path.read_text() == "Use OLS"
+
+
+def test_run_respond_404_unknown_project(run_client):
+    client, _, _ = run_client
+    r = client.post(
+        "/api/projects/nonexistent/runs/exp-001/respond",
+        data={"prompt_id": "p-001", "answer": "x"},
+    )
+    assert r.status_code == 404
+
+
+def test_run_respond_422_missing_prompt_id(run_client):
+    client, _, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/runs/exp-001/respond",
+        data={"prompt_id": "", "answer": "x"},
+    )
+    assert r.status_code == 422
+
+
+def test_run_respond_400_traversal(run_client):
+    client, _, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/runs/exp-001/respond",
+        data={"prompt_id": "../../etc/passwd", "answer": "x"},
+    )
+    assert r.status_code == 400
+
+
+def test_run_respond_creates_dotdir_if_missing(run_client):
+    client, _, proj = run_client
+    assert not (proj / "experiments" / "exp-001" / ".prompts").exists()
+    r = client.post(
+        "/api/projects/alpha/runs/exp-001/respond",
+        data={"prompt_id": "p-001", "answer": "x"},
+    )
+    assert r.status_code == 200
+    assert (proj / "experiments" / "exp-001" / ".prompts").is_dir()

@@ -1202,6 +1202,41 @@ async def api_knowledge_add(name: str, request: Request):
     return JSONResponse({"id": entry.id, "title": entry.title}, status_code=201)
 
 
+@router.post("/projects/{name}/runs/{exp_id}/respond")
+async def api_run_respond(name: str, exp_id: str, request: Request):
+    """Record a user's answer to an inline prompt from the live log page.
+
+    The browser-side prompt form (rendered by ``run_log.html`` when the
+    SSE stream emits an ``event: prompt`` event) POSTs ``prompt_id`` and
+    ``answer`` here. We persist the answer at
+    ``<exp>/.prompts/<prompt_id>.answer`` so the orchestrator can pick
+    it up on its next poll cycle.
+
+    The orchestrator-side answer-file polling (and the symmetric
+    ``URIKA-PROMPT:`` emission) is deferred to Phase 12 — this endpoint
+    is shipped first so the dashboard side can be exercised end to end.
+
+    Path-traversal protection: ``prompt_id`` may not contain ``/`` or
+    ``..``. Empty ``prompt_id`` is a 422.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    body = await request.form()
+    prompt_id = (body.get("prompt_id") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    if not prompt_id:
+        raise HTTPException(status_code=422, detail="prompt_id is required")
+    # Path-traversal protection
+    if "/" in prompt_id or ".." in prompt_id:
+        raise HTTPException(status_code=400, detail="Invalid prompt_id")
+    answers_dir = summary.path / "experiments" / exp_id / ".prompts"
+    answers_dir.mkdir(parents=True, exist_ok=True)
+    (answers_dir / f"{prompt_id}.answer").write_text(answer, encoding="utf-8")
+    return {"status": "answer_recorded", "prompt_id": prompt_id}
+
+
 @router.post("/projects/{name}/runs/{exp_id}/stop")
 def api_run_stop(name: str, exp_id: str) -> dict:
     """Request a graceful stop of an in-flight experiment run.
