@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import tomllib
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from urika.core.experiment import create_experiment
-from urika.core.models import VALID_AUDIENCES, VALID_MODES
+from urika.core.models import VALID_AUDIENCES, VALID_MODES, ProjectConfig
 from urika.core.registry import ProjectRegistry
 from urika.core.revisions import record_revision, update_project_field
 from urika.core.settings import load_settings, save_settings
@@ -65,6 +67,98 @@ def api_projects() -> list[dict]:
         }
         for s in summaries
     ]
+
+
+# Project name pattern: lowercase alphanumeric + hyphens, must not start
+# with a hyphen. Mirrors the HTML pattern attribute on the New project form.
+_PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+@router.post("/projects")
+async def api_create_project(request: Request):
+    """Synchronously materialize a new project workspace.
+
+    Builds a :class:`ProjectConfig` from the form, calls
+    :func:`create_project_workspace` to lay down the directory tree
+    + ``urika.toml`` on disk, and registers the project in the
+    central :class:`ProjectRegistry`.
+
+    Builder-agent invocation (data profiling, source scanning,
+    knowledge ingestion) is intentionally deferred to a future phase
+    — for now the user goes straight to the project home and runs
+    experiments from there.
+    """
+    body = await request.form()
+    name = (body.get("name") or "").strip()
+    question = (body.get("question") or "").strip()
+    description = (body.get("description") or "").strip()
+    mode = (body.get("mode") or "exploratory").strip()
+    audience = (body.get("audience") or "expert").strip()
+    data_paths_raw = (body.get("data_paths") or "").strip()
+
+    if not name or not question:
+        raise HTTPException(
+            status_code=422, detail="name and question are required"
+        )
+    if not _PROJECT_NAME_RE.match(name):
+        raise HTTPException(
+            status_code=422,
+            detail="name must be lowercase alphanumeric + hyphens (no leading hyphen)",
+        )
+    if mode not in VALID_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"mode must be one of {sorted(VALID_MODES)}",
+        )
+    if audience not in VALID_AUDIENCES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"audience must be one of {sorted(VALID_AUDIENCES)}",
+        )
+
+    registry = ProjectRegistry()
+    if name in registry.list_all():
+        raise HTTPException(
+            status_code=409, detail=f"Project '{name}' already exists"
+        )
+
+    data_paths = [
+        p.strip() for p in data_paths_raw.splitlines() if p.strip()
+    ]
+
+    settings = load_settings()
+    projects_root = Path(
+        settings.get("projects_root", str(Path.home() / "urika-projects"))
+    ).expanduser()
+    projects_root.mkdir(parents=True, exist_ok=True)
+    project_dir = projects_root / name
+
+    if project_dir.exists():
+        raise HTTPException(
+            status_code=409, detail="Directory already exists on disk"
+        )
+
+    cfg = ProjectConfig(
+        name=name,
+        question=question,
+        mode=mode,
+        description=description,
+        data_paths=data_paths,
+        audience=audience,
+    )
+
+    from urika.core.workspace import create_project_workspace
+
+    create_project_workspace(project_dir, cfg)
+    registry.register(name, project_dir)
+
+    if request.headers.get("hx-request") == "true":
+        return Response(
+            status_code=201, headers={"HX-Redirect": f"/projects/{name}"}
+        )
+    return JSONResponse(
+        {"name": name, "path": str(project_dir)}, status_code=201
+    )
 
 
 @router.put("/projects/{name}/settings")
