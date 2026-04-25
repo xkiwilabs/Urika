@@ -490,6 +490,33 @@ class TestUpdateCommand:
 
 
 class TestDashboardCommand:
+    """The dashboard CLI now uses urika.tui.dashboard_launcher and
+    the FastAPI dashboard_v2 app. Tests stub uvicorn.Server so no
+    real port is bound and webbrowser.open just records the URL.
+    """
+
+    def _patch_launcher(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        import uvicorn
+
+        class _StubServer:
+            def __init__(self, config: object) -> None:
+                self.config = config
+                self.started = True
+                # exit immediately so the CLI's wait loop returns
+                self.should_exit = True
+
+            def run(self) -> None:
+                return None
+
+        monkeypatch.setattr(uvicorn, "Server", _StubServer)
+
+        opened: list[str] = []
+        monkeypatch.setattr(
+            "urika.tui.dashboard_launcher.webbrowser.open",
+            lambda u: opened.append(u),
+        )
+        return opened
+
     def test_nonexistent_project(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
@@ -497,50 +524,52 @@ class TestDashboardCommand:
         assert result.exit_code != 0
 
     def test_resolves_project_and_starts_server(
-        self, runner: CliRunner, urika_env: dict[str, str]
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _create_project(runner, urika_env)
-        # Mock start_dashboard to avoid actually starting a blocking server.
-        # The import is lazy (inside the function body), so patch the source module.
-        with patch("urika.dashboard.server.start_dashboard") as mock_server:
-            result = runner.invoke(
-                cli, ["dashboard", "test-proj"], env=urika_env
-            )
+        opened = self._patch_launcher(monkeypatch)
+        result = runner.invoke(cli, ["dashboard", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
-        assert "Starting dashboard" in result.output
+        assert "Starting" in result.output
         assert "Dashboard stopped" in result.output
-        mock_server.assert_called_once()
-        # Verify project path was passed
-        call_args = mock_server.call_args
-        called_path = call_args[0][0]
-        assert called_path == _project_dir(urika_env)
+        # Browser opened to the project page
+        assert any("/projects/test-proj" in u for u in opened)
 
     def test_custom_port(
-        self, runner: CliRunner, urika_env: dict[str, str]
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _create_project(runner, urika_env)
-        with patch("urika.dashboard.server.start_dashboard") as mock_server:
-            result = runner.invoke(
-                cli, ["dashboard", "test-proj", "--port", "9999"], env=urika_env
-            )
+        opened = self._patch_launcher(monkeypatch)
+        result = runner.invoke(
+            cli, ["dashboard", "test-proj", "--port", "9999"], env=urika_env
+        )
         assert result.exit_code == 0, result.output
-        mock_server.assert_called_once()
-        call_kwargs = mock_server.call_args
-        assert call_kwargs[1]["port"] == 9999 or call_kwargs[0][1] == 9999
+        assert any("http://127.0.0.1:9999" in u for u in opened)
 
-    def test_keyboard_interrupt(
-        self, runner: CliRunner, urika_env: dict[str, str]
+    def test_no_project_arg_opens_projects_list(
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _create_project(runner, urika_env)
-        with patch(
-            "urika.dashboard.server.start_dashboard",
-            side_effect=KeyboardInterrupt,
-        ):
-            result = runner.invoke(
-                cli, ["dashboard", "test-proj"], env=urika_env
-            )
+        """`urika dashboard` without a project opens /projects."""
+        opened = self._patch_launcher(monkeypatch)
+        result = runner.invoke(cli, ["dashboard"], env=urika_env)
         assert result.exit_code == 0, result.output
-        assert "Dashboard stopped" in result.output
+        # Some URL was opened
+        assert opened, "browser should have been opened"
+        # All opened URLs end with /projects (no project segment)
+        for url in opened:
+            assert url.endswith("/projects"), url
+            # belt-and-braces: no /projects/<name>
+            tail = url.rsplit("/projects", 1)[1]
+            assert tail == ""
 
 
 # ── Venv create command ────────────────────────────────────────

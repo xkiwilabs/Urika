@@ -9,26 +9,49 @@ from urika.cli._base import cli
 
 from urika.cli._helpers import (
     _resolve_project,
-    _ensure_project,
 )
 
 
 @cli.command("dashboard")
 @click.argument("project", required=False, default=None)
-@click.option("--port", default=8420, type=int, help="Server port (default: 8420)")
-def dashboard(project: str | None, port: int) -> None:
-    """Open the project dashboard in your browser."""
-    project = _ensure_project(project)
-    project_path, _config = _resolve_project(project)
+@click.option(
+    "--port",
+    default=None,
+    type=int,
+    help="Server port (default: random free port)",
+)
+def dashboard(project: str | None, port: int | None) -> None:
+    """Open the dashboard in your browser.
 
-    click.echo(f"\n  Starting dashboard for {_config.name}...")
+    Without PROJECT, opens the projects list at ``/projects``.
+    With PROJECT, opens that project's page at ``/projects/<name>``.
+    """
+    from urika.tui.dashboard_launcher import start_dashboard_server
 
-    from urika.dashboard.server import start_dashboard
+    open_path = "/projects"
+    label = "Urika dashboard"
+    if project:
+        # Validate project exists; _resolve_project raises ClickException on miss
+        _path, _config = _resolve_project(project)
+        open_path = f"/projects/{project}"
+        label = f"{_config.name} dashboard"
+
+    click.echo(f"\n  Starting {label}...")
+    server, _thread, used_port = start_dashboard_server(
+        port=port,
+        open_path=open_path,
+    )
+    click.echo(f"  Listening on http://127.0.0.1:{used_port}{open_path}")
+    click.echo("  Press Ctrl+C to stop.")
 
     try:
-        start_dashboard(project_path, port=port)
+        # Keep the main thread alive while the daemon thread serves
+        import time
+
+        while not getattr(server, "should_exit", False):
+            time.sleep(0.5)
     except KeyboardInterrupt:
-        pass
+        server.should_exit = True
 
     click.echo("  Dashboard stopped.")
 
