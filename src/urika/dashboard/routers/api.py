@@ -970,6 +970,14 @@ async def api_project_finalize(name: str, request: Request):
     pid = spawn_finalize(
         name, summary.path, instructions=instructions, audience=audience
     )
+    # The "Finalize project" button on the project home posts via HTMX;
+    # on success we want the browser to navigate the whole page to the
+    # live finalize log so the user can watch streaming output. HTMX
+    # honours an HX-Redirect response header by doing a full-page
+    # navigation.
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/finalize/log"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
     return JSONResponse({"status": "started", "pid": pid})
 
 

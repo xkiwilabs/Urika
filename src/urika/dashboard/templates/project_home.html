@@ -21,6 +21,17 @@
     {% endif %}
   </div>
 
+  <section class="project-actions" style="margin-top: var(--space-5);">
+    <form
+      hx-post="/api/projects/{{ project.name }}/finalize"
+      hx-target="#finalize-feedback"
+      hx-swap="innerHTML"
+    >
+      <button type="submit" class="btn btn--secondary">Finalize project</button>
+      <span id="finalize-feedback" class="text-muted"></span>
+    </form>
+  </section>
+
   {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation %}
     <section class="final-outputs">
       <h2 class="section-heading">Final outputs</h2>

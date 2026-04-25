@@ -118,6 +118,20 @@ def test_finalize_post_accepts_finalize_specific_audience(finalize_client):
     assert spawn_calls[0]["audience"] == "standard"
 
 
+def test_finalize_post_hx_request_emits_redirect_header(finalize_client):
+    """When the request comes from HTMX, the response should redirect the
+    whole page to the finalize log so the user sees streaming output."""
+    client, spawn_calls, _ = finalize_client
+    r = client.post(
+        "/api/projects/alpha/finalize",
+        data={},
+        headers={"hx-request": "true"},
+    )
+    assert r.status_code == 200
+    assert r.headers.get("hx-redirect") == "/projects/alpha/finalize/log"
+    assert len(spawn_calls) == 1
+
+
 # ── SSE stream ────────────────────────────────────────────────────────────
 
 

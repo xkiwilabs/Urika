@@ -569,6 +569,27 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     )
 
 
+@router.get("/projects/{name}/finalize/log", response_class=HTMLResponse)
+def project_finalize_log(name: str, request: Request) -> HTMLResponse:
+    """Live-tail the project's finalize log via SSE.
+
+    Mirrors :func:`project_experiment_log` but reads from
+    ``projectbook/finalize.log`` (via the existing
+    ``/api/projects/<n>/finalize/stream`` endpoint) and watches
+    ``projectbook/.finalize.lock`` for completion. The page itself
+    is static; the inline ``<script>`` opens an ``EventSource`` and
+    appends each line to a ``<pre>``.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return request.app.state.templates.TemplateResponse(
+        "finalize_log.html",
+        {"request": request, "project": summary},
+    )
+
+
 @router.get("/projects/{name}/advisor", response_class=HTMLResponse)
 def project_advisor(name: str, request: Request) -> HTMLResponse:
     """Render the advisor chat panel.

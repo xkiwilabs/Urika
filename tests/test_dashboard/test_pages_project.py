@@ -965,3 +965,42 @@ def test_experiments_list_humanizes_experiment_names(client_with_runs):
     body = r.text
     # client_with_runs fixture creates name="baseline" — humanize → "Baseline"
     assert "Baseline" in body
+
+
+# --- Task 11E.2: Finalize button on project home + finalize log page ---
+
+
+def test_project_home_has_finalize_button(client_with_projects):
+    """Project home should expose a 'Finalize project' button that POSTs
+    to the existing /api/.../finalize endpoint."""
+    r = client_with_projects.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    assert "Finalize project" in body
+    assert 'hx-post="/api/projects/alpha/finalize"' in body
+
+
+def test_finalize_log_page_returns_200_and_has_eventsource(client_with_projects):
+    r = client_with_projects.get("/projects/alpha/finalize/log")
+    assert r.status_code == 200
+    body = r.text
+    assert "EventSource" in body
+    # SSE URL embedded in inline script
+    assert "/api/projects/alpha/finalize/stream" in body
+    # Pre element to receive log lines
+    assert 'id="log"' in body
+
+
+def test_finalize_log_page_404_unknown_project(client_with_projects):
+    r = client_with_projects.get("/projects/nonexistent/finalize/log")
+    assert r.status_code == 404
+
+
+def test_finalize_log_page_breadcrumb(client_with_projects):
+    r = client_with_projects.get("/projects/alpha/finalize/log")
+    body = r.text
+    # Breadcrumb chain: Projects / <project> / Finalize log
+    assert "Finalize log" in body
+    assert "/projects/alpha" in body
+    # Back-to-project-home link surfaces on completion
+    assert "Back to project home" in body
