@@ -38,6 +38,11 @@
          href="/settings">Settings</a>
     {% endif %}
   </nav>
+  <div class="sidebar-section sidebar-section--bottom">
+    <a class="sidebar-link"
+       :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/docs') }"
+       href="/docs">Documentation</a>
+  </div>
   <div class="sidebar-footer">
     <button
       class="btn btn--ghost theme-toggle"

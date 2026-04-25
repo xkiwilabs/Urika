@@ -74,8 +74,9 @@ def create_app(
     if auth_token:
         deps.append(Depends(_make_auth_dependency(auth_token)))
 
-    from urika.dashboard.routers import pages, api
+    from urika.dashboard.routers import pages, api, docs as docs_router
     app.include_router(pages.router, dependencies=deps)
     app.include_router(api.router, dependencies=deps)
+    app.include_router(docs_router.router, dependencies=deps)
 
     return app
