@@ -38,6 +38,7 @@ def start_dashboard_server(
     port: int | None = None,
     open_path: str = "/projects",
     open_browser: bool = True,
+    auth_token: str | None = None,
 ) -> tuple[Any, threading.Thread, int]:
     """Start the FastAPI dashboard on a background daemon thread.
 
@@ -51,6 +52,10 @@ def start_dashboard_server(
     open_browser:
         If ``True`` (default), call ``webbrowser.open`` once the
         server reports started. Set to ``False`` for tests.
+    auth_token:
+        If set, every page and API request must carry
+        ``Authorization: Bearer <token>``. ``/healthz`` and
+        ``/static/...`` remain accessible without the header.
 
     Returns
     -------
@@ -70,7 +75,7 @@ def start_dashboard_server(
 
     # Registry is read from URIKA_HOME; project_root=None lets the
     # dashboard use the registered project directories.
-    app = create_app(project_root=None)
+    app = create_app(project_root=None, auth_token=auth_token)
     config = uvicorn.Config(
         app,
         host="127.0.0.1",

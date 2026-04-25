@@ -20,7 +20,19 @@ from urika.cli._helpers import (
     type=int,
     help="Server port (default: random free port)",
 )
-def dashboard(project: str | None, port: int | None) -> None:
+@click.option(
+    "--auth-token",
+    default=None,
+    help=(
+        "Require this bearer token on all requests "
+        "(Authorization: Bearer <token>). /healthz and /static are exempt."
+    ),
+)
+def dashboard(
+    project: str | None,
+    port: int | None,
+    auth_token: str | None,
+) -> None:
     """Open the dashboard in your browser.
 
     Without PROJECT, opens the projects list at ``/projects``.
@@ -40,8 +52,11 @@ def dashboard(project: str | None, port: int | None) -> None:
     server, _thread, used_port = start_dashboard_server(
         port=port,
         open_path=open_path,
+        auth_token=auth_token,
     )
     click.echo(f"  Listening on http://127.0.0.1:{used_port}{open_path}")
+    if auth_token:
+        click.echo("  Auth: Authorization: Bearer <token> required.")
     click.echo("  Press Ctrl+C to stop.")
 
     try:
