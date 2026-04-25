@@ -17,6 +17,7 @@ from urika.dashboard_v2.projects import (
     list_project_summaries,
     load_project_summary,
 )
+from urika.knowledge.store import KnowledgeStore
 
 router = APIRouter(tags=["pages"])
 
@@ -126,6 +127,51 @@ def project_methods(request: Request, name: str) -> HTMLResponse:
             "project": summary,
             "methods": methods,
             "metric_keys": metric_keys,
+        },
+    )
+
+
+@router.get("/projects/{name}/knowledge", response_class=HTMLResponse)
+def project_knowledge(request: Request, name: str) -> HTMLResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    store = KnowledgeStore(summary.path)
+    entries = store.list_all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "knowledge.html",
+        {
+            "request": request,
+            "project": summary,
+            "entries": entries,
+        },
+    )
+
+
+@router.get(
+    "/projects/{name}/knowledge/{entry_id}",
+    response_class=HTMLResponse,
+)
+def project_knowledge_entry(
+    request: Request, name: str, entry_id: str
+) -> HTMLResponse:
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    store = KnowledgeStore(summary.path)
+    entry = store.get(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Unknown entry")
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "knowledge_entry.html",
+        {
+            "request": request,
+            "project": summary,
+            "entry": entry,
         },
     )
 

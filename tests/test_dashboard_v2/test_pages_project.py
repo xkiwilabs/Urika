@@ -225,3 +225,81 @@ def test_methods_page_empty_state(client_with_projects):
     r = client_with_projects.get("/projects/alpha/methods")
     assert r.status_code == 200
     assert "No methods registered yet" in r.text or "no methods" in r.text.lower()
+
+
+def _make_project_with_knowledge(root: Path, name: str, entries: list[dict]) -> Path:
+    proj = root / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    knowledge_dir = proj / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    (knowledge_dir / "index.json").write_text(json.dumps({"entries": entries}))
+    return proj
+
+
+@pytest.fixture
+def client_with_knowledge(tmp_path: Path, monkeypatch) -> TestClient:
+    entries = [
+        {
+            "id": "k-001",
+            "source": "/tmp/paper.pdf",
+            "source_type": "pdf",
+            "title": "A neural net paper",
+            "content": "# title\n\nbody body body",
+            "tags": [],
+            "added_at": "2026-04-25T00:00:00Z",
+        },
+        {
+            "id": "k-002",
+            "source": "https://example.com/article",
+            "source_type": "url",
+            "title": "An article",
+            "content": "url content",
+            "tags": [],
+            "added_at": "2026-04-25T01:00:00Z",
+        },
+    ]
+    _make_project_with_knowledge(tmp_path, "alpha", entries)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)
+
+
+def test_knowledge_page_returns_200_and_lists_entries(client_with_knowledge):
+    r = client_with_knowledge.get("/projects/alpha/knowledge")
+    assert r.status_code == 200
+    body = r.text
+    assert "A neural net paper" in body
+    assert "An article" in body
+    assert "k-001" in body
+    assert "pdf" in body
+
+
+def test_knowledge_entry_page_renders_content(client_with_knowledge):
+    r = client_with_knowledge.get("/projects/alpha/knowledge/k-001")
+    assert r.status_code == 200
+    body = r.text
+    assert "A neural net paper" in body
+    assert "body body body" in body  # raw content visible
+
+
+def test_knowledge_entry_404_unknown_id(client_with_knowledge):
+    r = client_with_knowledge.get("/projects/alpha/knowledge/k-999")
+    assert r.status_code == 404
+
+
+def test_knowledge_page_empty_state(client_with_projects):
+    r = client_with_projects.get("/projects/alpha/knowledge")
+    assert r.status_code == 200
+    assert "No knowledge ingested yet" in r.text or "no knowledge" in r.text.lower()
+
+
+def test_knowledge_page_404_unknown_project(client_with_knowledge):
+    r = client_with_knowledge.get("/projects/nonexistent/knowledge")
+    assert r.status_code == 404

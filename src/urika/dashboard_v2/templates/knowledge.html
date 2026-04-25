@@ -1,0 +1,42 @@
+{% extends "_base.html" %}
+
+{% block title %}Knowledge · {{ project.name }} · Urika{% endblock %}
+{% block heading %}Knowledge{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-sep">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name }}</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>Knowledge</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  {% if entries %}
+    <ul class="list">
+      {% for entry in entries %}
+        <li class="list-item">
+          <a
+            href="/projects/{{ project.name }}/knowledge/{{ entry.id }}"
+            class="list-item-link"
+          >
+            <div class="list-item-main">
+              <div class="list-item-title">{{ entry.title }}</div>
+              <div class="list-item-subtitle text-muted">{{ entry.id }}</div>
+            </div>
+            <div class="list-item-meta">
+              <span class="tag">{{ entry.source_type }}</span>
+              <span class="text-muted">{{ entry.added_at }}</span>
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <p>No knowledge ingested yet. Add sources via <code>urika knowledge add &lt;path-or-url&gt;</code>.</p>
+    </div>
+  {% endif %}
+{% endblock %}
