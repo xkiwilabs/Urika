@@ -651,12 +651,25 @@ h4 {
 .markdown-body table {
   border-collapse: collapse;
   margin: var(--space-3) 0;
+  /* Wide tables scroll horizontally inside their column rather than
+     pushing the page wider. */
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
 }
 .markdown-body th, .markdown-body td {
   border: 1px solid var(--border);
   padding: var(--space-2) var(--space-3);
 }
 .markdown-body th { background: var(--bg-elevated); }
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
+.markdown-body figure {
+  max-width: 100%;
+  margin: var(--space-3) 0;
+}
 
 /* ---------- Experiment artifacts (Outputs section) ---------- */
 .artifacts { margin-top: var(--space-5); }
