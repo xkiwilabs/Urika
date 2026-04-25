@@ -80,11 +80,12 @@ def test_project_home_lists_recent_experiments(client_with_experiments):
 def test_project_home_sidebar_shows_project_links(client_with_projects):
     r = client_with_projects.get("/projects/alpha")
     body = r.text
-    # Sidebar has project-scoped Home/Experiments/Methods/Knowledge/Run/Settings links
+    # Sidebar has project-scoped Home/Experiments/Methods/Knowledge/Settings links.
+    # Run + Criteria links were removed; Run is a button on /experiments and
+    # Criteria is reachable from project settings.
     assert "/projects/alpha/experiments" in body
     assert "/projects/alpha/methods" in body
     assert "/projects/alpha/knowledge" in body
-    assert "/projects/alpha/run" in body
     assert "/projects/alpha/settings" in body
 
 

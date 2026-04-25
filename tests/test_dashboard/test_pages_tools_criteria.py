@@ -73,8 +73,17 @@ def test_criteria_page_404_unknown_project(tools_client):
     assert r.status_code == 404
 
 
-def test_sidebar_includes_tools_and_criteria_links(tools_client):
+def test_sidebar_includes_tools_link(tools_client):
     r = tools_client.get("/projects/alpha")
     body = r.text
     assert "/projects/alpha/tools" in body
-    assert "/projects/alpha/criteria" in body
+
+
+def test_sidebar_omits_criteria_and_run_links(tools_client):
+    """Criteria and Run links were removed — Run is a button on
+    /experiments and Criteria is reachable from project settings."""
+    r = tools_client.get("/projects/alpha")
+    body = r.text
+    # The sidebar no longer renders direct links to /criteria or /run.
+    assert 'href="/projects/alpha/criteria"' not in body
+    assert 'href="/projects/alpha/run"' not in body
