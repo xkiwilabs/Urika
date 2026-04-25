@@ -1,22 +1,38 @@
 <aside class="sidebar" x-data="{ open: true }" :aria-expanded="open">
   <a class="brand" href="/">
-    <span class="wordmark">Urika</span>
+    <span class="wordmark">URIKA</span>
   </a>
   <nav class="sidebar-nav">
     {% if project %}
       <a class="sidebar-link sidebar-link--back" href="/projects">← Back to projects</a>
       <div class="sidebar-section">
         <div class="sidebar-section-label">{{ project.name | humanize }}</div>
-        <a class="sidebar-link" href="/projects/{{ project.name }}">Home</a>
-        <a class="sidebar-link" href="/projects/{{ project.name }}/experiments">Experiments</a>
-        <a class="sidebar-link" href="/projects/{{ project.name }}/methods">Methods</a>
-        <a class="sidebar-link" href="/projects/{{ project.name }}/knowledge">Knowledge</a>
-        <a class="sidebar-link" href="/projects/{{ project.name }}/run">Run</a>
-        <a class="sidebar-link" href="/projects/{{ project.name }}/settings">Settings</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname === '/projects/{{ project.name }}' }"
+           href="/projects/{{ project.name }}">Home</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/experiments') }"
+           href="/projects/{{ project.name }}/experiments">Experiments</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/methods') }"
+           href="/projects/{{ project.name }}/methods">Methods</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/knowledge') }"
+           href="/projects/{{ project.name }}/knowledge">Knowledge</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/run') }"
+           href="/projects/{{ project.name }}/run">Run</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/settings') }"
+           href="/projects/{{ project.name }}/settings">Settings</a>
       </div>
     {% else %}
-      <a class="sidebar-link" href="/projects">Projects</a>
-      <a class="sidebar-link" href="/settings">Settings</a>
+      <a class="sidebar-link"
+         :class="{ 'sidebar-link--active': window.location.pathname === '/projects' }"
+         href="/projects">Projects</a>
+      <a class="sidebar-link"
+         :class="{ 'sidebar-link--active': window.location.pathname === '/settings' }"
+         href="/settings">Settings</a>
     {% endif %}
   </nav>
   <div class="sidebar-footer">

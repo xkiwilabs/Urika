@@ -248,3 +248,50 @@ def test_theme_toggle_lives_in_sidebar_not_header(audit_client):
     )
     if header_match:
         assert 'theme-toggle' not in header_match.group(1)
+
+
+# ---- brand + sidebar link styling (Task 11A.2) ---------------------------
+
+
+def test_brand_uses_uppercase_urika(audit_client):
+    """The sidebar wordmark renders as URIKA (uppercase)."""
+    r = audit_client.get("/projects")
+    body = r.text
+    assert "URIKA" in body
+    # And the lowercase version should be gone from the wordmark span.
+    assert '<span class="wordmark">Urika</span>' not in body
+
+
+def test_sidebar_link_active_class_applied_on_projects(audit_client):
+    """The Projects sidebar link carries an active-state Alpine binding."""
+    r = audit_client.get("/projects")
+    body = r.text
+    assert "sidebar-link--active" in body
+    assert "window.location.pathname === '/projects'" in body
+
+
+def test_sidebar_link_active_class_applied_on_project_home(audit_client):
+    """Project-mode links use Alpine active-state bindings (Home exact, others startsWith)."""
+    r = audit_client.get("/projects/alpha")
+    body = r.text
+    # Home: exact match
+    assert "window.location.pathname === '/projects/alpha'" in body
+    # Experiments: startsWith
+    assert (
+        "window.location.pathname.startsWith('/projects/alpha/experiments')"
+        in body
+    )
+
+
+def test_app_css_defines_sidebar_link_active_style():
+    """The stylesheet defines the .sidebar-link--active rule with accent color."""
+    from urika.dashboard.app import create_app
+
+    app = create_app(project_root=None)
+    client = TestClient(app)
+    r = client.get("/static/app.css")
+    assert r.status_code == 200
+    body = r.text
+    assert ".sidebar-link--active" in body
+    # Active state uses the accent token
+    assert "color-mix(in srgb, var(--accent)" in body
