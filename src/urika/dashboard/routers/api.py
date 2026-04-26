@@ -401,58 +401,50 @@ def _apply_structured_settings(project_path, form) -> None:
                 )
             )
 
-    # ---- privacy (Task 11D.1) ----
-    # The Privacy tab posts ``project_privacy_mode`` ∈ {inherit, open,
-    # private, hybrid}. ``inherit`` removes any [privacy] block — the
-    # project falls back to the global config. The other three write a
-    # project-local override.
+    # ---- privacy ----
+    # The Privacy tab posts ``project_privacy_mode`` ∈ {open, private,
+    # hybrid}.  ``inherit`` is gone — there is no system-wide default
+    # mode any more, so each project owns its mode in [privacy].
     if "project_privacy_mode" in form:
         new_mode = (form.get("project_privacy_mode") or "").strip()
-        if new_mode not in {"inherit", "open", "private", "hybrid"}:
+        if new_mode not in {"open", "private", "hybrid"}:
             raise HTTPException(
                 status_code=422,
                 detail=(
                     "project_privacy_mode must be one of "
-                    "{'inherit', 'open', 'private', 'hybrid'}"
+                    "{'open', 'private', 'hybrid'}"
                 ),
             )
 
         old_privacy = data.get("privacy", {}) or {}
-        old_mode = old_privacy.get("mode") if old_privacy else "inherit"
-        if not old_mode:
-            old_mode = "inherit"
+        old_mode = old_privacy.get("mode") or "open"
 
-        if new_mode == "inherit":
-            if "privacy" in data:
-                del data["privacy"]
-                revisions.append(("privacy", old_mode, "inherit"))
-        else:
-            new_privacy: dict = {"mode": new_mode}
-            if new_mode == "private":
-                ep = {
-                    "base_url": (
-                        form.get("project_privacy_private_url") or ""
-                    ).strip(),
-                    "api_key_env": (
-                        form.get("project_privacy_private_key_env") or ""
-                    ).strip(),
-                }
-                new_privacy["endpoints"] = {"private": ep}
-            elif new_mode == "hybrid":
-                ep = {
-                    "base_url": (
-                        form.get("project_privacy_hybrid_private_url") or ""
-                    ).strip(),
-                    "api_key_env": (
-                        form.get("project_privacy_hybrid_private_key_env") or ""
-                    ).strip(),
-                }
-                new_privacy["endpoints"] = {"private": ep}
-            # 'open' has no endpoint metadata — mode alone is the override.
+        new_privacy: dict = {"mode": new_mode}
+        if new_mode == "private":
+            ep = {
+                "base_url": (
+                    form.get("project_privacy_private_url") or ""
+                ).strip(),
+                "api_key_env": (
+                    form.get("project_privacy_private_key_env") or ""
+                ).strip(),
+            }
+            new_privacy["endpoints"] = {"private": ep}
+        elif new_mode == "hybrid":
+            ep = {
+                "base_url": (
+                    form.get("project_privacy_hybrid_private_url") or ""
+                ).strip(),
+                "api_key_env": (
+                    form.get("project_privacy_hybrid_private_key_env") or ""
+                ).strip(),
+            }
+            new_privacy["endpoints"] = {"private": ep}
+        # 'open' has no endpoint metadata — mode alone is the override.
 
-            if new_privacy != old_privacy:
-                data["privacy"] = new_privacy
-                revisions.append(("privacy", old_mode, new_mode))
+        if new_privacy != old_privacy:
+            data["privacy"] = new_privacy
+            revisions.append(("privacy", old_mode, new_mode))
 
     # ---- notifications (2-state: enabled / disabled) ----
     # Per-channel checkboxes: ``project_notif_<ch>_enabled`` ∈ {"on",

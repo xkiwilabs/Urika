@@ -406,15 +406,15 @@ def _basics(**extra) -> dict:
     return base
 
 
-def test_settings_put_privacy_inherit_writes_no_section(settings_client, tmp_path):
-    """project_privacy_mode=inherit → no [privacy] block in urika.toml."""
+def test_settings_put_privacy_inherit_no_longer_accepted(
+    settings_client, tmp_path
+):
+    """The old 'inherit' value is rejected (422) — mode is required."""
     r = settings_client.put(
         "/api/projects/alpha/settings",
         data=_basics(project_privacy_mode="inherit"),
     )
-    assert r.status_code == 200
-    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
-    assert "privacy" not in toml
+    assert r.status_code == 422
 
 
 def test_settings_put_privacy_private_writes_full_block(settings_client, tmp_path):
@@ -471,31 +471,6 @@ def test_settings_put_privacy_hybrid_writes_both(settings_client, tmp_path):
         toml["privacy"]["endpoints"]["private"]["base_url"]
         == "http://localhost:11434"
     )
-
-
-def test_settings_put_privacy_switch_back_to_inherit_clears_block(
-    settings_client, tmp_path
-):
-    """Setting an override then switching to inherit removes [privacy] entirely."""
-    # First write a private override
-    settings_client.put(
-        "/api/projects/alpha/settings",
-        data=_basics(
-            project_privacy_mode="private",
-            project_privacy_private_url="http://localhost:11434",
-            project_privacy_private_model="qwen3:14b",
-        ),
-    )
-    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
-    assert "privacy" in toml
-
-    # Now switch back to inherit — block should be removed
-    settings_client.put(
-        "/api/projects/alpha/settings",
-        data=_basics(project_privacy_mode="inherit"),
-    )
-    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
-    assert "privacy" not in toml
 
 
 def test_settings_put_privacy_invalid_mode_returns_422(settings_client):

@@ -71,13 +71,20 @@ def test_project_settings_models_tab_has_per_agent_rows(client_with_projects):
         assert f'name="endpoint[{agent}]"' in body
 
 
-def test_project_settings_privacy_tab_renders_inherit_radio(client_with_projects):
-    """Privacy tab is now editable: a radio group with 'inherit' default."""
+def test_project_settings_privacy_tab_renders_three_radio_options(
+    client_with_projects,
+):
+    """Privacy tab: 3-option radio (open / private / hybrid). The
+    legacy 'inherit' option is gone — there is no system-wide default
+    mode any more, so each project owns its mode."""
     body = client_with_projects.get("/projects/alpha/settings").text
-    # Radio group named project_privacy_mode with all four options
     assert 'name="project_privacy_mode"' in body
-    for value in ("inherit", "open", "private", "hybrid"):
+    for value in ("open", "private", "hybrid"):
         assert f'value="{value}"' in body
+    # 'inherit' must NOT be a project_privacy_mode radio option any more.
+    # (The Models tab's endpoint dropdown still uses 'inherit' as a
+    # per-agent "no override" sentinel — that's unrelated.)
+    assert 'name="project_privacy_mode" value="inherit"' not in body
 
 
 def test_project_settings_privacy_tab_has_per_mode_fields(client_with_projects):
@@ -96,14 +103,12 @@ def test_project_settings_privacy_tab_has_per_mode_fields(client_with_projects):
     assert 'name="project_privacy_hybrid_private_model"' in body
 
 
-def test_project_settings_privacy_tab_shows_global_mode_in_inherit_label(
+def test_project_settings_privacy_tab_no_inherit_label(
     client_with_projects,
 ):
-    """Inherit radio label surfaces the current global mode."""
+    """The 'Inherit from global' label is gone — modes are project-owned."""
     body = client_with_projects.get("/projects/alpha/settings").text
-    # The label for the inherit radio includes the global mode name so
-    # the user knows what they'd be inheriting.
-    assert "Inherit from global" in body
+    assert "Inherit from global" not in body
 
 
 def test_project_settings_notifications_tab_has_per_channel_enabled_checkbox(

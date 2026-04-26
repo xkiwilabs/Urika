@@ -165,18 +165,12 @@
       <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.</span>
     </div>
 
-    {# ---- Privacy tab (editable, with inherit) ------------------------ #}
+    {# ---- Privacy tab (editable, mode is required) -------------------- #}
     <div class="tab-panel" x-show="active === 'privacy'" x-cloak
          x-data="{ pmode: '{{ project_privacy_mode }}' }">
       <div class="form-row">
         <label>Privacy mode for this project</label>
         <div class="radio-group">
-          <label class="checkbox-row">
-            <input type="radio" name="project_privacy_mode" value="inherit"
-                   x-model="pmode"
-                   {% if project_privacy_mode == "inherit" %}checked{% endif %}>
-            <span>Inherit from global ({{ global_privacy_mode }})</span>
-          </label>
           <label class="checkbox-row">
             <input type="radio" name="project_privacy_mode" value="open"
                    x-model="pmode"
@@ -197,9 +191,9 @@
           </label>
         </div>
         <span class="form-help">
-          When <em>inherit</em> is selected, this project uses the global
-          privacy settings. Picking any other mode writes a project-local
-          <code>[privacy]</code> override into <code>urika.toml</code>.
+          Mode is required and is set at project creation
+          (<code>urika new</code>).  Switching modes here writes a fresh
+          <code>[privacy]</code> block to <code>urika.toml</code>.
         </span>
       </div>
 

@@ -586,19 +586,14 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             }
         )
 
-    # Privacy tab: editable with "Inherit from global" semantics.
-    # When the project has no [privacy] block in urika.toml, the radio
-    # snaps to "inherit" and the per-mode fields are blank. When a block
-    # exists, the radio reflects [privacy].mode and the per-mode fields
-    # pull from [privacy.endpoints.private] and [runtime].
-    global_settings = load_settings()
-    global_privacy_mode = global_settings.get("privacy", {}).get("mode", "open")
+    # Privacy tab: mode is required (no inherit option).  When the
+    # project has no [privacy] block, default to ``open`` for the radio.
+    # The per-mode fields pull from [privacy.endpoints.private] and
+    # [runtime] when present.
     project_privacy = toml_data.get("privacy", {}) or {}
     project_privacy_endpoints = project_privacy.get("endpoints", {}) or {}
     project_privacy_private_ep = project_privacy_endpoints.get("private", {}) or {}
-    project_privacy_mode = project_privacy.get("mode") if project_privacy else "inherit"
-    if not project_privacy_mode:
-        project_privacy_mode = "inherit"
+    project_privacy_mode = project_privacy.get("mode") or "open"
 
     # Hybrid mode wires the data_agent override to the private model — mirror
     # the global page so we can re-populate the "private model" field.
@@ -648,7 +643,6 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "runtime_model": runtime_section.get("model", ""),
             "data_paths_text": data_paths_text,
             "success_criteria_text": success_criteria_text,
-            "global_privacy_mode": global_privacy_mode,
             "project_privacy": project_privacy,
             "project_privacy_mode": project_privacy_mode,
             "project_privacy_open_model": (
