@@ -253,13 +253,20 @@ def test_theme_toggle_lives_in_sidebar_not_header(audit_client):
 # ---- brand + sidebar link styling (Task 11A.2) ---------------------------
 
 
-def test_brand_uses_uppercase_urika(audit_client):
-    """The sidebar wordmark renders as URIKA (uppercase)."""
+def test_brand_renders_ascii_wordmark_and_version(audit_client):
+    """The sidebar wordmark renders as the CLI ASCII-art banner plus
+    a version label, matching the terminal header style."""
     r = audit_client.get("/projects")
     body = r.text
-    assert "URIKA" in body
-    # And the lowercase version should be gone from the wordmark span.
-    assert '<span class="wordmark">Urika</span>' not in body
+    # The ASCII banner uses chunky box-drawing chars from the CLI logo.
+    assert "██████" in body
+    # aria-label keeps the brand text accessible.
+    assert 'aria-label="URIKA"' in body
+    # Version label sits under the wordmark.
+    assert "version-label" in body
+    assert ">v" in body  # "v<version>"
+    # Old plain wordmark span is gone.
+    assert '<span class="wordmark">' not in body
 
 
 def test_sidebar_link_active_class_applied_on_projects(audit_client):

@@ -61,6 +61,12 @@ def create_app(
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     app.state.templates.env.filters["humanize"] = humanize
     app.state.templates.env.filters["tag_status"] = tag_status
+    try:
+        from importlib.metadata import version as _pkg_version
+        _version = _pkg_version("urika")
+    except Exception:
+        _version = "dev"
+    app.state.templates.env.globals["urika_version"] = _version
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     # /healthz is registered before the authenticated routers so it
