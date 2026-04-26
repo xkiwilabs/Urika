@@ -15,6 +15,7 @@ from urika.core.models import VALID_AUDIENCES, VALID_MODES, ExperimentConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
 from urika.core.settings import get_named_endpoints, load_settings
+from urika.core.workspace import load_project_config
 from urika.dashboard.projects import (
     list_project_summaries,
     load_project_summary,
@@ -516,6 +517,216 @@ def project_criteria(name: str, request: Request) -> HTMLResponse:
     return request.app.state.templates.TemplateResponse(
         "criteria.html",
         {"request": request, "project": summary, "criteria": criteria},
+    )
+
+
+def _supported_data_extensions() -> set[str]:
+    """Return the set of file extensions the data-loader registry handles."""
+    from urika.data.readers.registry import ReaderRegistry
+
+    registry = ReaderRegistry()
+    registry.discover()
+    # Internal attribute — collect from every registered reader. Falls back
+    # to {".csv"} when something goes wrong, since the CSV reader ships
+    # with the project and is the only reader currently registered.
+    try:
+        exts: set[str] = set()
+        for name in registry.list_all():
+            for r in registry._readers.values():  # noqa: SLF001
+                if r.name() == name:
+                    exts.update(r.supported_extensions())
+        return exts or {".csv"}
+    except Exception:
+        return {".csv"}
+
+
+def _resolve_data_path(
+    project_path: Path,
+    data_paths: list[str],
+    requested_path: str,
+) -> Path:
+    """Resolve ``requested_path`` and confirm it sits inside an allow-listed root.
+
+    The allow-list is the project's registered ``data_paths`` plus the
+    project's own ``<project>/data`` directory. Raises ``HTTPException(400)``
+    when the resolved path escapes every allow-listed root, when the
+    request is empty, or when the path includes a literal ``..`` segment
+    (defence in depth — ``Path.resolve`` already collapses these but the
+    early check produces a clearer 400).
+
+    Symlinks pointing outside an allow-list root are rejected because
+    ``Path.resolve(strict=False)`` walks symlinks before comparison.
+    """
+    if not requested_path:
+        raise HTTPException(status_code=400, detail="Missing path")
+    if ".." in Path(requested_path).parts:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    try:
+        resolved = Path(requested_path).resolve()
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail="Invalid path") from exc
+
+    allow_roots: list[Path] = []
+    for entry in data_paths:
+        try:
+            allow_roots.append(Path(entry).resolve())
+        except OSError:
+            continue
+    # Always permit the project's bundled <project>/data directory.
+    try:
+        allow_roots.append((project_path / "data").resolve())
+    except OSError:
+        pass
+
+    for root in allow_roots:
+        # is_relative_to also returns True when resolved == root, so a
+        # data_paths entry that points directly at a file still validates.
+        if resolved == root or resolved.is_relative_to(root):
+            return resolved
+    raise HTTPException(status_code=400, detail="Path is outside data sources")
+
+
+@router.get("/projects/{name}/data", response_class=HTMLResponse)
+def project_data(request: Request, name: str) -> HTMLResponse:
+    """List files registered as project data sources.
+
+    Iterates over ``[project].data_paths`` from urika.toml. Each entry is
+    a string path; if it resolves to a directory we list the files
+    inside that the loader's reader registry can handle, otherwise we
+    treat it as a single file. Each row carries enough metadata
+    (existence, format-supported, size, row-count when cheap to read) to
+    render the listing without spawning the loader for every file —
+    schema/preview only happens on the dedicated inspect page.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    cfg = load_project_config(summary.path)
+    supported_exts = _supported_data_extensions()
+
+    rows: list[dict] = []
+    seen: set[Path] = set()
+
+    def _add_file(path: Path) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        ext = path.suffix.lower()
+        exists = path.exists()
+        format_supported = ext in supported_exts
+        size_bytes: int | None = None
+        if exists and path.is_file():
+            try:
+                size_bytes = path.stat().st_size
+            except OSError:
+                size_bytes = None
+        rows.append(
+            {
+                "path": str(path),
+                "name": path.name,
+                "exists": exists,
+                "format_supported": format_supported,
+                "extension": ext,
+                "size_bytes": size_bytes,
+            }
+        )
+
+    for entry in cfg.data_paths or []:
+        p = Path(entry)
+        if p.is_dir():
+            for child in sorted(p.iterdir()):
+                if child.is_file() and child.suffix.lower() in supported_exts:
+                    _add_file(child)
+        else:
+            _add_file(p)
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "data_list.html",
+        {
+            "request": request,
+            "project": summary,
+            "rows": rows,
+            "data_paths": cfg.data_paths or [],
+        },
+    )
+
+
+@router.get("/projects/{name}/data/inspect", response_class=HTMLResponse)
+def project_data_inspect(request: Request, name: str, path: str = "") -> HTMLResponse:
+    """Inspect one data file: schema + missing counts + head/tail preview.
+
+    The ``path`` query parameter is validated against the project's
+    registered ``data_paths`` (plus ``<project>/data``) by
+    :func:`_resolve_data_path` — anything outside that allow-list 400s.
+    Missing files 404 and unsupported formats render with an explanatory
+    message rather than crashing.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    cfg = load_project_config(summary.path)
+
+    resolved = _resolve_data_path(summary.path, cfg.data_paths or [], path)
+
+    from urika.data.loader import load_dataset
+
+    templates = request.app.state.templates
+    error: str | None = None
+    schema_rows: list[dict] = []
+    head_rows: list[dict] = []
+    tail_rows: list[dict] = []
+    n_rows = 0
+    n_columns = 0
+    columns: list[str] = []
+    try:
+        view = load_dataset(resolved)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+    except ValueError:
+        error = "Unsupported format"
+        view = None  # type: ignore[assignment]
+
+    if view is not None:
+        s = view.summary
+        n_rows = s.n_rows
+        n_columns = s.n_columns
+        columns = s.columns
+        for col in s.columns:
+            schema_rows.append(
+                {
+                    "name": col,
+                    "dtype": s.dtypes.get(col, ""),
+                    "missing": s.missing_counts.get(col, 0),
+                    "stats": s.numeric_stats.get(col),
+                }
+            )
+        # Head / tail preview — convert to records dicts so the template
+        # can iterate without a pandas dependency.
+        head_rows = view.data.head(10).to_dict("records")
+        tail_rows = view.data.tail(10).to_dict("records")
+
+    return templates.TemplateResponse(
+        "data_inspect.html",
+        {
+            "request": request,
+            "project": summary,
+            "file_path": str(resolved),
+            "file_name": resolved.name,
+            "error": error,
+            "n_rows": n_rows,
+            "n_columns": n_columns,
+            "columns": columns,
+            "schema_rows": schema_rows,
+            "head_rows": head_rows,
+            "tail_rows": tail_rows,
+        },
     )
 
 

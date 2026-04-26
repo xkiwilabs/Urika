@@ -1,0 +1,53 @@
+{% extends "_base.html" %}
+
+{% block title %}Data · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Data sources{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Data</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+{% if rows %}
+  <ul class="list">
+    {% for row in rows %}
+      <li class="list-item">
+        <div class="list-item-row">
+          <div class="list-item-main">
+            <div class="list-item-title">
+              {% if row.exists and row.format_supported %}
+                <a href="/projects/{{ project.name }}/data/inspect?path={{ row.path | urlencode }}">{{ row.name }}</a>
+              {% else %}
+                {{ row.name }}
+              {% endif %}
+            </div>
+            <div class="list-item-subtitle text-muted">{{ row.path }}</div>
+          </div>
+          <div class="list-item-meta">
+            {% if not row.exists %}
+              <span class="tag tag--failed">Missing</span>
+            {% elif not row.format_supported %}
+              <span class="tag">Unsupported format</span>
+            {% else %}
+              <span class="tag">{{ row.extension }}</span>
+            {% endif %}
+            {% if row.size_bytes is not none %}
+              <span class="text-muted">{{ row.size_bytes }} bytes</span>
+            {% endif %}
+          </div>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="empty-state">
+    <p>No data sources registered. Use the project builder to add data.</p>
+  </div>
+{% endif %}
+{% endblock %}

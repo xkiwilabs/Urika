@@ -1,0 +1,131 @@
+{% extends "_base.html" %}
+
+{% block title %}Inspect {{ file_name }} · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Inspect: {{ file_name }}{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}/data">Data</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">{{ file_name }}</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.92rem;
+  }
+  .data-table th, .data-table td {
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    padding: 0.35rem 0.55rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .data-table th {
+    background: var(--surface-2, rgba(127, 127, 127, 0.12));
+    font-weight: 600;
+  }
+  .data-table-wrap {
+    overflow-x: auto;
+  }
+  .stat-cell {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85rem;
+  }
+  .file-meta {
+    color: var(--text-muted, #888);
+    margin-bottom: 1rem;
+    font-size: 0.92rem;
+  }
+</style>
+
+<p class="file-meta"><code>{{ file_path }}</code></p>
+
+{% if error %}
+  <div class="empty-state">
+    <p><strong>{{ error }}</strong></p>
+    <p class="text-muted">This file's extension is not handled by any registered data reader.</p>
+  </div>
+{% else %}
+  <p class="file-meta">{{ n_rows }} rows · {{ n_columns }} columns</p>
+
+  <h2>Schema</h2>
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Column</th>
+          <th>Dtype</th>
+          <th>Missing</th>
+          <th>Numeric stats</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in schema_rows %}
+          <tr>
+            <td>{{ s.name }}</td>
+            <td><code>{{ s.dtype }}</code></td>
+            <td>{{ s.missing }}</td>
+            <td class="stat-cell">
+              {% if s.stats %}
+                mean={{ "%.3f"|format(s.stats.mean) }} ·
+                std={{ "%.3f"|format(s.stats.std) }} ·
+                min={{ "%.3f"|format(s.stats.min) }} ·
+                max={{ "%.3f"|format(s.stats.max) }} ·
+                median={{ "%.3f"|format(s.stats.median) }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>First 10 rows</h2>
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          {% for col in columns %}<th>{{ col }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in head_rows %}
+          <tr>
+            {% for col in columns %}<td>{{ row[col] }}</td>{% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Last 10 rows</h2>
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          {% for col in columns %}<th>{{ col }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in tail_rows %}
+          <tr>
+            {% for col in columns %}<td>{{ row[col] }}</td>{% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}
