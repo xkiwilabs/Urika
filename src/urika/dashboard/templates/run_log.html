@@ -23,8 +23,11 @@
 {% block content %}
 <div class="card">
   <div id="log-status" class="text-muted">Connecting…</div>
-  {% include "_thinking.html" %}
   <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
+  {# Sticky activity indicator below the scroll box: stays visible the
+     whole run so the user has a constant signal during quiet stretches
+     between tool calls. Only stopped on the completion event. #}
+  {% include "_thinking.html" %}
 
   <div id="log-prompts" style="margin-top: var(--space-4);"></div>
 
@@ -68,10 +71,8 @@
   };
 
   es.onmessage = function (e) {
-    if (window._urikaThinkingHandle) {
-      window._urikaThinkingHandle.stop();
-      window._urikaThinkingHandle = null;
-    }
+    // Spinner stays running through the whole stream — see comment in
+    // summarize_log.html for the rationale.
     const line = document.createElement("div");
     line.textContent = e.data;
     logEl.appendChild(line);

@@ -110,6 +110,42 @@ def test_tool_build_log_includes_thinking_partial(thinking_client):
     assert "/static/urika-thinking.js" in body
 
 
+def _assert_thinking_below_log(body: str) -> None:
+    """The placeholder must sit BELOW the <pre id="log"> on every log
+    page — Phase B5.1 originally placed it above, which made it vanish
+    forever once the first SSE byte arrived. Sticking it below the
+    scroll box keeps it visible during quiet stretches between tool
+    calls and is only stopped on the completion event."""
+    log_pos = body.find('<pre id="log"')
+    thinking_pos = body.find("data-urika-thinking")
+    assert log_pos != -1, "log <pre> not found"
+    assert thinking_pos != -1, "thinking placeholder not found"
+    assert log_pos < thinking_pos, (
+        "thinking placeholder must render AFTER the log <pre>, not before — "
+        "otherwise it disappears once the log starts streaming."
+    )
+
+
+def test_thinking_placeholder_sits_below_log_on_summarize(thinking_client):
+    body = thinking_client.get("/projects/alpha/summarize/log").text
+    _assert_thinking_below_log(body)
+
+
+def test_thinking_placeholder_sits_below_log_on_finalize(thinking_client):
+    body = thinking_client.get("/projects/alpha/finalize/log").text
+    _assert_thinking_below_log(body)
+
+
+def test_thinking_placeholder_sits_below_log_on_tool_build(thinking_client):
+    body = thinking_client.get("/projects/alpha/tools/build/log").text
+    _assert_thinking_below_log(body)
+
+
+def test_thinking_placeholder_sits_below_log_on_run(thinking_client):
+    body = thinking_client.get("/projects/alpha/experiments/exp-001/log").text
+    _assert_thinking_below_log(body)
+
+
 def test_static_urika_thinking_js_served(thinking_client):
     r = thinking_client.get("/static/urika-thinking.js")
     assert r.status_code == 200
