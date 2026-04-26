@@ -22,6 +22,32 @@ from pathlib import Path
 _DAEMON_THREADS: list[threading.Thread] = []
 
 
+def _build_env(*, no_tee: bool = False) -> dict[str, str]:
+    """Environment for spawned urika subprocesses.
+
+    Always sets ``PYTHONUNBUFFERED=1`` so the daemon drainer can tail
+    stdout in real time (block buffering on a piped child stdout would
+    otherwise hold output in 8KB chunks until process exit). When
+    ``no_tee=True`` also sets ``URIKA_NO_TEE`` so ``urika run`` skips
+    its own log tee — the dashboard becomes the sole writer.
+    """
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    if no_tee:
+        env["URIKA_NO_TEE"] = "1"
+    return env
+
+
+def _python_cmd(executable: str | None) -> list[str]:
+    """Base command for spawning ``python -u -m urika ...``.
+
+    The ``-u`` flag disables Python's stdout/stderr buffering in the
+    child so a piped stdout streams line-by-line into the drainer
+    thread instead of being held in 8KB blocks until process exit.
+    """
+    return [executable or sys.executable, "-u", "-m", "urika"]
+
+
 def _start_drainer(
     proc: subprocess.Popen, log_path: Path, lock_path: Path
 ) -> threading.Thread:
@@ -95,10 +121,7 @@ def spawn_experiment_run(
     log_path = exp_dir / "run.log"
     lock_path = exp_dir / ".lock"
 
-    cmd = [
-        executable or sys.executable,
-        "-m",
-        "urika",
+    cmd = _python_cmd(executable) + [
         "run",
         project_name,
         "--experiment",
@@ -119,8 +142,7 @@ def spawn_experiment_run(
     if resume:
         cmd.append("--resume")
 
-    env = os.environ.copy()
-    env["URIKA_NO_TEE"] = "1"
+    env = _build_env(no_tee=True)
 
     proc = subprocess.Popen(
         cmd,
@@ -165,10 +187,7 @@ def spawn_finalize(
     log_path = book_dir / "finalize.log"
     lock_path = book_dir / ".finalize.lock"
 
-    cmd = [
-        executable or sys.executable,
-        "-m",
-        "urika",
+    cmd = _python_cmd(executable) + [
         "finalize",
         project_name,
         "--json",
@@ -180,7 +199,7 @@ def spawn_finalize(
     if draft:
         cmd.append("--draft")
 
-    env = os.environ.copy()
+    env = _build_env()
 
     proc = subprocess.Popen(
         cmd,
@@ -219,10 +238,7 @@ def spawn_report(
     log_path = exp_dir / "report.log"
     lock_path = exp_dir / ".report.lock"
 
-    cmd = [
-        executable or sys.executable,
-        "-m",
-        "urika",
+    cmd = _python_cmd(executable) + [
         "report",
         project_name,
         "--experiment",
@@ -234,7 +250,7 @@ def spawn_report(
     if audience:
         cmd.extend(["--audience", audience])
 
-    env = os.environ.copy()
+    env = _build_env()
 
     proc = subprocess.Popen(
         cmd,
@@ -272,10 +288,7 @@ def spawn_evaluate(
     log_path = exp_dir / "evaluate.log"
     lock_path = exp_dir / ".evaluate.lock"
 
-    cmd = [
-        executable or sys.executable,
-        "-m",
-        "urika",
+    cmd = _python_cmd(executable) + [
         "evaluate",
         project_name,
         experiment_id,
@@ -284,7 +297,7 @@ def spawn_evaluate(
     if instructions:
         cmd.extend(["--instructions", instructions])
 
-    env = os.environ.copy()
+    env = _build_env()
 
     proc = subprocess.Popen(
         cmd,
@@ -323,10 +336,7 @@ def spawn_summarize(
     log_path = book_dir / "summarize.log"
     lock_path = book_dir / ".summarize.lock"
 
-    cmd = [
-        executable or sys.executable,
-        "-m",
-        "urika",
+    cmd = _python_cmd(executable) + [
         "summarize",
         project_name,
         "--json",
@@ -334,7 +344,7 @@ def spawn_summarize(
     if instructions:
         cmd.extend(["--instructions", instructions])
 
-    env = os.environ.copy()
+    env = _build_env()
 
     proc = subprocess.Popen(
         cmd,
@@ -374,17 +384,14 @@ def spawn_build_tool(
     log_path = tools_dir / "build.log"
     lock_path = tools_dir / ".build.lock"
 
-    cmd = [
-        executable or sys.executable,
-        "-m",
-        "urika",
+    cmd = _python_cmd(executable) + [
         "build-tool",
         project_name,
         instructions,
         "--json",
     ]
 
-    env = os.environ.copy()
+    env = _build_env()
 
     proc = subprocess.Popen(
         cmd,
@@ -423,10 +430,7 @@ def spawn_present(
     log_path = exp_dir / "present.log"
     lock_path = exp_dir / ".present.lock"
 
-    cmd = [
-        executable or sys.executable,
-        "-m",
-        "urika",
+    cmd = _python_cmd(executable) + [
         "present",
         project_name,
         "--experiment",
@@ -438,7 +442,7 @@ def spawn_present(
     if audience:
         cmd.extend(["--audience", audience])
 
-    env = os.environ.copy()
+    env = _build_env()
 
     proc = subprocess.Popen(
         cmd,
