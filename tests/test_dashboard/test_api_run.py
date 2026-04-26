@@ -38,12 +38,13 @@ def run_client(tmp_path: Path, monkeypatch) -> tuple[TestClient, list[dict], Pat
 
     spawn_calls: list[dict] = []
 
-    def fake_spawn(project_name, project_path, experiment_id, **_):
+    def fake_spawn(project_name, project_path, experiment_id, **kwargs):
         spawn_calls.append(
             {
                 "project_name": project_name,
                 "project_path": project_path,
                 "experiment_id": experiment_id,
+                **kwargs,
             }
         )
         # Simulate the daemon thread's first writes
@@ -91,6 +92,33 @@ def test_run_post_creates_experiment_and_spawns(run_client):
     assert spawn_calls[0]["project_name"] == "alpha"
     assert spawn_calls[0]["experiment_id"] == exp_id
     assert spawn_calls[0]["project_path"] == proj
+
+
+def test_run_post_forwards_optional_flags_to_spawn(run_client):
+    """instructions, max_turns, audience from the form must be
+    forwarded to spawn_experiment_run so the spawned ``urika run``
+    subprocess receives them. Previously dropped on the floor — the
+    form fields were validated but discarded, leaving the CLI to
+    re-discover values from project state instead."""
+    client, spawn_calls, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "name": "baseline",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "7",
+            "instructions": "focus on regularized models",
+        },
+    )
+    assert r.status_code == 200
+    assert len(spawn_calls) == 1
+    call = spawn_calls[0]
+    assert call.get("instructions") == "focus on regularized models"
+    assert call.get("max_turns") == 7
+    assert call.get("audience") == "expert"
 
 
 def test_run_post_returns_html_fragment_by_default(run_client):

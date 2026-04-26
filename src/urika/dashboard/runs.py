@@ -57,6 +57,9 @@ def spawn_experiment_run(
     project_path: Path,
     experiment_id: str,
     *,
+    instructions: str = "",
+    max_turns: int | None = None,
+    audience: str | None = None,
     executable: str | None = None,
 ) -> int:
     """Spawn ``urika run <project> --experiment <exp_id>`` as a subprocess.
@@ -64,6 +67,12 @@ def spawn_experiment_run(
     Writes the PID to ``<exp>/.lock`` and starts a daemon thread that
     reads the subprocess's stdout into ``<exp>/run.log``. Returns the
     PID so the caller can stash it / kill it later.
+
+    Optional keyword args mirror the same-named ``urika run`` flags so
+    the dashboard's "+ New experiment" modal can pass through the form
+    fields (``instructions``, ``max_turns``, ``audience``) it already
+    validates. Empty/None values are simply not appended to the
+    command line.
 
     The subprocess receives ``URIKA_NO_TEE=1`` in its environment so
     that ``urika run`` skips its own ``OrchestratorLogger`` tee and
@@ -83,6 +92,12 @@ def spawn_experiment_run(
         "--experiment",
         experiment_id,
     ]
+    if max_turns is not None:
+        cmd.extend(["--max-turns", str(max_turns)])
+    if instructions:
+        cmd.extend(["--instructions", instructions])
+    if audience:
+        cmd.extend(["--audience", audience])
 
     env = os.environ.copy()
     env["URIKA_NO_TEE"] = "1"

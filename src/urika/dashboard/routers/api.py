@@ -1217,9 +1217,7 @@ async def api_project_run_post(name: str, request: Request):
     mode = form.get("mode") or ""
     audience = form.get("audience") or ""
     max_turns = form.get("max_turns") or "10"
-    # ``instructions`` is accepted but currently unused at spawn time —
-    # the CLI picks up its own instructions from project state.
-    _ = form.get("instructions") or ""
+    instructions = (form.get("instructions") or "").strip()
 
     if mode not in VALID_MODES:
         raise HTTPException(
@@ -1250,7 +1248,14 @@ async def api_project_run_post(name: str, request: Request):
     _validate_privacy_endpoint(summary.path)
 
     exp = create_experiment(summary.path, name=name_field, hypothesis=hypothesis)
-    pid = spawn_experiment_run(name, summary.path, exp.experiment_id)
+    pid = spawn_experiment_run(
+        name,
+        summary.path,
+        exp.experiment_id,
+        instructions=instructions,
+        max_turns=max_turns_int,
+        audience=audience,
+    )
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
