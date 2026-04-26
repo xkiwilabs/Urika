@@ -11,7 +11,7 @@
   </nav>
 {% endblock %}
 
-{% from "_macros.html" import modal %}
+{% from "_macros.html" import modal, action_label %}
 
 {% block content %}
 <style>
@@ -34,26 +34,17 @@
   <section class="project-actions" style="margin-top: var(--space-5);">
     <button type="button" class="btn btn--secondary"
             @click="$dispatch('open-modal', { id: 'finalize' })">
-      {% if final_outputs.has_report and final_outputs.has_presentation %}
-        Re-finalize project
-      {% else %}
-        Finalize project
-      {% endif %}
+      {{ action_label("Finalize", "project", final_outputs.has_report and final_outputs.has_presentation) }}
     </button>
     <span id="finalize-feedback" class="text-muted"></span>
     <button type="button" class="btn btn--secondary"
             @click="$dispatch('open-modal', { id: 'summarize' })">
-      {% if has_summary %}
-        Re-summarize project
-      {% else %}
-        Summarize project
-      {% endif %}
+      {{ action_label("Summarize", "project", has_summary) }}
     </button>
     <span id="summarize-feedback" class="text-muted"></span>
   </section>
 
-  {% call modal('summarize',
-    ('Re-summarize project' if has_summary else 'Summarize project')) %}
+  {% call modal('summarize', action_label("Summarize", "project", has_summary)) %}
     <form
       hx-post="/api/projects/{{ project.name }}/summarize"
       hx-target="#summarize-feedback"
@@ -72,7 +63,7 @@
   {% endcall %}
 
   {% call modal('finalize',
-    ('Re-finalize project' if (final_outputs.has_report and final_outputs.has_presentation) else 'Finalize project')) %}
+    action_label("Finalize", "project", final_outputs.has_report and final_outputs.has_presentation)) %}
     <form
       hx-post="/api/projects/{{ project.name }}/finalize"
       hx-target="#finalize-feedback"

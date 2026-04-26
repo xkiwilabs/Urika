@@ -19,6 +19,12 @@
 </div>
 {% endmacro %}
 
+{% macro action_label(verb, noun, exists) -%}
+{# "Generate report" / "Re-generate report"; "Finalize project" / "Re-finalize project".
+   Use for any button or modal title where we toggle on prior-artifact existence. #}
+{%- if exists -%}Re-{{ verb | lower }} {{ noun }}{%- else -%}{{ verb }} {{ noun }}{%- endif -%}
+{%- endmacro %}
+
 {% macro modal(id, title) %}
 {# Usage:
    {% call modal('new-experiment', 'New experiment') %}

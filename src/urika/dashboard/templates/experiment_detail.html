@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import modal %}
+{% from "_macros.html" import modal, action_label %}
 
 {% block title %}{{ experiment.name | humanize }} · Urika{% endblock %}
 {% block heading %}{{ experiment.name | humanize }}{% endblock %}
@@ -39,12 +39,12 @@
           </a>
           <button type="button" class="btn btn--secondary"
                   @click="$dispatch('open-modal', { id: 'report' })">
-            Re-generate report
+            {{ action_label("Generate", "report", has_report) }}
           </button>
         {% else %}
           <button type="button" class="btn btn--secondary"
                   @click="$dispatch('open-modal', { id: 'report' })">
-            Generate report
+            {{ action_label("Generate", "report", has_report) }}
           </button>
         {% endif %}
       </div>
@@ -61,12 +61,12 @@
           </a>
           <button type="button" class="btn btn--secondary"
                   @click="$dispatch('open-modal', { id: 'present' })">
-            Re-generate presentation
+            {{ action_label("Generate", "presentation", has_presentation) }}
           </button>
         {% else %}
           <button type="button" class="btn btn--secondary"
                   @click="$dispatch('open-modal', { id: 'present' })">
-            Generate presentation
+            {{ action_label("Generate", "presentation", has_presentation) }}
           </button>
         {% endif %}
       </div>
@@ -154,7 +154,7 @@
     {% endif %}
   </section>
 
-  {% call modal('present', ('Re-generate presentation' if has_presentation else 'Generate presentation')) %}
+  {% call modal('present', action_label("Generate", "presentation", has_presentation)) %}
     <form
       hx-post="/api/projects/{{ project.name }}/present"
       hx-target="#present-feedback"
@@ -182,7 +182,7 @@
     </form>
   {% endcall %}
 
-  {% call modal('report', ('Re-generate report' if has_report else 'Generate report')) %}
+  {% call modal('report', action_label("Generate", "report", has_report)) %}
     <form
       hx-post="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/report"
       hx-target="#report-feedback"

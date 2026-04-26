@@ -39,3 +39,28 @@ def test_modal_macro_renders(tmp_path):
     assert "modal-title" in out
     assert ">Test</h2>" in out
     assert "body content" in out
+
+
+def test_action_label_first_run_uses_verb():
+    env = Environment(loader=FileSystemLoader("src/urika/dashboard/templates"))
+    src = (
+        '{% from "_macros.html" import action_label %}'
+        '{{ action_label("Generate", "report", false) }}'
+    )
+    assert env.from_string(src).render().strip() == "Generate report"
+
+
+def test_action_label_existing_artifact_prefixes_re():
+    env = Environment(loader=FileSystemLoader("src/urika/dashboard/templates"))
+    cases = [
+        ("Generate", "report", "Re-generate report"),
+        ("Generate", "presentation", "Re-generate presentation"),
+        ("Finalize", "project", "Re-finalize project"),
+        ("Summarize", "project", "Re-summarize project"),
+    ]
+    for verb, noun, expected in cases:
+        src = (
+            '{% from "_macros.html" import action_label %}'
+            f'{{{{ action_label("{verb}", "{noun}", true) }}}}'
+        )
+        assert env.from_string(src).render().strip() == expected
