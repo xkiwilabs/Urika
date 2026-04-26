@@ -63,31 +63,63 @@
   ]) %}
 
     {# ---- Privacy tab -------------------------------------------------- #}
-    {# Endpoint config only.  There is no system-wide default privacy mode —
-       each project picks its mode at creation.  Per-mode model defaults live
-       on the Models tab. #}
-    <div class="tab-panel" x-show="active === 'privacy'">
+    {# Multi-endpoint editor.  Each row defines a named endpoint under
+       [privacy.endpoints.<name>] in ~/.urika/settings.toml.  The Models
+       tab's per-agent endpoint dropdown lists every endpoint defined
+       here (plus the implicit 'open' cloud endpoint).  Mode selection
+       still lives on each project (set at `urika new` time). #}
+    <div class="tab-panel" x-show="active === 'privacy'"
+         x-data='{ endpoints: {{ named_endpoints | tojson }} }'>
       <p class="form-help" style="margin-bottom: var(--space-3);">
-        Mode selection lives on each project (set at <code>urika new</code>
-        time). This tab configures the connection details for the
-        <em>private</em> endpoint that private and hybrid projects route
-        agents to.
+        Define one or more named endpoints. Each can be referenced from
+        the Models tab to route specific agents through it. The runtime
+        loader treats <code>open</code> as the cloud (Claude) endpoint
+        implicitly; don't define one with that name.
       </p>
 
-      <div class="privacy-block">
-        <h4>Private endpoint</h4>
-        <div class="form-row">
-          <label for="privacy_private_url">Endpoint URL</label>
-          <input type="text" id="privacy_private_url" name="privacy_private_url"
-                 value="{{ privacy_private_url }}"
-                 placeholder="http://localhost:11434">
+      <template x-for="(ep, idx) in endpoints" :key="idx">
+        <div class="privacy-block">
+          <h4 x-text="ep.name || '(unnamed endpoint)'"></h4>
+          <div class="form-row">
+            <label>Name (slug)</label>
+            <input type="text"
+                   :name="'endpoints[' + idx + '][name]'"
+                   x-model="ep.name"
+                   pattern="[a-z0-9_-]+"
+                   placeholder="e.g. private, ollama, vllm_small"
+                   required>
+          </div>
+          <div class="form-row">
+            <label>Base URL</label>
+            <input type="text"
+                   :name="'endpoints[' + idx + '][base_url]'"
+                   x-model="ep.base_url"
+                   placeholder="http://localhost:11434">
+          </div>
+          <div class="form-row">
+            <label>API key env var (optional)</label>
+            <input type="text"
+                   :name="'endpoints[' + idx + '][api_key_env]'"
+                   x-model="ep.api_key_env"
+                   placeholder="(optional, e.g. INFERENCE_HUB_KEY)">
+          </div>
+          <div class="form-row">
+            <label>Default model (optional)</label>
+            <input type="text"
+                   :name="'endpoints[' + idx + '][default_model]'"
+                   x-model="ep.default_model"
+                   placeholder="e.g. qwen3:14b">
+          </div>
+          <button type="button" class="btn btn--ghost"
+                  @click="endpoints.splice(idx, 1)">Remove</button>
         </div>
-        <div class="form-row">
-          <label for="privacy_private_key_env">API key env var</label>
-          <input type="text" id="privacy_private_key_env" name="privacy_private_key_env"
-                 value="{{ privacy_private_key_env }}"
-                 placeholder="(optional, e.g. INFERENCE_HUB_KEY)">
-        </div>
+      </template>
+
+      <div style="margin-top: var(--space-3);">
+        <button type="button" class="btn btn--secondary"
+                @click="endpoints.push({name: '', base_url: '', api_key_env: '', default_model: ''})">
+          + Add endpoint
+        </button>
       </div>
     </div>
 

@@ -33,17 +33,36 @@ def test_global_settings_uses_tabs_macro(settings_client):
     assert "tab-button" in body
 
 
-def test_global_settings_privacy_tab_endpoint_only(settings_client):
-    """Privacy tab now exposes just the private endpoint connection
-    details. The default-mode picker and per-mode model fields are gone
-    — mode lives at project creation, per-mode model defaults live on
-    the Models tab."""
+def test_global_settings_privacy_tab_multi_endpoint_editor(settings_client, tmp_path):
+    """Privacy tab is a multi-endpoint editor.  Each row defines a
+    named endpoint under ``[privacy.endpoints.<name>]``.  Pre-existing
+    endpoints render as Alpine-bound rows so the user can edit / remove
+    them; an "+ Add endpoint" button appends a fresh empty row.
+    """
+    # Pre-seed one endpoint so the page renders with a row pre-filled.
+    (tmp_path / "home" / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n',
+        encoding="utf-8",
+    )
     body = settings_client.get("/settings").text
+    # The Alpine x-data carries the named endpoints list.
+    assert "endpoints:" in body
+    # Pre-seeded endpoint surfaces in the Alpine state.
+    assert "private" in body
+    assert "http://localhost:11434" in body
+    # The Privacy tab uses the new bracketed naming scheme via Alpine's
+    # ``:name`` directive, so the literal ``name="endpoints[..."`` form
+    # field is constructed at render time. Look for the bound attribute.
+    assert ":name=\"'endpoints[' + idx + '][name]'\"" in body
+    assert ":name=\"'endpoints[' + idx + '][base_url]'\"" in body
+    assert ":name=\"'endpoints[' + idx + '][api_key_env]'\"" in body
+    assert ":name=\"'endpoints[' + idx + '][default_model]'\"" in body
+    # The "+ Add endpoint" button is present.
+    assert "+ Add endpoint" in body
     # Mode picker MUST NOT be on the global Privacy tab any more.
     assert 'name="privacy_mode"' not in body
-    # Private endpoint URL + key env are the only fields.
-    assert 'name="privacy_private_url"' in body
-    assert 'name="privacy_private_key_env"' in body
     # Per-mode model fields are gone from this tab.
     assert 'name="privacy_open_model"' not in body
     assert 'name="privacy_private_model"' not in body
@@ -51,6 +70,9 @@ def test_global_settings_privacy_tab_endpoint_only(settings_client):
     assert 'name="privacy_hybrid_private_url"' not in body
     assert 'name="privacy_hybrid_private_key_env"' not in body
     assert 'name="privacy_hybrid_private_model"' not in body
+    # Legacy single-endpoint form fields are gone.
+    assert 'name="privacy_private_url"' not in body
+    assert 'name="privacy_private_key_env"' not in body
 
 
 def test_global_settings_models_tab_has_per_mode_grids(settings_client):
@@ -235,16 +257,18 @@ def test_global_settings_auto_enable_checkbox_reflects_saved_value(
 # ---- Privacy tab round-trips -----------------------------------------------
 
 
-def test_global_settings_put_private_endpoint_writes_section(
+def test_global_settings_put_single_endpoint_writes_section(
     settings_client, tmp_path
 ):
-    """Submitting the private endpoint URL + key env writes
-    [privacy.endpoints.private]. No mode is written to globals."""
+    """Submitting a single named endpoint via the multi-endpoint form
+    writes ``[privacy.endpoints.<name>]``. No mode is written to globals."""
     r = settings_client.put(
         "/api/settings",
         data={
-            "privacy_private_url": "http://localhost:11434",
-            "privacy_private_key_env": "",
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
             "default_audience": "expert",
             "default_max_turns": "10",
         },
@@ -257,6 +281,105 @@ def test_global_settings_put_private_endpoint_writes_section(
     )
     # No system-wide default mode is persisted any more.
     assert "mode" not in s.get("privacy", {})
+
+
+def test_global_settings_put_multiple_endpoints_writes_each(
+    settings_client, tmp_path
+):
+    """Submitting two endpoints (private + ollama) writes both blocks
+    under ``[privacy.endpoints]``."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "qwen3:14b",
+            "endpoints[1][name]": "ollama",
+            "endpoints[1][base_url]": "http://localhost:11435",
+            "endpoints[1][api_key_env]": "",
+            "endpoints[1][default_model]": "llama3:8b",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    eps = s["privacy"]["endpoints"]
+    assert eps["private"]["base_url"] == "http://localhost:11434"
+    assert eps["private"]["default_model"] == "qwen3:14b"
+    assert eps["ollama"]["base_url"] == "http://localhost:11435"
+    assert eps["ollama"]["default_model"] == "llama3:8b"
+
+
+def test_global_settings_put_omitting_endpoint_deletes_it(
+    settings_client, tmp_path
+):
+    """An endpoint present in the previous TOML but absent from the
+    new submission is REMOVED — diff-apply semantics so the user can
+    delete an endpoint by simply unmounting its row."""
+    # Pre-seed two endpoints.
+    (tmp_path / "home" / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+        '\n'
+        '[privacy.endpoints.ollama]\n'
+        'base_url = "http://localhost:11435"\n'
+        'api_key_env = ""\n',
+        encoding="utf-8",
+    )
+    # Submit only one of the two — the other should be deleted.
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    eps = s["privacy"]["endpoints"]
+    assert "private" in eps
+    assert "ollama" not in eps
+
+
+def test_global_settings_put_reserved_endpoint_name_rejected(settings_client):
+    """The name ``open`` is reserved (it's the implicit cloud endpoint
+    name) and submitting it returns 422."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "endpoints[0][name]": "open",
+            "endpoints[0][base_url]": "http://example.com",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_global_settings_put_invalid_endpoint_name_rejected(settings_client):
+    """An endpoint name with spaces (or any character outside
+    ``[a-z0-9_-]``) returns 422."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "endpoints[0][name]": "Has Spaces",
+            "endpoints[0][base_url]": "http://example.com",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+        },
+    )
+    assert r.status_code == 422
 
 
 def test_global_settings_put_drops_legacy_privacy_mode(settings_client, tmp_path):

@@ -562,6 +562,86 @@ def _apply_structured_settings(project_path, form) -> None:
 
 _VALID_PRIVACY_MODES = {"open", "private", "hybrid"}
 
+# Reserved endpoint name: ``open`` is the implicit cloud (Claude)
+# endpoint and may not be redefined by the user.
+_RESERVED_ENDPOINT_NAMES = {"open"}
+_ENDPOINT_NAME_RE = re.compile(r"^[a-z0-9_-]+$")
+
+
+def _parse_endpoints_form(
+    form,
+) -> tuple[list[dict[str, str]], bool]:
+    """Pull multi-endpoint rows from the global Privacy form.
+
+    Returns ``(rows, has_endpoints_field)``. ``has_endpoints_field`` is
+    ``True`` if any ``endpoints[<i>][...]`` field was present in the
+    submission — used by the caller to distinguish "user submitted no
+    endpoints" (legitimate delete-all) from "Privacy tab wasn't part
+    of this submission".
+
+    Each row in ``rows`` is a fully-populated dict with keys
+    ``name`` / ``base_url`` / ``api_key_env`` / ``default_model``.
+
+    Validates:
+      * ``name`` matches ``^[a-z0-9_-]+$`` → 422 otherwise
+      * ``name`` is not in :data:`_RESERVED_ENDPOINT_NAMES` → 422
+
+    Empty-name rows (where the user clicked "+ Add" but never typed a
+    name, then submitted) are silently dropped.
+    """
+    # Find every index that appears in the form. We accept any of the
+    # four bracketed keys as evidence that the row exists.
+    indexed_re = re.compile(r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|default_model)\]$")
+    indices: set[int] = set()
+    has_field = False
+    for key in form.keys():
+        m = indexed_re.match(key)
+        if m:
+            has_field = True
+            indices.add(int(m.group(1)))
+
+    rows: list[dict[str, str]] = []
+    seen_names: set[str] = set()
+    for idx in sorted(indices):
+        name = (form.get(f"endpoints[{idx}][name]") or "").strip()
+        if not name:
+            # Silently skip rows the user added but never named.
+            continue
+        if not _ENDPOINT_NAME_RE.match(name):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"endpoint name '{name}' must match ^[a-z0-9_-]+$"
+                ),
+            )
+        if name in _RESERVED_ENDPOINT_NAMES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"endpoint name '{name}' is reserved (it's the "
+                    "implicit cloud endpoint name)"
+                ),
+            )
+        if name in seen_names:
+            raise HTTPException(
+                status_code=422,
+                detail=f"endpoint name '{name}' appears more than once",
+            )
+        seen_names.add(name)
+        rows.append(
+            {
+                "name": name,
+                "base_url": (form.get(f"endpoints[{idx}][base_url]") or "").strip(),
+                "api_key_env": (
+                    form.get(f"endpoints[{idx}][api_key_env]") or ""
+                ).strip(),
+                "default_model": (
+                    form.get(f"endpoints[{idx}][default_model]") or ""
+                ).strip(),
+            }
+        )
+    return rows, has_field
+
 
 @router.put("/settings")
 async def api_global_settings_put(request: Request):
@@ -610,9 +690,19 @@ async def api_global_settings_put(request: Request):
             detail="default_max_turns must be > 0",
         )
 
-    # ---- Privacy tab: endpoint connection details only -----------------
-    private_url = (form.get("privacy_private_url") or "").strip()
-    private_key_env = (form.get("privacy_private_key_env") or "").strip()
+    # ---- Privacy tab: multi-endpoint editor ----------------------------
+    # Form fields arrive as ``endpoints[<i>][name]`` /
+    # ``endpoints[<i>][base_url]`` / ``endpoints[<i>][api_key_env]`` /
+    # ``endpoints[<i>][default_model]``.  We collect every index, then
+    # diff-apply: endpoints in the submission overwrite/insert into
+    # ``[privacy.endpoints.<name>]``; endpoints absent from the
+    # submission get REMOVED so deletes work.
+    #
+    # Validation:
+    #   * ``name`` must match ``^[a-z0-9_-]+$``
+    #   * ``open`` is reserved (the implicit cloud endpoint name)
+    #   * empty/whitespace ``name`` rows are silently ignored
+    submitted_endpoints, has_endpoints_field = _parse_endpoints_form(form)
 
     # ---- Load existing settings and mutate -----------------------------
     s = load_settings()
@@ -623,14 +713,22 @@ async def api_global_settings_put(request: Request):
     runtime = s.setdefault("runtime", {})
     runtime_models = runtime.setdefault("models", {})
 
-    # Persist the private endpoint when the user supplied either a URL
-    # or a key env var.  An empty payload leaves any existing endpoint
-    # untouched — the user can clear it out by removing the section
-    # manually if they really want to.
-    if private_url or private_key_env:
-        ep = endpoints.setdefault("private", {})
-        ep["base_url"] = private_url
-        ep["api_key_env"] = private_key_env
+    if has_endpoints_field:
+        # Diff-apply: replace the endpoints map with what the user
+        # submitted. Missing rows = deleted. Extra fields (e.g.
+        # ``default_model``) survive.
+        new_endpoints: dict[str, dict[str, str]] = {}
+        for ep in submitted_endpoints:
+            row: dict[str, str] = {
+                "base_url": ep["base_url"],
+                "api_key_env": ep["api_key_env"],
+            }
+            # ``default_model`` is optional — only persist when set.
+            if ep["default_model"]:
+                row["default_model"] = ep["default_model"]
+            new_endpoints[ep["name"]] = row
+        endpoints.clear()
+        endpoints.update(new_endpoints)
 
     # Drop any stale [privacy].mode that older settings.toml files may
     # have carried — there is no system-wide default mode any more.

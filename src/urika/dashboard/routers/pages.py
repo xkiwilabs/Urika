@@ -14,7 +14,7 @@ from urika.core.method_registry import load_methods
 from urika.core.models import VALID_AUDIENCES, VALID_MODES, ExperimentConfig
 from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
-from urika.core.settings import load_settings
+from urika.core.settings import get_named_endpoints, load_settings
 from urika.dashboard.projects import (
     list_project_summaries,
     load_project_summary,
@@ -452,8 +452,10 @@ def global_settings(request: Request) -> HTMLResponse:
     s = load_settings()
     privacy = s.get("privacy", {})
     endpoints = privacy.get("endpoints", {}) or {}
-    private_ep = endpoints.get("private", {}) or {}
     runtime = s.get("runtime", {}) or {}
+    # Multi-endpoint editor on the Privacy tab. Each entry shape:
+    #   {"name", "base_url", "api_key_env", "default_model"}
+    named_endpoints = get_named_endpoints()
     runtime_modes = runtime.get("modes", {}) or {}
     runtime_models = runtime.get("models", {}) or {}
     prefs = s.get("preferences", {}) or {}
@@ -510,9 +512,8 @@ def global_settings(request: Request) -> HTMLResponse:
         "global_settings.html",
         {
             "request": request,
-            # Privacy tab — endpoint config only.
-            "privacy_private_url": private_ep.get("base_url", ""),
-            "privacy_private_key_env": private_ep.get("api_key_env", ""),
+            # Privacy tab — multi-endpoint editor.
+            "named_endpoints": named_endpoints,
             # Models tab
             "runtime_model": runtime.get("model", ""),
             "model_rows": model_rows,
