@@ -905,11 +905,13 @@ def test_global_settings_put_per_agent_endpoint_accepts_named_endpoint(
     )
 
 
-def test_global_settings_put_per_agent_endpoint_rejects_undefined_name(
+def test_global_settings_put_per_agent_endpoint_strips_undefined_name(
     settings_client, tmp_path
 ):
-    """A per-agent endpoint pointing at an undefined endpoint name
-    returns 422."""
+    """A per-agent endpoint pointing at an undefined endpoint name is
+    silently stripped (drops the override) — Privacy-tab edits like
+    rename/remove must not 422 the rest of the form. Save still
+    succeeds; the agent just falls back to the mode default."""
     r = settings_client.put(
         "/api/settings",
         data={
@@ -921,11 +923,16 @@ def test_global_settings_put_per_agent_endpoint_rejects_undefined_name(
             "default_max_turns": "10",
             "runtime_modes_open_model": "claude-opus-4-7",
             "runtime_modes_open_models[task_agent][model]": "llama3:8b",
-            # No endpoint named ``does_not_exist`` is defined → 422.
+            # Undefined endpoint name → silently stripped, save still 200.
             "runtime_modes_open_models[task_agent][endpoint]": "does_not_exist",
         },
     )
-    assert r.status_code == 422
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    ta = s["runtime"]["modes"]["open"]["models"]["task_agent"]
+    assert ta.get("model") == "llama3:8b"
+    # endpoint key is absent (stripped) — no override, falls back to mode default.
+    assert "endpoint" not in ta
 
 
 def test_global_settings_put_private_mode_coerces_open_endpoint_to_private(

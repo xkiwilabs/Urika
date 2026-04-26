@@ -876,13 +876,12 @@ async def api_global_settings_put(request: Request):
                 endpoint_val = "private" if "private" in defined_endpoint_names else ""
 
             if endpoint_val and endpoint_val not in valid_endpoint_values:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"runtime_modes_{mode_name}_models[{agent}][endpoint]"
-                        f" must be one of {sorted(valid_endpoint_values)}"
-                    ),
-                )
+                # The user just renamed/removed an endpoint that this row
+                # was previously pointing at — silently strip the override
+                # instead of 422'ing. The runtime loader will fall back to
+                # the mode default. This makes Privacy-tab edits non-
+                # destructive to the rest of the form.
+                endpoint_val = ""
 
             row: dict[str, str] = {}
             if model_val:
@@ -922,14 +921,12 @@ async def api_global_settings_put(request: Request):
                 row["model"] = model_val
             if endpoint_val and endpoint_val != "inherit":
                 if endpoint_val not in valid_endpoint_values:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=(
-                            f"endpoint[{agent}] must be one of "
-                            f"{sorted(valid_endpoint_values | {'inherit'})}"
-                        ),
-                    )
-                row["endpoint"] = endpoint_val
+                    # User likely renamed/removed an endpoint elsewhere
+                    # in the same submission. Silently strip the now-
+                    # invalid override (drop it) instead of 422'ing.
+                    pass
+                else:
+                    row["endpoint"] = endpoint_val
             if row:
                 runtime_models[agent] = row
             elif agent in runtime_models:
