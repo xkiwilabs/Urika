@@ -741,6 +741,24 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     # the global page so we can re-populate the "private model" field.
     hybrid_data_agent = runtime_models.get("data_agent", {}) or {}
 
+    # Inheritance hint for the Privacy tab. When globals define a usable
+    # private endpoint AND the project doesn't override it, the URL field
+    # may be left blank — the runtime loader (commit 1) inherits the
+    # global endpoint at agent dispatch time. Surface what's available so
+    # the user knows what they'd inherit.
+    _inherited_private_ep = next(
+        (
+            ep for ep in _named_endpoints_full
+            if ep.get("name") == "private"
+            and (ep.get("base_url") or "").strip()
+        ),
+        None,
+    )
+    inherited_endpoint = {
+        "private": _inherited_private_ep,
+        "hybrid": _inherited_private_ep,
+    }
+
     # Stringify list/dict-valued project-section fields for textarea display.
     data_paths_text = "\n".join(project_section.get("data_paths", []) or [])
     success_criteria = project_section.get("success_criteria", {}) or {}
@@ -827,6 +845,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "cloud_models": cloud_models,
             "known_cloud_models": KNOWN_CLOUD_MODELS,
             "private_endpoint_options": private_endpoint_options,
+            "inherited_endpoint": inherited_endpoint,
             "notifications": notifications,
             "notif_channels": notifications.get("channels", []) or [],
             "notif_suppress_level": notifications.get("suppress_level", ""),

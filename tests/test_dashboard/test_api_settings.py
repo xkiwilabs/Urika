@@ -868,3 +868,98 @@ def test_settings_put_open_mode_no_endpoint_required(
         data=_basics(project_privacy_mode="open"),
     )
     assert r.status_code == 200
+
+
+# ---- Privacy block: blank URL + globals → skip project endpoint write ------
+# When the form's URL field is blank AND a global endpoint exists, the
+# project TOML must NOT carry [privacy.endpoints.private] — the runtime
+# loader inherits from globals (commit 1). Stops the silent-stub-write
+# behavior that left projects unrunnable.
+
+
+def test_settings_put_private_blank_url_with_global_skips_endpoint_write(
+    settings_client, tmp_path
+):
+    """Blank URL + global endpoint → project TOML has [privacy].mode but
+    NO [privacy.endpoints]. The runtime loader fills in the endpoint via
+    inheritance."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="private",
+            project_privacy_private_url="",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["privacy"]["mode"] == "private"
+    # No project-local endpoint duplicate — inheritance handles it.
+    assert "endpoints" not in toml["privacy"]
+
+
+def test_settings_put_private_explicit_url_writes_override(
+    settings_client, tmp_path
+):
+    """A non-blank URL becomes a project-local override that wins over
+    globals (per the runtime loader's precedence rules)."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="private",
+            project_privacy_private_url="http://my-server:8080",
+            project_privacy_private_key_env="MY_KEY",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["privacy"]["mode"] == "private"
+    assert (
+        toml["privacy"]["endpoints"]["private"]["base_url"]
+        == "http://my-server:8080"
+    )
+
+
+def test_settings_put_hybrid_blank_url_with_global_skips_endpoint_write(
+    settings_client, tmp_path
+):
+    """Same rule for hybrid mode: blank URL + globals → no project-local
+    [privacy.endpoints] written."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="hybrid",
+            project_privacy_hybrid_private_url="",
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    assert toml["privacy"]["mode"] == "hybrid"
+    assert "endpoints" not in toml["privacy"]
+
+
+# ---- Privacy tab page render: shows inheritance hint -----------------------
+
+
+def test_project_settings_page_shows_inherited_endpoint_when_globals_exist(
+    settings_client,
+):
+    """The project Privacy tab renders an 'Inherits global endpoint' line
+    above the per-mode URL inputs when globals supply an endpoint."""
+    r = settings_client.get("/projects/alpha/settings")
+    assert r.status_code == 200
+    body = r.text
+    # Inheritance hint must appear in the page somewhere — both private
+    # and hybrid blocks reuse the same wording.
+    assert "Inherits global endpoint" in body
+    # The global endpoint URL the test fixture seeded.
+    assert "http://localhost:11434" in body
+
+
+def test_project_settings_page_no_inherit_hint_without_globals(
+    settings_client_no_global_endpoint,
+):
+    """When globals have no endpoint, the inheritance hint must NOT
+    appear (it would mislead the user about what's inherited)."""
+    r = settings_client_no_global_endpoint.get("/projects/alpha/settings")
+    assert r.status_code == 200
+    assert "Inherits global endpoint" not in r.text

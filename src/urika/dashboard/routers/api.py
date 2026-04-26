@@ -560,25 +560,36 @@ def _apply_structured_settings(project_path, form) -> None:
 
         new_privacy: dict = {"mode": new_mode}
         if new_mode == "private":
-            ep = {
-                "base_url": (
-                    form.get("project_privacy_private_url") or ""
-                ).strip(),
-                "api_key_env": (
-                    form.get("project_privacy_private_key_env") or ""
-                ).strip(),
-            }
-            new_privacy["endpoints"] = {"private": ep}
+            url_val = (form.get("project_privacy_private_url") or "").strip()
+            key_val = (
+                form.get("project_privacy_private_key_env") or ""
+            ).strip()
+            # Blank URL + globals available → skip the endpoint write so
+            # the runtime loader inherits the global endpoint (commit 1).
+            # Stops the silent-stub-write that left projects "saved"
+            # but unrunnable. The save-time gate above already refused
+            # blank+no-globals.
+            if url_val:
+                new_privacy["endpoints"] = {
+                    "private": {
+                        "base_url": url_val,
+                        "api_key_env": key_val,
+                    }
+                }
         elif new_mode == "hybrid":
-            ep = {
-                "base_url": (
-                    form.get("project_privacy_hybrid_private_url") or ""
-                ).strip(),
-                "api_key_env": (
-                    form.get("project_privacy_hybrid_private_key_env") or ""
-                ).strip(),
-            }
-            new_privacy["endpoints"] = {"private": ep}
+            url_val = (
+                form.get("project_privacy_hybrid_private_url") or ""
+            ).strip()
+            key_val = (
+                form.get("project_privacy_hybrid_private_key_env") or ""
+            ).strip()
+            if url_val:
+                new_privacy["endpoints"] = {
+                    "private": {
+                        "base_url": url_val,
+                        "api_key_env": key_val,
+                    }
+                }
         # 'open' has no endpoint metadata — mode alone is the override.
 
         if new_privacy != old_privacy:

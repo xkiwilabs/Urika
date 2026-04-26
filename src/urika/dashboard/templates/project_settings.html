@@ -383,6 +383,16 @@
       {# Private block #}
       <div class="privacy-block" x-show="pmode === 'private'" x-cloak>
         <h4>Private mode</h4>
+        {% if inherited_endpoint and inherited_endpoint.private %}
+          <p class="form-help privacy-inherits"
+             data-inherits-mode="private">
+            Inherits global endpoint:
+            <strong>{{ inherited_endpoint.private.name }}</strong>
+            (<code>{{ inherited_endpoint.private.base_url }}</code>).
+            Leave the URL blank to use it; type a URL to override
+            for this project.
+          </p>
+        {% endif %}
         <div class="form-row">
           <label for="project_privacy_private_url">Endpoint URL</label>
           <input type="text" id="project_privacy_private_url"
@@ -409,6 +419,16 @@
       {# Hybrid block #}
       <div class="privacy-block" x-show="pmode === 'hybrid'" x-cloak>
         <h4>Hybrid mode</h4>
+        {% if inherited_endpoint and inherited_endpoint.hybrid %}
+          <p class="form-help privacy-inherits"
+             data-inherits-mode="hybrid">
+            Inherits global endpoint:
+            <strong>{{ inherited_endpoint.hybrid.name }}</strong>
+            (<code>{{ inherited_endpoint.hybrid.base_url }}</code>).
+            Leave the private URL blank to use it; type a URL to
+            override for this project.
+          </p>
+        {% endif %}
         <div class="form-row">
           <label for="project_privacy_hybrid_cloud_model">Cloud model (most agents)</label>
           <select id="project_privacy_hybrid_cloud_model"
