@@ -51,7 +51,13 @@ The dashboard is a multi-page app. Each route is a server-rendered Jinja templat
 | `/projects/<name>/tools` | Registered tools listing (read-only viewer for the project tool registry). |
 | `/projects/<name>/criteria` | Versioned success-criteria viewer (read-only). |
 | `/projects/<name>/advisor` | Advisor chat panel — persistent transcript per project (see below). |
+| `/projects/<name>/data` | Data sources registered for the project (Phase 13). |
+| `/projects/<name>/data/inspect?path=...` | Schema, missing counts, head/tail preview for one file (Phase 13). |
+| `/projects/<name>/usage` | Token / cost time-series charts and recent sessions table (Phase 13). |
+| `/projects/<name>/projectbook/summary` | Rendered `projectbook/summary.md` from the summarizer agent (Phase 13). |
 | `/projects/<name>/finalize/log` | Finalize log page: streams the running finalize subprocess via SSE. |
+| `/projects/<name>/summarize/log` | Summarize log page: streams the running summarize subprocess via SSE (Phase 13). |
+| `/projects/<name>/tools/build/log` | Build-tool log page: streams the running tool-builder subprocess via SSE (Phase 13). |
 | `/projects/<name>/experiments/<id>/log` | Live log streaming via SSE (see below). |
 | `/projects/<name>/settings` | Project settings (tabbed: basics / data / models / privacy / notifications). |
 | `/settings` | Global defaults (tabbed: privacy / models / preferences / notifications). |
@@ -135,11 +141,14 @@ The knowledge page now has an **+ Add knowledge** button (top-right) that opens 
 | `notifications` | settings tab — global + per-project, full edit |
 | `update` | project settings PUT |
 | `criteria` | `/projects/<n>/criteria` (read-only viewer) |
-| `tools` | `/projects/<n>/tools` (read-only viewer) |
+| `tools` | `/projects/<n>/tools` (read-only viewer) — **+ Build tool** modal launches `urika build-tool` (Phase 13) |
 | `logs` | `/projects/<n>/experiments/<id>/log` |
 | `status` | project home |
-| `evaluate` | **CLI-only** — agent invocation, not user-facing |
-| `inspect` | **CLI-only** — local data introspection |
+| `evaluate` | **Evaluate** button on experiment detail → `POST /api/projects/<n>/experiments/<id>/evaluate` (Phase 13) |
+| `summarize` | **Summarize / Re-summarize project** button on project home → `POST /api/projects/<n>/summarize` (Phase 13) |
+| `build-tool` | **+ Build tool** modal on project tools page → `POST /api/projects/<n>/tools/build` (Phase 13) |
+| `inspect` | `/projects/<n>/data` and `/projects/<n>/data/inspect` (Phase 13) |
+| `usage` | `/projects/<n>/usage` (Phase 13) |
 | `plan` | **CLI-only** — agent invocation, not user-facing |
 | `setup` | **CLI-only** — installation flow |
 | `dashboard` | **CLI-only** (it starts this server) |
@@ -157,7 +166,7 @@ The sidebar is **mode-aware** — it shows different links depending on whether 
   - Global settings
 - **Project mode** (active on any `/projects/<name>/...` route):
   - A "← Back to projects" link returns the user to the registry.
-  - Project-scoped links: Home, Experiments, Methods, Findings, Knowledge, Tools, Criteria, Advisor, Settings.
+  - Project-scoped links (canonical order): Home, Experiments, Methods, Tools, Data, Knowledge, Advisor, Usage, Settings. Data and Usage were added in Phase 13.
 - **Footer**: the theme toggle (moved here in Phase 11A from its previous location in the page header).
 
 Sidebar links are muted by default, accent-coloured on hover, and accent + tinted-background when the current path matches the link's route. Active state is computed server-side from the request path.
@@ -282,6 +291,12 @@ The dashboard's HTMX/fetch endpoints (server-rendered pages above are the only t
 | `POST /api/projects/<n>/runs/<exp>/respond` | Answer a mid-run interactive prompt. | 11F.2 |
 | `POST /api/projects/<n>/finalize` | Kick off the finalize subprocess. | — |
 | `GET  /api/projects/<n>/finalize/stream` | SSE stream of the finalize log. | — |
+| `POST /api/projects/<n>/summarize` | Spawn the summarize subprocess. | 13C |
+| `GET  /api/projects/<n>/summarize/stream` | SSE stream of the summarize log. | 13C |
+| `POST /api/projects/<n>/experiments/<id>/evaluate` | Spawn the evaluate subprocess for an experiment. | 13B |
+| `POST /api/projects/<n>/experiments/<id>/report` | Spawn the report subprocess for an experiment. | 13B |
+| `POST /api/projects/<n>/tools/build` | Spawn the tool-builder subprocess. | 13D |
+| `GET  /api/projects/<n>/tools/build/stream` | SSE stream of the tool-builder log. | 13D |
 | `POST /api/projects/<n>/advisor` | Send a chat message to the advisor; appends to `projectbook/advisor.json`. | 11E.1 |
 | `POST /api/projects/<n>/knowledge` | Add a knowledge entry from a path or URL. | 11E.3 |
 | `PUT  /api/projects/<n>/settings/...` | Save settings tabs (basics/data/models/privacy/notifications). | — |
@@ -289,6 +304,20 @@ The dashboard's HTMX/fetch endpoints (server-rendered pages above are the only t
 | `GET  /api/projects/<n>/findings` | Raw findings JSON (for agents/scripts; UI uses the rendered page). | — |
 
 No rendered link in the dashboard points at an `/api/*` URL — they are exclusively HTMX/fetch targets.
+
+
+## Phase 13 additions at a glance
+
+For readers cross-referencing the Phase 13 plan (`dev/plans/2026-04-26-phase-13-coverage-and-modals.md`):
+
+- **Modal flag expansion (13A).** Run, Finalize, and New Project modals now expose every meaningful CLI flag — `--instructions`, `--audience`, `--draft`, `--auto`, `--max-experiments`, `--review-criteria`, `--resume`. Whatever you can pass on the CLI is now selectable in the browser.
+- **Per-experiment agent buttons (13B).** Experiment detail page got Evaluate, Generate / Re-generate report, and Generate / Re-generate presentation modals. Each spawns the matching CLI subprocess and HX-Redirects to the live log.
+- **Project home expansion (13C).** Summarize / Re-summarize project button alongside Finalize. The summarizer's text output is persisted to `projectbook/summary.md` so the Re-summarize label flips on disk state, and a "Summary" card appears in Final outputs when present. `urika summarize` gained an `--instructions` flag for parity with other commands.
+- **Tool builder in-browser (13D).** Project Tools page got a `+ Build tool` button that opens a modal with a free-text instructions textarea and posts to `urika build-tool`. Privacy gate fires before spawn — tool_builder runs in private mode under hybrid.
+- **Data inspection (13E).** New `/projects/<n>/data` page lists registered data sources from `urika.toml`'s `[project].data_paths`. `/data/inspect?path=...` shows column / dtype / missing / numeric stats plus head(10) and tail(10) preview, using the same loader registry the agents use. Path traversal is blocked by an allow-list validator against `data_paths` plus `<project>/data`.
+- **Usage charts (13F).** `/projects/<n>/usage` reads `usage.json`, shows totals plus token-over-time and cost-over-time line charts via Chart.js (4.4.1, CDN). Per-experiment / per-agent slices intentionally omitted — the usage schema doesn't carry that breakdown yet.
+- **Macro DRY (13G.1).** `action_label("Generate", "report", has_report)` → "Generate report" / "Re-generate report". One macro replaces four inlined ternaries across `project_home.html` and `experiment_detail.html`.
+- **Sidebar reorder (13G.2).** Canonical project-mode order is now Home / Experiments / Methods / Tools / Data / Knowledge / Advisor / Usage / Settings.
 
 
 ## Phase 11 additions at a glance
