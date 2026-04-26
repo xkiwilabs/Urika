@@ -1,9 +1,10 @@
-"""Tests for ``urika delete``.
+"""Tests for ``urika delete`` and ``urika list --prune``.
 
 The core trash helper has its own coverage in
 ``tests/test_core/test_project_delete.py``; here we exercise the CLI
-wrapper (confirm prompt, --force, --json, ProjectNotFoundError /
-ActiveRunError surfacing, registry-only path).
+wrappers (confirm prompt, --force, --json, ProjectNotFoundError /
+ActiveRunError surfacing, registry-only path) and the new ``--prune``
+flag on ``urika list``.
 """
 
 from __future__ import annotations
@@ -198,3 +199,60 @@ class TestDeleteCommand:
         assert Path(data["trash_path"]).parent == trash_root
         assert Path(data["trash_path"]).name.startswith("foo-")
         assert Path(data["trash_path"]).exists()
+
+
+# ---------------------------------------------------------------------------
+# urika list --prune
+# ---------------------------------------------------------------------------
+
+
+class TestListPrune:
+    def test_list_prune_removes_missing_entries(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        # Two registered projects: one real, one ghost
+        real = _register_project(urika_env, "real")
+        ghost = Path(urika_env["URIKA_PROJECTS_DIR"]) / "ghost"
+        _registry_for(urika_env).register("ghost", ghost)
+        assert not ghost.exists()
+
+        result = runner.invoke(cli, ["list", "--prune"], env=urika_env)
+
+        assert result.exit_code == 0, result.output
+        assert "Pruned" in result.output
+        assert "ghost" in result.output
+        # Real project is still listed afterwards
+        assert "real" in result.output
+
+        reg = _registry_for(urika_env)
+        assert reg.get("ghost") is None
+        assert reg.get("real") == real
+
+    def test_list_prune_no_stale_entries(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _register_project(urika_env, "real")
+
+        result = runner.invoke(cli, ["list", "--prune"], env=urika_env)
+
+        assert result.exit_code == 0, result.output
+        assert "No stale entries" in result.output
+        assert "real" in result.output
+
+    def test_list_without_prune_unchanged(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        # Register one valid + one ghost; without --prune both should remain.
+        _register_project(urika_env, "real")
+        ghost = Path(urika_env["URIKA_PROJECTS_DIR"]) / "ghost"
+        _registry_for(urika_env).register("ghost", ghost)
+
+        result = runner.invoke(cli, ["list"], env=urika_env)
+
+        assert result.exit_code == 0, result.output
+        assert "real" in result.output
+        assert "ghost" in result.output
+        # Registry untouched
+        reg = _registry_for(urika_env)
+        assert reg.get("real") is not None
+        assert reg.get("ghost") is not None

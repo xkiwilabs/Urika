@@ -22,9 +22,37 @@ from urika.core.registry import ProjectRegistry
 
 @cli.command("list")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def list_cmd(json_output: bool) -> None:
+@click.option(
+    "--prune",
+    is_flag=True,
+    help="Unregister projects whose folders are missing before listing.",
+)
+def list_cmd(json_output: bool, prune: bool) -> None:
     """List all registered projects."""
     registry = ProjectRegistry()
+
+    if prune:
+        # Walk the registry and trash any entry whose path no longer exists.
+        # ``trash_project`` falls into its registry-only branch when the
+        # folder is gone, so this is silent and side-effect-free on disk.
+        from urika.core.project_delete import trash_project
+
+        stale = sorted(
+            name for name, path in registry.list_all().items() if not path.exists()
+        )
+        for name in stale:
+            trash_project(name)
+
+        if stale:
+            count = len(stale)
+            word = "entry" if count == 1 else "entries"
+            click.echo(f"Pruned {count} stale {word}: {', '.join(stale)}")
+        else:
+            click.echo("No stale entries.")
+
+        # Re-load registry so subsequent listing reflects the pruning.
+        registry = ProjectRegistry()
+
     projects = registry.list_all()
 
     if json_output:
