@@ -82,6 +82,40 @@ def get_default_privacy() -> dict[str, Any]:
     return {"endpoints": privacy.get("endpoints", {})}
 
 
+def get_named_endpoints() -> list[dict[str, str]]:
+    """Return every named endpoint defined in ``~/.urika/settings.toml``.
+
+    Each element has shape ``{"name", "base_url", "api_key_env",
+    "default_model"}``.  The ``default_model`` field is read from an
+    optional ``[privacy.endpoints.<name>].default_model`` key — surfaced
+    here so the dashboard can edit it; the runtime loader's per-endpoint
+    fallback semantics live elsewhere.
+
+    Reads ``[privacy.endpoints.<name>]``.  Order is sorted by name for
+    deterministic UI rendering.  Returns ``[]`` when the settings file
+    is missing, unparseable, or has no endpoints block.
+    """
+    settings = load_settings()
+    privacy = settings.get("privacy", {})
+    endpoints = privacy.get("endpoints", {})
+    if not isinstance(endpoints, dict):
+        return []
+    out: list[dict[str, str]] = []
+    for name in sorted(endpoints):
+        cfg = endpoints[name]
+        if not isinstance(cfg, dict):
+            continue
+        out.append(
+            {
+                "name": name,
+                "base_url": cfg.get("base_url", ""),
+                "api_key_env": cfg.get("api_key_env", ""),
+                "default_model": cfg.get("default_model", ""),
+            }
+        )
+    return out
+
+
 def get_default_runtime() -> dict[str, Any]:
     """Get default runtime settings for new projects."""
     settings = load_settings()

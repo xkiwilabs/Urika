@@ -129,3 +129,103 @@ def test_get_default_privacy_no_file_returns_empty_endpoints(urika_home):
     out = get_default_privacy()
     assert "mode" not in out
     assert out["endpoints"] == {}
+
+
+# ---- get_named_endpoints ---------------------------------------------------
+
+
+def test_get_named_endpoints_returns_empty_when_no_file(urika_home):
+    """No settings file → ``get_named_endpoints`` returns ``[]``."""
+    from urika.core.settings import get_named_endpoints
+
+    assert get_named_endpoints() == []
+
+
+def test_get_named_endpoints_returns_empty_when_no_endpoints_block(urika_home):
+    """Settings file without ``[privacy.endpoints]`` → ``[]``."""
+    from urika.core.settings import get_named_endpoints, save_settings
+
+    save_settings({"preferences": {"audience": "expert"}})
+    assert get_named_endpoints() == []
+
+
+def test_get_named_endpoints_returns_legacy_single_private_with_empty_default_model(
+    urika_home,
+):
+    """Old single-endpoint setup (``[privacy.endpoints.private]`` with
+    just ``base_url`` + ``api_key_env``) round-trips with an empty
+    ``default_model`` field."""
+    from urika.core.settings import get_named_endpoints, save_settings
+
+    save_settings(
+        {
+            "privacy": {
+                "endpoints": {
+                    "private": {
+                        "base_url": "http://localhost:11434",
+                        "api_key_env": "",
+                    }
+                }
+            }
+        }
+    )
+    eps = get_named_endpoints()
+    assert len(eps) == 1
+    ep = eps[0]
+    assert ep["name"] == "private"
+    assert ep["base_url"] == "http://localhost:11434"
+    assert ep["api_key_env"] == ""
+    assert ep["default_model"] == ""
+
+
+def test_get_named_endpoints_returns_multiple_sorted_by_name(urika_home):
+    """Multiple endpoints come back sorted alphabetically by name with
+    every field surfaced."""
+    from urika.core.settings import get_named_endpoints, save_settings
+
+    save_settings(
+        {
+            "privacy": {
+                "endpoints": {
+                    "private": {
+                        "base_url": "http://localhost:11434",
+                        "api_key_env": "",
+                        "default_model": "qwen3:14b",
+                    },
+                    "ollama": {
+                        "base_url": "http://localhost:11435",
+                        "api_key_env": "",
+                        "default_model": "llama3:8b",
+                    },
+                }
+            }
+        }
+    )
+    eps = get_named_endpoints()
+    assert [e["name"] for e in eps] == ["ollama", "private"]
+    ollama = eps[0]
+    assert ollama["base_url"] == "http://localhost:11435"
+    assert ollama["default_model"] == "llama3:8b"
+    private = eps[1]
+    assert private["base_url"] == "http://localhost:11434"
+    assert private["default_model"] == "qwen3:14b"
+
+
+def test_get_named_endpoints_skips_non_dict_entries(urika_home, monkeypatch):
+    """A malformed (non-dict) endpoint value is silently skipped."""
+    from urika.core import settings as settings_mod
+
+    monkeypatch.setattr(
+        settings_mod,
+        "load_settings",
+        lambda: {
+            "privacy": {
+                "endpoints": {
+                    "ok": {"base_url": "http://x", "api_key_env": ""},
+                    "bad": "not-a-dict",
+                }
+            }
+        },
+    )
+    eps = settings_mod.get_named_endpoints()
+    assert [e["name"] for e in eps] == ["ok"]
