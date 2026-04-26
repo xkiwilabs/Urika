@@ -91,45 +91,97 @@
       </div>
     </div>
 
-    {# ---- Models tab --------------------------------------------------- #}
-    <div class="tab-panel" x-show="active === 'models'" x-cloak>
+    {# ---- Models tab — per-mode per-agent grids ----------------------- #}
+    {# A mode dropdown swaps which grid is visible. Each grid carries its
+       own default-model field + per-agent rows. Project Models tabs
+       inherit from these per-mode defaults via the loader's per-mode
+       fallback. #}
+    <div class="tab-panel" x-show="active === 'models'" x-cloak
+         x-data="{ mode: 'open' }">
       <div class="form-row">
-        <label for="runtime_model">Default runtime model</label>
-        <input type="text" id="runtime_model" name="runtime_model"
-               value="{{ runtime_model }}"
-               placeholder="claude-opus-4-7">
-        <span class="form-help">Sets <code>[runtime].model</code>. Overrides the privacy block's model if set.</span>
+        <label for="models_mode_picker">Configure defaults for mode</label>
+        <select id="models_mode_picker" x-model="mode">
+          <option value="open">open</option>
+          <option value="private">private</option>
+          <option value="hybrid">hybrid</option>
+        </select>
+        <span class="form-help">
+          Each mode has its own default model + per-agent grid. Projects
+          inherit the matching mode's grid at runtime.
+        </span>
       </div>
 
-      <table class="models-grid">
-        <thead>
-          <tr>
-            <th>Agent</th>
-            <th>Model</th>
-            <th>Endpoint</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in model_rows %}
-          <tr>
-            <td><code>{{ row.agent }}</code></td>
-            <td>
-              <input type="text" name="model[{{ row.agent }}]"
-                     value="{{ row.model }}" placeholder="(inherit)">
-            </td>
-            <td>
-              <select name="endpoint[{{ row.agent }}]">
-                {% for choice in endpoint_choices %}
-                  <option value="{{ choice }}"
-                          {% if choice == row.endpoint %}selected{% endif %}>{{ choice }}</option>
-                {% endfor %}
-              </select>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.</span>
+      {% for mode_name in ["open", "private", "hybrid"] %}
+        {% set grid = mode_grids[mode_name] %}
+        <div class="privacy-block" x-show="mode === '{{ mode_name }}'" x-cloak>
+          <h4>{{ mode_name|capitalize }} mode</h4>
+
+          <div class="form-row">
+            <label for="runtime_modes_{{ mode_name }}_model">
+              Default model for {{ mode_name }} mode
+            </label>
+            <input type="text"
+                   id="runtime_modes_{{ mode_name }}_model"
+                   name="runtime_modes_{{ mode_name }}_model"
+                   value="{{ grid.default_model }}"
+                   {% if mode_name == "private" %}
+                   placeholder="(set local model name, e.g. qwen3:14b)"
+                   {% else %}
+                   placeholder="claude-opus-4-7"
+                   {% endif %}>
+          </div>
+
+          <table class="models-grid">
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Model</th>
+                <th>Endpoint</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in grid.rows %}
+              <tr>
+                <td><code>{{ row.agent }}</code></td>
+                <td>
+                  <input type="text"
+                         name="runtime_modes_{{ mode_name }}_models[{{ row.agent }}][model]"
+                         value="{{ row.model }}"
+                         placeholder="(use mode default)">
+                </td>
+                <td>
+                  <select name="runtime_modes_{{ mode_name }}_models[{{ row.agent }}][endpoint]">
+                    {% if mode_name == "open" %}
+                      {# Open mode: agent can route to either endpoint. #}
+                      <option value="open" {% if row.endpoint == "open" %}selected{% endif %}>open</option>
+                      <option value="private" {% if row.endpoint == "private" %}selected{% endif %}>private</option>
+                    {% elif mode_name == "private" %}
+                      {# Private mode: cloud is hidden. #}
+                      <option value="private" selected>private</option>
+                    {% else %}
+                      {# Hybrid: data_agent + tool_builder are private-only;
+                         everyone else can choose. #}
+                      {% if row.agent in ["data_agent", "tool_builder"] %}
+                        <option value="private" selected>private</option>
+                      {% else %}
+                        <option value="open" {% if row.endpoint == "open" %}selected{% endif %}>open</option>
+                        <option value="private" {% if row.endpoint == "private" %}selected{% endif %}>private</option>
+                      {% endif %}
+                    {% endif %}
+                  </select>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+
+      <span class="form-help">
+        Defaults are written to <code>[runtime.modes.&lt;mode&gt;]</code>
+        and per-agent overrides to
+        <code>[runtime.modes.&lt;mode&gt;.models.&lt;agent&gt;]</code>.
+      </span>
     </div>
 
     {# ---- Preferences tab --------------------------------------------- #}

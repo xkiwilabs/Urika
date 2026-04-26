@@ -619,12 +619,92 @@ async def api_global_settings_put(request: Request):
     if not privacy:
         s.pop("privacy", None)
 
-    # ---- Models tab: top-level runtime_model + per-agent overrides ----
+    # ---- Models tab: per-mode per-agent grids ------------------------
+    # The form posts:
+    #   runtime_modes_<mode>_model                    — default for mode
+    #   runtime_modes_<mode>_models[<agent>][model]   — per-agent model
+    #   runtime_modes_<mode>_models[<agent>][endpoint] — per-agent endpoint
+    #
+    # We parse each mode independently and write to
+    #   [runtime.modes.<mode>].model
+    #   [runtime.modes.<mode>.models.<agent>] = { model, endpoint }
+    runtime_modes = runtime.setdefault("modes", {})
+
+    for mode_name in ("open", "private", "hybrid"):
+        default_field = f"runtime_modes_{mode_name}_model"
+        if default_field not in form:
+            # Mode block wasn't part of this submission — leave it alone.
+            continue
+
+        default_val = (form.get(default_field) or "").strip()
+        mode_cfg = runtime_modes.setdefault(mode_name, {})
+
+        if default_val:
+            mode_cfg["model"] = default_val
+        elif "model" in mode_cfg:
+            del mode_cfg["model"]
+
+        # Per-agent rows for this mode. Walk the form once and pick out
+        # the bracketed names that belong here.
+        prefix = f"runtime_modes_{mode_name}_models["
+        new_per_agent: dict[str, dict[str, str]] = {}
+        for key in form.keys():
+            if not key.startswith(prefix) or not key.endswith("][model]"):
+                continue
+            # Extract <agent> from runtime_modes_<mode>_models[<agent>][model]
+            agent = key[len(prefix) : -len("][model]")]
+            if agent not in _KNOWN_AGENTS:
+                continue
+            model_val = (form.get(key) or "").strip()
+            endpoint_val = (
+                form.get(f"{prefix}{agent}][endpoint]") or ""
+            ).strip()
+
+            # Server-side enforcement of mode-specific endpoint constraints.
+            # Private mode: all agents are private-only.
+            # Hybrid mode: data_agent + tool_builder are private-only.
+            # Open mode: any endpoint is fine.
+            if mode_name == "private" and endpoint_val == "open":
+                # Silently coerce to private — UI shouldn't allow this.
+                endpoint_val = "private"
+            if mode_name == "hybrid" and agent in {"data_agent", "tool_builder"}:
+                endpoint_val = "private"
+
+            if endpoint_val and endpoint_val not in _VALID_ENDPOINTS:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"runtime_modes_{mode_name}_models[{agent}][endpoint]"
+                        f" must be one of {sorted(_VALID_ENDPOINTS)}"
+                    ),
+                )
+
+            row: dict[str, str] = {}
+            if model_val:
+                row["model"] = model_val
+            if endpoint_val:
+                row["endpoint"] = endpoint_val
+            if row:
+                new_per_agent[agent] = row
+
+        if new_per_agent:
+            mode_cfg["models"] = new_per_agent
+        elif "models" in mode_cfg:
+            del mode_cfg["models"]
+
+        if not mode_cfg:
+            del runtime_modes[mode_name]
+
+    # Legacy bare runtime_model field (kept for back-compat). Project
+    # urika.toml still uses [runtime].model, so this lets the dashboard
+    # configure that knob directly via the same form.
     runtime_model_field = (form.get("runtime_model") or "").strip()
     if runtime_model_field:
-        # Explicit override of the privacy-block-computed model.
         runtime["model"] = runtime_model_field
 
+    # Legacy bare model[<agent>] / endpoint[<agent>] (used by tests
+    # written before the per-mode redesign). Still write to the flat
+    # [runtime.models.<agent>] table for back-compat.
     for key in form.keys():
         if key.startswith("model[") and key.endswith("]"):
             agent = key[len("model[") : -1]
@@ -632,7 +712,7 @@ async def api_global_settings_put(request: Request):
                 continue
             model_val = (form.get(key) or "").strip()
             endpoint_val = (form.get(f"endpoint[{agent}]") or "").strip()
-            row: dict[str, str] = {}
+            row = {}
             if model_val:
                 row["model"] = model_val
             if endpoint_val and endpoint_val != "inherit":
@@ -647,14 +727,14 @@ async def api_global_settings_put(request: Request):
                 row["endpoint"] = endpoint_val
             if row:
                 runtime_models[agent] = row
-            elif agent in runtime_models and agent != "data_agent":
-                # User cleared the row — drop the override (but don't blow
-                # away the data_agent row we just wrote in hybrid mode).
+            elif agent in runtime_models:
                 del runtime_models[agent]
 
     # Clean up empty containers so the TOML stays tidy.
     if not runtime_models:
         runtime.pop("models", None)
+    if not runtime_modes:
+        runtime.pop("modes", None)
     if not runtime:
         s.pop("runtime", None)
 

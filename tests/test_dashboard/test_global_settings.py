@@ -53,25 +53,105 @@ def test_global_settings_privacy_tab_endpoint_only(settings_client):
     assert 'name="privacy_hybrid_private_model"' not in body
 
 
-def test_global_settings_models_tab_has_per_agent_rows(settings_client):
-    """Models tab renders a row per known agent + a top-level model field."""
+def test_global_settings_models_tab_has_per_mode_grids(settings_client):
+    """Models tab renders three grids (open / private / hybrid), each
+    with a default-model field + per-agent rows.  Form names follow the
+    new bracketed scheme: ``runtime_modes_<mode>_model`` and
+    ``runtime_modes_<mode>_models[<agent>][model|endpoint]``."""
     body = settings_client.get("/settings").text
-    assert 'name="runtime_model"' in body
-    for agent in (
-        "planning_agent",
-        "task_agent",
-        "evaluator",
-        "advisor_agent",
-        "tool_builder",
-        "literature_agent",
-        "presentation_agent",
-        "report_agent",
-        "project_builder",
-        "data_agent",
-        "finalizer",
-    ):
-        assert f'name="model[{agent}]"' in body
-        assert f'name="endpoint[{agent}]"' in body
+    # Mode picker (UI-only; not posted to the server).
+    assert 'id="models_mode_picker"' in body
+    # One default-model field per mode.
+    for mode_name in ("open", "private", "hybrid"):
+        assert f'name="runtime_modes_{mode_name}_model"' in body
+    # Per-agent rows under each mode use the bracketed naming convention.
+    for mode_name in ("open", "private", "hybrid"):
+        for agent in (
+            "planning_agent",
+            "task_agent",
+            "evaluator",
+            "advisor_agent",
+            "tool_builder",
+            "literature_agent",
+            "presentation_agent",
+            "report_agent",
+            "project_builder",
+            "data_agent",
+            "finalizer",
+        ):
+            assert (
+                f'name="runtime_modes_{mode_name}_models[{agent}][model]"'
+                in body
+            )
+            assert (
+                f'name="runtime_modes_{mode_name}_models[{agent}][endpoint]"'
+                in body
+            )
+
+
+def test_global_settings_models_tab_hybrid_forces_private_for_data_and_tool_builder(
+    settings_client,
+):
+    """In the hybrid grid, data_agent + tool_builder rows offer ONLY the
+    'private' endpoint option (the cloud option is hidden)."""
+    import re
+
+    body = settings_client.get("/settings").text
+    # data_agent's hybrid endpoint <select> must contain 'private' but NOT
+    # an 'open' option.
+    for forced_agent in ("data_agent", "tool_builder"):
+        m = re.search(
+            r'name="runtime_modes_hybrid_models\['
+            + forced_agent
+            + r'\]\[endpoint\]".*?</select>',
+            body,
+            flags=re.DOTALL,
+        )
+        assert m is not None, f"missing endpoint select for {forced_agent}"
+        block = m.group(0)
+        assert 'value="private"' in block
+        assert 'value="open"' not in block
+
+
+def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
+    settings_client,
+):
+    """In the private grid, every agent's endpoint dropdown offers ONLY
+    'private' — the cloud option is hidden."""
+    import re
+
+    body = settings_client.get("/settings").text
+    for agent in ("task_agent", "evaluator", "advisor_agent"):
+        m = re.search(
+            r'name="runtime_modes_private_models\['
+            + agent
+            + r'\]\[endpoint\]".*?</select>',
+            body,
+            flags=re.DOTALL,
+        )
+        assert m is not None
+        block = m.group(0)
+        assert 'value="private"' in block
+        assert 'value="open"' not in block
+
+
+def test_global_settings_models_tab_open_mode_offers_both_endpoints(
+    settings_client,
+):
+    """Open mode's per-agent endpoint dropdown offers both 'open' and
+    'private'."""
+    import re
+
+    body = settings_client.get("/settings").text
+    m = re.search(
+        r'name="runtime_modes_open_models\[task_agent\]\[endpoint\]".*?</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    block = m.group(0)
+    assert 'value="open"' in block
+    assert 'value="private"' in block
 
 
 def test_global_settings_preferences_tab_has_expected_fields(settings_client):
@@ -254,6 +334,128 @@ def test_global_settings_put_runtime_model_override_writes_runtime_model(
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
     # runtime_model overrides whatever the privacy block computed
     assert s["runtime"]["model"] == "claude-haiku-4-5"
+
+
+# ---- Per-mode model defaults round-trip ------------------------------------
+
+
+def test_global_settings_put_per_mode_default_model_writes_runtime_modes(
+    settings_client, tmp_path
+):
+    """``runtime_modes_<mode>_model`` populates
+    ``[runtime.modes.<mode>].model``."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "runtime_modes_open_model": "claude-opus-4-7",
+            "runtime_modes_private_model": "qwen3:14b",
+            "runtime_modes_hybrid_model": "claude-sonnet-4-5",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert s["runtime"]["modes"]["open"]["model"] == "claude-opus-4-7"
+    assert s["runtime"]["modes"]["private"]["model"] == "qwen3:14b"
+    assert s["runtime"]["modes"]["hybrid"]["model"] == "claude-sonnet-4-5"
+
+
+def test_global_settings_put_per_mode_per_agent_writes_models_subtable(
+    settings_client, tmp_path
+):
+    """``runtime_modes_<mode>_models[<agent>][model|endpoint]`` populates
+    ``[runtime.modes.<mode>.models.<agent>]``."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "runtime_modes_open_model": "claude-opus-4-7",
+            "runtime_modes_open_models[task_agent][model]": "claude-haiku-4-5",
+            "runtime_modes_open_models[task_agent][endpoint]": "open",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert (
+        s["runtime"]["modes"]["open"]["models"]["task_agent"]["model"]
+        == "claude-haiku-4-5"
+    )
+    assert (
+        s["runtime"]["modes"]["open"]["models"]["task_agent"]["endpoint"]
+        == "open"
+    )
+
+
+def test_global_settings_put_hybrid_forces_data_agent_private(
+    settings_client, tmp_path
+):
+    """A hybrid-mode submission that tries endpoint=open for data_agent
+    is silently coerced to endpoint=private — server-side enforcement of
+    the forced-private rule."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "runtime_modes_hybrid_model": "claude-sonnet-4-5",
+            "runtime_modes_hybrid_models[data_agent][model]": "qwen3:14b",
+            # UI shouldn't allow this, but defensive enforcement matters.
+            "runtime_modes_hybrid_models[data_agent][endpoint]": "open",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert (
+        s["runtime"]["modes"]["hybrid"]["models"]["data_agent"]["endpoint"]
+        == "private"
+    )
+
+
+def test_global_settings_put_hybrid_forces_tool_builder_private(
+    settings_client, tmp_path
+):
+    """tool_builder joins data_agent in the forced-private set."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "runtime_modes_hybrid_model": "claude-sonnet-4-5",
+            "runtime_modes_hybrid_models[tool_builder][model]": "qwen3:14b",
+            "runtime_modes_hybrid_models[tool_builder][endpoint]": "open",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert (
+        s["runtime"]["modes"]["hybrid"]["models"]["tool_builder"]["endpoint"]
+        == "private"
+    )
+
+
+def test_global_settings_put_private_mode_coerces_open_endpoint_to_private(
+    settings_client, tmp_path
+):
+    """Private mode hides the cloud option in the UI; the API enforces
+    the same rule (any endpoint=open submission is coerced)."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "runtime_modes_private_model": "qwen3:14b",
+            "runtime_modes_private_models[task_agent][model]": "qwen3-coder",
+            "runtime_modes_private_models[task_agent][endpoint]": "open",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert (
+        s["runtime"]["modes"]["private"]["models"]["task_agent"]["endpoint"]
+        == "private"
+    )
 
 
 # ---- Preferences tab round-trip --------------------------------------------
