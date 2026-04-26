@@ -164,6 +164,83 @@ class TestNewCommand:
         )
         assert result.exit_code != 0
 
+    def test_json_private_mode_without_endpoint_aborts(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """``urika new --json --privacy-mode private`` with no global
+        endpoint configured must exit non-zero and emit a JSON error
+        rather than silently saving an unrunnable project."""
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "priv-proj",
+                "-q",
+                "Q?",
+                "-m",
+                "exploratory",
+                "--privacy-mode",
+                "private",
+                "--json",
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code != 0
+        # Output is a JSON error blob carrying the fix instruction.
+        assert "private endpoint" in result.output.lower() or "endpoint" in result.output.lower()
+
+    def test_json_hybrid_mode_without_endpoint_aborts(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """Hybrid mode also requires a private endpoint — the
+        forced-private agents (data_agent / tool_builder) need it."""
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "hyb-proj",
+                "-q",
+                "Q?",
+                "-m",
+                "exploratory",
+                "--privacy-mode",
+                "hybrid",
+                "--json",
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code != 0
+
+    def test_json_private_mode_with_global_endpoint_succeeds(
+        self, runner: CliRunner, urika_env: dict[str, str], tmp_path: Path
+    ) -> None:
+        """When a global private endpoint is configured (via
+        ~/.urika/settings.toml), --json + --privacy-mode private must
+        succeed."""
+        # Seed a global endpoint
+        settings = Path(urika_env["URIKA_HOME"]) / "settings.toml"
+        settings.write_text(
+            "[privacy.endpoints.private]\n"
+            'base_url = "http://localhost:11434"\n',
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "priv-ok",
+                "-q",
+                "Q?",
+                "-m",
+                "exploratory",
+                "--privacy-mode",
+                "private",
+                "--json",
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+
 
 class TestListCommand:
     def test_empty(self, runner: CliRunner, urika_env: dict[str, str]) -> None:

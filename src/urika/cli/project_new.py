@@ -37,6 +37,17 @@ from urika.core.registry import ProjectRegistry
     "--data", "data_path", default=None, help="Path to data file or directory."
 )
 @click.option("--description", default=None, help="Project description.")
+@click.option(
+    "--privacy-mode",
+    "privacy_mode_flag",
+    default=None,
+    type=click.Choice(["open", "private", "hybrid"]),
+    help=(
+        "Data privacy mode (open/private/hybrid). In --json mode this is "
+        "the only way to pick non-open; private/hybrid additionally "
+        "require a configured private endpoint in global settings."
+    ),
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def new(
     name: str | None,
@@ -44,6 +55,7 @@ def new(
     mode: str | None,
     data_path: str | None,
     description: str | None,
+    privacy_mode_flag: str | None = None,
     json_output: bool = False,
 ) -> None:
     """Create a new project."""
@@ -95,9 +107,27 @@ def new(
     _saved_url = _saved_private_ep.get("base_url", "")
     _saved_key_env = _saved_private_ep.get("api_key_env", "")
 
-    # In JSON mode, skip all interactive prompts — pick least-restrictive mode
+    # In JSON mode, skip all interactive prompts. The default privacy
+    # mode is ``open`` (cloud); the user may opt into private/hybrid via
+    # --privacy-mode, in which case we must have a configured private
+    # endpoint in globals or we abort here rather than letting the
+    # runtime fail at first agent run (post-Commit 1).
     if json_output:
-        privacy_mode_val = "open"
+        privacy_mode_val = privacy_mode_flag or "open"
+        if privacy_mode_val in ("private", "hybrid"):
+            saved_url_str = (_saved_url or "").strip()
+            if not saved_url_str:
+                from urika.cli_helpers import output_json_error
+
+                output_json_error(
+                    f"Privacy mode '{privacy_mode_val}' requires a "
+                    f"configured private endpoint, but no "
+                    f"[privacy.endpoints.private].base_url is set in "
+                    f"global settings. Run `urika config` (or use the "
+                    f"dashboard's Privacy tab) before creating a "
+                    f"private/hybrid project in --json mode."
+                )
+                raise SystemExit(1)
         private_endpoint_url = _saved_url
         private_endpoint_key_env = _saved_key_env
         if data_path is not None:
@@ -143,7 +173,17 @@ def new(
                 private_endpoint_url = interactive_prompt(
                     "Private endpoint URL",
                     default=_url_default,
+                    required=True,
                 )
+                # Defensive — if interactive_prompt somehow returned an
+                # empty string (e.g. EOF on piped stdin with no
+                # default), don't proceed with a blank base_url.
+                if not (private_endpoint_url or "").strip():
+                    print_error(
+                        "Private endpoint URL is required for "
+                        f"{privacy_mode_val} mode."
+                    )
+                    raise click.Abort()
                 private_endpoint_key_env = interactive_prompt(
                     "API key env var (empty for Ollama)",
                     default=_key_default,
