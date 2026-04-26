@@ -1,0 +1,115 @@
+# Future Feature Priorities — Status Review (2026-04-27)
+
+Captured during smoke testing of the Phase B running-ops + log streaming
+work. Ranks four candidate features by `value × (1 / cost)` and pins
+where the code stands today so we can come back to plan each one fully
+without re-doing the audit.
+
+Order to pick up later:
+
+1. **Notifications polish** — smallest, validates work already shipped
+2. **Orchestrator memory polish** — small, finishes an 80%-built feature
+3. **Project memory + agent instructions** — biggest scope, biggest unlocked value, needs its own plan first
+4. **Agent runtime abstraction** — defer; no current user pain
+
+---
+
+## 1. Orchestrator memory + `/resume` — mostly built, edges remain
+
+**What's there:**
+
+- `src/urika/core/orchestrator_sessions.py` — full save/load/list/prune/get_most_recent/delete/create_new_session API (~150 lines).
+- Sessions persist to `<project>/.urika/orchestrator-sessions/<id>.json`.
+- `/resume` and `/resume-session` slash commands in `src/urika/repl/commands_session.py`.
+- `cmd_project` in `commands.py:200` already detects recent sessions on project switch and tells the user `Type /resume-session to reload`.
+- `src/urika/repl/main.py:545` calls `save_session()` after orchestrator turns.
+
+**What's missing or thin:**
+
+- **Dashboard surface:** zero. No `/projects/<n>/sessions` page, no session list, no resume button. CLI/TUI only.
+- **Auto-save granularity:** saves at certain main-loop checkpoints; could miss a turn if REPL exits between save points.
+- **Pruning:** `prune_old_sessions(keep=20)` exists but isn't called automatically — sessions accumulate forever until someone calls it.
+- **Session previews:** `list_sessions` returns metadata only; no "what did we last talk about" preview.
+- **No tests** for the dashboard side because there's no dashboard side.
+
+**Effort to done:** ~1–2 days. Add a session-list page + Resume button to the dashboard (mirror the advisor history page). Hook auto-prune into `save_session`. Add a 1–2 line preview to `list_sessions`.
+
+---
+
+## 2. Project memory + agent instructions — basically not started
+
+**What's there:**
+
+- `src/urika/core/advisor_memory.py` — narrow scope, advisor-only rolling history.
+- The instructions textarea in modals is passed at spawn time only, never persisted.
+
+**What's missing (almost everything):**
+
+- No persistent store for "instructions ever given to this project".
+- No agent has memory they read at run start — every run begins cold with system prompt + project files.
+- No summarization of long histories beyond what `advisor_memory.py` does locally.
+- No cross-agent memory (planning agent can't see what the user told the task agent last week).
+- No "this project has these standing instructions" file that all agents read.
+
+**Why this is the biggest gap:** Every other feature works around it. Users repeat instructions; agents make contradictory recommendations across runs; "what did the advisor say last time" is lost. The model is the global Claude Code memory directory — Urika needs the project-scoped equivalent.
+
+**Effort to done:** ~1 week for v1. Design needed first:
+- Where memory lives (`<project>/memory/MEMORY.md` mirroring CLAUDE.md? `memory/*.md` per topic?)
+- How agents read it (system-prompt injection? tool call? both?)
+- Categories (`user`, `feedback`, `instructions`, `decisions`)
+- Lifecycle (who writes? when does it auto-summarize? who curates?)
+
+This is its own plan. Recommend writing `dev/plans/2026-XX-XX-project-memory.md` before any code.
+
+---
+
+## 3. Agent runtime abstraction — scaffold in, only one backend
+
+**What's there:**
+
+- `src/urika/agents/runner.py` — `AgentRunner` ABC + `get_runner(backend="claude")` factory.
+- `src/urika/agents/adapters/claude_sdk.py` — the only implemented adapter.
+- The factory accepts a `backend` arg, so the interface is positioned for swap-in.
+
+**What's missing:**
+
+- **No second adapter exists.** Codex / Google ADK / Pi adapters are theoretical. Without a second backend, the abstraction's correctness is untested — the first port typically reveals what's hardcoded in the supposedly-abstract base class.
+- No config plumbing for "pick a backend" in `urika config` or `~/.urika/settings.toml`.
+- No per-agent backend override.
+- The Anthropic OAuth block (Feb 2026) referenced in `project_agent_runtime_abstraction.md` makes the "spawn `claude` CLI" path the practical default — but that's already what `claude_sdk.py` does, so the constraint isn't binding right now.
+
+**Why deprioritize:** No immediate user pain. Not blocked by the Claude SDK today. The abstraction's value is *future optionality*, not a feature you can demo. Doing it now is over-investment unless a specific second-backend need emerges.
+
+**Effort to done:** ~2 weeks. Write a Pi-runtime or Codex adapter (forces the abstraction to be actually abstract), add backend selection to `urika config`, plumb through. Skip if no real need.
+
+---
+
+## 4. Pause / notifications polish — built but unverified
+
+**What's there:**
+
+- `src/urika/orchestrator/pause.py` — full ESC-to-pause keypress listener, daemon thread, cross-platform (Unix `cbreak` + Windows `msvcrt`).
+- `src/urika/notifications/` — bus + 3 channels (email, slack, telegram) + events + queries.
+- `KeyboardInterrupt` handling in REPL main loop.
+
+**What's missing or unverified:**
+
+- Per `project_pause_notifications.md`: dev-branch-only until user has fully tested. Feature exists; trust isn't validated.
+- No automated test of the actual ESC-press → pause-acknowledgment flow (hard to test cross-platform daemon-thread keypress listeners).
+- Notification channels likely need real-world send tests (do Slack webhooks actually fire? does email handle SMTP auth correctly under different relay configs?).
+- No dashboard surface for notifications status / test-send button — would catch config issues without firing a real run.
+
+**Effort to done:** ~3 days. (a) Add a "Send test" button on the dashboard Settings → Notifications tab (POST endpoint fires one test notification through each enabled channel, reports success/failure inline). (b) Manual smoke pass: run an experiment, hit ESC, verify graceful pause; configure each channel with real creds, fire a test send, fix anything broken. (c) Document the pause UX in `docs/17-notifications.md`. Then graduate from dev-only.
+
+---
+
+## Priority rationale
+
+| Priority | Feature | Effort | Confidence | Gates |
+|----------|---------|--------|------------|-------|
+| 1 | Notifications polish | ~3 days | high | removes "dev-only" flag from existing code |
+| 2 | Orchestrator memory polish | ~1–2 days | high | finishes 80%-built feature |
+| 3 | Project memory + instructions | ~1 week (after plan) | medium | unlocks cross-run continuity |
+| 4 | Runtime abstraction | ~2 weeks | low | no current pain |
+
+Picking #1 next gives a quick win that retires a feature flag. #2 follows naturally and tightens loose ends. #3 deserves a dedicated planning phase before any code lands. #4 stays parked.
