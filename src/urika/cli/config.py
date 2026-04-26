@@ -289,6 +289,20 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
 
     # ── Private mode: configure endpoint + model ──
     elif mode == "private":
+        # Project-scope: if globals already define a usable private
+        # endpoint, the project doesn't need its own copy — leaving the
+        # URL blank tells the wizard "use the inherited one". Drop
+        # required=True in that case so blank input is a valid answer.
+        # Globals-scope: the wizard is configuring the global endpoint
+        # itself, so a URL is mandatory regardless.
+        from urika.core.settings import get_named_endpoints
+
+        _has_global_ep = any(
+            (ep.get("base_url") or "").strip()
+            for ep in get_named_endpoints()
+        )
+        _url_required = not (is_project and _has_global_ep)
+
         click.echo()
         ep_type = interactive_numbered(
             "  Private endpoint type:",
@@ -308,35 +322,45 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             from urika.cli_helpers import interactive_prompt
 
             ep_url = interactive_prompt(
-                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)",
-                required=True,
+                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)"
+                + (" [blank = inherit from globals]" if not _url_required else ""),
+                required=_url_required,
             )
         else:
             from urika.cli_helpers import interactive_prompt
 
-            ep_url = interactive_prompt("  Server URL", required=True)
-
-        # Defensive: even after required=True a blank URL would leave the
-        # project unable to run anything privacy-sensitive (the runtime
-        # would raise MissingPrivateEndpointError). Cancel the wizard so
-        # the user comes back when they have a URL.
-        if not (ep_url or "").strip():
-            raise UserCancelled()
-
-        p = settings.setdefault("privacy", {})
-        ep = p.setdefault("endpoints", {}).setdefault("private", {})
-        ep["base_url"] = ep_url
-
-        # API key only for remote servers (not needed for Ollama/LM Studio)
-        if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
-            from urika.cli_helpers import interactive_prompt
-
-            key_env = interactive_prompt(
-                "  API key env var NAME, not the key itself (e.g. INFERENCE_HUB_KEY)",
-                default="",
+            ep_url = interactive_prompt(
+                "  Server URL"
+                + (" [blank = inherit from globals]" if not _url_required else ""),
+                required=_url_required,
             )
-            if key_env:
-                ep["api_key_env"] = key_env
+
+        # When the user typed a URL we honor it as a project-local
+        # override.  When blank AND globals have one, fall through —
+        # the runtime loader will inherit the global endpoint
+        # (commit 1).  Without globals, refuse to save a blank URL
+        # (runtime would raise MissingPrivateEndpointError).
+        ep_url = (ep_url or "").strip()
+        if not ep_url:
+            if not _has_global_ep:
+                raise UserCancelled()
+            # Blank URL + globals available: skip endpoint write entirely.
+            ep = None
+        else:
+            p = settings.setdefault("privacy", {})
+            ep = p.setdefault("endpoints", {}).setdefault("private", {})
+            ep["base_url"] = ep_url
+
+            # API key only for remote servers (not Ollama/LM Studio)
+            if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
+                from urika.cli_helpers import interactive_prompt
+
+                key_env = interactive_prompt(
+                    "  API key env var NAME, not the key itself (e.g. INFERENCE_HUB_KEY)",
+                    default="",
+                )
+                if key_env:
+                    ep["api_key_env"] = key_env
 
         from urika.cli_helpers import interactive_prompt
         from urika.core.settings import load_settings
@@ -357,7 +381,10 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             required=True,
         )
         _set_default_model(model_name)
-        print_success(f"Mode: private · Endpoint: {ep_url} · Model: {model_name}")
+        _ep_label = ep_url if ep_url else "(inherits from globals)"
+        print_success(
+            f"Mode: private · Endpoint: {_ep_label} · Model: {model_name}"
+        )
 
     # ── Hybrid mode: cloud model + private endpoint for data agents ──
     elif mode == "hybrid":
@@ -371,6 +398,18 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         )
         cloud_model = choice.split(" —")[0].strip()
         _set_default_model(cloud_model)
+
+        # Project-scope: if globals already define a usable private
+        # endpoint, the project doesn't need its own copy — leaving the
+        # URL blank tells the wizard "use the inherited one". Drop
+        # required=True in that case.
+        from urika.core.settings import get_named_endpoints
+
+        _has_global_ep = any(
+            (ep.get("base_url") or "").strip()
+            for ep in get_named_endpoints()
+        )
+        _url_required = not (is_project and _has_global_ep)
 
         # Private endpoint for data agents
         click.echo()
@@ -393,34 +432,40 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             from urika.cli_helpers import interactive_prompt
 
             ep_url = interactive_prompt(
-                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)",
-                required=True,
+                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)"
+                + (" [blank = inherit from globals]" if not _url_required else ""),
+                required=_url_required,
             )
         else:
             from urika.cli_helpers import interactive_prompt
 
-            ep_url = interactive_prompt("  Server URL", required=True)
-
-        # Defensive: even after required=True a blank URL would leave the
-        # hybrid mode unable to route data agents to a private endpoint
-        # (runtime would raise MissingPrivateEndpointError). Cancel the
-        # wizard so the user comes back when they have a URL.
-        if not (ep_url or "").strip():
-            raise UserCancelled()
-
-        p = settings.setdefault("privacy", {})
-        ep = p.setdefault("endpoints", {}).setdefault("private", {})
-        ep["base_url"] = ep_url
-
-        if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
-            from urika.cli_helpers import interactive_prompt
-
-            key_env = interactive_prompt(
-                "  API key environment variable name",
-                default="",
+            ep_url = interactive_prompt(
+                "  Server URL"
+                + (" [blank = inherit from globals]" if not _url_required else ""),
+                required=_url_required,
             )
-            if key_env:
-                ep["api_key_env"] = key_env
+
+        # Honor a typed URL as a project-local override.  Blank +
+        # globals available → skip endpoint write so the runtime loader
+        # inherits.  Blank + no globals → cancel (runtime would crash).
+        ep_url = (ep_url or "").strip()
+        if not ep_url:
+            if not _has_global_ep:
+                raise UserCancelled()
+        else:
+            p = settings.setdefault("privacy", {})
+            ep = p.setdefault("endpoints", {}).setdefault("private", {})
+            ep["base_url"] = ep_url
+
+            if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
+                from urika.cli_helpers import interactive_prompt
+
+                key_env = interactive_prompt(
+                    "  API key environment variable name",
+                    default="",
+                )
+                if key_env:
+                    ep["api_key_env"] = key_env
 
         from urika.cli_helpers import interactive_prompt
         from urika.core.settings import load_settings
@@ -454,9 +499,10 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         _set_per_agent("data_agent", private_model, "private")
         _set_per_agent("tool_builder", private_model, "private")
 
+        _ep_label = ep_url if ep_url else "(inherits from globals)"
         print_success(
             f"Mode: hybrid · Cloud: {cloud_model} · "
-            f"Data agents: {private_model} via {ep_url}"
+            f"Data agents: {private_model} via {_ep_label}"
         )
 
     # ── Save ──

@@ -288,17 +288,21 @@ class TestConfigPrivateEndpointRequired:
             )
 
     def test_required_flag_set_on_url_prompts(self) -> None:
-        """The URL prompts in the private + hybrid branches must call
-        interactive_prompt with required=True. Source-level check —
-        cheaper than spinning up the wizard."""
+        """The URL prompts in the private + hybrid branches must pass
+        a ``required=`` value that defaults to True (only relaxed when
+        the project is being configured AND globals already provide a
+        usable endpoint). Source-level check — cheaper than spinning
+        up the wizard."""
         import inspect
 
         from urika.cli import config as config_module
 
         src = inspect.getsource(config_module._config_interactive)
-        # Both vLLM and Custom branches must pass required=True now —
-        # the previous code did not.
-        assert src.count("required=True") >= 2
+        # Two URL prompts (vLLM + Custom) per branch × 2 branches (private
+        # + hybrid) = 4 sites that must pass ``required=_url_required``.
+        # That sentinel resolves to True for globals config and for
+        # project config when no global endpoint exists.
+        assert src.count("required=_url_required") >= 4
 
     def test_blank_url_after_required_loop_raises_user_cancelled(
         self, urika_env: dict[str, str], monkeypatch
@@ -338,6 +342,132 @@ class TestConfigPrivateEndpointRequired:
                 current_mode="open",
                 is_project=False,
                 project_path=None,
+            )
+
+    def test_project_blank_url_with_global_endpoint_succeeds(
+        self, urika_env: dict[str, str], tmp_path: Path, monkeypatch
+    ) -> None:
+        """Project-scope wizard accepts a blank URL when globals already
+        define a usable private endpoint. The runtime loader will inherit
+        the global endpoint (commit 1), so the project TOML doesn't need
+        its own [privacy.endpoints.private] copy."""
+        from urika.cli.config import _config_interactive
+
+        for k, v in urika_env.items():
+            monkeypatch.setenv(k, v)
+
+        # Pre-seed a global private endpoint.
+        urika_home = Path(urika_env["URIKA_HOME"])
+        (urika_home / "settings.toml").write_text(
+            '[privacy.endpoints.private]\n'
+            'base_url = "http://localhost:11434"\n',
+            encoding="utf-8",
+        )
+
+        project_dir = tmp_path / "proj-with-globals"
+        project_dir.mkdir()
+        (project_dir / "urika.toml").write_text(
+            '[project]\nname = "proj-with-globals"\n', encoding="utf-8"
+        )
+
+        numbered_calls = iter([
+            "private — all agents use local/server models (nothing leaves your network)",
+            "Custom server URL",
+        ])
+
+        def fake_numbered(prompt, options, *, default=1, **_):
+            return next(numbered_calls)
+
+        prompt_calls: list[tuple[str, bool]] = []
+
+        def fake_prompt(message, *, default="", required=False, **_):
+            prompt_calls.append((message, required))
+            if "Server URL" in message:
+                # User leaves it blank — relying on global inheritance.
+                return ""
+            if "Model name" in message:
+                return "qwen3:14b"
+            return default
+
+        monkeypatch.setattr(
+            "urika.cli_helpers.interactive_numbered", fake_numbered
+        )
+        monkeypatch.setattr(
+            "urika.cli_helpers.interactive_prompt", fake_prompt
+        )
+
+        session: dict = {"privacy": {}}
+        # Should NOT raise — globals supply the endpoint.
+        _config_interactive(
+            session=session,
+            current_mode="open",
+            is_project=True,
+            project_path=project_dir,
+        )
+
+        # The URL prompt must have been called with required=False.
+        url_calls = [
+            (m, r) for m, r in prompt_calls if "Server URL" in m
+        ]
+        assert url_calls, "URL prompt was not invoked"
+        assert all(not r for _m, r in url_calls), (
+            f"URL prompt should be required=False when globals supply an "
+            f"endpoint, got: {url_calls}"
+        )
+
+        # And the project session must NOT have written
+        # [privacy.endpoints.private] — inheritance handles it.
+        assert "endpoints" not in session.get("privacy", {}), (
+            f"Project should not duplicate global endpoint, got "
+            f"{session['privacy']}"
+        )
+
+    def test_project_blank_url_without_global_endpoint_cancels(
+        self, urika_env: dict[str, str], tmp_path: Path, monkeypatch
+    ) -> None:
+        """Project-scope wizard with NO global endpoint: a blank URL
+        must still cancel (project would be unrunnable otherwise)."""
+        from urika.cli.config import _config_interactive
+        from urika.cli_helpers import UserCancelled
+
+        for k, v in urika_env.items():
+            monkeypatch.setenv(k, v)
+
+        # No settings.toml created → no global endpoint.
+
+        project_dir = tmp_path / "proj-no-globals"
+        project_dir.mkdir()
+        (project_dir / "urika.toml").write_text(
+            '[project]\nname = "proj-no-globals"\n', encoding="utf-8"
+        )
+
+        numbered_calls = iter([
+            "private — all agents use local/server models (nothing leaves your network)",
+            "Custom server URL",
+        ])
+
+        def fake_numbered(prompt, options, *, default=1, **_):
+            return next(numbered_calls)
+
+        def fake_prompt(message, *, default="", required=False, **_):
+            if "Server URL" in message:
+                # Simulate EOF/empty input.
+                return ""
+            return default
+
+        monkeypatch.setattr(
+            "urika.cli_helpers.interactive_numbered", fake_numbered
+        )
+        monkeypatch.setattr(
+            "urika.cli_helpers.interactive_prompt", fake_prompt
+        )
+
+        with pytest.raises(UserCancelled):
+            _config_interactive(
+                session={"privacy": {}},
+                current_mode="open",
+                is_project=True,
+                project_path=project_dir,
             )
 
 
