@@ -84,8 +84,11 @@ def test_global_settings_models_tab_has_per_mode_grids(settings_client):
     new bracketed scheme: ``runtime_modes_<mode>_model`` and
     ``runtime_modes_<mode>_models[<agent>][model|endpoint]``."""
     body = settings_client.get("/settings").text
-    # Mode picker (UI-only; not posted to the server).
-    assert 'id="models_mode_picker"' in body
+    # Sub-tabs (UI-only; not posted to the server). Replaced the old
+    # mode-picker dropdown.
+    assert ">Open</button>" in body
+    assert ">Private</button>" in body
+    assert ">Hybrid</button>" in body
     # One default-model field per mode.
     for mode_name in ("open", "private", "hybrid"):
         assert f'name="runtime_modes_{mode_name}_model"' in body

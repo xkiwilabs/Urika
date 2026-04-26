@@ -134,25 +134,28 @@
       </div>
     </div>
 
-    {# ---- Models tab — per-mode per-agent grids ----------------------- #}
-    {# A mode dropdown swaps which grid is visible. Each grid carries its
-       own default-model field + per-agent rows. Project Models tabs
-       inherit from these per-mode defaults via the loader's per-mode
-       fallback. #}
+    {# ---- Models tab — per-mode sub-tabs ------------------------------ #}
+    {# Sub-tabs (Open / Private / Hybrid) swap which mode's grid is
+       visible. Each grid carries its own default-model field + per-agent
+       rows. Project Models tabs inherit from these per-mode defaults
+       via the loader's per-mode fallback. #}
     <div class="tab-panel" x-show="active === 'models'" x-cloak
          x-data="{ mode: 'open' }">
-      <div class="form-row">
-        <label for="models_mode_picker">Configure defaults for mode</label>
-        <select id="models_mode_picker" x-model="mode">
-          <option value="open">open</option>
-          <option value="private">private</option>
-          <option value="hybrid">hybrid</option>
-        </select>
-        <span class="form-help">
-          Each mode has its own default model + per-agent grid. Projects
-          inherit the matching mode's grid at runtime.
-        </span>
+      <div class="tab-list" role="tablist" style="margin-bottom: var(--space-3);">
+        <button class="tab-button" type="button"
+                :class="{ 'tab-button--active': mode === 'open' }"
+                @click="mode = 'open'" role="tab">Open</button>
+        <button class="tab-button" type="button"
+                :class="{ 'tab-button--active': mode === 'private' }"
+                @click="mode = 'private'" role="tab">Private</button>
+        <button class="tab-button" type="button"
+                :class="{ 'tab-button--active': mode === 'hybrid' }"
+                @click="mode = 'hybrid'" role="tab">Hybrid</button>
       </div>
+      <span class="form-help" style="display:block; margin-bottom: var(--space-3);">
+        Each mode has its own default model + per-agent grid. Projects
+        inherit the matching mode's grid at runtime.
+      </span>
 
       {% for mode_name in ["open", "private", "hybrid"] %}
         {% set grid = mode_grids[mode_name] %}
@@ -164,13 +167,14 @@
               Default model for {{ mode_name }} mode
             </label>
             {% if mode_name in ["open", "hybrid"] %}
-              {# Cloud-side default → dropdown of known Claude models. #}
+              {# Cloud-side default → dropdown of known Claude models.
+                 No '(empty)' option — defaults to claude-opus-4-7
+                 (the best available model on a fresh install). #}
               <select id="runtime_modes_{{ mode_name }}_model"
                       name="runtime_modes_{{ mode_name }}_model">
-                <option value="" {% if not grid.default_model %}selected{% endif %}>(empty)</option>
                 {% for m in known_cloud_models %}
                   <option value="{{ m }}"
-                          {% if m == grid.default_model %}selected{% endif %}>{{ m }}</option>
+                          {% if m == (grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
                 {% endfor %}
               </select>
             {% else %}
