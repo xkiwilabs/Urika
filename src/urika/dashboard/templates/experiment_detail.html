@@ -59,17 +59,15 @@
              target="_blank" rel="noopener">
             Open presentation &#8599;
           </a>
+          <button type="button" class="btn btn--secondary"
+                  @click="$dispatch('open-modal', { id: 'present' })">
+            Re-generate presentation
+          </button>
         {% else %}
-          <form
-            hx-post="/api/projects/{{ project.name }}/present"
-            hx-target="#present-feedback"
-            hx-swap="innerHTML"
-            style="display:inline"
-          >
-            <input type="hidden" name="experiment_id" value="{{ experiment.experiment_id }}">
-            <button class="btn btn--secondary" type="submit">Generate presentation</button>
-            <span id="present-feedback" class="text-muted"></span>
-          </form>
+          <button type="button" class="btn btn--secondary"
+                  @click="$dispatch('open-modal', { id: 'present' })">
+            Generate presentation
+          </button>
         {% endif %}
       </div>
     </div>
@@ -155,6 +153,34 @@
       </div>
     {% endif %}
   </section>
+
+  {% call modal('present', ('Re-generate presentation' if has_presentation else 'Generate presentation')) %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/present"
+      hx-target="#present-feedback"
+      hx-swap="innerHTML"
+    >
+      <input type="hidden" name="experiment_id" value="{{ experiment.experiment_id }}">
+      <div class="form-row">
+        <label for="pr-instructions">Instructions (optional)</label>
+        <textarea id="pr-instructions" name="instructions" rows="3"
+                  placeholder="Steer the presentation (e.g. 'emphasize ensemble results')"></textarea>
+      </div>
+      <div class="form-row">
+        <label for="pr-audience">Audience</label>
+        <select id="pr-audience" name="audience">
+          <option value="novice">novice</option>
+          <option value="standard" selected>standard</option>
+          <option value="expert">expert</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run</button>
+        <span id="present-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
 
   {% call modal('report', ('Re-generate report' if has_report else 'Generate report')) %}
     <form

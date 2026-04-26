@@ -109,6 +109,28 @@ def test_present_post_passes_instructions_and_audience(present_client):
     assert spawn_calls[0]["audience"] == "expert"
 
 
+def test_present_post_forwards_instructions_audience(present_client):
+    """The dashboard's per-experiment presentation modal posts the
+    CLI-mirroring instructions + audience fields. Confirm both flow
+    through to spawn_present unchanged across all valid audience
+    values."""
+    client, spawn_calls, _ = present_client
+    for aud in ("novice", "standard", "expert"):
+        spawn_calls.clear()
+        r = client.post(
+            "/api/projects/alpha/present",
+            data={
+                "experiment_id": "exp-001",
+                "instructions": f"steer for {aud}",
+                "audience": aud,
+            },
+        )
+        assert r.status_code == 200
+        assert len(spawn_calls) == 1
+        assert spawn_calls[0]["instructions"] == f"steer for {aud}"
+        assert spawn_calls[0]["audience"] == aud
+
+
 def test_present_post_404_unknown_project(present_client):
     client, _, _ = present_client
     r = client.post(
