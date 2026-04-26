@@ -72,7 +72,7 @@ After project creation, Urika offers to run the first suggested experiment immed
 List all registered projects.
 
 ```
-urika list
+urika list [--prune]
 ```
 
 ```
@@ -81,6 +81,44 @@ urika list
 ```
 
 Projects marked with `?` have a missing directory on disk.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--prune` | Silently unregister any entries whose folder no longer exists, then print the cleaned list. Useful after manually deleting project directories outside Urika. |
+
+---
+
+### `urika delete`
+
+Move a project to `~/.urika/trash/<name>-<YYYYMMDD-HHMMSS>/` and remove it from the registry. The folder is moved, not deleted, so artifacts are preserved. Empty the trash manually when you're sure (`rm -rf ~/.urika/trash/...`).
+
+```
+urika delete NAME [--force] [--json]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--force` / `-f` | Skip the confirmation prompt. |
+| `--json` | Emit the trash result as JSON (`name`, `original_path`, `trash_path`, `registry_only`). |
+
+**Behavior:**
+
+- Refuses to trash if a `.lock` file exists anywhere under the project (active run / finalize / evaluate). Stop the run first.
+- If the project's folder is already missing on disk, only the registry entry is removed (no second prompt) and the message reflects that.
+- A manifest (`.urika-trash-manifest.json`) is written into the trash directory so you can identify it later.
+- Each operation appends one JSON line to `~/.urika/deletion-log.jsonl`.
+
+**Example:**
+
+```
+$ urika delete my-old-project
+Move project 'my-old-project' to ~/.urika/trash/? (files preserved, registry entry removed) [y/N]: y
+Moved 'my-old-project' to /home/user/.urika/trash/my-old-project-20260426-153012
+```
 
 ---
 

@@ -208,6 +208,17 @@ The experiment detail page composes all of these into a single view: hypotheses,
 The project home page surfaces the same artifacts as **"Final outputs"** cards — they appear whenever the corresponding file exists on disk. Each card links to the rendered page, never to the JSON.
 
 
+## Project deletion (Danger zone)
+
+Project settings (`/projects/<n>/settings`) ends with a **Danger zone** section. The "Move to trash" button is gated by a GitHub-style typed-name confirmation: the user must type the project name exactly before the button enables. Submitting `DELETE /api/projects/<n>` moves the project directory to `~/.urika/trash/<n>-<timestamp>/` and removes the registry entry; the response includes `HX-Redirect: /projects` so the browser lands on the projects list.
+
+If the project has any `.lock` file underneath it (active run / finalize / evaluate), the danger zone renders a disabled state with the lock path instead of the active button — the same active-run guard the CLI enforces.
+
+The projects list (`/projects`) shows an inline **Unregister** button next to any project whose registered path no longer exists on disk. Clicking it posts `DELETE` to the same endpoint, which falls into the registry-only branch (nothing to move — the folder is already gone).
+
+Files are preserved in `~/.urika/trash/`. Empty the trash manually when you're sure. There's no Restore command — copy the directory back yourself if you ever need to.
+
+
 ## Settings UI
 
 Two settings pages share the same tabbed form pattern. Tabs are a small Alpine.js primitive — no router, no URL fragments — so saving a tab's form does not navigate away.
@@ -286,6 +297,7 @@ The dashboard's HTMX/fetch endpoints (server-rendered pages above are the only t
 | Endpoint | Purpose | Phase |
 |---|---|---|
 | `POST /api/projects` | Create a new project — runs `urika new --json --non-interactive`. | 11C |
+| `DELETE /api/projects/<n>` | Move the project to `~/.urika/trash/` and unregister it. 422 if a `.lock` file exists. | post-13 |
 | `POST /api/projects/<n>/run` | Spawn an experiment run. | — |
 | `GET  /api/projects/<n>/runs/<id>/stream` | SSE stream of the run log, including `event: prompt` for mid-run questions. | 11F |
 | `POST /api/projects/<n>/runs/<exp>/respond` | Answer a mid-run interactive prompt. | 11F.2 |

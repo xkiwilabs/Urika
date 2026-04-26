@@ -133,6 +133,7 @@ Available at all times, regardless of whether a project is loaded.
 | `/list` | List all registered projects. The currently loaded project is marked with a diamond. |
 | `/new` | Create a new project using the same interactive builder flow as `urika new`. |
 | `/project <name>` | Load a project by name. Shows project mode, experiment count, and completion status. |
+| `/delete <name>` | Move a project to `~/.urika/trash/` and remove it from the registry. Prompts for confirmation. Refuses if any `.lock` is present. If the deleted project is currently loaded, the session context is cleared. |
 | `/quit` | Save session usage data and exit. |
 | `/tools` | List all available analysis tools. If a project is loaded, also includes project-specific tools. |
 | `/usage` | Show usage stats. With a loaded project: current session and historical totals. Without: usage across all projects. |
