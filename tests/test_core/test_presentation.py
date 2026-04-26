@@ -56,6 +56,32 @@ class TestRenderPresentation:
         html = (output / "index.html").read_text()
         assert "My Research" in html
 
+    def test_notes_plugin_is_registered_and_files_copied(
+        self, tmp_path: Path
+    ) -> None:
+        """The RevealNotes plugin (S-key speaker view) needs notes.js +
+        notes.html copied next to the deck and registered in
+        Reveal.initialize. Without both, S does nothing."""
+        slide_data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [{"type": "bullets", "title": "B", "bullets": ["x"]}],
+        }
+        output = render_presentation(slide_data, tmp_path / "pres", theme="light")
+
+        assert (output / "notes.js").exists(), (
+            "notes.js must be copied next to the deck — the S-key handler "
+            "lives in this file."
+        )
+        assert (output / "notes.html").exists(), (
+            "notes.html must be copied next to the deck — the speaker-view "
+            "popup is opened at this relative URL by the plugin."
+        )
+
+        html = (output / "index.html").read_text()
+        assert '<script src="notes.js"></script>' in html
+        assert "plugins: [RevealNotes]" in html
+
     def test_title_slide_includes_keyboard_hint(self, tmp_path: Path) -> None:
         """Title slide should remind viewers about reveal.js shortcuts so
         they can find speaker notes (S), fullscreen (F), and the help

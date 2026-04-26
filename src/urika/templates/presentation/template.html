@@ -346,6 +346,7 @@
     <div id="thumb-strip"></div>
 
     <script src="reveal.min.js"></script>
+    <script src="notes.js"></script>
     <script>
         Reveal.initialize({
             hash: true,
@@ -362,7 +363,10 @@
             overview: true,
             touch: true,
             minScale: 0.1,
-            maxScale: 1.5
+            maxScale: 1.5,
+            // Registers the speaker-notes plugin so pressing S opens
+            // the presenter view (current slide + next + notes + timer).
+            plugins: [RevealNotes]
         });
 
         Reveal.on('ready', function() {

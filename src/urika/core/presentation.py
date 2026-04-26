@@ -46,7 +46,18 @@ def render_presentation(
 
     # Copy reveal.js template files
     template_dir = Path(__file__).parent.parent / "templates" / "presentation"
-    for f in ("reveal.min.js", "reveal.css", "theme-light.css", "theme-dark.css"):
+    for f in (
+        "reveal.min.js",
+        "reveal.css",
+        "theme-light.css",
+        "theme-dark.css",
+        # RevealNotes plugin: notes.js registers the S-key handler;
+        # notes.html is the popup window's template (the plugin opens
+        # it via window.open at a relative URL, so it must live next
+        # to the deck).
+        "notes.js",
+        "notes.html",
+    ):
         src = template_dir / f
         if src.exists():
             shutil.copy2(src, output_dir / f)
