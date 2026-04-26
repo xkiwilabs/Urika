@@ -250,7 +250,7 @@ def build_agent_env_for_endpoint(
         endpoint_name = "private"
     elif runtime_config.privacy_mode == "hybrid":
         # Default hybrid: data_agent and tool_builder use private endpoint
-        _PRIVATE_AGENTS = {"data_agent"}
+        _PRIVATE_AGENTS = {"data_agent", "tool_builder"}
         if agent_name in _PRIVATE_AGENTS:
             endpoint_name = "private"
 
