@@ -226,6 +226,121 @@ class TestConfigCommand:
         assert result.exit_code != 0
 
 
+class TestConfigPrivateEndpointRequired:
+    """`urika config` must reject a blank private-endpoint URL.
+
+    The hard-fail at runtime (Commit 1) means a blank URL would crash
+    the project's first agent run; we may as well catch it in the
+    config wizard where the user can fix it on the spot. The wizard
+    raises UserCancelled (caught in config_command) when the URL is
+    empty.
+    """
+
+    def test_blank_private_endpoint_url_aborts_wizard(
+        self, urika_env: dict[str, str], monkeypatch
+    ) -> None:
+        """Custom server URL (free-text) returning empty must abort the
+        wizard with UserCancelled rather than save mode=private with
+        no endpoint URL."""
+        import os
+
+        from urika.cli.config import _config_interactive
+        from urika.cli_helpers import UserCancelled
+
+        # Apply env so settings.toml lands in tmp.
+        for k, v in urika_env.items():
+            monkeypatch.setenv(k, v)
+
+        # Mode picker → "private". Endpoint type picker → "Custom server URL".
+        # Numbered prompts are answered by the displayed string so we map
+        # the call sequence to the right choice text.
+        numbered_calls = iter([
+            "private — all agents use local/server models (nothing leaves your network)",
+            "Custom server URL",
+        ])
+
+        def fake_numbered(prompt, options, *, default=1, **_):
+            return next(numbered_calls)
+
+        # interactive_prompt is called once for the URL after the type
+        # picker resolved to "Custom server URL". required=True would
+        # normally re-prompt, but here we simulate the user pressing
+        # Ctrl+C — the helper raises UserCancelled, which the wizard
+        # propagates out.
+        def fake_prompt(message, *, default="", required=False, **_):
+            if "Server URL" in message:
+                raise UserCancelled()
+            return default
+
+        monkeypatch.setattr(
+            "urika.cli_helpers.interactive_numbered", fake_numbered
+        )
+        monkeypatch.setattr(
+            "urika.cli_helpers.interactive_prompt", fake_prompt
+        )
+
+        with pytest.raises(UserCancelled):
+            _config_interactive(
+                session={"privacy": {}},
+                current_mode="open",
+                is_project=False,
+                project_path=None,
+            )
+
+    def test_required_flag_set_on_url_prompts(self) -> None:
+        """The URL prompts in the private + hybrid branches must call
+        interactive_prompt with required=True. Source-level check —
+        cheaper than spinning up the wizard."""
+        import inspect
+
+        from urika.cli import config as config_module
+
+        src = inspect.getsource(config_module._config_interactive)
+        # Both vLLM and Custom branches must pass required=True now —
+        # the previous code did not.
+        assert src.count("required=True") >= 2
+
+    def test_blank_url_after_required_loop_raises_user_cancelled(
+        self, urika_env: dict[str, str], monkeypatch
+    ) -> None:
+        """Defensive check: if interactive_prompt somehow returns an
+        empty string (EOF on piped stdin with no default), the wizard
+        must still cancel rather than save an empty base_url."""
+        from urika.cli.config import _config_interactive
+        from urika.cli_helpers import UserCancelled
+
+        for k, v in urika_env.items():
+            monkeypatch.setenv(k, v)
+
+        numbered_calls = iter([
+            "private — all agents use local/server models (nothing leaves your network)",
+            "Custom server URL",
+        ])
+
+        def fake_numbered(prompt, options, *, default=1, **_):
+            return next(numbered_calls)
+
+        def fake_prompt(message, *, default="", required=False, **_):
+            # Simulate the EOF/piped-stdin path that returns default
+            # without re-prompting — default is empty here.
+            return ""
+
+        monkeypatch.setattr(
+            "urika.cli_helpers.interactive_numbered", fake_numbered
+        )
+        monkeypatch.setattr(
+            "urika.cli_helpers.interactive_prompt", fake_prompt
+        )
+
+        with pytest.raises(UserCancelled):
+            _config_interactive(
+                session={"privacy": {}},
+                current_mode="open",
+                is_project=False,
+                project_path=None,
+            )
+
+
 # ── Update command ─────────────────────────────────────────────
 
 

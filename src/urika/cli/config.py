@@ -198,6 +198,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
     import click
     from urika.cli_display import print_step, print_success, print_warning
     from urika.cli_helpers import (
+        UserCancelled,
         interactive_confirm,
         interactive_numbered,
         interactive_prompt,
@@ -307,12 +308,20 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             from urika.cli_helpers import interactive_prompt
 
             ep_url = interactive_prompt(
-                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)"
+                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)",
+                required=True,
             )
         else:
             from urika.cli_helpers import interactive_prompt
 
-            ep_url = interactive_prompt("  Server URL")
+            ep_url = interactive_prompt("  Server URL", required=True)
+
+        # Defensive: even after required=True a blank URL would leave the
+        # project unable to run anything privacy-sensitive (the runtime
+        # would raise MissingPrivateEndpointError). Cancel the wizard so
+        # the user comes back when they have a URL.
+        if not (ep_url or "").strip():
+            raise UserCancelled()
 
         p = settings.setdefault("privacy", {})
         ep = p.setdefault("endpoints", {}).setdefault("private", {})
@@ -384,12 +393,20 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             from urika.cli_helpers import interactive_prompt
 
             ep_url = interactive_prompt(
-                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)"
+                "  Server URL without /v1 (e.g. http://192.168.1.100:4200)",
+                required=True,
             )
         else:
             from urika.cli_helpers import interactive_prompt
 
-            ep_url = interactive_prompt("  Server URL")
+            ep_url = interactive_prompt("  Server URL", required=True)
+
+        # Defensive: even after required=True a blank URL would leave the
+        # hybrid mode unable to route data agents to a private endpoint
+        # (runtime would raise MissingPrivateEndpointError). Cancel the
+        # wizard so the user comes back when they have a URL.
+        if not (ep_url or "").strip():
+            raise UserCancelled()
 
         p = settings.setdefault("privacy", {})
         ep = p.setdefault("endpoints", {}).setdefault("private", {})
