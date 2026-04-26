@@ -377,6 +377,29 @@ def _apply_structured_settings(project_path, form) -> None:
         _effective_mode = (data.get("privacy", {}) or {}).get("mode") or "open"
     _HYBRID_FORCED_PRIVATE = {"data_agent", "tool_builder"}
 
+    # Build the set of valid endpoint values: ``open`` (implicit cloud)
+    # plus every named endpoint defined in the global settings AND any
+    # endpoint already present in (or about to be written by this PUT
+    # to) the project's own [privacy.endpoints.*].  A per-agent endpoint
+    # pointing at a totally undefined name is a 422 — typos would
+    # otherwise silently route to the default and confuse users.
+    from urika.core.settings import get_named_endpoints as _get_named_endpoints
+
+    _project_defined_endpoints = {
+        ep["name"] for ep in _get_named_endpoints()
+    }
+    # Project-local endpoints (existing TOML).
+    _project_defined_endpoints |= set(
+        (data.get("privacy", {}) or {}).get("endpoints", {}) or {}
+    )
+    # If this PUT switches to private/hybrid mode, the privacy block
+    # will create [privacy.endpoints.private] — count that too so the
+    # per-agent endpoint validation in the same submission accepts
+    # ``private`` even when globals have no such endpoint defined.
+    if _effective_mode in ("private", "hybrid"):
+        _project_defined_endpoints.add("private")
+    _project_valid_endpoints = {"open"} | _project_defined_endpoints
+
     new_models: dict[str, dict[str, str]] = {}
     has_model_fields = False
     for key in form.keys():
@@ -391,12 +414,12 @@ def _apply_structured_settings(project_path, form) -> None:
             if model_val:
                 row["model"] = model_val
             if endpoint_val and endpoint_val != "inherit":
-                if endpoint_val not in _VALID_ENDPOINTS:
+                if endpoint_val not in _project_valid_endpoints:
                     raise HTTPException(
                         status_code=422,
                         detail=(
                             f"endpoint[{agent}] must be one of "
-                            f"{sorted(_VALID_ENDPOINTS | {'inherit'})}"
+                            f"{sorted(_project_valid_endpoints | {'inherit'})}"
                         ),
                     )
                 # Enforce per-mode endpoint constraints (silently strip

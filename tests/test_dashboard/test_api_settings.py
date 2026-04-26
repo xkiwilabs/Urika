@@ -35,6 +35,16 @@ def settings_client(tmp_path: Path, monkeypatch) -> TestClient:
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    # Pre-seed a global ``private`` endpoint so per-agent endpoint
+    # overrides referencing ``private`` round-trip without 422.  The
+    # project-settings PUT validates per-agent endpoint names against
+    # the union of globals + project-local + the implicit ``open``.
+    (home / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n',
+        encoding="utf-8",
+    )
     app = create_app(project_root=tmp_path)
     return TestClient(app)
 

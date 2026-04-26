@@ -608,18 +608,27 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     )
 
     # Endpoint constraints by mode:
-    #   open    → all agents may pick {open, private}
-    #   private → all agents private only (cloud is hidden — defeats the
-    #             point of private mode otherwise)
-    #   hybrid  → data_agent + tool_builder private only; others {open, private}
+    #   open    → all agents may pick any defined endpoint + ``open``
+    #   private → all agents private only (the implicit ``open`` cloud
+    #             endpoint is hidden — defeats the point of private mode)
+    #   hybrid  → data_agent + tool_builder private only; others may
+    #             pick any defined endpoint + ``open``
+    #
+    # The dropdown's choices come from globals' [privacy.endpoints.*] —
+    # any user-defined name (private, ollama, vllm_small, ...) shows up
+    # as long as the mode allows it.
     _HYBRID_FORCED_PRIVATE = {"data_agent", "tool_builder"}
+    project_named_endpoints = [ep["name"] for ep in get_named_endpoints()]
 
     def _endpoint_choices_for(agent: str) -> tuple[list[str], bool]:
+        # Always sort defined endpoints for stable rendering.
+        named = sorted(project_named_endpoints)
         if project_privacy_mode == "private":
-            return (["private"], False)
+            return (named, False)
         if project_privacy_mode == "hybrid" and agent in _HYBRID_FORCED_PRIVATE:
-            return (["private"], True)
-        return (["open", "private"], False)
+            return (named, True)
+        # Non-restricted: cloud + every named endpoint.
+        return (["open"] + named, False)
 
     model_rows = []
     for agent in KNOWN_AGENTS:

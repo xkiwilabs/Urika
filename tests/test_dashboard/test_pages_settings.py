@@ -161,10 +161,24 @@ def test_project_settings_tab_order_basics_data_privacy_models_notifications(
 
 
 def _set_project_privacy(tmp_path, mode: str) -> None:
-    """Helper: write a [privacy].mode to alpha/urika.toml."""
+    """Helper: write a [privacy].mode to alpha/urika.toml.
+
+    Also pre-seeds a global ``private`` endpoint so the per-agent
+    endpoint dropdowns have something to render — multi-endpoint
+    semantics: the dropdown lists every defined endpoint, so an empty
+    globals settings file would render an empty dropdown.
+    """
     proj = tmp_path / "alpha" / "urika.toml"
     proj.write_text(
         proj.read_text() + f'\n[privacy]\nmode = "{mode}"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    (home / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n',
+        encoding="utf-8",
     )
 
 
@@ -208,6 +222,153 @@ def test_project_settings_models_hybrid_data_agent_forced_private(
     # The data_agent + tool_builder rows must show the "private only" hint.
     # Two rows → at least two occurrences of the hint.
     assert body.count("private only (hybrid)") >= 2
+
+
+def test_project_settings_models_endpoint_dropdown_lists_named_endpoints(
+    tmp_path, monkeypatch
+):
+    """Project Models tab's per-agent endpoint dropdown lists every
+    named endpoint defined on globals' Privacy tab — not just
+    ``private``.  Mode constraints still apply.
+    """
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+        '\n'
+        '[privacy]\n'
+        'mode = "open"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+        '\n'
+        '[privacy.endpoints.ollama]\n'
+        'base_url = "http://localhost:11435"\n'
+        'api_key_env = ""\n'
+    )
+    client = TestClient(create_app(project_root=tmp_path))
+    body = client.get("/projects/alpha/settings").text
+    # Open mode: every named endpoint + the implicit ``open`` shows up.
+    assert '<option value="open"' in body
+    assert '<option value="private"' in body
+    assert '<option value="ollama"' in body
+
+
+def test_project_settings_put_per_agent_endpoint_accepts_named_endpoint(
+    tmp_path, monkeypatch
+):
+    """Setting per-agent endpoint to a name defined in globals writes
+    it to the project's [runtime.models.<agent>] block."""
+    import json
+
+    import tomllib
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text(
+        '[privacy.endpoints.ollama]\n'
+        'base_url = "http://localhost:11435"\n'
+        'api_key_env = ""\n'
+    )
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "q",
+            "description": "",
+            "mode": "exploratory",
+            "audience": "expert",
+            "model[task_agent]": "llama3:8b",
+            "endpoint[task_agent]": "ollama",
+        },
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((proj / "urika.toml").read_text())
+    assert toml["runtime"]["models"]["task_agent"]["endpoint"] == "ollama"
+
+
+def test_project_settings_put_per_agent_endpoint_rejects_undefined_name(
+    tmp_path, monkeypatch
+):
+    """Per-agent endpoint pointing at an undefined name returns 422."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    # Globals define only ``private`` — ``does_not_exist`` is unknown.
+    (home / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+    )
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.put(
+        "/api/projects/alpha/settings",
+        data={
+            "question": "q",
+            "description": "",
+            "mode": "exploratory",
+            "audience": "expert",
+            "model[task_agent]": "llama3:8b",
+            "endpoint[task_agent]": "does_not_exist",
+        },
+    )
+    assert r.status_code == 422
 
 
 def test_project_settings_models_placeholder_from_global_per_mode(
