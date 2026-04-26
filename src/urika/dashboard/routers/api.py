@@ -24,6 +24,7 @@ from urika.dashboard.runs import (
     spawn_finalize,
     spawn_present,
     spawn_report,
+    spawn_summarize,
 )
 
 # Hardcoded list of agent roles whose model/endpoint can be overridden.
@@ -1503,6 +1504,84 @@ async def api_finalize_stream(name: str):
         raise HTTPException(status_code=404, detail="Unknown project")
     log_path = summary.path / "projectbook" / "finalize.log"
     lock_path = summary.path / "projectbook" / ".finalize.lock"
+
+    async def event_stream():
+        position = 0
+        if log_path.exists():
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    yield f"data: {line.rstrip()}\n\n"
+                position = f.tell()
+
+        while lock_path.exists() or log_path.exists():
+            new_data = ""
+            if log_path.exists():
+                with open(log_path, "r", encoding="utf-8") as f:
+                    f.seek(position)
+                    new_data = f.read()
+                    position = f.tell()
+            if new_data:
+                for line in new_data.splitlines():
+                    yield f"data: {line}\n\n"
+            if not lock_path.exists():
+                yield (
+                    f"event: status\ndata: {json.dumps({'status': 'completed'})}\n\n"
+                )
+                return
+            await asyncio.sleep(0.5)
+
+        yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/projects/{name}/summarize")
+async def api_project_summarize(name: str, request: Request):
+    """Spawn ``urika summarize <project> --json`` for a project.
+
+    Mirrors the ``/finalize`` endpoint shape: validates the project
+    exists, pulls the optional ``instructions`` form field, and hands
+    off to ``spawn_summarize`` which Popens the CLI and detaches a
+    daemon thread to drain its stdout into ``projectbook/summarize.log``.
+    Returns JSON with the spawned PID, or HX-Redirects to the live log
+    when called from HTMX.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    body = await request.form()
+    instructions = (body.get("instructions") or "").strip()
+
+    # Pre-flight privacy gate — same rule as /run, /finalize, /present.
+    _validate_privacy_endpoint(summary.path)
+
+    pid = spawn_summarize(
+        name,
+        summary.path,
+        instructions=instructions,
+    )
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/summarize/log"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
+    return JSONResponse({"status": "started", "pid": pid})
+
+
+@router.get("/projects/{name}/summarize/stream")
+async def api_summarize_stream(name: str):
+    """Server-sent-events tail of ``projectbook/summarize.log``.
+
+    Same shape as :func:`api_finalize_stream` but reads from
+    ``projectbook/summarize.log`` and watches ``.summarize.lock`` for
+    completion.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    log_path = summary.path / "projectbook" / "summarize.log"
+    lock_path = summary.path / "projectbook" / ".summarize.lock"
 
     async def event_stream():
         position = 0

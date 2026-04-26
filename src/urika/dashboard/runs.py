@@ -299,6 +299,56 @@ def spawn_evaluate(
     return proc.pid
 
 
+def spawn_summarize(
+    project_name: str,
+    project_path: Path,
+    *,
+    instructions: str = "",
+    executable: str | None = None,
+) -> int:
+    """Spawn ``urika summarize <project> --json`` as a subprocess.
+
+    Writes the PID to ``<project>/projectbook/.summarize.lock`` and tees
+    stdout to ``<project>/projectbook/summarize.log``. The lock is
+    removed when the subprocess exits. Returns the PID.
+
+    The summarizer agent is read-only — its writable_dirs is empty.
+    The ``urika summarize`` CLI handler itself writes the agent's
+    final text output to ``projectbook/summary.md`` after the run
+    completes; the dashboard relies on the presence of that file
+    to flip the button label between "Summarize" and "Re-summarize".
+    """
+    book_dir = project_path / "projectbook"
+    book_dir.mkdir(parents=True, exist_ok=True)
+    log_path = book_dir / "summarize.log"
+    lock_path = book_dir / ".summarize.lock"
+
+    cmd = [
+        executable or sys.executable,
+        "-m",
+        "urika",
+        "summarize",
+        project_name,
+        "--json",
+    ]
+    if instructions:
+        cmd.extend(["--instructions", instructions])
+
+    env = os.environ.copy()
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+        env=env,
+    )
+    lock_path.write_text(str(proc.pid), encoding="utf-8")
+    _start_drainer(proc, log_path, lock_path)
+    return proc.pid
+
+
 def spawn_present(
     project_name: str,
     project_path: Path,

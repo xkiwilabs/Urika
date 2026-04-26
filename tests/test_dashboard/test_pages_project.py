@@ -1125,3 +1125,99 @@ def test_finalize_log_page_breadcrumb(client_with_projects):
     assert "/projects/alpha" in body
     # Back-to-project-home link surfaces on completion
     assert "Back to project home" in body
+
+
+# ── Summarize button + log + summary view ─────────────────────────────────
+
+
+def test_project_home_summarize_button_when_no_summary(client_with_projects):
+    """No projectbook/summary.md → button reads "Summarize project"."""
+    r = client_with_projects.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    assert "Summarize project" in body
+    assert "Re-summarize project" not in body
+    # Modal posts to the new endpoint
+    assert "/api/projects/alpha/summarize" in body
+
+
+def test_project_home_resummarize_button_when_summary_present(
+    tmp_path, monkeypatch
+):
+    """A pre-existing projectbook/summary.md flips the button label."""
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    book = proj / "projectbook"
+    book.mkdir()
+    (book / "summary.md").write_text("# Prior summary\n\nhello\n")
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+    r = client.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    assert "Re-summarize project" in body
+    # The Summary card surfaces in the final-outputs grid.
+    assert "/projects/alpha/projectbook/summary" in body
+
+
+def test_summarize_log_page_returns_200_and_has_eventsource(client_with_projects):
+    r = client_with_projects.get("/projects/alpha/summarize/log")
+    assert r.status_code == 200
+    body = r.text
+    assert "EventSource" in body
+    assert "/api/projects/alpha/summarize/stream" in body
+    assert 'id="log"' in body
+
+
+def test_summarize_log_page_404_unknown_project(client_with_projects):
+    r = client_with_projects.get("/projects/nonexistent/summarize/log")
+    assert r.status_code == 404
+
+
+def test_projectbook_summary_view_renders_when_present(tmp_path, monkeypatch):
+    """GET /projects/<n>/projectbook/summary renders summary.md as HTML."""
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    book = proj / "projectbook"
+    book.mkdir()
+    (book / "summary.md").write_text(
+        "# Project status\n\nThree experiments completed.\n"
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+    r = client.get("/projects/alpha/projectbook/summary")
+    assert r.status_code == 200
+    body = r.text
+    assert "Project summary" in body  # title_override
+    assert "Project status" in body
+    assert "Three experiments completed" in body
+
+
+def test_projectbook_summary_view_404_when_absent(client_with_projects):
+    """When summary.md doesn't exist, the page returns 404."""
+    r = client_with_projects.get("/projects/alpha/projectbook/summary")
+    assert r.status_code == 404
+
+
+def test_projectbook_summary_view_404_unknown_project(client_with_projects):
+    r = client_with_projects.get("/projects/nonexistent/projectbook/summary")
+    assert r.status_code == 404

@@ -143,6 +143,7 @@ def project_home(request: Request, name: str) -> HTMLResponse:
             or (book / "presentation" / "index.html").exists()
         ),
     }
+    has_summary = (book / "summary.md").exists()
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "project_home.html",
@@ -151,6 +152,7 @@ def project_home(request: Request, name: str) -> HTMLResponse:
             "project": summary,
             "recent_experiments": recent,
             "final_outputs": final_outputs,
+            "has_summary": has_summary,
         },
     )
 
@@ -256,6 +258,41 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
             "experiment_id": "",  # template handles empty
             "body_html": render_markdown(raw),
             "title_override": "Final report",
+        },
+    )
+
+
+@router.get("/projects/{name}/projectbook/summary", response_class=HTMLResponse)
+def projectbook_summary(name: str, request: Request) -> HTMLResponse:
+    """Render the project-level summary at ``projectbook/summary.md``.
+
+    Reuses ``report_view.html`` with an empty ``experiment_id`` and a
+    ``title_override`` so the breadcrumb chain ends at the project,
+    not an experiment. The summarizer is read-only and never produces
+    figures, so no markdown post-processing is required.
+
+    Registered BEFORE the catch-all ``projectbook/{rest:path}`` route so
+    the markdown is rendered through the template rather than served
+    raw as a FileResponse.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    summary_path = summary.path / "projectbook" / "summary.md"
+    if not summary_path.exists():
+        raise HTTPException(status_code=404, detail="No project summary")
+    from urika.dashboard.render import render_markdown
+
+    raw = summary_path.read_text(encoding="utf-8")
+    return request.app.state.templates.TemplateResponse(
+        "report_view.html",
+        {
+            "request": request,
+            "project": summary,
+            "experiment_id": "",
+            "body_html": render_markdown(raw),
+            "title_override": "Project summary",
         },
     )
 
@@ -858,6 +895,25 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "notif_slack": notif_slack,
             "notif_telegram": notif_telegram,
         },
+    )
+
+
+@router.get("/projects/{name}/summarize/log", response_class=HTMLResponse)
+def project_summarize_log(name: str, request: Request) -> HTMLResponse:
+    """Live-tail the project's summarize log via SSE.
+
+    Mirrors :func:`project_finalize_log` but reads from
+    ``projectbook/summarize.log`` (via the
+    ``/api/projects/<n>/summarize/stream`` endpoint) and watches
+    ``projectbook/.summarize.lock`` for completion.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return request.app.state.templates.TemplateResponse(
+        "summarize_log.html",
+        {"request": request, "project": summary},
     )
 
 

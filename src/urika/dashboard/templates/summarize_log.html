@@ -1,0 +1,49 @@
+{% extends "_base.html" %}
+
+{% block title %}Summarize log · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Summarize log: {{ project.name | humanize }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a class="breadcrumb-item" href="/projects">Projects</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+  <span class="breadcrumb-separator">/</span>
+  <span class="breadcrumb-current">Summarize log</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div id="log-status" class="text-muted">Connecting…</div>
+  <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
+
+  <div id="log-completion" style="display: none; margin-top: var(--space-4);">
+    <p>Summarize complete.</p>
+    <a class="btn btn--primary" href="/projects/{{ project.name }}">Back to project home →</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  const url = "/api/projects/{{ project.name }}/summarize/stream";
+  const logEl = document.getElementById("log");
+  const statusEl = document.getElementById("log-status");
+  const completionEl = document.getElementById("log-completion");
+  const es = new EventSource(url);
+  es.onopen = function () { statusEl.textContent = "Streaming…"; };
+  es.onmessage = function (e) {
+    const line = document.createElement("div");
+    line.textContent = e.data;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+  es.addEventListener("status", function (e) {
+    statusEl.textContent = "Completed.";
+    completionEl.style.display = "";
+    es.close();
+  });
+  es.onerror = function () { statusEl.textContent = "Connection lost."; };
+})();
+</script>
+{% endblock %}

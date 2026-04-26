@@ -41,7 +41,35 @@
       {% endif %}
     </button>
     <span id="finalize-feedback" class="text-muted"></span>
+    <button type="button" class="btn btn--secondary"
+            @click="$dispatch('open-modal', { id: 'summarize' })">
+      {% if has_summary %}
+        Re-summarize project
+      {% else %}
+        Summarize project
+      {% endif %}
+    </button>
+    <span id="summarize-feedback" class="text-muted"></span>
   </section>
+
+  {% call modal('summarize',
+    ('Re-summarize project' if has_summary else 'Summarize project')) %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/summarize"
+      hx-target="#summarize-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="sm-instructions">Instructions (optional)</label>
+        <textarea id="sm-instructions" name="instructions" rows="3"
+                  placeholder="Steer the summarizer (optional)"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run summarize</button>
+      </div>
+    </form>
+  {% endcall %}
 
   {% call modal('finalize',
     ('Re-finalize project' if (final_outputs.has_report and final_outputs.has_presentation) else 'Finalize project')) %}
@@ -74,7 +102,7 @@
     </form>
   {% endcall %}
 
-  {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation %}
+  {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation or has_summary %}
     <section class="final-outputs">
       <h2 class="section-heading">Final outputs</h2>
       <div class="final-outputs-grid">
@@ -94,6 +122,12 @@
           <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/presentation" target="_blank" rel="noopener">
             <div class="card-title">Presentation &#8599;</div>
             <div class="card-body text-muted">Reveal.js slide deck.</div>
+          </a>
+        {% endif %}
+        {% if has_summary %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/summary">
+            <div class="card-title">Summary</div>
+            <div class="card-body text-muted">Latest project status snapshot.</div>
           </a>
         {% endif %}
       </div>
