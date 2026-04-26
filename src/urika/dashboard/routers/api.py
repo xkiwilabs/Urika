@@ -95,6 +95,9 @@ async def api_create_project(request: Request):
     mode = (body.get("mode") or "exploratory").strip()
     audience = (body.get("audience") or "expert").strip()
     data_paths_raw = (body.get("data_paths") or "").strip()
+    # ``privacy_mode`` is optional — defaults to ``open`` for legacy
+    # callers and the New Project modal that doesn't yet expose it.
+    privacy_mode = (body.get("privacy_mode") or "open").strip()
 
     if not name or not question:
         raise HTTPException(
@@ -115,6 +118,36 @@ async def api_create_project(request: Request):
             status_code=422,
             detail=f"audience must be one of {sorted(VALID_AUDIENCES)}",
         )
+    if privacy_mode not in _VALID_PRIVACY_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"privacy_mode must be one of {sorted(_VALID_PRIVACY_MODES)}"
+            ),
+        )
+
+    # Hard gate: private/hybrid require a configured private endpoint
+    # in global settings. Without one the runtime would raise
+    # MissingPrivateEndpointError on the first agent invocation, so we
+    # may as well refuse the project creation up front with a fix
+    # instruction the user can act on.
+    if privacy_mode in ("private", "hybrid"):
+        from urika.core.settings import get_named_endpoints
+
+        if not any(
+            (ep.get("base_url") or "").strip()
+            for ep in get_named_endpoints()
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Privacy mode '{privacy_mode}' requires at least "
+                    f"one endpoint with a non-empty base_url to be "
+                    f"configured. Add one on the global Privacy tab "
+                    f"(/settings) before creating a project in this "
+                    f"mode."
+                ),
+            )
 
     registry = ProjectRegistry()
     if name in registry.list_all():
@@ -150,6 +183,17 @@ async def api_create_project(request: Request):
     from urika.core.workspace import create_project_workspace
 
     create_project_workspace(project_dir, cfg)
+
+    # Persist the privacy_mode in the new project's urika.toml. The
+    # workspace writer always writes [project] + [preferences]; we
+    # tack on a [privacy] block when the user picked a non-open mode
+    # so the runtime loader sees it on the next agent invocation.
+    if privacy_mode != "open":
+        toml_path = project_dir / "urika.toml"
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        data.setdefault("privacy", {})["mode"] = privacy_mode
+        _write_toml(toml_path, data)
 
     # Seed the new project's [notifications].channels list from the
     # global per-channel ``auto_enable`` flags. Channels with

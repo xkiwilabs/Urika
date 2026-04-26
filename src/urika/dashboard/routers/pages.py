@@ -91,9 +91,17 @@ def root() -> RedirectResponse:
 
 @router.get("/projects", response_class=HTMLResponse)
 def projects_list(request: Request) -> HTMLResponse:
+    from urika.core.settings import get_named_endpoints
+
     registry = ProjectRegistry().list_all()
     summaries = list_project_summaries(registry)
     templates = request.app.state.templates
+    # Surface "is at least one private endpoint configured" so the New
+    # Project modal can warn when the user picks private/hybrid.
+    has_private_endpoint = any(
+        (ep.get("base_url") or "").strip()
+        for ep in get_named_endpoints()
+    )
     return templates.TemplateResponse(
         "projects_list.html",
         {
@@ -101,6 +109,7 @@ def projects_list(request: Request) -> HTMLResponse:
             "projects": summaries,
             "valid_modes": sorted(VALID_MODES),
             "valid_audiences": sorted(VALID_AUDIENCES),
+            "has_private_endpoint": has_private_endpoint,
         },
     )
 

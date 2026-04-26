@@ -268,6 +268,182 @@ def test_create_project_no_auto_enable_no_notifications_block(create_client):
     )
 
 
+# ---- Privacy mode validation ----------------------------------------------
+
+
+def test_create_project_privacy_mode_private_without_endpoint_returns_422(
+    create_client,
+):
+    """Picking privacy_mode=private with no global endpoint configured
+    must 422 — otherwise the runtime would raise
+    MissingPrivateEndpointError on first agent call."""
+    client, _ = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "no-ep-priv",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "private",
+        },
+    )
+    assert r.status_code == 422
+    detail = r.json()["detail"].lower()
+    assert "private" in detail
+    assert "endpoint" in detail
+    assert "privacy" in detail or "/settings" in detail
+
+
+def test_create_project_privacy_mode_hybrid_without_endpoint_returns_422(
+    create_client,
+):
+    """Hybrid mode is symmetric — data agents are forced-private."""
+    client, _ = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "no-ep-hyb",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "hybrid",
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_create_project_invalid_privacy_mode_returns_422(create_client):
+    """Garbage privacy_mode values are rejected up front."""
+    client, _ = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "bad-priv",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "garbage",
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_create_project_privacy_mode_private_with_endpoint_succeeds(
+    tmp_path: Path, monkeypatch
+):
+    """When a private endpoint is configured globally, private/hybrid
+    POSTs are accepted. The new project's urika.toml carries the
+    [privacy].mode override."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text("{}")
+
+    projects_root = tmp_path / "projects"
+    projects_root.mkdir()
+    settings_path = home / "settings.toml"
+    settings_path.write_text(
+        f'projects_root = "{projects_root}"\n'
+        "[privacy.endpoints.private]\n"
+        'base_url = "http://localhost:11434"\n',
+        encoding="utf-8",
+    )
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "priv-ok",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "private",
+        },
+    )
+    assert r.status_code == 201, r.text
+
+    # The project's urika.toml should have [privacy].mode = "private".
+    proj_toml = tomllib.loads(
+        (projects_root / "priv-ok" / "urika.toml").read_text(encoding="utf-8")
+    )
+    assert proj_toml["privacy"]["mode"] == "private"
+
+
+def test_create_project_privacy_mode_open_default_does_not_gate(create_client):
+    """When privacy_mode is omitted or set to ``open``, the endpoint
+    check is skipped (cloud is always available)."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "open-default",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            # Note: no privacy_mode field
+        },
+    )
+    assert r.status_code == 201
+
+    # No [privacy] block written for open mode.
+    proj_toml = tomllib.loads(
+        (projects_root / "open-default" / "urika.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "privacy" not in proj_toml or "mode" not in proj_toml.get(
+        "privacy", {}
+    )
+
+
+def test_create_project_privacy_mode_endpoint_with_blank_url_does_not_pass(
+    tmp_path: Path, monkeypatch
+):
+    """An endpoint section defined with a blank base_url is NOT a
+    valid private endpoint. The 422 must still fire — same rule as the
+    runtime loader's MissingPrivateEndpointError."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text("{}")
+
+    projects_root = tmp_path / "projects"
+    projects_root.mkdir()
+    settings_path = home / "settings.toml"
+    settings_path.write_text(
+        f'projects_root = "{projects_root}"\n'
+        "[privacy.endpoints.private]\n"
+        'base_url = ""\n',
+        encoding="utf-8",
+    )
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "blank-url",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "private",
+        },
+    )
+    assert r.status_code == 422
+
+
 def test_create_project_duplicate_name_returns_409(create_client):
     """A second create with the same name fails after the registry sees it."""
     client, _ = create_client

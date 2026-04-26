@@ -152,6 +152,26 @@
         </select>
       </div>
 
+      <div class="form-row form-row--inline" x-data="{ pmode: 'open' }">
+        <label for="np-privacy-mode">Privacy mode</label>
+        <select id="np-privacy-mode" name="privacy_mode" x-model="pmode">
+          <option value="open" selected>open — agents use Claude API (cloud)</option>
+          <option value="private">private — agents use local/private endpoints only</option>
+          <option value="hybrid">hybrid — data agents private, others cloud</option>
+        </select>
+        {# Hint shown only when the user picks private/hybrid AND there
+           is no globally-configured endpoint with a non-empty base_url.
+           The Submit button stays clickable on purpose — the server-side
+           422 is the source of truth; the hint just saves a round trip. #}
+        <template x-if="(pmode === 'private' || pmode === 'hybrid') && {{ has_private_endpoint | tojson }} === false">
+          <span class="text-warning" style="font-size: 0.85em;">
+            No private endpoint is configured.
+            <a href="/settings#privacy">Configure one on the Privacy tab</a>
+            before creating a {private,hybrid}-mode project.
+          </span>
+        </template>
+      </div>
+
       <div class="form-actions">
         <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
         <button type="submit" class="btn btn--primary">Create project</button>
