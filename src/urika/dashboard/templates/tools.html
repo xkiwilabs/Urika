@@ -20,12 +20,6 @@
 
 {% block content %}
 {% if scope == "project" %}
-  <style>
-    .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
-    .form-row label { font-weight: 600; }
-    .form-row textarea, .form-row input { width: 100%; font: inherit; padding: 0.4rem; }
-    .form-actions { display: flex; align-items: center; gap: 0.75rem; }
-  </style>
   <section class="project-actions" style="margin-bottom: var(--space-5);">
     <button type="button" class="btn btn--primary"
             @click="$dispatch('open-modal', { id: 'build-tool' })">

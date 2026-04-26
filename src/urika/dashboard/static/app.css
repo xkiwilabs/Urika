@@ -891,6 +891,42 @@ h4 {
 .modal-close { font-size: 1.4em; }
 .modal-body { padding: var(--space-5); }
 
+/* ---------- Modal form layout ---------- */
+/* Block-level rows so labels stack above inputs and inputs span the
+   modal width. Used by every modal form (run / finalize / summarize /
+   build-tool / evaluate / report / present / advisor / new project). */
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.form-row label { font-weight: var(--fw-semibold); }
+.form-row input,
+.form-row textarea,
+.form-row select {
+  width: 100%;
+  font: inherit;
+  padding: var(--space-2);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.form-row textarea { resize: vertical; min-height: 4.5rem; }
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
 /* ---------- Advisor chat ---------- */
 .advisor-transcript {
   display: flex;

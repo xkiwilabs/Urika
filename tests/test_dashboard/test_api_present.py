@@ -178,6 +178,23 @@ def test_present_post_blank_audience_passes_as_none(present_client):
     assert spawn_calls[0]["audience"] is None
 
 
+def test_present_post_hx_request_emits_redirect_header(present_client):
+    """When the request comes from HTMX, the response should redirect
+    the whole page to the experiment log so the user sees streaming
+    output instead of a JSON body dumped into the modal."""
+    client, spawn_calls, _ = present_client
+    r = client.post(
+        "/api/projects/alpha/present",
+        headers={"hx-request": "true"},
+        data={"experiment_id": "exp-001"},
+    )
+    assert r.status_code == 200
+    assert r.headers.get("hx-redirect", "").endswith(
+        "/projects/alpha/experiments/exp-001/log"
+    )
+    assert len(spawn_calls) == 1
+
+
 # ---- Privacy pre-flight check ---------------------------------------------
 
 

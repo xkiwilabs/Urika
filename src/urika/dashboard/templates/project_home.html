@@ -14,14 +14,6 @@
 {% from "_macros.html" import modal, action_label %}
 
 {% block content %}
-<style>
-  .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
-  .form-row label { font-weight: 600; }
-  .form-row input, .form-row textarea, .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
-  .form-actions { display: flex; align-items: center; gap: 0.75rem; }
-  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
-</style>
-
   <div class="card">
     {% if project.question %}
       <div class="card-title project-question">{{ project.question }}</div>

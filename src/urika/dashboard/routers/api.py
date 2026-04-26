@@ -1826,6 +1826,10 @@ async def api_project_present(name: str, request: Request):
         instructions=instructions,
         audience=audience,
     )
+
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/experiments/{experiment_id}/log"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
     return JSONResponse(
         {"status": "started", "pid": pid, "experiment_id": experiment_id}
     )
