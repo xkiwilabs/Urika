@@ -546,6 +546,16 @@ h4 {
   min-width: 0;
 }
 
+/* In bare rows (methods, tools), the meta block sits BELOW main
+   on its own line and left-aligns with the title for visual
+   rhythm — no jumping between right- and left-alignment depending
+   on whether the meta fit inline. */
+.list-item-row > .list-item-meta {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  margin-top: var(--space-2);
+}
+
 /* ---------- 4. Breadcrumb ---------- */
 .breadcrumb {
   display: flex;
