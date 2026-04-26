@@ -155,29 +155,40 @@ def _seed_private_endpoint(tmp_path, *, with_default_model: bool = True):
     (tmp_path / "home" / "settings.toml").write_text(body, encoding="utf-8")
 
 
-def test_global_settings_models_tab_hybrid_forces_private_for_data_and_tool_builder(
+def test_global_settings_models_tab_hybrid_data_agent_locked_private(
     settings_client, tmp_path
 ):
-    """In the hybrid grid, data_agent + tool_builder rows offer ONLY the
-    'private' endpoint option (the cloud option is hidden)."""
+    """In the hybrid grid, only data_agent's endpoint <select> is hard-
+    locked to private (cloud option hidden + select disabled).
+    tool_builder defaults to private but the user can switch it to
+    open — so its <select> includes both options."""
     import re
 
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
-    # data_agent's hybrid endpoint <select> must contain 'private' but NOT
-    # an 'open' option.
-    for forced_agent in ("data_agent", "tool_builder"):
-        m = re.search(
-            r'name="runtime_modes_hybrid_models\['
-            + forced_agent
-            + r'\]\[endpoint\]".*?</select>',
-            body,
-            flags=re.DOTALL,
-        )
-        assert m is not None, f"missing endpoint select for {forced_agent}"
-        block = m.group(0)
-        assert 'value="private"' in block
-        assert 'value="open"' not in block
+
+    # data_agent: locked. The select is disabled and offers only private.
+    m = re.search(
+        r'name="runtime_modes_hybrid_models\[data_agent\]\[endpoint\]".*?</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None, "missing endpoint select for data_agent"
+    block = m.group(0)
+    assert 'value="private"' in block
+    assert 'value="open"' not in block
+    assert "disabled" in block
+
+    # tool_builder: NOT locked. The select offers both open and private.
+    m = re.search(
+        r'name="runtime_modes_hybrid_models\[tool_builder\]\[endpoint\]".*?</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None, "missing endpoint select for tool_builder"
+    block = m.group(0)
+    assert 'value="private"' in block
+    assert 'value="open"' in block
 
 
 def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
@@ -836,10 +847,11 @@ def test_global_settings_put_hybrid_forces_data_agent_private(
     )
 
 
-def test_global_settings_put_hybrid_forces_tool_builder_private(
+def test_global_settings_put_hybrid_allows_tool_builder_open(
     settings_client, tmp_path
 ):
-    """tool_builder joins data_agent in the forced-private set."""
+    """tool_builder DEFAULTS to private but the user is free to flip
+    it to open. Only data_agent is hard-locked private in hybrid."""
     r = settings_client.put(
         "/api/settings",
         data={
@@ -850,7 +862,7 @@ def test_global_settings_put_hybrid_forces_tool_builder_private(
             "default_audience": "expert",
             "default_max_turns": "10",
             "runtime_modes_hybrid_model": "claude-sonnet-4-5",
-            "runtime_modes_hybrid_models[tool_builder][model]": "qwen3:14b",
+            "runtime_modes_hybrid_models[tool_builder][model]": "claude-opus-4-7",
             "runtime_modes_hybrid_models[tool_builder][endpoint]": "open",
         },
     )
@@ -858,7 +870,7 @@ def test_global_settings_put_hybrid_forces_tool_builder_private(
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
     assert (
         s["runtime"]["modes"]["hybrid"]["models"]["tool_builder"]["endpoint"]
-        == "private"
+        == "open"
     )
 
 

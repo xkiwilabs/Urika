@@ -76,19 +76,21 @@
        submit. The server's /api/settings handler accepts both the
        indexed endpoints[<i>][name] shape and the JSON shape. #}
     <div class="tab-panel" x-show="active === 'privacy'"
-         x-data='{ endpoints: {{ named_endpoints | tojson }} }'
-         x-init="
-           const form = $el.closest('form');
-           if (form) form.addEventListener('htmx:configRequest', e => {
-             e.detail.parameters['endpoints_json'] = JSON.stringify(endpoints);
-           });
-         ">
+         x-data='{ endpoints: {{ named_endpoints | tojson }} }'>
       <p class="form-help" style="margin-bottom: var(--space-3);">
         Define one or more named endpoints. Each can be referenced from
         the Models tab to route specific agents through it. The runtime
         loader treats <code>open</code> as the cloud (Claude) endpoint
         implicitly; don't define one with that name.
       </p>
+
+      {# Hidden input is the actual carrier for the multi-endpoint
+         submission. Alpine keeps :value reactively synced to the
+         endpoints array; HTMX serializes it like any normal form
+         field. Avoids the timing pitfalls of :name= bindings inside
+         <template x-for>. #}
+      <input type="hidden" name="endpoints_json"
+             :value="JSON.stringify(endpoints)">
 
       <template x-for="(ep, idx) in endpoints" :key="idx">
         <div class="privacy-block">
@@ -272,7 +274,9 @@
            endpoint=<private> → auto-set to that endpoint's default_model
                                  (rendered as a read-only display + hidden
                                  input pair).
-         data_agent + tool_builder rows still hide the ``open`` option. #}
+         data_agent is HARD-LOCKED to private (its endpoint <select> is
+         disabled). tool_builder DEFAULTS to private but is fully
+         user-switchable. Other agents default to ``open``. #}
       {% set grid = mode_grids["hybrid"] %}
       <div class="privacy-block" x-show="mode === 'hybrid'" x-cloak>
         <h4>Hybrid mode</h4>
@@ -296,13 +300,29 @@
           </thead>
           <tbody>
             {% for row in grid.rows %}
-            {% set show_open = row.agent not in ["data_agent", "tool_builder"] %}
-            {% set initial_ep = row.endpoint if (row.endpoint == "open" and show_open) or row.endpoint in defined_endpoint_names else ("open" if show_open else (defined_endpoint_names[0] if defined_endpoint_names else "")) %}
+            {% set is_locked = row.agent == "data_agent" %}
+            {% set defaults_private = row.agent in ["data_agent", "tool_builder"] %}
+            {% set show_open = not is_locked %}
+            {# Initial endpoint:
+                 locked agent (data_agent) → first defined endpoint (or "")
+                 default-private agent (tool_builder, no override yet) → first defined endpoint
+                 explicit override on row → use that
+                 else → "open" #}
+            {% if row.endpoint and (row.endpoint == "open" and show_open) %}
+              {% set initial_ep = "open" %}
+            {% elif row.endpoint in defined_endpoint_names %}
+              {% set initial_ep = row.endpoint %}
+            {% elif defaults_private %}
+              {% set initial_ep = defined_endpoint_names[0] if defined_endpoint_names else "" %}
+            {% else %}
+              {% set initial_ep = "open" %}
+            {% endif %}
             <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
               <td><code>{{ row.agent }}</code></td>
               <td>
                 <select name="runtime_modes_hybrid_models[{{ row.agent }}][endpoint]"
-                        x-model="ep">
+                        x-model="ep"
+                        {% if is_locked %}disabled{% endif %}>
                   {% if show_open %}
                     <option value="open" {% if initial_ep == "open" %}selected{% endif %}>open</option>
                   {% endif %}
@@ -311,6 +331,14 @@
                             {% if initial_ep == ep_name %}selected{% endif %}>{{ ep_name }}</option>
                   {% endfor %}
                 </select>
+                {% if is_locked %}
+                  {# A disabled <select> doesn't submit its value, so
+                     mirror the locked endpoint into a hidden input. #}
+                  <input type="hidden"
+                         name="runtime_modes_hybrid_models[{{ row.agent }}][endpoint]"
+                         :value="ep">
+                  <div class="form-help">Locked: data_agent must use a private endpoint.</div>
+                {% endif %}
               </td>
               <td>
                 {# Cloud variant: a free dropdown of known cloud models.

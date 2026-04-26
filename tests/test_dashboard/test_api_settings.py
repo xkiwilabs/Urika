@@ -706,17 +706,19 @@ def test_settings_put_models_hybrid_strips_open_for_data_agent(
     assert da.get("endpoint") != "open"
 
 
-def test_settings_put_models_hybrid_strips_open_for_tool_builder(
+def test_settings_put_models_hybrid_keeps_open_for_tool_builder(
     settings_client, tmp_path
 ):
-    """In hybrid mode, tool_builder's endpoint=open is silently stripped."""
+    """In hybrid mode, tool_builder's endpoint=open is RESPECTED.
+    Unlike data_agent, tool_builder isn't hard-locked private — the
+    user is free to switch it to cloud."""
     r = settings_client.put(
         "/api/projects/alpha/settings",
         data=_basics(
             project_privacy_mode="hybrid",
             project_privacy_hybrid_private_url="http://localhost:11434",
             **{
-                "model[tool_builder]": "qwen3:14b",
+                "model[tool_builder]": "claude-opus-4-7",
                 "endpoint[tool_builder]": "open",
             },
         ),
@@ -724,8 +726,7 @@ def test_settings_put_models_hybrid_strips_open_for_tool_builder(
     assert r.status_code == 200
     toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
     tb = toml.get("runtime", {}).get("models", {}).get("tool_builder", {})
-    assert tb.get("model") == "qwen3:14b"
-    assert tb.get("endpoint") != "open"
+    assert tb.get("endpoint") == "open"
 
 
 def test_settings_put_models_hybrid_keeps_open_for_other_agents(

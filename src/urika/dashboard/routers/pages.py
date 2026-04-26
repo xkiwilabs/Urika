@@ -640,7 +640,11 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     # The dropdown's choices come from globals' [privacy.endpoints.*] —
     # any user-defined name (private, ollama, vllm_small, ...) shows up
     # as long as the mode allows it.
-    _HYBRID_FORCED_PRIVATE = {"data_agent", "tool_builder"}
+    # data_agent's hybrid endpoint is HARD-LOCKED to private (cloud is
+    # excluded from its dropdown entirely). tool_builder DEFAULTS to
+    # private but the user is free to switch it to open.
+    _HYBRID_LOCKED_PRIVATE = {"data_agent"}
+    _HYBRID_DEFAULT_PRIVATE = {"data_agent", "tool_builder"}
     _named_endpoints_full = get_named_endpoints()
     project_named_endpoints = [ep["name"] for ep in _named_endpoints_full]
     # Private-mode rows pick an endpoint by name and the form auto-derives
@@ -657,7 +661,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
         named = sorted(project_named_endpoints)
         if project_privacy_mode == "private":
             return (named, False)
-        if project_privacy_mode == "hybrid" and agent in _HYBRID_FORCED_PRIVATE:
+        if project_privacy_mode == "hybrid" and agent in _HYBRID_LOCKED_PRIVATE:
             return (named, True)
         # Non-restricted: cloud + every named endpoint.
         return (["open"] + named, False)

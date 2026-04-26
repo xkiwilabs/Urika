@@ -272,20 +272,21 @@ def test_project_settings_models_private_mode_empty_state_when_no_default_model(
     assert "Configure endpoints" in body
 
 
-def test_project_settings_models_hybrid_data_agent_forced_private(
+def test_project_settings_models_hybrid_data_agent_locked_private(
     client_with_projects, tmp_path
 ):
-    """In hybrid mode data_agent + tool_builder are marked force_private.
+    """In hybrid mode ONLY data_agent is hard-locked private.
 
-    The template renders a 'private only (hybrid)' note next to the
-    forced-private agent rows so the user sees why the dropdown is
-    restricted.
+    tool_builder defaults to private but the user is free to switch it
+    to open. The template renders a 'locked' hint next to data_agent
+    only, and disables its endpoint <select>.
     """
     _set_project_privacy(tmp_path, "hybrid")
     body = client_with_projects.get("/projects/alpha/settings").text
-    # The data_agent + tool_builder rows must show the "private only" hint.
-    # Two rows → at least two occurrences of the hint.
-    assert body.count("private only (hybrid)") >= 2
+    # data_agent shows the locked hint; tool_builder does NOT.
+    assert "locked: data_agent must use a private endpoint" in body
+    # Hint appears exactly once (only data_agent).
+    assert body.count("locked: data_agent must use a private endpoint") == 1
 
 
 def test_project_settings_runtime_model_is_select_in_open_mode(

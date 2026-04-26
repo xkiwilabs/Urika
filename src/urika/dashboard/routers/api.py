@@ -365,9 +365,9 @@ def _apply_structured_settings(project_path, form) -> None:
     # already restricts these dropdowns):
     #   private mode → strip endpoint=open from any agent (cloud is
     #     hidden in private mode; defeats the point otherwise)
-    #   hybrid mode  → strip endpoint=open for data_agent + tool_builder
-    #     (these two are forced-private — see _PRIVATE_AGENTS in
-    #     urika.agents.config)
+    #   hybrid mode  → strip endpoint=open ONLY for data_agent (it's
+    #     hard-locked private; tool_builder defaults to private but the
+    #     user can switch it to open)
     #
     # We resolve the effective mode from the form (if submitted) or fall
     # back to the existing TOML's [privacy].mode (or "open" as the
@@ -375,7 +375,7 @@ def _apply_structured_settings(project_path, form) -> None:
     _effective_mode = (form.get("project_privacy_mode") or "").strip()
     if _effective_mode not in {"open", "private", "hybrid"}:
         _effective_mode = (data.get("privacy", {}) or {}).get("mode") or "open"
-    _HYBRID_FORCED_PRIVATE = {"data_agent", "tool_builder"}
+    _HYBRID_LOCKED_PRIVATE = {"data_agent"}
 
     # Build the set of valid endpoint values: ``open`` (implicit cloud)
     # plus every named endpoint defined in the global settings AND any
@@ -430,7 +430,7 @@ def _apply_structured_settings(project_path, form) -> None:
                         endpoint_val = ""
                     elif (
                         _effective_mode == "hybrid"
-                        and agent in _HYBRID_FORCED_PRIVATE
+                        and agent in _HYBRID_LOCKED_PRIVATE
                     ):
                         endpoint_val = ""
                 if endpoint_val:
@@ -866,12 +866,13 @@ async def api_global_settings_put(request: Request):
             # Server-side enforcement of mode-specific endpoint constraints.
             # Private mode: ``open`` is hidden (defeats the point); coerce
             #   to ``private`` if defined, otherwise drop the override.
-            # Hybrid mode: data_agent + tool_builder are forced-private —
+            # Hybrid mode: ONLY data_agent is hard-locked private —
             #   ``open`` collapses to ``private`` (when defined).
+            #   tool_builder defaults to private but is user-switchable.
             # Open mode: any endpoint name is fine.
             if mode_name == "private" and endpoint_val == "open":
                 endpoint_val = "private" if "private" in defined_endpoint_names else ""
-            if mode_name == "hybrid" and agent in {"data_agent", "tool_builder"}:
+            if mode_name == "hybrid" and agent == "data_agent":
                 endpoint_val = "private" if "private" in defined_endpoint_names else ""
 
             if endpoint_val and endpoint_val not in valid_endpoint_values:

@@ -240,21 +240,36 @@
           </thead>
           <tbody>
             {% for row in model_rows %}
-            {% set initial_ep = row.endpoint if row.endpoint and row.endpoint != "inherit" else (row.endpoint_choices[0] if row.endpoint_choices else "") %}
+            {% set is_locked = row.agent == "data_agent" %}
+            {% set defaults_private = row.agent in ["data_agent", "tool_builder"] %}
+            {# Initial endpoint: explicit project override > default-private
+               for the two privacy-sensitive agents > first available choice. #}
+            {% if row.endpoint and row.endpoint != "inherit" and row.endpoint in row.endpoint_choices %}
+              {% set initial_ep = row.endpoint %}
+            {% elif defaults_private and row.endpoint_choices %}
+              {# Pick first non-"open" choice (prefer a private endpoint). #}
+              {% set initial_ep = (row.endpoint_choices | reject('eq', 'open') | list)[0] if (row.endpoint_choices | reject('eq', 'open') | list) else row.endpoint_choices[0] %}
+            {% else %}
+              {% set initial_ep = row.endpoint_choices[0] if row.endpoint_choices else "" %}
+            {% endif %}
             <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
               <td>
                 <code>{{ row.agent }}</code>
-                {% if row.force_private %}
-                  <span class="form-help" style="display:block;">private only (hybrid)</span>
+                {% if is_locked %}
+                  <span class="form-help" style="display:block;">locked: data_agent must use a private endpoint</span>
                 {% endif %}
               </td>
               <td>
-                <select name="endpoint[{{ row.agent }}]" x-model="ep">
+                <select name="endpoint[{{ row.agent }}]" x-model="ep"
+                        {% if is_locked %}disabled{% endif %}>
                   {% for choice in row.endpoint_choices %}
                     <option value="{{ choice }}"
                             {% if choice == initial_ep %}selected{% endif %}>{{ choice }}</option>
                   {% endfor %}
                 </select>
+                {% if is_locked %}
+                  <input type="hidden" name="endpoint[{{ row.agent }}]" :value="ep">
+                {% endif %}
               </td>
               <td>
                 {# Cloud variant: free dropdown of known cloud models.
