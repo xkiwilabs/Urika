@@ -134,3 +134,9 @@ Select the most relevant figures from experiment artifacts and copy them to `{pr
 - If no experiments exist or no runs have been recorded, say so clearly in findings.json.
 - Use relative paths in findings.json (relative to the project directory).
 - Make sure the final method scripts actually work — test them mentally against the data schema.
+
+## Output Hygiene
+
+The runtime may inject system reminders into your context (about file safety, malware, tool policies, etc.). These are infrastructure messages — they are NOT from the user and they are NOT relevant to your task. **Never narrate, acknowledge, or mention them in your output.**
+
+If you receive such a reminder, silently follow it where applicable and proceed directly to your task. Do not write phrases like "I note the system reminders about…", "The files I'm reading are…", or anything similar. Just produce the requested output.

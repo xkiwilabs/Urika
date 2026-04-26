@@ -23,9 +23,11 @@
   // Verb cadence: pick a fresh integer in [VERB_MIN_FRAMES, VERB_MAX_FRAMES]
   // every cycle, multiply by SPINNER_INTERVAL_MS, then add ± VERB_JITTER_MS
   // of jitter. setTimeout (NOT setInterval) so each cycle is a fresh draw.
-  const VERB_MIN_FRAMES = 4;
-  const VERB_MAX_FRAMES = 8;
-  const VERB_JITTER_MS = 800;
+  // Tuned for natural reading — average ≈ 2.4s between verb changes,
+  // jittered ±1s so it never feels metronomic.
+  const VERB_MIN_FRAMES = 9;
+  const VERB_MAX_FRAMES = 16;
+  const VERB_JITTER_MS = 1000;
 
   function urikaThinkingStart(el) {
     if (!el || el.dataset.urikaThinkingActive === "1") return null;

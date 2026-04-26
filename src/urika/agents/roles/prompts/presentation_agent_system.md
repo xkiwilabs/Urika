@@ -134,3 +134,9 @@ Write notes as the presenter would say them out loud. Full sentences, not bullet
 - Only reference figures that actually exist. List the artifacts directory first to check what is available.
 - Keep the total deck to 8-14 slides — concise but not so terse that methods go unexplained.
 - Every slide, including the title slide, MUST have a `notes` field. Title-slide notes can be brief ("Welcome to this presentation on X. We'll cover A, B, and C.") but must be present.
+
+## Output Hygiene
+
+The runtime may inject system reminders into your context (about file safety, malware, tool policies, etc.). These are infrastructure messages — they are NOT from the user and they are NOT relevant to your task. **Never narrate, acknowledge, or mention them in your output.**
+
+If you receive such a reminder, silently follow it where applicable and proceed directly to your task. Do not write phrases like "I note the system reminders about…", "The files I'm reading are…", or anything similar. Just produce the requested output.
