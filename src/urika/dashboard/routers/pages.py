@@ -730,6 +730,58 @@ def project_data_inspect(request: Request, name: str, path: str = "") -> HTMLRes
     )
 
 
+@router.get("/projects/{name}/usage", response_class=HTMLResponse)
+def project_usage(request: Request, name: str) -> HTMLResponse:
+    """Render usage time-series + totals for the project.
+
+    Reads ``<project>/usage.json`` (via :func:`load_usage` /
+    :func:`get_totals`). The schema doesn't carry per-experiment or
+    per-agent breakdown so the page sticks to time-series of total
+    tokens and cost, plus a recent-sessions table capped at 50.
+    Pre-computes ``tokens_series`` and ``cost_series`` arrays so the
+    template can hand them to Chart.js as JSON without per-row JS work.
+    """
+    from urika.core.usage import get_totals, load_usage
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    data = load_usage(summary.path)
+    sessions = data.get("sessions", []) or []
+    totals = get_totals(summary.path)
+
+    tokens_series: list[dict] = []
+    cost_series: list[dict] = []
+    for s in sessions:
+        ended = s.get("ended", "") or s.get("started", "")
+        if not ended:
+            continue
+        tin = int(s.get("tokens_in", 0) or 0)
+        tout = int(s.get("tokens_out", 0) or 0)
+        tokens_series.append({"x": ended, "y": tin + tout})
+        cost_series.append({"x": ended, "y": float(s.get("cost_usd", 0) or 0)})
+
+    # Recent 50, newest-first. The on-disk order is append-only so the
+    # last entry is the most recent.
+    recent_sessions = list(reversed(sessions))[:50]
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "usage.html",
+        {
+            "request": request,
+            "project": summary,
+            "totals": totals,
+            "sessions": sessions,
+            "recent_sessions": recent_sessions,
+            "tokens_series": tokens_series,
+            "cost_series": cost_series,
+        },
+    )
+
+
 @router.get("/projects/{name}/methods", response_class=HTMLResponse)
 def project_methods(request: Request, name: str) -> HTMLResponse:
     registry = ProjectRegistry().list_all()
