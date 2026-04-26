@@ -512,6 +512,31 @@ def test_run_log_page_type_present_carries_query_in_sse_url(client_run_log):
     assert 'id="stop-btn"' not in r.text
 
 
+def test_run_log_presentation_link_opens_in_new_tab(client_run_log):
+    """Presentation links must always open in a new tab — reveal.js takes
+    over the whole window, and losing the dashboard tab to a deck would
+    be a navigation trap. Pin every presentation <a> to carry
+    ``target="_blank" rel="noopener"`` consistently."""
+    r = client_run_log.get("/projects/alpha/experiments/exp-001/log")
+    assert r.status_code == 200
+    body = r.text
+    # Find the presentation link and assert the attrs sit on the same tag.
+    import re
+    match = re.search(
+        r'<a[^>]*id="link-presentation"[^>]*>',
+        body,
+        re.DOTALL,
+    )
+    assert match, "presentation link not found on run log page"
+    tag = match.group(0)
+    assert 'target="_blank"' in tag, (
+        f"presentation link missing target=_blank: {tag!r}"
+    )
+    assert 'rel="noopener"' in tag, (
+        f"presentation link missing rel=noopener: {tag!r}"
+    )
+
+
 def test_run_log_page_type_unknown_falls_back_to_run(client_run_log):
     """An unknown ?type value silently degrades to run — the page still
     renders, the SSE URL has no query string, and the Stop button is back."""
