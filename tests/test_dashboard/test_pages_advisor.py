@@ -106,19 +106,17 @@ def test_advisor_link_in_sidebar(advisor_client):
 
 
 def test_advisor_page_has_rotating_spinner_and_verbs(advisor_client):
-    """The advisor chat JS must define both the spinner-frame and
-    activity-verb arrays so the placeholder animates instead of being
-    a static "Thinking…" string. Mirrors the CLI/TUI's
-    _spinner_frames / _activity_verbs in urika.repl.main."""
+    """The advisor chat must load the shared thinking helper so the
+    placeholder animates instead of being a static "Thinking…" string.
+    Mirrors the CLI/TUI's _spinner_frames / _activity_verbs in
+    urika.repl.main — the frames + verbs themselves now live in
+    /static/urika-thinking.js, but the page must reference it and call
+    urikaThinking.start() to spin up the placeholder."""
     r = advisor_client.get("/projects/alpha/advisor")
     body = r.text
-    # Spinner braille frames — first + last frames in the rotation.
-    assert "⠋" in body
-    assert "⠏" in body
-    # Activity verbs — at least 4 of the 8 should appear.
-    for verb in ("Thinking", "Reasoning", "Analyzing", "Processing"):
-        assert verb in body
-    # The setInterval timers that drive the animation.
-    assert "setInterval" in body
+    # The shared helper script is included.
+    assert "/static/urika-thinking.js" in body
+    # The page calls into the helper to start a placeholder.
+    assert "urikaThinking.start" in body
     # No more static placeholder text.
     assert "appendMessage('advisor', 'Thinking…')" not in body

@@ -16,6 +16,7 @@
 {% block content %}
 <div class="card">
   <div id="log-status" class="text-muted">Connecting…</div>
+  {% include "_thinking.html" %}
   <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
 
   <div id="log-completion" style="display: none; margin-top: var(--space-4);">
@@ -33,6 +34,10 @@
   const es = new EventSource(url);
   es.onopen = function () { statusEl.textContent = "Streaming…"; };
   es.onmessage = function (e) {
+    if (window._urikaThinkingHandle) {
+      window._urikaThinkingHandle.stop();
+      window._urikaThinkingHandle = null;
+    }
     const line = document.createElement("div");
     line.textContent = e.data;
     logEl.appendChild(line);
@@ -41,6 +46,10 @@
   es.addEventListener("status", function (e) {
     statusEl.textContent = "Completed.";
     completionEl.style.display = "";
+    if (window._urikaThinkingHandle) {
+      window._urikaThinkingHandle.stop();
+      window._urikaThinkingHandle = null;
+    }
     es.close();
   });
   es.onerror = function () { statusEl.textContent = "Connection lost."; };

@@ -1,0 +1,16 @@
+{# Renders a placeholder div + auto-starts the spinner. The caller can
+   stop the animation by calling window._urikaThinkingHandle.stop()
+   (e.g. on first SSE message or on event: status). Single placeholder
+   per page is enough — log pages only need one, and the advisor builds
+   its placeholders in JS so it doesn't include this partial. #}
+<div data-urika-thinking class="urika-thinking"></div>
+<script src="/static/urika-thinking.js"></script>
+<script>
+  (function () {
+    const el = document.querySelector('[data-urika-thinking]:not([data-started])');
+    if (el) {
+      el.dataset.started = "1";
+      window._urikaThinkingHandle = window.urikaThinking.start(el);
+    }
+  })();
+</script>

@@ -36,6 +36,7 @@
   </div>
 </form>
 
+<script src="/static/urika-thinking.js"></script>
 <script>
 (function () {
   const form = document.getElementById('advisor-form');
@@ -52,35 +53,14 @@
     textarea.value = '';
     textarea.disabled = true;
 
-    // Animated thinking placeholder — mirrors the CLI/TUI's spinner
-    // frames + rotating activity verbs (urika.repl.main._activity_verbs
-    // and _spinner_frames). 100ms spinner tick, 3s verb tick.
+    // Animated thinking placeholder — shared helper from
+    // /static/urika-thinking.js. Slower spinner + jittered verb
+    // cadence + urika-blue colour come baked in.
     const thinking = appendMessage('advisor', '');
     thinking.classList.add('message--thinking');
-
-    const SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
-    const ACTIVITY_VERBS = [
-      "Thinking", "Reasoning", "Analyzing", "Processing",
-      "Exploring", "Evaluating", "Considering", "Reviewing",
-    ];
-    let spinnerIdx = 0;
-    let verbIdx = 0;
-    const renderThinking = () => {
-      thinking.textContent =
-        `${SPINNER_FRAMES[spinnerIdx]} ${ACTIVITY_VERBS[verbIdx]}…`;
-    };
-    renderThinking();
-    const spinnerTimer = setInterval(() => {
-      spinnerIdx = (spinnerIdx + 1) % SPINNER_FRAMES.length;
-      renderThinking();
-    }, 100);
-    const verbTimer = setInterval(() => {
-      verbIdx = (verbIdx + 1) % ACTIVITY_VERBS.length;
-      renderThinking();
-    }, 3000);
+    const thinkingHandle = window.urikaThinking.start(thinking);
     const stopThinking = () => {
-      clearInterval(spinnerTimer);
-      clearInterval(verbTimer);
+      if (thinkingHandle) thinkingHandle.stop();
     };
 
     try {

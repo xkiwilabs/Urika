@@ -1046,6 +1046,17 @@ h4 {
   outline-offset: 2px;
 }
 
+/* ---------- Shared "thinking…" placeholder ---------- */
+/* Driven by /static/urika-thinking.js. The element gets this class
+   while the spinner is running and loses it on stop(). Urika blue
+   keeps the activity visible without competing with the log stream. */
+.urika-thinking {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  padding: var(--space-3);
+}
+
 /* ---------- Documentation viewer ---------- */
 /* Docs nav lives in the sidebar (third mode); the main panel is
    just the rendered .markdown-body article inside a .card. */

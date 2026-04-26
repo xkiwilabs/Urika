@@ -23,6 +23,7 @@
 {% block content %}
 <div class="card">
   <div id="log-status" class="text-muted">Connecting…</div>
+  {% include "_thinking.html" %}
   <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
 
   <div id="log-prompts" style="margin-top: var(--space-4);"></div>
@@ -67,6 +68,10 @@
   };
 
   es.onmessage = function (e) {
+    if (window._urikaThinkingHandle) {
+      window._urikaThinkingHandle.stop();
+      window._urikaThinkingHandle = null;
+    }
     const line = document.createElement("div");
     line.textContent = e.data;
     logEl.appendChild(line);
@@ -141,6 +146,10 @@
     statusEl.textContent = payload.status === "completed" ? "Completed." : `Status: ${payload.status || "unknown"}`;
     completionEl.style.display = "";
     if (stopBtn) stopBtn.style.display = "none";
+    if (window._urikaThinkingHandle) {
+      window._urikaThinkingHandle.stop();
+      window._urikaThinkingHandle = null;
+    }
     es.close();
 
     // Probe for report / presentation existence so the buttons only
