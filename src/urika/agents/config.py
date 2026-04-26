@@ -104,8 +104,57 @@ class RuntimeConfig:
     endpoints: dict[str, EndpointConfig] = field(default_factory=dict)
 
 
+def _load_global_per_mode(mode: str) -> tuple[str, dict[str, AgentModelConfig]]:
+    """Read ``[runtime.modes.<mode>]`` from ``~/.urika/settings.toml``.
+
+    Returns ``(default_model, per_agent_overrides)`` extracted from
+    ``[runtime.modes.<mode>].model`` and
+    ``[runtime.modes.<mode>.models.<agent>]``.  Empty values are returned
+    when the file is missing, unparseable, or has no block for ``mode``.
+    """
+    import tomllib
+
+    from urika.core.settings import _settings_path
+
+    path = _settings_path()
+    if not path.exists():
+        return "", {}
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return "", {}
+
+    modes = data.get("runtime", {}).get("modes", {})
+    if not isinstance(modes, dict):
+        return "", {}
+    cfg = modes.get(mode, {})
+    if not isinstance(cfg, dict):
+        return "", {}
+
+    default_model = cfg.get("model", "") or ""
+    per_agent: dict[str, AgentModelConfig] = {}
+    for agent_name, agent_cfg in (cfg.get("models", {}) or {}).items():
+        if isinstance(agent_cfg, dict):
+            per_agent[agent_name] = AgentModelConfig(
+                endpoint=agent_cfg.get("endpoint", "open"),
+                model=agent_cfg.get("model", ""),
+            )
+        elif isinstance(agent_cfg, str):
+            per_agent[agent_name] = AgentModelConfig(model=agent_cfg)
+    return default_model, per_agent
+
+
 def load_runtime_config(project_dir: Path) -> RuntimeConfig:
-    """Load runtime config from urika.toml. Returns defaults if not configured."""
+    """Load runtime config from urika.toml. Returns defaults if not configured.
+
+    Project-level overrides always win.  When the project's ``urika.toml``
+    has no entry for a given agent (or no top-level ``[runtime].model``),
+    the loader falls back to ``[runtime.modes.<project_mode>]`` in
+    ``~/.urika/settings.toml``.  This is the live-inheritance bit of the
+    global-defaults model: projects pick a mode and get per-agent
+    defaults from globals without copying them at creation time.
+    """
     import tomllib
 
     toml_path = project_dir / "urika.toml"
@@ -140,11 +189,23 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
                     api_key_env=ep_cfg.get("api_key_env", ""),
                 )
 
+        # ── Live-inherit from global per-mode defaults ────────────────
+        # Project-level values always win; globals fill in the gaps for
+        # any agent (or the top-level model) that the project hasn't
+        # overridden.
+        project_mode = privacy.get("mode", "open")
+        global_default_model, global_per_agent = _load_global_per_mode(project_mode)
+        for agent_name, gcfg in global_per_agent.items():
+            if agent_name not in model_overrides:
+                model_overrides[agent_name] = gcfg
+
+        final_model = runtime.get("model", "") or global_default_model
+
         return RuntimeConfig(
             backend=runtime.get("backend", "claude"),
-            model=runtime.get("model", ""),
+            model=final_model,
             model_overrides=model_overrides,
-            privacy_mode=privacy.get("mode", "open"),
+            privacy_mode=project_mode,
             endpoints=endpoints,
         )
     except (OSError, ValueError, KeyError, TypeError) as exc:
