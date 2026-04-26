@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from urika.agents.config import AgentConfig, AgentRole, SecurityPolicy
+import pytest
+
+from urika.agents.config import (
+    AgentConfig,
+    AgentRole,
+    EndpointConfig,
+    MissingPrivateEndpointError,
+    RuntimeConfig,
+    SecurityPolicy,
+    build_agent_env_for_endpoint,
+)
 
 
 class TestSecurityPolicyWriteAllowed:
@@ -228,3 +238,90 @@ class TestAgentRole:
         config = role.build_config(tmp_path)
         assert config.name == "worker"
         assert f"{tmp_path}" in config.system_prompt
+
+
+class TestPrivateEndpointHardFail:
+    """``build_agent_env_for_endpoint`` must raise rather than silently
+    fall back to cloud when private/hybrid mode requires a private
+    endpoint that isn't configured (or has no base_url).
+
+    Open mode and hybrid mode for non-data agents (e.g. planning_agent)
+    never need a private endpoint, so they must NOT raise.
+    """
+
+    def test_private_mode_missing_endpoint_raises(self, tmp_path: Path) -> None:
+        rc = RuntimeConfig(privacy_mode="private", endpoints={})
+        with pytest.raises(MissingPrivateEndpointError) as exc_info:
+            build_agent_env_for_endpoint(tmp_path, "task_agent", rc)
+        msg = str(exc_info.value)
+        assert "private" in msg
+        assert "task_agent" in msg
+        # User-facing fix instruction.
+        assert "urika config" in msg or "dashboard" in msg
+
+    def test_private_mode_endpoint_with_blank_url_raises(
+        self, tmp_path: Path
+    ) -> None:
+        """An endpoint defined with an empty ``base_url`` is still
+        missing — defining the section without a URL is a configuration
+        error, not a silent green light."""
+        rc = RuntimeConfig(
+            privacy_mode="private",
+            endpoints={"private": EndpointConfig(base_url="")},
+        )
+        with pytest.raises(MissingPrivateEndpointError) as exc_info:
+            build_agent_env_for_endpoint(tmp_path, "task_agent", rc)
+        assert "base_url" in str(exc_info.value)
+
+    def test_hybrid_mode_data_agent_missing_endpoint_raises(
+        self, tmp_path: Path
+    ) -> None:
+        """Hybrid mode forces the data_agent to private; with no
+        private endpoint configured, the run must abort."""
+        rc = RuntimeConfig(privacy_mode="hybrid", endpoints={})
+        with pytest.raises(MissingPrivateEndpointError):
+            build_agent_env_for_endpoint(tmp_path, "data_agent", rc)
+
+    def test_hybrid_mode_tool_builder_missing_endpoint_raises(
+        self, tmp_path: Path
+    ) -> None:
+        rc = RuntimeConfig(privacy_mode="hybrid", endpoints={})
+        with pytest.raises(MissingPrivateEndpointError):
+            build_agent_env_for_endpoint(tmp_path, "tool_builder", rc)
+
+    def test_hybrid_mode_non_private_agent_does_not_raise(
+        self, tmp_path: Path
+    ) -> None:
+        """Hybrid mode lets agents outside the forced-private set go to
+        cloud, so a missing private endpoint must NOT raise for them."""
+        rc = RuntimeConfig(privacy_mode="hybrid", endpoints={})
+        # Should NOT raise — planning_agent goes to cloud in hybrid mode.
+        build_agent_env_for_endpoint(tmp_path, "planning_agent", rc)
+
+    def test_open_mode_missing_endpoint_does_not_raise(
+        self, tmp_path: Path
+    ) -> None:
+        """Open mode never needs a private endpoint — cloud is always
+        available."""
+        rc = RuntimeConfig(privacy_mode="open", endpoints={})
+        # Should NOT raise.
+        build_agent_env_for_endpoint(tmp_path, "task_agent", rc)
+
+    def test_private_mode_with_configured_endpoint_succeeds(
+        self, tmp_path: Path
+    ) -> None:
+        rc = RuntimeConfig(
+            privacy_mode="private",
+            endpoints={
+                "private": EndpointConfig(base_url="http://localhost:11434"),
+            },
+        )
+        env = build_agent_env_for_endpoint(tmp_path, "task_agent", rc)
+        assert env is not None
+        assert env.get("ANTHROPIC_BASE_URL") == "http://localhost:11434"
+
+    def test_missing_private_endpoint_error_is_runtime_error(self) -> None:
+        """Subclassing RuntimeError lets callers that already catch
+        RuntimeError keep working; new callers can catch the specific
+        class for a more targeted handler."""
+        assert issubclass(MissingPrivateEndpointError, RuntimeError)

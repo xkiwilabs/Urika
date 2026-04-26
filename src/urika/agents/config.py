@@ -7,6 +7,25 @@ from pathlib import Path
 from typing import Callable
 
 
+class MissingPrivateEndpointError(RuntimeError):
+    """Raised when a privacy-sensitive agent run requires a configured
+    private endpoint that is missing from the runtime config.
+
+    The runtime used to silently fall back to the cloud endpoint and
+    only emit a ``warnings.warn(...)``.  That made it possible to run
+    a project in ``private`` (or ``hybrid``) mode while quietly
+    sending data to the Anthropic API — the opposite of the
+    user-facing privacy contract.
+
+    Now ``build_agent_env_for_endpoint`` raises this error when the
+    selected endpoint is missing, so the run aborts visibly and the
+    user is forced to fix the configuration before any
+    privacy-sensitive workload starts.
+    """
+
+    pass
+
+
 @dataclass
 class SecurityPolicy:
     """Filesystem and command boundaries for an agent.
@@ -256,18 +275,23 @@ def build_agent_env_for_endpoint(
 
     if endpoint_name != "open":
         endpoint = runtime_config.endpoints.get(endpoint_name)
-        if endpoint is None:
-            import warnings
-
-            warnings.warn(
+        if endpoint is None or not endpoint.base_url:
+            # Hard fail — silently falling back to the cloud endpoint
+            # would violate the privacy contract.  The user must
+            # configure the endpoint before running privacy-sensitive
+            # work.
+            reason = (
+                f"is missing"
+                if endpoint is None
+                else "has no base_url"
+            )
+            raise MissingPrivateEndpointError(
                 f"Privacy mode '{runtime_config.privacy_mode}' "
-                f"requires endpoint '{endpoint_name}' but it "
-                f"is not defined in [privacy.endpoints."
-                f"{endpoint_name}] in urika.toml. Agent "
-                f"'{agent_name}' will use the default open "
-                f"endpoint. Define the endpoint or change "
-                f"the privacy mode to avoid this.",
-                stacklevel=2,
+                f"requires the '{endpoint_name}' endpoint to be "
+                f"configured for agent '{agent_name}', but "
+                f"[privacy.endpoints.{endpoint_name}] {reason}. "
+                f"Configure it via `urika config` or the dashboard's "
+                f"Privacy tab before running this project."
             )
         if endpoint:
             if env is None:
