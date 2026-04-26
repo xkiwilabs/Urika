@@ -195,6 +195,56 @@ def spawn_finalize(
     return proc.pid
 
 
+def spawn_evaluate(
+    project_name: str,
+    project_path: Path,
+    experiment_id: str,
+    *,
+    instructions: str = "",
+    executable: str | None = None,
+) -> int:
+    """Spawn ``urika evaluate <project> <experiment_id>`` as a subprocess.
+
+    Writes the PID to ``<exp>/.evaluate.lock`` and tees stdout to
+    ``<exp>/evaluate.log``. The lock is removed when the subprocess
+    exits. Returns the PID.
+
+    The evaluator does not produce a dedicated artifact file; it
+    appends to ``progress.json`` and prints to stdout. The dashboard
+    tails ``evaluate.log`` so the user can watch the agent's work.
+    """
+    exp_dir = project_path / "experiments" / experiment_id
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    log_path = exp_dir / "evaluate.log"
+    lock_path = exp_dir / ".evaluate.lock"
+
+    cmd = [
+        executable or sys.executable,
+        "-m",
+        "urika",
+        "evaluate",
+        project_name,
+        experiment_id,
+        "--json",
+    ]
+    if instructions:
+        cmd.extend(["--instructions", instructions])
+
+    env = os.environ.copy()
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+        env=env,
+    )
+    lock_path.write_text(str(proc.pid), encoding="utf-8")
+    _start_drainer(proc, log_path, lock_path)
+    return proc.pid
+
+
 def spawn_present(
     project_name: str,
     project_path: Path,

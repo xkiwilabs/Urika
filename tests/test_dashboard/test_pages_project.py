@@ -191,6 +191,25 @@ def test_experiment_detail_lists_runs(client_with_runs):
     assert "run-001" in body or "observation for run 1" in body
 
 
+def test_experiment_detail_shows_evaluate_button_and_modal(client_with_runs):
+    """The Outputs section must contain an Evaluate button that opens
+    the 'evaluate' modal, and the modal form must POST to the
+    per-experiment evaluate API."""
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    assert r.status_code == 200
+    body = r.text
+    # Button dispatches Alpine open-modal event with id=evaluate
+    assert "open-modal" in body
+    assert "id: 'evaluate'" in body
+    assert ">Evaluate<" in body or "Evaluate\n" in body
+    # Modal form posts to the per-experiment evaluate endpoint
+    assert (
+        'hx-post="/api/projects/alpha/experiments/exp-001/evaluate"' in body
+    )
+    # Instructions textarea is present
+    assert 'name="instructions"' in body
+
+
 def test_experiment_detail_404_for_unknown_experiment(client_with_runs):
     r = client_with_runs.get("/projects/alpha/experiments/exp-999")
     assert r.status_code == 404
