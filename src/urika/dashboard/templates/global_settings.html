@@ -138,9 +138,10 @@
 
     {# ---- Models tab — per-mode sub-tabs ------------------------------ #}
     {# Sub-tabs (Open / Private / Hybrid) swap which mode's grid is
-       visible. Each grid carries its own default-model field + per-agent
-       rows. Project Models tabs inherit from these per-mode defaults
-       via the loader's per-mode fallback. #}
+       visible. Every grid is the same shape: a 3-column table with
+       Agent / Endpoint / Model. The Endpoint cell varies per mode
+       (read-only text vs UI-category select) but the visual rhythm
+       stays consistent across modes. #}
     <div class="tab-panel" x-show="active === 'models'" x-cloak
          x-data="{ mode: 'open' }">
       <div class="tab-list" role="tablist" style="margin-bottom: var(--space-3);">
@@ -160,10 +161,10 @@
       </span>
 
       {# ---- Open mode grid ------------------------------------------ #}
-      {# In open mode every agent uses the cloud (Claude) endpoint by
-         definition, so the endpoint column is dropped.  Each row's
-         hidden ``[endpoint]=open`` is still submitted so the server's
-         existing PUT validator (which expects both fields) is satisfied. #}
+      {# In open mode every agent uses the cloud (Claude) endpoint, so
+         the Endpoint cell renders as the literal text "open" (read-
+         only). A hidden ``[endpoint]=open`` carries the value to the
+         server. The Model column is a cloud-models <select>. #}
       {% set grid = mode_grids["open"] %}
       <div class="privacy-block" x-show="mode === 'open'" x-cloak>
         <h4>Open mode</h4>
@@ -181,6 +182,7 @@
           <thead>
             <tr>
               <th>Agent</th>
+              <th>Endpoint</th>
               <th>Model</th>
             </tr>
           </thead>
@@ -189,16 +191,18 @@
             <tr>
               <td><code>{{ row.agent }}</code></td>
               <td>
-                {# Cloud-models dropdown — open mode is always cloud. #}
+                <span>open</span>
+                <input type="hidden"
+                       name="runtime_modes_open_models[{{ row.agent }}][endpoint]"
+                       value="open">
+              </td>
+              <td>
                 <select name="runtime_modes_open_models[{{ row.agent }}][model]">
                   {% for m in known_cloud_models %}
                     <option value="{{ m }}"
                             {% if m == (row.model or grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
                   {% endfor %}
                 </select>
-                <input type="hidden"
-                       name="runtime_modes_open_models[{{ row.agent }}][endpoint]"
-                       value="open">
               </td>
             </tr>
             {% endfor %}
@@ -207,14 +211,13 @@
       </div>
 
       {# ---- Private mode grid --------------------------------------- #}
-      {# In private mode every agent uses a private endpoint by
-         definition, so the endpoint column is dropped.  Per-agent
-         model fields become a single dropdown of the private endpoints
-         defined on the Privacy tab — its option value is the endpoint
-         name and its visible label is "<default_model> (<endpoint_name>)".
-         A hidden ``model`` input is bound (via Alpine) to that
-         endpoint's ``default_model`` so the form submits both fields
-         the API expects. #}
+      {# In private mode every agent uses a private endpoint, so the
+         Endpoint cell renders as the literal text "private" (read-
+         only). The Model column header is "Model (Endpoint)" to flag
+         the asymmetry: picking a row in this column actually selects
+         a named private endpoint AND its bundled default_model.
+         Hidden inputs carry both ``[endpoint]`` (the chosen endpoint
+         name) and ``[model]`` (its default_model). #}
       {% set grid = mode_grids["private"] %}
       <div class="privacy-block" x-show="mode === 'private'" x-cloak>
         <h4>Private mode</h4>
@@ -231,24 +234,30 @@
             <thead>
               <tr>
                 <th>Agent</th>
-                <th>Endpoint (model)</th>
+                <th>Endpoint</th>
+                <th>Model (Endpoint)</th>
               </tr>
             </thead>
             <tbody>
               {% for row in grid.rows %}
-              {# Per-row Alpine state holds the chosen endpoint name; a
-                 hidden model input is :value-bound to its default_model. #}
+              {# Per-row Alpine state holds the chosen endpoint name. The
+                 visible <select> has no name= so it's not submitted; two
+                 hidden inputs carry [endpoint] and [model] derived from
+                 the local ``ep`` value. #}
               {% set initial_ep = row.endpoint if row.endpoint in private_endpoint_options|map(attribute='name')|list else private_endpoint_options[0].name %}
               <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
                 <td><code>{{ row.agent }}</code></td>
+                <td><span>private</span></td>
                 <td>
-                  <select name="runtime_modes_private_models[{{ row.agent }}][endpoint]"
-                          x-model="ep">
+                  <select x-model="ep">
                     {% for opt in private_endpoint_options %}
                       <option value="{{ opt.name }}"
                               {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
                     {% endfor %}
                   </select>
+                  <input type="hidden"
+                         name="runtime_modes_private_models[{{ row.agent }}][endpoint]"
+                         :value="ep">
                   <input type="hidden"
                          name="runtime_modes_private_models[{{ row.agent }}][model]"
                          :value="(opts.find(o => o.name === ep) || {}).default_model || ''">
@@ -268,15 +277,16 @@
       </div>
 
       {# ---- Hybrid mode grid ---------------------------------------- #}
-      {# Hybrid keeps the endpoint dropdown (open + named privates) but
-         the model widget swaps per row's currently-selected endpoint:
-           endpoint=open      → cloud-models <select>
-           endpoint=<private> → auto-set to that endpoint's default_model
-                                 (rendered as a read-only display + hidden
-                                 input pair).
-         data_agent is HARD-LOCKED to private (its endpoint <select> is
-         disabled). tool_builder DEFAULTS to private but is fully
-         user-switchable. Other agents default to ``open``. #}
+      {# Hybrid's Endpoint cell is a UI category dropdown (open /
+         private), NOT directly submitted. It drives the Model column,
+         which swaps:
+           cat=open    → cloud-models <select>
+           cat=private → named-private-endpoints <select>
+         Hidden inputs carry the resolved [endpoint] and [model]:
+           cat=open    → endpoint=open,           model=<chosen cloud model>
+           cat=private → endpoint=<chosen ep>,    model=<that ep's default_model>
+         data_agent: category locked to "private" (only option, disabled).
+         tool_builder: defaults to "private" but user-switchable. #}
       {% set grid = mode_grids["hybrid"] %}
       <div class="privacy-block" x-show="mode === 'hybrid'" x-cloak>
         <h4>Hybrid mode</h4>
@@ -295,76 +305,87 @@
             <tr>
               <th>Agent</th>
               <th>Endpoint</th>
-              <th>Model</th>
+              <th>Model (Endpoint)</th>
             </tr>
           </thead>
           <tbody>
             {% for row in grid.rows %}
             {% set is_locked = row.agent == "data_agent" %}
             {% set defaults_private = row.agent in ["data_agent", "tool_builder"] %}
-            {% set show_open = not is_locked %}
-            {# Initial endpoint:
-                 locked agent (data_agent) → first defined endpoint (or "")
-                 default-private agent (tool_builder, no override yet) → first defined endpoint
-                 explicit override on row → use that
+            {# Initial UI category:
+                 locked agent (data_agent) → "private"
+                 default-private agent (tool_builder) with no override → "private"
+                 explicit override on row pointing at a named endpoint → "private"
+                 explicit "open" override → "open"
                  else → "open" #}
-            {% if row.endpoint and (row.endpoint == "open" and show_open) %}
-              {% set initial_ep = "open" %}
+            {% if is_locked %}
+              {% set initial_cat = "private" %}
+            {% elif row.endpoint == "open" %}
+              {% set initial_cat = "open" %}
             {% elif row.endpoint in defined_endpoint_names %}
-              {% set initial_ep = row.endpoint %}
+              {% set initial_cat = "private" %}
             {% elif defaults_private %}
-              {% set initial_ep = defined_endpoint_names[0] if defined_endpoint_names else "" %}
+              {% set initial_cat = "private" %}
             {% else %}
-              {% set initial_ep = "open" %}
+              {% set initial_cat = "open" %}
             {% endif %}
-            <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
+            {# Initial chosen private endpoint (used when cat=private). #}
+            {% if row.endpoint in private_endpoint_options|map(attribute='name')|list %}
+              {% set initial_ep = row.endpoint %}
+            {% elif private_endpoint_options %}
+              {% set initial_ep = private_endpoint_options[0].name %}
+            {% else %}
+              {% set initial_ep = "" %}
+            {% endif %}
+            {# Initial chosen cloud model (used when cat=open). #}
+            {% set initial_cloud_model = row.model or grid.default_model or "claude-opus-4-7" %}
+            <tr x-data='{ cat: "{{ initial_cat }}", ep: "{{ initial_ep }}", cloud_model: "{{ initial_cloud_model }}", opts: {{ private_endpoint_options | tojson }} }'>
               <td><code>{{ row.agent }}</code></td>
               <td>
-                <select name="runtime_modes_hybrid_models[{{ row.agent }}][endpoint]"
-                        x-model="ep"
-                        {% if is_locked %}disabled{% endif %}>
-                  {% if show_open %}
-                    <option value="open" {% if initial_ep == "open" %}selected{% endif %}>open</option>
+                {# UI category select — NOT submitted directly (no name=).
+                   data_agent: only "private" + disabled (locked).
+                   tool_builder + others: both options. #}
+                <select x-model="cat" {% if is_locked %}disabled{% endif %}>
+                  {% if not is_locked %}
+                    <option value="open" {% if initial_cat == "open" %}selected{% endif %}>open</option>
                   {% endif %}
-                  {% for ep_name in defined_endpoint_names %}
-                    <option value="{{ ep_name }}"
-                            {% if initial_ep == ep_name %}selected{% endif %}>{{ ep_name }}</option>
-                  {% endfor %}
+                  <option value="private" {% if initial_cat == "private" %}selected{% endif %}>private</option>
                 </select>
+                {# Hidden input carries the resolved endpoint:
+                   cat=open    → "open"
+                   cat=private → the chosen private endpoint name. #}
+                <input type="hidden"
+                       name="runtime_modes_hybrid_models[{{ row.agent }}][endpoint]"
+                       :value="cat === 'open' ? 'open' : ep">
                 {% if is_locked %}
-                  {# A disabled <select> doesn't submit its value, so
-                     mirror the locked endpoint into a hidden input. #}
-                  <input type="hidden"
-                         name="runtime_modes_hybrid_models[{{ row.agent }}][endpoint]"
-                         :value="ep">
                   <div class="form-help">Locked: data_agent must use a private endpoint.</div>
                 {% endif %}
               </td>
               <td>
-                {# Cloud variant: a free dropdown of known cloud models.
-                   ``:disabled`` keeps the field out of the form
-                   submission whenever the row is on a private endpoint
-                   (otherwise the hidden private-model input below
-                   would be ignored, since both share a name). #}
-                <select name="runtime_modes_hybrid_models[{{ row.agent }}][model]"
-                        x-show="ep === 'open'"
-                        :disabled="ep !== 'open'">
+                {# Cloud variant — a free <select> of known cloud models.
+                   No name=; the hidden [model] input below carries the
+                   resolved value. #}
+                <select x-show="cat === 'open'" x-model="cloud_model">
                   {% for m in known_cloud_models %}
                     <option value="{{ m }}"
-                            {% if m == (row.model or grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+                            {% if m == initial_cloud_model %}selected{% endif %}>{{ m }}</option>
                   {% endfor %}
                 </select>
-                {# Private variant: locked to the endpoint's default_model.
-                   Display span + hidden input pair. The hidden input
-                   is ``:disabled`` whenever the row is on the cloud
-                   endpoint so it doesn't shadow the cloud-models
-                   <select> above. #}
-                <span x-show="ep !== 'open'" x-cloak class="form-help"
-                      x-text="(opts.find(o => o.name === ep) || {}).default_model || '(endpoint has no default model)'"></span>
+                {# Private variant — same shape as the Private mode grid:
+                   <select> of named private endpoints, label is
+                   "<default_model> (<endpoint_name>)". Drives ``ep``. #}
+                <select x-show="cat === 'private'" x-cloak x-model="ep">
+                  {% for opt in private_endpoint_options %}
+                    <option value="{{ opt.name }}"
+                            {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
+                  {% endfor %}
+                </select>
+                {# Hidden input carries the resolved model:
+                   cat=open    → the chosen cloud model
+                   cat=private → that endpoint's default_model. #}
                 <input type="hidden"
                        name="runtime_modes_hybrid_models[{{ row.agent }}][model]"
-                       :disabled="ep === 'open'"
-                       :value="(opts.find(o => o.name === ep) || {}).default_model || ''">
+                       :value="cat === 'open' ? cloud_model : ((opts.find(o => o.name === ep) || {}).default_model || '')">
               </td>
             </tr>
             {% endfor %}

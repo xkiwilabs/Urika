@@ -158,60 +158,113 @@ def _seed_private_endpoint(tmp_path, *, with_default_model: bool = True):
 def test_global_settings_models_tab_hybrid_data_agent_locked_private(
     settings_client, tmp_path
 ):
-    """In the hybrid grid, only data_agent's endpoint <select> is hard-
-    locked to private (cloud option hidden + select disabled).
-    tool_builder defaults to private but the user can switch it to
-    open — so its <select> includes both options."""
+    """In the hybrid grid, data_agent's Endpoint <select> is hard-locked
+    to private (only ``private`` option, disabled). tool_builder
+    defaults to private but the user can switch it to open — its
+    <select> includes BOTH options.
+
+    The visible Endpoint <select> in hybrid is a UI category dropdown
+    (open / private) with NO ``name=`` attribute — it doesn't carry a
+    server value directly. Hidden inputs (``name="runtime_modes_hybrid_models[<agent>][endpoint]"``)
+    are bound (Alpine) to the local state.
+    """
     import re
 
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
+    # Scope to the hybrid grid (open + private grids share the DOM
+    # under x-show, but each row's hidden [endpoint] input bears the
+    # right name regardless of which grid is active).
+    grid_match = re.search(
+        r'<h4>Hybrid mode</h4>.*?</table>', body, flags=re.DOTALL
+    )
+    assert grid_match is not None
+    grid = grid_match.group(0)
 
-    # data_agent: locked. The select is disabled and offers only private.
+    # Locate the data_agent row.
     m = re.search(
-        r'name="runtime_modes_hybrid_models\[data_agent\]\[endpoint\]".*?</select>',
-        body,
+        r'<tr[^>]*x-data=[^>]*>\s*<td><code>data_agent</code></td>'
+        r'.*?'
+        r'name="runtime_modes_hybrid_models\[data_agent\]\[endpoint\]"',
+        grid,
         flags=re.DOTALL,
     )
-    assert m is not None, "missing endpoint select for data_agent"
+    assert m is not None, "data_agent row not found"
     block = m.group(0)
-    assert 'value="private"' in block
-    assert 'value="open"' not in block
-    assert "disabled" in block
-
-    # tool_builder: NOT locked. The select offers both open and private.
-    m = re.search(
-        r'name="runtime_modes_hybrid_models\[tool_builder\]\[endpoint\]".*?</select>',
-        body,
+    # The visible category select for data_agent: only private + disabled.
+    m_sel = re.search(
+        r'<select[^>]*x-model="cat"[^>]*>(.*?)</select>',
+        block,
         flags=re.DOTALL,
     )
-    assert m is not None, "missing endpoint select for tool_builder"
+    assert m_sel is not None
+    sel_open_tag = m_sel.group(0).split(">", 1)[0]
+    assert "disabled" in sel_open_tag
+    assert 'value="private"' in m_sel.group(1)
+    assert 'value="open"' not in m_sel.group(1)
+
+    # tool_builder row: NOT locked. Visible select has both open + private.
+    m = re.search(
+        r'<tr[^>]*x-data=[^>]*>\s*<td><code>tool_builder</code></td>'
+        r'.*?'
+        r'name="runtime_modes_hybrid_models\[tool_builder\]\[endpoint\]"',
+        grid,
+        flags=re.DOTALL,
+    )
+    assert m is not None, "tool_builder row not found"
     block = m.group(0)
-    assert 'value="private"' in block
-    assert 'value="open"' in block
+    m_sel = re.search(
+        r'<select[^>]*x-model="cat"[^>]*>(.*?)</select>',
+        block,
+        flags=re.DOTALL,
+    )
+    assert m_sel is not None
+    sel_open_tag = m_sel.group(0).split(">", 1)[0]
+    assert "disabled" not in sel_open_tag
+    assert 'value="private"' in m_sel.group(1)
+    assert 'value="open"' in m_sel.group(1)
 
 
 def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
     settings_client, tmp_path
 ):
-    """In the private grid, every agent's endpoint dropdown offers ONLY
-    private endpoints — the cloud option never appears."""
+    """In the private grid, every agent's Model (Endpoint) <select>
+    offers ONLY named private endpoints — the cloud option never
+    appears. The hidden [endpoint] input mirrors the chosen private
+    endpoint name via Alpine ``:value="ep"``."""
     import re
 
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
+    # Scope to the private-mode grid (all three grids share the DOM,
+    # toggled via x-show). The grid is delimited by its <h4> header
+    # and the closing </table>.
+    grid_match = re.search(
+        r'<h4>Private mode</h4>.*?</table>', body, flags=re.DOTALL
+    )
+    assert grid_match is not None
+    grid = grid_match.group(0)
     for agent in ("task_agent", "evaluator", "advisor_agent"):
+        # Each row contains: <code>agent</code> ... a visible <select>
+        # ... two hidden inputs (one for [endpoint], one for [model]).
         m = re.search(
-            r'name="runtime_modes_private_models\['
-            + agent
-            + r'\]\[endpoint\]".*?</select>',
-            body,
+            r'<td><code>' + agent + r'</code></td>'
+            r'.*?'
+            r'name="runtime_modes_private_models\[' + agent + r'\]\[model\]"',
+            grid,
             flags=re.DOTALL,
         )
         assert m is not None
         block = m.group(0)
+        # Private endpoints appear as options; cloud "open" does not.
         assert 'value="private"' in block
         assert 'value="open"' not in block
+        # The hidden [endpoint] input is :value-bound to ``ep``.
+        assert (
+            'name="runtime_modes_private_models['
+            + agent
+            + '][endpoint]"' in block
+        )
 
 
 def test_global_settings_models_open_default_model_is_select(settings_client):
@@ -272,12 +325,13 @@ def test_global_settings_models_open_mode_per_agent_model_is_cloud_select(
     assert 'value="claude-haiku-4-5"' in block
 
 
-def test_global_settings_models_open_mode_drops_endpoint_dropdown(
+def test_global_settings_models_open_mode_endpoint_cell_is_text(
     settings_client,
 ):
-    """In open mode every agent uses the cloud endpoint by definition,
-    so the endpoint column is gone and a hidden ``[endpoint]=open``
-    travels with each row instead."""
+    """In open mode every agent uses the cloud endpoint, so the
+    Endpoint cell renders the literal text ``open`` (a read-only
+    `<span>`) plus a hidden ``[endpoint]=open`` input. There is NO
+    <select> bearing the endpoint field name."""
     import re
 
     body = settings_client.get("/settings").text
@@ -287,21 +341,23 @@ def test_global_settings_models_open_mode_drops_endpoint_dropdown(
         body,
     )
     assert m is not None
-    # No <select> for the open-mode endpoint — the column has been
-    # dropped on the open grid.
+    # No <select> for the open-mode endpoint — read-only text only.
     m_select = re.search(
         r'<select[^>]*name="runtime_modes_open_models\[task_agent\]\[endpoint\]"',
         body,
     )
     assert m_select is None
+    # The literal "open" text is rendered in the Endpoint column.
+    assert "<span>open</span>" in body
 
 
-def test_global_settings_models_private_mode_drops_endpoint_column(
+def test_global_settings_models_private_mode_endpoint_cell_is_text(
     settings_client, tmp_path
 ):
-    """Private mode also drops the endpoint column.  The model select
-    IS the endpoint chooser — its option values are endpoint names and
-    its labels are ``<default_model> (<endpoint_name>)``."""
+    """Private mode's Endpoint cell is the literal text ``private`` (a
+    read-only `<span>`), NOT a dropdown. The Model column ("Model
+    (Endpoint)") drives both the [endpoint] and [model] hidden inputs.
+    """
     import re
 
     (tmp_path / "home" / "settings.toml").write_text(
@@ -312,20 +368,32 @@ def test_global_settings_models_private_mode_drops_endpoint_column(
         encoding="utf-8",
     )
     body = settings_client.get("/settings").text
+    # The visible Model select has no name= (Alpine drives hidden inputs).
+    # Locate the task_agent row and assert its options carry the
+    # "<default_model> (<endpoint_name>)" labels.
     m = re.search(
-        r'<select[^>]*name="runtime_modes_private_models\[task_agent\]\[endpoint\]"[^>]*>(.*?)</select>',
+        r'<td><code>task_agent</code></td>'
+        r'.*?'
+        r'name="runtime_modes_private_models\[task_agent\]\[model\]"',
         body,
         flags=re.DOTALL,
     )
     assert m is not None
-    block = m.group(1)
-    # Option label is "<default_model> (<endpoint_name>)".
+    block = m.group(0)
+    # Model select option label is "<default_model> (<endpoint_name>)".
     assert "qwen3:14b (private)" in block
-    # The matching hidden model input is bound via Alpine to the
-    # chosen endpoint's default_model.
+    # Both hidden inputs are present: [endpoint] (Alpine :value="ep")
+    # and [model] (Alpine :value=opts.find(...).default_model).
     assert (
-        'name="runtime_modes_private_models[task_agent][model]"' in body
+        'name="runtime_modes_private_models[task_agent][endpoint]"' in block
     )
+    assert (
+        'name="runtime_modes_private_models[task_agent][model]"' in block
+    )
+    # The Endpoint cell renders the literal text "private".
+    # The row's <td><span>private</span></td> sits between the agent
+    # <code> and the Model <select>.
+    assert "<span>private</span>" in block
 
 
 def test_global_settings_models_private_mode_empty_state_when_no_endpoints(
@@ -342,26 +410,27 @@ def test_global_settings_models_private_mode_empty_state_when_no_endpoints(
 def test_global_settings_models_hybrid_row_has_alpine_state(
     settings_client, tmp_path
 ):
-    """Hybrid rows carry an Alpine ``x-data`` block whose ``ep`` field
-    drives the conditional model widget (cloud-models <select> vs
-    auto-populated read-only display)."""
+    """Hybrid rows carry an Alpine ``x-data`` block whose ``cat`` field
+    drives the Endpoint category (open / private) and the conditional
+    Model widget (cloud-models <select> vs named-private-endpoint
+    <select>). ``ep`` and ``cloud_model`` track the chosen values."""
     import re
 
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
-    # Alpine state declared per row — task_agent is non-forced, so it
-    # will at minimum carry the ``ep`` field initialised from the saved
-    # value (or "open" by default).
+    # Alpine state declared per row — task_agent is non-forced.
     m = re.search(
-        r'<tr[^>]*x-data=\'{ ep:[^\']*\'[^>]*>\s*<td><code>task_agent</code></td>',
+        r'<tr[^>]*x-data=\'{ cat:[^\']*\'[^>]*>\s*<td><code>task_agent</code></td>',
         body,
     )
     assert m is not None
-    # The hybrid row's model widget pair: a cloud-models <select> AND
-    # a hidden input — Alpine ``:disabled`` keeps only the active one
-    # in the form submission.
+    # The hybrid row carries hidden inputs for both [endpoint] and
+    # [model] — Alpine :value bindings resolve them based on ``cat``.
     assert (
         'name="runtime_modes_hybrid_models[task_agent][model]"' in body
+    )
+    assert (
+        'name="runtime_modes_hybrid_models[task_agent][endpoint]"' in body
     )
 
 
@@ -388,19 +457,24 @@ def test_global_settings_models_private_default_model_is_text(settings_client):
 def test_global_settings_models_tab_hybrid_mode_offers_both_endpoints(
     settings_client, tmp_path
 ):
-    """Hybrid mode keeps the endpoint dropdown — non-forced agents
-    can pick either ``open`` or any defined private endpoint."""
+    """Hybrid mode's Endpoint cell is a UI category dropdown (open /
+    private) — non-forced agents can pick either category. The model
+    column then swaps shape based on the choice."""
     import re
 
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
+    # Locate the task_agent row block.
     m = re.search(
-        r'name="runtime_modes_hybrid_models\[task_agent\]\[endpoint\]".*?</select>',
+        r'<tr[^>]*x-data=[^>]*>\s*<td><code>task_agent</code></td>'
+        r'.*?'
+        r'name="runtime_modes_hybrid_models\[task_agent\]\[endpoint\]"',
         body,
         flags=re.DOTALL,
     )
     assert m is not None
     block = m.group(0)
+    # The visible category select has both options.
     assert 'value="open"' in block
     assert 'value="private"' in block
 
@@ -409,8 +483,9 @@ def test_global_settings_models_tab_hybrid_mode_lists_all_named_endpoints(
     settings_client, tmp_path
 ):
     """When multiple named endpoints are defined, the hybrid-mode
-    per-agent dropdown lists every one of them (alongside ``open``
-    for non-forced agents)."""
+    Model (Endpoint) dropdown (visible only when category=private)
+    lists every one of them. The Endpoint category dropdown still
+    only carries the two UI categories (open / private)."""
     import re
 
     (tmp_path / "home" / "settings.toml").write_text(
@@ -426,23 +501,33 @@ def test_global_settings_models_tab_hybrid_mode_lists_all_named_endpoints(
         encoding="utf-8",
     )
     body = settings_client.get("/settings").text
+    # The task_agent row's full fragment (from agent <code> through
+    # its hidden [model] input) carries every named endpoint as a
+    # private-variant model option, plus the cloud category option.
     m = re.search(
-        r'name="runtime_modes_hybrid_models\[task_agent\]\[endpoint\]".*?</select>',
+        r'<td><code>task_agent</code></td>'
+        r'.*?'
+        r'name="runtime_modes_hybrid_models\[task_agent\]\[model\]"',
         body,
         flags=re.DOTALL,
     )
     assert m is not None
     block = m.group(0)
+    # Category select: both UI categories.
     assert 'value="open"' in block
+    # Private-variant model select: every defined endpoint.
     assert 'value="private"' in block
     assert 'value="ollama"' in block
+    # Labels carry the bundled default_model.
+    assert "qwen3:14b (private)" in block
+    assert "llama3:8b (ollama)" in block
 
 
 def test_global_settings_models_tab_private_mode_lists_all_named_endpoints(
     settings_client, tmp_path
 ):
-    """Private mode's per-agent model <select> lists every defined
-    private endpoint (the model field IS the endpoint chooser).  No
+    """Private mode's Model (Endpoint) <select> lists every defined
+    private endpoint (the model field IS the endpoint chooser). No
     ``open`` option appears."""
     import re
 
@@ -459,9 +544,18 @@ def test_global_settings_models_tab_private_mode_lists_all_named_endpoints(
         encoding="utf-8",
     )
     body = settings_client.get("/settings").text
+    # Scope to the private-mode grid.
+    grid_match = re.search(
+        r'<h4>Private mode</h4>.*?</table>', body, flags=re.DOTALL
+    )
+    assert grid_match is not None
+    grid = grid_match.group(0)
+    # task_agent row block (agent <code> through hidden [model] input).
     m = re.search(
-        r'name="runtime_modes_private_models\[task_agent\]\[endpoint\]".*?</select>',
-        body,
+        r'<td><code>task_agent</code></td>'
+        r'.*?'
+        r'name="runtime_modes_private_models\[task_agent\]\[model\]"',
+        grid,
         flags=re.DOTALL,
     )
     assert m is not None
@@ -472,6 +566,204 @@ def test_global_settings_models_tab_private_mode_lists_all_named_endpoints(
     # Labels carry the default_model in parens.
     assert "qwen3:14b (private)" in block
     assert "llama3:8b (ollama)" in block
+
+
+# ---- New always-three-columns layout: explicit shape assertions ---------
+
+
+def test_global_settings_models_open_mode_three_column_table(
+    settings_client,
+):
+    """Open mode grid is a 3-column table: Agent / Endpoint / Model.
+    Endpoint cell shows literal "open" text; Model cell is a cloud-
+    models <select>."""
+    import re
+
+    body = settings_client.get("/settings").text
+    # Locate the open grid (its h4 anchors it).
+    m = re.search(
+        r'<h4>Open mode</h4>.*?</table>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    grid = m.group(0)
+    # 3-column header.
+    assert "<th>Agent</th>" in grid
+    assert "<th>Endpoint</th>" in grid
+    assert "<th>Model</th>" in grid
+    # Each row has the literal "open" span and a hidden [endpoint]=open.
+    assert "<span>open</span>" in grid
+    assert (
+        'name="runtime_modes_open_models[task_agent][endpoint]"' in grid
+    )
+    # Hidden input carries value="open" for the task_agent row.
+    assert re.search(
+        r'<input[^>]*type="hidden"[^>]*'
+        r'name="runtime_modes_open_models\[task_agent\]\[endpoint\]"'
+        r'[^>]*value="open"',
+        grid,
+        flags=re.DOTALL,
+    ) is not None
+    # Model select carries cloud models.
+    m_sel = re.search(
+        r'<select[^>]*name="runtime_modes_open_models\[task_agent\]\[model\]"[^>]*>(.*?)</select>',
+        grid,
+        flags=re.DOTALL,
+    )
+    assert m_sel is not None
+    assert 'value="claude-opus-4-7"' in m_sel.group(1)
+
+
+def test_global_settings_models_private_mode_three_column_table(
+    settings_client, tmp_path
+):
+    """Private mode grid is a 3-column table: Agent / Endpoint /
+    Model (Endpoint). Endpoint cell shows literal "private" text;
+    Model cell is a <select> of named private endpoints."""
+    import re
+
+    _seed_private_endpoint(tmp_path)
+    body = settings_client.get("/settings").text
+    m = re.search(
+        r'<h4>Private mode</h4>.*?</table>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    grid = m.group(0)
+    # 3-column header — Model column header is "Model (Endpoint)".
+    assert "<th>Agent</th>" in grid
+    assert "<th>Endpoint</th>" in grid
+    assert "<th>Model (Endpoint)</th>" in grid
+    # Endpoint cell renders the literal "private" text.
+    assert "<span>private</span>" in grid
+    # Two hidden inputs per row carry [endpoint] and [model].
+    assert (
+        'name="runtime_modes_private_models[task_agent][endpoint]"' in grid
+    )
+    assert (
+        'name="runtime_modes_private_models[task_agent][model]"' in grid
+    )
+
+
+def test_global_settings_models_hybrid_mode_three_column_table(
+    settings_client, tmp_path
+):
+    """Hybrid mode grid is a 3-column table: Agent / Endpoint /
+    Model (Endpoint). Endpoint cell is a UI category <select> (open
+    / private). Model cell is conditional."""
+    import re
+
+    _seed_private_endpoint(tmp_path)
+    body = settings_client.get("/settings").text
+    m = re.search(
+        r'<h4>Hybrid mode</h4>.*?</table>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    grid = m.group(0)
+    # 3-column header.
+    assert "<th>Agent</th>" in grid
+    assert "<th>Endpoint</th>" in grid
+    assert "<th>Model (Endpoint)</th>" in grid
+    # task_agent's Endpoint column is a UI category <select> with two
+    # options (open / private) — the visible select has no name= and
+    # is x-modeled to the local ``cat`` variable.
+    m_row = re.search(
+        r'<tr[^>]*x-data=[^>]*>\s*<td><code>task_agent</code></td>'
+        r'.*?'
+        r'name="runtime_modes_hybrid_models\[task_agent\]\[endpoint\]"',
+        grid,
+        flags=re.DOTALL,
+    )
+    assert m_row is not None
+    row_block = m_row.group(0)
+    assert 'x-model="cat"' in row_block
+    assert 'value="open"' in row_block
+    assert 'value="private"' in row_block
+
+
+def test_global_settings_models_hybrid_data_agent_locked_only_private(
+    settings_client, tmp_path
+):
+    """In hybrid mode, data_agent's Endpoint <select> is `disabled`
+    and offers ONLY ``private``."""
+    import re
+
+    _seed_private_endpoint(tmp_path)
+    body = settings_client.get("/settings").text
+    # Scope to the hybrid grid first.
+    grid_match = re.search(
+        r'<h4>Hybrid mode</h4>.*?</table>', body, flags=re.DOTALL
+    )
+    assert grid_match is not None
+    grid = grid_match.group(0)
+    # Locate data_agent's row block.
+    m = re.search(
+        r'<tr[^>]*x-data=[^>]*>\s*<td><code>data_agent</code></td>'
+        r'.*?</tr>',
+        grid,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    row = m.group(0)
+    # Visible category select: disabled + only private option.
+    m_sel = re.search(
+        r'<select[^>]*x-model="cat"[^>]*>(.*?)</select>',
+        row,
+        flags=re.DOTALL,
+    )
+    assert m_sel is not None
+    sel_open_tag = m_sel.group(0).split(">", 1)[0]
+    assert "disabled" in sel_open_tag
+    assert 'value="private"' in m_sel.group(1)
+    assert 'value="open"' not in m_sel.group(1)
+
+
+def test_global_settings_models_hybrid_tool_builder_defaults_private(
+    settings_client, tmp_path
+):
+    """In hybrid mode, tool_builder's Endpoint <select> has BOTH
+    options and the ``private`` option starts selected."""
+    import re
+
+    _seed_private_endpoint(tmp_path)
+    body = settings_client.get("/settings").text
+    # Scope to the hybrid grid first.
+    grid_match = re.search(
+        r'<h4>Hybrid mode</h4>.*?</table>', body, flags=re.DOTALL
+    )
+    assert grid_match is not None
+    grid = grid_match.group(0)
+    m = re.search(
+        r'<tr[^>]*x-data=[^>]*>\s*<td><code>tool_builder</code></td>'
+        r'.*?</tr>',
+        grid,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    row = m.group(0)
+    # Visible category select: both options, NOT disabled.
+    m_sel = re.search(
+        r'<select[^>]*x-model="cat"[^>]*>(.*?)</select>',
+        row,
+        flags=re.DOTALL,
+    )
+    assert m_sel is not None
+    open_tag = m_sel.group(0).split(">", 1)[0]
+    sel_body = m_sel.group(1)
+    assert "disabled" not in open_tag
+    assert 'value="open"' in sel_body
+    assert 'value="private"' in sel_body
+    # ``private`` option is pre-selected.
+    m_priv = re.search(
+        r'<option value="private"[^>]*>private</option>',
+        sel_body,
+    )
+    assert m_priv is not None
+    assert "selected" in m_priv.group(0)
 
 
 def test_global_settings_preferences_tab_has_expected_fields(settings_client):

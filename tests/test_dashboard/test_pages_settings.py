@@ -182,12 +182,13 @@ def _set_project_privacy(tmp_path, mode: str) -> None:
     )
 
 
-def test_project_settings_models_open_mode_drops_endpoint_column(
+def test_project_settings_models_open_mode_endpoint_cell_is_text(
     client_with_projects, tmp_path
 ):
-    """Open mode rows: model is a <select> of known cloud models;
-    endpoint is sent as a hidden ``open`` field — there is no per-agent
-    endpoint dropdown in open mode."""
+    """Open mode rows: Endpoint cell renders the literal text ``open``
+    (read-only `<span>`) plus a hidden ``endpoint[<agent>]=open``
+    input. Model is a <select> of known cloud models; there is NO
+    <select> bearing the endpoint field name."""
     import re
 
     _set_project_privacy(tmp_path, "open")
@@ -211,14 +212,15 @@ def test_project_settings_models_open_mode_drops_endpoint_column(
     assert 'value="claude-opus-4-7"' in m_model.group(1)
 
 
-def test_project_settings_models_private_mode_drops_endpoint_column(
+def test_project_settings_models_private_mode_endpoint_cell_is_text(
     client_with_projects, tmp_path
 ):
-    """Private mode rows: the endpoint <select>'s options are
-    ``<default_model> (<endpoint_name>)``.  There is no separate model
-    column — a hidden ``model[<agent>]`` is bound (Alpine) to the
-    chosen endpoint's default_model. The ``open`` option never
-    appears."""
+    """Private mode rows: the Endpoint cell renders the literal text
+    ``private`` (read-only `<span>`). The Model column ("Model
+    (Endpoint)") is a <select> of named private endpoints labelled
+    ``<default_model> (<endpoint_name>)``. ``open`` is never an
+    option. Two hidden inputs (Alpine ``:value`` bound) carry
+    ``endpoint[<agent>]`` and ``model[<agent>]``."""
     import re
 
     # Pre-seed the private endpoint with a default_model so the grid
@@ -235,20 +237,27 @@ def test_project_settings_models_private_mode_drops_endpoint_column(
         encoding="utf-8",
     )
     body = client_with_projects.get("/projects/alpha/settings").text
-    # Endpoint <select> exists; ``open`` is not an option.
+    # The visible Model select has no name= (Alpine drives hidden inputs).
+    # Locate task_agent's row block from agent <code> through the
+    # hidden [model] input — assertions live within that fragment.
     m = re.search(
-        r'<select[^>]*name="endpoint\[task_agent\]"[^>]*>(.*?)</select>',
+        r'<td><code>task_agent</code></td>'
+        r'.*?'
+        r'name="model\[task_agent\]"',
         body,
         flags=re.DOTALL,
     )
     assert m is not None
-    block = m.group(1)
-    assert 'value="open"' not in block
-    assert 'value="private"' in block
-    # Label has the default_model in parens.
+    block = m.group(0)
+    # Model column option labels carry "<default_model> (<endpoint_name>)".
     assert "qwen3:14b (private)" in block
-    # Hidden model input is part of the row submission.
-    assert 'name="model[task_agent]"' in body
+    assert 'value="private"' in block
+    assert 'value="open"' not in block
+    # Both hidden inputs are present.
+    assert 'name="endpoint[task_agent]"' in block
+    assert 'name="model[task_agent]"' in block
+    # Endpoint cell shows the literal "private" text.
+    assert "<span>private</span>" in block
 
 
 def test_project_settings_models_private_mode_empty_state_when_no_default_model(
@@ -424,11 +433,13 @@ def test_project_settings_open_mode_per_agent_model_is_cloud_select(
 def test_project_settings_models_hybrid_endpoint_dropdown_lists_named_endpoints(
     tmp_path, monkeypatch
 ):
-    """In hybrid mode the per-agent endpoint dropdown lists every
-    named endpoint defined on globals' Privacy tab plus the implicit
-    ``open`` (for non-forced agents).
+    """In hybrid mode the Endpoint <select> is a UI category dropdown
+    (open / private). The Model (Endpoint) column's private-variant
+    <select> lists every named endpoint defined on globals' Privacy
+    tab.
     """
     import json
+    import re
 
     from fastapi.testclient import TestClient
 
@@ -466,10 +477,28 @@ def test_project_settings_models_hybrid_endpoint_dropdown_lists_named_endpoints(
     )
     client = TestClient(create_app(project_root=tmp_path))
     body = client.get("/projects/alpha/settings").text
-    # Hybrid mode: every named endpoint + the implicit ``open`` shows up.
-    assert '<option value="open"' in body
-    assert '<option value="private"' in body
-    assert '<option value="ollama"' in body
+    # The task_agent row contains BOTH the UI category select (open/
+    # private) and the private-variant model select (every named
+    # endpoint). The project template wraps the agent <code> in a
+    # <td>\n<code>...</code>\n...</td> block so the regex tolerates
+    # whitespace.
+    m = re.search(
+        r'<code>task_agent</code>'
+        r'.*?'
+        r'name="model\[task_agent\]"',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    block = m.group(0)
+    # UI category options.
+    assert 'value="open"' in block
+    # Private-variant Model select lists every named endpoint.
+    assert 'value="private"' in block
+    assert 'value="ollama"' in block
+    # Labels carry the bundled default_model.
+    assert "qwen3:14b (private)" in block
+    assert "llama3:8b (ollama)" in block
 
 
 def test_project_settings_put_per_agent_endpoint_accepts_named_endpoint(
@@ -631,3 +660,221 @@ def test_project_settings_models_placeholder_from_global_per_mode(
     # Project-wide placeholder pulls the per-mode default model.
     assert 'name="runtime_model"' in body
     assert 'placeholder="qwen3:14b"' in body
+
+
+# ---- New always-three-columns layout: explicit shape assertions ---------
+
+
+def test_project_settings_models_open_mode_three_column_table(
+    tmp_path, monkeypatch
+):
+    """Project's open-mode Models grid is a 3-column table:
+    Agent / Endpoint / Model. Endpoint cell shows literal "open"
+    text; Model cell is a cloud-models <select>."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+        '\n'
+        '[privacy]\n'
+        'mode = "open"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+    body = client.get("/projects/alpha/settings").text
+    # 3-column header.
+    assert "<th>Agent</th>" in body
+    assert "<th>Endpoint</th>" in body
+    assert "<th>Model</th>" in body
+    # Endpoint cell renders literal "open" text.
+    assert "<span>open</span>" in body
+    # Hidden endpoint=open per row.
+    assert 'name="endpoint[task_agent]"' in body
+    assert 'value="open"' in body
+
+
+def test_project_settings_models_private_mode_three_column_table(
+    tmp_path, monkeypatch
+):
+    """Project's private-mode Models grid is a 3-column table:
+    Agent / Endpoint / Model (Endpoint). Endpoint cell shows literal
+    "private" text; Model cell is a <select> of named private
+    endpoints."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+        '\n'
+        '[privacy]\n'
+        'mode = "private"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+        'default_model = "qwen3:14b"\n',
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(project_root=tmp_path))
+    body = client.get("/projects/alpha/settings").text
+    # 3-column header — Model column is "Model (Endpoint)".
+    assert "<th>Agent</th>" in body
+    assert "<th>Endpoint</th>" in body
+    assert "<th>Model (Endpoint)</th>" in body
+    # Endpoint cell renders literal "private" text.
+    assert "<span>private</span>" in body
+    # Hidden inputs carry both [endpoint] and [model].
+    assert 'name="endpoint[task_agent]"' in body
+    assert 'name="model[task_agent]"' in body
+
+
+def test_project_settings_models_hybrid_mode_three_column_table(
+    tmp_path, monkeypatch
+):
+    """Project's hybrid-mode Models grid is a 3-column table:
+    Agent / Endpoint / Model (Endpoint). Endpoint cell is a UI
+    category <select> with two options (open / private). Model cell
+    is conditional. data_agent's category select is locked + only
+    private; tool_builder defaults to private but is switchable."""
+    import json
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+        '\n'
+        '[privacy]\n'
+        'mode = "hybrid"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+        'default_model = "qwen3:14b"\n',
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(project_root=tmp_path))
+    body = client.get("/projects/alpha/settings").text
+    # 3-column header.
+    assert "<th>Agent</th>" in body
+    assert "<th>Endpoint</th>" in body
+    assert "<th>Model (Endpoint)</th>" in body
+
+    # task_agent: NOT locked. Visible category select has both options.
+    m = re.search(
+        r'<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>task_agent</code>'
+        r'.*?</tr>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    row = m.group(0)
+    m_cat = re.search(
+        r'<select[^>]*x-model="cat"[^>]*>(.*?)</select>',
+        row,
+        flags=re.DOTALL,
+    )
+    assert m_cat is not None
+    open_tag = m_cat.group(0).split(">", 1)[0]
+    assert "disabled" not in open_tag
+    assert 'value="open"' in m_cat.group(1)
+    assert 'value="private"' in m_cat.group(1)
+    # Hidden inputs for [endpoint] and [model].
+    assert 'name="endpoint[task_agent]"' in row
+    assert 'name="model[task_agent]"' in row
+
+    # data_agent: locked. Category select is disabled + only private.
+    m_data = re.search(
+        r'<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>data_agent</code>'
+        r'.*?</tr>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m_data is not None
+    data_row = m_data.group(0)
+    m_data_cat = re.search(
+        r'<select[^>]*x-model="cat"[^>]*>(.*?)</select>',
+        data_row,
+        flags=re.DOTALL,
+    )
+    assert m_data_cat is not None
+    data_open_tag = m_data_cat.group(0).split(">", 1)[0]
+    assert "disabled" in data_open_tag
+    assert 'value="private"' in m_data_cat.group(1)
+    assert 'value="open"' not in m_data_cat.group(1)
+
+    # tool_builder: NOT locked. Both options, ``private`` pre-selected.
+    m_tb = re.search(
+        r'<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>tool_builder</code>'
+        r'.*?</tr>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m_tb is not None
+    tb_row = m_tb.group(0)
+    m_tb_cat = re.search(
+        r'<select[^>]*x-model="cat"[^>]*>(.*?)</select>',
+        tb_row,
+        flags=re.DOTALL,
+    )
+    assert m_tb_cat is not None
+    tb_open_tag = m_tb_cat.group(0).split(">", 1)[0]
+    assert "disabled" not in tb_open_tag
+    assert 'value="open"' in m_tb_cat.group(1)
+    assert 'value="private"' in m_tb_cat.group(1)
+    # ``private`` option is pre-selected.
+    m_priv = re.search(
+        r'<option value="private"[^>]*>private</option>',
+        m_tb_cat.group(1),
+    )
+    assert m_priv is not None
+    assert "selected" in m_priv.group(0)
