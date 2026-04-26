@@ -153,7 +153,7 @@
         <label for="np-audience">Audience</label>
         <select id="np-audience" name="audience">
           {% for a in valid_audiences %}
-            <option value="{{ a }}" {% if a == "novice" %}selected{% endif %}>{{ a }}</option>
+            <option value="{{ a }}" {% if a == "standard" %}selected{% endif %}>{{ a }}</option>
           {% endfor %}
         </select>
       </div>

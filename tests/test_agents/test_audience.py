@@ -20,9 +20,14 @@ def test_standard_audience_requires_verbose_notes():
     assert "sentences" in text
 
 
-def test_novice_audience_more_verbose_than_standard():
-    assert len(AUDIENCE_INSTRUCTIONS["novice"]) > len(AUDIENCE_INSTRUCTIONS["standard"])
-    assert len(AUDIENCE_INSTRUCTIONS["standard"]) > len(AUDIENCE_INSTRUCTIONS["expert"])
+def test_expert_audience_is_the_most_concise():
+    """Expert assumes shared vocabulary and skips method explanation,
+    so its prose is shorter than the audiences that have to walk
+    readers through methods. Standard and novice are both deep but
+    for different readers (senior undergrad vs no background), so we
+    don't pin a strict ordering between those two."""
+    assert len(AUDIENCE_INSTRUCTIONS["expert"]) < len(AUDIENCE_INSTRUCTIONS["standard"])
+    assert len(AUDIENCE_INSTRUCTIONS["expert"]) < len(AUDIENCE_INSTRUCTIONS["novice"])
 
 
 @pytest.mark.parametrize("name", ["expert", "standard", "novice"])
