@@ -209,3 +209,21 @@ def test_project_tools_build_button_running_links_to_log(tools_client, tmp_path)
     assert "btn--running" in body
     # The build-tool modal-open dispatch must be replaced by the link.
     assert "id: 'build-tool'" not in body
+
+
+# ── Phase B5.2: completion CTA on tool-build log page ─────────────────────
+
+
+def test_tool_build_log_has_back_to_tools_cta(tools_client):
+    """The tool-build log page must surface a "Back to tools" CTA in
+    the completion div — no artifact probe needed (the tool builder
+    writes new files into <project>/tools/, not a single canonical
+    artifact)."""
+    r = tools_client.get("/projects/alpha/tools/build/log")
+    assert r.status_code == 200
+    body = r.text
+    # The CTA targets the project Tools page.
+    assert 'href="/projects/alpha/tools"' in body
+    assert "Back to tools" in body
+    # And the page does NOT call the artifacts probe — the CTA is static.
+    assert "/api/projects/alpha/artifacts/projectbook" not in body

@@ -1469,3 +1469,46 @@ def test_experiments_page_new_experiment_button_running_links_to_log(
     assert "btn--running" in body
     # The new-experiment modal-open dispatch must be gone.
     assert "id: 'new-experiment'" not in body
+
+
+# ── Phase B5.2: completion CTAs on project-level log pages ────────────────
+
+
+def test_summarize_log_has_view_summary_cta(client_with_projects):
+    """The summarize log page must wire a hidden "View summary" button
+    that JS reveals once the artifact probe confirms summary.md exists."""
+    r = client_with_projects.get("/projects/alpha/summarize/log")
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="link-summary"' in body
+    assert 'href="/projects/alpha/projectbook/summary"' in body
+    # And the existing "Back to project home" link stays.
+    assert "Back to project home" in body
+
+
+def test_finalize_log_has_three_artifact_ctas(client_with_projects):
+    """The finalize log page must wire hidden CTAs for all three
+    finalize artifacts (report, presentation, findings)."""
+    r = client_with_projects.get("/projects/alpha/finalize/log")
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="link-report"' in body
+    assert 'href="/projects/alpha/projectbook/report"' in body
+    assert 'id="link-presentation"' in body
+    assert 'href="/projects/alpha/projectbook/presentation"' in body
+    # The presentation CTA opens in a new tab.
+    assert 'target="_blank"' in body
+    assert 'id="link-findings"' in body
+    assert 'href="/projects/alpha/findings"' in body
+
+
+def test_summarize_log_calls_artifacts_probe_on_completion(client_with_projects):
+    r = client_with_projects.get("/projects/alpha/summarize/log")
+    assert r.status_code == 200
+    assert 'fetch("/api/projects/alpha/artifacts/projectbook")' in r.text
+
+
+def test_finalize_log_calls_artifacts_probe_on_completion(client_with_projects):
+    r = client_with_projects.get("/projects/alpha/finalize/log")
+    assert r.status_code == 200
+    assert 'fetch("/api/projects/alpha/artifacts/projectbook")' in r.text

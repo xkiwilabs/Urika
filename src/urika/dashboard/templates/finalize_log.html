@@ -22,6 +22,16 @@
   <div id="log-completion" style="display: none; margin-top: var(--space-4);">
     <p>Finalize complete.</p>
     <a class="btn btn--primary" href="/projects/{{ project.name }}">Back to project home →</a>
+    <a class="btn btn--secondary"
+       href="/projects/{{ project.name }}/projectbook/report"
+       id="link-report" style="display: none;">View report</a>
+    <a class="btn btn--secondary"
+       href="/projects/{{ project.name }}/projectbook/presentation"
+       target="_blank" rel="noopener"
+       id="link-presentation" style="display: none;">Open presentation ↗</a>
+    <a class="btn btn--secondary"
+       href="/projects/{{ project.name }}/findings"
+       id="link-findings" style="display: none;">View findings</a>
   </div>
 </div>
 
@@ -51,6 +61,18 @@
       window._urikaThinkingHandle = null;
     }
     es.close();
+
+    // Probe for the freshly-written projectbook artifacts. Only the
+    // CTAs whose backing files exist on disk are revealed.
+    fetch("/api/projects/{{ project.name }}/artifacts/projectbook")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        if (data.has_report) document.getElementById("link-report").style.display = "";
+        if (data.has_presentation) document.getElementById("link-presentation").style.display = "";
+        if (data.has_findings) document.getElementById("link-findings").style.display = "";
+      })
+      .catch(() => {});
   });
   es.onerror = function () { statusEl.textContent = "Connection lost."; };
 })();

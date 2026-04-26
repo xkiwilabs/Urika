@@ -1426,6 +1426,31 @@ def api_experiment_artifacts(name: str, exp_id: str):
     }
 
 
+@router.get("/projects/{name}/artifacts/projectbook")
+def api_projectbook_artifacts(name: str):
+    """Report which projectbook artifact files exist for a project.
+
+    Cheap on-disk probe — four ``Path.exists`` checks under
+    ``<project>/projectbook``. Used by the summarize / finalize live
+    log pages to decide which "view the result" buttons to reveal
+    once the operation completes. Mirrors the per-experiment
+    ``api_experiment_artifacts`` endpoint above.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    book = summary.path / "projectbook"
+
+    return {
+        "has_summary": (book / "summary.md").exists(),
+        "has_report": (book / "report.md").exists(),
+        "has_presentation": (book / "presentation.html").exists()
+        or (book / "presentation" / "index.html").exists(),
+        "has_findings": (book / "findings.json").exists(),
+    }
+
+
 _EXPERIMENT_LOG_TYPES: dict[str, tuple[str, str]] = {
     # type → (log_filename, lock_filename)
     "run": ("run.log", ".lock"),

@@ -22,6 +22,9 @@
   <div id="log-completion" style="display: none; margin-top: var(--space-4);">
     <p>Summarize complete.</p>
     <a class="btn btn--primary" href="/projects/{{ project.name }}">Back to project home →</a>
+    <a class="btn btn--secondary"
+       href="/projects/{{ project.name }}/projectbook/summary"
+       id="link-summary" style="display: none;">View summary</a>
   </div>
 </div>
 
@@ -51,6 +54,16 @@
       window._urikaThinkingHandle = null;
     }
     es.close();
+
+    // Probe for the freshly-written projectbook artifact so the
+    // "view summary" CTA only surfaces when summary.md actually exists.
+    fetch("/api/projects/{{ project.name }}/artifacts/projectbook")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        if (data.has_summary) document.getElementById("link-summary").style.display = "";
+      })
+      .catch(() => {});
   });
   es.onerror = function () { statusEl.textContent = "Connection lost."; };
 })();
