@@ -481,6 +481,45 @@ h4 {
   50%      { opacity: 1.0; transform: scale(1.2); }
 }
 
+/* ---------- Running-ops banner ---------- */
+/* Persistent strip at the top of every project-scoped page listing
+   currently-running operations as clickable chips.  Renders only when
+   there is at least one chip after self-link suppression. */
+.active-ops-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+}
+.active-ops-label {
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+}
+.active-op-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: var(--fw-medium);
+  text-transform: capitalize;
+  transition: background var(--transition);
+}
+.active-op-chip:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--accent);
+}
+
 /* ---------- 2. Card ---------- */
 .card {
   background: var(--bg-elevated);

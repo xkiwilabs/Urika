@@ -61,6 +61,20 @@ ENDPOINT_CHOICES = ["inherit", "open", "private"]
 router = APIRouter(tags=["pages"])
 
 
+def _project_template_context(name: str, summary) -> dict:
+    """Common template context for any project-scoped page.
+
+    Currently injects ``active_ops`` (read by ``_base.html`` to render
+    the persistent running-ops banner). Phase B3 already pre-computes
+    ``running_by_type`` / ``running_by_exp`` per-page; those callers
+    keep doing so — the per-button maps and this flat list serve
+    different surfaces (banner vs button state) and the helper just
+    runs ``list_active_operations`` once more, which is cheap (a fixed
+    set of stat calls plus one ``iterdir`` over experiments/).
+    """
+    return {"active_ops": list_active_operations(name, summary.path)}
+
+
 def _experiment_runs_summary(
     exp_dir: Path, exp: ExperimentConfig
 ) -> tuple[int, str, str]:
@@ -150,17 +164,16 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     active = list_active_operations(name, summary.path)
     running_by_type = {op.type: op for op in active}
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "project_home.html",
-        {
-            "request": request,
-            "project": summary,
-            "recent_experiments": recent,
-            "final_outputs": final_outputs,
-            "has_summary": has_summary,
-            "running_by_type": running_by_type,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "recent_experiments": recent,
+        "final_outputs": final_outputs,
+        "has_summary": has_summary,
+        "running_by_type": running_by_type,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("project_home.html", ctx)
 
 
 # Keys finalize.json is documented to emit (see
@@ -207,15 +220,14 @@ def project_findings(request: Request, name: str) -> HTMLResponse:
 
     extras = {k: v for k, v in findings.items() if k not in WELL_KNOWN_FINDINGS_KEYS}
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "findings.html",
-        {
-            "request": request,
-            "project": summary,
-            "findings": findings,
-            "extras": extras,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "findings": findings,
+        "extras": extras,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("findings.html", ctx)
 
 
 @router.get("/projects/{name}/projectbook/report", response_class=HTMLResponse)
@@ -256,16 +268,15 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
         rf"](/projects/{name}/projectbook/\1/\2)",
         raw,
     )
-    return request.app.state.templates.TemplateResponse(
-        "report_view.html",
-        {
-            "request": request,
-            "project": summary,
-            "experiment_id": "",  # template handles empty
-            "body_html": render_markdown(raw),
-            "title_override": "Final report",
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "experiment_id": "",  # template handles empty
+        "body_html": render_markdown(raw),
+        "title_override": "Final report",
+    }
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse("report_view.html", ctx)
 
 
 @router.get("/projects/{name}/projectbook/summary", response_class=HTMLResponse)
@@ -291,16 +302,15 @@ def projectbook_summary(name: str, request: Request) -> HTMLResponse:
     from urika.dashboard.render import render_markdown
 
     raw = summary_path.read_text(encoding="utf-8")
-    return request.app.state.templates.TemplateResponse(
-        "report_view.html",
-        {
-            "request": request,
-            "project": summary,
-            "experiment_id": "",
-            "body_html": render_markdown(raw),
-            "title_override": "Project summary",
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "experiment_id": "",
+        "body_html": render_markdown(raw),
+        "title_override": "Project summary",
+    }
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse("report_view.html", ctx)
 
 
 @router.get("/projects/{name}/projectbook/presentation/{rest:path}")
@@ -432,17 +442,16 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     running_by_type = {op.type: op for op in active}
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "experiments.html",
-        {
-            "request": request,
-            "project": summary,
-            "experiments": rows,
-            "valid_modes": sorted(VALID_MODES),
-            "valid_audiences": sorted(VALID_AUDIENCES),
-            "running_by_type": running_by_type,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "experiments": rows,
+        "valid_modes": sorted(VALID_MODES),
+        "valid_audiences": sorted(VALID_AUDIENCES),
+        "running_by_type": running_by_type,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("experiments.html", ctx)
 
 
 def _tools_to_rows(tool_registry) -> list[dict]:
@@ -504,16 +513,18 @@ def project_tools(name: str, request: Request) -> HTMLResponse:
     # flight (project-scoped — only one tool build per project at a time).
     active = list_active_operations(name, summary.path)
     running_by_type = {op.type: op for op in active}
-    return request.app.state.templates.TemplateResponse(
-        "tools.html",
-        {
-            "request": request,
-            "project": summary,
-            "tools": _tools_to_rows(tool_registry),
-            "scope": "project",
-            "running_by_type": running_by_type,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "tools": _tools_to_rows(tool_registry),
+        "scope": "project",
+        "running_by_type": running_by_type,
+        # active_ops shadows the Phase B3 lookup but the helper is
+        # cheap and keeps the banner data path identical to every
+        # other project page.
+        "active_ops": active,
+    }
+    return request.app.state.templates.TemplateResponse("tools.html", ctx)
 
 
 @router.get("/projects/{name}/criteria", response_class=HTMLResponse)
@@ -535,10 +546,9 @@ def project_criteria(name: str, request: Request) -> HTMLResponse:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         criteria = data.get("project", {}).get("success_criteria", {}) or {}
-    return request.app.state.templates.TemplateResponse(
-        "criteria.html",
-        {"request": request, "project": summary, "criteria": criteria},
-    )
+    ctx = {"request": request, "project": summary, "criteria": criteria}
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse("criteria.html", ctx)
 
 
 def _supported_data_extensions() -> set[str]:
@@ -667,15 +677,14 @@ def project_data(request: Request, name: str) -> HTMLResponse:
             _add_file(p)
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "data_list.html",
-        {
-            "request": request,
-            "project": summary,
-            "rows": rows,
-            "data_paths": cfg.data_paths or [],
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "rows": rows,
+        "data_paths": cfg.data_paths or [],
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("data_list.html", ctx)
 
 
 @router.get("/projects/{name}/data/inspect", response_class=HTMLResponse)
@@ -733,22 +742,21 @@ def project_data_inspect(request: Request, name: str, path: str = "") -> HTMLRes
         head_rows = view.data.head(10).to_dict("records")
         tail_rows = view.data.tail(10).to_dict("records")
 
-    return templates.TemplateResponse(
-        "data_inspect.html",
-        {
-            "request": request,
-            "project": summary,
-            "file_path": str(resolved),
-            "file_name": resolved.name,
-            "error": error,
-            "n_rows": n_rows,
-            "n_columns": n_columns,
-            "columns": columns,
-            "schema_rows": schema_rows,
-            "head_rows": head_rows,
-            "tail_rows": tail_rows,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "file_path": str(resolved),
+        "file_name": resolved.name,
+        "error": error,
+        "n_rows": n_rows,
+        "n_columns": n_columns,
+        "columns": columns,
+        "schema_rows": schema_rows,
+        "head_rows": head_rows,
+        "tail_rows": tail_rows,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("data_inspect.html", ctx)
 
 
 @router.get("/projects/{name}/usage", response_class=HTMLResponse)
@@ -789,18 +797,17 @@ def project_usage(request: Request, name: str) -> HTMLResponse:
     recent_sessions = list(reversed(sessions))[:50]
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "usage.html",
-        {
-            "request": request,
-            "project": summary,
-            "totals": totals,
-            "sessions": sessions,
-            "recent_sessions": recent_sessions,
-            "tokens_series": tokens_series,
-            "cost_series": cost_series,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "totals": totals,
+        "sessions": sessions,
+        "recent_sessions": recent_sessions,
+        "tokens_series": tokens_series,
+        "cost_series": cost_series,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("usage.html", ctx)
 
 
 @router.get("/projects/{name}/methods", response_class=HTMLResponse)
@@ -813,15 +820,14 @@ def project_methods(request: Request, name: str) -> HTMLResponse:
     # Collect the union of metric keys for the sort dropdown.
     metric_keys = sorted({k for m in methods for k in m.get("metrics", {})})
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "methods.html",
-        {
-            "request": request,
-            "project": summary,
-            "methods": methods,
-            "metric_keys": metric_keys,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "methods": methods,
+        "metric_keys": metric_keys,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("methods.html", ctx)
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -1119,6 +1125,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
         active_lock_path = None
 
     templates = request.app.state.templates
+    ctx_extra = _project_template_context(name, summary)
     return templates.TemplateResponse(
         "project_settings.html",
         {
@@ -1183,6 +1190,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "notif_slack": notif_slack,
             "notif_telegram": notif_telegram,
             "active_lock_path": active_lock_path,
+            **ctx_extra,
         },
     )
 
@@ -1200,10 +1208,9 @@ def project_summarize_log(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    return request.app.state.templates.TemplateResponse(
-        "summarize_log.html",
-        {"request": request, "project": summary},
-    )
+    ctx = {"request": request, "project": summary}
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse("summarize_log.html", ctx)
 
 
 @router.get("/projects/{name}/tools/build/log", response_class=HTMLResponse)
@@ -1218,10 +1225,9 @@ def project_tool_build_log(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    return request.app.state.templates.TemplateResponse(
-        "tool_build_log.html",
-        {"request": request, "project": summary},
-    )
+    ctx = {"request": request, "project": summary}
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse("tool_build_log.html", ctx)
 
 
 @router.get("/projects/{name}/finalize/log", response_class=HTMLResponse)
@@ -1239,10 +1245,9 @@ def project_finalize_log(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    return request.app.state.templates.TemplateResponse(
-        "finalize_log.html",
-        {"request": request, "project": summary},
-    )
+    ctx = {"request": request, "project": summary}
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse("finalize_log.html", ctx)
 
 
 @router.get("/projects/{name}/advisor", response_class=HTMLResponse)
@@ -1263,10 +1268,9 @@ def project_advisor(name: str, request: Request) -> HTMLResponse:
     from urika.core.advisor_memory import load_history
 
     history = load_history(summary.path)
-    return request.app.state.templates.TemplateResponse(
-        "advisor_chat.html",
-        {"request": request, "project": summary, "history": history},
-    )
+    ctx = {"request": request, "project": summary, "history": history}
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse("advisor_chat.html", ctx)
 
 
 @router.get("/projects/{name}/run")
@@ -1290,14 +1294,13 @@ def project_knowledge(request: Request, name: str) -> HTMLResponse:
     store = KnowledgeStore(summary.path)
     entries = store.list_all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "knowledge.html",
-        {
-            "request": request,
-            "project": summary,
-            "entries": entries,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "entries": entries,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("knowledge.html", ctx)
 
 
 @router.get(
@@ -1314,14 +1317,13 @@ def project_knowledge_entry(request: Request, name: str, entry_id: str) -> HTMLR
     if entry is None:
         raise HTTPException(status_code=404, detail="Unknown entry")
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "knowledge_entry.html",
-        {
-            "request": request,
-            "project": summary,
-            "entry": entry,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "entry": entry,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("knowledge_entry.html", ctx)
 
 
 _EXPERIMENT_LOG_TYPES = {"run", "evaluate", "report", "present"}
@@ -1357,15 +1359,14 @@ def project_experiment_log(
         raise HTTPException(status_code=404, detail="Unknown project")
     log_type = type if type in _EXPERIMENT_LOG_TYPES else "run"
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "run_log.html",
-        {
-            "request": request,
-            "project": summary,
-            "experiment_id": exp_id,
-            "log_type": log_type,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "experiment_id": exp_id,
+        "log_type": log_type,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("run_log.html", ctx)
 
 
 @router.get(
@@ -1388,15 +1389,14 @@ def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
         base_url=f"/projects/{name}/experiments/{exp_id}/artifacts",
     )
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "report_view.html",
-        {
-            "request": request,
-            "project": summary,
-            "experiment_id": exp_id,
-            "body_html": body_html,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "experiment_id": exp_id,
+        "body_html": body_html,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse("report_view.html", ctx)
 
 
 # NOTE: must be registered BEFORE the bare ``/presentation`` route so
@@ -1528,18 +1528,19 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
     running_by_exp = {(op.type, op.experiment_id): op for op in active}
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "experiment_detail.html",
-        {
-            "request": request,
-            "project": summary,
-            "experiment": exp,
-            "experiment_status": experiment_status,
-            "runs": runs,
-            "has_report": has_report,
-            "has_presentation": has_presentation,
-            "has_log": has_log,
-            "artifact_files": artifact_files,
-            "running_by_exp": running_by_exp,
-        },
-    )
+    ctx = {
+        "request": request,
+        "project": summary,
+        "experiment": exp,
+        "experiment_status": experiment_status,
+        "runs": runs,
+        "has_report": has_report,
+        "has_presentation": has_presentation,
+        "has_log": has_log,
+        "artifact_files": artifact_files,
+        "running_by_exp": running_by_exp,
+        # Banner reads the flat list — include it alongside the
+        # per-button (type, exp_id) map.
+        "active_ops": active,
+    }
+    return templates.TemplateResponse("experiment_detail.html", ctx)

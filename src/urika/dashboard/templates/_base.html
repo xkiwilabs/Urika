@@ -26,6 +26,32 @@
     <main class="main">
       <header class="page-header">
         {% block breadcrumb %}{% endblock %}
+        {% if active_ops %}
+          {# Persistent running-ops banner. Only renders chips for ops
+             whose log page is NOT the current URL — clicking a chip
+             should never be a no-op self-link. We compare against the
+             full path+query, so two ops on the same experiment (e.g.
+             ?type=evaluate vs ?type=report) remain distinct. #}
+          {% set _ns = namespace(chips=[]) %}
+          {% set _current = request.url.path + ('?' + request.url.query if request.url.query else '') %}
+          {% for op in active_ops %}
+            {% if op.log_url != _current %}
+              {% set _ = _ns.chips.append(op) %}
+            {% endif %}
+          {% endfor %}
+          {% if _ns.chips %}
+            <div class="active-ops-banner" role="status" aria-live="polite">
+              <span class="active-ops-label">Running:</span>
+              {% for op in _ns.chips %}
+                <a class="active-op-chip" href="{{ op.log_url }}">
+                  <span class="running-dot"></span>
+                  {{ op.type | replace('_', ' ') }}
+                  {% if op.experiment_id %} · {{ op.experiment_id }}{% endif %}
+                </a>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endif %}
         <h1 class="page-title">{% block heading %}{% endblock %}</h1>
       </header>
       {% block content %}{% endblock %}
