@@ -629,6 +629,55 @@ def _apply_structured_settings(project_path, form) -> None:
 
 _VALID_PRIVACY_MODES = {"open", "private", "hybrid"}
 
+
+def _validate_privacy_endpoint(project_path: Path) -> None:
+    """Refuse to spawn an agent run when the project's privacy mode
+    requires a private endpoint that isn't usable.
+
+    Loads the project's :class:`RuntimeConfig` (which already merges in
+    global per-mode defaults) plus :func:`get_named_endpoints` from
+    globals.  When ``privacy_mode`` is ``private`` or ``hybrid`` the
+    union of project-local + global endpoints must include at least
+    one entry with a non-empty ``base_url``; otherwise we raise
+    ``HTTPException(422, ...)`` with a clear fix instruction.
+
+    Mirrors the runtime loader's hard fail
+    (:class:`MissingPrivateEndpointError`) — same gate, moved earlier
+    in the flow so the user gets the error from the dashboard before
+    a subprocess is even started.
+    """
+    from urika.agents.config import load_runtime_config
+    from urika.core.settings import get_named_endpoints
+
+    runtime_config = load_runtime_config(project_path)
+    if runtime_config.privacy_mode not in ("private", "hybrid"):
+        return
+
+    # Project-local endpoints (from urika.toml) take precedence; fall
+    # back to the global named endpoints.
+    project_endpoints = runtime_config.endpoints or {}
+    has_project_url = any(
+        (ep.base_url or "").strip()
+        for ep in project_endpoints.values()
+    )
+    has_global_url = any(
+        (ep.get("base_url") or "").strip()
+        for ep in get_named_endpoints()
+    )
+
+    if not (has_project_url or has_global_url):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Privacy mode '{runtime_config.privacy_mode}' "
+                f"requires a configured private endpoint, but no "
+                f"endpoint with a non-empty base_url is defined for "
+                f"this project or in global settings. Configure one "
+                f"on the global Privacy tab (/settings) before "
+                f"running this project."
+            ),
+        )
+
 # Reserved endpoint name: ``open`` is the implicit cloud (Claude)
 # endpoint and may not be redefined by the user.
 _RESERVED_ENDPOINT_NAMES = {"open"}
@@ -1141,6 +1190,11 @@ async def api_project_run_post(name: str, request: Request):
     if not hypothesis:
         raise HTTPException(status_code=422, detail="hypothesis is required")
 
+    # Pre-flight: if the project is in private/hybrid mode and no
+    # private endpoint exists, fail before creating the experiment dir
+    # so a stale .lock isn't left behind.
+    _validate_privacy_endpoint(summary.path)
+
     exp = create_experiment(summary.path, name=name_field, hypothesis=hypothesis)
     pid = spawn_experiment_run(name, summary.path, exp.experiment_id)
 
@@ -1310,6 +1364,9 @@ async def api_project_finalize(name: str, request: Request):
             detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
         )
 
+    # Pre-flight privacy gate — same rule as /run.
+    _validate_privacy_endpoint(summary.path)
+
     pid = spawn_finalize(
         name, summary.path, instructions=instructions, audience=audience
     )
@@ -1401,6 +1458,9 @@ async def api_project_present(name: str, request: Request):
             status_code=422,
             detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
         )
+
+    # Pre-flight privacy gate — same rule as /run.
+    _validate_privacy_endpoint(summary.path)
 
     pid = spawn_present(
         name,

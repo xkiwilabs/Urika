@@ -311,3 +311,127 @@ def test_run_respond_creates_dotdir_if_missing(run_client):
     )
     assert r.status_code == 200
     assert (proj / "experiments" / "exp-001" / ".prompts").is_dir()
+
+
+# ---- Privacy pre-flight check ---------------------------------------------
+
+
+def _make_private_project(tmp_path: Path, name: str = "alpha") -> Path:
+    """Make a project with [privacy].mode = private but no endpoint."""
+    proj = tmp_path / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n\n'
+        f'[privacy]\nmode = "private"\n'
+    )
+    return proj
+
+
+@pytest.fixture
+def run_client_private_no_endpoint(
+    tmp_path: Path, monkeypatch
+) -> tuple[TestClient, list[dict], Path]:
+    """A run-client whose project is in private mode but with no
+    private endpoint configured anywhere — runs must be refused."""
+    proj = _make_private_project(tmp_path, "alpha")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    # Empty settings.toml — no private endpoint defined globally.
+    (home / "settings.toml").write_text("", encoding="utf-8")
+
+    spawn_calls: list[dict] = []
+
+    def fake_spawn(project_name, project_path, experiment_id, **_):
+        spawn_calls.append(
+            {
+                "project_name": project_name,
+                "experiment_id": experiment_id,
+            }
+        )
+        return 1234
+
+    monkeypatch.setattr(runs_module, "spawn_experiment_run", fake_spawn)
+    from urika.dashboard.routers import api as api_module
+
+    monkeypatch.setattr(api_module, "spawn_experiment_run", fake_spawn)
+
+    app = create_app(project_root=tmp_path)
+    return TestClient(app), spawn_calls, proj
+
+
+def test_run_post_private_mode_without_endpoint_returns_422(
+    run_client_private_no_endpoint,
+):
+    """Pre-flight gate: project in private mode + no endpoint must
+    fail before the experiment dir is created and before spawn is
+    called."""
+    client, spawn_calls, proj = run_client_private_no_endpoint
+    r = client.post(
+        "/api/projects/alpha/run",
+        data={
+            "name": "exp",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+        },
+    )
+    assert r.status_code == 422
+    detail = r.json()["detail"].lower()
+    assert "private" in detail
+    assert "endpoint" in detail
+    # Spawn must NOT have been called.
+    assert spawn_calls == []
+    # No experiment dir created.
+    exp_root = proj / "experiments"
+    if exp_root.exists():
+        assert list(exp_root.iterdir()) == []
+
+
+def test_run_post_private_mode_with_endpoint_succeeds(
+    tmp_path: Path, monkeypatch
+):
+    """Symmetric positive case: when a global endpoint is configured,
+    private-mode projects can run."""
+    proj = _make_private_project(tmp_path, "alpha")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text(
+        "[privacy.endpoints.private]\n"
+        'base_url = "http://localhost:11434"\n',
+        encoding="utf-8",
+    )
+
+    def fake_spawn(project_name, project_path, experiment_id, **_):
+        exp_dir = project_path / "experiments" / experiment_id
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        (exp_dir / ".lock").write_text("99999")
+        return 99999
+
+    monkeypatch.setattr(runs_module, "spawn_experiment_run", fake_spawn)
+    from urika.dashboard.routers import api as api_module
+
+    monkeypatch.setattr(api_module, "spawn_experiment_run", fake_spawn)
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "name": "exp",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+        },
+    )
+    assert r.status_code == 200, r.text

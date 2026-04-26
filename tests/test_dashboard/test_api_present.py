@@ -154,3 +154,56 @@ def test_present_post_blank_audience_passes_as_none(present_client):
     )
     assert r.status_code == 200
     assert spawn_calls[0]["audience"] is None
+
+
+# ---- Privacy pre-flight check ---------------------------------------------
+
+
+def _make_private_project_with_experiment(
+    tmp_path: Path, name: str = "alpha", exp_id: str = "exp-001"
+) -> Path:
+    proj = tmp_path / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n\n'
+        f'[privacy]\nmode = "private"\n'
+    )
+    exp_dir = proj / "experiments" / exp_id
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "experiment.json").write_text("{}")
+    return proj
+
+
+def test_present_post_private_mode_without_endpoint_returns_422(
+    tmp_path: Path, monkeypatch
+):
+    """Pre-flight gate: present on a private-mode project with no
+    private endpoint must 422 before the spawn helper runs."""
+    proj = _make_private_project_with_experiment(tmp_path, "alpha", "exp-001")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text("", encoding="utf-8")
+
+    spawn_calls: list[dict] = []
+
+    def fake_spawn(*a, **kw):
+        spawn_calls.append({"args": a, "kwargs": kw})
+        return 1234
+
+    monkeypatch.setattr(runs_module, "spawn_present", fake_spawn)
+    from urika.dashboard.routers import api as api_module
+
+    monkeypatch.setattr(api_module, "spawn_present", fake_spawn)
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/projects/alpha/present",
+        data={"experiment_id": "exp-001"},
+    )
+    assert r.status_code == 422
+    assert spawn_calls == []

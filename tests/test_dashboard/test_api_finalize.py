@@ -214,3 +214,52 @@ def test_finalize_stream_includes_new_lines_then_completes(finalize_stream_runni
     assert "data: midway" in body
     assert "event: status" in body
     assert '"completed"' in body
+
+
+# ---- Privacy pre-flight check ---------------------------------------------
+
+
+def _make_private_project(tmp_path: Path, name: str = "alpha") -> Path:
+    proj = tmp_path / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n\n'
+        f'[privacy]\nmode = "private"\n'
+    )
+    return proj
+
+
+def test_finalize_post_private_mode_without_endpoint_returns_422(
+    tmp_path: Path, monkeypatch
+):
+    """Pre-flight gate: finalize on a private-mode project with no
+    private endpoint configured anywhere must 422 before the spawn
+    helper is called."""
+    proj = _make_private_project(tmp_path, "alpha")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text("", encoding="utf-8")
+
+    spawn_calls: list[dict] = []
+
+    def fake_spawn(*a, **kw):
+        spawn_calls.append({"args": a, "kwargs": kw})
+        return 1234
+
+    monkeypatch.setattr(runs_module, "spawn_finalize", fake_spawn)
+    from urika.dashboard.routers import api as api_module
+
+    monkeypatch.setattr(api_module, "spawn_finalize", fake_spawn)
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/projects/alpha/finalize",
+        data={"instructions": "", "audience": "standard"},
+    )
+    assert r.status_code == 422
+    assert spawn_calls == []
