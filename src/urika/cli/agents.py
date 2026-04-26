@@ -441,8 +441,15 @@ def build_tool(
 
 @cli.command()
 @click.argument("project", required=False, default=None)
+@click.option(
+    "--instructions",
+    default=None,
+    help="Optional guidance to steer the summarizer (e.g. 'focus on open questions').",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def summarize(project: str | None, json_output: bool) -> None:
+def summarize(
+    project: str | None, instructions: str | None, json_output: bool
+) -> None:
     """Summarize the current state of a project."""
 
 
@@ -475,6 +482,8 @@ def summarize(project: str | None, json_output: bool) -> None:
     config = role.build_config(project_dir=project_path)
 
     prompt = "Summarize the current state of this project."
+    if instructions:
+        prompt = prompt + "\n\nAdditional guidance:\n" + instructions
 
     _start_ms, _start_iso = _agent_run_start()
 
@@ -495,6 +504,20 @@ def summarize(project: str | None, json_output: bool) -> None:
         return
 
     _record_agent_usage(project_path, result, _start_iso, _start_ms)
+
+    # Best-effort persistence of the summary to projectbook/summary.md so the
+    # dashboard can detect prior state and flip the "Summarize" button label
+    # to "Re-summarize". Failures (disk full, locked path) are swallowed so
+    # they never break the CLI flow.
+    if result.success and result.text_output:
+        try:
+            book_dir = project_path / "projectbook"
+            book_dir.mkdir(parents=True, exist_ok=True)
+            (book_dir / "summary.md").write_text(
+                result.text_output.strip() + "\n", encoding="utf-8"
+            )
+        except OSError:
+            pass
 
     if json_output:
         from urika.cli_helpers import output_json

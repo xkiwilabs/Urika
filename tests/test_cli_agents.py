@@ -1030,3 +1030,86 @@ class TestSummarizeCommand:
         assert result.exit_code == 0, result.output
         data = _extract_json(result.output)
         assert data["output"] == "Agent timeout"
+
+    def test_summarize_accepts_instructions_option(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """The --instructions option appends to the prompt and is forwarded
+        to the agent runner.
+
+        We don't depend on the spinner or output format — we just need to
+        prove the option is registered and that the prompt the runner
+        receives includes the user-supplied steering text.
+        """
+        _create_project(runner, urika_env)
+        with _agent_mocks(
+            _mock_agent_result(text_output="Steered summary content")
+        ) as ctx:
+            result = runner.invoke(
+                cli,
+                [
+                    "summarize",
+                    "test-proj",
+                    "--instructions",
+                    "focus on open questions",
+                    "--json",
+                ],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        # The runner.run call should have received the augmented prompt.
+        runner_mock = ctx.mock_get_runner.return_value
+        # Look at the prompt arg from the most recent call.
+        call_args = runner_mock.run.await_args or runner_mock.run.call_args
+        # prompt is the second positional arg (config, prompt, ...)
+        assert call_args is not None
+        passed_prompt = call_args.args[1]
+        assert "Summarize the current state of this project." in passed_prompt
+        assert "Additional guidance:" in passed_prompt
+        assert "focus on open questions" in passed_prompt
+
+    def test_summarize_persists_summary_md(
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+        tmp_path: Path,
+    ) -> None:
+        """A successful summarize run writes its output to
+        projectbook/summary.md so the dashboard can detect prior state."""
+        _create_project(runner, urika_env)
+        with _agent_mocks(
+            _mock_agent_result(text_output="Summary body line 1\nLine 2")
+        ):
+            result = runner.invoke(
+                cli,
+                ["summarize", "test-proj", "--json"],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        summary_path = project_dir / "projectbook" / "summary.md"
+        assert summary_path.exists()
+        content = summary_path.read_text(encoding="utf-8")
+        assert "Summary body line 1" in content
+        assert "Line 2" in content
+
+    def test_summarize_failed_run_does_not_write_summary(
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+    ) -> None:
+        """If the agent run fails, summary.md must not be created — the
+        dashboard relies on its presence to flip the button label."""
+        _create_project(runner, urika_env)
+        with _agent_mocks(
+            _mock_agent_result(success=False, text_output="", error="boom")
+        ):
+            result = runner.invoke(
+                cli,
+                ["summarize", "test-proj", "--json"],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        summary_path = project_dir / "projectbook" / "summary.md"
+        assert not summary_path.exists()
