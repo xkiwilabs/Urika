@@ -185,18 +185,14 @@ def finalize_stream_completed(tmp_path: Path, monkeypatch) -> TestClient:
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
-    (home / "projects.json").write_text(
-        json.dumps({"alpha": str(tmp_path / "alpha")})
-    )
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
     app = create_app(project_root=tmp_path)
     return TestClient(app)
 
 
 @pytest.fixture
 def finalize_stream_running(tmp_path: Path, monkeypatch):
-    proj = _make_project_with_finalize_log(
-        tmp_path, "alpha", "starting\n", lock=True
-    )
+    proj = _make_project_with_finalize_log(tmp_path, "alpha", "starting\n", lock=True)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
@@ -292,4 +288,51 @@ def test_finalize_post_private_mode_without_endpoint_returns_422(
         data={"instructions": "", "audience": "standard"},
     )
     assert r.status_code == 422
+    assert spawn_calls == []
+
+
+# ---- Idempotent spawn: redirect to live log when already running ---------
+
+
+def test_finalize_post_when_already_running_redirects_to_log(finalize_client):
+    """HTMX POST while a finalize is already running must NOT spawn
+    a duplicate. Instead, respond with HX-Redirect to the live log."""
+    import os
+
+    client, spawn_calls, proj = finalize_client
+    book = proj / "projectbook"
+    book.mkdir(exist_ok=True)
+    (book / ".finalize.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/finalize",
+        headers={"hx-request": "true"},
+        data={},
+    )
+    assert r.status_code == 200
+    assert r.headers.get("hx-redirect") == "/projects/alpha/finalize/log"
+    assert spawn_calls == []
+
+
+def test_finalize_post_when_already_running_returns_409_without_hx(
+    finalize_client,
+):
+    """Non-HTMX caller (curl, scripts) must get a 409 with a JSON body
+    so they can detect the duplicate explicitly instead of a 200."""
+    import os
+
+    client, spawn_calls, proj = finalize_client
+    book = proj / "projectbook"
+    book.mkdir(exist_ok=True)
+    (book / ".finalize.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/finalize",
+        data={},
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["status"] == "already_running"
+    assert body["log_url"] == "/projects/alpha/finalize/log"
+    assert body["type"] == "finalize"
     assert spawn_calls == []

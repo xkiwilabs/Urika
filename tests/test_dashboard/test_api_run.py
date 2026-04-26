@@ -514,9 +514,7 @@ def test_run_post_private_mode_without_endpoint_returns_422(
         assert list(exp_root.iterdir()) == []
 
 
-def test_run_post_private_mode_with_endpoint_succeeds(
-    tmp_path: Path, monkeypatch
-):
+def test_run_post_private_mode_with_endpoint_succeeds(tmp_path: Path, monkeypatch):
     """Symmetric positive case: when a global endpoint is configured,
     private-mode projects can run."""
     proj = _make_private_project(tmp_path, "alpha")
@@ -525,8 +523,7 @@ def test_run_post_private_mode_with_endpoint_succeeds(
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
     (home / "settings.toml").write_text(
-        "[privacy.endpoints.private]\n"
-        'base_url = "http://localhost:11434"\n',
+        '[privacy.endpoints.private]\nbase_url = "http://localhost:11434"\n',
         encoding="utf-8",
     )
 
@@ -557,3 +554,94 @@ def test_run_post_private_mode_with_endpoint_succeeds(
         },
     )
     assert r.status_code == 200, r.text
+
+
+# ---- Idempotent spawn: redirect to live log when already running ---------
+
+
+def test_run_post_when_already_running_redirects_to_log(run_client):
+    """HTMX POST while a run is already in flight on this project must
+    NOT spawn a duplicate experiment. Instead, redirect to the live log."""
+    import os
+
+    client, spawn_calls, proj = run_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"hx-request": "true"},
+        data={
+            "name": "baseline",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers.get("hx-redirect") == "/projects/alpha/experiments/exp-001/log"
+    assert spawn_calls == []
+    # No new experiment dir created either.
+    other = [d for d in (proj / "experiments").iterdir() if d.name != "exp-001"]
+    assert other == []
+
+
+def test_run_post_when_already_running_returns_409_without_hx(run_client):
+    """Non-HTMX caller (curl, scripts) must get a 409 with a JSON body
+    so they can detect the duplicate explicitly instead of a 200."""
+    import os
+
+    client, spawn_calls, proj = run_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/run",
+        data={
+            "name": "baseline",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+        },
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["status"] == "already_running"
+    assert body["log_url"] == "/projects/alpha/experiments/exp-001/log"
+    assert body["type"] == "run"
+    assert spawn_calls == []
+
+
+def test_run_post_other_experiment_stale_lock_does_not_block(run_client):
+    """A *stale* run lock (dead PID) on a different experiment must NOT
+    block a fresh run — only live locks count as ``already running``.
+    Verifies the running-op check filters by ``_is_active_run_lock``
+    rather than mere lock-file presence.
+    """
+    client, spawn_calls, proj = run_client
+    other = proj / "experiments" / "exp-OTHER"
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "experiment.json").write_text("{}")
+    # PID 99999999 is virtually guaranteed not to be a live process.
+    (other / ".lock").write_text("99999999")
+
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "name": "baseline",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+        },
+    )
+    assert r.status_code == 200
+    assert len(spawn_calls) == 1

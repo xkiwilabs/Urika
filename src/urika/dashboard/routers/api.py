@@ -757,6 +757,48 @@ def _validate_privacy_endpoint(project_path: Path) -> None:
         )
 
 
+def _redirect_if_running(
+    project_name: str,
+    project_path: Path,
+    op_type: str,
+    request: Request,
+    *,
+    experiment_id: str | None = None,
+) -> Response | JSONResponse | None:
+    """Return a redirect/409 response if an op of this type is already
+    running for this project (and matching experiment, if applicable);
+    otherwise return ``None`` and let the caller spawn.
+
+    For HTMX requests the response is 200 + ``HX-Redirect`` to the
+    running op's log URL — same UX as a fresh spawn would produce. For
+    non-HTMX (curl, scripts) we return 409 with a JSON body so callers
+    can detect the duplicate explicitly instead of receiving a 200 they
+    can't distinguish from a real start.
+
+    Pass ``experiment_id`` for per-experiment ops so two different
+    experiments running the same op type in parallel don't block each
+    other; leave it ``None`` for project-level ops.
+    """
+    from urika.dashboard.active_ops import list_active_operations
+
+    for op in list_active_operations(project_name, project_path):
+        if op.type != op_type:
+            continue
+        if experiment_id is not None and op.experiment_id != experiment_id:
+            continue
+        if request.headers.get("hx-request") == "true":
+            return Response(status_code=200, headers={"HX-Redirect": op.log_url})
+        return JSONResponse(
+            {
+                "status": "already_running",
+                "log_url": op.log_url,
+                "type": op_type,
+            },
+            status_code=409,
+        )
+    return None
+
+
 # Reserved endpoint name: ``open`` is the implicit cloud (Claude)
 # endpoint and may not be redefined by the user.
 _RESERVED_ENDPOINT_NAMES = {"open"}
@@ -1292,6 +1334,16 @@ async def api_project_run_post(name: str, request: Request):
             detail="max_experiments requires --auto to be enabled",
         )
 
+    # If a run is already in flight for any experiment in this project,
+    # redirect to its live log instead of materializing a new experiment
+    # dir and spawning a duplicate. Project-scoped check: the new
+    # experiment_id isn't known yet (``create_experiment`` hasn't run),
+    # so any active run blocks a fresh spawn — matches the user's
+    # intent of "show me what's already running".
+    existing = _redirect_if_running(name, summary.path, "run", request)
+    if existing is not None:
+        return existing
+
     # Pre-flight: if the project is in private/hybrid mode and no
     # private endpoint exists, fail before creating the experiment dir
     # so a stale .lock isn't left behind.
@@ -1499,6 +1551,12 @@ async def api_project_finalize(name: str, request: Request):
             detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
         )
 
+    # If a finalize is already running for this project, redirect to
+    # its live log instead of spawning a duplicate.
+    existing = _redirect_if_running(name, summary.path, "finalize", request)
+    if existing is not None:
+        return existing
+
     # Pre-flight privacy gate — same rule as /run.
     _validate_privacy_endpoint(summary.path)
 
@@ -1583,6 +1641,12 @@ async def api_project_summarize(name: str, request: Request):
     body = await request.form()
     instructions = (body.get("instructions") or "").strip()
 
+    # If a summarize is already running for this project, redirect to
+    # its live log instead of spawning a duplicate.
+    existing = _redirect_if_running(name, summary.path, "summarize", request)
+    if existing is not None:
+        return existing
+
     # Pre-flight privacy gate — same rule as /run, /finalize, /present.
     _validate_privacy_endpoint(summary.path)
 
@@ -1662,6 +1726,12 @@ async def api_project_build_tool(name: str, request: Request):
     instructions = (body.get("instructions") or "").strip()
     if not instructions:
         raise HTTPException(status_code=422, detail="instructions is required")
+
+    # If a build-tool run is already in flight for this project,
+    # redirect to its live log instead of spawning a duplicate.
+    existing = _redirect_if_running(name, summary.path, "build_tool", request)
+    if existing is not None:
+        return existing
 
     # Pre-flight privacy gate — tool_builder runs in private mode under
     # hybrid, so the gate must apply here too.
@@ -1749,6 +1819,19 @@ async def api_experiment_report(name: str, exp_id: str, request: Request):
             detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
         )
 
+    # If a report run is already in flight for THIS experiment, redirect
+    # to its live log instead of spawning a duplicate. Different
+    # experiments don't block each other.
+    existing = _redirect_if_running(
+        name,
+        summary.path,
+        "report",
+        request,
+        experiment_id=exp_id,
+    )
+    if existing is not None:
+        return existing
+
     # Pre-flight privacy gate — same rule as /run, /finalize, /present.
     _validate_privacy_endpoint(summary.path)
 
@@ -1783,6 +1866,19 @@ async def api_experiment_evaluate(name: str, exp_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Unknown project")
     if not (summary.path / "experiments" / exp_id).is_dir():
         raise HTTPException(status_code=422, detail="Unknown experiment")
+
+    # If an evaluate run is already in flight for THIS experiment,
+    # redirect to its live log instead of spawning a duplicate.
+    # Different experiments don't block each other.
+    existing = _redirect_if_running(
+        name,
+        summary.path,
+        "evaluate",
+        request,
+        experiment_id=exp_id,
+    )
+    if existing is not None:
+        return existing
 
     # Pre-flight privacy gate — same rule as /run, /finalize, /present.
     _validate_privacy_endpoint(summary.path)
@@ -1836,6 +1932,19 @@ async def api_project_present(name: str, request: Request):
             status_code=422,
             detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
         )
+
+    # If a present run is already in flight for THIS experiment,
+    # redirect to its live log instead of spawning a duplicate.
+    # Different experiments don't block each other.
+    existing = _redirect_if_running(
+        name,
+        summary.path,
+        "present",
+        request,
+        experiment_id=experiment_id,
+    )
+    if existing is not None:
+        return existing
 
     # Pre-flight privacy gate — same rule as /run.
     _validate_privacy_endpoint(summary.path)

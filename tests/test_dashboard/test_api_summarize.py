@@ -162,3 +162,50 @@ def test_summarize_post_private_mode_without_endpoint_returns_422(
     )
     assert r.status_code == 422
     assert spawn_calls == []
+
+
+# ---- Idempotent spawn: redirect to live log when already running ---------
+
+
+def test_summarize_post_when_already_running_redirects_to_log(summarize_client):
+    """HTMX POST while a summarize is already running must NOT spawn
+    a duplicate. Instead, respond with HX-Redirect to the live log."""
+    import os
+
+    client, spawn_calls, proj = summarize_client
+    book = proj / "projectbook"
+    book.mkdir(exist_ok=True)
+    (book / ".summarize.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/summarize",
+        headers={"hx-request": "true"},
+        data={"instructions": ""},
+    )
+    assert r.status_code == 200
+    assert r.headers.get("hx-redirect") == "/projects/alpha/summarize/log"
+    assert spawn_calls == []
+
+
+def test_summarize_post_when_already_running_returns_409_without_hx(
+    summarize_client,
+):
+    """Non-HTMX caller (curl, scripts) must get a 409 with a JSON body
+    so they can detect the duplicate explicitly instead of a 200."""
+    import os
+
+    client, spawn_calls, proj = summarize_client
+    book = proj / "projectbook"
+    book.mkdir(exist_ok=True)
+    (book / ".summarize.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/summarize",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["status"] == "already_running"
+    assert body["log_url"] == "/projects/alpha/summarize/log"
+    assert body["type"] == "summarize"
+    assert spawn_calls == []

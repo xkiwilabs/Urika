@@ -175,3 +175,72 @@ def test_evaluate_post_private_mode_without_endpoint_returns_422(
     )
     assert r.status_code == 422
     assert spawn_calls == []
+
+
+# ---- Idempotent spawn: redirect to live log when already running ---------
+
+
+def test_evaluate_post_when_already_running_redirects_to_log(evaluate_client):
+    """HTMX POST while an evaluate is already running for this experiment
+    must NOT spawn a duplicate. Instead, redirect to the live log."""
+    import os
+
+    client, spawn_calls, proj = evaluate_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".evaluate.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/evaluate",
+        headers={"hx-request": "true"},
+        data={"instructions": ""},
+    )
+    assert r.status_code == 200
+    assert (
+        r.headers.get("hx-redirect")
+        == "/projects/alpha/experiments/exp-001/log?type=evaluate"
+    )
+    assert spawn_calls == []
+
+
+def test_evaluate_post_when_already_running_returns_409_without_hx(
+    evaluate_client,
+):
+    """Non-HTMX caller (curl, scripts) must get a 409 with a JSON body
+    so they can detect the duplicate explicitly instead of a 200."""
+    import os
+
+    client, spawn_calls, proj = evaluate_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".evaluate.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/evaluate",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["status"] == "already_running"
+    assert body["log_url"] == "/projects/alpha/experiments/exp-001/log?type=evaluate"
+    assert body["type"] == "evaluate"
+    assert spawn_calls == []
+
+
+def test_evaluate_post_other_experiment_running_does_not_block(evaluate_client):
+    """A live evaluate lock on a *different* experiment must NOT block
+    a fresh evaluate spawn for this experiment — locks are per-experiment."""
+    import os
+
+    client, spawn_calls, proj = evaluate_client
+    other = proj / "experiments" / "exp-OTHER"
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "experiment.json").write_text("{}")
+    (other / ".evaluate.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/evaluate",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 200
+    assert len(spawn_calls) == 1
