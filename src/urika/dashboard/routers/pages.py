@@ -227,19 +227,34 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="No final report")
     from urika.dashboard.render import render_markdown
 
-    # TODO: figures referenced from the project-level report (typically
-    # under projectbook/artifacts/ or projectbook/figures/) currently
-    # render broken in the dashboard. We don't yet have an artifact-viewer
-    # route under projectbook to rewrite ``base_url`` to. The per-experiment
-    # surface (where figures are actually used most) is fixed; this is a
-    # follow-up.
+    raw = report_path.read_text(encoding="utf-8")
+    # Project-level reports reference figures in three relative shapes:
+    #   ![alt](figures/foo.png)              → projectbook/figures/foo.png
+    #   ![alt](artifacts/foo.png)            → projectbook/artifacts/foo.png
+    #   ![alt](../<exp_id>/artifacts/foo.png) → experiments/<exp_id>/artifacts/foo.png
+    # Pre-process the markdown to rewrite these to absolute URLs that
+    # resolve through the existing per-experiment artifact viewer
+    # (route: /projects/<n>/experiments/<exp_id>/artifacts/<file>) and
+    # the new projectbook subpath viewer (added below).
+    import re as _re
+
+    raw = _re.sub(
+        r'\]\(\.\./([^/)]+)/artifacts/([^)]+)\)',
+        rf'](/projects/{name}/experiments/\1/artifacts/\2)',
+        raw,
+    )
+    raw = _re.sub(
+        r'\]\((figures|artifacts)/([^)]+)\)',
+        rf'](/projects/{name}/projectbook/\1/\2)',
+        raw,
+    )
     return request.app.state.templates.TemplateResponse(
         "report_view.html",
         {
             "request": request,
             "project": summary,
             "experiment_id": "",  # template handles empty
-            "body_html": render_markdown(report_path.read_text(encoding="utf-8")),
+            "body_html": render_markdown(raw),
             "title_override": "Final report",
         },
     )
@@ -313,6 +328,36 @@ def _inject_base_tag(html: str, base_url: str) -> str:
             r"(<head[^>]*>)", r"\1\n  " + base_tag, html, count=1
         )
     return base_tag + html
+
+
+@router.get("/projects/{name}/projectbook/{rest:path}")
+def projectbook_asset(name: str, rest: str) -> FileResponse:
+    """Serve arbitrary files under ``<project>/projectbook/<rest>``.
+
+    Powers the figures and artifacts referenced from the project-level
+    final report (``projectbook/report.md``).  Common subpaths:
+    ``figures/foo.png``, ``artifacts/foo.csv``.
+
+    Path-traversal protection: rejects ``..`` segments and ensures the
+    resolved file stays under the projectbook root.
+
+    Registered AFTER the specific ``projectbook/report`` and
+    ``projectbook/presentation`` routes so those still win for their
+    exact paths; only "everything else" falls through here.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not rest or ".." in rest or rest.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    book_root = (summary.path / "projectbook").resolve()
+    asset_path = book_root / rest
+    if not asset_path.exists() or not asset_path.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found")
+    if not asset_path.resolve().is_relative_to(book_root):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return FileResponse(asset_path)
 
 
 @router.get("/projects/{name}/experiments", response_class=HTMLResponse)
