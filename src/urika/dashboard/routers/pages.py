@@ -99,8 +99,7 @@ def projects_list(request: Request) -> HTMLResponse:
     # Surface "is at least one private endpoint configured" so the New
     # Project modal can warn when the user picks private/hybrid.
     has_private_endpoint = any(
-        (ep.get("base_url") or "").strip()
-        for ep in get_named_endpoints()
+        (ep.get("base_url") or "").strip() for ep in get_named_endpoints()
     )
     return templates.TemplateResponse(
         "projects_list.html",
@@ -241,13 +240,13 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
     import re as _re
 
     raw = _re.sub(
-        r'\]\(\.\./([^/)]+)/artifacts/([^)]+)\)',
-        rf'](/projects/{name}/experiments/\1/artifacts/\2)',
+        r"\]\(\.\./([^/)]+)/artifacts/([^)]+)\)",
+        rf"](/projects/{name}/experiments/\1/artifacts/\2)",
         raw,
     )
     raw = _re.sub(
-        r'\]\((figures|artifacts)/([^)]+)\)',
-        rf'](/projects/{name}/projectbook/\1/\2)',
+        r"\]\((figures|artifacts)/([^)]+)\)",
+        rf"](/projects/{name}/projectbook/\1/\2)",
         raw,
     )
     return request.app.state.templates.TemplateResponse(
@@ -361,9 +360,7 @@ def _inject_base_tag(html: str, base_url: str) -> str:
     import re
 
     if re.search(r"<head[^>]*>", html):
-        return re.sub(
-            r"(<head[^>]*>)", r"\1\n  " + base_tag, html, count=1
-        )
+        return re.sub(r"(<head[^>]*>)", r"\1\n  " + base_tag, html, count=1)
     return base_tag + html
 
 
@@ -717,9 +714,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     # inherit, and any field they edit becomes a project override.
     from urika.agents.config import _load_global_per_mode
 
-    global_default_model, global_per_agent = _load_global_per_mode(
-        project_privacy_mode
-    )
+    global_default_model, global_per_agent = _load_global_per_mode(project_privacy_mode)
 
     # Endpoint constraints by mode:
     #   open    → all agents may pick any defined endpoint + ``open``
@@ -785,9 +780,9 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     # the user knows what they'd inherit.
     _inherited_private_ep = next(
         (
-            ep for ep in _named_endpoints_full
-            if ep.get("name") == "private"
-            and (ep.get("base_url") or "").strip()
+            ep
+            for ep in _named_endpoints_full
+            if ep.get("name") == "private" and (ep.get("base_url") or "").strip()
         ),
         None,
     )
@@ -822,9 +817,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
 
     notif_email = (notifications.get("email", {}) or {}) if notifications else {}
     notif_slack = (notifications.get("slack", {}) or {}) if notifications else {}
-    notif_telegram = (
-        (notifications.get("telegram", {}) or {}) if notifications else {}
-    )
+    notif_telegram = (notifications.get("telegram", {}) or {}) if notifications else {}
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -838,9 +831,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "endpoint_choices": ENDPOINT_CHOICES,
             "model_rows": model_rows,
             "runtime_model": runtime_section.get("model", ""),
-            "runtime_model_placeholder": (
-                global_default_model or "claude-opus-4-7"
-            ),
+            "runtime_model_placeholder": (global_default_model or "claude-opus-4-7"),
             "data_paths_text": data_paths_text,
             "success_criteria_text": success_criteria_text,
             "project_privacy": project_privacy,
@@ -876,9 +867,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
                 if project_privacy_mode == "hybrid"
                 else ""
             ),
-            "project_privacy_hybrid_private_model": hybrid_data_agent.get(
-                "model", ""
-            ),
+            "project_privacy_hybrid_private_model": hybrid_data_agent.get("model", ""),
             "cloud_models": cloud_models,
             "known_cloud_models": KNOWN_CLOUD_MODELS,
             "private_endpoint_options": private_endpoint_options,
@@ -913,6 +902,24 @@ def project_summarize_log(name: str, request: Request) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="Unknown project")
     return request.app.state.templates.TemplateResponse(
         "summarize_log.html",
+        {"request": request, "project": summary},
+    )
+
+
+@router.get("/projects/{name}/tools/build/log", response_class=HTMLResponse)
+def project_tool_build_log(name: str, request: Request) -> HTMLResponse:
+    """Live-tail the project's tool-build log via SSE.
+
+    Mirrors :func:`project_finalize_log` but reads from ``tools/build.log``
+    and watches ``tools/.build.lock`` for completion. The "back" link
+    returns to the project Tools page rather than the project home.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return request.app.state.templates.TemplateResponse(
+        "tool_build_log.html",
         {"request": request, "project": summary},
     )
 
@@ -971,9 +978,7 @@ def project_run_redirect(name: str) -> RedirectResponse:
     it: the redirect lands on the experiments page with ``?new=1``, which
     Alpine reads on init to auto-open the modal.
     """
-    return RedirectResponse(
-        url=f"/projects/{name}/experiments?new=1", status_code=307
-    )
+    return RedirectResponse(url=f"/projects/{name}/experiments?new=1", status_code=307)
 
 
 @router.get("/projects/{name}/knowledge", response_class=HTMLResponse)
@@ -1087,9 +1092,7 @@ def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
 # with an explicit ``not rest`` check), so the bare-``/presentation``
 # route below remains reachable.
 @router.get("/projects/{name}/experiments/{exp_id}/presentation/{rest:path}")
-def experiment_presentation_asset(
-    name: str, exp_id: str, rest: str
-) -> FileResponse:
+def experiment_presentation_asset(name: str, exp_id: str, rest: str) -> FileResponse:
     """Serve sibling assets (CSS/JS/images) for the per-experiment deck.
 
     Without this, ``index.html`` loads but its relative
@@ -1103,9 +1106,7 @@ def experiment_presentation_asset(
         raise HTTPException(status_code=404, detail="Unknown project")
     if not rest or ".." in rest or rest.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid path")
-    pres_root = (
-        summary.path / "experiments" / exp_id / "presentation"
-    ).resolve()
+    pres_root = (summary.path / "experiments" / exp_id / "presentation").resolve()
     asset_path = pres_root / rest
     if not asset_path.exists() or not asset_path.is_file():
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -1188,10 +1189,9 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
     # Presentation may be a single file (presentation.html) or a directory
     # containing index.html — accept both forms (matches the actual
     # presentation_agent output and the existing serve route).
-    has_presentation = (
-        (exp_dir / "presentation.html").exists()
-        or (exp_dir / "presentation" / "index.html").exists()
-    )
+    has_presentation = (exp_dir / "presentation.html").exists() or (
+        exp_dir / "presentation" / "index.html"
+    ).exists()
     has_log = (exp_dir / "run.log").exists()
 
     artifacts_dir = exp_dir / "artifacts"

@@ -203,9 +203,7 @@ def test_experiment_detail_shows_evaluate_button_and_modal(client_with_runs):
     assert "id: 'evaluate'" in body
     assert ">Evaluate<" in body or "Evaluate\n" in body
     # Modal form posts to the per-experiment evaluate endpoint
-    assert (
-        'hx-post="/api/projects/alpha/experiments/exp-001/evaluate"' in body
-    )
+    assert 'hx-post="/api/projects/alpha/experiments/exp-001/evaluate"' in body
     # Instructions textarea is present
     assert 'name="instructions"' in body
 
@@ -431,9 +429,7 @@ def test_run_page_redirect_404_unknown_project(client_with_projects):
     """The redirect is purely a URL rewrite — it doesn't validate the
     project name. Following the redirect lands on the experiments page
     which does the 404."""
-    r = client_with_projects.get(
-        "/projects/nonexistent/run", follow_redirects=True
-    )
+    r = client_with_projects.get("/projects/nonexistent/run", follow_redirects=True)
     assert r.status_code == 404
 
 
@@ -542,9 +538,7 @@ def test_report_view_rewrites_relative_image_paths(client_with_runs):
     assert r.status_code == 200
     body = r.text
     # Both forms should resolve to the same absolute artifact URL.
-    assert (
-        'src="/projects/alpha/experiments/exp-001/artifacts/fig.png"' in body
-    )
+    assert 'src="/projects/alpha/experiments/exp-001/artifacts/fig.png"' in body
     # The unrewritten relative forms should NOT be in the page.
     assert 'src="fig.png"' not in body
     assert 'src="artifacts/fig.png"' not in body
@@ -554,8 +548,7 @@ def test_report_view_leaves_absolute_urls_alone(client_with_runs):
     proj = client_with_runs.app.state.project_root / "alpha"
     exp_dir = proj / "experiments" / "exp-001"
     (exp_dir / "report.md").write_text(
-        "[Link](https://example.com/page)\n\n"
-        "![Remote](https://example.com/x.png)\n"
+        "[Link](https://example.com/page)\n\n![Remote](https://example.com/x.png)\n"
     )
     r = client_with_runs.get("/projects/alpha/experiments/exp-001/report")
     body = r.text
@@ -937,6 +930,7 @@ def test_projectbook_presentation_404_unknown_project(client_with_runs):
 
 # --- Bug 1: live status overlay (progress.json wins over experiment.json) ---
 
+
 def _make_project_with_pending_exp(root: Path, name: str, exp_id: str) -> Path:
     """Fixture helper: experiment.json says 'pending' (the default), but
     progress.json says 'completed' — what the live state actually is."""
@@ -1000,7 +994,7 @@ def test_experiments_list_uses_progress_status_when_present(client_with_pending_
     # The live status should be visible
     assert "completed" in body
     # The stale 'pending' from experiment.json must NOT leak through
-    assert 'tag tag--pending' not in body
+    assert "tag tag--pending" not in body
 
 
 def test_experiment_detail_uses_progress_status_when_present(client_with_pending_exp):
@@ -1008,10 +1002,11 @@ def test_experiment_detail_uses_progress_status_when_present(client_with_pending
     assert r.status_code == 200
     body = r.text
     assert "completed" in body
-    assert 'tag tag--pending' not in body
+    assert "tag tag--pending" not in body
 
 
 # --- Bug 2: directory-form presentation detection ---
+
 
 def test_experiment_detail_recognizes_directory_form_presentation(client_with_runs):
     proj = client_with_runs.app.state.project_root / "alpha"
@@ -1028,6 +1023,7 @@ def test_experiment_detail_recognizes_directory_form_presentation(client_with_ru
 
 
 # --- Bug 3: humanize filter applied in templates ---
+
 
 def test_experiments_list_humanizes_experiment_names(client_with_runs):
     """Experiment 'baseline' should appear humanized as 'Baseline' in the list."""
@@ -1060,13 +1056,13 @@ def test_project_home_shows_full_multi_line_question(client_with_runs):
     # Rewrite urika.toml directly with a multi-line question.
     toml_path = proj / "urika.toml"
     toml_path.write_text(
-        '[project]\n'
+        "[project]\n"
         f'name = "alpha"\n'
         f'question = "{long_q.replace(chr(10), "\\n")}"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
     )
     r = client_with_runs.get("/projects/alpha")
@@ -1141,9 +1137,7 @@ def test_project_home_summarize_button_when_no_summary(client_with_projects):
     assert "/api/projects/alpha/summarize" in body
 
 
-def test_project_home_resummarize_button_when_summary_present(
-    tmp_path, monkeypatch
-):
+def test_project_home_resummarize_button_when_summary_present(tmp_path, monkeypatch):
     """A pre-existing projectbook/summary.md flips the button label."""
     proj = tmp_path / "alpha"
     proj.mkdir()

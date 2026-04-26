@@ -349,6 +349,56 @@ def spawn_summarize(
     return proc.pid
 
 
+def spawn_build_tool(
+    project_name: str,
+    project_path: Path,
+    *,
+    instructions: str,
+    executable: str | None = None,
+) -> int:
+    """Spawn ``urika build-tool <project> <instructions> --json``.
+
+    Writes the PID to ``<project>/tools/.build.lock`` and tees stdout to
+    ``<project>/tools/build.log``. The lock is removed when the
+    subprocess exits. Returns the PID.
+
+    ``instructions`` is a positional CLI argument (the tool description).
+    It is required — callers must validate before reaching this helper;
+    we still raise ``ValueError`` defensively to avoid spawning a CLI
+    invocation that would block on the interactive prompt.
+    """
+    if not (instructions or "").strip():
+        raise ValueError("instructions is required")
+    tools_dir = project_path / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    log_path = tools_dir / "build.log"
+    lock_path = tools_dir / ".build.lock"
+
+    cmd = [
+        executable or sys.executable,
+        "-m",
+        "urika",
+        "build-tool",
+        project_name,
+        instructions,
+        "--json",
+    ]
+
+    env = os.environ.copy()
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+        env=env,
+    )
+    lock_path.write_text(str(proc.pid), encoding="utf-8")
+    _start_drainer(proc, log_path, lock_path)
+    return proc.pid
+
+
 def spawn_present(
     project_name: str,
     project_path: Path,

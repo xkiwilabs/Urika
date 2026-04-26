@@ -176,9 +176,7 @@ class TestAdvisorCommand:
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
         _create_project(runner, urika_env)
-        with _agent_mocks(
-            _mock_agent_result(text_output="Consider ensemble methods")
-        ):
+        with _agent_mocks(_mock_agent_result(text_output="Consider ensemble methods")):
             # _offer_to_run_advisor_suggestions is called as a bare name in
             # agents.py but is defined in run.py. Inject it into agents module
             # globals so the non-JSON code path does not raise NameError.
@@ -244,9 +242,7 @@ class TestEvaluateCommand:
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
         _project_dir, exp_id = _create_project_with_experiment(runner, urika_env)
-        with _agent_mocks(
-            _mock_agent_result(text_output="No overfitting detected")
-        ):
+        with _agent_mocks(_mock_agent_result(text_output="No overfitting detected")):
             result = runner.invoke(
                 cli,
                 ["evaluate", "test-proj", exp_id],
@@ -284,9 +280,7 @@ class TestEvaluateCommand:
     ) -> None:
         """When no experiment_id is given, evaluate picks the most recent."""
         _project_dir, exp_id = _create_project_with_experiment(runner, urika_env)
-        with _agent_mocks(
-            _mock_agent_result(text_output="Evaluated latest")
-        ):
+        with _agent_mocks(_mock_agent_result(text_output="Evaluated latest")):
             result = runner.invoke(
                 cli,
                 ["evaluate", "test-proj", "--json"],
@@ -458,9 +452,7 @@ class TestPresentCommand:
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
         _create_project(runner, urika_env)
-        result = runner.invoke(
-            cli, ["present", "test-proj", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["present", "test-proj", "--json"], env=urika_env)
         assert result.exit_code != 0
         assert "No experiments" in result.output
 
@@ -834,9 +826,7 @@ class TestCriteriaCommand:
         if criteria_file.exists():
             criteria_file.unlink()
 
-        result = runner.invoke(
-            cli, ["criteria", "test-proj", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["criteria", "test-proj", "--json"], env=urika_env)
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["criteria"] is None
@@ -865,9 +855,7 @@ class TestCriteriaCommand:
             rationale="Updated after baseline",
         )
 
-        result = runner.invoke(
-            cli, ["criteria", "test-proj", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["criteria", "test-proj", "--json"], env=urika_env)
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         criteria = data["criteria"]
@@ -929,9 +917,7 @@ class TestCriteriaCommand:
             rationale="Refined after experiment 2",
         )
 
-        result = runner.invoke(
-            cli, ["criteria", "test-proj", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["criteria", "test-proj", "--json"], env=urika_env)
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         criteria = data["criteria"]
@@ -947,9 +933,7 @@ class TestCriteriaCommand:
         """JSON output includes version and set_by in the criteria object."""
         _create_project(runner, urika_env)
         # Builder seeds v1; verify it appears in JSON
-        result = runner.invoke(
-            cli, ["criteria", "test-proj", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["criteria", "test-proj", "--json"], env=urika_env)
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         criteria = data["criteria"]
@@ -976,9 +960,7 @@ class TestSummarizeCommand:
     ) -> None:
         _create_project(runner, urika_env)
         with _agent_mocks(
-            _mock_agent_result(
-                text_output="Project has 3 experiments, best R2=0.85"
-            )
+            _mock_agent_result(text_output="Project has 3 experiments, best R2=0.85")
         ):
             result = runner.invoke(
                 cli,

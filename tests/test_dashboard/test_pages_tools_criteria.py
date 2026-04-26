@@ -80,6 +80,7 @@ def test_global_tools_link_in_sidebar(tools_client):
     r = tools_client.get("/projects")
     body = r.text
     import re
+
     sidebar = re.search(
         r'<aside class="sidebar"[^>]*>(.*?)</aside>', body, re.DOTALL
     ).group(1)
@@ -133,3 +134,44 @@ def test_sidebar_omits_criteria_and_run_links(tools_client):
     # The sidebar no longer renders direct links to /criteria or /run.
     assert 'href="/projects/alpha/criteria"' not in body
     assert 'href="/projects/alpha/run"' not in body
+
+
+# ── Build-tool button + log page ──────────────────────────────────────────
+
+
+def test_project_tools_page_has_build_tool_button(tools_client):
+    """Project Tools page renders the "+ Build tool" button + modal form
+    posting to the new endpoint."""
+    r = tools_client.get("/projects/alpha/tools")
+    assert r.status_code == 200
+    body = r.text
+    assert "+ Build tool" in body
+    assert "/api/projects/alpha/tools/build" in body
+    # The textarea name must match what the API reads.
+    assert 'name="instructions"' in body
+
+
+def test_global_tools_page_has_no_build_tool_button(tools_client):
+    """The global /tools page must NOT render the Build tool button —
+    custom tools belong to a specific project."""
+    r = tools_client.get("/tools")
+    assert r.status_code == 200
+    body = r.text
+    assert "+ Build tool" not in body
+    assert "/tools/build" not in body
+
+
+def test_tool_build_log_page_returns_200(tools_client):
+    r = tools_client.get("/projects/alpha/tools/build/log")
+    assert r.status_code == 200
+    body = r.text
+    assert "EventSource" in body
+    assert "/api/projects/alpha/tools/build/stream" in body
+    assert 'id="log"' in body
+    # Back link returns to the project Tools page, not project home.
+    assert "/projects/alpha/tools" in body
+
+
+def test_tool_build_log_page_404_unknown_project(tools_client):
+    r = tools_client.get("/projects/nonexistent/tools/build/log")
+    assert r.status_code == 404

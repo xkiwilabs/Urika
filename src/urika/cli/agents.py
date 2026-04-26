@@ -28,14 +28,12 @@ from urika.cli._helpers import (
 from urika.cli.run import _offer_to_run_advisor_suggestions
 
 
-
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("text", required=False, default=None)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     """Ask the advisor agent a question about the project."""
-
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -80,8 +78,7 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     context_summary = load_context_summary(project_path)
     if context_summary:
         context += (
-            f"\n## Research Context (from previous sessions)\n\n"
-            f"{context_summary}\n\n"
+            f"\n## Research Context (from previous sessions)\n\n{context_summary}\n\n"
         )
     context += f"\nUser: {text}\n"
     methods_path = project_path / "methods.json"
@@ -127,17 +124,13 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         from urika.core.advisor_memory import append_exchange
 
         advisor_text = result.text_output.strip()
-        append_exchange(
-            project_path, role="user", text=text, source="cli"
-        )
+        append_exchange(project_path, role="user", text=text, source="cli")
 
         from urika.orchestrator.parsing import parse_suggestions as _parse_sug
 
         _parsed = _parse_sug(advisor_text)
         _parsed_suggestions = (
-            _parsed["suggestions"]
-            if _parsed and _parsed.get("suggestions")
-            else None
+            _parsed["suggestions"] if _parsed and _parsed.get("suggestions") else None
         )
         append_exchange(
             project_path,
@@ -167,7 +160,6 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         click.echo(f"Error: {result.error}")
 
 
-
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("experiment_id", required=False, default=None)
@@ -181,7 +173,6 @@ def evaluate(
     project: str | None, experiment_id: str | None, instructions: str, json_output: bool
 ) -> None:
     """Run the evaluator agent on an experiment."""
-
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -257,7 +248,6 @@ def evaluate(
         click.echo(f"Error: {result.error}")
 
 
-
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.argument("experiment_id", required=False, default=None)
@@ -271,7 +261,6 @@ def plan(
     project: str | None, experiment_id: str | None, instructions: str, json_output: bool
 ) -> None:
     """Run the planning agent to design the next method."""
-
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -347,8 +336,6 @@ def plan(
         click.echo(f"Error: {result.error}")
 
 
-
-
 @cli.command("build-tool")
 @click.argument("project", required=False, default=None)
 @click.argument("instructions", required=False, default=None)
@@ -366,7 +353,6 @@ def build_tool(
       urika build-tool my-project "build a tool that computes ICC using pingouin"
       urika build-tool my-project "install librosa and create an audio feature extractor"
     """
-
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
     from urika.cli_helpers import interactive_prompt
@@ -436,9 +422,6 @@ def build_tool(
         click.echo(f"Error: {result.error}")
 
 
-
-
-
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option(
@@ -447,11 +430,8 @@ def build_tool(
     help="Optional guidance to steer the summarizer (e.g. 'focus on open questions').",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def summarize(
-    project: str | None, instructions: str | None, json_output: bool
-) -> None:
+def summarize(project: str | None, instructions: str | None, json_output: bool) -> None:
     """Summarize the current state of a project."""
-
 
     from urika.cli_display import Spinner, format_agent_output, print_agent
 
@@ -575,7 +555,6 @@ def criteria(project: str | None, json_output: bool) -> None:
             f"{primary.get('direction', '>')} {primary.get('target')}"
         )
     click.echo()
-
 
 
 # ── Re-exports from sibling modules (Phase 8 split) ───────────────

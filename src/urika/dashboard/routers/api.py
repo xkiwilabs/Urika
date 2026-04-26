@@ -19,6 +19,7 @@ from urika.core.settings import load_settings, save_settings
 from urika.core.workspace import _write_toml
 from urika.dashboard.projects import list_project_summaries, load_project_summary
 from urika.dashboard.runs import (
+    spawn_build_tool,
     spawn_evaluate,
     spawn_experiment_run,
     spawn_finalize,
@@ -103,9 +104,7 @@ async def api_create_project(request: Request):
     privacy_mode = (body.get("privacy_mode") or "open").strip()
 
     if not name or not question:
-        raise HTTPException(
-            status_code=422, detail="name and question are required"
-        )
+        raise HTTPException(status_code=422, detail="name and question are required")
     if not _PROJECT_NAME_RE.match(name):
         raise HTTPException(
             status_code=422,
@@ -124,9 +123,7 @@ async def api_create_project(request: Request):
     if privacy_mode not in _VALID_PRIVACY_MODES:
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"privacy_mode must be one of {sorted(_VALID_PRIVACY_MODES)}"
-            ),
+            detail=(f"privacy_mode must be one of {sorted(_VALID_PRIVACY_MODES)}"),
         )
 
     # Hard gate: private/hybrid require a configured private endpoint
@@ -137,10 +134,7 @@ async def api_create_project(request: Request):
     if privacy_mode in ("private", "hybrid"):
         from urika.core.settings import get_named_endpoints
 
-        if not any(
-            (ep.get("base_url") or "").strip()
-            for ep in get_named_endpoints()
-        ):
+        if not any((ep.get("base_url") or "").strip() for ep in get_named_endpoints()):
             raise HTTPException(
                 status_code=422,
                 detail=(
@@ -154,13 +148,9 @@ async def api_create_project(request: Request):
 
     registry = ProjectRegistry()
     if name in registry.list_all():
-        raise HTTPException(
-            status_code=409, detail=f"Project '{name}' already exists"
-        )
+        raise HTTPException(status_code=409, detail=f"Project '{name}' already exists")
 
-    data_paths = [
-        p.strip() for p in data_paths_raw.splitlines() if p.strip()
-    ]
+    data_paths = [p.strip() for p in data_paths_raw.splitlines() if p.strip()]
 
     settings = load_settings()
     projects_root = Path(
@@ -170,9 +160,7 @@ async def api_create_project(request: Request):
     project_dir = projects_root / name
 
     if project_dir.exists():
-        raise HTTPException(
-            status_code=409, detail="Directory already exists on disk"
-        )
+        raise HTTPException(status_code=409, detail="Directory already exists on disk")
 
     cfg = ProjectConfig(
         name=name,
@@ -231,12 +219,8 @@ async def api_create_project(request: Request):
     registry.register(name, project_dir)
 
     if request.headers.get("hx-request") == "true":
-        return Response(
-            status_code=201, headers={"HX-Redirect": f"/projects/{name}"}
-        )
-    return JSONResponse(
-        {"name": name, "path": str(project_dir)}, status_code=201
-    )
+        return Response(status_code=201, headers={"HX-Redirect": f"/projects/{name}"})
+    return JSONResponse({"name": name, "path": str(project_dir)}, status_code=201)
 
 
 @router.put("/projects/{name}/settings")
@@ -445,9 +429,7 @@ def _apply_structured_settings(project_path, form) -> None:
     # otherwise silently route to the default and confuse users.
     from urika.core.settings import get_named_endpoints as _get_named_endpoints
 
-    _project_defined_endpoints = {
-        ep["name"] for ep in _get_named_endpoints()
-    }
+    _project_defined_endpoints = {ep["name"] for ep in _get_named_endpoints()}
     # Project-local endpoints (existing TOML).
     _project_defined_endpoints |= set(
         (data.get("privacy", {}) or {}).get("endpoints", {}) or {}
@@ -489,8 +471,7 @@ def _apply_structured_settings(project_path, form) -> None:
                     if _effective_mode == "private":
                         endpoint_val = ""
                     elif (
-                        _effective_mode == "hybrid"
-                        and agent in _HYBRID_LOCKED_PRIVATE
+                        _effective_mode == "hybrid" and agent in _HYBRID_LOCKED_PRIVATE
                     ):
                         endpoint_val = ""
                 if endpoint_val:
@@ -523,8 +504,7 @@ def _apply_structured_settings(project_path, form) -> None:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "project_privacy_mode must be one of "
-                    "{'open', 'private', 'hybrid'}"
+                    "project_privacy_mode must be one of {'open', 'private', 'hybrid'}"
                 ),
             )
 
@@ -558,8 +538,7 @@ def _apply_structured_settings(project_path, form) -> None:
             from urika.core.settings import get_named_endpoints
 
             has_global_url = any(
-                (ep.get("base_url") or "").strip()
-                for ep in get_named_endpoints()
+                (ep.get("base_url") or "").strip() for ep in get_named_endpoints()
             )
 
             if not (form_url or existing_url or has_global_url):
@@ -577,9 +556,7 @@ def _apply_structured_settings(project_path, form) -> None:
         new_privacy: dict = {"mode": new_mode}
         if new_mode == "private":
             url_val = (form.get("project_privacy_private_url") or "").strip()
-            key_val = (
-                form.get("project_privacy_private_key_env") or ""
-            ).strip()
+            key_val = (form.get("project_privacy_private_key_env") or "").strip()
             # Blank URL + globals available → skip the endpoint write so
             # the runtime loader inherits the global endpoint (commit 1).
             # Stops the silent-stub-write that left projects "saved"
@@ -593,12 +570,8 @@ def _apply_structured_settings(project_path, form) -> None:
                     }
                 }
         elif new_mode == "hybrid":
-            url_val = (
-                form.get("project_privacy_hybrid_private_url") or ""
-            ).strip()
-            key_val = (
-                form.get("project_privacy_hybrid_private_key_env") or ""
-            ).strip()
+            url_val = (form.get("project_privacy_hybrid_private_url") or "").strip()
+            key_val = (form.get("project_privacy_hybrid_private_key_env") or "").strip()
             if url_val:
                 new_privacy["endpoints"] = {
                     "private": {
@@ -650,9 +623,7 @@ def _apply_structured_settings(project_path, form) -> None:
         # Per-channel overrides — stashed even when the channel itself
         # is off so the user doesn't lose their typing on a disable.
         email_extra = (form.get("project_notif_email_extra_to") or "").strip()
-        email_extra_list = [
-            a.strip() for a in email_extra.split(",") if a.strip()
-        ]
+        email_extra_list = [a.strip() for a in email_extra.split(",") if a.strip()]
         if email_extra_list:
             new_notif["email"] = {"extra_to": email_extra_list}
 
@@ -727,12 +698,10 @@ def _validate_privacy_endpoint(project_path: Path) -> None:
     # back to the global named endpoints.
     project_endpoints = runtime_config.endpoints or {}
     has_project_url = any(
-        (ep.base_url or "").strip()
-        for ep in project_endpoints.values()
+        (ep.base_url or "").strip() for ep in project_endpoints.values()
     )
     has_global_url = any(
-        (ep.get("base_url") or "").strip()
-        for ep in get_named_endpoints()
+        (ep.get("base_url") or "").strip() for ep in get_named_endpoints()
     )
 
     if not (has_project_url or has_global_url):
@@ -747,6 +716,7 @@ def _validate_privacy_endpoint(project_path: Path) -> None:
                 f"running this project."
             ),
         )
+
 
 # Reserved endpoint name: ``open`` is the implicit cloud (Claude)
 # endpoint and may not be redefined by the user.
@@ -787,10 +757,13 @@ def _parse_endpoints_form(
     json_blob = form.get("endpoints_json")
     if json_blob is not None:
         import json
+
         try:
             parsed = json.loads(json_blob) if json_blob else []
         except (ValueError, TypeError):
-            raise HTTPException(status_code=422, detail="endpoints_json must be valid JSON")
+            raise HTTPException(
+                status_code=422, detail="endpoints_json must be valid JSON"
+            )
         if not isinstance(parsed, list):
             raise HTTPException(status_code=422, detail="endpoints_json must be a list")
         rows: list[dict[str, str]] = []
@@ -820,17 +793,21 @@ def _parse_endpoints_form(
                     detail=f"endpoint name '{name}' appears more than once",
                 )
             seen_names.add(name)
-            rows.append({
-                "name": name,
-                "base_url": (item.get("base_url") or "").strip(),
-                "api_key_env": (item.get("api_key_env") or "").strip(),
-                "default_model": (item.get("default_model") or "").strip(),
-            })
+            rows.append(
+                {
+                    "name": name,
+                    "base_url": (item.get("base_url") or "").strip(),
+                    "api_key_env": (item.get("api_key_env") or "").strip(),
+                    "default_model": (item.get("default_model") or "").strip(),
+                }
+            )
         return rows, True
 
     # Find every index that appears in the form. We accept any of the
     # four bracketed keys as evidence that the row exists.
-    indexed_re = re.compile(r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|default_model)\]$")
+    indexed_re = re.compile(
+        r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|default_model)\]$"
+    )
     indices: set[int] = set()
     has_field = False
     for key in form.keys():
@@ -849,9 +826,7 @@ def _parse_endpoints_form(
         if not _ENDPOINT_NAME_RE.match(name):
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"endpoint name '{name}' must match ^[a-z0-9_-]+$"
-                ),
+                detail=(f"endpoint name '{name}' must match ^[a-z0-9_-]+$"),
             )
         if name in _RESERVED_ENDPOINT_NAMES:
             raise HTTPException(
@@ -1022,9 +997,7 @@ async def api_global_settings_put(request: Request):
             if agent not in _KNOWN_AGENTS:
                 continue
             model_val = (form.get(key) or "").strip()
-            endpoint_val = (
-                form.get(f"{prefix}{agent}][endpoint]") or ""
-            ).strip()
+            endpoint_val = (form.get(f"{prefix}{agent}][endpoint]") or "").strip()
 
             # Server-side enforcement of mode-specific endpoint constraints.
             # Private mode: ``open`` is hidden (defeats the point); coerce
@@ -1147,9 +1120,7 @@ async def api_global_settings_put(request: Request):
     # defaults that would survive even when the user hasn't entered any
     # connection details.
     has_email_data = any(
-        v
-        for k, v in email_section.items()
-        if k not in ("smtp_port", "auto_enable")
+        v for k, v in email_section.items() if k not in ("smtp_port", "auto_enable")
     ) or (smtp_port != 587)
     if has_email_data or email_auto_enable:
         notifications["email"] = email_section
@@ -1162,9 +1133,7 @@ async def api_global_settings_put(request: Request):
         "token_env": (form.get("notifications_slack_token_env") or "").strip(),
         "auto_enable": slack_auto_enable,
     }
-    has_slack_data = any(
-        v for k, v in slack_section.items() if k != "auto_enable"
-    )
+    has_slack_data = any(v for k, v in slack_section.items() if k != "auto_enable")
     if has_slack_data or slack_auto_enable:
         notifications["slack"] = slack_section
     elif "slack" in notifications:
@@ -1435,7 +1404,7 @@ def _format_log_line(line: str) -> str:
     dashboard side can be tested with a fabricated log line.
     """
     if line.startswith(_PROMPT_PREFIX):
-        payload = line[len(_PROMPT_PREFIX):].strip()
+        payload = line[len(_PROMPT_PREFIX) :].strip()
         return f"event: prompt\ndata: {payload}\n\n"
     return f"data: {line}\n\n"
 
@@ -1613,6 +1582,86 @@ async def api_summarize_stream(name: str):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@router.post("/projects/{name}/tools/build")
+async def api_project_build_tool(name: str, request: Request):
+    """Spawn ``urika build-tool <project> <instructions> --json``.
+
+    Validates the project exists, requires a non-empty ``instructions``
+    form field (the tool description — the build-tool CLI takes it as
+    a positional argument and would otherwise block on an interactive
+    prompt). Hands off to ``spawn_build_tool`` which Popens the CLI
+    and detaches a daemon thread to drain stdout into
+    ``<project>/tools/build.log``.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    body = await request.form()
+    instructions = (body.get("instructions") or "").strip()
+    if not instructions:
+        raise HTTPException(status_code=422, detail="instructions is required")
+
+    # Pre-flight privacy gate — tool_builder runs in private mode under
+    # hybrid, so the gate must apply here too.
+    _validate_privacy_endpoint(summary.path)
+
+    pid = spawn_build_tool(
+        name,
+        summary.path,
+        instructions=instructions,
+    )
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/tools/build/log"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
+    return JSONResponse({"status": "started", "pid": pid})
+
+
+@router.get("/projects/{name}/tools/build/stream")
+async def api_build_tool_stream(name: str):
+    """Server-sent-events tail of ``tools/build.log``.
+
+    Same shape as :func:`api_finalize_stream` but reads from
+    ``tools/build.log`` and watches ``tools/.build.lock`` for completion.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    log_path = summary.path / "tools" / "build.log"
+    lock_path = summary.path / "tools" / ".build.lock"
+
+    async def event_stream():
+        position = 0
+        if log_path.exists():
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    yield f"data: {line.rstrip()}\n\n"
+                position = f.tell()
+
+        while lock_path.exists() or log_path.exists():
+            new_data = ""
+            if log_path.exists():
+                with open(log_path, "r", encoding="utf-8") as f:
+                    f.seek(position)
+                    new_data = f.read()
+                    position = f.tell()
+            if new_data:
+                for line in new_data.splitlines():
+                    yield f"data: {line}\n\n"
+            if not lock_path.exists():
+                yield (
+                    f"event: status\ndata: {json.dumps({'status': 'completed'})}\n\n"
+                )
+                return
+            await asyncio.sleep(0.5)
+
+        yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @router.post("/projects/{name}/experiments/{exp_id}/report")
 async def api_experiment_report(name: str, exp_id: str, request: Request):
     """Spawn ``urika report <project> --experiment <exp_id>``.
@@ -1654,9 +1703,7 @@ async def api_experiment_report(name: str, exp_id: str, request: Request):
     if request.headers.get("hx-request") == "true":
         log_url = f"/projects/{name}/experiments/{exp_id}/log"
         return Response(status_code=200, headers={"HX-Redirect": log_url})
-    return JSONResponse(
-        {"status": "started", "pid": pid, "experiment_id": exp_id}
-    )
+    return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
 
 
 @router.post("/projects/{name}/experiments/{exp_id}/evaluate")
@@ -1693,9 +1740,7 @@ async def api_experiment_evaluate(name: str, exp_id: str, request: Request):
     if request.headers.get("hx-request") == "true":
         log_url = f"/projects/{name}/experiments/{exp_id}/log"
         return Response(status_code=200, headers={"HX-Redirect": log_url})
-    return JSONResponse(
-        {"status": "started", "pid": pid, "experiment_id": exp_id}
-    )
+    return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
 
 
 @router.post("/projects/{name}/present")
@@ -1783,9 +1828,7 @@ async def api_project_advisor(name: str, request: Request):
         from urika.core.advisor_memory import append_exchange
         from urika.orchestrator.parsing import parse_suggestions
 
-        append_exchange(
-            summary.path, role="user", text=question, source="dashboard"
-        )
+        append_exchange(summary.path, role="user", text=question, source="dashboard")
         parsed = parse_suggestions(response_md) or {}
         suggestions = parsed.get("suggestions") if parsed else None
         append_exchange(
