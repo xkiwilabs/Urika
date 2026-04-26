@@ -3,21 +3,29 @@
 These provide defaults for new projects. Users can override
 per-project during `urika new` or by editing urika.toml.
 
-Example ~/.urika/settings.toml:
+Globals configure connection details and per-mode model defaults.
+There is no system-wide default privacy mode — each project picks
+its own mode at creation time and the loader live-inherits the
+matching ``[runtime.modes.<mode>]`` block.
 
-    [privacy]
-    mode = "private"
+Example ~/.urika/settings.toml:
 
     [privacy.endpoints.private]
     base_url = "http://localhost:11434"
     api_key_env = ""
 
-    [privacy.endpoints.university]
-    base_url = "https://claude.myuni.edu/v1"
-    api_key_env = "UNI_API_KEY"
+    [runtime.modes.open]
+    model = "claude-opus-4-7"
 
-    [runtime]
-    model = "qwen3-coder"
+    [runtime.modes.private]
+    model = "qwen3:14b"
+
+    [runtime.modes.hybrid]
+    model = "claude-opus-4-7"
+
+    [runtime.modes.hybrid.models.data_agent]
+    model = "qwen3:14b"
+    endpoint = "private"
 
     [preferences]
     web_search = false
@@ -63,14 +71,15 @@ def save_settings(data: dict[str, Any]) -> None:
 def get_default_privacy() -> dict[str, Any]:
     """Get default privacy settings for new projects.
 
-    Returns a dict with keys: mode, endpoints (dict of name -> {base_url, api_key_env}).
+    Returns endpoints only — there is no system default mode.  Each
+    project picks its own mode at creation time (via ``urika new`` or
+    POST /api/projects).  The returned dict has a single key,
+    ``endpoints``, mapping endpoint names to ``{base_url, api_key_env}``
+    dicts.
     """
     settings = load_settings()
     privacy = settings.get("privacy", {})
-    return {
-        "mode": privacy.get("mode", "open"),
-        "endpoints": privacy.get("endpoints", {}),
-    }
+    return {"endpoints": privacy.get("endpoints", {})}
 
 
 def get_default_runtime() -> dict[str, Any]:

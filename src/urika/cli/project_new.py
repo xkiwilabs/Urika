@@ -85,19 +85,19 @@ def new(
         name = interactive_prompt("Project name", required=True)
     name = _sanitize_project_name(name)
 
-    # Load saved defaults from ~/.urika/settings.toml
+    # Load saved endpoint connection details from ~/.urika/settings.toml.
+    # There is NO saved default mode — each project picks its mode fresh.
     from urika.core.settings import get_default_privacy
 
     _saved_privacy = get_default_privacy()
-    _saved_mode = _saved_privacy.get("mode", "open")
     _saved_endpoints = _saved_privacy.get("endpoints", {})
     _saved_private_ep = _saved_endpoints.get("private", {})
     _saved_url = _saved_private_ep.get("base_url", "")
     _saved_key_env = _saved_private_ep.get("api_key_env", "")
 
-    # In JSON mode, skip all interactive prompts — use saved defaults
+    # In JSON mode, skip all interactive prompts — pick least-restrictive mode
     if json_output:
-        privacy_mode_val = _saved_mode
+        privacy_mode_val = "open"
         private_endpoint_url = _saved_url
         private_endpoint_key_env = _saved_key_env
         if data_path is not None:
@@ -109,18 +109,16 @@ def new(
         web_search = False
         use_venv = False
     else:
-        # Privacy mode — ask FIRST, before data path
-        _mode_default = {"open": 1, "private": 2, "hybrid": 3}.get(_saved_mode, 1)
-        _has_saved = _saved_mode != "open"
-        _saved_hint = f" (saved default: {_saved_mode})" if _has_saved else ""
+        # Privacy mode — ask FIRST, before data path. No pre-fill: each
+        # project picks its own mode regardless of any global config.
         privacy_choice = _prompt_numbered(
-            f"\nData privacy mode:{_saved_hint}",
+            "\nData privacy mode:",
             [
                 "Open — agents use cloud models, no restrictions",
                 "Private — all agents use private/local endpoints only",
                 "Hybrid — data reading is private, thinking uses cloud models",
             ],
-            default=_mode_default,
+            default=1,
         )
         _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
         privacy_mode_val = _privacy_map.get(

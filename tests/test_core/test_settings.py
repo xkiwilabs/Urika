@@ -96,3 +96,36 @@ def test_get_default_notifications_auto_enable_missing_channel_is_false(urika_ho
     assert out["email"] is True
     assert out["slack"] is False
     assert out["telegram"] is False
+
+
+def test_get_default_privacy_returns_endpoints_only(urika_home):
+    """get_default_privacy() exposes endpoints but NOT a mode key —
+    there is no system-wide default privacy mode any more."""
+    from urika.core.settings import get_default_privacy, save_settings
+
+    save_settings(
+        {
+            "privacy": {
+                "mode": "private",  # legacy, ignored
+                "endpoints": {
+                    "private": {
+                        "base_url": "http://localhost:11434",
+                        "api_key_env": "",
+                    }
+                },
+            }
+        }
+    )
+    out = get_default_privacy()
+    assert "mode" not in out
+    assert out["endpoints"]["private"]["base_url"] == "http://localhost:11434"
+
+
+def test_get_default_privacy_no_file_returns_empty_endpoints(urika_home):
+    """No settings file → get_default_privacy returns empty endpoints
+    dict, no mode key."""
+    from urika.core.settings import get_default_privacy
+
+    out = get_default_privacy()
+    assert "mode" not in out
+    assert out["endpoints"] == {}
