@@ -1303,11 +1303,16 @@ def project_knowledge_entry(request: Request, name: str, entry_id: str) -> HTMLR
     )
 
 
+_EXPERIMENT_LOG_TYPES = {"run", "evaluate", "report", "present"}
+
+
 @router.get(
     "/projects/{name}/experiments/{exp_id}/log",
     response_class=HTMLResponse,
 )
-def project_experiment_log(request: Request, name: str, exp_id: str) -> HTMLResponse:
+def project_experiment_log(
+    request: Request, name: str, exp_id: str, type: str = "run"
+) -> HTMLResponse:
     """Render the live log page for an experiment.
 
     The page itself is static HTML — its inline ``<script>`` opens an
@@ -1318,11 +1323,18 @@ def project_experiment_log(request: Request, name: str, exp_id: str) -> HTMLResp
     instant ``POST /api/projects/<name>/run`` returns — before the
     orchestrator has flushed any output. The SSE endpoint tolerates
     that case and emits an ``event: status`` ``no_log`` event.
+
+    ``type`` selects which log file the page tails — defaults to
+    ``run``. Allowed values are ``run``, ``evaluate``, ``report``,
+    ``present``. Unknown values silently fall back to ``run`` (we
+    don't 422 on a flaky query string), and the allow-list also
+    keeps untrusted input from leaking into the SSE stream URL.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
+    log_type = type if type in _EXPERIMENT_LOG_TYPES else "run"
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "run_log.html",
@@ -1330,6 +1342,7 @@ def project_experiment_log(request: Request, name: str, exp_id: str) -> HTMLResp
             "request": request,
             "project": summary,
             "experiment_id": exp_id,
+            "log_type": log_type,
         },
     )
 

@@ -43,9 +43,7 @@ def evaluate_client(tmp_path: Path, monkeypatch):
 
     spawn_calls: list[dict] = []
 
-    def fake_spawn(
-        project_name, project_path, experiment_id, *, instructions="", **_
-    ):
+    def fake_spawn(project_name, project_path, experiment_id, *, instructions="", **_):
         spawn_calls.append(
             {
                 "project_name": project_name,
@@ -125,7 +123,7 @@ def test_evaluate_post_hx_request_emits_redirect_header(evaluate_client):
     )
     assert r.status_code == 200
     assert r.headers.get("hx-redirect", "").endswith(
-        "/projects/alpha/experiments/exp-001/log"
+        "/projects/alpha/experiments/exp-001/log?type=evaluate"
     )
     assert len(spawn_calls) == 1
 

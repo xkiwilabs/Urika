@@ -1,6 +1,8 @@
 {% extends "_base.html" %}
 
-{% block title %}Live log · {{ experiment_id }} · {{ project.name | humanize }} · Urika{% endblock %}
+{% set _log_type = log_type or "run" %}
+
+{% block title %}Live log · {{ experiment_id }}{% if _log_type != "run" %} · {{ _log_type }}{% endif %} · {{ project.name | humanize }} · Urika{% endblock %}
 
 {% block breadcrumb %}
 <nav class="breadcrumb">
@@ -12,11 +14,11 @@
   <span class="breadcrumb-separator">/</span>
   <a class="breadcrumb-item" href="/projects/{{ project.name }}/experiments/{{ experiment_id }}">{{ experiment_id }}</a>
   <span class="breadcrumb-separator">/</span>
-  <span class="breadcrumb-current">Log</span>
+  <span class="breadcrumb-current">Log{% if _log_type != "run" %} · {{ _log_type }}{% endif %}</span>
 </nav>
 {% endblock %}
 
-{% block heading %}Live log: {{ experiment_id }}{% endblock %}
+{% block heading %}Live log: {{ experiment_id }}{% if _log_type != "run" %} · {{ _log_type }}{% endif %}{% endblock %}
 
 {% block content %}
 <div class="card">
@@ -25,9 +27,11 @@
 
   <div id="log-prompts" style="margin-top: var(--space-4);"></div>
 
+  {% if _log_type == "run" %}
   <div style="margin-top: var(--space-4);">
     <button class="btn btn--secondary" id="stop-btn">Stop run</button>
   </div>
+  {% endif %}
 
   <div id="log-completion" style="display: none; margin-top: var(--space-4);">
     <p>Run complete.</p>
@@ -50,10 +54,11 @@
 
 <script>
 (function () {
-  const url = "/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stream";
+  const url = "/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stream{% if _log_type != 'run' %}?type={{ _log_type }}{% endif %}";
   const logEl = document.getElementById("log");
   const statusEl = document.getElementById("log-status");
   const completionEl = document.getElementById("log-completion");
+  const stopBtn = document.getElementById("stop-btn");
 
   const es = new EventSource(url);
 
@@ -135,7 +140,7 @@
     try { payload = JSON.parse(e.data); } catch (_) {}
     statusEl.textContent = payload.status === "completed" ? "Completed." : `Status: ${payload.status || "unknown"}`;
     completionEl.style.display = "";
-    document.getElementById("stop-btn").style.display = "none";
+    if (stopBtn) stopBtn.style.display = "none";
     es.close();
 
     // Probe for report / presentation existence so the buttons only
@@ -154,13 +159,15 @@
     statusEl.textContent = "Connection lost.";
   };
 
-  document.getElementById("stop-btn").addEventListener("click", function () {
-    fetch("/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stop", {
-      method: "POST",
-    }).then(() => {
-      statusEl.textContent = "Stop requested. Waiting for current step to finish…";
+  if (stopBtn) {
+    stopBtn.addEventListener("click", function () {
+      fetch("/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stop", {
+        method: "POST",
+      }).then(() => {
+        statusEl.textContent = "Stop requested. Waiting for current step to finish…";
+      });
     });
-  });
+  }
 })();
 </script>
 {% endblock %}

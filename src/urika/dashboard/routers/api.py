@@ -1374,15 +1374,35 @@ def api_experiment_artifacts(name: str, exp_id: str):
     }
 
 
+_EXPERIMENT_LOG_TYPES: dict[str, tuple[str, str]] = {
+    # type → (log_filename, lock_filename)
+    "run": ("run.log", ".lock"),
+    "evaluate": ("evaluate.log", ".evaluate.lock"),
+    "report": ("report.log", ".report.lock"),
+    "present": ("present.log", ".present.lock"),
+}
+
+
 @router.get("/projects/{name}/runs/{exp_id}/stream")
-async def api_run_stream(name: str, exp_id: str):
-    """Server-sent-events tail of an experiment's ``run.log``.
+async def api_run_stream(name: str, exp_id: str, type: str = "run"):
+    """Server-sent-events tail of an experiment's per-agent log file.
 
     Emits each existing log line as ``data: <line>\\n\\n``, then polls
-    every 0.5s for new content. When the ``.lock`` file disappears
-    (the run has finished), flushes any remaining lines and emits an
+    every 0.5s for new content. When the lock file disappears (the run
+    has finished), flushes any remaining lines and emits an
     ``event: status\\ndata: {"status":"completed"}\\n\\n`` event before
     closing the connection.
+
+    ``type`` selects which log/lock pair to tail (default ``run``):
+
+    * ``run`` → ``run.log`` + ``.lock``
+    * ``evaluate`` → ``evaluate.log`` + ``.evaluate.lock``
+    * ``report`` → ``report.log`` + ``.report.lock``
+    * ``present`` → ``present.log`` + ``.present.lock``
+
+    Unknown values silently fall back to ``run`` so a flaky query
+    string can't 422 the page; the allow-list also keeps untrusted
+    input from being interpolated into a filesystem path.
 
     The browser-side EventSource (Task 6.5) consumes this stream.
     """
@@ -1390,8 +1410,9 @@ async def api_run_stream(name: str, exp_id: str):
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    log_path = summary.path / "experiments" / exp_id / "run.log"
-    lock_path = summary.path / "experiments" / exp_id / ".lock"
+    log_name, lock_name = _EXPERIMENT_LOG_TYPES.get(type, _EXPERIMENT_LOG_TYPES["run"])
+    log_path = summary.path / "experiments" / exp_id / log_name
+    lock_path = summary.path / "experiments" / exp_id / lock_name
 
     async def event_stream():
         # Initial backlog — drain whatever's already on disk.
@@ -1740,7 +1761,7 @@ async def api_experiment_report(name: str, exp_id: str, request: Request):
     )
 
     if request.headers.get("hx-request") == "true":
-        log_url = f"/projects/{name}/experiments/{exp_id}/log"
+        log_url = f"/projects/{name}/experiments/{exp_id}/log?type=report"
         return Response(status_code=200, headers={"HX-Redirect": log_url})
     return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
 
@@ -1777,7 +1798,7 @@ async def api_experiment_evaluate(name: str, exp_id: str, request: Request):
     )
 
     if request.headers.get("hx-request") == "true":
-        log_url = f"/projects/{name}/experiments/{exp_id}/log"
+        log_url = f"/projects/{name}/experiments/{exp_id}/log?type=evaluate"
         return Response(status_code=200, headers={"HX-Redirect": log_url})
     return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
 
@@ -1828,7 +1849,7 @@ async def api_project_present(name: str, request: Request):
     )
 
     if request.headers.get("hx-request") == "true":
-        log_url = f"/projects/{name}/experiments/{experiment_id}/log"
+        log_url = f"/projects/{name}/experiments/{experiment_id}/log?type=present"
         return Response(status_code=200, headers={"HX-Redirect": log_url})
     return JSONResponse(
         {"status": "started", "pid": pid, "experiment_id": experiment_id}

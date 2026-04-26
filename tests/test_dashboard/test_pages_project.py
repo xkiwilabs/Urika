@@ -484,6 +484,46 @@ def test_run_log_page_works_without_existing_experiment(client_run_log):
     assert r.status_code == 200
 
 
+def test_run_log_page_type_evaluate_carries_query_in_sse_url(client_run_log):
+    """When the page is loaded with ?type=evaluate the embedded
+    EventSource URL must point at the evaluate log stream so the
+    browser tails evaluate.log instead of run.log."""
+    r = client_run_log.get("/projects/alpha/experiments/exp-001/log?type=evaluate")
+    assert r.status_code == 200
+    body = r.text
+    assert "/api/projects/alpha/runs/exp-001/stream?type=evaluate" in body
+    # Heading should reflect the agent type
+    assert "evaluate" in body
+    # The Stop run button is run-only — hidden for evaluate/report/present
+    assert 'id="stop-btn"' not in body
+
+
+def test_run_log_page_type_report_carries_query_in_sse_url(client_run_log):
+    r = client_run_log.get("/projects/alpha/experiments/exp-001/log?type=report")
+    assert r.status_code == 200
+    assert "/api/projects/alpha/runs/exp-001/stream?type=report" in r.text
+    assert 'id="stop-btn"' not in r.text
+
+
+def test_run_log_page_type_present_carries_query_in_sse_url(client_run_log):
+    r = client_run_log.get("/projects/alpha/experiments/exp-001/log?type=present")
+    assert r.status_code == 200
+    assert "/api/projects/alpha/runs/exp-001/stream?type=present" in r.text
+    assert 'id="stop-btn"' not in r.text
+
+
+def test_run_log_page_type_unknown_falls_back_to_run(client_run_log):
+    """An unknown ?type value silently degrades to run — the page still
+    renders, the SSE URL has no query string, and the Stop button is back."""
+    r = client_run_log.get("/projects/alpha/experiments/exp-001/log?type=bogus")
+    assert r.status_code == 200
+    body = r.text
+    # No ?type= in the SSE URL when defaulting to run
+    assert '/api/projects/alpha/runs/exp-001/stream"' in body
+    assert "?type=" not in body.split("EventSource")[1].split(";")[0]
+    assert 'id="stop-btn"' in body
+
+
 def test_report_view_renders_markdown(client_with_runs):
     # Fabricate report.md
     proj = client_with_runs.app.state.project_root / "alpha"

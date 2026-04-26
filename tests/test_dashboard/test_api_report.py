@@ -143,7 +143,7 @@ def test_report_post_hx_request_emits_redirect_header(report_client):
     )
     assert r.status_code == 200
     assert r.headers.get("hx-redirect", "").endswith(
-        "/projects/alpha/experiments/exp-001/log"
+        "/projects/alpha/experiments/exp-001/log?type=report"
     )
     assert len(spawn_calls) == 1
 

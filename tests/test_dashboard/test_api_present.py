@@ -190,7 +190,7 @@ def test_present_post_hx_request_emits_redirect_header(present_client):
     )
     assert r.status_code == 200
     assert r.headers.get("hx-redirect", "").endswith(
-        "/projects/alpha/experiments/exp-001/log"
+        "/projects/alpha/experiments/exp-001/log?type=present"
     )
     assert len(spawn_calls) == 1
 

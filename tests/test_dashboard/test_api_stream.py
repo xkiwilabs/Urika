@@ -45,9 +45,7 @@ def stream_client_completed(tmp_path: Path, monkeypatch) -> TestClient:
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
-    (home / "projects.json").write_text(
-        json.dumps({"alpha": str(tmp_path / "alpha")})
-    )
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
     app = create_app(project_root=tmp_path)
     return TestClient(app)
 
@@ -55,9 +53,7 @@ def stream_client_completed(tmp_path: Path, monkeypatch) -> TestClient:
 @pytest.fixture
 def stream_client_running(tmp_path: Path, monkeypatch):
     # Has lock — caller will remove it from a thread to end the stream
-    proj = _make_project_with_log(
-        tmp_path, "alpha", "exp-001", "initial\n", lock=True
-    )
+    proj = _make_project_with_log(tmp_path, "alpha", "exp-001", "initial\n", lock=True)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
@@ -81,9 +77,7 @@ def test_stream_emits_existing_log_then_completes(stream_client_completed):
 
 
 def test_stream_404_unknown_project(stream_client_completed):
-    r = stream_client_completed.get(
-        "/api/projects/nonexistent/runs/exp-001/stream"
-    )
+    r = stream_client_completed.get("/api/projects/nonexistent/runs/exp-001/stream")
     assert r.status_code == 404
 
 
@@ -101,9 +95,7 @@ def test_stream_includes_new_lines_then_completes(stream_client_running):
 
     threading.Thread(target=append_then_unlock, daemon=True).start()
 
-    with client.stream(
-        "GET", "/api/projects/alpha/runs/exp-001/stream"
-    ) as r:
+    with client.stream("GET", "/api/projects/alpha/runs/exp-001/stream") as r:
         body = b"".join(r.iter_bytes()).decode("utf-8")
     assert "data: initial" in body
     assert "data: midway" in body
@@ -111,9 +103,7 @@ def test_stream_includes_new_lines_then_completes(stream_client_running):
     assert '"completed"' in body
 
 
-def test_stream_emits_prompt_event_for_urika_prompt_line(
-    tmp_path: Path, monkeypatch
-):
+def test_stream_emits_prompt_event_for_urika_prompt_line(tmp_path: Path, monkeypatch):
     """A URIKA-PROMPT: line in run.log should be emitted as an SSE
     'prompt' event with the trailing JSON payload as the data line —
     not as an ordinary data: event with the raw prefix in it.
@@ -143,9 +133,7 @@ def test_stream_emits_prompt_event_for_urika_prompt_line(
     app = create_app(project_root=tmp_path)
     client = TestClient(app)
 
-    with client.stream(
-        "GET", "/api/projects/alpha/runs/exp-001/stream"
-    ) as r:
+    with client.stream("GET", "/api/projects/alpha/runs/exp-001/stream") as r:
         assert r.status_code == 200
         body = b"".join(r.iter_bytes()).decode("utf-8")
 
@@ -160,4 +148,130 @@ def test_stream_emits_prompt_event_for_urika_prompt_line(
     assert "data: URIKA-PROMPT:" not in body
     # Should reach completion (no lock file)
     assert "event: status" in body
+    assert '"completed"' in body
+
+
+# ---- Per-agent log type (?type=evaluate|report|present) -------------------
+
+
+@pytest.fixture
+def stream_client_typed(tmp_path: Path, monkeypatch):
+    """A project with all four per-agent log files written; no locks
+    so each stream completes after draining its backlog."""
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "run.log").write_text("from-run-log\n")
+    (exp_dir / "evaluate.log").write_text("from-evaluate-log\n")
+    (exp_dir / "report.log").write_text("from-report-log\n")
+    (exp_dir / "present.log").write_text("from-present-log\n")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)
+
+
+def test_stream_type_evaluate_reads_evaluate_log(stream_client_typed):
+    with stream_client_typed.stream(
+        "GET", "/api/projects/alpha/runs/exp-001/stream?type=evaluate"
+    ) as r:
+        assert r.status_code == 200
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+    assert "data: from-evaluate-log" in body
+    assert "data: from-run-log" not in body
+    assert '"completed"' in body
+
+
+def test_stream_type_report_reads_report_log(stream_client_typed):
+    with stream_client_typed.stream(
+        "GET", "/api/projects/alpha/runs/exp-001/stream?type=report"
+    ) as r:
+        assert r.status_code == 200
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+    assert "data: from-report-log" in body
+    assert "data: from-run-log" not in body
+    assert '"completed"' in body
+
+
+def test_stream_type_present_reads_present_log(stream_client_typed):
+    with stream_client_typed.stream(
+        "GET", "/api/projects/alpha/runs/exp-001/stream?type=present"
+    ) as r:
+        assert r.status_code == 200
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+    assert "data: from-present-log" in body
+    assert "data: from-run-log" not in body
+    assert '"completed"' in body
+
+
+def test_stream_type_unknown_falls_back_to_run(stream_client_typed):
+    """Unknown type values must not 422 or escape into a filesystem
+    path — they silently degrade to ``run.log``."""
+    with stream_client_typed.stream(
+        "GET", "/api/projects/alpha/runs/exp-001/stream?type=../etc/passwd"
+    ) as r:
+        assert r.status_code == 200
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+    assert "data: from-run-log" in body
+    assert "data: from-evaluate-log" not in body
+
+
+def test_stream_type_default_still_reads_run_log(stream_client_typed):
+    """No ?type= → default to run.log (existing behaviour)."""
+    with stream_client_typed.stream(
+        "GET", "/api/projects/alpha/runs/exp-001/stream"
+    ) as r:
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+    assert "data: from-run-log" in body
+    assert "data: from-evaluate-log" not in body
+
+
+def test_stream_type_evaluate_watches_evaluate_lock(tmp_path: Path, monkeypatch):
+    """The lock file selection must follow the type too — otherwise the
+    stream would terminate as soon as the run.log lock disappeared even
+    though evaluate is still running."""
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    eval_log = exp_dir / "evaluate.log"
+    eval_log.write_text("first eval line\n")
+    eval_lock = exp_dir / ".evaluate.lock"
+    eval_lock.write_text("9999")
+    # No .lock for run — if the route mistakenly watched .lock, the
+    # stream would think the run was already done and skip the polling.
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    def append_then_unlock():
+        time.sleep(0.6)
+        with open(eval_log, "a", encoding="utf-8") as f:
+            f.write("second eval line\n")
+        time.sleep(0.6)
+        eval_lock.unlink()
+
+    threading.Thread(target=append_then_unlock, daemon=True).start()
+
+    with client.stream(
+        "GET", "/api/projects/alpha/runs/exp-001/stream?type=evaluate"
+    ) as r:
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+    assert "data: first eval line" in body
+    assert "data: second eval line" in body
     assert '"completed"' in body
