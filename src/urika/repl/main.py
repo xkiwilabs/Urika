@@ -261,18 +261,32 @@ def run_repl() -> None:
     click.echo()
 
     # ── Toolbar ──────────────────────────────────────────
-    _privacy_cache: dict[str, str] = {}
+    # Cache holds (mode, broken) where ``broken`` is True when the
+    # project's privacy mode requires a private endpoint but none is
+    # configured (project-local OR globally). When broken, the toolbar
+    # paints the mode red so the user notices before runs hard-fail.
+    _privacy_cache: dict[str, tuple[str, bool]] = {}
 
-    def _get_privacy(project_path) -> str:
+    def _get_privacy(project_path) -> tuple[str, bool]:
         key = str(project_path)
         if key not in _privacy_cache:
             try:
                 from urika.agents.config import load_runtime_config
 
                 rc = load_runtime_config(project_path)
-                _privacy_cache[key] = rc.privacy_mode
+                mode = rc.privacy_mode
+                broken = False
+                if mode in ("private", "hybrid"):
+                    # rc.endpoints already merges project + globals
+                    # (commit 1 of project-consistency phase).
+                    has_usable = any(
+                        (ep.base_url or "").strip()
+                        for ep in rc.endpoints.values()
+                    )
+                    broken = not has_usable
+                _privacy_cache[key] = (mode, broken)
             except Exception:
-                _privacy_cache[key] = "open"
+                _privacy_cache[key] = ("open", False)
         return _privacy_cache[key]
 
     # Spinner for the toolbar — rotates when agent is active
@@ -334,8 +348,16 @@ def run_repl() -> None:
 
         if session.has_project:
             line2_parts.append(f"{sep}\033[36m{session.project_name}\033[0m")
-            privacy = _get_privacy(session.project_path)
-            line2_parts.append(f"{sep}\033[33m{privacy}\033[0m")
+            privacy, broken = _get_privacy(session.project_path)
+            if broken:
+                # Red + bold + warning glyph: project's mode requires a
+                # private endpoint but none is configured anywhere. Runs
+                # will hard-fail until the user sets one.
+                line2_parts.append(
+                    f"{sep}\033[31;1m{privacy} ⚠ no endpoint\033[0m"
+                )
+            else:
+                line2_parts.append(f"{sep}\033[33m{privacy}\033[0m")
 
         if session.model:
             from urika.cli_display import format_model_source

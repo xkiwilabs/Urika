@@ -38,7 +38,7 @@ class StatusBar(Static):
     def render(self) -> Text:
         """Single-line colored Rich Text.
 
-        urika │ project │ model │ tokens · calls │ cost │ processing time
+        urika │ project │ privacy │ model │ tokens · calls │ cost │ processing time
 
         Agent activity (spinner, verb) is handled by ActivityBar
         above — NOT shown here. Colors match the REPL/CLI palette.
@@ -47,6 +47,8 @@ class StatusBar(Static):
         CYAN = "#00d7ff"
         GREEN = "#66ff99"
         MAGENTA = "#cc66ff"
+        YELLOW = "#ffcc00"
+        RED = "bold #ff4444"
         DIM = "#666666"
 
         sep = Text(" │ ", style=DIM)
@@ -55,6 +57,15 @@ class StatusBar(Static):
 
         if self.session.has_project:
             parts.append(Text(self.session.project_name or "", style=CYAN))
+
+            # Privacy mode + broken-endpoint warning. private/hybrid
+            # without a usable endpoint paint red so the user notices
+            # before the next agent run hard-fails.
+            mode, broken = self._privacy_state()
+            if broken:
+                parts.append(Text(f"{mode} ⚠ no endpoint", style=RED))
+            else:
+                parts.append(Text(mode, style=YELLOW))
 
         if self.session.model:
             parts.append(Text(self.session.model, style=CYAN))
@@ -91,3 +102,35 @@ class StatusBar(Static):
     def watch_tick(self, _value: int) -> None:
         """Re-render when tick changes."""
         self.refresh()
+
+    def _privacy_state(self) -> tuple[str, bool]:
+        """Return ``(mode, broken)`` for the current project.
+
+        ``broken`` is True when mode is private/hybrid and no usable
+        private endpoint is configured (project-local or globally).
+        Cached on the widget per project_path so we don't reload the
+        runtime config on every 250ms tick.
+        """
+        if not self.session.has_project or not self.session.project_path:
+            return ("open", False)
+        cache = getattr(self, "_privacy_cache", None)
+        if cache is None:
+            cache = {}
+            self._privacy_cache = cache
+        key = str(self.session.project_path)
+        if key in cache:
+            return cache[key]
+        try:
+            from urika.agents.config import load_runtime_config
+            rc = load_runtime_config(self.session.project_path)
+            mode = rc.privacy_mode
+            broken = False
+            if mode in ("private", "hybrid"):
+                broken = not any(
+                    (ep.base_url or "").strip()
+                    for ep in rc.endpoints.values()
+                )
+            cache[key] = (mode, broken)
+        except Exception:
+            cache[key] = ("open", False)
+        return cache[key]
