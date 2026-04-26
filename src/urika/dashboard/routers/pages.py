@@ -508,12 +508,18 @@ def global_settings(request: Request) -> HTMLResponse:
         )
 
     templates = request.app.state.templates
+    # List of defined endpoint names (sorted) for the Models tab's
+    # per-agent endpoint <select>. The implicit ``open`` cloud endpoint
+    # is added in-template based on mode constraints.
+    defined_endpoint_names = [ep["name"] for ep in named_endpoints]
+
     return templates.TemplateResponse(
         "global_settings.html",
         {
             "request": request,
             # Privacy tab — multi-endpoint editor.
             "named_endpoints": named_endpoints,
+            "defined_endpoint_names": defined_endpoint_names,
             # Models tab
             "runtime_model": runtime.get("model", ""),
             "model_rows": model_rows,

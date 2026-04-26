@@ -749,6 +749,14 @@ async def api_global_settings_put(request: Request):
     #   [runtime.modes.<mode>.models.<agent>] = { model, endpoint }
     runtime_modes = runtime.setdefault("modes", {})
 
+    # The set of valid per-agent endpoint values for *this* PUT.  It
+    # covers the implicit cloud endpoint plus every endpoint the user
+    # just defined (or that already lived in the TOML if the Privacy
+    # tab wasn't part of this submission).  ``inherit`` is the
+    # no-override sentinel.
+    defined_endpoint_names = set(endpoints.keys())
+    valid_endpoint_values = {"open"} | defined_endpoint_names
+
     for mode_name in ("open", "private", "hybrid"):
         default_field = f"runtime_modes_{mode_name}_model"
         if default_field not in form:
@@ -780,21 +788,22 @@ async def api_global_settings_put(request: Request):
             ).strip()
 
             # Server-side enforcement of mode-specific endpoint constraints.
-            # Private mode: all agents are private-only.
-            # Hybrid mode: data_agent + tool_builder are private-only.
-            # Open mode: any endpoint is fine.
+            # Private mode: ``open`` is hidden (defeats the point); coerce
+            #   to ``private`` if defined, otherwise drop the override.
+            # Hybrid mode: data_agent + tool_builder are forced-private —
+            #   ``open`` collapses to ``private`` (when defined).
+            # Open mode: any endpoint name is fine.
             if mode_name == "private" and endpoint_val == "open":
-                # Silently coerce to private — UI shouldn't allow this.
-                endpoint_val = "private"
+                endpoint_val = "private" if "private" in defined_endpoint_names else ""
             if mode_name == "hybrid" and agent in {"data_agent", "tool_builder"}:
-                endpoint_val = "private"
+                endpoint_val = "private" if "private" in defined_endpoint_names else ""
 
-            if endpoint_val and endpoint_val not in _VALID_ENDPOINTS:
+            if endpoint_val and endpoint_val not in valid_endpoint_values:
                 raise HTTPException(
                     status_code=422,
                     detail=(
                         f"runtime_modes_{mode_name}_models[{agent}][endpoint]"
-                        f" must be one of {sorted(_VALID_ENDPOINTS)}"
+                        f" must be one of {sorted(valid_endpoint_values)}"
                     ),
                 )
 
@@ -835,12 +844,12 @@ async def api_global_settings_put(request: Request):
             if model_val:
                 row["model"] = model_val
             if endpoint_val and endpoint_val != "inherit":
-                if endpoint_val not in _VALID_ENDPOINTS:
+                if endpoint_val not in valid_endpoint_values:
                     raise HTTPException(
                         status_code=422,
                         detail=(
                             f"endpoint[{agent}] must be one of "
-                            f"{sorted(_VALID_ENDPOINTS | {'inherit'})}"
+                            f"{sorted(valid_endpoint_values | {'inherit'})}"
                         ),
                     )
                 row["endpoint"] = endpoint_val

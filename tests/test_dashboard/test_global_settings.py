@@ -111,13 +111,25 @@ def test_global_settings_models_tab_has_per_mode_grids(settings_client):
             )
 
 
+def _seed_private_endpoint(tmp_path):
+    """Pre-seed ~/.urika/settings.toml with a single ``private`` endpoint
+    so the per-agent endpoint dropdowns have a value to render."""
+    (tmp_path / "home" / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n',
+        encoding="utf-8",
+    )
+
+
 def test_global_settings_models_tab_hybrid_forces_private_for_data_and_tool_builder(
-    settings_client,
+    settings_client, tmp_path
 ):
     """In the hybrid grid, data_agent + tool_builder rows offer ONLY the
     'private' endpoint option (the cloud option is hidden)."""
     import re
 
+    _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     # data_agent's hybrid endpoint <select> must contain 'private' but NOT
     # an 'open' option.
@@ -136,12 +148,13 @@ def test_global_settings_models_tab_hybrid_forces_private_for_data_and_tool_buil
 
 
 def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
-    settings_client,
+    settings_client, tmp_path
 ):
     """In the private grid, every agent's endpoint dropdown offers ONLY
     'private' — the cloud option is hidden."""
     import re
 
+    _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     for agent in ("task_agent", "evaluator", "advisor_agent"):
         m = re.search(
@@ -158,12 +171,13 @@ def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
 
 
 def test_global_settings_models_tab_open_mode_offers_both_endpoints(
-    settings_client,
+    settings_client, tmp_path
 ):
     """Open mode's per-agent endpoint dropdown offers both 'open' and
-    'private'."""
+    'private' when the user has defined a ``private`` endpoint."""
     import re
 
+    _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     m = re.search(
         r'name="runtime_modes_open_models\[task_agent\]\[endpoint\]".*?</select>',
@@ -174,6 +188,65 @@ def test_global_settings_models_tab_open_mode_offers_both_endpoints(
     block = m.group(0)
     assert 'value="open"' in block
     assert 'value="private"' in block
+
+
+def test_global_settings_models_tab_open_mode_lists_all_named_endpoints(
+    settings_client, tmp_path
+):
+    """When multiple named endpoints are defined, the open-mode per-agent
+    dropdown lists every one of them (alongside the implicit ``open``)."""
+    import re
+
+    (tmp_path / "home" / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+        '\n'
+        '[privacy.endpoints.ollama]\n'
+        'base_url = "http://localhost:11435"\n'
+        'api_key_env = ""\n',
+        encoding="utf-8",
+    )
+    body = settings_client.get("/settings").text
+    m = re.search(
+        r'name="runtime_modes_open_models\[task_agent\]\[endpoint\]".*?</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    block = m.group(0)
+    assert 'value="open"' in block
+    assert 'value="private"' in block
+    assert 'value="ollama"' in block
+
+
+def test_global_settings_models_tab_private_mode_lists_all_named_endpoints(
+    settings_client, tmp_path
+):
+    """Private mode hides ``open`` but still lists every named endpoint."""
+    import re
+
+    (tmp_path / "home" / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+        '\n'
+        '[privacy.endpoints.ollama]\n'
+        'base_url = "http://localhost:11435"\n'
+        'api_key_env = ""\n',
+        encoding="utf-8",
+    )
+    body = settings_client.get("/settings").text
+    m = re.search(
+        r'name="runtime_modes_private_models\[task_agent\]\[endpoint\]".*?</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    block = m.group(0)
+    assert 'value="open"' not in block
+    assert 'value="private"' in block
+    assert 'value="ollama"' in block
 
 
 def test_global_settings_preferences_tab_has_expected_fields(settings_client):
@@ -421,10 +494,19 @@ def test_global_settings_put_ignores_unknown_privacy_mode_field(settings_client)
 def test_global_settings_put_per_agent_override_writes_runtime_models(
     settings_client, tmp_path
 ):
-    """[runtime.models.<agent>] is populated from model[<agent>] form fields."""
+    """[runtime.models.<agent>] is populated from model[<agent>] form fields.
+
+    Requires the named endpoint ``private`` to actually exist — multi-
+    endpoint validation rejects per-agent endpoint values that don't
+    match a defined endpoint or the implicit ``open``.
+    """
     r = settings_client.put(
         "/api/settings",
         data={
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
             "privacy_mode": "open",
             "privacy_open_model": "claude-sonnet-4-5",
             "default_audience": "expert",
@@ -520,6 +602,10 @@ def test_global_settings_put_hybrid_forces_data_agent_private(
     r = settings_client.put(
         "/api/settings",
         data={
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
             "default_audience": "expert",
             "default_max_turns": "10",
             "runtime_modes_hybrid_model": "claude-sonnet-4-5",
@@ -543,6 +629,10 @@ def test_global_settings_put_hybrid_forces_tool_builder_private(
     r = settings_client.put(
         "/api/settings",
         data={
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
             "default_audience": "expert",
             "default_max_turns": "10",
             "runtime_modes_hybrid_model": "claude-sonnet-4-5",
@@ -558,6 +648,60 @@ def test_global_settings_put_hybrid_forces_tool_builder_private(
     )
 
 
+def test_global_settings_put_per_agent_endpoint_accepts_named_endpoint(
+    settings_client, tmp_path
+):
+    """A per-agent endpoint value matching a defined named endpoint
+    (anything beyond ``open`` / ``private``) round-trips to the TOML."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
+            "endpoints[1][name]": "ollama",
+            "endpoints[1][base_url]": "http://localhost:11435",
+            "endpoints[1][api_key_env]": "",
+            "endpoints[1][default_model]": "",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "runtime_modes_open_model": "claude-opus-4-7",
+            "runtime_modes_open_models[task_agent][model]": "llama3:8b",
+            "runtime_modes_open_models[task_agent][endpoint]": "ollama",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    assert (
+        s["runtime"]["modes"]["open"]["models"]["task_agent"]["endpoint"]
+        == "ollama"
+    )
+
+
+def test_global_settings_put_per_agent_endpoint_rejects_undefined_name(
+    settings_client, tmp_path
+):
+    """A per-agent endpoint pointing at an undefined endpoint name
+    returns 422."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "runtime_modes_open_model": "claude-opus-4-7",
+            "runtime_modes_open_models[task_agent][model]": "llama3:8b",
+            # No endpoint named ``does_not_exist`` is defined → 422.
+            "runtime_modes_open_models[task_agent][endpoint]": "does_not_exist",
+        },
+    )
+    assert r.status_code == 422
+
+
 def test_global_settings_put_private_mode_coerces_open_endpoint_to_private(
     settings_client, tmp_path
 ):
@@ -566,6 +710,10 @@ def test_global_settings_put_private_mode_coerces_open_endpoint_to_private(
     r = settings_client.put(
         "/api/settings",
         data={
+            "endpoints[0][name]": "private",
+            "endpoints[0][base_url]": "http://localhost:11434",
+            "endpoints[0][api_key_env]": "",
+            "endpoints[0][default_model]": "",
             "default_audience": "expert",
             "default_max_turns": "10",
             "runtime_modes_private_model": "qwen3:14b",

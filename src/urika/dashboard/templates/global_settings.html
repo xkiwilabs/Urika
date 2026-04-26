@@ -182,24 +182,28 @@
                          placeholder="(use mode default)">
                 </td>
                 <td>
+                  {# Per-agent endpoint dropdown lists every named
+                     endpoint defined on the Privacy tab, plus the
+                     implicit ``open`` cloud endpoint, filtered by the
+                     mode's constraints:
+                       open    — all named endpoints + open
+                       private — all named endpoints (open hidden)
+                       hybrid  — all named endpoints + open, except
+                                 data_agent + tool_builder which are
+                                 forced-private (open hidden) #}
                   <select name="runtime_modes_{{ mode_name }}_models[{{ row.agent }}][endpoint]">
-                    {% if mode_name == "open" %}
-                      {# Open mode: agent can route to either endpoint. #}
+                    {% set show_open = (
+                      mode_name == "open"
+                      or (mode_name == "hybrid"
+                          and row.agent not in ["data_agent", "tool_builder"])
+                    ) %}
+                    {% if show_open %}
                       <option value="open" {% if row.endpoint == "open" %}selected{% endif %}>open</option>
-                      <option value="private" {% if row.endpoint == "private" %}selected{% endif %}>private</option>
-                    {% elif mode_name == "private" %}
-                      {# Private mode: cloud is hidden. #}
-                      <option value="private" selected>private</option>
-                    {% else %}
-                      {# Hybrid: data_agent + tool_builder are private-only;
-                         everyone else can choose. #}
-                      {% if row.agent in ["data_agent", "tool_builder"] %}
-                        <option value="private" selected>private</option>
-                      {% else %}
-                        <option value="open" {% if row.endpoint == "open" %}selected{% endif %}>open</option>
-                        <option value="private" {% if row.endpoint == "private" %}selected{% endif %}>private</option>
-                      {% endif %}
                     {% endif %}
+                    {% for ep_name in defined_endpoint_names %}
+                      <option value="{{ ep_name }}"
+                              {% if row.endpoint == ep_name %}selected{% endif %}>{{ ep_name }}</option>
+                    {% endfor %}
                   </select>
                 </td>
               </tr>
