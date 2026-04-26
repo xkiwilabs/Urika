@@ -879,3 +879,56 @@ def test_project_settings_models_hybrid_mode_three_column_table(
     )
     assert m_priv is not None
     assert "selected" in m_priv.group(0)
+
+
+# ---- Danger zone ---------------------------------------------------------
+
+
+def test_settings_page_renders_danger_zone(client_with_projects):
+    """Settings page exposes a Danger zone section with a type-name confirm
+    input and a Move-to-trash button bound to DELETE /api/projects/<name>."""
+    body = client_with_projects.get("/projects/alpha/settings").text
+    assert "Danger zone" in body
+    # The Alpine type-name confirm input exists.
+    assert 'x-data="{ typed:' in body
+    # The danger button targets the new DELETE endpoint.
+    assert 'hx-delete="/api/projects/alpha"' in body
+    # btn--danger styling, NOT btn--primary.
+    assert "btn--danger" in body
+
+
+def test_settings_page_disables_button_when_lock_present(tmp_path, monkeypatch):
+    """When any ``.lock`` file is present under the project, the Danger
+    zone renders a disabled state with a "Stop the running" message
+    instead of an active Move-to-trash button."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    # Drop a .lock file under experiments/exp-001/.
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / ".lock").write_text("99999")
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha/settings").text
+    assert "Danger zone" in body
+    # Disabled-state message names the run.
+    assert "Stop the running" in body
+    # The lock filename shows up so the user knows where to look.
+    assert ".lock" in body
+    # No active danger button when locked.
+    assert 'hx-delete="/api/projects/alpha"' not in body

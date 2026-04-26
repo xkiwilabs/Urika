@@ -1082,6 +1082,20 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     notif_slack = (notifications.get("slack", {}) or {}) if notifications else {}
     notif_telegram = (notifications.get("telegram", {}) or {}) if notifications else {}
 
+    # Danger zone: block trash if any ``.lock`` file is present anywhere
+    # under the project (active run / evaluate / finalize / build). The
+    # core helper does the same check authoritatively; we walk inline
+    # here just to render a disabled UI state with the lock path. Wrap
+    # in try/except so a permission error doesn't 500 the settings page.
+    active_lock_path: Path | None = None
+    try:
+        for lock in summary.path.rglob("*.lock"):
+            if lock.is_file():
+                active_lock_path = lock
+                break
+    except OSError:
+        active_lock_path = None
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "project_settings.html",
@@ -1146,6 +1160,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "notif_email": notif_email,
             "notif_slack": notif_slack,
             "notif_telegram": notif_telegram,
+            "active_lock_path": active_lock_path,
         },
     )
 

@@ -532,4 +532,45 @@
     <span id="settings-feedback" class="text-muted"></span>
   </div>
 </form>
+
+{# ---- Danger zone -----------------------------------------------------
+   Lives outside the settings <form> so the type-name confirm input
+   doesn't get submitted when the user saves regular settings. The
+   Move-to-trash button posts DELETE /api/projects/<name> directly via
+   HTMX; on success the server emits HX-Redirect: /projects so the
+   user lands back on the (now-shorter) project list.
+#}
+<section class="card danger-zone">
+  <h2>Danger zone</h2>
+  <p class="text-muted">
+    Moving the project to trash unregisters it from Urika and moves
+    the project folder to
+    <code>~/.urika/trash/{{ project.name }}-&lt;timestamp&gt;/</code>.
+    Files are preserved; empty the trash folder manually when you're sure.
+  </p>
+  {% if active_lock_path %}
+    <p class="text-warning">
+      Stop the running process first &mdash; lock file present at
+      <code>{{ active_lock_path }}</code>.
+    </p>
+    <button class="btn btn--danger" type="button" disabled>Move to trash</button>
+  {% else %}
+    <div x-data="{ typed: '' }" style="display: flex; flex-direction: column; gap: 0.5rem; max-width: 480px;">
+      <input
+        type="text"
+        class="input"
+        placeholder="Type the project name to confirm"
+        x-model="typed"
+        style="font: inherit; padding: 0.4rem;"
+      >
+      <button
+        class="btn btn--danger"
+        type="button"
+        :disabled="typed !== '{{ project.name }}'"
+        hx-delete="/api/projects/{{ project.name }}"
+        hx-confirm="Move '{{ project.name }}' to trash? Files are preserved at ~/.urika/trash/."
+      >Move to trash</button>
+    </div>
+  {% endif %}
+</section>
 {% endblock %}

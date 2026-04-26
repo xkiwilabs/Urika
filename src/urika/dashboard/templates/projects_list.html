@@ -59,6 +59,12 @@
             <div class="list-item-meta">
               {% if p.missing %}
                 <span class="tag tag--failed">missing</span>
+                <button
+                  class="btn btn--ghost btn--small"
+                  type="button"
+                  hx-delete="/api/projects/{{ p.name }}"
+                  hx-confirm="Unregister '{{ p.name }}'? (folder is already missing)"
+                >Unregister</button>
               {% else %}
                 <span class="text-muted">{{ p.experiment_count }} experiments</span>
                 <span class="tag">{{ p.mode }}</span>

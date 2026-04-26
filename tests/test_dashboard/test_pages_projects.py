@@ -74,3 +74,37 @@ def test_project_summary_has_last_activity(tmp_path: Path):
     summaries = list_project_summaries({"alpha": proj})
     assert summaries[0].last_activity != ""
     assert "T" in summaries[0].last_activity  # ISO format
+
+
+def test_projects_list_shows_unregister_button_for_missing_projects(
+    tmp_path: Path, monkeypatch
+):
+    """Projects whose folder is missing get an inline Unregister button
+    that posts DELETE /api/projects/<name>; intact projects do not."""
+    import json
+
+    # Real on-disk project for ``alpha``; ``ghost`` points at a path
+    # that never exists so its summary will carry ``missing=True``.
+    proj_alpha = tmp_path / "alpha"
+    proj_alpha.mkdir()
+    (proj_alpha / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    bogus = tmp_path / "ghost"  # never created
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(
+        json.dumps({"alpha": str(proj_alpha), "ghost": str(bogus)})
+    )
+
+    client = TestClient(create_app(project_root=tmp_path))
+    body = client.get("/projects").text
+
+    # The missing project gets a DELETE-bound Unregister button.
+    assert 'hx-delete="/api/projects/ghost"' in body
+    assert "Unregister" in body
+    # The intact project does NOT get one.
+    assert 'hx-delete="/api/projects/alpha"' not in body
