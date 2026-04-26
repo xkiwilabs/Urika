@@ -65,7 +65,8 @@ def test_project_tools_page_lists_project_local_tool(tools_client, tmp_path):
     )
     r = tools_client.get("/projects/alpha/tools")
     body = r.text
-    assert "my_custom_tool" in body or "My custom tool" in body
+    # The humanize filter renders 'my_custom_tool' as 'My Custom Tool'
+    assert "My Custom Tool" in body
     assert "custom for this project" in body
 
 

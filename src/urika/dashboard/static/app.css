@@ -494,7 +494,8 @@ h4 {
   opacity: 0.6;
 }
 
-.list-item-link {
+.list-item-link,
+.list-item-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -505,6 +506,16 @@ h4 {
 
 .list-item-link:hover {
   color: var(--text);
+}
+
+/* When a list-item has no .list-item-link wrapper (methods, tools, etc.),
+   give it the same padding so text doesn't sit flush against the edge. */
+.list-item:not(:has(> .list-item-link)):not(:has(> .list-item-row)) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
 }
 
 .list-item-main {
