@@ -24,6 +24,7 @@
   .form-row--inline label { font-weight: 600; }
   .form-row--inline input, .form-row--inline select { width: auto; }
   .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
 </style>
 
   {# Auto-open the New experiment modal when ?new=1 (used by /run redirect). #}
@@ -139,6 +140,33 @@
       <div class="form-row">
         <label for="ne-instructions">Additional instructions (optional)</label>
         <textarea id="ne-instructions" name="instructions" rows="2" placeholder="Any extra steering for this run."></textarea>
+      </div>
+
+      <div class="form-row" x-data="{ showAdvanced: false }">
+        <button type="button" class="btn btn--ghost"
+                @click="showAdvanced = !showAdvanced"
+                :aria-expanded="showAdvanced ? 'true' : 'false'">
+          <span x-text="showAdvanced ? '▾ Advanced' : '▸ Advanced'"></span>
+        </button>
+        <div x-show="showAdvanced" x-cloak style="margin-top: var(--space-3);"
+             x-data="{ auto: false }">
+          <label class="checkbox-row">
+            <input type="checkbox" name="auto" value="on" x-model="auto">
+            <span>Run autonomously (multi-experiment)</span>
+          </label>
+          <div class="form-row" x-show="auto" x-cloak>
+            <label for="ne-max-experiments">Max experiments</label>
+            <input id="ne-max-experiments" name="max_experiments" type="number" min="1" value="5">
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" name="review_criteria" value="on">
+            <span>Review success criteria after each experiment</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="resume" value="on">
+            <span>Resume an interrupted run (use existing experiment state)</span>
+          </label>
+        </div>
       </div>
 
       <div class="form-actions">

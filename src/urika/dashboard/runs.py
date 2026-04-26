@@ -60,6 +60,10 @@ def spawn_experiment_run(
     instructions: str = "",
     max_turns: int | None = None,
     audience: str | None = None,
+    auto: bool = False,
+    max_experiments: int | None = None,
+    review_criteria: bool = False,
+    resume: bool = False,
     executable: str | None = None,
 ) -> int:
     """Spawn ``urika run <project> --experiment <exp_id>`` as a subprocess.
@@ -70,9 +74,17 @@ def spawn_experiment_run(
 
     Optional keyword args mirror the same-named ``urika run`` flags so
     the dashboard's "+ New experiment" modal can pass through the form
-    fields (``instructions``, ``max_turns``, ``audience``) it already
-    validates. Empty/None values are simply not appended to the
-    command line.
+    fields it already validates:
+
+    * ``instructions`` → ``--instructions``
+    * ``max_turns`` → ``--max-turns``
+    * ``audience`` → ``--audience``
+    * ``auto`` → ``--auto`` (autonomous, multi-experiment)
+    * ``max_experiments`` → ``--max-experiments`` (only meaningful with auto)
+    * ``review_criteria`` → ``--review-criteria``
+    * ``resume`` → ``--resume`` (resume an interrupted run)
+
+    Empty/None/False values are simply not appended to the command line.
 
     The subprocess receives ``URIKA_NO_TEE=1`` in its environment so
     that ``urika run`` skips its own ``OrchestratorLogger`` tee and
@@ -92,12 +104,20 @@ def spawn_experiment_run(
         "--experiment",
         experiment_id,
     ]
-    if max_turns is not None:
-        cmd.extend(["--max-turns", str(max_turns)])
     if instructions:
         cmd.extend(["--instructions", instructions])
+    if max_turns is not None:
+        cmd.extend(["--max-turns", str(max_turns)])
     if audience:
         cmd.extend(["--audience", audience])
+    if auto:
+        cmd.append("--auto")
+    if max_experiments is not None:
+        cmd.extend(["--max-experiments", str(max_experiments)])
+    if review_criteria:
+        cmd.append("--review-criteria")
+    if resume:
+        cmd.append("--resume")
 
     env = os.environ.copy()
     env["URIKA_NO_TEE"] = "1"

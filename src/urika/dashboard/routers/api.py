@@ -1219,6 +1219,12 @@ async def api_project_run_post(name: str, request: Request):
     max_turns = form.get("max_turns") or "10"
     instructions = (form.get("instructions") or "").strip()
 
+    # Advanced options — mirror the corresponding ``urika run`` flags.
+    auto = bool(form.get("auto"))
+    max_experiments_raw = (form.get("max_experiments") or "").strip()
+    review_criteria = bool(form.get("review_criteria"))
+    resume = bool(form.get("resume"))
+
     if mode not in VALID_MODES:
         raise HTTPException(
             status_code=422,
@@ -1242,6 +1248,26 @@ async def api_project_run_post(name: str, request: Request):
     if not hypothesis:
         raise HTTPException(status_code=422, detail="hypothesis is required")
 
+    max_experiments_int: int | None = None
+    if max_experiments_raw:
+        try:
+            max_experiments_int = int(max_experiments_raw)
+            if max_experiments_int <= 0:
+                raise ValueError
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="max_experiments must be a positive integer",
+            ) from exc
+
+    # max_experiments only makes sense in autonomous mode — otherwise
+    # the meta-orchestrator path isn't taken and the flag is dropped.
+    if max_experiments_int is not None and not auto:
+        raise HTTPException(
+            status_code=422,
+            detail="max_experiments requires --auto to be enabled",
+        )
+
     # Pre-flight: if the project is in private/hybrid mode and no
     # private endpoint exists, fail before creating the experiment dir
     # so a stale .lock isn't left behind.
@@ -1255,6 +1281,10 @@ async def api_project_run_post(name: str, request: Request):
         instructions=instructions,
         max_turns=max_turns_int,
         audience=audience,
+        auto=auto,
+        max_experiments=max_experiments_int,
+        review_criteria=review_criteria,
+        resume=resume,
     )
 
     accept = request.headers.get("accept", "")

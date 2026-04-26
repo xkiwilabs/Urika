@@ -121,6 +121,100 @@ def test_run_post_forwards_optional_flags_to_spawn(run_client):
     assert call.get("audience") == "expert"
 
 
+def test_run_post_forwards_advanced_flags(run_client):
+    """Advanced toggles (auto/max_experiments/review_criteria/resume) from
+    the modal must be forwarded as kwargs to spawn_experiment_run so the
+    spawned ``urika run`` subprocess receives the right CLI flags."""
+    client, spawn_calls, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "name": "test",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "be thorough",
+            "auto": "on",
+            "max_experiments": "3",
+            "review_criteria": "on",
+            "resume": "on",
+        },
+    )
+    assert r.status_code == 200
+    assert spawn_calls
+    call = spawn_calls[0]
+    assert call.get("auto") is True
+    assert call.get("max_experiments") == 3
+    assert call.get("review_criteria") is True
+    assert call.get("resume") is True
+
+
+def test_run_post_max_experiments_without_auto_returns_422(run_client):
+    """max_experiments only takes effect in autonomous mode — supplying
+    it without ``auto`` must 422 rather than silently dropping the flag."""
+    client, spawn_calls, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        data={
+            "name": "test",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+            "max_experiments": "3",  # without auto
+        },
+    )
+    assert r.status_code == 422
+    assert spawn_calls == []
+
+
+def test_run_post_advanced_flags_default_false(run_client):
+    """When the advanced section is left collapsed, the spawn helper sees
+    auto=False / max_experiments=None / review_criteria=False / resume=False."""
+    client, spawn_calls, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "name": "test",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+        },
+    )
+    assert r.status_code == 200
+    assert spawn_calls
+    call = spawn_calls[0]
+    assert call.get("auto") is False
+    assert call.get("max_experiments") is None
+    assert call.get("review_criteria") is False
+    assert call.get("resume") is False
+
+
+def test_run_post_invalid_max_experiments_returns_422(run_client):
+    """Non-positive / non-integer max_experiments must 422."""
+    client, _, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        data={
+            "name": "test",
+            "hypothesis": "h",
+            "mode": "exploratory",
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+            "auto": "on",
+            "max_experiments": "0",
+        },
+    )
+    assert r.status_code == 422
+
+
 def test_run_post_returns_html_fragment_by_default(run_client):
     client, _, _ = run_client
     r = client.post(
