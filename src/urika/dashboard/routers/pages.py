@@ -1082,17 +1082,18 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     notif_slack = (notifications.get("slack", {}) or {}) if notifications else {}
     notif_telegram = (notifications.get("telegram", {}) or {}) if notifications else {}
 
-    # Danger zone: block trash if any ``.lock`` file is present anywhere
-    # under the project (active run / evaluate / finalize / build). The
-    # core helper does the same check authoritatively; we walk inline
-    # here just to render a disabled UI state with the lock path. Wrap
-    # in try/except so a permission error doesn't 500 the settings page.
+    # Danger zone: block trash if a live run-lock PID file is present
+    # anywhere under the project (active run / evaluate / finalize /
+    # build / etc.). Reuse the core helper so the UI matches the
+    # server-side rule exactly — and so JSON write mutexes
+    # (``criteria.json.lock``, ``usage.json.lock`` from
+    # ``urika.core.filelock``) don't trigger a false positive. Wrap in
+    # try/except so a permission error doesn't 500 the settings page.
+    from urika.core.project_delete import _find_active_lock
+
     active_lock_path: Path | None = None
     try:
-        for lock in summary.path.rglob("*.lock"):
-            if lock.is_file():
-                active_lock_path = lock
-                break
+        active_lock_path = _find_active_lock(summary.path)
     except OSError:
         active_lock_path = None
 

@@ -9,6 +9,7 @@ project) block the operation.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -49,9 +50,55 @@ def _deletion_log() -> Path:
     return _urika_home() / "deletion-log.jsonl"
 
 
+def _pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Signal blocked but the PID exists — treat as alive.
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _is_active_run_lock(lock: Path) -> bool:
+    """Return True only for live run-lock PID files.
+
+    Urika writes two distinct kinds of ``.lock`` files:
+
+    * Run/finalize/evaluate/etc. PID locks. Always dot-prefixed
+      (``.lock``, ``.finalize.lock``, ``.evaluate.lock``, …) and
+      contain a PID. The drainer thread removes them on subprocess
+      exit, but a hard kill can leave them stale.
+    * JSON write mutexes from ``urika.core.filelock`` (e.g.
+      ``criteria.json.lock``, ``usage.json.lock``). Not dot-prefixed,
+      always present once touched, and never indicate ongoing work.
+
+    Only the first kind blocks deletion, and only when the recorded
+    PID is still alive.
+    """
+    if not lock.is_file() or not lock.name.startswith("."):
+        return False
+    try:
+        content = lock.read_text(encoding="utf-8").strip()
+    except OSError:
+        # Treat unreadable as active — safer than letting the user
+        # accidentally trash a project mid-run.
+        return True
+    if not content:
+        return False
+    try:
+        pid = int(content)
+    except ValueError:
+        return False
+    return _pid_is_alive(pid)
+
+
 def _find_active_lock(project_path: Path) -> Path | None:
     for lock in project_path.rglob("*.lock"):
-        if lock.is_file():
+        if _is_active_run_lock(lock):
             return lock
     return None
 

@@ -98,11 +98,14 @@ class TestTrashProject:
     def test_trash_blocked_by_active_lock(
         self, tmp_path: Path, tmp_urika_home: Path
     ) -> None:
+        import os
+
         project = _make_project(tmp_path, "proj-locked")
         exp_dir = project / "experiments" / "exp-001"
         exp_dir.mkdir(parents=True)
         lock_path = exp_dir / ".lock"
-        lock_path.write_text("pid:1234\n", encoding="utf-8")
+        # Use the test process's own PID so it's guaranteed alive.
+        lock_path.write_text(str(os.getpid()), encoding="utf-8")
 
         registry = ProjectRegistry()
         registry.register("locked", project)
@@ -121,6 +124,60 @@ class TestTrashProject:
         assert not (tmp_urika_home / "deletion-log.jsonl").exists()
         # Manifest NOT written into the project
         assert not (project / ".urika-trash-manifest.json").exists()
+
+    def test_trash_ignores_filelock_mutex_files(
+        self, tmp_path: Path, tmp_urika_home: Path
+    ) -> None:
+        """JSON write mutexes (criteria.json.lock, usage.json.lock) are
+        left around forever and don't indicate ongoing work — trashing
+        must NOT block on them."""
+        project = _make_project(tmp_path, "proj-mutex")
+        # urika.core.filelock writes a sibling <name>.lock next to the
+        # JSON file. These never get cleaned up and don't carry a PID.
+        (project / "criteria.json.lock").touch()
+        (project / "usage.json.lock").touch()
+
+        registry = ProjectRegistry()
+        registry.register("mutex", project)
+
+        result = trash_project("mutex")
+        assert result.registry_only is False
+        assert result.trash_path is not None
+        assert result.trash_path.exists()
+        assert not project.exists()
+
+    def test_trash_ignores_stale_pid_lock(
+        self, tmp_path: Path, tmp_urika_home: Path
+    ) -> None:
+        """If a .lock file holds a PID that's no longer alive (process
+        crashed without cleanup), it's stale and shouldn't block."""
+        project = _make_project(tmp_path, "proj-stale")
+        exp_dir = project / "experiments" / "exp-001"
+        exp_dir.mkdir(parents=True)
+        # PID well outside the kernel's pid_max range — won't exist.
+        (exp_dir / ".lock").write_text("9999999", encoding="utf-8")
+
+        registry = ProjectRegistry()
+        registry.register("stale", project)
+
+        result = trash_project("stale")
+        assert result.registry_only is False
+        assert result.trash_path is not None
+
+    def test_trash_ignores_empty_lock_file(
+        self, tmp_path: Path, tmp_urika_home: Path
+    ) -> None:
+        """Empty .lock files (touched but never written) are stale."""
+        project = _make_project(tmp_path, "proj-empty")
+        exp_dir = project / "experiments" / "exp-001"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / ".lock").touch()
+
+        registry = ProjectRegistry()
+        registry.register("empty", project)
+
+        result = trash_project("empty")
+        assert result.registry_only is False
 
     def test_trash_unknown_project_raises(
         self, tmp_path: Path, tmp_urika_home: Path

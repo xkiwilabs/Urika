@@ -153,7 +153,9 @@ class TestDeleteCommand:
         lock_dir = project / "experiments" / "exp-001"
         lock_dir.mkdir(parents=True, exist_ok=True)
         lock_path = lock_dir / ".lock"
-        lock_path.write_text("pid:1234\n", encoding="utf-8")
+        # Use the test process's PID so it's detected as live.
+        import os as _os
+        lock_path.write_text(str(_os.getpid()), encoding="utf-8")
 
         result = runner.invoke(cli, ["delete", "foo", "--force"], env=urika_env)
 

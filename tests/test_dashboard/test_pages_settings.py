@@ -913,10 +913,12 @@ def test_settings_page_disables_button_when_lock_present(tmp_path, monkeypatch):
         '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
         'description = ""\n\n[preferences]\naudience = "expert"\n'
     )
-    # Drop a .lock file under experiments/exp-001/.
+    # Drop a live PID lock file under experiments/exp-001/. Use this
+    # process's PID so the live-PID check treats it as active.
+    import os
     exp_dir = proj / "experiments" / "exp-001"
     exp_dir.mkdir(parents=True)
-    (exp_dir / ".lock").write_text("99999")
+    (exp_dir / ".lock").write_text(str(os.getpid()))
 
     home = tmp_path / "home"
     home.mkdir()

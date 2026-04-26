@@ -52,11 +52,13 @@ def test_delete_unknown_returns_404(tmp_path: Path, monkeypatch):
 
 
 def test_delete_with_active_lock_returns_422(home_with_alpha):
+    import os
     client, proj, _home = home_with_alpha
     exp_dir = proj / "experiments" / "exp-001"
     exp_dir.mkdir(parents=True)
     lock = exp_dir / ".lock"
-    lock.write_text("12345")
+    # Use the test process's PID so the lock is detected as live.
+    lock.write_text(str(os.getpid()))
 
     r = client.delete("/api/projects/alpha")
     assert r.status_code == 422
