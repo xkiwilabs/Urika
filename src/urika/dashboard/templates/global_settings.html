@@ -97,9 +97,11 @@
             <label>Name (slug)</label>
             <input type="text"
                    x-model="ep.name"
-                   pattern="[a-z0-9_-]+"
-                   placeholder="e.g. private, ollama, vllm_small"
-                   required>
+                   placeholder="e.g. private, ollama, vllm_small">
+            <span class="form-help">
+              Lowercase letters, digits, <code>-</code> and <code>_</code> only.
+              Reserved names: <code>open</code>.
+            </span>
           </div>
           <div class="form-row">
             <label>Base URL</label>
