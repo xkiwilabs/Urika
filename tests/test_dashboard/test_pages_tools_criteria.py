@@ -175,3 +175,37 @@ def test_tool_build_log_page_returns_200(tools_client):
 def test_tool_build_log_page_404_unknown_project(tools_client):
     r = tools_client.get("/projects/nonexistent/tools/build/log")
     assert r.status_code == 404
+
+
+# ── Phase B3: + Build tool button reflects running state ─────────────────
+
+import os  # noqa: E402  — grouped near the Phase B3 tests for locality
+
+
+def _drop_lock(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def test_project_tools_build_button_idle_opens_modal(tools_client):
+    """No live tools/.build.lock → button is the idle modal-opener."""
+    r = tools_client.get("/projects/alpha/tools")
+    assert r.status_code == 200
+    body = r.text
+    assert "id: 'build-tool'" in body
+    assert "Build tool running" not in body
+    assert "btn--running" not in body
+
+
+def test_project_tools_build_button_running_links_to_log(tools_client, tmp_path):
+    """Live ``tools/.build.lock`` → button becomes a link to the
+    tool-build log page."""
+    _drop_lock(tmp_path / "alpha" / "tools" / ".build.lock")
+    r = tools_client.get("/projects/alpha/tools")
+    assert r.status_code == 200
+    body = r.text
+    assert 'href="/projects/alpha/tools/build/log"' in body
+    assert "Build tool running" in body
+    assert "btn--running" in body
+    # The build-tool modal-open dispatch must be replaced by the link.
+    assert "id: 'build-tool'" not in body

@@ -16,6 +16,7 @@ from urika.core.progress import load_progress
 from urika.core.registry import ProjectRegistry
 from urika.core.settings import get_named_endpoints, load_settings
 from urika.core.workspace import load_project_config
+from urika.dashboard.active_ops import list_active_operations
 from urika.dashboard.projects import (
     list_project_summaries,
     load_project_summary,
@@ -144,6 +145,10 @@ def project_home(request: Request, name: str) -> HTMLResponse:
         ),
     }
     has_summary = (book / "summary.md").exists()
+    # Phase B3: surface running ops so the Summarize / Finalize buttons
+    # can flip to "running… view log" links instead of opening a modal.
+    active = list_active_operations(name, summary.path)
+    running_by_type = {op.type: op for op in active}
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "project_home.html",
@@ -153,6 +158,7 @@ def project_home(request: Request, name: str) -> HTMLResponse:
             "recent_experiments": recent,
             "final_outputs": final_outputs,
             "has_summary": has_summary,
+            "running_by_type": running_by_type,
         },
     )
 
@@ -419,6 +425,12 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     # Newest-first for display (list_experiments returns oldest-first by ID).
     rows.reverse()
 
+    # Phase B3: any active experiment ``run`` blocks a fresh one (Phase B2
+    # design — run is project-scoped). Surface it so the "+ New experiment"
+    # button can flip to a link pointing at the running experiment's log.
+    active = list_active_operations(name, summary.path)
+    running_by_type = {op.type: op for op in active}
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "experiments.html",
@@ -428,6 +440,7 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
             "experiments": rows,
             "valid_modes": sorted(VALID_MODES),
             "valid_audiences": sorted(VALID_AUDIENCES),
+            "running_by_type": running_by_type,
         },
     )
 
@@ -463,6 +476,9 @@ def global_tools(request: Request) -> HTMLResponse:
             "project": None,
             "tools": _tools_to_rows(tool_registry),
             "scope": "global",
+            # No project context → no running-ops lookup. The template
+            # only consults this map under ``scope == "project"``.
+            "running_by_type": {},
         },
     )
 
@@ -484,6 +500,10 @@ def project_tools(name: str, request: Request) -> HTMLResponse:
     tool_registry = ToolRegistry()
     project_tools_dir = summary.path / "tools"
     tool_registry.discover_project(project_tools_dir)
+    # Phase B3: + Build tool button flips to a link when a build is in
+    # flight (project-scoped — only one tool build per project at a time).
+    active = list_active_operations(name, summary.path)
+    running_by_type = {op.type: op for op in active}
     return request.app.state.templates.TemplateResponse(
         "tools.html",
         {
@@ -491,6 +511,7 @@ def project_tools(name: str, request: Request) -> HTMLResponse:
             "project": summary,
             "tools": _tools_to_rows(tool_registry),
             "scope": "project",
+            "running_by_type": running_by_type,
         },
     )
 
@@ -1499,6 +1520,13 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
                     }
                 )
 
+    # Phase B3: surface running per-experiment ops (evaluate / report /
+    # present) keyed by ``(type, experiment_id)`` so each artifact-row
+    # button can independently flip to a "running… view log" link
+    # without affecting siblings on other experiments.
+    active = list_active_operations(name, summary.path)
+    running_by_exp = {(op.type, op.experiment_id): op for op in active}
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "experiment_detail.html",
@@ -1512,5 +1540,6 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
             "has_presentation": has_presentation,
             "has_log": has_log,
             "artifact_files": artifact_files,
+            "running_by_exp": running_by_exp,
         },
     )

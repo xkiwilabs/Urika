@@ -27,18 +27,30 @@
   .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
 </style>
 
-  {# Auto-open the New experiment modal when ?new=1 (used by /run redirect). #}
-  <div
-    x-data
-    x-init="if (new URLSearchParams(window.location.search).get('new') === '1') $dispatch('open-modal', { id: 'new-experiment' })"
-  ></div>
+  {% set ne = running_by_type.get("run") %}
+  {% if not ne %}
+    {# Auto-open the New experiment modal when ?new=1 (used by /run redirect).
+       Suppressed when a run is already in flight — the page shows a link to
+       the live log instead. #}
+    <div
+      x-data
+      x-init="if (new URLSearchParams(window.location.search).get('new') === '1') $dispatch('open-modal', { id: 'new-experiment' })"
+    ></div>
+  {% endif %}
 
   <div class="page-actions">
-    <button
-      class="btn btn--primary"
-      @click="$dispatch('open-modal', { id: 'new-experiment' })"
-      type="button"
-    >+ New experiment</button>
+    {% if ne %}
+      <a class="btn btn--primary btn--running" href="{{ ne.log_url }}">
+        <span class="running-dot"></span>
+        Experiment running… view log
+      </a>
+    {% else %}
+      <button
+        class="btn btn--primary"
+        @click="$dispatch('open-modal', { id: 'new-experiment' })"
+        type="button"
+      >+ New experiment</button>
+    {% endif %}
   </div>
 
   {% if experiments %}

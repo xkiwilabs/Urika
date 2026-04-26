@@ -24,15 +24,31 @@
   </div>
 
   <section class="project-actions" style="margin-top: var(--space-5);">
-    <button type="button" class="btn btn--secondary"
-            @click="$dispatch('open-modal', { id: 'finalize' })">
-      {{ action_label("Finalize", "project", final_outputs.has_report and final_outputs.has_presentation) }}
-    </button>
+    {% set fz = running_by_type.get("finalize") %}
+    {% if fz %}
+      <a class="btn btn--secondary btn--running" href="{{ fz.log_url }}">
+        <span class="running-dot"></span>
+        Finalize running… view log
+      </a>
+    {% else %}
+      <button type="button" class="btn btn--secondary"
+              @click="$dispatch('open-modal', { id: 'finalize' })">
+        {{ action_label("Finalize", "project", final_outputs.has_report and final_outputs.has_presentation) }}
+      </button>
+    {% endif %}
     <span id="finalize-feedback" class="text-muted"></span>
-    <button type="button" class="btn btn--secondary"
-            @click="$dispatch('open-modal', { id: 'summarize' })">
-      {{ action_label("Summarize", "project", has_summary) }}
-    </button>
+    {% set sm = running_by_type.get("summarize") %}
+    {% if sm %}
+      <a class="btn btn--secondary btn--running" href="{{ sm.log_url }}">
+        <span class="running-dot"></span>
+        Summarize running… view log
+      </a>
+    {% else %}
+      <button type="button" class="btn btn--secondary"
+              @click="$dispatch('open-modal', { id: 'summarize' })">
+        {{ action_label("Summarize", "project", has_summary) }}
+      </button>
+    {% endif %}
     <span id="summarize-feedback" class="text-muted"></span>
   </section>
 

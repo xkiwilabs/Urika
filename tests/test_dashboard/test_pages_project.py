@@ -1255,3 +1255,217 @@ def test_projectbook_summary_view_404_when_absent(client_with_projects):
 def test_projectbook_summary_view_404_unknown_project(client_with_projects):
     r = client_with_projects.get("/projects/nonexistent/projectbook/summary")
     assert r.status_code == 404
+
+
+# ── Phase B3: buttons reflect running state ──────────────────────────────
+#
+# Each trigger button on a project page should render either:
+#   - idle: a <button> that opens the existing modal (no behavioural change)
+#   - running: an <a class="btn--running" href="<log_url>"> with a pulsing dot
+# Detection runs through ``urika.dashboard.active_ops.list_active_operations``,
+# which keys off live PID lock files. Tests use ``os.getpid()`` so the lock
+# resolves to a live process — matching the pattern in test_active_ops.py.
+
+
+import os  # noqa: E402  — grouped near the Phase B3 tests for locality
+
+
+def _drop_lock(path: Path) -> None:
+    """Write a live-PID lock file at ``path`` (parents created)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(os.getpid()), encoding="utf-8")
+
+
+# ---- Summarize button on project_home ----------------------------------
+
+
+def test_project_home_summarize_button_idle_opens_modal(client_with_projects):
+    """No live summarize lock → button is the idle modal-opener."""
+    r = client_with_projects.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    # Idle: dispatches the open-modal event for the summarize modal.
+    assert "id: 'summarize'" in body
+    # Running affordance must NOT be present.
+    assert "Summarize running" not in body
+    assert "btn--running" not in body
+
+
+def test_project_home_summarize_button_running_links_to_log(
+    client_with_projects, tmp_path
+):
+    """Live ``projectbook/.summarize.lock`` → button becomes a link to
+    the log page."""
+    proj = tmp_path / "alpha"
+    _drop_lock(proj / "projectbook" / ".summarize.lock")
+    r = client_with_projects.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    # The running link target points at the live-tail log page.
+    assert 'href="/projects/alpha/summarize/log"' in body
+    assert "Summarize running" in body
+    assert "btn--running" in body
+    # The modal-open dispatch for summarize must NOT remain — the running
+    # affordance replaces the button. (Other modals on the page still
+    # exist, so we can't assert "open-modal" is absent globally; we just
+    # check the summarize-id one is gone.)
+    assert "id: 'summarize'" not in body
+
+
+# ---- Finalize button on project_home ----------------------------------
+
+
+def test_project_home_finalize_button_idle_opens_modal(client_with_projects):
+    r = client_with_projects.get("/projects/alpha")
+    body = r.text
+    assert "id: 'finalize'" in body
+    assert "Finalize running" not in body
+
+
+def test_project_home_finalize_button_running_links_to_log(
+    client_with_projects, tmp_path
+):
+    proj = tmp_path / "alpha"
+    _drop_lock(proj / "projectbook" / ".finalize.lock")
+    r = client_with_projects.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    assert 'href="/projects/alpha/finalize/log"' in body
+    assert "Finalize running" in body
+    assert "btn--running" in body
+    assert "id: 'finalize'" not in body
+
+
+# ---- Evaluate button on experiment_detail -----------------------------
+
+
+def test_experiment_detail_evaluate_button_idle_opens_modal(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "id: 'evaluate'" in body
+    assert "Evaluate running" not in body
+
+
+def test_experiment_detail_evaluate_button_running_links_to_log(
+    client_with_runs,
+):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    _drop_lock(proj / "experiments" / "exp-001" / ".evaluate.lock")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    assert r.status_code == 200
+    body = r.text
+    assert 'href="/projects/alpha/experiments/exp-001/log?type=evaluate"' in body
+    assert "Evaluate running" in body
+    assert "btn--running" in body
+    assert "id: 'evaluate'" not in body
+
+
+def test_experiment_detail_evaluate_lock_on_other_exp_does_not_affect_this(
+    client_with_runs,
+):
+    """A live evaluate lock on a DIFFERENT experiment must NOT change
+    this experiment's button — locks are scoped per-experiment-id."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    _drop_lock(proj / "experiments" / "exp-other" / ".evaluate.lock")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    # The live lock is on exp-other — exp-001 should still be idle.
+    assert "id: 'evaluate'" in body
+    assert "Evaluate running" not in body
+
+
+# ---- Report button on experiment_detail -------------------------------
+
+
+def test_experiment_detail_report_button_idle_opens_modal(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "id: 'report'" in body
+    assert "report running" not in body.lower() or "report running…" not in body
+
+
+def test_experiment_detail_report_button_running_links_to_log(client_with_runs):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    _drop_lock(proj / "experiments" / "exp-001" / ".report.lock")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert 'href="/projects/alpha/experiments/exp-001/log?type=report"' in body
+    assert "Report running" in body
+    assert "btn--running" in body
+    assert "id: 'report'" not in body
+
+
+def test_experiment_detail_report_lock_on_other_exp_does_not_affect_this(
+    client_with_runs,
+):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    _drop_lock(proj / "experiments" / "exp-other" / ".report.lock")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "id: 'report'" in body
+    assert "Report running" not in body
+
+
+# ---- Presentation button on experiment_detail -------------------------
+
+
+def test_experiment_detail_present_button_idle_opens_modal(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "id: 'present'" in body
+    assert "Presentation running" not in body
+
+
+def test_experiment_detail_present_button_running_links_to_log(
+    client_with_runs,
+):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    _drop_lock(proj / "experiments" / "exp-001" / ".present.lock")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert 'href="/projects/alpha/experiments/exp-001/log?type=present"' in body
+    assert "Presentation running" in body
+    assert "btn--running" in body
+    assert "id: 'present'" not in body
+
+
+def test_experiment_detail_present_lock_on_other_exp_does_not_affect_this(
+    client_with_runs,
+):
+    proj = client_with_runs.app.state.project_root / "alpha"
+    _drop_lock(proj / "experiments" / "exp-other" / ".present.lock")
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    body = r.text
+    assert "id: 'present'" in body
+    assert "Presentation running" not in body
+
+
+# ---- + New experiment button on experiments.html ----------------------
+
+
+def test_experiments_page_new_experiment_button_idle_opens_modal(
+    client_with_projects,
+):
+    r = client_with_projects.get("/projects/alpha/experiments")
+    body = r.text
+    assert "id: 'new-experiment'" in body
+    assert "Experiment running" not in body
+    assert "btn--running" not in body
+
+
+def test_experiments_page_new_experiment_button_running_links_to_log(
+    client_with_projects, tmp_path
+):
+    """Any live experiment ``.lock`` blocks a fresh run (the run op type
+    is project-scoped per Phase B2). The + New experiment button should
+    link to that running experiment's log."""
+    proj = tmp_path / "alpha"
+    _drop_lock(proj / "experiments" / "exp-running" / ".lock")
+    r = client_with_projects.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    assert 'href="/projects/alpha/experiments/exp-running/log"' in body
+    assert "Experiment running" in body
+    assert "btn--running" in body
+    # The new-experiment modal-open dispatch must be gone.
+    assert "id: 'new-experiment'" not in body

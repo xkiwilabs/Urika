@@ -37,10 +37,13 @@
              href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/report">
             View report
           </a>
-          <button type="button" class="btn btn--secondary"
-                  @click="$dispatch('open-modal', { id: 'report' })">
-            {{ action_label("Generate", "report", has_report) }}
-          </button>
+        {% endif %}
+        {% set rp = running_by_exp.get(("report", experiment.experiment_id)) %}
+        {% if rp %}
+          <a class="btn btn--secondary btn--running" href="{{ rp.log_url }}">
+            <span class="running-dot"></span>
+            Report running… view log
+          </a>
         {% else %}
           <button type="button" class="btn btn--secondary"
                   @click="$dispatch('open-modal', { id: 'report' })">
@@ -59,10 +62,13 @@
              target="_blank" rel="noopener">
             Open presentation &#8599;
           </a>
-          <button type="button" class="btn btn--secondary"
-                  @click="$dispatch('open-modal', { id: 'present' })">
-            {{ action_label("Generate", "presentation", has_presentation) }}
-          </button>
+        {% endif %}
+        {% set pr = running_by_exp.get(("present", experiment.experiment_id)) %}
+        {% if pr %}
+          <a class="btn btn--secondary btn--running" href="{{ pr.log_url }}">
+            <span class="running-dot"></span>
+            Presentation running… view log
+          </a>
         {% else %}
           <button type="button" class="btn btn--secondary"
                   @click="$dispatch('open-modal', { id: 'present' })">
@@ -89,10 +95,18 @@
     <div class="artifact-row">
       <div class="artifact-row-label">Evaluation</div>
       <div class="artifact-row-actions">
-        <button type="button" class="btn btn--secondary"
-                @click="$dispatch('open-modal', { id: 'evaluate' })">
-          Evaluate
-        </button>
+        {% set ev = running_by_exp.get(("evaluate", experiment.experiment_id)) %}
+        {% if ev %}
+          <a class="btn btn--secondary btn--running" href="{{ ev.log_url }}">
+            <span class="running-dot"></span>
+            Evaluate running… view log
+          </a>
+        {% else %}
+          <button type="button" class="btn btn--secondary"
+                  @click="$dispatch('open-modal', { id: 'evaluate' })">
+            Evaluate
+          </button>
+        {% endif %}
       </div>
     </div>
 

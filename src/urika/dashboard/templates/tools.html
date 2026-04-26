@@ -21,10 +21,18 @@
 {% block content %}
 {% if scope == "project" %}
   <section class="project-actions" style="margin-bottom: var(--space-5);">
-    <button type="button" class="btn btn--primary"
-            @click="$dispatch('open-modal', { id: 'build-tool' })">
-      + Build tool
-    </button>
+    {% set bt = running_by_type.get("build_tool") %}
+    {% if bt %}
+      <a class="btn btn--primary btn--running" href="{{ bt.log_url }}">
+        <span class="running-dot"></span>
+        Build tool running… view log
+      </a>
+    {% else %}
+      <button type="button" class="btn btn--primary"
+              @click="$dispatch('open-modal', { id: 'build-tool' })">
+        + Build tool
+      </button>
+    {% endif %}
     <span id="build-tool-feedback" class="text-muted"></span>
   </section>
 

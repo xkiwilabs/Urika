@@ -456,6 +456,31 @@ h4 {
   font-size: var(--fs-xs);
 }
 
+/* Running-state indicator on action buttons. Border + accent text colour
+   distinguish from idle siblings; the dot pulses to convey "in flight". */
+.btn--running {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+.btn--running:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+}
+.running-dot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-right: 0.45em;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: urika-pulse 1.4s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes urika-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 1.0; transform: scale(1.2); }
+}
+
 /* ---------- 2. Card ---------- */
 .card {
   background: var(--bg-elevated);
