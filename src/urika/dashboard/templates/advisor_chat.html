@@ -52,9 +52,36 @@
     textarea.value = '';
     textarea.disabled = true;
 
-    // Append italic "Thinking…" placeholder while the request runs
-    const thinking = appendMessage('advisor', 'Thinking…');
+    // Animated thinking placeholder — mirrors the CLI/TUI's spinner
+    // frames + rotating activity verbs (urika.repl.main._activity_verbs
+    // and _spinner_frames). 100ms spinner tick, 3s verb tick.
+    const thinking = appendMessage('advisor', '');
     thinking.classList.add('message--thinking');
+
+    const SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+    const ACTIVITY_VERBS = [
+      "Thinking", "Reasoning", "Analyzing", "Processing",
+      "Exploring", "Evaluating", "Considering", "Reviewing",
+    ];
+    let spinnerIdx = 0;
+    let verbIdx = 0;
+    const renderThinking = () => {
+      thinking.textContent =
+        `${SPINNER_FRAMES[spinnerIdx]} ${ACTIVITY_VERBS[verbIdx]}…`;
+    };
+    renderThinking();
+    const spinnerTimer = setInterval(() => {
+      spinnerIdx = (spinnerIdx + 1) % SPINNER_FRAMES.length;
+      renderThinking();
+    }, 100);
+    const verbTimer = setInterval(() => {
+      verbIdx = (verbIdx + 1) % ACTIVITY_VERBS.length;
+      renderThinking();
+    }, 3000);
+    const stopThinking = () => {
+      clearInterval(spinnerTimer);
+      clearInterval(verbTimer);
+    };
 
     try {
       const data = new FormData();
@@ -65,9 +92,11 @@
       });
       if (r.ok) {
         const body = await r.json();
+        stopThinking();
         thinking.classList.remove('message--thinking');
         thinking.textContent = body.response || body.answer || JSON.stringify(body);
       } else {
+        stopThinking();
         thinking.classList.remove('message--thinking');
         thinking.classList.add('message--error');
         let detail = `Error ${r.status}`;
@@ -78,6 +107,7 @@
         thinking.textContent = detail;
       }
     } catch (err) {
+      stopThinking();
       thinking.classList.remove('message--thinking');
       thinking.classList.add('message--error');
       thinking.textContent = `Error: ${err.message}`;

@@ -1555,6 +1555,32 @@ async def api_project_advisor(name: str, request: Request):
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    # Persist the exchange to projectbook/advisor-history.json so the
+    # /projects/<n>/advisor page shows it on next reload. Mirrors what
+    # the CLI's `urika advisor` command does after a successful run
+    # (see urika.cli.agents.advisor). source="dashboard" distinguishes
+    # browser-originated exchanges from REPL/CLI ones in the audit log.
+    try:
+        from urika.core.advisor_memory import append_exchange
+        from urika.orchestrator.parsing import parse_suggestions
+
+        append_exchange(
+            summary.path, role="user", text=question, source="dashboard"
+        )
+        parsed = parse_suggestions(response_md) or {}
+        suggestions = parsed.get("suggestions") if parsed else None
+        append_exchange(
+            summary.path,
+            role="advisor",
+            text=response_md,
+            source="dashboard",
+            suggestions=suggestions,
+        )
+    except Exception:
+        # History writing is best-effort — don't fail the user's
+        # advisor request if the audit log can't be updated.
+        pass
+
     return {"response": response_md}
 
 

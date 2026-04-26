@@ -103,3 +103,22 @@ def test_advisor_link_in_sidebar(advisor_client):
     body = r.text
     assert "/projects/alpha/advisor" in body
     assert ">Advisor</a>" in body
+
+
+def test_advisor_page_has_rotating_spinner_and_verbs(advisor_client):
+    """The advisor chat JS must define both the spinner-frame and
+    activity-verb arrays so the placeholder animates instead of being
+    a static "Thinking…" string. Mirrors the CLI/TUI's
+    _spinner_frames / _activity_verbs in urika.repl.main."""
+    r = advisor_client.get("/projects/alpha/advisor")
+    body = r.text
+    # Spinner braille frames — first + last frames in the rotation.
+    assert "⠋" in body
+    assert "⠏" in body
+    # Activity verbs — at least 4 of the 8 should appear.
+    for verb in ("Thinking", "Reasoning", "Analyzing", "Processing"):
+        assert verb in body
+    # The setInterval timers that drive the animation.
+    assert "setInterval" in body
+    # No more static placeholder text.
+    assert "appendMessage('advisor', 'Thinking…')" not in body

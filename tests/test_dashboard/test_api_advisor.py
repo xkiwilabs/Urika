@@ -100,6 +100,60 @@ def test_advisor_post_blank_question(advisor_client):
     assert calls == []
 
 
+def test_advisor_post_persists_history(advisor_client):
+    """A successful POST writes both user and advisor entries to
+    projectbook/advisor-history.json with source="dashboard"."""
+    client, calls, proj = advisor_client
+    r = client.post(
+        "/api/projects/alpha/advisor",
+        data={"question": "what next?"},
+    )
+    assert r.status_code == 200
+
+    history_path = proj / "projectbook" / "advisor-history.json"
+    assert history_path.exists(), "advisor-history.json must be created"
+    entries = json.loads(history_path.read_text(encoding="utf-8"))
+    assert len(entries) == 2
+    user_entry, advisor_entry = entries
+    assert user_entry["role"] == "user"
+    assert user_entry["text"] == "what next?"
+    assert user_entry["source"] == "dashboard"
+    assert advisor_entry["role"] == "advisor"
+    assert advisor_entry["source"] == "dashboard"
+    assert "Advice" in advisor_entry["text"]
+
+
+def test_advisor_post_does_not_persist_on_error(tmp_path, monkeypatch):
+    """A failed advisor run leaves history untouched."""
+    proj = _make_project(tmp_path, "alpha")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+
+    async def fake_run_advisor(*_, **__):
+        raise RuntimeError("LLM unavailable")
+
+    monkeypatch.setattr(api_module, "_run_advisor_inline", fake_run_advisor)
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/projects/alpha/advisor",
+        data={"question": "what next?"},
+    )
+    assert r.status_code == 500
+
+    # On error, the route must not create an empty history file or
+    # write a stray user-only entry — bubbles up before the persist
+    # block runs.
+    history_path = proj / "projectbook" / "advisor-history.json"
+    assert not history_path.exists(), (
+        "advisor-history.json must not be written when the runner fails"
+    )
+
+
 def test_advisor_post_runtime_error_returns_500(tmp_path, monkeypatch):
     proj = _make_project(tmp_path, "alpha")
     home = tmp_path / "home"
