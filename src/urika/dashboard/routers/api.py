@@ -515,6 +515,49 @@ def _apply_structured_settings(project_path, form) -> None:
         old_privacy = data.get("privacy", {}) or {}
         old_mode = old_privacy.get("mode") or "open"
 
+        # Gate: switching to private/hybrid requires at least one usable
+        # private endpoint to be reachable from somewhere — the form's
+        # submitted URL, the project's existing TOML, or globals. Without
+        # that the runtime would hard-fail with
+        # MissingPrivateEndpointError on the first agent invocation;
+        # mirroring the POST /api/projects gate (Phase 12.6) keeps
+        # save-time behavior in lockstep with run-time behavior.
+        if new_mode in ("private", "hybrid"):
+            url_field = (
+                "project_privacy_private_url"
+                if new_mode == "private"
+                else "project_privacy_hybrid_private_url"
+            )
+            form_url = (form.get(url_field) or "").strip()
+
+            existing_endpoints = old_privacy.get("endpoints", {}) or {}
+            existing_url = ""
+            if isinstance(existing_endpoints, dict):
+                for ep_cfg in existing_endpoints.values():
+                    if isinstance(ep_cfg, dict):
+                        if (ep_cfg.get("base_url") or "").strip():
+                            existing_url = ep_cfg.get("base_url", "").strip()
+                            break
+
+            from urika.core.settings import get_named_endpoints
+
+            has_global_url = any(
+                (ep.get("base_url") or "").strip()
+                for ep in get_named_endpoints()
+            )
+
+            if not (form_url or existing_url or has_global_url):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Privacy mode '{new_mode}' requires at least "
+                        f"one endpoint with a non-empty base_url to be "
+                        f"configured. Provide one in the form, in the "
+                        f"project's urika.toml, or on the global Privacy "
+                        f"tab (/settings) before switching to this mode."
+                    ),
+                )
+
         new_privacy: dict = {"mode": new_mode}
         if new_mode == "private":
             ep = {

@@ -768,3 +768,103 @@ def test_settings_put_models_open_mode_keeps_open_endpoint(
     toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
     da = toml.get("runtime", {}).get("models", {}).get("data_agent", {})
     assert da.get("endpoint") == "open"
+
+
+# ---- Privacy mode-switch gate: requires endpoint somewhere -----------------
+# Mirrors the POST /api/projects gate from Phase 12.6 commit 4. A project
+# cannot switch to private/hybrid mode unless at least one usable private
+# endpoint exists somewhere — project TOML, the form's URL, or globals.
+
+
+@pytest.fixture
+def settings_client_no_global_endpoint(tmp_path: Path, monkeypatch) -> TestClient:
+    """settings_client variant with NO global private endpoint configured.
+
+    Used to exercise the save-time gate that refuses private/hybrid
+    mode when no endpoint is reachable from anywhere — the runtime
+    would hard-fail otherwise.
+    """
+    proj = _write_project(tmp_path, "alpha")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    # Intentionally NO settings.toml — no global endpoint available.
+    app = create_app(project_root=tmp_path)
+    return TestClient(app)
+
+
+def test_settings_put_private_blank_url_no_global_endpoint_returns_422(
+    settings_client_no_global_endpoint,
+):
+    """Switching to private mode with a blank URL and no global endpoint
+    must 422 — runtime would hard-fail with MissingPrivateEndpointError
+    otherwise."""
+    r = settings_client_no_global_endpoint.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="private",
+            project_privacy_private_url="",
+        ),
+    )
+    assert r.status_code == 422
+    assert "endpoint" in r.json()["detail"].lower()
+
+
+def test_settings_put_private_blank_url_with_global_endpoint_succeeds(
+    settings_client,
+):
+    """settings_client pre-seeds a global private endpoint. With that
+    in place, switching to private mode with a blank URL must succeed —
+    the runtime loader inherits the endpoint from globals."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="private",
+            project_privacy_private_url="",
+        ),
+    )
+    assert r.status_code == 200
+
+
+def test_settings_put_hybrid_blank_url_no_global_endpoint_returns_422(
+    settings_client_no_global_endpoint,
+):
+    """Switching to hybrid mode with a blank URL and no global endpoint
+    must 422 — data_agent and tool_builder are hard-locked private."""
+    r = settings_client_no_global_endpoint.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="hybrid",
+            project_privacy_hybrid_private_url="",
+        ),
+    )
+    assert r.status_code == 422
+    assert "endpoint" in r.json()["detail"].lower()
+
+
+def test_settings_put_hybrid_blank_url_with_global_endpoint_succeeds(
+    settings_client,
+):
+    """Hybrid + blank URL succeeds when globals supply an endpoint —
+    the runtime loader inherits it."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="hybrid",
+            project_privacy_hybrid_private_url="",
+        ),
+    )
+    assert r.status_code == 200
+
+
+def test_settings_put_open_mode_no_endpoint_required(
+    settings_client_no_global_endpoint,
+):
+    """Open mode never needs a private endpoint — switching must
+    succeed even without any endpoint defined anywhere."""
+    r = settings_client_no_global_endpoint.put(
+        "/api/projects/alpha/settings",
+        data=_basics(project_privacy_mode="open"),
+    )
+    assert r.status_code == 200
