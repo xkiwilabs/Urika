@@ -10,7 +10,9 @@ def test_sidebar_on_projects_list_shows_global_links_only(client_with_projects):
     assert "← Back to projects" not in body
 
 
-def test_sidebar_on_project_home_shows_project_links_and_back_button(client_with_projects):
+def test_sidebar_on_project_home_shows_project_links_and_back_button(
+    client_with_projects,
+):
     r = client_with_projects.get("/projects/alpha")
     body = r.text
     assert "← Back to projects" in body
@@ -30,3 +32,45 @@ def test_sidebar_on_global_settings_shows_global_links_only(settings_client):
     body = r.text
     assert 'href="/projects"' in body
     assert "← Back to projects" not in body
+
+
+def test_project_sidebar_lists_all_nine_links(client_with_projects):
+    """Inside a project the sidebar surfaces all nine project-scoped links."""
+    r = client_with_projects.get("/projects/alpha")
+    body = r.text
+    expected = [
+        "/projects/alpha",  # Home — full match handled by the active-class logic
+        "/projects/alpha/experiments",
+        "/projects/alpha/methods",
+        "/projects/alpha/tools",
+        "/projects/alpha/data",
+        "/projects/alpha/knowledge",
+        "/projects/alpha/advisor",
+        "/projects/alpha/usage",
+        "/projects/alpha/settings",
+    ]
+    for href in expected:
+        assert f'href="{href}"' in body, f"missing sidebar link: {href}"
+
+
+def test_project_sidebar_canonical_order(client_with_projects):
+    """Sidebar order is Home / Experiments / Methods / Tools / Data /
+    Knowledge / Advisor / Usage / Settings — Data sits between Tools and
+    Knowledge, Usage between Advisor and Settings."""
+    r = client_with_projects.get("/projects/alpha")
+    body = r.text
+    # Use the href anchors as positional markers — they appear once each
+    # in the sidebar block.
+    pairs = [
+        ("/projects/alpha/experiments", "/projects/alpha/methods"),
+        ("/projects/alpha/methods", "/projects/alpha/tools"),
+        ("/projects/alpha/tools", "/projects/alpha/data"),
+        ("/projects/alpha/data", "/projects/alpha/knowledge"),
+        ("/projects/alpha/knowledge", "/projects/alpha/advisor"),
+        ("/projects/alpha/advisor", "/projects/alpha/usage"),
+        ("/projects/alpha/usage", "/projects/alpha/settings"),
+    ]
+    for earlier, later in pairs:
+        ei = body.index(f'href="{earlier}"')
+        li = body.index(f'href="{later}"')
+        assert ei < li, f"sidebar order broken: {earlier} should precede {later}"
