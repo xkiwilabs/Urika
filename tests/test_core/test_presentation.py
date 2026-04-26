@@ -56,6 +56,30 @@ class TestRenderPresentation:
         html = (output / "index.html").read_text()
         assert "My Research" in html
 
+    def test_title_slide_includes_keyboard_hint(self, tmp_path: Path) -> None:
+        """Title slide should remind viewers about reveal.js shortcuts so
+        they can find speaker notes (S), fullscreen (F), and the help
+        overlay (?). Hint only appears on slide 1."""
+        slide_data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [{"type": "bullets", "title": "B", "bullets": ["x"]}],
+        }
+        output = render_presentation(slide_data, tmp_path / "pres", theme="light")
+        html = (output / "index.html").read_text()
+        # CSS rule + the markup both mention the class, but only the
+        # markup uses an <aside> tag — there should be exactly one.
+        assert html.count('<aside class="urika-keys-hint">') == 1
+        assert "<kbd>S</kbd>" in html
+        assert "<kbd>F</kbd>" in html
+        assert "<kbd>?</kbd>" in html
+        # The hint <aside> must live inside the title-slide section,
+        # before the second <section> opens (the bullet slide).
+        title_section = html.find('<section class="title-slide">')
+        second_section = html.find("<section", title_section + 1)
+        aside_pos = html.find('<aside class="urika-keys-hint">')
+        assert title_section < aside_pos < second_section
+
     def test_stat_slide_rendered(self, tmp_path: Path) -> None:
         slide_data = {
             "title": "Test",

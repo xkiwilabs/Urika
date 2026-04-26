@@ -89,12 +89,26 @@ def render_presentation(
 
 
 def _render_title_slide(title: str, subtitle: str) -> str:
-    """Render the title slide."""
+    """Render the title slide.
+
+    Includes a small keyboard-shortcut hint reminding the viewer that
+    reveal.js exposes ``S`` (speaker notes), ``F`` (fullscreen), and
+    ``?`` (help overlay). Only on slide 1 — gets out of the way once
+    the user has seen it.
+    """
     sub = f'<p class="subtitle">{_escape(subtitle)}</p>' if subtitle else ""
+    hint = (
+        '<aside class="urika-keys-hint">'
+        "Press <kbd>S</kbd> for speaker notes "
+        "· <kbd>F</kbd> fullscreen "
+        "· <kbd>?</kbd> help"
+        "</aside>"
+    )
     return f"""
             <section class="title-slide">
                 <h1>{_escape(title)}</h1>
                 {sub}
+                {hint}
             </section>
 """
 

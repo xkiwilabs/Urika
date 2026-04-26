@@ -107,6 +107,29 @@
             margin: 20px auto 0;
             border-radius: 2px;
         }
+        /* Keyboard-shortcut reminder on the title slide only.
+           Bottom-center, muted; opt-in via the surrounding <aside>. */
+        .title-slide .urika-keys-hint {
+            position: absolute;
+            bottom: 24px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 13px;
+            color: var(--u-muted);
+            letter-spacing: 0.02em;
+        }
+        .title-slide .urika-keys-hint kbd {
+            display: inline-block;
+            padding: 1px 6px;
+            margin: 0 2px;
+            font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+            font-size: 12px;
+            color: var(--u-text);
+            background: var(--u-bg-elevated, rgba(255, 255, 255, 0.06));
+            border: 1px solid var(--u-border, rgba(255, 255, 255, 0.15));
+            border-radius: 3px;
+        }
 
         /* ── Bullet slides — content fills ~70% for breathing room ── */
         .reveal section ul {
