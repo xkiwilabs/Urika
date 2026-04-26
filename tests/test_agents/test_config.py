@@ -256,8 +256,13 @@ class TestPrivateEndpointHardFail:
         msg = str(exc_info.value)
         assert "private" in msg
         assert "task_agent" in msg
-        # User-facing fix instruction.
+        # User-facing fix instruction — must point at both project TOML
+        # and the global settings location so users know inheritance is
+        # an option.
         assert "urika config" in msg or "dashboard" in msg
+        # Mentions globals as a possible fix location now that the
+        # loader inherits [privacy.endpoints] from there.
+        assert "settings.toml" in msg or "global" in msg.lower()
 
     def test_private_mode_endpoint_with_blank_url_raises(
         self, tmp_path: Path

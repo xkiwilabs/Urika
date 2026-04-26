@@ -189,3 +189,106 @@ def test_unparseable_settings_file_does_not_break_loader(
 
     rc = load_runtime_config(proj)
     assert rc.model == "X"
+
+
+# ---- Endpoint inheritance from globals ------------------------------------
+
+
+def test_load_runtime_config_inherits_global_endpoints(urika_home, tmp_path):
+    """Project mode=private with no project-level [privacy.endpoints]; the
+    loader pulls the endpoint from globals' [privacy.endpoints.private]
+    so the runtime can dispatch a private agent without crashing."""
+    from urika.agents.config import load_runtime_config
+
+    _write_settings(
+        urika_home,
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n',
+    )
+    proj = tmp_path / "p"
+    _write_project(
+        proj,
+        '[privacy]\nmode = "private"\n',
+    )
+
+    rc = load_runtime_config(proj)
+    assert rc.privacy_mode == "private"
+    assert "private" in rc.endpoints
+    assert rc.endpoints["private"].base_url == "http://localhost:11434"
+
+
+def test_load_runtime_config_project_endpoint_wins_over_global(
+    urika_home, tmp_path
+):
+    """When both project and globals define [privacy.endpoints.private],
+    the project's value wins on collision — same precedence rule as the
+    per-mode model overrides."""
+    from urika.agents.config import load_runtime_config
+
+    _write_settings(
+        urika_home,
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://global.example/inference"\n',
+    )
+    proj = tmp_path / "p"
+    _write_project(
+        proj,
+        '[privacy]\nmode = "private"\n'
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n',
+    )
+
+    rc = load_runtime_config(proj)
+    assert rc.endpoints["private"].base_url == "http://localhost:11434"
+
+
+def test_load_runtime_config_global_endpoints_no_project_block(
+    urika_home, tmp_path
+):
+    """Project urika.toml has no [privacy.endpoints] subblock — only
+    [privacy].mode = "private". Global endpoints still surface so the
+    runtime can dispatch without falling back to cloud."""
+    from urika.agents.config import load_runtime_config
+
+    _write_settings(
+        urika_home,
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n',
+    )
+    proj = tmp_path / "p"
+    # Mode set, but no [privacy.endpoints] subblock at all.
+    _write_project(
+        proj,
+        '[privacy]\nmode = "private"\n',
+    )
+
+    rc = load_runtime_config(proj)
+    assert rc.privacy_mode == "private"
+    assert rc.endpoints["private"].base_url == "http://localhost:11434"
+
+
+def test_load_runtime_config_inherits_multiple_global_endpoints(
+    urika_home, tmp_path
+):
+    """All names defined in globals' [privacy.endpoints.*] surface on
+    the project's RuntimeConfig.endpoints — multiple names, not just
+    'private'."""
+    from urika.agents.config import load_runtime_config
+
+    _write_settings(
+        urika_home,
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        '[privacy.endpoints.vllm]\n'
+        'base_url = "http://gpu.local:4200"\n',
+    )
+    proj = tmp_path / "p"
+    _write_project(
+        proj,
+        '[privacy]\nmode = "private"\n',
+    )
+
+    rc = load_runtime_config(proj)
+    assert rc.endpoints["private"].base_url == "http://localhost:11434"
+    assert rc.endpoints["vllm"].base_url == "http://gpu.local:4200"

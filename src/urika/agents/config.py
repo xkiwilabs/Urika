@@ -208,6 +208,24 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
                     api_key_env=ep_cfg.get("api_key_env", ""),
                 )
 
+        # ── Live-inherit endpoint definitions from globals ────────────
+        # Project-level [privacy.endpoints.<name>] always wins on
+        # collision; globals fill in any name the project hasn't defined.
+        # Mirrors the per-mode model live-inheritance pattern below — the
+        # dashboard's POST /api/projects writes only [privacy].mode (not
+        # endpoint duplicates), so without this the loader would crash
+        # on the next agent invocation with MissingPrivateEndpointError.
+        from urika.core.settings import get_named_endpoints
+
+        for ep in get_named_endpoints():
+            ep_name = ep.get("name", "")
+            if not ep_name or ep_name in endpoints:
+                continue
+            endpoints[ep_name] = EndpointConfig(
+                base_url=ep.get("base_url", ""),
+                api_key_env=ep.get("api_key_env", ""),
+            )
+
         # ── Live-inherit from global per-mode defaults ────────────────
         # Project-level values always win; globals fill in the gaps for
         # any agent (or the top-level model) that the project hasn't
@@ -290,8 +308,10 @@ def build_agent_env_for_endpoint(
                 f"requires the '{endpoint_name}' endpoint to be "
                 f"configured for agent '{agent_name}', but "
                 f"[privacy.endpoints.{endpoint_name}] {reason}. "
-                f"Configure it via `urika config` or the dashboard's "
-                f"Privacy tab before running this project."
+                f"Configure it in this project's urika.toml, in the "
+                f"global ~/.urika/settings.toml, or via `urika config` "
+                f"or the dashboard's Privacy tab before running this "
+                f"project."
             )
         if endpoint:
             if env is None:
