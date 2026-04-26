@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 VALID_MODES = {"exploratory", "confirmatory", "pipeline"}
-VALID_AUDIENCES = {"expert", "novice"}
+VALID_AUDIENCES = {"expert", "novice", "standard"}
 
 
 @dataclass
@@ -21,7 +21,7 @@ class ProjectConfig:
     description: str = ""
     data_paths: list[str] = field(default_factory=list)
     success_criteria: dict[str, Any] = field(default_factory=dict)
-    audience: str = "expert"
+    audience: str = "novice"
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
@@ -59,7 +59,7 @@ class ProjectConfig:
             description=p.get("description", ""),
             data_paths=p.get("data_paths", []),
             success_criteria=p.get("success_criteria", {}),
-            audience=d.get("preferences", {}).get("audience", "expert"),
+            audience=d.get("preferences", {}).get("audience", "novice"),
         )
 
 

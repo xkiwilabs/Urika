@@ -69,9 +69,9 @@
       <div class="form-row">
         <label for="fz-audience">Audience</label>
         <select id="fz-audience" name="audience">
-          <option value="novice">novice</option>
-          <option value="standard" selected>standard</option>
-          <option value="expert">expert</option>
+          {% for a in ["novice", "standard", "expert"] %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
         </select>
       </div>
       <label class="checkbox-row">

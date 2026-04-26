@@ -24,7 +24,7 @@ class ProjectSummary:
     question: str = ""
     mode: str = ""
     description: str = ""
-    audience: str = "standard"
+    audience: str = "novice"
     experiment_count: int = 0
     missing: bool = False
     # ISO-8601 timestamp of latest activity: max(mtime) over urika.toml

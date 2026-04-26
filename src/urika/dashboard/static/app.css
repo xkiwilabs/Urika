@@ -901,10 +901,13 @@ h4 {
   gap: var(--space-2);
   margin-bottom: var(--space-4);
 }
-.form-row label { font-weight: var(--fw-semibold); }
-.form-row input,
-.form-row textarea,
-.form-row select {
+.form-row > label { font-weight: var(--fw-semibold); }
+/* Text-like inputs span the row; radio + checkbox keep their native
+   inline layout (the privacy + notifications tabs use them inside
+   .form-row wrappers and broke when this rule matched too broadly). */
+.form-row > input:not([type="radio"]):not([type="checkbox"]),
+.form-row > textarea,
+.form-row > select {
   width: 100%;
   font: inherit;
   padding: var(--space-2);

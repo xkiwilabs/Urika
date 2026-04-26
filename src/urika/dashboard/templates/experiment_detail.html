@@ -169,9 +169,9 @@
       <div class="form-row">
         <label for="pr-audience">Audience</label>
         <select id="pr-audience" name="audience">
-          <option value="novice">novice</option>
-          <option value="standard" selected>standard</option>
-          <option value="expert">expert</option>
+          {% for a in ["novice", "standard", "expert"] %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="form-actions">
@@ -196,9 +196,9 @@
       <div class="form-row">
         <label for="rp-audience">Audience</label>
         <select id="rp-audience" name="audience">
-          <option value="novice">novice</option>
-          <option value="standard" selected>standard</option>
-          <option value="expert">expert</option>
+          {% for a in ["novice", "standard", "expert"] %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="form-actions">

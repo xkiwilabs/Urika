@@ -104,9 +104,12 @@ class TestProjectConfig:
         restored = ProjectConfig.from_toml_dict(d)
         assert restored.description == "My project description"
 
-    def test_audience_default_expert(self) -> None:
+    def test_audience_default_novice(self) -> None:
+        """New projects default to the most accessible audience so reports
+        and slides include "what this means" framing unless the user
+        explicitly opts into a denser style."""
         config = ProjectConfig(name="test", question="Q?", mode="exploratory")
-        assert config.audience == "expert"
+        assert config.audience == "novice"
 
     def test_audience_from_toml(self) -> None:
         d = {

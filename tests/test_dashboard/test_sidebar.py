@@ -54,20 +54,21 @@ def test_project_sidebar_lists_all_nine_links(client_with_projects):
 
 
 def test_project_sidebar_canonical_order(client_with_projects):
-    """Sidebar order is Home / Experiments / Methods / Tools / Data /
-    Knowledge / Advisor / Usage / Settings — Data sits between Tools and
-    Knowledge, Usage between Advisor and Settings."""
+    """Sidebar order is Home / Experiments / Advisor / Knowledge /
+    Methods / Tools / Data / Usage / Settings — Advisor follows
+    Experiments, then Knowledge, with Methods/Tools/Data after, and
+    Usage between Data and Settings."""
     r = client_with_projects.get("/projects/alpha")
     body = r.text
     # Use the href anchors as positional markers — they appear once each
     # in the sidebar block.
     pairs = [
-        ("/projects/alpha/experiments", "/projects/alpha/methods"),
+        ("/projects/alpha/experiments", "/projects/alpha/advisor"),
+        ("/projects/alpha/advisor", "/projects/alpha/knowledge"),
+        ("/projects/alpha/knowledge", "/projects/alpha/methods"),
         ("/projects/alpha/methods", "/projects/alpha/tools"),
         ("/projects/alpha/tools", "/projects/alpha/data"),
-        ("/projects/alpha/data", "/projects/alpha/knowledge"),
-        ("/projects/alpha/knowledge", "/projects/alpha/advisor"),
-        ("/projects/alpha/advisor", "/projects/alpha/usage"),
+        ("/projects/alpha/data", "/projects/alpha/usage"),
         ("/projects/alpha/usage", "/projects/alpha/settings"),
     ]
     for earlier, later in pairs:

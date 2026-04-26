@@ -166,7 +166,7 @@ The sidebar is **mode-aware** — it shows different links depending on whether 
   - Global settings
 - **Project mode** (active on any `/projects/<name>/...` route):
   - A "← Back to projects" link returns the user to the registry.
-  - Project-scoped links (canonical order): Home, Experiments, Methods, Tools, Data, Knowledge, Advisor, Usage, Settings. Data and Usage were added in Phase 13.
+  - Project-scoped links (canonical order): Home, Experiments, Advisor, Knowledge, Methods, Tools, Data, Usage, Settings. Advisor sits second after Experiments so the conversational entry point is one click away; Methods/Tools/Data cluster the analytical surfaces; Usage and Settings close the list.
 - **Footer**: the theme toggle (moved here in Phase 11A from its previous location in the page header).
 
 Sidebar links are muted by default, accent-coloured on hover, and accent + tinted-background when the current path matches the link's route. Active state is computed server-side from the request path.

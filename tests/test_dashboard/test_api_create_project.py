@@ -161,7 +161,7 @@ def test_create_project_invalid_mode_returns_422(create_client):
 
 
 def test_create_project_invalid_audience_returns_422(create_client):
-    """audience must be one of {'expert', 'novice'} — 'standard' is not valid."""
+    """audience must be one of VALID_AUDIENCES — anything else 422s."""
     client, _ = create_client
     r = client.post(
         "/api/projects",
@@ -169,7 +169,7 @@ def test_create_project_invalid_audience_returns_422(create_client):
             "name": "proj",
             "question": "q",
             "mode": "exploratory",
-            "audience": "standard",
+            "audience": "alien",
         },
     )
     assert r.status_code == 422
