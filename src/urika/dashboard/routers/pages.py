@@ -331,15 +331,48 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     )
 
 
+def _tools_to_rows(tool_registry) -> list[dict]:
+    """Read every registered tool's name/description/category."""
+    rows: list[dict] = []
+    for tool_name in tool_registry.list_all():
+        tool = tool_registry.get(tool_name)
+        if tool is None:
+            continue
+        rows.append(
+            {
+                "name": tool.name(),
+                "description": tool.description(),
+                "category": tool.category(),
+            }
+        )
+    return rows
+
+
+@router.get("/tools", response_class=HTMLResponse)
+def global_tools(request: Request) -> HTMLResponse:
+    """List built-in tools shipped with Urika (global, project-independent)."""
+    from urika.tools.registry import ToolRegistry
+
+    tool_registry = ToolRegistry()
+    tool_registry.discover()
+    return request.app.state.templates.TemplateResponse(
+        "tools.html",
+        {
+            "request": request,
+            "project": None,
+            "tools": _tools_to_rows(tool_registry),
+            "scope": "global",
+        },
+    )
+
+
 @router.get("/projects/{name}/tools", response_class=HTMLResponse)
 def project_tools(name: str, request: Request) -> HTMLResponse:
-    """List every registered tool (built-in + project-local).
+    """List custom tools authored under ``<project>/tools/``.
 
-    Walks :class:`urika.tools.registry.ToolRegistry` after both
-    ``discover()`` (built-ins from ``urika.tools.*``) and
-    ``discover_project(<project>/tools)`` have run. Each row carries the
-    tool's name, description, and category — read-only; tool authoring
-    happens at the agent layer.
+    Built-in tools live on the global ``/tools`` page; this view shows
+    ONLY the project's own ``tools/*.py`` modules so users can see
+    what's been added on top of the built-in set.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -348,24 +381,16 @@ def project_tools(name: str, request: Request) -> HTMLResponse:
     from urika.tools.registry import ToolRegistry
 
     tool_registry = ToolRegistry()
-    tool_registry.discover()
     project_tools_dir = summary.path / "tools"
     tool_registry.discover_project(project_tools_dir)
-    tools = []
-    for tool_name in tool_registry.list_all():
-        tool = tool_registry.get(tool_name)
-        if tool is None:
-            continue
-        tools.append(
-            {
-                "name": tool.name(),
-                "description": tool.description(),
-                "category": tool.category(),
-            }
-        )
     return request.app.state.templates.TemplateResponse(
         "tools.html",
-        {"request": request, "project": summary, "tools": tools},
+        {
+            "request": request,
+            "project": summary,
+            "tools": _tools_to_rows(tool_registry),
+            "scope": "project",
+        },
     )
 
 
