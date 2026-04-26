@@ -195,6 +195,60 @@ def spawn_finalize(
     return proc.pid
 
 
+def spawn_report(
+    project_name: str,
+    project_path: Path,
+    experiment_id: str,
+    *,
+    instructions: str = "",
+    audience: str | None = None,
+    executable: str | None = None,
+) -> int:
+    """Spawn ``urika report <project> --experiment <id>`` as a subprocess.
+
+    Writes the PID to ``<exp>/.report.lock`` and tees stdout to
+    ``<exp>/report.log``. The lock is removed when the subprocess
+    exits. Returns the PID.
+
+    ``audience`` follows the report CLI's allow-list
+    (``{"novice", "standard", "expert"}``); callers should validate
+    against the CLI's set before invoking.
+    """
+    exp_dir = project_path / "experiments" / experiment_id
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    log_path = exp_dir / "report.log"
+    lock_path = exp_dir / ".report.lock"
+
+    cmd = [
+        executable or sys.executable,
+        "-m",
+        "urika",
+        "report",
+        project_name,
+        "--experiment",
+        experiment_id,
+        "--json",
+    ]
+    if instructions:
+        cmd.extend(["--instructions", instructions])
+    if audience:
+        cmd.extend(["--audience", audience])
+
+    env = os.environ.copy()
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+        env=env,
+    )
+    lock_path.write_text(str(proc.pid), encoding="utf-8")
+    _start_drainer(proc, log_path, lock_path)
+    return proc.pid
+
+
 def spawn_evaluate(
     project_name: str,
     project_path: Path,

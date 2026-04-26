@@ -23,6 +23,7 @@ from urika.dashboard.runs import (
     spawn_experiment_run,
     spawn_finalize,
     spawn_present,
+    spawn_report,
 )
 
 # Hardcoded list of agent roles whose model/endpoint can be overridden.
@@ -1531,6 +1532,52 @@ async def api_finalize_stream(name: str):
         yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/projects/{name}/experiments/{exp_id}/report")
+async def api_experiment_report(name: str, exp_id: str, request: Request):
+    """Spawn ``urika report <project> --experiment <exp_id>``.
+
+    Mirrors the per-experiment evaluate endpoint. Validates the project
+    + experiment, pulls ``instructions`` and ``audience`` from the form,
+    validates audience against the CLI's allow-list, and hands off to
+    ``spawn_report``. When called from HTMX, redirects to the live log
+    so the user can watch the report agent's stream.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not (summary.path / "experiments" / exp_id).is_dir():
+        raise HTTPException(status_code=422, detail="Unknown experiment")
+
+    body = await request.form()
+    instructions = (body.get("instructions") or "").strip()
+    audience_raw = (body.get("audience") or "").strip()
+    audience = audience_raw or None
+    if audience and audience not in _FINALIZE_AUDIENCES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
+        )
+
+    # Pre-flight privacy gate — same rule as /run, /finalize, /present.
+    _validate_privacy_endpoint(summary.path)
+
+    pid = spawn_report(
+        name,
+        summary.path,
+        exp_id,
+        instructions=instructions,
+        audience=audience,
+    )
+
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/experiments/{exp_id}/log"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
+    return JSONResponse(
+        {"status": "started", "pid": pid, "experiment_id": exp_id}
+    )
 
 
 @router.post("/projects/{name}/experiments/{exp_id}/evaluate")
