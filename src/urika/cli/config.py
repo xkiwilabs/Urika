@@ -130,8 +130,11 @@ def config_command(
         click.echo(f"\n  {label}\n")
         p = settings.get("privacy", {})
         r = settings.get("runtime", {})
-        mode = p.get("mode", "open")
-        print_step(f"Privacy mode: {mode}")
+        if is_project:
+            mode = p.get("mode", "open")
+            print_step(f"Privacy mode: {mode}")
+        else:
+            print_step("Privacy mode: (set per project)")
         eps = p.get("endpoints", {})
         for ep_name, ep in eps.items():
             if isinstance(ep, dict):
@@ -141,16 +144,35 @@ def config_command(
                 if key:
                     label_ep += f" (key: ${key})"
                 print_step(label_ep)
-        if r.get("model"):
-            print_step(f"Default model: {r['model']}")
-        models = r.get("models", {})
-        for agent_name, agent_cfg in models.items():
-            if isinstance(agent_cfg, dict):
-                m = agent_cfg.get("model", "")
-                ep = agent_cfg.get("endpoint", "open")
-                print_step(f"  {agent_name}: {m} (endpoint: {ep})")
-            elif isinstance(agent_cfg, str):
-                print_step(f"  {agent_name}: {agent_cfg}")
+        if is_project:
+            if r.get("model"):
+                print_step(f"Default model: {r['model']}")
+            models = r.get("models", {})
+            for agent_name, agent_cfg in models.items():
+                if isinstance(agent_cfg, dict):
+                    m = agent_cfg.get("model", "")
+                    ep = agent_cfg.get("endpoint", "open")
+                    print_step(f"  {agent_name}: {m} (endpoint: {ep})")
+                elif isinstance(agent_cfg, str):
+                    print_step(f"  {agent_name}: {agent_cfg}")
+        else:
+            # Global per-mode defaults are stored under [runtime.modes.<mode>]
+            modes = r.get("modes", {}) or {}
+            for mode_name in ("open", "private", "hybrid"):
+                cfg = modes.get(mode_name)
+                if not isinstance(cfg, dict):
+                    continue
+                if cfg.get("model"):
+                    print_step(f"[{mode_name}] default: {cfg['model']}")
+                for agent_name, agent_cfg in (cfg.get("models", {}) or {}).items():
+                    if isinstance(agent_cfg, dict):
+                        m = agent_cfg.get("model", "")
+                        ep = agent_cfg.get("endpoint", "open")
+                        print_step(
+                            f"  [{mode_name}] {agent_name}: {m} (endpoint: {ep})"
+                        )
+                    elif isinstance(agent_cfg, str):
+                        print_step(f"  [{mode_name}] {agent_name}: {agent_cfg}")
         click.echo()
         return
 
@@ -217,7 +239,35 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             click.echo("  Cancelled.")
             return
 
-    settings.setdefault("privacy", {})["mode"] = mode
+    # Project-scoped writes still live under flat [privacy]/[runtime];
+    # globals now go under [runtime.modes.<mode>].  The runtime loader
+    # reads both and prefers the project values.
+    if is_project:
+        settings.setdefault("privacy", {})["mode"] = mode
+
+    def _set_default_model(model_name: str) -> None:
+        """Write the per-mode default model — global goes under
+        [runtime.modes.<mode>].model, project under [runtime].model."""
+        if is_project:
+            settings.setdefault("runtime", {})["model"] = model_name
+        else:
+            runtime = settings.setdefault("runtime", {})
+            modes_section = runtime.setdefault("modes", {})
+            modes_section.setdefault(mode, {})["model"] = model_name
+
+    def _set_per_agent(agent: str, model_name: str, endpoint: str) -> None:
+        """Write a per-agent override.  Global goes under
+        [runtime.modes.<mode>.models.<agent>], project under
+        [runtime.models.<agent>]."""
+        row = {"model": model_name, "endpoint": endpoint}
+        if is_project:
+            (settings.setdefault("runtime", {})
+                .setdefault("models", {}))[agent] = row
+        else:
+            runtime = settings.setdefault("runtime", {})
+            modes_section = runtime.setdefault("modes", {})
+            mode_cfg = modes_section.setdefault(mode, {})
+            mode_cfg.setdefault("models", {})[agent] = row
 
     # ── Open mode: pick cloud model ──
     if mode == "open":
@@ -229,9 +279,11 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             default=1,
         )
         model_name = choice.split(" —")[0].strip()
-        settings.setdefault("runtime", {})["model"] = model_name
-        # Clear any private endpoints
-        settings.get("privacy", {}).pop("endpoints", None)
+        _set_default_model(model_name)
+        # Clear any private endpoints (project-scope only — globals
+        # share endpoint defs across modes).
+        if is_project:
+            settings.get("privacy", {}).pop("endpoints", None)
         print_success(f"Mode: open · Model: {model_name}")
 
     # ── Private mode: configure endpoint + model ──
@@ -281,14 +333,21 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         from urika.core.settings import load_settings
 
         global_settings = load_settings()
-        global_model = global_settings.get("runtime", {}).get("model", "")
+        # Read the global per-mode default first; fall back to legacy
+        # flat [runtime].model for backward compat.
+        global_model = (
+            global_settings.get("runtime", {})
+            .get("modes", {})
+            .get("private", {})
+            .get("model", "")
+        ) or global_settings.get("runtime", {}).get("model", "")
 
         model_name = interactive_prompt(
             "  Model name" + (f" [{global_model}]" if global_model else " (e.g. qwen3:14b)"),
             default=global_model if global_model else "",
             required=True,
         )
-        settings.setdefault("runtime", {})["model"] = model_name
+        _set_default_model(model_name)
         print_success(f"Mode: private · Endpoint: {ep_url} · Model: {model_name}")
 
     # ── Hybrid mode: cloud model + private endpoint for data agents ──
@@ -302,7 +361,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             default=1,
         )
         cloud_model = choice.split(" —")[0].strip()
-        settings.setdefault("runtime", {})["model"] = cloud_model
+        _set_default_model(cloud_model)
 
         # Private endpoint for data agents
         click.echo()
@@ -349,9 +408,17 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         from urika.cli_helpers import interactive_prompt
         from urika.core.settings import load_settings
 
-        # Default from global settings if configured
+        # Default from global settings if configured. Prefer the new
+        # per-mode location; fall back to legacy flat keys.
         global_settings = load_settings()
         global_data_model = (
+            global_settings.get("runtime", {})
+            .get("modes", {})
+            .get("hybrid", {})
+            .get("models", {})
+            .get("data_agent", {})
+            .get("model", "")
+        ) or (
             global_settings.get("runtime", {})
             .get("models", {})
             .get("data_agent", {})
@@ -365,10 +432,10 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             required=True,
         )
 
-        # Set per-agent overrides
-        models = settings.setdefault("runtime", {}).setdefault("models", {})
-        models["data_agent"] = {"model": private_model, "endpoint": "private"}
-        # tool_builder uses cloud by default in hybrid (doesn't touch raw data)
+        # data_agent + tool_builder are forced-private in hybrid mode
+        # (see _PRIVATE_AGENTS in agents.config).
+        _set_per_agent("data_agent", private_model, "private")
+        _set_per_agent("tool_builder", private_model, "private")
 
         print_success(
             f"Mode: hybrid · Cloud: {cloud_model} · "
