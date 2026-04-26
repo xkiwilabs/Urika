@@ -184,6 +184,19 @@ async def api_create_project(request: Request):
 
     create_project_workspace(project_dir, cfg)
 
+    # Persist any free-text builder instructions the user supplied. The
+    # dashboard's create-project flow doesn't currently invoke the
+    # project_builder agent, so we stash the instructions on disk so a
+    # future builder-agent integration (Phase 13B+) can pick them up
+    # rather than dropping the input on the floor.
+    instructions = (body.get("instructions") or "").strip()
+    if instructions:
+        urika_dir = project_dir / ".urika"
+        urika_dir.mkdir(parents=True, exist_ok=True)
+        (urika_dir / "builder_instructions.txt").write_text(
+            instructions, encoding="utf-8"
+        )
+
     # Persist the privacy_mode in the new project's urika.toml. The
     # workspace writer always writes [project] + [preferences]; we
     # tack on a [privacy] block when the user picked a non-open mode

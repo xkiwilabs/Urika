@@ -444,6 +444,49 @@ def test_create_project_privacy_mode_endpoint_with_blank_url_does_not_pass(
     assert r.status_code == 422
 
 
+def test_create_project_persists_instructions(create_client, tmp_path):
+    """Free-text builder instructions from the New Project modal are
+    captured to <project>/.urika/builder_instructions.txt so a future
+    builder-agent integration can pick them up."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "with-instr",
+            "question": "Q?",
+            "description": "",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "",
+            "instructions": "focus on time series",
+        },
+    )
+    assert r.status_code == 201
+    instr_path = projects_root / "with-instr" / ".urika" / "builder_instructions.txt"
+    assert instr_path.exists()
+    assert instr_path.read_text(encoding="utf-8") == "focus on time series"
+
+
+def test_create_project_no_instructions_no_file(create_client, tmp_path):
+    """When the instructions field is empty, no builder_instructions.txt
+    file is written — empty input means no future opinion to honour."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "no-instr",
+            "question": "Q?",
+            "description": "",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "",
+        },
+    )
+    assert r.status_code == 201
+    instr_path = projects_root / "no-instr" / ".urika" / "builder_instructions.txt"
+    assert not instr_path.exists()
+
+
 def test_create_project_duplicate_name_returns_409(create_client):
     """A second create with the same name fails after the registry sees it."""
     client, _ = create_client

@@ -152,6 +152,16 @@
         </select>
       </div>
 
+      <div class="form-row">
+        <label for="np-instructions">Instructions (optional)</label>
+        <textarea id="np-instructions" name="instructions" rows="3"
+                  placeholder="Steer the project_builder agent — e.g. 'focus on time-series methods'"></textarea>
+        <span class="form-help">
+          Captured for future builder-agent invocation. Not currently
+          consumed by the dashboard's POST /api/projects flow.
+        </span>
+      </div>
+
       <div class="form-row form-row--inline" x-data="{ pmode: 'open' }">
         <label for="np-privacy-mode">Privacy mode</label>
         <select id="np-privacy-mode" name="privacy_mode" x-model="pmode">
