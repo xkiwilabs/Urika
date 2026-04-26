@@ -524,6 +524,15 @@ def global_settings(request: Request) -> HTMLResponse:
     # per-agent endpoint <select>. The implicit ``open`` cloud endpoint
     # is added in-template based on mode constraints.
     defined_endpoint_names = [ep["name"] for ep in named_endpoints]
+    # Private-mode rows pick an endpoint by name and the form auto-derives
+    # the matching ``default_model`` for submission.  Only endpoints with
+    # a ``default_model`` defined are eligible — without one, there is
+    # nothing to populate the model field with.
+    private_endpoint_options = [
+        {"name": ep["name"], "default_model": ep["default_model"]}
+        for ep in named_endpoints
+        if ep.get("default_model")
+    ]
 
     return templates.TemplateResponse(
         "global_settings.html",
@@ -532,6 +541,7 @@ def global_settings(request: Request) -> HTMLResponse:
             # Privacy tab — multi-endpoint editor.
             "named_endpoints": named_endpoints,
             "defined_endpoint_names": defined_endpoint_names,
+            "private_endpoint_options": private_endpoint_options,
             # Models tab
             "runtime_model": runtime.get("model", ""),
             "model_rows": model_rows,
@@ -631,7 +641,16 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     # any user-defined name (private, ollama, vllm_small, ...) shows up
     # as long as the mode allows it.
     _HYBRID_FORCED_PRIVATE = {"data_agent", "tool_builder"}
-    project_named_endpoints = [ep["name"] for ep in get_named_endpoints()]
+    _named_endpoints_full = get_named_endpoints()
+    project_named_endpoints = [ep["name"] for ep in _named_endpoints_full]
+    # Private-mode rows pick an endpoint by name and the form auto-derives
+    # the matching ``default_model`` for submission.  Only endpoints with
+    # a ``default_model`` defined are eligible.
+    private_endpoint_options = [
+        {"name": ep["name"], "default_model": ep["default_model"]}
+        for ep in _named_endpoints_full
+        if ep.get("default_model")
+    ]
 
     def _endpoint_choices_for(agent: str) -> tuple[list[str], bool]:
         # Always sort defined endpoints for stable rendering.
@@ -749,6 +768,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             ),
             "cloud_models": cloud_models,
             "known_cloud_models": KNOWN_CLOUD_MODELS,
+            "private_endpoint_options": private_endpoint_options,
             "notifications": notifications,
             "notif_channels": notifications.get("channels", []) or [],
             "notif_suppress_level": notifications.get("suppress_level", ""),

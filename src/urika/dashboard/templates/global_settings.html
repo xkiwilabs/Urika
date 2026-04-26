@@ -157,85 +157,192 @@
         inherit the matching mode's grid at runtime.
       </span>
 
-      {% for mode_name in ["open", "private", "hybrid"] %}
-        {% set grid = mode_grids[mode_name] %}
-        <div class="privacy-block" x-show="mode === '{{ mode_name }}'" x-cloak>
-          <h4>{{ mode_name|capitalize }} mode</h4>
+      {# ---- Open mode grid ------------------------------------------ #}
+      {# In open mode every agent uses the cloud (Claude) endpoint by
+         definition, so the endpoint column is dropped.  Each row's
+         hidden ``[endpoint]=open`` is still submitted so the server's
+         existing PUT validator (which expects both fields) is satisfied. #}
+      {% set grid = mode_grids["open"] %}
+      <div class="privacy-block" x-show="mode === 'open'" x-cloak>
+        <h4>Open mode</h4>
+        <div class="form-row">
+          <label for="runtime_modes_open_model">Default model for open mode</label>
+          <select id="runtime_modes_open_model"
+                  name="runtime_modes_open_model">
+            {% for m in known_cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == (grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <table class="models-grid">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Model</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in grid.rows %}
+            <tr>
+              <td><code>{{ row.agent }}</code></td>
+              <td>
+                {# Cloud-models dropdown — open mode is always cloud. #}
+                <select name="runtime_modes_open_models[{{ row.agent }}][model]">
+                  {% for m in known_cloud_models %}
+                    <option value="{{ m }}"
+                            {% if m == (row.model or grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+                <input type="hidden"
+                       name="runtime_modes_open_models[{{ row.agent }}][endpoint]"
+                       value="open">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
 
-          <div class="form-row">
-            <label for="runtime_modes_{{ mode_name }}_model">
-              Default model for {{ mode_name }} mode
-            </label>
-            {% if mode_name in ["open", "hybrid"] %}
-              {# Cloud-side default → dropdown of known Claude models.
-                 No '(empty)' option — defaults to claude-opus-4-7
-                 (the best available model on a fresh install). #}
-              <select id="runtime_modes_{{ mode_name }}_model"
-                      name="runtime_modes_{{ mode_name }}_model">
-                {% for m in known_cloud_models %}
-                  <option value="{{ m }}"
-                          {% if m == (grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
-                {% endfor %}
-              </select>
-            {% else %}
-              {# Private mode → free-text (local server model names vary). #}
-              <input type="text"
-                     id="runtime_modes_{{ mode_name }}_model"
-                     name="runtime_modes_{{ mode_name }}_model"
-                     value="{{ grid.default_model }}"
-                     placeholder="(set local model name, e.g. qwen3:14b)">
-            {% endif %}
-          </div>
-
+      {# ---- Private mode grid --------------------------------------- #}
+      {# In private mode every agent uses a private endpoint by
+         definition, so the endpoint column is dropped.  Per-agent
+         model fields become a single dropdown of the private endpoints
+         defined on the Privacy tab — its option value is the endpoint
+         name and its visible label is "<default_model> (<endpoint_name>)".
+         A hidden ``model`` input is bound (via Alpine) to that
+         endpoint's ``default_model`` so the form submits both fields
+         the API expects. #}
+      {% set grid = mode_grids["private"] %}
+      <div class="privacy-block" x-show="mode === 'private'" x-cloak>
+        <h4>Private mode</h4>
+        <div class="form-row">
+          <label for="runtime_modes_private_model">Default model for private mode</label>
+          <input type="text"
+                 id="runtime_modes_private_model"
+                 name="runtime_modes_private_model"
+                 value="{{ grid.default_model }}"
+                 placeholder="(set local model name, e.g. qwen3:14b)">
+        </div>
+        {% if private_endpoint_options %}
           <table class="models-grid">
             <thead>
               <tr>
                 <th>Agent</th>
-                <th>Model</th>
-                <th>Endpoint</th>
+                <th>Endpoint (model)</th>
               </tr>
             </thead>
             <tbody>
               {% for row in grid.rows %}
-              <tr>
+              {# Per-row Alpine state holds the chosen endpoint name; a
+                 hidden model input is :value-bound to its default_model. #}
+              {% set initial_ep = row.endpoint if row.endpoint in private_endpoint_options|map(attribute='name')|list else private_endpoint_options[0].name %}
+              <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
                 <td><code>{{ row.agent }}</code></td>
                 <td>
-                  <input type="text"
-                         name="runtime_modes_{{ mode_name }}_models[{{ row.agent }}][model]"
-                         value="{{ row.model }}"
-                         placeholder="(use mode default)">
-                </td>
-                <td>
-                  {# Per-agent endpoint dropdown lists every named
-                     endpoint defined on the Privacy tab, plus the
-                     implicit ``open`` cloud endpoint, filtered by the
-                     mode's constraints:
-                       open    — all named endpoints + open
-                       private — all named endpoints (open hidden)
-                       hybrid  — all named endpoints + open, except
-                                 data_agent + tool_builder which are
-                                 forced-private (open hidden) #}
-                  <select name="runtime_modes_{{ mode_name }}_models[{{ row.agent }}][endpoint]">
-                    {% set show_open = (
-                      mode_name == "open"
-                      or (mode_name == "hybrid"
-                          and row.agent not in ["data_agent", "tool_builder"])
-                    ) %}
-                    {% if show_open %}
-                      <option value="open" {% if row.endpoint == "open" %}selected{% endif %}>open</option>
-                    {% endif %}
-                    {% for ep_name in defined_endpoint_names %}
-                      <option value="{{ ep_name }}"
-                              {% if row.endpoint == ep_name %}selected{% endif %}>{{ ep_name }}</option>
+                  <select name="runtime_modes_private_models[{{ row.agent }}][endpoint]"
+                          x-model="ep">
+                    {% for opt in private_endpoint_options %}
+                      <option value="{{ opt.name }}"
+                              {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
                     {% endfor %}
                   </select>
+                  <input type="hidden"
+                         name="runtime_modes_private_models[{{ row.agent }}][model]"
+                         :value="(opts.find(o => o.name === ep) || {}).default_model || ''">
                 </td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
+        {% else %}
+          <p class="form-help">
+            No private endpoints with a default model are defined yet.
+            <a href="#" @click.prevent="active = 'privacy'">Configure endpoints</a>
+            on the Privacy tab first — give each one a default model so
+            it can be selected here.
+          </p>
+        {% endif %}
+      </div>
+
+      {# ---- Hybrid mode grid ---------------------------------------- #}
+      {# Hybrid keeps the endpoint dropdown (open + named privates) but
+         the model widget swaps per row's currently-selected endpoint:
+           endpoint=open      → cloud-models <select>
+           endpoint=<private> → auto-set to that endpoint's default_model
+                                 (rendered as a read-only display + hidden
+                                 input pair).
+         data_agent + tool_builder rows still hide the ``open`` option. #}
+      {% set grid = mode_grids["hybrid"] %}
+      <div class="privacy-block" x-show="mode === 'hybrid'" x-cloak>
+        <h4>Hybrid mode</h4>
+        <div class="form-row">
+          <label for="runtime_modes_hybrid_model">Default model for hybrid mode</label>
+          <select id="runtime_modes_hybrid_model"
+                  name="runtime_modes_hybrid_model">
+            {% for m in known_cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == (grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
         </div>
-      {% endfor %}
+        <table class="models-grid">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Endpoint</th>
+              <th>Model</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in grid.rows %}
+            {% set show_open = row.agent not in ["data_agent", "tool_builder"] %}
+            {% set initial_ep = row.endpoint if (row.endpoint == "open" and show_open) or row.endpoint in defined_endpoint_names else ("open" if show_open else (defined_endpoint_names[0] if defined_endpoint_names else "")) %}
+            <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
+              <td><code>{{ row.agent }}</code></td>
+              <td>
+                <select name="runtime_modes_hybrid_models[{{ row.agent }}][endpoint]"
+                        x-model="ep">
+                  {% if show_open %}
+                    <option value="open" {% if initial_ep == "open" %}selected{% endif %}>open</option>
+                  {% endif %}
+                  {% for ep_name in defined_endpoint_names %}
+                    <option value="{{ ep_name }}"
+                            {% if initial_ep == ep_name %}selected{% endif %}>{{ ep_name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                {# Cloud variant: a free dropdown of known cloud models.
+                   ``:disabled`` keeps the field out of the form
+                   submission whenever the row is on a private endpoint
+                   (otherwise the hidden private-model input below
+                   would be ignored, since both share a name). #}
+                <select name="runtime_modes_hybrid_models[{{ row.agent }}][model]"
+                        x-show="ep === 'open'"
+                        :disabled="ep !== 'open'">
+                  {% for m in known_cloud_models %}
+                    <option value="{{ m }}"
+                            {% if m == (row.model or grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+                {# Private variant: locked to the endpoint's default_model.
+                   Display span + hidden input pair. The hidden input
+                   is ``:disabled`` whenever the row is on the cloud
+                   endpoint so it doesn't shadow the cloud-models
+                   <select> above. #}
+                <span x-show="ep !== 'open'" x-cloak class="form-help"
+                      x-text="(opts.find(o => o.name === ep) || {}).default_model || '(endpoint has no default model)'"></span>
+                <input type="hidden"
+                       name="runtime_modes_hybrid_models[{{ row.agent }}][model]"
+                       :disabled="ep === 'open'"
+                       :value="(opts.find(o => o.name === ep) || {}).default_model || ''">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
 
       <span class="form-help">
         Defaults are written to <code>[runtime.modes.&lt;mode&gt;]</code>

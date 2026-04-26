@@ -125,10 +125,23 @@
     </div>
 
     {# ---- Models tab --------------------------------------------------- #}
-    {# Models grid pulls placeholders from the global per-mode defaults    #}
-    {# (see ~/.urika/settings.toml's [runtime.modes.<project_mode>]).      #}
-    {# Empty fields here mean "inherit from globals"; any value entered    #}
-    {# becomes a project override that wins at runtime.                    #}
+    {# Per-mode shape (matches the global Models tab):
+         open    → no endpoint column; per-agent model is a <select> of
+                   known cloud Claude models.  Hidden ``endpoint=open``
+                   travels with each row for backend compatibility.
+         private → no endpoint column; per-agent ``[endpoint]`` is a
+                   <select> of named private endpoints (label
+                   ``<default_model> (<endpoint_name>)``); a hidden
+                   ``[model]`` is auto-derived (Alpine) from the chosen
+                   endpoint's default_model.
+         hybrid  → endpoint dropdown + conditional model widget:
+                     endpoint=open      → cloud-models <select>
+                     endpoint=<private> → read-only display + hidden
+                                           input bound to that
+                                           endpoint's default_model.
+       Field names stay on the existing scheme (``model[<agent>]`` /
+       ``endpoint[<agent>]``) so the project-settings API doesn't need
+       to grow new conventions. #}
     <div class="tab-panel" x-show="active === 'models'" x-cloak>
       <div class="form-row">
         <label for="runtime_model">Project-wide model override</label>
@@ -151,43 +164,123 @@
         <span class="form-help">Sets <code>[runtime].model</code>. Leave blank to inherit the global per-mode default.</span>
       </div>
 
-      <table class="models-grid">
-        <thead>
-          <tr>
-            <th>Agent</th>
-            <th>Model</th>
-            <th>Endpoint</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in model_rows %}
-          <tr>
-            <td>
-              <code>{{ row.agent }}</code>
-              {% if row.force_private %}
-                <span class="form-help" style="display:block;">private only (hybrid)</span>
-              {% endif %}
-            </td>
-            <td>
-              <input type="text" name="model[{{ row.agent }}]"
-                     value="{{ row.model }}"
-                     placeholder="{{ row.placeholder_model or '(inherit)' }}">
-            </td>
-            <td>
-              <select name="endpoint[{{ row.agent }}]">
-                {# 'inherit' is the no-override sentinel — always allowed #}
-                <option value="inherit"
-                        {% if row.endpoint == "inherit" or not row.endpoint %}selected{% endif %}>inherit</option>
-                {% for choice in row.endpoint_choices %}
-                  <option value="{{ choice }}"
-                          {% if choice == row.endpoint %}selected{% endif %}>{{ choice }}</option>
-                {% endfor %}
-              </select>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      {% if project_privacy_mode == "open" %}
+        {# Open mode: cloud-models <select> per row + hidden endpoint. #}
+        <table class="models-grid">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Model</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in model_rows %}
+            <tr>
+              <td><code>{{ row.agent }}</code></td>
+              <td>
+                <select name="model[{{ row.agent }}]">
+                  <option value="" {% if not row.model %}selected{% endif %}>(inherit{% if row.placeholder_model %}: {{ row.placeholder_model }}{% endif %})</option>
+                  {% for m in known_cloud_models %}
+                    <option value="{{ m }}"
+                            {% if m == row.model %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+                <input type="hidden" name="endpoint[{{ row.agent }}]" value="open">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% elif project_privacy_mode == "private" %}
+        {# Private mode: endpoint <select> drives the (hidden) model. #}
+        {% if private_endpoint_options %}
+          <table class="models-grid">
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Endpoint (model)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in model_rows %}
+              {% set initial_ep = row.endpoint if row.endpoint in private_endpoint_options|map(attribute='name')|list else private_endpoint_options[0].name %}
+              <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
+                <td><code>{{ row.agent }}</code></td>
+                <td>
+                  <select name="endpoint[{{ row.agent }}]" x-model="ep">
+                    {% for opt in private_endpoint_options %}
+                      <option value="{{ opt.name }}"
+                              {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
+                    {% endfor %}
+                  </select>
+                  <input type="hidden" name="model[{{ row.agent }}]"
+                         :value="(opts.find(o => o.name === ep) || {}).default_model || ''">
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="form-help">
+            No private endpoints with a default model are defined yet.
+            <a href="#" @click.prevent="active = 'privacy'">Configure endpoints</a>
+            on the Privacy tab first — give each one a default model so
+            it can be selected here.
+          </p>
+        {% endif %}
+      {% else %}
+        {# Hybrid mode: endpoint dropdown + conditional model widget. #}
+        <table class="models-grid">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Endpoint</th>
+              <th>Model</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in model_rows %}
+            {% set initial_ep = row.endpoint if row.endpoint and row.endpoint != "inherit" else (row.endpoint_choices[0] if row.endpoint_choices else "") %}
+            <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
+              <td>
+                <code>{{ row.agent }}</code>
+                {% if row.force_private %}
+                  <span class="form-help" style="display:block;">private only (hybrid)</span>
+                {% endif %}
+              </td>
+              <td>
+                <select name="endpoint[{{ row.agent }}]" x-model="ep">
+                  {% for choice in row.endpoint_choices %}
+                    <option value="{{ choice }}"
+                            {% if choice == initial_ep %}selected{% endif %}>{{ choice }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                {# Cloud variant: free dropdown of known cloud models.
+                   ``:disabled`` keeps it out of the form submission
+                   whenever the row is set to a private endpoint. #}
+                <select name="model[{{ row.agent }}]"
+                        x-show="ep === 'open'"
+                        :disabled="ep !== 'open'">
+                  <option value="" {% if not row.model %}selected{% endif %}>(inherit{% if row.placeholder_model %}: {{ row.placeholder_model }}{% endif %})</option>
+                  {% for m in known_cloud_models %}
+                    <option value="{{ m }}"
+                            {% if m == row.model %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+                {# Private variant: locked to the endpoint's default_model. #}
+                <span x-show="ep !== 'open'" x-cloak class="form-help"
+                      x-text="(opts.find(o => o.name === ep) || {}).default_model || '(endpoint has no default model)'"></span>
+                <input type="hidden" name="model[{{ row.agent }}]"
+                       :disabled="ep === 'open'"
+                       :value="(opts.find(o => o.name === ep) || {}).default_model || ''">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
       <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.  Placeholders show the global per-mode default for the project's current mode.</span>
     </div>
 

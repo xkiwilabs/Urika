@@ -78,54 +78,81 @@ def test_global_settings_privacy_tab_multi_endpoint_editor(settings_client, tmp_
     assert 'name="privacy_private_key_env"' not in body
 
 
-def test_global_settings_models_tab_has_per_mode_grids(settings_client):
-    """Models tab renders three grids (open / private / hybrid), each
-    with a default-model field + per-agent rows.  Form names follow the
-    new bracketed scheme: ``runtime_modes_<mode>_model`` and
-    ``runtime_modes_<mode>_models[<agent>][model|endpoint]``."""
+def test_global_settings_models_tab_has_per_mode_grids(settings_client, tmp_path):
+    """Models tab renders three grids (open / private / hybrid).
+
+    Per the per-mode shape redesign:
+      * Open mode rows submit ``[model]`` (cloud-models <select>) plus
+        a hidden ``[endpoint]=open``.  No endpoint <select>.
+      * Private mode rows submit ``[endpoint]`` (a <select> of named
+        private endpoints) plus a hidden ``[model]`` derived (via
+        Alpine) from the chosen endpoint's default_model.
+      * Hybrid mode rows submit BOTH ``[endpoint]`` and ``[model]``
+        (the model widget swaps per chosen endpoint).
+    """
+    # Pre-seed a private endpoint with a default_model so the private
+    # grid actually renders the per-agent rows (it shows an empty-state
+    # otherwise).
+    (tmp_path / "home" / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+        'default_model = "qwen3:14b"\n',
+        encoding="utf-8",
+    )
     body = settings_client.get("/settings").text
-    # Sub-tabs (UI-only; not posted to the server). Replaced the old
-    # mode-picker dropdown.
+    # Sub-tabs (UI-only; not posted to the server).
     assert ">Open</button>" in body
     assert ">Private</button>" in body
     assert ">Hybrid</button>" in body
     # One default-model field per mode.
     for mode_name in ("open", "private", "hybrid"):
         assert f'name="runtime_modes_{mode_name}_model"' in body
-    # Per-agent rows under each mode use the bracketed naming convention.
-    for mode_name in ("open", "private", "hybrid"):
-        for agent in (
-            "planning_agent",
-            "task_agent",
-            "evaluator",
-            "advisor_agent",
-            "tool_builder",
-            "literature_agent",
-            "presentation_agent",
-            "report_agent",
-            "project_builder",
-            "data_agent",
-            "finalizer",
-        ):
-            assert (
-                f'name="runtime_modes_{mode_name}_models[{agent}][model]"'
-                in body
-            )
-            assert (
-                f'name="runtime_modes_{mode_name}_models[{agent}][endpoint]"'
-                in body
-            )
+    agents = (
+        "planning_agent",
+        "task_agent",
+        "evaluator",
+        "advisor_agent",
+        "tool_builder",
+        "literature_agent",
+        "presentation_agent",
+        "report_agent",
+        "project_builder",
+        "data_agent",
+        "finalizer",
+    )
+    # Open mode: each row sends a model field + hidden endpoint.
+    for agent in agents:
+        assert f'name="runtime_modes_open_models[{agent}][model]"' in body
+        assert f'name="runtime_modes_open_models[{agent}][endpoint]"' in body
+    # Private mode: each row sends an endpoint + (Alpine-derived) model.
+    for agent in agents:
+        assert f'name="runtime_modes_private_models[{agent}][model]"' in body
+        assert (
+            f'name="runtime_modes_private_models[{agent}][endpoint]"' in body
+        )
+    # Hybrid mode: each row sends both endpoint and model.
+    for agent in agents:
+        assert f'name="runtime_modes_hybrid_models[{agent}][model]"' in body
+        assert f'name="runtime_modes_hybrid_models[{agent}][endpoint]"' in body
 
 
-def _seed_private_endpoint(tmp_path):
+def _seed_private_endpoint(tmp_path, *, with_default_model: bool = True):
     """Pre-seed ~/.urika/settings.toml with a single ``private`` endpoint
-    so the per-agent endpoint dropdowns have a value to render."""
-    (tmp_path / "home" / "settings.toml").write_text(
+    so the per-agent endpoint dropdowns have a value to render.
+
+    ``with_default_model`` controls whether the endpoint also gets a
+    ``default_model`` — required for the private-mode grid to render
+    its per-agent rows (the grid shows an empty-state otherwise).
+    """
+    body = (
         '[privacy.endpoints.private]\n'
         'base_url = "http://localhost:11434"\n'
-        'api_key_env = ""\n',
-        encoding="utf-8",
+        'api_key_env = ""\n'
     )
+    if with_default_model:
+        body += 'default_model = "qwen3:14b"\n'
+    (tmp_path / "home" / "settings.toml").write_text(body, encoding="utf-8")
 
 
 def test_global_settings_models_tab_hybrid_forces_private_for_data_and_tool_builder(
@@ -157,7 +184,7 @@ def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
     settings_client, tmp_path
 ):
     """In the private grid, every agent's endpoint dropdown offers ONLY
-    'private' — the cloud option is hidden."""
+    private endpoints — the cloud option never appears."""
     import re
 
     _seed_private_endpoint(tmp_path)
@@ -211,25 +238,120 @@ def test_global_settings_models_hybrid_default_model_is_select(settings_client):
     assert 'value="claude-opus-4-7"' in block
 
 
-def test_global_settings_models_per_agent_model_field_stays_free_text(
+def test_global_settings_models_open_mode_per_agent_model_is_cloud_select(
     settings_client,
 ):
-    """Per-agent model fields remain free-text in every mode — the user
-    might pick a custom-named cloud model OR a local model name that
-    isn't in any fixed list."""
+    """Open mode rows are all cloud (no endpoint column).  Each row's
+    model field is a <select> of known cloud Claude models — the user
+    is always picking a Claude variant in open mode."""
     import re
 
     body = settings_client.get("/settings").text
-    for mode_name in ("open", "private", "hybrid"):
-        m = re.search(
-            r'<input[^>]*type="text"[^>]*name="runtime_modes_'
-            + mode_name
-            + r'_models\[task_agent\]\[model\]"',
-            body,
-        )
-        assert m is not None, (
-            f"per-agent model field for {mode_name}/task_agent should be text input"
-        )
+    m = re.search(
+        r'<select[^>]*name="runtime_modes_open_models\[task_agent\]\[model\]"[^>]*>(.*?)</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None, (
+        "open-mode per-agent model field should be a <select> of cloud models"
+    )
+    block = m.group(1)
+    assert 'value="claude-opus-4-7"' in block
+    assert 'value="claude-sonnet-4-5"' in block
+    assert 'value="claude-haiku-4-5"' in block
+
+
+def test_global_settings_models_open_mode_drops_endpoint_dropdown(
+    settings_client,
+):
+    """In open mode every agent uses the cloud endpoint by definition,
+    so the endpoint column is gone and a hidden ``[endpoint]=open``
+    travels with each row instead."""
+    import re
+
+    body = settings_client.get("/settings").text
+    # Hidden input present, value "open".
+    m = re.search(
+        r'<input[^>]*type="hidden"[^>]*name="runtime_modes_open_models\[task_agent\]\[endpoint\]"[^>]*value="open"',
+        body,
+    )
+    assert m is not None
+    # No <select> for the open-mode endpoint — the column has been
+    # dropped on the open grid.
+    m_select = re.search(
+        r'<select[^>]*name="runtime_modes_open_models\[task_agent\]\[endpoint\]"',
+        body,
+    )
+    assert m_select is None
+
+
+def test_global_settings_models_private_mode_drops_endpoint_column(
+    settings_client, tmp_path
+):
+    """Private mode also drops the endpoint column.  The model select
+    IS the endpoint chooser — its option values are endpoint names and
+    its labels are ``<default_model> (<endpoint_name>)``."""
+    import re
+
+    (tmp_path / "home" / "settings.toml").write_text(
+        '[privacy.endpoints.private]\n'
+        'base_url = "http://localhost:11434"\n'
+        'api_key_env = ""\n'
+        'default_model = "qwen3:14b"\n',
+        encoding="utf-8",
+    )
+    body = settings_client.get("/settings").text
+    m = re.search(
+        r'<select[^>]*name="runtime_modes_private_models\[task_agent\]\[endpoint\]"[^>]*>(.*?)</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None
+    block = m.group(1)
+    # Option label is "<default_model> (<endpoint_name>)".
+    assert "qwen3:14b (private)" in block
+    # The matching hidden model input is bound via Alpine to the
+    # chosen endpoint's default_model.
+    assert (
+        'name="runtime_modes_private_models[task_agent][model]"' in body
+    )
+
+
+def test_global_settings_models_private_mode_empty_state_when_no_endpoints(
+    settings_client,
+):
+    """When no private endpoints have a default_model defined, the
+    private grid renders an empty state pointing at the Privacy tab."""
+    body = settings_client.get("/settings").text
+    # Empty-state phrase + a "Configure endpoints" link to the Privacy tab.
+    assert "No private endpoints" in body
+    assert "Configure endpoints" in body
+
+
+def test_global_settings_models_hybrid_row_has_alpine_state(
+    settings_client, tmp_path
+):
+    """Hybrid rows carry an Alpine ``x-data`` block whose ``ep`` field
+    drives the conditional model widget (cloud-models <select> vs
+    auto-populated read-only display)."""
+    import re
+
+    _seed_private_endpoint(tmp_path)
+    body = settings_client.get("/settings").text
+    # Alpine state declared per row — task_agent is non-forced, so it
+    # will at minimum carry the ``ep`` field initialised from the saved
+    # value (or "open" by default).
+    m = re.search(
+        r'<tr[^>]*x-data=\'{ ep:[^\']*\'[^>]*>\s*<td><code>task_agent</code></td>',
+        body,
+    )
+    assert m is not None
+    # The hybrid row's model widget pair: a cloud-models <select> AND
+    # a hidden input — Alpine ``:disabled`` keeps only the active one
+    # in the form submission.
+    assert (
+        'name="runtime_modes_hybrid_models[task_agent][model]"' in body
+    )
 
 
 def test_global_settings_models_private_default_model_is_text(settings_client):
@@ -252,17 +374,17 @@ def test_global_settings_models_private_default_model_is_text(settings_client):
     assert m_input is not None
 
 
-def test_global_settings_models_tab_open_mode_offers_both_endpoints(
+def test_global_settings_models_tab_hybrid_mode_offers_both_endpoints(
     settings_client, tmp_path
 ):
-    """Open mode's per-agent endpoint dropdown offers both 'open' and
-    'private' when the user has defined a ``private`` endpoint."""
+    """Hybrid mode keeps the endpoint dropdown — non-forced agents
+    can pick either ``open`` or any defined private endpoint."""
     import re
 
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     m = re.search(
-        r'name="runtime_modes_open_models\[task_agent\]\[endpoint\]".*?</select>',
+        r'name="runtime_modes_hybrid_models\[task_agent\]\[endpoint\]".*?</select>',
         body,
         flags=re.DOTALL,
     )
@@ -272,26 +394,29 @@ def test_global_settings_models_tab_open_mode_offers_both_endpoints(
     assert 'value="private"' in block
 
 
-def test_global_settings_models_tab_open_mode_lists_all_named_endpoints(
+def test_global_settings_models_tab_hybrid_mode_lists_all_named_endpoints(
     settings_client, tmp_path
 ):
-    """When multiple named endpoints are defined, the open-mode per-agent
-    dropdown lists every one of them (alongside the implicit ``open``)."""
+    """When multiple named endpoints are defined, the hybrid-mode
+    per-agent dropdown lists every one of them (alongside ``open``
+    for non-forced agents)."""
     import re
 
     (tmp_path / "home" / "settings.toml").write_text(
         '[privacy.endpoints.private]\n'
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
+        'default_model = "qwen3:14b"\n'
         '\n'
         '[privacy.endpoints.ollama]\n'
         'base_url = "http://localhost:11435"\n'
-        'api_key_env = ""\n',
+        'api_key_env = ""\n'
+        'default_model = "llama3:8b"\n',
         encoding="utf-8",
     )
     body = settings_client.get("/settings").text
     m = re.search(
-        r'name="runtime_modes_open_models\[task_agent\]\[endpoint\]".*?</select>',
+        r'name="runtime_modes_hybrid_models\[task_agent\]\[endpoint\]".*?</select>',
         body,
         flags=re.DOTALL,
     )
@@ -305,17 +430,21 @@ def test_global_settings_models_tab_open_mode_lists_all_named_endpoints(
 def test_global_settings_models_tab_private_mode_lists_all_named_endpoints(
     settings_client, tmp_path
 ):
-    """Private mode hides ``open`` but still lists every named endpoint."""
+    """Private mode's per-agent model <select> lists every defined
+    private endpoint (the model field IS the endpoint chooser).  No
+    ``open`` option appears."""
     import re
 
     (tmp_path / "home" / "settings.toml").write_text(
         '[privacy.endpoints.private]\n'
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
+        'default_model = "qwen3:14b"\n'
         '\n'
         '[privacy.endpoints.ollama]\n'
         'base_url = "http://localhost:11435"\n'
-        'api_key_env = ""\n',
+        'api_key_env = ""\n'
+        'default_model = "llama3:8b"\n',
         encoding="utf-8",
     )
     body = settings_client.get("/settings").text
@@ -329,6 +458,9 @@ def test_global_settings_models_tab_private_mode_lists_all_named_endpoints(
     assert 'value="open"' not in block
     assert 'value="private"' in block
     assert 'value="ollama"' in block
+    # Labels carry the default_model in parens.
+    assert "qwen3:14b (private)" in block
+    assert "llama3:8b (ollama)" in block
 
 
 def test_global_settings_preferences_tab_has_expected_fields(settings_client):
