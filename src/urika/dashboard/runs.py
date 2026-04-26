@@ -167,7 +167,7 @@ def spawn_finalize(
     draft: bool = False,
     executable: str | None = None,
 ) -> int:
-    """Spawn ``urika finalize <project> --json`` as a subprocess.
+    """Spawn ``urika finalize <project>`` as a subprocess.
 
     Writes the PID to ``<project>/projectbook/.finalize.lock`` and tees
     stdout to ``<project>/projectbook/finalize.log``. The lock is
@@ -187,10 +187,14 @@ def spawn_finalize(
     log_path = book_dir / "finalize.log"
     lock_path = book_dir / ".finalize.lock"
 
+    # Note: no ``--json`` flag here. ``--json`` would silence the
+    # ``_make_on_message`` callback inside the CLI, suppressing the
+    # tool-use prints that drive the SSE log stream's verbose output.
+    # We don't parse the CLI's stdout — we tee it to a log file — so
+    # text-mode output is fine.
     cmd = _python_cmd(executable) + [
         "finalize",
         project_name,
-        "--json",
     ]
     if instructions:
         cmd.extend(["--instructions", instructions])
@@ -243,7 +247,6 @@ def spawn_report(
         project_name,
         "--experiment",
         experiment_id,
-        "--json",
     ]
     if instructions:
         cmd.extend(["--instructions", instructions])
@@ -292,7 +295,6 @@ def spawn_evaluate(
         "evaluate",
         project_name,
         experiment_id,
-        "--json",
     ]
     if instructions:
         cmd.extend(["--instructions", instructions])
@@ -319,7 +321,7 @@ def spawn_summarize(
     instructions: str = "",
     executable: str | None = None,
 ) -> int:
-    """Spawn ``urika summarize <project> --json`` as a subprocess.
+    """Spawn ``urika summarize <project>`` as a subprocess.
 
     Writes the PID to ``<project>/projectbook/.summarize.lock`` and tees
     stdout to ``<project>/projectbook/summarize.log``. The lock is
@@ -339,7 +341,6 @@ def spawn_summarize(
     cmd = _python_cmd(executable) + [
         "summarize",
         project_name,
-        "--json",
     ]
     if instructions:
         cmd.extend(["--instructions", instructions])
@@ -366,7 +367,7 @@ def spawn_build_tool(
     instructions: str,
     executable: str | None = None,
 ) -> int:
-    """Spawn ``urika build-tool <project> <instructions> --json``.
+    """Spawn ``urika build-tool <project> <instructions>`` as a subprocess.
 
     Writes the PID to ``<project>/tools/.build.lock`` and tees stdout to
     ``<project>/tools/build.log``. The lock is removed when the
@@ -388,7 +389,6 @@ def spawn_build_tool(
         "build-tool",
         project_name,
         instructions,
-        "--json",
     ]
 
     env = _build_env()
@@ -435,7 +435,6 @@ def spawn_present(
         project_name,
         "--experiment",
         experiment_id,
-        "--json",
     ]
     if instructions:
         cmd.extend(["--instructions", instructions])
