@@ -638,3 +638,122 @@ def test_settings_put_notifications_overrides_persist_when_channel_off(
     assert notifs.get("channels", []) == []
     # But the override is preserved
     assert notifs["email"]["extra_to"] == ["alice@example.com"]
+
+
+# ---- Commit 9: server-side endpoint constraint enforcement ----------------
+
+
+def test_settings_put_models_private_mode_strips_open_endpoint(
+    settings_client, tmp_path
+):
+    """In private mode, any per-agent endpoint=open is silently stripped.
+
+    Defensive against form submissions that bypass the UI's restricted
+    dropdown — the loader's runtime semantics make 'open' meaningless
+    in private mode anyway.
+    """
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="private",
+            project_privacy_private_url="http://localhost:11434",
+            **{
+                "model[planning_agent]": "qwen3:14b",
+                "endpoint[planning_agent]": "open",
+            },
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    # endpoint=open is stripped; the model survives.
+    pa = toml.get("runtime", {}).get("models", {}).get("planning_agent", {})
+    assert pa.get("model") == "qwen3:14b"
+    assert pa.get("endpoint") != "open"
+
+
+def test_settings_put_models_hybrid_strips_open_for_data_agent(
+    settings_client, tmp_path
+):
+    """In hybrid mode, data_agent's endpoint=open is silently stripped.
+
+    data_agent is in the forced-private set (alongside tool_builder).
+    """
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="hybrid",
+            project_privacy_hybrid_private_url="http://localhost:11434",
+            **{
+                "model[data_agent]": "qwen3:14b",
+                "endpoint[data_agent]": "open",
+            },
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    da = toml.get("runtime", {}).get("models", {}).get("data_agent", {})
+    assert da.get("model") == "qwen3:14b"
+    assert da.get("endpoint") != "open"
+
+
+def test_settings_put_models_hybrid_strips_open_for_tool_builder(
+    settings_client, tmp_path
+):
+    """In hybrid mode, tool_builder's endpoint=open is silently stripped."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="hybrid",
+            project_privacy_hybrid_private_url="http://localhost:11434",
+            **{
+                "model[tool_builder]": "qwen3:14b",
+                "endpoint[tool_builder]": "open",
+            },
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    tb = toml.get("runtime", {}).get("models", {}).get("tool_builder", {})
+    assert tb.get("model") == "qwen3:14b"
+    assert tb.get("endpoint") != "open"
+
+
+def test_settings_put_models_hybrid_keeps_open_for_other_agents(
+    settings_client, tmp_path
+):
+    """In hybrid mode, non-forced-private agents keep endpoint=open."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="hybrid",
+            project_privacy_hybrid_private_url="http://localhost:11434",
+            **{
+                "model[planning_agent]": "claude-opus-4-7",
+                "endpoint[planning_agent]": "open",
+            },
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    pa = toml.get("runtime", {}).get("models", {}).get("planning_agent", {})
+    assert pa.get("endpoint") == "open"
+
+
+def test_settings_put_models_open_mode_keeps_open_endpoint(
+    settings_client, tmp_path
+):
+    """In open mode, all agents may set endpoint=open (no stripping)."""
+    r = settings_client.put(
+        "/api/projects/alpha/settings",
+        data=_basics(
+            project_privacy_mode="open",
+            **{
+                "model[data_agent]": "claude-opus-4-7",
+                "endpoint[data_agent]": "open",
+            },
+        ),
+    )
+    assert r.status_code == 200
+    toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
+    da = toml.get("runtime", {}).get("models", {}).get("data_agent", {})
+    assert da.get("endpoint") == "open"

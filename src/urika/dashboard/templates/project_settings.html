@@ -65,8 +65,8 @@
   {% call(active) tabs("project-settings", [
     {"id": "basics", "label": "Basics"},
     {"id": "data", "label": "Data"},
-    {"id": "models", "label": "Models"},
     {"id": "privacy", "label": "Privacy"},
+    {"id": "models", "label": "Models"},
     {"id": "notifications", "label": "Notifications"}
   ]) %}
 
@@ -125,13 +125,17 @@
     </div>
 
     {# ---- Models tab --------------------------------------------------- #}
+    {# Models grid pulls placeholders from the global per-mode defaults    #}
+    {# (see ~/.urika/settings.toml's [runtime.modes.<project_mode>]).      #}
+    {# Empty fields here mean "inherit from globals"; any value entered    #}
+    {# becomes a project override that wins at runtime.                    #}
     <div class="tab-panel" x-show="active === 'models'" x-cloak>
       <div class="form-row">
         <label for="runtime_model">Project-wide model override</label>
         <input type="text" id="runtime_model" name="runtime_model"
                value="{{ runtime_model }}"
-               placeholder="claude-opus-4-7">
-        <span class="form-help">Sets <code>[runtime].model</code>. Leave blank to inherit from global settings.</span>
+               placeholder="{{ runtime_model_placeholder }}">
+        <span class="form-help">Sets <code>[runtime].model</code>. Leave blank to inherit the global per-mode default.</span>
       </div>
 
       <table class="models-grid">
@@ -145,14 +149,23 @@
         <tbody>
           {% for row in model_rows %}
           <tr>
-            <td><code>{{ row.agent }}</code></td>
+            <td>
+              <code>{{ row.agent }}</code>
+              {% if row.force_private %}
+                <span class="form-help" style="display:block;">private only (hybrid)</span>
+              {% endif %}
+            </td>
             <td>
               <input type="text" name="model[{{ row.agent }}]"
-                     value="{{ row.model }}" placeholder="(inherit)">
+                     value="{{ row.model }}"
+                     placeholder="{{ row.placeholder_model or '(inherit)' }}">
             </td>
             <td>
               <select name="endpoint[{{ row.agent }}]">
-                {% for choice in endpoint_choices %}
+                {# 'inherit' is the no-override sentinel — always allowed #}
+                <option value="inherit"
+                        {% if row.endpoint == "inherit" or not row.endpoint %}selected{% endif %}>inherit</option>
+                {% for choice in row.endpoint_choices %}
                   <option value="{{ choice }}"
                           {% if choice == row.endpoint %}selected{% endif %}>{{ choice }}</option>
                 {% endfor %}
@@ -162,7 +175,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.</span>
+      <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.  Placeholders show the global per-mode default for the project's current mode.</span>
     </div>
 
     {# ---- Privacy tab (editable, mode is required) -------------------- #}

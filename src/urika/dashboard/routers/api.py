@@ -360,6 +360,23 @@ def _apply_structured_settings(project_path, form) -> None:
 
     # ---- runtime.models.<agent> (per-agent overrides) ----
     # Pull bracketed form fields. Form keys arrive as e.g. "model[task_agent]".
+    #
+    # Server-side endpoint constraint enforcement (defensive — the UI
+    # already restricts these dropdowns):
+    #   private mode → strip endpoint=open from any agent (cloud is
+    #     hidden in private mode; defeats the point otherwise)
+    #   hybrid mode  → strip endpoint=open for data_agent + tool_builder
+    #     (these two are forced-private — see _PRIVATE_AGENTS in
+    #     urika.agents.config)
+    #
+    # We resolve the effective mode from the form (if submitted) or fall
+    # back to the existing TOML's [privacy].mode (or "open" as the
+    # ultimate default — same rule the Privacy tab uses).
+    _effective_mode = (form.get("project_privacy_mode") or "").strip()
+    if _effective_mode not in {"open", "private", "hybrid"}:
+        _effective_mode = (data.get("privacy", {}) or {}).get("mode") or "open"
+    _HYBRID_FORCED_PRIVATE = {"data_agent", "tool_builder"}
+
     new_models: dict[str, dict[str, str]] = {}
     has_model_fields = False
     for key in form.keys():
@@ -382,7 +399,19 @@ def _apply_structured_settings(project_path, form) -> None:
                             f"{sorted(_VALID_ENDPOINTS | {'inherit'})}"
                         ),
                     )
-                row["endpoint"] = endpoint_val
+                # Enforce per-mode endpoint constraints (silently strip
+                # disallowed open endpoints — the UI already prevents
+                # this; the server side is the defensive check).
+                if endpoint_val == "open":
+                    if _effective_mode == "private":
+                        endpoint_val = ""
+                    elif (
+                        _effective_mode == "hybrid"
+                        and agent in _HYBRID_FORCED_PRIVATE
+                    ):
+                        endpoint_val = ""
+                if endpoint_val:
+                    row["endpoint"] = endpoint_val
             if row:
                 new_models[agent] = row
 

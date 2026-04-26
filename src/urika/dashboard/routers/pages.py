@@ -572,20 +572,6 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     runtime_models = runtime_section.get("models", {}) or {}
     notifications = toml_data.get("notifications", {}) or {}
 
-    # Pre-shape per-agent rows for the Models tab so the template stays
-    # logic-light. Each row carries the existing override (if any) so the
-    # form re-populates after a save.
-    model_rows = []
-    for agent in KNOWN_AGENTS:
-        row = runtime_models.get(agent, {}) or {}
-        model_rows.append(
-            {
-                "agent": agent,
-                "model": row.get("model", ""),
-                "endpoint": row.get("endpoint", "inherit"),
-            }
-        )
-
     # Privacy tab: mode is required (no inherit option).  When the
     # project has no [privacy] block, default to ``open`` for the radio.
     # The per-mode fields pull from [privacy.endpoints.private] and
@@ -594,6 +580,56 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     project_privacy_endpoints = project_privacy.get("endpoints", {}) or {}
     project_privacy_private_ep = project_privacy_endpoints.get("private", {}) or {}
     project_privacy_mode = project_privacy.get("mode") or "open"
+
+    # Pre-shape per-agent rows for the Models tab so the template stays
+    # logic-light. Each row carries:
+    #   - agent: agent name
+    #   - model: project override (empty if none)
+    #   - endpoint: project override (empty/'inherit' if none)
+    #   - placeholder_model: global per-mode default model for this agent
+    #   - force_private: True for data_agent + tool_builder when mode=hybrid
+    #   - endpoint_choices: list of allowed endpoint values for this row,
+    #     computed from the project's mode + force_private flag.
+    #
+    # The placeholders surface live-inheritance from the global
+    # [runtime.modes.<project_mode>] block: the user sees what they'd
+    # inherit, and any field they edit becomes a project override.
+    from urika.agents.config import _load_global_per_mode
+
+    global_default_model, global_per_agent = _load_global_per_mode(
+        project_privacy_mode
+    )
+
+    # Endpoint constraints by mode:
+    #   open    → all agents may pick {open, private}
+    #   private → all agents private only (cloud is hidden — defeats the
+    #             point of private mode otherwise)
+    #   hybrid  → data_agent + tool_builder private only; others {open, private}
+    _HYBRID_FORCED_PRIVATE = {"data_agent", "tool_builder"}
+
+    def _endpoint_choices_for(agent: str) -> tuple[list[str], bool]:
+        if project_privacy_mode == "private":
+            return (["private"], False)
+        if project_privacy_mode == "hybrid" and agent in _HYBRID_FORCED_PRIVATE:
+            return (["private"], True)
+        return (["open", "private"], False)
+
+    model_rows = []
+    for agent in KNOWN_AGENTS:
+        row = runtime_models.get(agent, {}) or {}
+        gcfg = global_per_agent.get(agent)
+        placeholder_model = gcfg.model if gcfg else ""
+        choices, force_private = _endpoint_choices_for(agent)
+        model_rows.append(
+            {
+                "agent": agent,
+                "model": row.get("model", ""),
+                "endpoint": row.get("endpoint", "inherit"),
+                "placeholder_model": placeholder_model,
+                "force_private": force_private,
+                "endpoint_choices": choices,
+            }
+        )
 
     # Hybrid mode wires the data_agent override to the private model — mirror
     # the global page so we can re-populate the "private model" field.
@@ -641,6 +677,9 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "endpoint_choices": ENDPOINT_CHOICES,
             "model_rows": model_rows,
             "runtime_model": runtime_section.get("model", ""),
+            "runtime_model_placeholder": (
+                global_default_model or "claude-opus-4-7"
+            ),
             "data_paths_text": data_paths_text,
             "success_criteria_text": success_criteria_text,
             "project_privacy": project_privacy,
