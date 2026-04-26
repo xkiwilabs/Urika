@@ -611,7 +611,60 @@ def _parse_endpoints_form(
 
     Empty-name rows (where the user clicked "+ Add" but never typed a
     name, then submitted) are silently dropped.
+
+    Accepts two equivalent submission shapes:
+      * ``endpoints_json`` — single field carrying a JSON-serialized
+        list of ``{name, base_url, api_key_env, default_model}`` dicts.
+        Used by the dashboard form (Alpine :name= binding inside x-for
+        is brittle; JSON sidesteps the timing).
+      * ``endpoints[<i>][<field>]`` — indexed bracketed names. Kept for
+        manual API callers and tests.
     """
+    # Prefer JSON if the form provides it.
+    json_blob = form.get("endpoints_json")
+    if json_blob is not None:
+        import json
+        try:
+            parsed = json.loads(json_blob) if json_blob else []
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="endpoints_json must be valid JSON")
+        if not isinstance(parsed, list):
+            raise HTTPException(status_code=422, detail="endpoints_json must be a list")
+        rows: list[dict[str, str]] = []
+        seen_names: set[str] = set()
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            if not _ENDPOINT_NAME_RE.match(name):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"endpoint name '{name}' must match ^[a-z0-9_-]+$",
+                )
+            if name in _RESERVED_ENDPOINT_NAMES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"endpoint name '{name}' is reserved (it's the "
+                        "implicit cloud endpoint name)"
+                    ),
+                )
+            if name in seen_names:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"endpoint name '{name}' appears more than once",
+                )
+            seen_names.add(name)
+            rows.append({
+                "name": name,
+                "base_url": (item.get("base_url") or "").strip(),
+                "api_key_env": (item.get("api_key_env") or "").strip(),
+                "default_model": (item.get("default_model") or "").strip(),
+            })
+        return rows, True
+
     # Find every index that appears in the form. We accept any of the
     # four bracketed keys as evidence that the row exists.
     indexed_re = re.compile(r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|default_model)\]$")

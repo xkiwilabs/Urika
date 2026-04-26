@@ -67,9 +67,22 @@
        [privacy.endpoints.<name>] in ~/.urika/settings.toml.  The Models
        tab's per-agent endpoint dropdown lists every endpoint defined
        here (plus the implicit 'open' cloud endpoint).  Mode selection
-       still lives on each project (set at `urika new` time). #}
+       still lives on each project (set at `urika new` time).
+
+       Submission: rather than rely on Alpine :name= bindings inside an
+       x-for template (which has timing edge cases with HTMX form
+       serialization), the entire endpoints array is serialized as
+       JSON into a single hidden #endpoints_json input on form
+       submit. The server's /api/settings handler accepts both the
+       indexed endpoints[<i>][name] shape and the JSON shape. #}
     <div class="tab-panel" x-show="active === 'privacy'"
-         x-data='{ endpoints: {{ named_endpoints | tojson }} }'>
+         x-data='{ endpoints: {{ named_endpoints | tojson }} }'
+         x-init="
+           const form = $el.closest('form');
+           if (form) form.addEventListener('htmx:configRequest', e => {
+             e.detail.parameters['endpoints_json'] = JSON.stringify(endpoints);
+           });
+         ">
       <p class="form-help" style="margin-bottom: var(--space-3);">
         Define one or more named endpoints. Each can be referenced from
         the Models tab to route specific agents through it. The runtime
@@ -83,7 +96,6 @@
           <div class="form-row">
             <label>Name (slug)</label>
             <input type="text"
-                   :name="'endpoints[' + idx + '][name]'"
                    x-model="ep.name"
                    pattern="[a-z0-9_-]+"
                    placeholder="e.g. private, ollama, vllm_small"
@@ -92,21 +104,18 @@
           <div class="form-row">
             <label>Base URL</label>
             <input type="text"
-                   :name="'endpoints[' + idx + '][base_url]'"
                    x-model="ep.base_url"
                    placeholder="http://localhost:11434">
           </div>
           <div class="form-row">
             <label>API key env var (optional)</label>
             <input type="text"
-                   :name="'endpoints[' + idx + '][api_key_env]'"
                    x-model="ep.api_key_env"
                    placeholder="(optional, e.g. INFERENCE_HUB_KEY)">
           </div>
           <div class="form-row">
             <label>Default model (optional)</label>
             <input type="text"
-                   :name="'endpoints[' + idx + '][default_model]'"
                    x-model="ep.default_model"
                    placeholder="e.g. qwen3:14b">
           </div>

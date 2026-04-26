@@ -52,13 +52,16 @@ def test_global_settings_privacy_tab_multi_endpoint_editor(settings_client, tmp_
     # Pre-seeded endpoint surfaces in the Alpine state.
     assert "private" in body
     assert "http://localhost:11434" in body
-    # The Privacy tab uses the new bracketed naming scheme via Alpine's
-    # ``:name`` directive, so the literal ``name="endpoints[..."`` form
-    # field is constructed at render time. Look for the bound attribute.
-    assert ":name=\"'endpoints[' + idx + '][name]'\"" in body
-    assert ":name=\"'endpoints[' + idx + '][base_url]'\"" in body
-    assert ":name=\"'endpoints[' + idx + '][api_key_env]'\"" in body
-    assert ":name=\"'endpoints[' + idx + '][default_model]'\"" in body
+    # The Privacy tab now serializes the endpoints array to a single
+    # JSON field at submit time (avoids Alpine :name= timing edge cases
+    # that prevented the form from including dynamically-added rows).
+    # Each row has x-model bindings on its inputs.
+    assert 'x-model="ep.name"' in body
+    assert 'x-model="ep.base_url"' in body
+    assert 'x-model="ep.api_key_env"' in body
+    assert 'x-model="ep.default_model"' in body
+    # The configRequest hook injects endpoints_json into the request.
+    assert "endpoints_json" in body
     # The "+ Add endpoint" button is present.
     assert "+ Add endpoint" in body
     # Mode picker MUST NOT be on the global Privacy tab any more.
