@@ -664,10 +664,11 @@ def test_global_settings_models_hybrid_mode_three_column_table(
     )
     assert m is not None
     grid = m.group(0)
-    # 3-column header.
-    assert "<th>Agent</th>" in grid
-    assert "<th>Endpoint</th>" in grid
-    assert "<th>Model (Endpoint)</th>" in grid
+    # 3-column header (with explicit per-column widths so endpoint and
+    # model columns balance equally).
+    assert ">Agent</th>" in grid
+    assert ">Endpoint</th>" in grid
+    assert ">Model (Endpoint)</th>" in grid
     # task_agent's Endpoint column is a UI category <select> with two
     # options (open / private) — the visible select has no name= and
     # is x-modeled to the local ``cat`` variable.

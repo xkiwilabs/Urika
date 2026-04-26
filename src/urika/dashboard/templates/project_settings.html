@@ -24,6 +24,7 @@
   .form-help { color: var(--text-muted); font-size: var(--fs-xs); }
   .form-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
   .models-grid { width: 100%; border-collapse: collapse; }
+  .models-grid--hybrid { table-layout: fixed; }
   .models-grid th, .models-grid td {
     padding: var(--space-2);
     border-bottom: 1px solid var(--border);
@@ -250,12 +251,12 @@
            [endpoint] + [model] values via Alpine :value bindings.
            data_agent: locked to "private" (only option, disabled).
            tool_builder: defaults to "private" but user-switchable. #}
-        <table class="models-grid">
+        <table class="models-grid models-grid--hybrid">
           <thead>
             <tr>
-              <th>Agent</th>
-              <th>Endpoint</th>
-              <th>Model (Endpoint)</th>
+              <th style="width: 20%;">Agent</th>
+              <th style="width: 40%;">Endpoint</th>
+              <th style="width: 40%;">Model (Endpoint)</th>
             </tr>
           </thead>
           <tbody>

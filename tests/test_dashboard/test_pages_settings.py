@@ -804,10 +804,11 @@ def test_project_settings_models_hybrid_mode_three_column_table(
     )
     client = TestClient(create_app(project_root=tmp_path))
     body = client.get("/projects/alpha/settings").text
-    # 3-column header.
-    assert "<th>Agent</th>" in body
-    assert "<th>Endpoint</th>" in body
-    assert "<th>Model (Endpoint)</th>" in body
+    # 3-column header (with explicit per-column widths to balance the
+    # Endpoint and Model columns equally).
+    assert ">Agent</th>" in body
+    assert ">Endpoint</th>" in body
+    assert ">Model (Endpoint)</th>" in body
 
     # task_agent: NOT locked. Visible category select has both options.
     m = re.search(
