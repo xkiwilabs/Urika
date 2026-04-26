@@ -55,15 +55,17 @@
       <li class="list-item"
           data-sort-name="{{ m.name }}"
           {% for k, v in m.metrics.items() %}data-sort-{{ k }}="{{ v }}"{% endfor %}>
-        <div class="list-item-main">
-          <div class="list-item-title">{{ m.name | humanize }}</div>
-          <div class="list-item-subtitle">{{ m.description }}</div>
-        </div>
-        <div class="list-item-meta">
-          {% for k, v in m.metrics.items() %}
-            <span class="metric-pill">{{ k }}={% if v is number %}{{ "%.3f"|format(v) }}{% else %}{{ v }}{% endif %}</span>
-          {% endfor %}
-          <span class="tag">{{ m.status }}</span>
+        <div class="list-item-row">
+          <div class="list-item-main">
+            <div class="list-item-title">{{ m.name | humanize }}</div>
+            <div class="list-item-subtitle">{{ m.description }}</div>
+          </div>
+          <div class="list-item-meta">
+            {% for k, v in m.metrics.items() %}
+              <span class="metric-pill">{{ k }}={% if v is number %}{{ "%.3f"|format(v) }}{% else %}{{ v }}{% endif %}</span>
+            {% endfor %}
+            <span class="tag">{{ m.status }}</span>
+          </div>
         </div>
       </li>
     {% endfor %}

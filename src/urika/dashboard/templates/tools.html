@@ -22,12 +22,14 @@
   <ul class="list">
     {% for t in tools %}
       <li class="list-item">
-        <div class="list-item-main">
-          <div class="list-item-title">{{ t.name | humanize }}</div>
-          <div class="list-item-subtitle">{{ t.description }}</div>
-        </div>
-        <div class="list-item-meta">
-          <span class="tag">{{ t.category }}</span>
+        <div class="list-item-row">
+          <div class="list-item-main">
+            <div class="list-item-title">{{ t.name | humanize }}</div>
+            <div class="list-item-subtitle">{{ t.description }}</div>
+          </div>
+          <div class="list-item-meta">
+            <span class="tag">{{ t.category }}</span>
+          </div>
         </div>
       </li>
     {% endfor %}
