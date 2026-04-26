@@ -555,25 +555,20 @@ async def api_global_settings_put(request: Request):
     4. Calls :func:`save_settings` to write the merged dict.
 
     Validation:
-      * ``privacy_mode`` ∈ ``{"open", "private", "hybrid"}``
       * ``default_audience`` ∈ ``VALID_AUDIENCES``
       * ``default_max_turns`` is a positive int
-      * ``private`` mode requires endpoint URL + model
-      * ``hybrid`` mode requires private endpoint URL + private model
+
+    The Privacy tab no longer carries a system-wide default mode — each
+    project picks its own mode at creation.  This handler only persists
+    the private endpoint connection details; per-mode model defaults
+    live on the Models tab.
 
     Returns an HTML fragment for HTMX swap, or JSON if the client sets
     ``Accept: application/json``.
     """
     form = await request.form()
 
-    # ---- Validate privacy mode + audience + max_turns ------------------
-    privacy_mode = (form.get("privacy_mode") or "").strip()
-    if privacy_mode not in _VALID_PRIVACY_MODES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"privacy_mode must be one of {sorted(_VALID_PRIVACY_MODES)}",
-        )
-
+    # ---- Validate audience + max_turns ---------------------------------
     default_audience = (form.get("default_audience") or "").strip()
     if default_audience not in VALID_AUDIENCES:
         raise HTTPException(
@@ -594,73 +589,35 @@ async def api_global_settings_put(request: Request):
             detail="default_max_turns must be > 0",
         )
 
-    # ---- Privacy-mode-specific required fields -------------------------
+    # ---- Privacy tab: endpoint connection details only -----------------
     private_url = (form.get("privacy_private_url") or "").strip()
     private_key_env = (form.get("privacy_private_key_env") or "").strip()
-    private_model = (form.get("privacy_private_model") or "").strip()
-    open_model = (form.get("privacy_open_model") or "").strip()
-    hybrid_cloud_model = (form.get("privacy_hybrid_cloud_model") or "").strip()
-    hybrid_private_url = (form.get("privacy_hybrid_private_url") or "").strip()
-    hybrid_private_key_env = (form.get("privacy_hybrid_private_key_env") or "").strip()
-    hybrid_private_model = (form.get("privacy_hybrid_private_model") or "").strip()
-
-    if privacy_mode == "private":
-        if not private_url:
-            raise HTTPException(
-                status_code=422, detail="private mode requires privacy_private_url"
-            )
-        if not private_model:
-            raise HTTPException(
-                status_code=422, detail="private mode requires privacy_private_model"
-            )
-    elif privacy_mode == "hybrid":
-        if not hybrid_private_url:
-            raise HTTPException(
-                status_code=422,
-                detail="hybrid mode requires privacy_hybrid_private_url",
-            )
-        if not hybrid_private_model:
-            raise HTTPException(
-                status_code=422,
-                detail="hybrid mode requires privacy_hybrid_private_model",
-            )
 
     # ---- Load existing settings and mutate -----------------------------
     s = load_settings()
 
-    # Privacy section
     privacy = s.setdefault("privacy", {})
-    privacy["mode"] = privacy_mode
     endpoints = privacy.setdefault("endpoints", {})
 
     runtime = s.setdefault("runtime", {})
     runtime_models = runtime.setdefault("models", {})
 
-    if privacy_mode == "open":
-        # Cloud model goes to [runtime].model. Clear any private endpoint
-        # entry to keep the file tidy (matches the CLI behavior).
-        if open_model:
-            runtime["model"] = open_model
-        # Don't blow away other endpoints — just leave the section as-is.
-
-    elif privacy_mode == "private":
+    # Persist the private endpoint when the user supplied either a URL
+    # or a key env var.  An empty payload leaves any existing endpoint
+    # untouched — the user can clear it out by removing the section
+    # manually if they really want to.
+    if private_url or private_key_env:
         ep = endpoints.setdefault("private", {})
         ep["base_url"] = private_url
         ep["api_key_env"] = private_key_env
-        if private_model:
-            runtime["model"] = private_model
 
-    elif privacy_mode == "hybrid":
-        if hybrid_cloud_model:
-            runtime["model"] = hybrid_cloud_model
-        ep = endpoints.setdefault("private", {})
-        ep["base_url"] = hybrid_private_url
-        ep["api_key_env"] = hybrid_private_key_env
-        # Wire data_agent → private model (mirrors the CLI hybrid setup).
-        runtime_models["data_agent"] = {
-            "model": hybrid_private_model,
-            "endpoint": "private",
-        }
+    # Drop any stale [privacy].mode that older settings.toml files may
+    # have carried — there is no system-wide default mode any more.
+    privacy.pop("mode", None)
+    if not endpoints:
+        privacy.pop("endpoints", None)
+    if not privacy:
+        s.pop("privacy", None)
 
     # ---- Models tab: top-level runtime_model + per-agent overrides ----
     runtime_model_field = (form.get("runtime_model") or "").strip()
@@ -798,7 +755,6 @@ async def api_global_settings_put(request: Request):
     if "application/json" in accept:
         return JSONResponse(
             {
-                "privacy_mode": privacy_mode,
                 "default_audience": default_audience,
                 "default_max_turns": max_turns,
             }

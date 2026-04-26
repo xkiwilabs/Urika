@@ -451,10 +451,10 @@ def global_settings(request: Request) -> HTMLResponse:
     """
     s = load_settings()
     privacy = s.get("privacy", {})
-    mode = privacy.get("mode", "open")
     endpoints = privacy.get("endpoints", {}) or {}
     private_ep = endpoints.get("private", {}) or {}
     runtime = s.get("runtime", {}) or {}
+    runtime_modes = runtime.get("modes", {}) or {}
     runtime_models = runtime.get("models", {}) or {}
     prefs = s.get("preferences", {}) or {}
     notifications = s.get("notifications", {}) or {}
@@ -467,10 +467,33 @@ def global_settings(request: Request) -> HTMLResponse:
         "claude-haiku-4-5",
     ]
 
-    # In hybrid mode the data_agent override carries the private model.
-    hybrid_data_agent = runtime_models.get("data_agent", {}) or {}
+    # Per-mode per-agent grids (Models tab — full layout in commit 9).
+    # Each mode dict surfaces the default model + per-agent rows so the
+    # template can render three independent grids.
+    mode_grids: dict[str, dict] = {}
+    for mode_name in ("open", "private", "hybrid"):
+        mode_cfg = runtime_modes.get(mode_name, {}) or {}
+        per_agent_models = mode_cfg.get("models", {}) or {}
+        rows = []
+        for agent in KNOWN_AGENTS:
+            row = per_agent_models.get(agent, {}) or {}
+            rows.append(
+                {
+                    "agent": agent,
+                    "model": row.get("model", ""),
+                    "endpoint": row.get("endpoint", "inherit"),
+                }
+            )
+        # Per-mode default model.  Cloud modes fall back to the
+        # claude-opus-4-7 placeholder; private starts blank.
+        default_model = mode_cfg.get("model", "")
+        mode_grids[mode_name] = {
+            "default_model": default_model,
+            "rows": rows,
+        }
 
-    # Per-agent rows for the Models tab, mirroring the project settings page.
+    # Legacy per-agent rows for the Models tab — still used until the
+    # commit 7 redesign replaces the single grid with per-mode grids.
     model_rows = []
     for agent in KNOWN_AGENTS:
         row = runtime_models.get(agent, {}) or {}
@@ -487,27 +510,13 @@ def global_settings(request: Request) -> HTMLResponse:
         "global_settings.html",
         {
             "request": request,
-            # Privacy tab values
-            "privacy_mode": mode,
-            "privacy_open_model": runtime.get("model", "") if mode == "open" else "",
+            # Privacy tab — endpoint config only.
             "privacy_private_url": private_ep.get("base_url", ""),
             "privacy_private_key_env": private_ep.get("api_key_env", ""),
-            "privacy_private_model": (
-                runtime.get("model", "") if mode == "private" else ""
-            ),
-            "privacy_hybrid_cloud_model": (
-                runtime.get("model", "") if mode == "hybrid" else ""
-            ),
-            "privacy_hybrid_private_url": (
-                private_ep.get("base_url", "") if mode == "hybrid" else ""
-            ),
-            "privacy_hybrid_private_key_env": (
-                private_ep.get("api_key_env", "") if mode == "hybrid" else ""
-            ),
-            "privacy_hybrid_private_model": hybrid_data_agent.get("model", ""),
             # Models tab
             "runtime_model": runtime.get("model", ""),
             "model_rows": model_rows,
+            "mode_grids": mode_grids,
             # Preferences tab
             "default_audience": prefs.get("audience", "novice"),
             "default_max_turns": prefs.get("max_turns_per_experiment", 10),

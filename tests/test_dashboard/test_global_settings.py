@@ -33,22 +33,24 @@ def test_global_settings_uses_tabs_macro(settings_client):
     assert "tab-button" in body
 
 
-def test_global_settings_privacy_tab_has_three_mode_blocks(settings_client):
-    """Privacy tab exposes inputs for open / private / hybrid configs."""
+def test_global_settings_privacy_tab_endpoint_only(settings_client):
+    """Privacy tab now exposes just the private endpoint connection
+    details. The default-mode picker and per-mode model fields are gone
+    — mode lives at project creation, per-mode model defaults live on
+    the Models tab."""
     body = settings_client.get("/settings").text
-    # Mode picker
-    assert 'name="privacy_mode"' in body
-    # Open block
-    assert 'name="privacy_open_model"' in body
-    # Private block
+    # Mode picker MUST NOT be on the global Privacy tab any more.
+    assert 'name="privacy_mode"' not in body
+    # Private endpoint URL + key env are the only fields.
     assert 'name="privacy_private_url"' in body
     assert 'name="privacy_private_key_env"' in body
-    assert 'name="privacy_private_model"' in body
-    # Hybrid block
-    assert 'name="privacy_hybrid_cloud_model"' in body
-    assert 'name="privacy_hybrid_private_url"' in body
-    assert 'name="privacy_hybrid_private_key_env"' in body
-    assert 'name="privacy_hybrid_private_model"' in body
+    # Per-mode model fields are gone from this tab.
+    assert 'name="privacy_open_model"' not in body
+    assert 'name="privacy_private_model"' not in body
+    assert 'name="privacy_hybrid_cloud_model"' not in body
+    assert 'name="privacy_hybrid_private_url"' not in body
+    assert 'name="privacy_hybrid_private_key_env"' not in body
+    assert 'name="privacy_hybrid_private_model"' not in body
 
 
 def test_global_settings_models_tab_has_per_agent_rows(settings_client):
@@ -153,98 +155,52 @@ def test_global_settings_auto_enable_checkbox_reflects_saved_value(
 # ---- Privacy tab round-trips -----------------------------------------------
 
 
-def test_global_settings_put_private_mode_writes_endpoint(settings_client, tmp_path):
-    """Mode=private with endpoint URL + model writes [privacy.endpoints.private]."""
+def test_global_settings_put_private_endpoint_writes_section(
+    settings_client, tmp_path
+):
+    """Submitting the private endpoint URL + key env writes
+    [privacy.endpoints.private]. No mode is written to globals."""
     r = settings_client.put(
         "/api/settings",
         data={
-            "privacy_mode": "private",
             "privacy_private_url": "http://localhost:11434",
             "privacy_private_key_env": "",
-            "privacy_private_model": "qwen3",
             "default_audience": "expert",
             "default_max_turns": "10",
         },
     )
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert s["privacy"]["mode"] == "private"
-    assert s["privacy"]["endpoints"]["private"]["base_url"] == "http://localhost:11434"
-    assert s["runtime"]["model"] == "qwen3"
+    assert (
+        s["privacy"]["endpoints"]["private"]["base_url"]
+        == "http://localhost:11434"
+    )
+    # No system-wide default mode is persisted any more.
+    assert "mode" not in s.get("privacy", {})
 
 
-def test_global_settings_put_hybrid_mode_writes_both_blocks(settings_client, tmp_path):
-    """Mode=hybrid writes cloud model + private endpoint config for data agents."""
+def test_global_settings_put_drops_legacy_privacy_mode(settings_client, tmp_path):
+    """Saving never writes [privacy].mode — and an existing legacy
+    value is dropped on the next save."""
+    # Pre-seed with a legacy [privacy].mode that older code wrote
+    (tmp_path / "home" / "settings.toml").write_text(
+        '[privacy]\nmode = "private"\n', encoding="utf-8"
+    )
     r = settings_client.put(
         "/api/settings",
         data={
-            "privacy_mode": "hybrid",
-            "privacy_hybrid_cloud_model": "claude-sonnet-4-5",
-            "privacy_hybrid_private_url": "http://localhost:11434",
-            "privacy_hybrid_private_key_env": "",
-            "privacy_hybrid_private_model": "qwen3",
             "default_audience": "expert",
             "default_max_turns": "10",
         },
     )
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert s["privacy"]["mode"] == "hybrid"
-    assert s["privacy"]["endpoints"]["private"]["base_url"] == "http://localhost:11434"
-    assert s["runtime"]["model"] == "claude-sonnet-4-5"
-    # Hybrid wires data_agent → private model
-    assert s["runtime"]["models"]["data_agent"]["model"] == "qwen3"
-    assert s["runtime"]["models"]["data_agent"]["endpoint"] == "private"
+    assert "mode" not in s.get("privacy", {})
 
 
-def test_global_settings_put_open_mode_writes_cloud_model(settings_client, tmp_path):
-    """Mode=open uses the open_model dropdown for [runtime].model."""
-    r = settings_client.put(
-        "/api/settings",
-        data={
-            "privacy_mode": "open",
-            "privacy_open_model": "claude-sonnet-4-5",
-            "default_audience": "expert",
-            "default_max_turns": "10",
-        },
-    )
-    assert r.status_code == 200
-    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert s["privacy"]["mode"] == "open"
-    assert s["runtime"]["model"] == "claude-sonnet-4-5"
-
-
-def test_global_settings_put_private_missing_url_returns_422(settings_client):
-    """Mode=private with no endpoint URL fails validation."""
-    r = settings_client.put(
-        "/api/settings",
-        data={
-            "privacy_mode": "private",
-            "privacy_private_url": "",
-            "privacy_private_model": "qwen3",
-            "default_audience": "expert",
-            "default_max_turns": "10",
-        },
-    )
-    assert r.status_code == 422
-
-
-def test_global_settings_put_private_missing_model_returns_422(settings_client):
-    """Mode=private with no model fails validation."""
-    r = settings_client.put(
-        "/api/settings",
-        data={
-            "privacy_mode": "private",
-            "privacy_private_url": "http://localhost:11434",
-            "privacy_private_model": "",
-            "default_audience": "expert",
-            "default_max_turns": "10",
-        },
-    )
-    assert r.status_code == 422
-
-
-def test_global_settings_put_invalid_privacy_mode_returns_422(settings_client):
+def test_global_settings_put_ignores_unknown_privacy_mode_field(settings_client):
+    """Old clients posting a privacy_mode= value get ignored, not 422.
+    The field is no longer part of the global form."""
     r = settings_client.put(
         "/api/settings",
         data={
@@ -253,7 +209,7 @@ def test_global_settings_put_invalid_privacy_mode_returns_422(settings_client):
             "default_max_turns": "10",
         },
     )
-    assert r.status_code == 422
+    assert r.status_code == 200
 
 
 # ---- Models tab round-trip --------------------------------------------------
@@ -590,13 +546,12 @@ def test_global_settings_put_returns_json_when_requested(settings_client):
         "/api/settings",
         headers={"accept": "application/json"},
         data={
-            "privacy_mode": "open",
-            "privacy_open_model": "claude-sonnet-4-5",
             "default_audience": "expert",
             "default_max_turns": "10",
         },
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["privacy_mode"] == "open"
+    # privacy_mode is no longer part of the global form / response.
+    assert "privacy_mode" not in body
     assert body["default_max_turns"] == 10

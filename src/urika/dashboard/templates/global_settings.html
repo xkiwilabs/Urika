@@ -63,39 +63,19 @@
   ]) %}
 
     {# ---- Privacy tab -------------------------------------------------- #}
-    <div class="tab-panel" x-show="active === 'privacy'"
-         x-data="{ mode: '{{ privacy_mode }}' }">
-      <div class="form-row">
-        <label for="privacy_mode">Privacy mode</label>
-        <select id="privacy_mode" name="privacy_mode" x-model="mode">
-          {% for m in valid_privacy_modes %}
-            <option value="{{ m }}" {% if m == privacy_mode %}selected{% endif %}>{{ m }}</option>
-          {% endfor %}
-        </select>
-        <span class="form-help">
-          <strong>open</strong> — all agents use the cloud API.
-          <strong>private</strong> — all agents use a local/self-hosted endpoint.
-          <strong>hybrid</strong> — most agents on cloud, data agents private.
-        </span>
-      </div>
+    {# Endpoint config only.  There is no system-wide default privacy mode —
+       each project picks its mode at creation.  Per-mode model defaults live
+       on the Models tab. #}
+    <div class="tab-panel" x-show="active === 'privacy'">
+      <p class="form-help" style="margin-bottom: var(--space-3);">
+        Mode selection lives on each project (set at <code>urika new</code>
+        time). This tab configures the connection details for the
+        <em>private</em> endpoint that private and hybrid projects route
+        agents to.
+      </p>
 
-      {# Open block — visible only when mode == 'open' #}
-      <div class="privacy-block" x-show="mode === 'open'" x-cloak>
-        <h4>Open mode</h4>
-        <div class="form-row">
-          <label for="privacy_open_model">Default cloud model</label>
-          <select id="privacy_open_model" name="privacy_open_model">
-            {% for m in cloud_models %}
-              <option value="{{ m }}"
-                      {% if m == privacy_open_model %}selected{% endif %}>{{ m }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-
-      {# Private block #}
-      <div class="privacy-block" x-show="mode === 'private'" x-cloak>
-        <h4>Private mode</h4>
+      <div class="privacy-block">
+        <h4>Private endpoint</h4>
         <div class="form-row">
           <label for="privacy_private_url">Endpoint URL</label>
           <input type="text" id="privacy_private_url" name="privacy_private_url"
@@ -107,46 +87,6 @@
           <input type="text" id="privacy_private_key_env" name="privacy_private_key_env"
                  value="{{ privacy_private_key_env }}"
                  placeholder="(optional, e.g. INFERENCE_HUB_KEY)">
-        </div>
-        <div class="form-row">
-          <label for="privacy_private_model">Model name</label>
-          <input type="text" id="privacy_private_model" name="privacy_private_model"
-                 value="{{ privacy_private_model }}"
-                 placeholder="qwen3:14b">
-        </div>
-      </div>
-
-      {# Hybrid block #}
-      <div class="privacy-block" x-show="mode === 'hybrid'" x-cloak>
-        <h4>Hybrid mode</h4>
-        <div class="form-row">
-          <label for="privacy_hybrid_cloud_model">Cloud model (most agents)</label>
-          <select id="privacy_hybrid_cloud_model" name="privacy_hybrid_cloud_model">
-            {% for m in cloud_models %}
-              <option value="{{ m }}"
-                      {% if m == privacy_hybrid_cloud_model %}selected{% endif %}>{{ m }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="form-row">
-          <label for="privacy_hybrid_private_url">Private endpoint URL (data agents)</label>
-          <input type="text" id="privacy_hybrid_private_url" name="privacy_hybrid_private_url"
-                 value="{{ privacy_hybrid_private_url }}"
-                 placeholder="http://localhost:11434">
-        </div>
-        <div class="form-row">
-          <label for="privacy_hybrid_private_key_env">Private API key env var</label>
-          <input type="text" id="privacy_hybrid_private_key_env"
-                 name="privacy_hybrid_private_key_env"
-                 value="{{ privacy_hybrid_private_key_env }}"
-                 placeholder="(optional)">
-        </div>
-        <div class="form-row">
-          <label for="privacy_hybrid_private_model">Private model name</label>
-          <input type="text" id="privacy_hybrid_private_model"
-                 name="privacy_hybrid_private_model"
-                 value="{{ privacy_hybrid_private_model }}"
-                 placeholder="qwen3:14b">
         </div>
       </div>
     </div>
