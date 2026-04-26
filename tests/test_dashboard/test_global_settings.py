@@ -170,6 +170,82 @@ def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
         assert 'value="open"' not in block
 
 
+def test_global_settings_models_open_default_model_is_select(settings_client):
+    """Open mode's per-mode default model field is a <select> dropdown
+    of known Claude models — not a free-text input."""
+    import re
+
+    body = settings_client.get("/settings").text
+    # The <select> wraps known cloud model options.
+    m = re.search(
+        r'<select[^>]*name="runtime_modes_open_model"[^>]*>(.*?)</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None, "open-mode default model is not a <select>"
+    block = m.group(1)
+    assert 'value="claude-opus-4-7"' in block
+    assert 'value="claude-sonnet-4-5"' in block
+    assert 'value="claude-haiku-4-5"' in block
+
+
+def test_global_settings_models_hybrid_default_model_is_select(settings_client):
+    """Hybrid mode's per-mode default model field is also a <select>
+    of known Claude models (the cloud-side default)."""
+    import re
+
+    body = settings_client.get("/settings").text
+    m = re.search(
+        r'<select[^>]*name="runtime_modes_hybrid_model"[^>]*>(.*?)</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None, "hybrid-mode default model is not a <select>"
+    block = m.group(1)
+    assert 'value="claude-opus-4-7"' in block
+
+
+def test_global_settings_models_per_agent_model_field_stays_free_text(
+    settings_client,
+):
+    """Per-agent model fields remain free-text in every mode — the user
+    might pick a custom-named cloud model OR a local model name that
+    isn't in any fixed list."""
+    import re
+
+    body = settings_client.get("/settings").text
+    for mode_name in ("open", "private", "hybrid"):
+        m = re.search(
+            r'<input[^>]*type="text"[^>]*name="runtime_modes_'
+            + mode_name
+            + r'_models\[task_agent\]\[model\]"',
+            body,
+        )
+        assert m is not None, (
+            f"per-agent model field for {mode_name}/task_agent should be text input"
+        )
+
+
+def test_global_settings_models_private_default_model_is_text(settings_client):
+    """Private mode's per-mode default model field stays a free-text
+    input — local-server model names vary too much for a fixed list."""
+    import re
+
+    body = settings_client.get("/settings").text
+    # No <select> with this name should exist.
+    m_select = re.search(
+        r'<select[^>]*name="runtime_modes_private_model"',
+        body,
+    )
+    assert m_select is None
+    # A text input does exist.
+    m_input = re.search(
+        r'<input[^>]*type="text"[^>]*name="runtime_modes_private_model"',
+        body,
+    )
+    assert m_input is not None
+
+
 def test_global_settings_models_tab_open_mode_offers_both_endpoints(
     settings_client, tmp_path
 ):

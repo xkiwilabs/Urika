@@ -152,15 +152,24 @@
             <label for="runtime_modes_{{ mode_name }}_model">
               Default model for {{ mode_name }} mode
             </label>
-            <input type="text"
-                   id="runtime_modes_{{ mode_name }}_model"
-                   name="runtime_modes_{{ mode_name }}_model"
-                   value="{{ grid.default_model }}"
-                   {% if mode_name == "private" %}
-                   placeholder="(set local model name, e.g. qwen3:14b)"
-                   {% else %}
-                   placeholder="claude-opus-4-7"
-                   {% endif %}>
+            {% if mode_name in ["open", "hybrid"] %}
+              {# Cloud-side default → dropdown of known Claude models. #}
+              <select id="runtime_modes_{{ mode_name }}_model"
+                      name="runtime_modes_{{ mode_name }}_model">
+                <option value="" {% if not grid.default_model %}selected{% endif %}>(empty)</option>
+                {% for m in known_cloud_models %}
+                  <option value="{{ m }}"
+                          {% if m == grid.default_model %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              {# Private mode → free-text (local server model names vary). #}
+              <input type="text"
+                     id="runtime_modes_{{ mode_name }}_model"
+                     name="runtime_modes_{{ mode_name }}_model"
+                     value="{{ grid.default_model }}"
+                     placeholder="(set local model name, e.g. qwen3:14b)">
+            {% endif %}
           </div>
 
           <table class="models-grid">

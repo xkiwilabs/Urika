@@ -132,9 +132,22 @@
     <div class="tab-panel" x-show="active === 'models'" x-cloak>
       <div class="form-row">
         <label for="runtime_model">Project-wide model override</label>
-        <input type="text" id="runtime_model" name="runtime_model"
-               value="{{ runtime_model }}"
-               placeholder="{{ runtime_model_placeholder }}">
+        {% if project_privacy_mode in ["open", "hybrid"] %}
+          {# Cloud project → dropdown of known Claude models. The
+             empty option means "inherit the global per-mode default". #}
+          <select id="runtime_model" name="runtime_model">
+            <option value="" {% if not runtime_model %}selected{% endif %}>(inherit global default: {{ runtime_model_placeholder }})</option>
+            {% for m in known_cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == runtime_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          {# Private mode → free-text (local server model names vary). #}
+          <input type="text" id="runtime_model" name="runtime_model"
+                 value="{{ runtime_model }}"
+                 placeholder="{{ runtime_model_placeholder }}">
+        {% endif %}
         <span class="form-help">Sets <code>[runtime].model</code>. Leave blank to inherit the global per-mode default.</span>
       </div>
 

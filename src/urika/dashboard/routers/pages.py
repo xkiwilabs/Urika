@@ -23,6 +23,18 @@ from urika.knowledge.store import KnowledgeStore
 
 VALID_PRIVACY_MODES = ["private", "open", "university"]
 
+# Known cloud (Claude) model names surfaced as dropdown choices on
+# both global and project Models tabs.  Mirrors the interactive CLI's
+# ``_CLOUD_MODELS`` list (in ``urika.cli.config``) — any new Claude
+# model the team wants users to pick from the dashboard goes here.
+# Local-server model names stay free-text everywhere because they
+# vary per deployment.
+KNOWN_CLOUD_MODELS = [
+    "claude-opus-4-7",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+]
+
 # The eleven agent roles whose model/endpoint can be overridden per-project.
 # Hardcoded (rather than discovered from the AgentRegistry) so the dashboard
 # stays decoupled from the agent loading machinery.
@@ -551,6 +563,7 @@ def global_settings(request: Request) -> HTMLResponse:
             "valid_privacy_modes": ["open", "private", "hybrid"],
             "valid_audiences": sorted(VALID_AUDIENCES),
             "cloud_models": cloud_models,
+            "known_cloud_models": KNOWN_CLOUD_MODELS,
             "known_agents": KNOWN_AGENTS,
             "endpoint_choices": ENDPOINT_CHOICES,
         },
@@ -735,6 +748,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
                 "model", ""
             ),
             "cloud_models": cloud_models,
+            "known_cloud_models": KNOWN_CLOUD_MODELS,
             "notifications": notifications,
             "notif_channels": notifications.get("channels", []) or [],
             "notif_suppress_level": notifications.get("suppress_level", ""),

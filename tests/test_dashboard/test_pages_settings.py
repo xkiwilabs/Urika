@@ -224,6 +224,134 @@ def test_project_settings_models_hybrid_data_agent_forced_private(
     assert body.count("private only (hybrid)") >= 2
 
 
+def test_project_settings_runtime_model_is_select_in_open_mode(
+    tmp_path, monkeypatch
+):
+    """Project Models tab's project-wide model override is a <select>
+    of known Claude models when the project's mode is ``open``."""
+    import json
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+        '\n'
+        '[privacy]\n'
+        'mode = "open"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+    body = client.get("/projects/alpha/settings").text
+    m = re.search(
+        r'<select[^>]*name="runtime_model"[^>]*>(.*?)</select>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert m is not None, "runtime_model should be a <select> in open mode"
+    block = m.group(1)
+    assert 'value="claude-opus-4-7"' in block
+    assert 'value="claude-sonnet-4-5"' in block
+    assert 'value="claude-haiku-4-5"' in block
+
+
+def test_project_settings_runtime_model_is_text_in_private_mode(
+    tmp_path, monkeypatch
+):
+    """In private mode the project-wide model override stays free-text —
+    local model names don't fit a fixed dropdown."""
+    import json
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+        '\n'
+        '[privacy]\n'
+        'mode = "private"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+    body = client.get("/projects/alpha/settings").text
+    # No <select name="runtime_model"> in private mode.
+    assert re.search(r'<select[^>]*name="runtime_model"', body) is None
+    # A text input exists.
+    assert re.search(
+        r'<input[^>]*type="text"[^>]*name="runtime_model"', body
+    )
+
+
+def test_project_settings_per_agent_model_stays_free_text(
+    tmp_path, monkeypatch
+):
+    """Per-agent model fields stay free-text in every project mode —
+    the user might point at a custom-named cloud model OR a local
+    model that isn't in any fixed list."""
+    import json
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    (proj / "urika.toml").write_text(
+        '[project]\n'
+        'name = "alpha"\n'
+        'question = "q"\n'
+        'mode = "exploratory"\n'
+        'description = ""\n'
+        '\n'
+        '[preferences]\n'
+        'audience = "expert"\n'
+        '\n'
+        '[privacy]\n'
+        'mode = "open"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+    body = client.get("/projects/alpha/settings").text
+    # task_agent's model input is a text input, not a <select>.
+    m = re.search(
+        r'<input[^>]*type="text"[^>]*name="model\[task_agent\]"',
+        body,
+    )
+    assert m is not None
+
+
 def test_project_settings_models_endpoint_dropdown_lists_named_endpoints(
     tmp_path, monkeypatch
 ):
