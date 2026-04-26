@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from urika.core.models import ProjectConfig
-from urika.core.workspace import create_project_workspace, load_project_config
+from urika.core.workspace import (
+    _write_toml,
+    create_project_workspace,
+    load_project_config,
+)
 
 
 class TestCreateProjectWorkspace:
@@ -77,3 +81,83 @@ class TestLoadProjectConfig:
     def test_load_nonexistent(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
             load_project_config(tmp_path / "nope")
+
+
+class TestWriteTomlInheritanceComment:
+    """``_write_toml`` prepends a comment block to project TOMLs whose
+    ``[privacy].mode`` is private or hybrid, explaining that per-agent
+    models and endpoints inherit from globals.  Runtime behavior is
+    unchanged; this is purely documentation for users reading the
+    file directly."""
+
+    def test_private_mode_emits_inheritance_comment(self, tmp_path: Path) -> None:
+        path = tmp_path / "urika.toml"
+        _write_toml(
+            path,
+            {
+                "project": {"name": "p", "mode": "exploratory"},
+                "privacy": {"mode": "private"},
+            },
+        )
+        text = path.read_text()
+        assert "Privacy mode: private" in text
+        assert "settings.toml" in text
+        assert "[runtime.modes.private]" in text
+        assert "[privacy.endpoints.*]" in text
+        # Comment must come before the [project] section.
+        assert text.find("Privacy mode") < text.find("[project]")
+
+    def test_hybrid_mode_emits_inheritance_comment(self, tmp_path: Path) -> None:
+        path = tmp_path / "urika.toml"
+        _write_toml(
+            path,
+            {
+                "project": {"name": "p", "mode": "exploratory"},
+                "privacy": {"mode": "hybrid"},
+            },
+        )
+        text = path.read_text()
+        assert "Privacy mode: hybrid" in text
+        assert "[runtime.modes.hybrid]" in text
+
+    def test_open_mode_no_inheritance_comment(self, tmp_path: Path) -> None:
+        path = tmp_path / "urika.toml"
+        _write_toml(
+            path,
+            {
+                "project": {"name": "p", "mode": "exploratory"},
+                "privacy": {"mode": "open"},
+            },
+        )
+        text = path.read_text()
+        # Open mode never inherits a private endpoint, so the comment
+        # would be misleading. Skip it.
+        assert "Privacy mode" not in text
+
+    def test_no_privacy_block_no_inheritance_comment(self, tmp_path: Path) -> None:
+        path = tmp_path / "urika.toml"
+        _write_toml(
+            path,
+            {"project": {"name": "p", "mode": "exploratory"}},
+        )
+        text = path.read_text()
+        assert "Privacy mode" not in text
+
+    def test_inheritance_comment_does_not_break_toml_parser(
+        self, tmp_path: Path
+    ) -> None:
+        """A TOML file with the comment block must still parse cleanly."""
+        import tomllib
+
+        path = tmp_path / "urika.toml"
+        _write_toml(
+            path,
+            {
+                "project": {"name": "p", "mode": "exploratory"},
+                "privacy": {"mode": "private"},
+            },
+        )
+        with open(path, "rb") as f:
+            parsed = tomllib.load(f)
+        assert parsed["project"]["name"] == "p"
+        assert parsed["privacy"]["mode"] == "private"

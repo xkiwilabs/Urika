@@ -78,8 +78,33 @@ def load_project_config(project_dir: Path) -> ProjectConfig:
 
 
 def _write_toml(path: Path, data: dict) -> None:
-    """Write a dict as TOML. Minimal writer for simple nested dicts."""
+    """Write a dict as TOML. Minimal writer for simple nested dicts.
+
+    When the data carries a ``[privacy].mode`` of ``private`` or
+    ``hybrid``, a comment block is prepended explaining that per-agent
+    models and endpoints are live-inherited from
+    ``~/.urika/settings.toml``.  Pure docs — runtime behavior is
+    unchanged — but it stops users staring at a project urika.toml
+    wondering why it has no ``[runtime.models.*]`` block.
+    """
     lines: list[str] = []
+
+    privacy = data.get("privacy", {}) if isinstance(data, dict) else {}
+    privacy_mode = (
+        privacy.get("mode") if isinstance(privacy, dict) else None
+    )
+    if privacy_mode in ("private", "hybrid"):
+        lines.extend(
+            [
+                f"# Privacy mode: {privacy_mode}. Per-agent models and "
+                "endpoints inherit from",
+                f"# ~/.urika/settings.toml [runtime.modes.{privacy_mode}] "
+                "and [privacy.endpoints.*]",
+                "# unless overridden in this file.",
+                "",
+            ]
+        )
+
     for section, values in data.items():
         lines.append(f"[{section}]")
         if isinstance(values, dict):
