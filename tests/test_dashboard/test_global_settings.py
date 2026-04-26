@@ -286,11 +286,16 @@ def test_global_settings_models_open_default_model_is_select(settings_client):
     assert 'value="claude-haiku-4-5"' in block
 
 
-def test_global_settings_models_hybrid_default_model_is_select(settings_client):
-    """Hybrid mode's per-mode default model field is also a <select>
-    of known Claude models (the cloud-side default)."""
+def test_global_settings_models_hybrid_default_model_is_select(
+    settings_client, tmp_path
+):
+    """Hybrid mode's per-mode default model field is a <select> of
+    known Claude models (the cloud-side default). Hybrid mode is only
+    enabled when at least one private endpoint exists, so we seed
+    one before checking."""
     import re
 
+    _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     m = re.search(
         r'<select[^>]*name="runtime_modes_hybrid_model"[^>]*>(.*?)</select>',
@@ -400,11 +405,13 @@ def test_global_settings_models_private_mode_empty_state_when_no_endpoints(
     settings_client,
 ):
     """When no private endpoints have a default_model defined, the
-    private grid renders an empty state pointing at the Privacy tab."""
+    private grid renders an empty state pointing at the Privacy tab.
+    Same applies to the Hybrid grid."""
     body = settings_client.get("/settings").text
-    # Empty-state phrase + a "Configure endpoints" link to the Privacy tab.
-    assert "No private endpoints" in body
-    assert "Configure endpoints" in body
+    # Empty-state phrasing for both private and hybrid.
+    assert "Private mode is unavailable" in body
+    assert "Hybrid mode is unavailable" in body
+    assert "Add one on the Privacy tab" in body
 
 
 def test_global_settings_models_hybrid_row_has_alpine_state(
@@ -434,24 +441,32 @@ def test_global_settings_models_hybrid_row_has_alpine_state(
     )
 
 
-def test_global_settings_models_private_default_model_is_text(settings_client):
-    """Private mode's per-mode default model field stays a free-text
-    input — local-server model names vary too much for a fixed list."""
+def test_global_settings_models_private_default_is_endpoint_select(
+    settings_client, tmp_path
+):
+    """Private mode's per-mode default field is a <select> of the
+    user's defined private endpoints (label = '<default_model>
+    (<endpoint_name>)', value = the endpoint's default_model). The
+    first defined endpoint is selected by default."""
     import re
 
+    _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
-    # No <select> with this name should exist.
-    m_select = re.search(
-        r'<select[^>]*name="runtime_modes_private_model"',
+    m = re.search(
+        r'<select[^>]*name="runtime_modes_private_model"[^>]*>(.*?)</select>',
         body,
+        flags=re.DOTALL,
     )
-    assert m_select is None
-    # A text input does exist.
+    assert m is not None, "private-mode default is not a <select>"
+    block = m.group(1)
+    # The seeded endpoint shows up with model + endpoint name in the label.
+    assert "qwen3:14b (private)" in block
+    # The legacy text input shape is gone.
     m_input = re.search(
         r'<input[^>]*type="text"[^>]*name="runtime_modes_private_model"',
         body,
     )
-    assert m_input is not None
+    assert m_input is None
 
 
 def test_global_settings_models_tab_hybrid_mode_offers_both_endpoints(

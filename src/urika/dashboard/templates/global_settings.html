@@ -222,15 +222,21 @@
       {% set grid = mode_grids["private"] %}
       <div class="privacy-block" x-show="mode === 'private'" x-cloak>
         <h4>Private mode</h4>
-        <div class="form-row">
-          <label for="runtime_modes_private_model">Default model for private mode</label>
-          <input type="text"
-                 id="runtime_modes_private_model"
-                 name="runtime_modes_private_model"
-                 value="{{ grid.default_model }}"
-                 placeholder="(set local model name, e.g. qwen3:14b)">
-        </div>
         {% if private_endpoint_options %}
+          <div class="form-row">
+            <label for="runtime_modes_private_model">Default endpoint for private mode</label>
+            <select id="runtime_modes_private_model"
+                    name="runtime_modes_private_model">
+              {% for opt in private_endpoint_options %}
+                <option value="{{ opt.default_model }}"
+                        {% if opt.default_model == grid.default_model or (loop.first and not grid.default_model) %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
+              {% endfor %}
+            </select>
+            <span class="form-help">
+              Picks the default model + endpoint for agents in private
+              mode that don't have their own per-agent override below.
+            </span>
+          </div>
           <table class="models-grid">
             <thead>
               <tr>
@@ -268,12 +274,14 @@
             </tbody>
           </table>
         {% else %}
-          <p class="form-help">
-            No private endpoints with a default model are defined yet.
-            <a href="#" @click.prevent="active = 'privacy'">Configure endpoints</a>
-            on the Privacy tab first — give each one a default model so
-            it can be selected here.
-          </p>
+          <div class="empty-state" style="margin-top: var(--space-3);">
+            <p><strong>Private mode is unavailable.</strong></p>
+            <p class="text-muted">
+              Private mode needs at least one named private endpoint with a default model.
+              <a href="#" @click.prevent="active = 'privacy'">Add one on the Privacy tab</a>
+              first.
+            </p>
+          </div>
         {% endif %}
       </div>
 
@@ -291,6 +299,17 @@
       {% set grid = mode_grids["hybrid"] %}
       <div class="privacy-block" x-show="mode === 'hybrid'" x-cloak>
         <h4>Hybrid mode</h4>
+        {% if not private_endpoint_options %}
+        <div class="empty-state" style="margin-top: var(--space-3);">
+          <p><strong>Hybrid mode is unavailable.</strong></p>
+          <p class="text-muted">
+            Hybrid mode mixes cloud and private endpoints — it needs at
+            least one named private endpoint with a default model.
+            <a href="#" @click.prevent="active = 'privacy'">Add one on the Privacy tab</a>
+            first.
+          </p>
+        </div>
+        {% else %}
         <div class="form-row">
           <label for="runtime_modes_hybrid_model">Default model for hybrid mode</label>
           <select id="runtime_modes_hybrid_model"
@@ -392,6 +411,7 @@
             {% endfor %}
           </tbody>
         </table>
+        {% endif %}
       </div>
 
       <span class="form-help">
