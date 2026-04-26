@@ -71,7 +71,11 @@ def docs_index(request: Request) -> HTMLResponse:
             "docs.html",
             {"request": request, "docs": [], "current": None, "body_html": None},
         )
-    first = next((d for d in docs if d["slug"].upper() == "README"), docs[0])
+    # Prefer 01-getting-started; fall back to README; fall back to first.
+    first = next(
+        (d for d in docs if d["slug"] == "01-getting-started"),
+        next((d for d in docs if d["slug"].upper() == "README"), docs[0]),
+    )
     return RedirectResponse(url=f"/docs/{first['slug']}", status_code=307)
 
 

@@ -3,7 +3,17 @@
     <span class="wordmark">URIKA</span>
   </a>
   <nav class="sidebar-nav">
-    {% if project %}
+    {% if docs is defined and docs %}
+      <a class="sidebar-link sidebar-link--back" href="/projects">← Back to projects</a>
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Documentation</div>
+        {% for d in docs %}
+          <a class="sidebar-link"
+             :class="{ 'sidebar-link--active': window.location.pathname === '/docs/{{ d.slug }}' }"
+             href="/docs/{{ d.slug }}">{{ d.label }}</a>
+        {% endfor %}
+      </div>
+    {% elif project %}
       <a class="sidebar-link sidebar-link--back" href="/projects">← Back to projects</a>
       <div class="sidebar-section">
         <div class="sidebar-section-label">{{ project.name | humanize }}</div>
@@ -38,11 +48,13 @@
          href="/settings">Settings</a>
     {% endif %}
   </nav>
+  {% if docs is not defined or not docs %}
   <div class="sidebar-section sidebar-section--bottom">
     <a class="sidebar-link"
        :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/docs') }"
        href="/docs">Documentation</a>
   </div>
+  {% endif %}
   <div class="sidebar-footer">
     <button
       class="btn btn--ghost theme-toggle"

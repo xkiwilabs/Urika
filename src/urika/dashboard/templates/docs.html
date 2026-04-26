@@ -1,28 +1,16 @@
 {% extends "_base.html" %}
-{% block title %}Documentation · Urika{% endblock %}
-{% block heading %}Documentation{% endblock %}
+{% block title %}{% if current %}{{ current.label }} · Documentation · Urika{% else %}Documentation · Urika{% endif %}{% endblock %}
+{% block heading %}{% if current %}{{ current.label }}{% else %}Documentation{% endif %}{% endblock %}
 
 {% block content %}
-<div class="docs-layout">
-  <aside class="docs-nav">
-    {% if docs %}
-      <nav>
-        {% for d in docs %}
-          <a class="docs-link {% if current and d.slug == current.slug %}docs-link--active{% endif %}"
-             href="/docs/{{ d.slug }}">{{ d.label }}</a>
-        {% endfor %}
-      </nav>
-    {% endif %}
-  </aside>
-  <article class="docs-body markdown-body">
-    {% if not docs %}
-      <div class="empty-state">
-        <p>Documentation not available.</p>
-        <p class="text-muted">Docs files weren't found on disk. If you're running Urika from a pip install, the docs are at <a href="https://github.com/yourorg/urika/tree/main/docs">the repo</a>.</p>
-      </div>
-    {% elif current %}
-      {{ body_html | safe }}
-    {% endif %}
+{% if not docs %}
+  <div class="empty-state">
+    <p>Documentation not available.</p>
+    <p class="text-muted">Docs files weren't found on disk. If you're running Urika from a pip install, the docs are at <a href="https://github.com/yourorg/urika/tree/main/docs">the repo</a>.</p>
+  </div>
+{% elif current %}
+  <article class="card markdown-body">
+    {{ body_html | safe }}
   </article>
-</div>
+{% endif %}
 {% endblock %}
