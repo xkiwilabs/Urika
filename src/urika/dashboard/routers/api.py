@@ -223,6 +223,45 @@ async def api_create_project(request: Request):
     return JSONResponse({"name": name, "path": str(project_dir)}, status_code=201)
 
 
+@router.delete("/projects/{name}")
+async def api_delete_project(name: str, request: Request):
+    """Move a registered project to ``~/.urika/trash/`` and unregister it.
+
+    Thin wrapper over :func:`urika.core.project_delete.trash_project`.
+    Active ``.lock`` files anywhere under the project folder block the
+    operation (422). Missing-folder entries are registry-only cleaned
+    up (200 with ``registry_only: true``).
+
+    HTMX callers receive an ``HX-Redirect: /projects`` header so the
+    page navigates back to the project list (which no longer contains
+    the trashed project).
+    """
+    from urika.core.project_delete import (
+        ActiveRunError,
+        ProjectNotFoundError,
+        trash_project,
+    )
+
+    try:
+        result = trash_project(name)
+    except ProjectNotFoundError:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    except ActiveRunError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    payload = {
+        "name": result.name,
+        "trash_path": str(result.trash_path) if result.trash_path else None,
+        "registry_only": result.registry_only,
+    }
+    if request.headers.get("hx-request") == "true":
+        return Response(
+            status_code=200,
+            headers={"HX-Redirect": "/projects"},
+        )
+    return JSONResponse(payload)
+
+
 @router.put("/projects/{name}/settings")
 async def api_project_settings_put(name: str, request: Request):
     """Atomically update project settings and record per-field revisions.
