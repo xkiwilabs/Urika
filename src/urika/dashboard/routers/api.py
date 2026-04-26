@@ -1447,6 +1447,7 @@ async def api_project_finalize(name: str, request: Request):
     instructions = (body.get("instructions") or "").strip()
     audience_raw = (body.get("audience") or "").strip()
     audience = audience_raw or None
+    draft = bool(body.get("draft"))
     if audience and audience not in _FINALIZE_AUDIENCES:
         raise HTTPException(
             status_code=422,
@@ -1457,7 +1458,11 @@ async def api_project_finalize(name: str, request: Request):
     _validate_privacy_endpoint(summary.path)
 
     pid = spawn_finalize(
-        name, summary.path, instructions=instructions, audience=audience
+        name,
+        summary.path,
+        instructions=instructions,
+        audience=audience,
+        draft=draft,
     )
     # The "Finalize project" button on the project home posts via HTMX;
     # on success we want the browser to navigate the whole page to the

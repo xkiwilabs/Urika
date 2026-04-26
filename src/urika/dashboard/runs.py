@@ -142,6 +142,7 @@ def spawn_finalize(
     *,
     instructions: str = "",
     audience: str | None = None,
+    draft: bool = False,
     executable: str | None = None,
 ) -> int:
     """Spawn ``urika finalize <project> --json`` as a subprocess.
@@ -154,6 +155,10 @@ def spawn_finalize(
     (``{"novice", "standard", "expert"}``), which differs from the
     core/models.py ``VALID_AUDIENCES`` set; callers should validate
     against the CLI's set before invoking.
+
+    When ``draft`` is True, ``--draft`` is appended so the finalizer
+    writes interim outputs to ``projectbook/draft/`` instead of
+    overwriting the final outputs.
     """
     book_dir = project_path / "projectbook"
     book_dir.mkdir(parents=True, exist_ok=True)
@@ -172,6 +177,8 @@ def spawn_finalize(
         cmd.extend(["--instructions", instructions])
     if audience:
         cmd.extend(["--audience", audience])
+    if draft:
+        cmd.append("--draft")
 
     env = os.environ.copy()
 

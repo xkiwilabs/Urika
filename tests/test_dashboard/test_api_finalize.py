@@ -41,13 +41,16 @@ def finalize_client(tmp_path: Path, monkeypatch) -> tuple[TestClient, list[dict]
 
     spawn_calls: list[dict] = []
 
-    def fake_spawn(project_name, project_path, *, instructions="", audience=None, **_):
+    def fake_spawn(
+        project_name, project_path, *, instructions="", audience=None, draft=False, **_
+    ):
         spawn_calls.append(
             {
                 "project_name": project_name,
                 "project_path": project_path,
                 "instructions": instructions,
                 "audience": audience,
+                "draft": draft,
             }
         )
         book_dir = project_path / "projectbook"
@@ -116,6 +119,33 @@ def test_finalize_post_accepts_finalize_specific_audience(finalize_client):
     )
     assert r.status_code == 200
     assert spawn_calls[0]["audience"] == "standard"
+
+
+def test_finalize_post_forwards_draft_flag(finalize_client):
+    """The Draft-mode checkbox in the finalize modal must be forwarded
+    to spawn_finalize as draft=True so the spawned subprocess gets
+    --draft and writes to projectbook/draft/."""
+    client, spawn_calls, _ = finalize_client
+    r = client.post(
+        "/api/projects/alpha/finalize",
+        data={"instructions": "", "audience": "novice", "draft": "on"},
+    )
+    assert r.status_code == 200
+    assert spawn_calls
+    assert spawn_calls[0]["draft"] is True
+
+
+def test_finalize_post_no_draft_defaults_false(finalize_client):
+    """When the draft checkbox is left unchecked, spawn_finalize sees
+    draft=False so the subprocess writes to the final outputs."""
+    client, spawn_calls, _ = finalize_client
+    r = client.post(
+        "/api/projects/alpha/finalize",
+        data={"instructions": "", "audience": "novice"},
+    )
+    assert r.status_code == 200
+    assert spawn_calls
+    assert spawn_calls[0]["draft"] is False
 
 
 def test_finalize_post_hx_request_emits_redirect_header(finalize_client):
