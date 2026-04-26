@@ -256,6 +256,59 @@ def cmd_new(session: ReplSession, args: str) -> None:
         click.echo(f"  Loaded project: {new_name}")
 
 
+@command("delete", description="Move a project to trash and unregister it")
+def cmd_delete(session: ReplSession, args: str) -> None:
+    from urika.core.project_delete import (
+        ActiveRunError,
+        ProjectNotFoundError,
+        trash_project,
+    )
+
+    name = args.strip()
+    if not name:
+        click.echo("  Usage: /delete <name>")
+        return
+
+    try:
+        click.confirm(
+            f"  Move project '{name}' to ~/.urika/trash/? "
+            "(files preserved, registry entry removed)",
+            abort=True,
+        )
+    except click.Abort:
+        click.echo("  Aborted.")
+        return
+
+    try:
+        result = trash_project(name)
+    except ProjectNotFoundError:
+        click.echo(f"  Project '{name}' is not registered.")
+        return
+    except ActiveRunError as exc:
+        click.echo(f"  {exc}")
+        return
+
+    if result.registry_only:
+        click.echo(
+            f"  Unregistered '{name}' "
+            f"(folder at {result.original_path} was already missing)."
+        )
+    else:
+        click.echo(f"  Moved '{name}' to {result.trash_path}")
+
+    if session.project_name == name:
+        # User deleted the project they were working in — clear context so
+        # subsequent commands don't try to read a now-trashed directory.
+        if session.notification_bus is not None:
+            try:
+                session.notification_bus.stop()
+            except Exception:
+                pass
+            session.notification_bus = None
+        session.clear_project()
+        click.echo("  Project context cleared. Use /list to pick another.")
+
+
 @command("quit", description="Exit Urika")
 def cmd_quit(session: ReplSession, args: str) -> None:
     session.save_usage()

@@ -4,9 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+import click
+
 from urika.repl_commands import (
     GLOBAL_COMMANDS,
     PROJECT_COMMANDS,
+    cmd_delete,
     cmd_new,
     get_all_commands,
     get_command_names,
@@ -193,3 +196,146 @@ class TestCmdNew:
             cmd_new(session, "")
 
         assert not session.has_project
+
+
+class TestCmdDelete:
+    """Tests for the /delete command handler."""
+
+    def test_empty_args_prints_usage(self, capsys) -> None:
+        session = ReplSession()
+        cmd_delete(session, "")
+        out = capsys.readouterr().out
+        assert "Usage: /delete" in out
+
+    def test_confirms_then_trashes(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        """User confirms 'y'; trash_project is called; success line printed."""
+        session = ReplSession()
+        proj = tmp_path / "foo"
+        proj.mkdir()
+
+        from urika.core.project_delete import TrashResult
+
+        called = {}
+
+        def fake_trash(name):
+            called["name"] = name
+            return TrashResult(
+                name=name,
+                original_path=proj,
+                trash_path=tmp_path / "trash" / "foo-x",
+                registry_only=False,
+            )
+
+        monkeypatch.setattr(
+            "urika.core.project_delete.trash_project", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
+        cmd_delete(session, "foo")
+
+        assert called["name"] == "foo"
+        assert "Moved 'foo' to" in capsys.readouterr().out
+
+    def test_n_aborts_without_calling_trash(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        session = ReplSession()
+        called = {"hit": False}
+
+        def fake_trash(name):
+            called["hit"] = True
+
+        def fake_confirm(*a, **kw):
+            raise click.Abort()
+
+        monkeypatch.setattr(
+            "urika.core.project_delete.trash_project", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", fake_confirm)
+        cmd_delete(session, "foo")
+        assert called["hit"] is False
+        assert "Aborted." in capsys.readouterr().out
+
+    def test_unknown_project_prints_error(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from urika.core.project_delete import ProjectNotFoundError
+
+        session = ReplSession()
+
+        def fake_trash(name):
+            raise ProjectNotFoundError(name)
+
+        monkeypatch.setattr(
+            "urika.core.project_delete.trash_project", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
+        cmd_delete(session, "ghost")
+        assert "not registered" in capsys.readouterr().out
+
+    def test_active_lock_prints_error(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from urika.core.project_delete import ActiveRunError
+
+        session = ReplSession()
+
+        def fake_trash(name):
+            raise ActiveRunError(tmp_path / "exp/.lock")
+
+        monkeypatch.setattr(
+            "urika.core.project_delete.trash_project", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
+        cmd_delete(session, "foo")
+        out = capsys.readouterr().out
+        assert ".lock" in out
+
+    def test_clears_session_when_deleting_loaded_project(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from urika.core.project_delete import TrashResult
+
+        session = ReplSession()
+        session.load_project(tmp_path, "foo")
+        assert session.has_project
+
+        def fake_trash(name):
+            return TrashResult(
+                name=name,
+                original_path=tmp_path,
+                trash_path=tmp_path / "trash" / "foo-x",
+                registry_only=False,
+            )
+
+        monkeypatch.setattr(
+            "urika.core.project_delete.trash_project", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
+        cmd_delete(session, "foo")
+        assert not session.has_project
+        assert "context cleared" in capsys.readouterr().out
+
+    def test_registry_only_message_when_folder_missing(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from urika.core.project_delete import TrashResult
+
+        session = ReplSession()
+        gone = tmp_path / "gone"
+
+        def fake_trash(name):
+            return TrashResult(
+                name=name,
+                original_path=gone,
+                trash_path=None,
+                registry_only=True,
+            )
+
+        monkeypatch.setattr(
+            "urika.core.project_delete.trash_project", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
+        cmd_delete(session, "foo")
+        out = capsys.readouterr().out
+        assert "Unregistered 'foo'" in out
+        assert "already missing" in out
