@@ -38,21 +38,32 @@ def test_docs_index_redirects_to_getting_started_when_present(client_with_docs):
     assert r.headers["location"] == "/docs/01-getting-started"
 
 
-def test_docs_index_falls_back_to_readme_when_no_getting_started(tmp_path, monkeypatch):
+def test_docs_index_falls_back_to_first_numbered_when_no_getting_started(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text("{}")
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
-    (docs_dir / "README.md").write_text("# Overview")
+    (docs_dir / "README.md").write_text("# Overview")  # excluded — repo-level
     (docs_dir / "02-other.md").write_text("# Other")
     from urika.dashboard.routers import docs as docs_router
     monkeypatch.setattr(docs_router, "_docs_dir", lambda: docs_dir)
     app = create_app(project_root=tmp_path)
     client = TestClient(app)
     r = client.get("/docs", follow_redirects=False)
-    assert r.headers["location"] == "/docs/README"
+    assert r.headers["location"] == "/docs/02-other"
+
+
+def test_docs_excludes_readme_from_nav(client_with_docs):
+    """README.md is the repo overview, not a dashboard doc — never shown."""
+    client, _ = client_with_docs
+    r = client.get("/docs/01-getting-started")
+    body = r.text
+    assert "/docs/README" not in body
+    # README content should also not appear via /docs/README
+    r2 = client.get("/docs/README")
+    assert r2.status_code == 404
 
 
 def test_docs_page_renders_md_file(client_with_docs):
@@ -75,9 +86,10 @@ def test_docs_page_lists_all_docs_in_sidebar(client_with_docs):
     )
     assert sidebar_match is not None
     sidebar = sidebar_match.group(1)
-    assert "/docs/README" in sidebar
     assert "/docs/01-getting-started" in sidebar
     assert "/docs/02-other" in sidebar
+    # README is the repo-level overview; never in the dashboard docs nav.
+    assert "/docs/README" not in sidebar
     # Back to projects link at the top of the docs sidebar
     assert "← Back to projects" in sidebar
 

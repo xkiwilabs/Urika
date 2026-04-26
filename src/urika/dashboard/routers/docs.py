@@ -38,21 +38,21 @@ def _docs_dir() -> Path | None:
 
 
 def _list_docs(docs_dir: Path) -> list[dict]:
-    """Return ``[{slug, label, path}]`` for every ``.md`` doc.
+    """Return ``[{slug, label, path}]`` for every numbered ``.md`` doc.
 
     The leading ``NN-`` prefix on filenames orders the list and is
-    stripped from the displayed label; ``README.md`` is relabelled
-    as "Overview" so it doesn't appear as a SHOUTING entry.
+    stripped from the displayed label. ``README.md`` is excluded —
+    it's the repo-level overview, not a dashboard doc.
     """
     out = []
     for p in sorted(docs_dir.glob("*.md")):
         slug = p.stem
+        if slug.upper() == "README":
+            continue
         label = slug
         if len(slug) > 3 and slug[2] == "-" and slug[:2].isdigit():
             label = slug[3:]
         label = label.replace("-", " ").replace("_", " ").capitalize()
-        if slug.upper() == "README":
-            label = "Overview"
         out.append({"slug": slug, "label": label, "path": p})
     return out
 
@@ -71,10 +71,10 @@ def docs_index(request: Request) -> HTMLResponse:
             "docs.html",
             {"request": request, "docs": [], "current": None, "body_html": None},
         )
-    # Prefer 01-getting-started; fall back to README; fall back to first.
+    # Prefer 01-getting-started; fall back to first numbered doc.
     first = next(
         (d for d in docs if d["slug"] == "01-getting-started"),
-        next((d for d in docs if d["slug"].upper() == "README"), docs[0]),
+        docs[0],
     )
     return RedirectResponse(url=f"/docs/{first['slug']}", status_code=307)
 
