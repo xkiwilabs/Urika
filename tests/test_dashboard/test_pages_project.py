@@ -439,24 +439,109 @@ def test_experiments_page_includes_new_experiment_modal(client_with_projects):
     body = r.text
     assert "+ New experiment" in body
     assert "modal-backdrop" in body
-    assert 'name="hypothesis"' in body
-    assert 'name="name"' in body
-    assert 'name="mode"' in body
     assert 'name="audience"' in body
     assert 'name="max_turns"' in body
+    assert 'name="instructions"' in body
     assert 'hx-post="/api/projects/alpha/run"' in body
 
 
-def test_experiments_page_modal_includes_mode_and_audience_options(
+def test_experiments_page_modal_includes_audience_options(
     client_with_projects,
 ):
-    """The modal needs valid_modes / valid_audiences from the route."""
+    """The modal needs valid_audiences from the route."""
     r = client_with_projects.get("/projects/alpha/experiments")
     body = r.text
-    # The fixture sets mode=exploratory and audience=expert; both must
-    # show up as <option> values in the dropdowns.
-    assert 'value="exploratory"' in body
+    # The fixture sets audience=expert; it must show up as an
+    # <option> value in the dropdown.
     assert 'value="expert"' in body
+
+
+def test_new_experiment_modal_has_no_name_field(client_with_projects):
+    """The redesigned modal must not ask for an experiment name — the
+    planning agent picks one during the run, matching ``urika run``."""
+    r = client_with_projects.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    # The old modal had an explicit Experiment-name input; the new one
+    # has no such input at all. ``ne-name`` is the unique id we'd have
+    # used for it, so its absence proves the field is gone.
+    assert 'id="ne-name"' not in body
+    # The form inside the new-experiment modal posts to /api/projects/.../run
+    # and contains no ``name="name"`` field. The page's <input> elements
+    # never use a literal ``name="name"`` attribute outside the old form,
+    # so a global check is sufficient here.
+    assert 'name="name"' not in body
+
+
+def test_new_experiment_modal_has_no_hypothesis_field(client_with_projects):
+    """Hypothesis is derived by the planning agent; the form must not ask."""
+    r = client_with_projects.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="ne-hypothesis"' not in body
+    assert 'name="hypothesis"' not in body
+
+
+def test_new_experiment_modal_has_no_mode_field(client_with_projects):
+    """Mode is project-level, not per-experiment; remove it from the form."""
+    r = client_with_projects.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="ne-mode"' not in body
+    assert 'name="mode"' not in body
+
+
+def test_new_experiment_modal_pre_selects_project_audience(
+    tmp_path: Path, monkeypatch
+):
+    """The Audience dropdown must pre-select the project's configured
+    audience — same pattern as project_home.html."""
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    proj = tmp_path / "alpha"
+    proj.mkdir()
+    # audience = "expert"
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+    r = client.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    # The "expert" option must be selected; "novice" / "standard" must not.
+    assert 'value="expert" selected' in body
+    assert 'value="novice" selected' not in body
+    assert 'value="standard" selected' not in body
+
+
+def test_new_experiment_modal_instructions_label_says_optional(
+    client_with_projects,
+):
+    """Label must literally read ``Instructions (optional)`` so the
+    optionality is visible without reading the placeholder."""
+    r = client_with_projects.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    assert "Instructions (optional)" in r.text
+
+
+def test_new_experiment_modal_advanced_section_is_collapsible(
+    client_with_projects,
+):
+    """The Advanced section must be server-side rendered closed; we
+    detect this by the presence of the Alpine ``showAdvanced: false``
+    state in the page body."""
+    r = client_with_projects.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    assert "showAdvanced: false" in r.text
 
 
 def test_run_log_page_returns_200_and_has_eventsource(client_run_log):

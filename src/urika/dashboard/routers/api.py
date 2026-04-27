@@ -1277,10 +1277,10 @@ async def api_project_run_post(name: str, request: Request):
         raise HTTPException(status_code=404, detail="Unknown project")
 
     # Read the form directly to avoid the path-param/form-field name collision.
+    # The redesigned "+ New experiment" modal mirrors ``urika run``: no name,
+    # no hypothesis, no mode. The planning agent picks a name + hypothesis
+    # during the run, and mode is project-level, not per-experiment.
     form = await request.form()
-    name_field = (form.get("name") or "").strip()
-    hypothesis = (form.get("hypothesis") or "").strip()
-    mode = form.get("mode") or ""
     audience = form.get("audience") or ""
     max_turns = form.get("max_turns") or "10"
     instructions = (form.get("instructions") or "").strip()
@@ -1291,11 +1291,6 @@ async def api_project_run_post(name: str, request: Request):
     review_criteria = bool(form.get("review_criteria"))
     resume = bool(form.get("resume"))
 
-    if mode not in VALID_MODES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"mode must be one of {sorted(VALID_MODES)}",
-        )
     if audience not in VALID_AUDIENCES:
         raise HTTPException(
             status_code=422,
@@ -1309,10 +1304,6 @@ async def api_project_run_post(name: str, request: Request):
         ) from exc
     if max_turns_int <= 0:
         raise HTTPException(status_code=422, detail="max_turns must be > 0")
-    if not name_field:
-        raise HTTPException(status_code=422, detail="name is required")
-    if not hypothesis:
-        raise HTTPException(status_code=422, detail="hypothesis is required")
 
     max_experiments_int: int | None = None
     if max_experiments_raw:
@@ -1349,7 +1340,12 @@ async def api_project_run_post(name: str, request: Request):
     # so a stale .lock isn't left behind.
     _validate_privacy_endpoint(summary.path)
 
-    exp = create_experiment(summary.path, name=name_field, hypothesis=hypothesis)
+    # ``create_experiment`` still takes name + hypothesis as kwargs; the
+    # planning agent fills them in during the run. Pass empty strings so
+    # the experiment dir + experiment.json are still created with the
+    # required keys present (CLI's ``urika run`` does the same — derives
+    # both from the agent's first turn).
+    exp = create_experiment(summary.path, name="", hypothesis="")
     pid = spawn_experiment_run(
         name,
         summary.path,

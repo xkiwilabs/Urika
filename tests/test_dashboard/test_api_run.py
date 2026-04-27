@@ -70,9 +70,6 @@ def test_run_post_creates_experiment_and_spawns(run_client):
         "/api/projects/alpha/run",
         headers={"accept": "application/json"},
         data={
-            "name": "baseline",
-            "hypothesis": "linear models will fit",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -105,9 +102,6 @@ def test_run_post_forwards_optional_flags_to_spawn(run_client):
         "/api/projects/alpha/run",
         headers={"accept": "application/json"},
         data={
-            "name": "baseline",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "7",
             "instructions": "focus on regularized models",
@@ -130,9 +124,6 @@ def test_run_post_forwards_advanced_flags(run_client):
         "/api/projects/alpha/run",
         headers={"accept": "application/json"},
         data={
-            "name": "test",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "be thorough",
@@ -158,9 +149,6 @@ def test_run_post_max_experiments_without_auto_returns_422(run_client):
     r = client.post(
         "/api/projects/alpha/run",
         data={
-            "name": "test",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -179,9 +167,6 @@ def test_run_post_advanced_flags_default_false(run_client):
         "/api/projects/alpha/run",
         headers={"accept": "application/json"},
         data={
-            "name": "test",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -202,9 +187,6 @@ def test_run_post_invalid_max_experiments_returns_422(run_client):
     r = client.post(
         "/api/projects/alpha/run",
         data={
-            "name": "test",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -220,9 +202,6 @@ def test_run_post_returns_html_fragment_by_default(run_client):
     r = client.post(
         "/api/projects/alpha/run",
         data={
-            "name": "baseline",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -242,9 +221,6 @@ def test_run_post_returns_hx_redirect_when_htmx_request(run_client):
         "/api/projects/alpha/run",
         headers={"hx-request": "true"},
         data={
-            "name": "test",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -261,9 +237,6 @@ def test_run_post_404_unknown_project(run_client):
     r = client.post(
         "/api/projects/nonexistent/run",
         data={
-            "name": "x",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -277,9 +250,6 @@ def test_run_post_invalid_max_turns(run_client):
     r = client.post(
         "/api/projects/alpha/run",
         data={
-            "name": "x",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "-1",
             "instructions": "",
@@ -293,27 +263,8 @@ def test_run_post_non_integer_max_turns(run_client):
     r = client.post(
         "/api/projects/alpha/run",
         data={
-            "name": "x",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "not-a-number",
-            "instructions": "",
-        },
-    )
-    assert r.status_code == 422
-
-
-def test_run_post_invalid_mode(run_client):
-    client, _, _ = run_client
-    r = client.post(
-        "/api/projects/alpha/run",
-        data={
-            "name": "x",
-            "hypothesis": "h",
-            "mode": "garbage",
-            "audience": "expert",
-            "max_turns": "5",
             "instructions": "",
         },
     )
@@ -325,9 +276,6 @@ def test_run_post_invalid_audience(run_client):
     r = client.post(
         "/api/projects/alpha/run",
         data={
-            "name": "x",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "alien",
             "max_turns": "5",
             "instructions": "",
@@ -336,20 +284,23 @@ def test_run_post_invalid_audience(run_client):
     assert r.status_code == 422
 
 
-def test_run_post_missing_required_fields(run_client):
-    client, _, _ = run_client
+def test_new_experiment_form_no_longer_requires_name_or_hypothesis(run_client):
+    """The redesigned + New experiment modal matches ``urika run``: no
+    name, no hypothesis, no mode. POST without those fields must succeed
+    — the planning agent populates name/hypothesis during the run, and
+    mode is project-level, not per-experiment."""
+    client, spawn_calls, _ = run_client
     r = client.post(
         "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
         data={
-            "name": "",  # empty
-            "hypothesis": "",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
         },
     )
-    assert r.status_code == 422
+    assert r.status_code == 200
+    assert len(spawn_calls) == 1
 
 
 def test_run_stop_writes_flag(run_client):
@@ -494,9 +445,6 @@ def test_run_post_private_mode_without_endpoint_returns_422(
     r = client.post(
         "/api/projects/alpha/run",
         data={
-            "name": "exp",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -545,9 +493,6 @@ def test_run_post_private_mode_with_endpoint_succeeds(tmp_path: Path, monkeypatc
         "/api/projects/alpha/run",
         headers={"accept": "application/json"},
         data={
-            "name": "exp",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -573,9 +518,6 @@ def test_run_post_when_already_running_redirects_to_log(run_client):
         "/api/projects/alpha/run",
         headers={"hx-request": "true"},
         data={
-            "name": "baseline",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -602,9 +544,6 @@ def test_run_post_when_already_running_returns_409_without_hx(run_client):
     r = client.post(
         "/api/projects/alpha/run",
         data={
-            "name": "baseline",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
@@ -635,9 +574,6 @@ def test_run_post_other_experiment_stale_lock_does_not_block(run_client):
         "/api/projects/alpha/run",
         headers={"accept": "application/json"},
         data={
-            "name": "baseline",
-            "hypothesis": "h",
-            "mode": "exploratory",
             "audience": "expert",
             "max_turns": "5",
             "instructions": "",
