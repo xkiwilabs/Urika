@@ -179,6 +179,12 @@ def _probe_endpoint(url: str) -> tuple[bool, str]:
     import urllib.error
     import urllib.request
 
+    # Bypass any system HTTP(S)_PROXY env vars: private endpoints
+    # (Tailscale, LAN, localhost) almost always need a direct
+    # connection; routing them through a corporate proxy is the wrong
+    # default and the most common cause of "url error: str" failures.
+    no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
     last_reason: str | None = None
 
     for path in ("", "/api/tags", "/v1/models", "/models"):
@@ -192,7 +198,7 @@ def _probe_endpoint(url: str) -> tuple[bool, str]:
             return False, f"invalid url: {type(e).__name__}"
 
         try:
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with no_proxy_opener.open(req, timeout=3) as resp:
                 code = getattr(resp, "status", None) or resp.getcode()
                 if 200 <= code < 300:
                     return True, "OK"
@@ -213,6 +219,12 @@ def _probe_endpoint(url: str) -> tuple[bool, str]:
             elif isinstance(reason, OSError):
                 # Generic OS-level network error — strip path-like info.
                 last_reason = f"network error: {reason.strerror or type(reason).__name__}"
+            elif isinstance(reason, str):
+                # urllib sometimes wraps a plain string (typically from
+                # proxy / handler chain failures). Pass it through —
+                # the message is generally safe and tells the user what
+                # went wrong.
+                last_reason = reason
             else:
                 last_reason = f"url error: {type(reason).__name__}"
         except TimeoutError:

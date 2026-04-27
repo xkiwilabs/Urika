@@ -115,54 +115,51 @@
   {% endif %}
 
   {% call modal('new-experiment', 'New experiment') %}
-    {# The form mirrors ``urika run`` exactly. Name + hypothesis are NOT
-       asked for — the planning agent picks them during the run. Mode is
-       project-level (set on the project home / settings) and isn't
-       per-experiment, so it's not in the form either. #}
+    {# Mirrors ``urika run`` exactly. Name + hypothesis aren't asked
+       for — the planning agent picks them. Mode is project-level. All
+       options are visible (no Advanced collapsible — the user keeps
+       running into the same options every time). Order: turns +
+       toggles → audience → instructions, since the open-ended
+       instructions field is the most attention-heavy and belongs at
+       the end. #}
     <form
+      x-data="{ auto: false }"
       hx-post="/api/projects/{{ project.name }}/run"
       hx-target="#new-experiment-feedback"
       hx-swap="innerHTML"
     >
       <div class="form-row">
+        <label for="ne-max-turns">Max turns</label>
+        <input id="ne-max-turns" name="max_turns" type="number" min="1" value="10">
+      </div>
+
+      <label class="checkbox-row">
+        <input type="checkbox" name="auto" value="on" x-model="auto">
+        <span>Auto mode (no confirmation prompts)</span>
+      </label>
+
+      <div class="form-row" x-show="auto" x-cloak style="margin-left: 1.5rem;">
+        <label for="ne-max-experiments">Max experiments</label>
+        <input id="ne-max-experiments" name="max_experiments" type="number" min="1" value="5">
+      </div>
+
+      <label class="checkbox-row">
+        <input type="checkbox" name="review_criteria" value="on">
+        <span>Review criteria when met</span>
+      </label>
+
+      <label class="checkbox-row">
+        <input type="checkbox" name="resume" value="on">
+        <span>Resume paused/failed experiment</span>
+      </label>
+
+      <div class="form-row" style="margin-top: var(--space-4);">
         <label for="ne-audience">Audience</label>
         <select id="ne-audience" name="audience">
           {% for a in valid_audiences %}
             <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
           {% endfor %}
         </select>
-      </div>
-
-      <div class="form-row" x-data="{ showAdvanced: false, auto: false }">
-        <button type="button" class="btn btn--ghost"
-                @click="showAdvanced = !showAdvanced"
-                :aria-expanded="showAdvanced ? 'true' : 'false'">
-          <span x-text="showAdvanced ? '▾ Advanced' : '▸ Advanced'"></span>
-        </button>
-        <div x-show="showAdvanced" x-cloak style="margin-top: var(--space-3);">
-          <div class="form-row">
-            <label for="ne-max-turns">Max turns</label>
-            <input id="ne-max-turns" name="max_turns" type="number" min="1" value="10">
-          </div>
-
-          <label class="checkbox-row">
-            <input type="checkbox" name="auto" value="on" x-model="auto">
-            <span>Auto mode (no confirmation prompts)</span>
-          </label>
-          <div class="form-row" x-show="auto" x-cloak style="margin-left: 1.5rem;">
-            <label for="ne-max-experiments">Max experiments</label>
-            <input id="ne-max-experiments" name="max_experiments" type="number" min="1" value="5">
-          </div>
-
-          <label class="checkbox-row">
-            <input type="checkbox" name="review_criteria" value="on">
-            <span>Review criteria when met</span>
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" name="resume" value="on">
-            <span>Resume paused/failed experiment</span>
-          </label>
-        </div>
       </div>
 
       <div class="form-row">

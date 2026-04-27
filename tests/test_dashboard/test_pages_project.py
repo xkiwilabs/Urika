@@ -533,15 +533,38 @@ def test_new_experiment_modal_instructions_label_says_optional(
     assert "Instructions (optional)" in r.text
 
 
-def test_new_experiment_modal_advanced_section_is_collapsible(
+def test_new_experiment_modal_shows_all_options_inline(
     client_with_projects,
 ):
-    """The Advanced section must be server-side rendered closed; we
-    detect this by the presence of the Alpine ``showAdvanced: false``
-    state in the page body."""
+    """All run flags are surfaced inline — no Advanced collapsible.
+    Users hit these every run; hiding them behind a toggle just adds
+    a click. The form's only Alpine state is ``auto`` (so the
+    Max experiments input can show conditionally)."""
     r = client_with_projects.get("/projects/alpha/experiments")
     assert r.status_code == 200
-    assert "showAdvanced: false" in r.text
+    body = r.text
+    # No Advanced toggle button.
+    assert "showAdvanced" not in body
+    # All four flag fields render inline.
+    assert 'name="max_turns"' in body
+    assert 'name="auto"' in body
+    assert 'name="max_experiments"' in body
+    assert 'name="review_criteria"' in body
+    assert 'name="resume"' in body
+
+
+def test_new_experiment_modal_audience_above_instructions(client_with_projects):
+    """Audience select must render BEFORE the instructions textarea —
+    instructions is the open-ended attention-heavy field that belongs
+    last. Pin the order so a future template tweak can't regress it."""
+    body = client_with_projects.get("/projects/alpha/experiments").text
+    audience_pos = body.find('id="ne-audience"')
+    instructions_pos = body.find('id="ne-instructions"')
+    assert audience_pos != -1 and instructions_pos != -1
+    assert audience_pos < instructions_pos, (
+        f"audience ({audience_pos}) must appear before instructions "
+        f"({instructions_pos})"
+    )
 
 
 def test_run_log_page_returns_200_and_has_eventsource(client_run_log):
