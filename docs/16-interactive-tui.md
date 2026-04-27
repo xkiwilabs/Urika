@@ -197,6 +197,71 @@ Choosing **Custom settings** lets you configure:
 - **Re-evaluate criteria if met** -- advisor reviews criteria when met, may raise the bar
 
 
+## Session Memory
+
+Urika persists each orchestrator chat session to
+``<project>/.urika/sessions/<id>.json`` so you can pick up a conversation
+later. The TUI/REPL is the canonical write surface; the dashboard
+provides read access via the **Sessions** sidebar tab.
+
+### How sessions are created
+
+Every chat with the orchestrator (whether free-text or a slash command
+that invokes the orchestrator) is part of a session. New sessions start
+when:
+
+- You launch a fresh `urika` (no `--resume`).
+- You explicitly type `/new-session` (planned).
+
+### Resume on launch
+
+```
+urika --resume                    # resume the most recent session for the most recent project
+urika --resume <session_id>       # resume a specific session
+```
+
+When you switch into a project that has a recent session, the REPL
+prints a one-line hint:
+
+```
+Project myproject loaded.
+  Previous session from 2 hours ago: "Why are tree counts so skewed…"
+  Type /resume-session to continue.
+```
+
+Type `/resume-session` (or `/resume-session <id>` for a specific one)
+to load that session's transcript into the current REPL.
+
+### Listing sessions
+
+- TUI/REPL: `/resume` lists recent sessions for the current project,
+  newest first.
+- Dashboard: navigate to **Sessions** in the project sidebar.
+
+### Resume on the dashboard
+
+The dashboard cannot run an interactive REPL. Instead, the **Resume**
+button on a session row links to
+``/projects/<n>/advisor?session_id=<id>``. The advisor page renders the
+prior session's messages as a read-only "Prior session" panel above the
+advisor transcript, so you can see what was discussed before and ask a
+follow-up via the advisor composer. **New advisor exchanges append to
+advisor history, not back to the original orchestrator session** — to
+continue writing into the original session, run
+``urika --resume <session_id>`` in the terminal.
+
+### Session retention
+
+Sessions auto-prune to the most recent **20 per project** when
+``save_session`` is called. Older sessions are deleted from disk.
+
+### Deleting a session
+
+- Dashboard: **Delete** button on each session row.
+- CLI: not yet exposed (planned). For now, manually delete
+  ``<project>/.urika/sessions/<id>.json``.
+
+
 ## Session Usage Tracking
 
 The TUI tracks usage throughout the session:
