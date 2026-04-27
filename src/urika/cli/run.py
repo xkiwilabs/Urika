@@ -629,14 +629,30 @@ def run(
     # advisor before the orchestrator loop so the user sees its output
     # in the same run.log alongside Planning / Task / Evaluator. Skip
     # on resume — the advisor already ran on the original spawn.
+    #
+    # Wrap defensively: if the helper raises (SDK runner state issues,
+    # network blip, parse failure on advisor output, etc.) we log it
+    # and proceed to the orchestrator loop with the original
+    # instructions instead of letting the exception kill the
+    # subprocess. The orchestrator's name-backfill on turn 1 is the
+    # safety net for the experiment naming.
     if advisor_first and not resume:
-        instructions = _run_advisor_first_for_experiment(
-            project_path,
-            project,
-            experiment_id,
-            instructions=instructions,
-            panel=panel,
-        )
+        try:
+            instructions = _run_advisor_first_for_experiment(
+                project_path,
+                project,
+                experiment_id,
+                instructions=instructions,
+                panel=panel,
+            )
+        except Exception as exc:
+            if not json_output:
+                print_step(
+                    "Advisor-first pass failed; continuing to planner",
+                    f"({type(exc).__name__}: {exc})",
+                )
+        if not json_output:
+            print_step("Advisor-first complete — continuing to orchestrator")
 
     # Create pause controller and key listener for ESC-to-pause
     from urika.orchestrator.pause import KeyListener, PauseController

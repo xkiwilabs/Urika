@@ -328,8 +328,32 @@ def _run_advisor_first_for_experiment(
     On any failure (advisor fails, no parseable suggestion, etc.) the
     experiment is left untouched and the original ``instructions`` are
     returned unchanged — the orchestrator's turn-1 name-backfill takes
-    over as the safety net.
+    over as the safety net. The helper NEVER raises out — every path
+    is caught and degrades to "return original instructions".
     """
+    try:
+        return _run_advisor_first_for_experiment_impl(
+            project_path,
+            project_name,
+            experiment_id,
+            instructions=instructions,
+            panel=panel,
+        )
+    except Exception:
+        # Final catch-all so a buggy advisor pass can never kill the
+        # subprocess before the orchestrator loop gets to run.
+        return instructions
+
+
+def _run_advisor_first_for_experiment_impl(
+    project_path: Path,
+    project_name: str,
+    experiment_id: str,
+    *,
+    instructions: str = "",
+    panel: object = None,
+) -> str:
+    """Inner implementation — see ``_run_advisor_first_for_experiment``."""
     import asyncio
     import json
 
