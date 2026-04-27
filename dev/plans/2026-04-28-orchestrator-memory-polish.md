@@ -10,6 +10,13 @@
 
 **Out of scope (decided):** rewriting how sessions are saved, changing the JSON shape, multi-user concurrency, session search.
 
+## Decisions locked in
+
+1. **Resume on dashboard = Option 2 (pre-fill advisor).** Dashboard's `/advisor` accepts `?session_id=...` and pre-loads prior messages as context. TUI/REPL stays the canonical chat surface.
+2. **`keep=20` auto-prune limit** is fine.
+3. **Sidebar position:** `Sessions` link sits between `Advisor` and `Knowledge`.
+4. **Sessions stay chat-only.** No persisting orchestrator activity (experiment proposals etc.) into the session record — those live in `progress.json` / `methods.json` already.
+
 ---
 
 ## Phase A — Plumbing
@@ -90,18 +97,17 @@ Sessions
 
 Routes:
 - `GET /projects/<n>/sessions` → list page.
-- `POST /api/projects/<n>/sessions/<id>/resume` → loads the session into the active TUI/REPL state via a session-resume token. **Caveat:** dashboard can't directly "resume" the way the TUI can — sessions are TUI/REPL chat state, not dashboard state. So Resume on the dashboard launches the dashboard's existing chat-style /advisor page with the session's messages pre-loaded as context. (Or marks the session as "active" in a way the next REPL launch picks up.) **Decision needed before implementation.**
+- `GET /projects/<n>/advisor?session_id=<id>` → existing advisor page; new query param pre-loads session messages as context for the next exchange.
 - `DELETE /api/projects/<n>/sessions/<id>` → trash via the existing `delete_session` helper.
 
-### Task B.2: Decide what "Resume" means on the dashboard
+### Task B.2: Wire `?session_id=` pre-load on `/advisor`
 
-**Discussion required.** Three options:
+Per locked-in decision (Option 2): `GET /projects/<n>/advisor?session_id=<id>` reads the session, renders its message history into the advisor's existing chat panel as read-only "prior conversation" context, then resumes a fresh advisor exchange below it. The next user message is appended to the session record.
 
-1. **Read-only viewer:** dashboard shows the session transcript as a read-only page; user must launch TUI/REPL with `urika --resume <id>` to actually continue.
-2. **Pre-fill advisor:** dashboard's `/advisor` accepts an optional `?session_id=...` query that pre-loads the session's messages as context for the next advisor exchange.
-3. **Full chat surface in dashboard:** new `/projects/<n>/sessions/<id>` page that's a full chat view, with a composer that POSTs to a new endpoint preserving session state. Bigger build.
-
-Recommend **Option 2 for v1.** Keep TUI/REPL as the canonical chat surface; dashboard's role is to surface the history and let the user kick a fresh advisor conversation that's aware of the prior session. Option 3 is a future expansion.
+**Files:**
+- Modify: `src/urika/dashboard/routers/pages.py` advisor view — accept `session_id` query, load session messages into template context.
+- Modify: `src/urika/dashboard/templates/advisor.html` — render prior messages above the composer when `session_id` is present.
+- Modify: advisor POST endpoint — when `session_id` is present, append turns to that session rather than creating a new one.
 
 ### Task B.3: Tests
 
@@ -149,15 +155,8 @@ Add a "Session memory" section explaining persistence + `/resume` + `/resume-ses
 ## Effort
 
 - Phase A (auto-prune + previews + tests): ~2 hours
-- Phase B (dashboard surface, decision-gated): ~half day, depending on Option chosen
+- Phase B (dashboard surface, Option 2): ~half day
 - Phase C (project-switch UX): ~1 hour
 - Phase D (smoke + docs): ~1 hour
 
-**Total: ~1 day** (1.5 if Option 3 is chosen for B).
-
-## Open questions for you to decide
-
-1. Resume semantics on dashboard — Option 1 / 2 / 3?
-2. Auto-prune `keep=20` — fine, or different?
-3. Sidebar position for Sessions link — between Advisor and Knowledge OK?
-4. Should sessions also persist orchestrator activity beyond chat (e.g. experiment proposals) or stay chat-only?
+**Total: ~1 day.**

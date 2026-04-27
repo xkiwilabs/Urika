@@ -7,11 +7,11 @@ without re-doing the audit.
 
 Order to pick up later:
 
-1. **Notifications polish** — smallest, validates work already shipped
-2. **Orchestrator memory polish** — small, finishes an 80%-built feature
-3. **Secrets handling** — three-tier secrets store (process env → project `.env` → global keyring/file). Unblocks UI-based key setup, gates clean multi-SDK adoption. Plan: `2026-04-27-secrets-handling-proposal.md`. Folds in task #115 (round-trip test prompt).
-4. **Project memory + agent instructions** — biggest scope, biggest unlocked value, needs its own plan first
-5. **Agent runtime abstraction** — defer; no current user pain
+1. **Notifications polish** (~3.5 days) — smallest, validates work already shipped. Plan: TBD (next).
+2. **Orchestrator memory polish** (~1 day) — finishes an 80%-built feature. Plan: `2026-04-28-orchestrator-memory-polish.md`. Decisions locked in.
+3. **Secrets handling** (~1 week) — three-tier store (process env → project `.env` → global keyring/file). Unblocks UI-based key setup, gates clean multi-SDK adoption. Plan: `2026-04-27-secrets-handling-proposal.md`. Folds in task #115 (round-trip test prompt).
+4. **Project memory + agent instructions** (~8–10 days) — biggest scope, biggest unlocked value. Plan: `2026-04-28-project-memory-design.md`. Auto-capture is the default; Phase 1+2+3 = v1.
+5. **Multi-provider runtime abstraction** (~2 weeks) — Codex / Gemini / Pi adapters. Parked behind #3 (each new adapter needs a secret).
 
 ---
 
@@ -54,17 +54,16 @@ Order to pick up later:
 
 **Why this is the biggest gap:** Every other feature works around it. Users repeat instructions; agents make contradictory recommendations across runs; "what did the advisor say last time" is lost. The model is the global Claude Code memory directory — Urika needs the project-scoped equivalent.
 
-**Effort to done:** ~1 week for v1. Design needed first:
-- Where memory lives (`<project>/memory/MEMORY.md` mirroring CLAUDE.md? `memory/*.md` per topic?)
-- How agents read it (system-prompt injection? tool call? both?)
-- Categories (`user`, `feedback`, `instructions`, `decisions`)
-- Lifecycle (who writes? when does it auto-summarize? who curates?)
-
-This is its own plan. Recommend writing `dev/plans/2026-XX-XX-project-memory.md` before any code.
+**Effort to done:** ~8–10 days for v1. Design locked in `dev/plans/2026-04-28-project-memory-design.md`:
+- Memory lives at `<project>/memory/MEMORY.md` + topic files, mirroring the global Claude Code memory pattern.
+- Agents read it via system-prompt prefix injection.
+- Categories: `user`, `feedback`, `instruction`, `decision`, `reference`.
+- Lifecycle: **auto-capture is the default** via inline `<memory type="...">` markers in advisor + planning agent prompts (orchestrator parses + strips). Manual edit via CLI/TUI/dashboard. Curator agent runs on threshold + recency + duplicate triggers. Per-project disable toggle.
+- v1 = Phases 1+2+3 (read path + auto-capture + manual surfaces + curator). Phase 4 polish after.
 
 ---
 
-## 3. Agent runtime abstraction — scaffold in, only one backend
+## 5. Agent runtime abstraction — scaffold in, only one backend
 
 **What's there:**
 
@@ -85,7 +84,7 @@ This is its own plan. Recommend writing `dev/plans/2026-XX-XX-project-memory.md`
 
 ---
 
-## 4. Pause / notifications polish — built but unverified
+## 1. Pause / notifications polish — built but unverified
 
 **What's there:**
 
@@ -100,11 +99,18 @@ This is its own plan. Recommend writing `dev/plans/2026-XX-XX-project-memory.md`
 - Notification channels likely need real-world send tests (do Slack webhooks actually fire? does email handle SMTP auth correctly under different relay configs?).
 - No dashboard surface for notifications status / test-send button — would catch config issues without firing a real run.
 
-**Effort to done:** ~3 days. (a) Add a "Send test" button on the dashboard Settings → Notifications tab (POST endpoint fires one test notification through each enabled channel, reports success/failure inline). (b) Manual smoke pass: run an experiment, hit ESC, verify graceful pause; configure each channel with real creds, fire a test send, fix anything broken. (c) Document the pause UX in `docs/17-notifications.md`. Then graduate from dev-only.
+**Effort to done:** ~3.5 days for combined Tier-1 must-do + should-do (per code audit 2026-04-28):
+
+- **Bugs (must fix):** event-vocabulary mismatch in `bus.py:267-309` (some `notify()` calls use names the dispatcher doesn't recognize); telegram polling never gives up on bad token (`telegram_channel.py:184-213`); email channel `stop_listener()` doesn't flush on all paths (`email_channel.py:49-53`); slack Socket Mode init has weak error reporting (`slack_channel.py:45-72`).
+- **UX:** add "Send test" button on dashboard Settings → Notifications (POST endpoint fires one test through each enabled channel, reports success/failure inline) — touches `global_settings.html:528-561` + `routers/api.py:1218-1250`. Better auth-error messages for Slack/Telegram (surface "invalid token" instead of silent retry). Per-channel enable/disable toggles. Slack/Telegram pause/stop buttons reachable on all event priorities, not just selected ones.
+- **Code quality:** reduce formatter duplication across the three channel files. Add docstrings + credential-validation tests.
+- **Docs:** add troubleshooting + caveats sections to `docs/17-notifications.md`.
+
+Then graduate from dev-only.
 
 ---
 
-## Secrets handling — full review
+## 3. Secrets handling — full review
 
 See `dev/plans/2026-04-27-secrets-handling-proposal.md` for the full design. TL;DR:
 
@@ -140,10 +146,10 @@ should land before the priorities below ship for real.
 
 | Priority | Feature | Effort | Confidence | Gates |
 |----------|---------|--------|------------|-------|
-| 1 | Notifications polish | ~3 days | high | removes "dev-only" flag from existing code |
-| 2 | Orchestrator memory polish | ~1–2 days | high | finishes 80%-built feature |
+| 1 | Notifications polish | ~3.5 days | high | removes "dev-only" flag from existing code |
+| 2 | Orchestrator memory polish | ~1 day | high | finishes 80%-built feature |
 | 3 | Secrets handling | ~1 week | high | gates UI-based key setup + multi-SDK adoption |
-| 4 | Project memory + instructions | ~1 week (after plan) | medium | unlocks cross-run continuity |
-| 5 | Runtime abstraction | ~2 weeks | low | depends on #3 (each adapter needs a key) |
+| 4 | Project memory + instructions | ~8–10 days | medium | unlocks cross-run continuity |
+| 5 | Runtime abstraction (Codex/Gemini/Pi) | ~2 weeks | low | depends on #3 (each adapter needs a key) |
 
-Picking #1 next gives a quick win that retires a feature flag. #2 follows naturally and tightens loose ends. #3 unblocks the dashboard "set up private model" flow end-to-end and is a hard prerequisite for #5 (every new adapter needs a secret). #4 deserves a dedicated planning phase before any code lands. #5 stays parked behind #3.
+Picking #1 next gives a quick win that retires a feature flag. #2 follows naturally and tightens loose ends. #3 unblocks the dashboard "set up private model" flow end-to-end and is a hard prerequisite for #5 (every new adapter needs a secret). #4 has its design locked in (`2026-04-28-project-memory-design.md`) — auto-capture default plus curator. #5 stays parked behind #3.
