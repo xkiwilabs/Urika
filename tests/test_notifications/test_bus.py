@@ -153,7 +153,7 @@ class TestNotificationBus:
         ("Experiment completed", "experiment_completed"),
         ("Experiment failed: timed out", "experiment_failed"),
         ("Experiment paused after turn 3", "experiment_paused"),
-        ("Experiment stopped by user", "experiment_stopped"),
+        ("Experiment stopped after turn 5", "experiment_stopped"),
     ])
     def test_map_progress_event_emits_run_status(
         self, phase_text, expected_event_type

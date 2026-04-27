@@ -326,7 +326,7 @@ class NotificationBus:
                     priority="medium",
                 )
 
-        # Paused (generic fallback — orchestrator emits "Paused after turn N")
+        # Paused (generic fallback — covers any other "Paused" phase text)
         if event == "phase" and "Paused" in detail:
             return NotificationEvent(
                 event_type="paused",

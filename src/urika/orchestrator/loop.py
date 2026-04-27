@@ -128,6 +128,7 @@ async def run_experiment(
             if state.max_turns is not None:
                 max_turns = state.max_turns
         except Exception as exc:
+            progress("phase", f"Experiment failed: {exc}")
             return _usage_dict("failed", 0, error=str(exc))
 
         # Use the last run's next_step as the initial task prompt, if available
@@ -145,6 +146,7 @@ async def run_experiment(
         try:
             start_session(project_dir, experiment_id, max_turns=max_turns)
         except Exception as exc:
+            progress("phase", f"Experiment failed: {exc}")
             return _usage_dict("failed", 0, error=str(exc))
         start_turn = 1
         task_prompt = "Begin the experiment. Try an initial approach."
@@ -199,11 +201,11 @@ async def run_experiment(
             from urika.core.session import stop_session
 
             stop_session(project_dir, experiment_id, reason="Stopped remotely")
-            progress("phase", f"Stopped after turn {turn - 1}")
+            progress("phase", f"Experiment stopped after turn {turn - 1}")
             return _usage_dict("stopped", turn - 1)
         if pause_controller is not None and pause_controller.is_pause_requested():
             pause_session(project_dir, experiment_id)
-            progress("phase", f"Paused after turn {turn - 1}")
+            progress("phase", f"Experiment paused after turn {turn - 1}")
             return _usage_dict("paused", turn - 1)
 
         # Verify private endpoint is still reachable (hybrid/private mode)
@@ -218,6 +220,7 @@ async def run_experiment(
                 )
                 progress("result", _ep_error)
                 fail_session(project_dir, experiment_id, error=_ep_error)
+                progress("phase", f"Experiment failed: {_ep_error}")
                 return _usage_dict("failed", turn, error=_ep_error)
 
         progress("turn", f"Turn {turn}/{max_turns}")
@@ -250,6 +253,10 @@ async def run_experiment(
                         if plan_result.error_category in _PAUSABLE_ERRORS
                         else "failed"
                     )
+                    if _status == "paused":
+                        progress("phase", f"Experiment paused after turn {turn}")
+                    else:
+                        progress("phase", f"Experiment failed: {_err}")
                     return _usage_dict(_status, turn, error=_err)
 
                 method_plan = parse_method_plan(plan_result.text_output)
@@ -312,6 +319,7 @@ async def run_experiment(
                         "agents can run."
                     )
                     fail_session(project_dir, experiment_id, error=_data_error)
+                    progress("phase", f"Experiment failed: {_data_error}")
                     return _usage_dict("failed", turn, error=_data_error)
 
                 progress("agent", "Data agent \u2014 extracting features")
@@ -337,6 +345,7 @@ async def run_experiment(
                         "Start your local model or switch to open mode."
                     )
                     fail_session(project_dir, experiment_id, error=_data_error)
+                    progress("phase", f"Experiment failed: {_data_error}")
                     return _usage_dict("failed", turn, error=_data_error)
 
                 if data_result.text_output:
@@ -349,6 +358,7 @@ async def run_experiment(
                 fail_session(
                     project_dir, experiment_id, error="task_agent role not found"
                 )
+                progress("phase", "Experiment failed: task_agent role not found")
                 return _usage_dict(
                     "failed",
                     turn,
@@ -379,6 +389,10 @@ async def run_experiment(
                     if task_result.error_category in _PAUSABLE_ERRORS
                     else "failed"
                 )
+                if _status == "paused":
+                    progress("phase", f"Experiment paused after turn {turn}")
+                else:
+                    progress("phase", f"Experiment failed: {_err}")
                 return _usage_dict(_status, turn, error=_err)
 
             # Parse and record runs
@@ -452,6 +466,7 @@ async def run_experiment(
                 fail_session(
                     project_dir, experiment_id, error="evaluator role not found"
                 )
+                progress("phase", "Experiment failed: evaluator role not found")
                 return _usage_dict(
                     "failed",
                     turn,
@@ -483,6 +498,10 @@ async def run_experiment(
                     if eval_result.error_category in _PAUSABLE_ERRORS
                     else "failed"
                 )
+                if _status == "paused":
+                    progress("phase", f"Experiment paused after turn {turn}")
+                else:
+                    progress("phase", f"Experiment failed: {_err}")
                 return _usage_dict(_status, turn, error=_err)
 
             evaluation = parse_evaluation(eval_result.text_output)
@@ -600,6 +619,7 @@ async def run_experiment(
                 _total_cost_usd += report_usage.get("cost_usd", 0.0)
                 _total_agent_calls += report_usage.get("agent_calls", 0)
                 _print_run_summary(project_dir, experiment_id, progress)
+                progress("phase", "Experiment completed")
                 return _usage_dict("completed", turn)
 
             # --- advisor_agent ---
@@ -611,6 +631,7 @@ async def run_experiment(
                     experiment_id,
                     error="advisor_agent role not found",
                 )
+                progress("phase", "Experiment failed: advisor_agent role not found")
                 return _usage_dict(
                     "failed",
                     turn,
@@ -674,6 +695,10 @@ async def run_experiment(
                     if suggest_result.error_category in _PAUSABLE_ERRORS
                     else "failed"
                 )
+                if _status == "paused":
+                    progress("phase", f"Experiment paused after turn {turn}")
+                else:
+                    progress("phase", f"Experiment failed: {_err}")
                 return _usage_dict(_status, turn, error=_err)
 
             suggestions = parse_suggestions(suggest_result.text_output)
@@ -728,6 +753,7 @@ async def run_experiment(
                     release_lock(project_dir, experiment_id)
                 except Exception:
                     pass
+            progress("phase", f"Experiment failed: {exc}")
             return _usage_dict("failed", turn, error=str(exc))
 
     # Reached max_turns without criteria being met
@@ -745,4 +771,5 @@ async def run_experiment(
     _total_cost_usd += report_usage.get("cost_usd", 0.0)
     _total_agent_calls += report_usage.get("agent_calls", 0)
     _print_run_summary(project_dir, experiment_id, progress)
+    progress("phase", "Experiment completed")
     return _usage_dict("completed", max_turns)
