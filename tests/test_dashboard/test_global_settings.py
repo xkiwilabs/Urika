@@ -1569,3 +1569,95 @@ def test_global_settings_put_returns_json_when_requested(settings_client):
     # privacy_mode is no longer part of the global form / response.
     assert "privacy_mode" not in body
     assert body["default_max_turns"] == 10
+
+
+# ---- Slack inbound-config fields (app_token + allow-lists) ----------------
+
+
+def test_global_settings_renders_slack_inbound_config_fields(settings_client):
+    """The Slack channel block must expose the three inbound-Socket-Mode
+    config fields so users don't have to hand-edit ``settings.toml`` to
+    enable inbound commands or restrict who can issue them."""
+    body = settings_client.get("/settings").text
+    assert 'name="notifications_slack_app_token_env"' in body
+    assert 'name="notifications_slack_allowed_channels"' in body
+    assert 'name="notifications_slack_allowed_users"' in body
+
+
+def test_global_settings_slack_inbound_fields_reflect_saved_values(
+    settings_client, tmp_path
+):
+    """When the inbound-config fields are saved in ``settings.toml``,
+    the form pre-populates them. ``allowed_channels`` /
+    ``allowed_users`` are stored as TOML lists; the form renders them
+    as comma-separated strings."""
+    (tmp_path / "home" / "settings.toml").write_text(
+        "[notifications.slack]\n"
+        'channel = "#urika"\n'
+        'token_env = "SLACK_BOT_TOKEN"\n'
+        'app_token_env = "SLACK_APP_TOKEN"\n'
+        'allowed_channels = ["#urika", "#lab-runs"]\n'
+        'allowed_users = ["U01ABC", "U02DEF"]\n',
+        encoding="utf-8",
+    )
+    body = settings_client.get("/settings").text
+    assert "SLACK_APP_TOKEN" in body
+    # Lists render as comma-joined strings.
+    assert "#urika, #lab-runs" in body or "#urika,#lab-runs" in body
+    assert "U01ABC, U02DEF" in body or "U01ABC,U02DEF" in body
+
+
+def test_global_settings_put_writes_slack_inbound_config(
+    settings_client, tmp_path
+):
+    """Saving the form persists the three new fields under
+    ``[notifications.slack]``. Comma-separated allow-lists are split
+    into TOML lists (whitespace stripped, empty entries dropped)."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_slack_channel": "#urika",
+            "notifications_slack_token_env": "SLACK_BOT_TOKEN",
+            "notifications_slack_app_token_env": "SLACK_APP_TOKEN",
+            "notifications_slack_allowed_channels": "#urika, #lab-runs",
+            "notifications_slack_allowed_users": "U01ABC, U02DEF",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    slack = s["notifications"]["slack"]
+    assert slack["app_token_env"] == "SLACK_APP_TOKEN"
+    assert slack["allowed_channels"] == ["#urika", "#lab-runs"]
+    assert slack["allowed_users"] == ["U01ABC", "U02DEF"]
+
+
+def test_global_settings_put_drops_empty_slack_inbound_fields(
+    settings_client, tmp_path
+):
+    """Empty inbound-config fields are not persisted — keeps TOML tidy.
+    An empty ``app_token_env`` and empty allow-lists must not write
+    keys that aren't there."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_slack_channel": "#urika",
+            "notifications_slack_token_env": "SLACK_BOT_TOKEN",
+            "notifications_slack_app_token_env": "",
+            "notifications_slack_allowed_channels": "",
+            "notifications_slack_allowed_users": "",
+        },
+    )
+    assert r.status_code == 200
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    slack = s["notifications"]["slack"]
+    # Channel + token_env still present (those carry data); the empty
+    # inbound-config fields must not have written keys.
+    assert slack["channel"] == "#urika"
+    assert slack["token_env"] == "SLACK_BOT_TOKEN"
+    assert "app_token_env" not in slack
+    assert "allowed_channels" not in slack
+    assert "allowed_users" not in slack

@@ -1257,11 +1257,37 @@ async def api_global_settings_put(request: Request):
         del notifications["email"]
 
     # Slack
-    slack_section = {
+    slack_section: dict[str, object] = {
         "channel": (form.get("notifications_slack_channel") or "").strip(),
         "token_env": (form.get("notifications_slack_token_env") or "").strip(),
         "auto_enable": slack_auto_enable,
     }
+    # Inbound Socket Mode (optional). Empty fields are NOT written so the
+    # TOML stays tidy — empty allow-lists in particular would be misleading
+    # (the channel treats None as "no restriction").
+    slack_app_token_env = (
+        form.get("notifications_slack_app_token_env") or ""
+    ).strip()
+    if slack_app_token_env:
+        slack_section["app_token_env"] = slack_app_token_env
+    slack_allowed_channels_raw = (
+        form.get("notifications_slack_allowed_channels") or ""
+    ).strip()
+    if slack_allowed_channels_raw:
+        slack_section["allowed_channels"] = [
+            s.strip()
+            for s in slack_allowed_channels_raw.split(",")
+            if s.strip()
+        ]
+    slack_allowed_users_raw = (
+        form.get("notifications_slack_allowed_users") or ""
+    ).strip()
+    if slack_allowed_users_raw:
+        slack_section["allowed_users"] = [
+            s.strip()
+            for s in slack_allowed_users_raw.split(",")
+            if s.strip()
+        ]
     has_slack_data = any(v for k, v in slack_section.items() if k != "auto_enable")
     if has_slack_data or slack_auto_enable:
         notifications["slack"] = slack_section

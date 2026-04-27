@@ -588,6 +588,28 @@
                  value="{{ notif_slack.get('token_env', '') }}"
                  placeholder="SLACK_BOT_TOKEN">
         </div>
+        {# Inbound Socket Mode (optional) — enables /commands from Slack. #}
+        <div class="form-row">
+          <label for="notifications_slack_app_token_env">App token env var (Socket Mode)</label>
+          <input type="text" id="notifications_slack_app_token_env"
+                 name="notifications_slack_app_token_env"
+                 value="{{ notif_slack.get('app_token_env', '') }}"
+                 placeholder="SLACK_APP_TOKEN">
+        </div>
+        <div class="form-row">
+          <label for="notifications_slack_allowed_channels">Allowed channels (comma-separated)</label>
+          <input type="text" id="notifications_slack_allowed_channels"
+                 name="notifications_slack_allowed_channels"
+                 value="{{ notif_slack.get('allowed_channels', []) | join(', ') if notif_slack.get('allowed_channels') is iterable and notif_slack.get('allowed_channels') is not string else (notif_slack.get('allowed_channels', '') or '') }}"
+                 placeholder="#urika-bot, #lab-runs">
+        </div>
+        <div class="form-row">
+          <label for="notifications_slack_allowed_users">Allowed users (comma-separated)</label>
+          <input type="text" id="notifications_slack_allowed_users"
+                 name="notifications_slack_allowed_users"
+                 value="{{ notif_slack.get('allowed_users', []) | join(', ') if notif_slack.get('allowed_users') is iterable and notif_slack.get('allowed_users') is not string else (notif_slack.get('allowed_users', '') or '') }}"
+                 placeholder="U01ABC, U02DEF">
+        </div>
       </div>
 
       {# Telegram — connection details + auto-enable hint. #}
