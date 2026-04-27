@@ -116,7 +116,12 @@
             <label>API key env var (optional)</label>
             <input type="text"
                    x-model="ep.api_key_env"
-                   placeholder="(optional, e.g. INFERENCE_HUB_KEY)">
+                   placeholder="e.g. INFERENCE_HUB_KEY">
+            <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+              Enter the <strong>name</strong> of an environment variable (e.g.
+              <code>INFERENCE_HUB_KEY</code>), not the key itself. Leave blank if
+              the endpoint doesn't require auth.
+            </span>
           </div>
           <div class="form-row">
             <label>Default model (optional)</label>
@@ -129,7 +134,7 @@
              whether the named API-key env var is actually set in the
              dashboard's process.  Reads from live Alpine state so it
              tests what's IN THE FORM, not what's saved. #}
-          <div class="form-row" x-data="{
+          <div class="endpoint-test" x-data="{
                  testing: false,
                  result: null,
                  testEndpoint() {
@@ -147,14 +152,14 @@
                      });
                  }
                }">
-            <button type="button" class="btn btn--small btn--ghost"
+            <button type="button" class="btn btn--small btn--primary"
                     @click="testEndpoint()"
                     :disabled="testing || !ep.base_url">
               <span class="running-dot" x-show="testing"></span>
-              <span x-text="testing ? 'Testing…' : 'Test'">Test</span>
+              <span x-text="testing ? 'Testing…' : 'Test endpoint'">Test endpoint</span>
             </button>
             <div x-show="result" x-cloak class="endpoint-test-result"
-                 style="margin-top: var(--space-2); font-size: var(--fs-xs);">
+                 style="font-size: var(--fs-xs);">
               <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
                 <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
                 <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>

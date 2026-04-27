@@ -935,7 +935,9 @@ def test_global_settings_privacy_tab_renders_test_button(settings_client):
     render a 'Test' button wired to the new POST endpoint."""
     body = settings_client.get("/settings").text
     # The button label and the click handler that calls the endpoint.
-    assert ">Test<" in body or ">Testing" in body
+    assert ">Test endpoint<" in body or ">Testing" in body
+    # Button uses the primary (blue) variant, not the muted ghost.
+    assert "btn--primary" in body
     assert "testEndpoint()" in body
     assert "/api/settings/test-endpoint" in body
 
@@ -944,6 +946,8 @@ def test_project_settings_privacy_tab_renders_test_button(client_with_projects):
     """Phase P3: the Project Privacy tab gets the same Test button next
     to each endpoint row (Private + Hybrid blocks)."""
     body = client_with_projects.get("/projects/alpha/settings").text
-    assert ">Test<" in body or ">Testing" in body
+    assert ">Test endpoint<" in body or ">Testing" in body
+    # Button uses the primary (blue) variant, not the muted ghost.
+    assert "btn--primary" in body
     assert "testEndpoint()" in body
     assert "/api/settings/test-endpoint" in body

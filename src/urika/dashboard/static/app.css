@@ -481,7 +481,21 @@ h4 {
   50%      { opacity: 1.0; transform: scale(1.2); }
 }
 
-/* P3: Privacy-tab "Test endpoint" button result colors. */
+/* P3: Privacy-tab "Test endpoint" button + result.
+   The button is intentionally NOT placed inside a .form-row (which
+   stretches its children to full width); instead we use this small
+   wrapper that centers the button under the endpoint inputs and keeps
+   it at its natural width. */
+.endpoint-test {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.endpoint-test-result {
+  text-align: center;
+}
 .endpoint-test-result--ok { color: var(--success); }
 .endpoint-test-result--fail { color: var(--error); }
 

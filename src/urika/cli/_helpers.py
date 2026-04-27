@@ -158,12 +158,21 @@ def _ensure_project(project: str | None) -> str:
 
 
 def _test_endpoint(url: str) -> bool:
-    """Test if an API endpoint is reachable (3s timeout)."""
+    """Test if an API endpoint is reachable (3s timeout).
+
+    Counts ANY HTTP response from the server as reachable — including
+    401 / 403 / 404. If the server can return a status code, the
+    endpoint exists and is up; auth rejection just means the probe
+    didn't send a key, not that the endpoint is broken.
+
+    Only connection-level failures (DNS error, refused, timeout) mean
+    "unreachable".
+    """
     import urllib.request
     import urllib.error
 
     # Try common health/version endpoints
-    for path in ["", "/api/tags", "/v1/models"]:
+    for path in ["", "/api/tags", "/v1/models", "/models"]:
         try:
             test_url = url.rstrip("/") + path
             req = urllib.request.Request(
@@ -172,7 +181,13 @@ def _test_endpoint(url: str) -> bool:
             )
             with urllib.request.urlopen(req, timeout=3):
                 return True
-        except Exception:
+        except urllib.error.HTTPError:
+            # Server responded with a non-2xx status (e.g. 401 from an
+            # auth-protected endpoint, 404 from a path that doesn't
+            # exist). Either way the server is up and answering.
+            return True
+        except (urllib.error.URLError, TimeoutError, OSError):
+            # Connection-level failure — try the next path.
             continue
     return False
 

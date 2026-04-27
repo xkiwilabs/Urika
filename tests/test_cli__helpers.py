@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import time
 
-from urika.cli._helpers import _agent_run_start
+from urika.cli._helpers import _agent_run_start, _test_endpoint
 
 
 def test_agent_run_start_returns_int_ms_and_iso_string() -> None:
@@ -30,3 +30,53 @@ def test_agent_run_start_ms_is_monotonic() -> None:
     second, _ = _agent_run_start()
     assert second > first
     assert second - first >= 5  # at least 5ms elapsed
+
+
+# ---- _test_endpoint reachability behaviour ----
+# The helper must treat ANY HTTP response (including 401 / 403 / 404)
+# as "reachable" — the server answered, so the endpoint exists. Only
+# connection-level failures count as unreachable. This pins the fix
+# for the bug where a working OpenAI-compatible endpoint that requires
+# auth was being reported "Unreachable" because the unauthenticated
+# probe got a 401.
+
+
+def test_test_endpoint_treats_http_error_as_reachable(monkeypatch) -> None:
+    """A server that returns 401/403/404 is reachable — the endpoint exists."""
+    import urllib.error
+    import urllib.request
+
+    def fake_urlopen(req, timeout):
+        raise urllib.error.HTTPError(
+            url=req.full_url, code=401, msg="Unauthorized", hdrs={}, fp=None
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert _test_endpoint("http://example.invalid:11434") is True
+
+
+def test_test_endpoint_treats_connection_failure_as_unreachable(monkeypatch) -> None:
+    """DNS / refused / timeout means the endpoint is genuinely down."""
+    import urllib.error
+    import urllib.request
+
+    def fake_urlopen(req, timeout):
+        raise urllib.error.URLError("Connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert _test_endpoint("http://example.invalid:11434") is False
+
+
+def test_test_endpoint_treats_2xx_as_reachable(monkeypatch) -> None:
+    """The happy path: 2xx response means the endpoint is up."""
+    import urllib.request
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: _FakeResponse())
+    assert _test_endpoint("http://example.invalid:11434") is True

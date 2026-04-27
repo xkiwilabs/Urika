@@ -432,7 +432,12 @@
                  name="project_privacy_private_key_env"
                  x-model="ep.api_key_env"
                  value="{{ project_privacy_private_key_env }}"
-                 placeholder="(optional)">
+                 placeholder="e.g. URIKA_API_KEY">
+          <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+            Enter the <strong>name</strong> of an environment variable (e.g.
+            <code>URIKA_API_KEY</code>), not the key itself. Leave blank if the
+            endpoint doesn't require auth.
+          </span>
         </div>
         <div class="form-row">
           <label for="project_privacy_private_model">Model name</label>
@@ -441,16 +446,18 @@
                  value="{{ project_privacy_private_model }}"
                  placeholder="qwen3:14b">
         </div>
-        {# Test endpoint button — Alpine state is shared with the inputs above. #}
-        <div class="form-row">
-          <button type="button" class="btn btn--small btn--ghost"
+        {# Test endpoint button — Alpine state is shared with the inputs above.
+           Uses .endpoint-test (centered, natural-width) instead of .form-row
+           (which would stretch the button to full width). #}
+        <div class="endpoint-test">
+          <button type="button" class="btn btn--small btn--primary"
                   @click="testEndpoint()"
                   :disabled="testing || !ep.base_url">
             <span class="running-dot" x-show="testing"></span>
-            <span x-text="testing ? 'Testing…' : 'Test'">Test</span>
+            <span x-text="testing ? 'Testing…' : 'Test endpoint'">Test endpoint</span>
           </button>
           <div x-show="result" x-cloak class="endpoint-test-result"
-               style="margin-top: var(--space-2); font-size: var(--fs-xs);">
+               style="font-size: var(--fs-xs);">
             <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
               <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
               <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>
@@ -526,7 +533,11 @@
                  name="project_privacy_hybrid_private_key_env"
                  x-model="ep.api_key_env"
                  value="{{ project_privacy_hybrid_private_key_env }}"
-                 placeholder="(optional)">
+                 placeholder="e.g. URIKA_API_KEY">
+          <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+            Enter the <strong>name</strong> of an environment variable (e.g.
+            <code>URIKA_API_KEY</code>), not the key itself.
+          </span>
         </div>
         <div class="form-row">
           <label for="project_privacy_hybrid_private_model">Private model name</label>
@@ -535,16 +546,17 @@
                  value="{{ project_privacy_hybrid_private_model }}"
                  placeholder="qwen3:14b">
         </div>
-        {# Test endpoint button — probes the private URL the user typed. #}
-        <div class="form-row">
-          <button type="button" class="btn btn--small btn--ghost"
+        {# Test endpoint button — probes the private URL the user typed.
+           Uses .endpoint-test wrapper (centered, natural width). #}
+        <div class="endpoint-test">
+          <button type="button" class="btn btn--small btn--primary"
                   @click="testEndpoint()"
                   :disabled="testing || !ep.base_url">
             <span class="running-dot" x-show="testing"></span>
-            <span x-text="testing ? 'Testing…' : 'Test'">Test</span>
+            <span x-text="testing ? 'Testing…' : 'Test endpoint'">Test endpoint</span>
           </button>
           <div x-show="result" x-cloak class="endpoint-test-result"
-               style="margin-top: var(--space-2); font-size: var(--fs-xs);">
+               style="font-size: var(--fs-xs);">
             <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
               <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
               <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>
