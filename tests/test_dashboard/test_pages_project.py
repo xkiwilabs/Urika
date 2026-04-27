@@ -293,6 +293,53 @@ def test_experiments_list_does_not_have_inline_delete_button(
     ), "row-level Delete button found; should only live in Danger zone"
 
 
+def test_experiments_list_status_says_running_when_lock_alive(
+    tmp_path: Path, monkeypatch
+):
+    """A live <exp>/.lock means the agent is working RIGHT NOW. The
+    row's status tag must reflect that even if progress.json hasn't
+    been written yet (which is normal during the spawn-to-first-write
+    window). Without this override, freshly-spawned experiments show
+    "pending" while actively running."""
+    import os
+
+    proj = _make_project_with_experiments(tmp_path, "alpha", 1)
+    # Drop a live PID lock on exp-001 to simulate a running experiment.
+    (proj / "experiments" / "exp-001" / ".lock").write_text(str(os.getpid()))
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha/experiments").text
+    # The exp-001 row's status pill must say "running", not "pending".
+    assert "tag--running" in body
+    # And NOT pending for that experiment (other rows might still
+    # legitimately be pending — but exp-001 with a live lock isn't).
+    assert ">running<" in body
+
+
+def test_experiment_detail_status_says_running_when_lock_alive(
+    tmp_path: Path, monkeypatch
+):
+    """Same override on the experiment detail page."""
+    import os
+
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 0)
+    (proj / "experiments" / "exp-001" / ".lock").write_text(str(os.getpid()))
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha/experiments/exp-001").text
+    assert "tag--running" in body
+
+
 def test_experiments_list_card_layout_has_three_main_rows(
     client_with_experiments,
 ):

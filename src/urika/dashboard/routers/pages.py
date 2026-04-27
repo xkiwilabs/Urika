@@ -80,10 +80,38 @@ def _experiment_runs_summary(
 ) -> tuple[int, str, str]:
     """Return ``(runs_count, last_touched_iso, status)`` for an experiment.
 
-    ``status`` is the live status from ``progress.json`` when present,
-    otherwise the static ``experiment.status`` (which is initialized to
-    ``"pending"`` at experiment creation and rarely overwritten).
+    Status is the *live* status:
+    1. If a live run-lock exists under the experiment dir (``.lock``
+       with an alive PID) → ``"running"``. Catches the window between
+       experiment-dir creation and the orchestrator's first
+       progress.json write — without this override the row would
+       say "pending" while the agent is actually working.
+    2. Otherwise, the status from ``progress.json`` if present.
+    3. Otherwise, the static ``experiment.status`` (initialized to
+       ``"pending"`` at creation).
     """
+    from urika.core.project_delete import _is_active_run_lock
+
+    lock_path = exp_dir / ".lock"
+    if lock_path.is_file() and _is_active_run_lock(lock_path):
+        # Counts + timestamp still come from progress.json if present.
+        runs_count = 0
+        last = exp.created_at
+        progress_path = exp_dir / "progress.json"
+        if progress_path.exists():
+            try:
+                progress = json.loads(progress_path.read_text(encoding="utf-8"))
+                runs = progress.get("runs", []) or []
+                runs_count = len(runs)
+                timestamps = [
+                    r.get("timestamp", "") for r in runs if r.get("timestamp")
+                ]
+                if timestamps:
+                    last = max(timestamps)
+            except (OSError, json.JSONDecodeError):
+                pass
+        return runs_count, last, "running"
+
     progress_path = exp_dir / "progress.json"
     if not progress_path.exists():
         return 0, exp.created_at, exp.status
@@ -1494,10 +1522,18 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="Unknown experiment") from exc
     progress = load_progress(summary.path, exp_id)
     runs = progress.get("runs", []) or []
-    # Live status overlays the static experiment.status default.
-    experiment_status = progress.get("status") or exp.status
-
     exp_dir = summary.path / "experiments" / exp_id
+
+    # Live status overlay: a live run-lock means the agent is actually
+    # working RIGHT NOW, regardless of what progress.json says (which
+    # may lag the orchestrator's first write).
+    from urika.core.project_delete import _is_active_run_lock
+
+    _live_lock = exp_dir / ".lock"
+    if _live_lock.is_file() and _is_active_run_lock(_live_lock):
+        experiment_status = "running"
+    else:
+        experiment_status = progress.get("status") or exp.status
     has_report = (exp_dir / "report.md").exists()
     # Presentation may be a single file (presentation.html) or a directory
     # containing index.html — accept both forms (matches the actual
