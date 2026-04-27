@@ -151,6 +151,38 @@ class TestDeleteSession:
         assert delete_session(tmp_path, "does-not-exist") is False
 
 
+def test_save_auto_prunes_when_over_keep_limit(tmp_path):
+    """Saving the 21st session triggers an auto-prune that keeps only 20.
+
+    Without this, sessions accumulate forever — the prune helper exists but
+    was never called from the save path before this fix.
+    """
+    project_dir = tmp_path
+
+    # Save 25 sessions in sequence.
+    for i in range(25):
+        session = OrchestratorSession(
+            session_id=f"session-{i:04d}",
+            started=f"2026-01-{(i % 28) + 1:02d}T00:00:00Z",
+            updated=f"2026-01-{(i % 28) + 1:02d}T00:00:00Z",
+        )
+        save_session(project_dir, session)
+
+    # After the 25th save, only 20 should remain on disk.
+    sessions_dir = project_dir / ".urika" / "sessions"
+    surviving = list(sessions_dir.glob("*.json"))
+    assert len(surviving) == 20, (
+        f"expected 20 sessions after auto-prune, found {len(surviving)}"
+    )
+
+    # The most recent (largest session_id) must NOT have been pruned —
+    # auto-prune should never delete the file we just wrote.
+    surviving_ids = sorted(f.stem for f in surviving)
+    assert "session-0024" in surviving_ids, (
+        "auto-prune deleted the freshly-saved session — sort order is wrong"
+    )
+
+
 class TestPruneOldSessions:
     def test_prune_nothing_when_under_limit(self, tmp_path: Path) -> None:
         for _ in range(3):
