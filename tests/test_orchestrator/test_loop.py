@@ -830,6 +830,103 @@ class TestGetUserInputCallback:
         # Should NOT start with "User instruction:" since callback returned ""
         assert not advisor_prompts[0].startswith("User instruction:")
 
+
+class TestAdvisorContextSummaryInjection:
+    """The end-of-turn advisor inside loop.py was the only path that
+    didn't get the rolling advisor-history summary injected into its
+    prompt. Other paths (standalone /advisor, meta-loop,
+    _determine_next_experiment) all do. Pin that the loop now
+    matches the rest."""
+
+    @pytest.mark.asyncio
+    async def test_advisor_prompt_includes_research_context_when_summary_present(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        # Stub load_context_summary to return a known string. Don't
+        # touch the real summary file format — we just want to verify
+        # the injection point fires.
+        from urika.core import advisor_memory as _am
+
+        monkeypatch.setattr(
+            _am,
+            "load_context_summary",
+            lambda _project: "User wants to focus on time-series approaches.",
+        )
+
+        advisor_prompts: list[str] = []
+
+        class CapturingRunner(AgentRunner):
+            async def run(
+                self, config: AgentConfig, prompt: str, *, on_message: object = None
+            ) -> AgentResult:
+                if config.name == "advisor_agent":
+                    advisor_prompts.append(prompt)
+                responses = {
+                    "planning_agent": _PLAN_OUTPUT,
+                    "task_agent": _TASK_OUTPUT,
+                    "evaluator": _EVAL_CRITERIA_MET,
+                    "advisor_agent": _SUGGESTION,
+                }
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=responses.get(config.name, ""),
+                    session_id=f"session-{config.name}",
+                    num_turns=1,
+                    duration_ms=100,
+                )
+
+        result = await run_experiment(
+            project_dir, exp_id, CapturingRunner(), max_turns=2
+        )
+
+        assert result["status"] == "completed"
+        assert len(advisor_prompts) >= 1
+        assert "Research Context (from previous sessions)" in advisor_prompts[0]
+        assert "time-series approaches" in advisor_prompts[0]
+
+    @pytest.mark.asyncio
+    async def test_advisor_prompt_unchanged_when_summary_unavailable(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """When load_context_summary returns empty / raises, the advisor
+        prompt is the bare evaluator output — no spurious "Research
+        Context" header."""
+        project_dir, exp_id = _setup_project(tmp_path)
+
+        from urika.core import advisor_memory as _am
+
+        monkeypatch.setattr(_am, "load_context_summary", lambda _project: "")
+
+        advisor_prompts: list[str] = []
+
+        class CapturingRunner(AgentRunner):
+            async def run(
+                self, config: AgentConfig, prompt: str, *, on_message: object = None
+            ) -> AgentResult:
+                if config.name == "advisor_agent":
+                    advisor_prompts.append(prompt)
+                responses = {
+                    "planning_agent": _PLAN_OUTPUT,
+                    "task_agent": _TASK_OUTPUT,
+                    "evaluator": _EVAL_CRITERIA_MET,
+                    "advisor_agent": _SUGGESTION,
+                }
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=responses.get(config.name, ""),
+                    session_id=f"session-{config.name}",
+                    num_turns=1,
+                    duration_ms=100,
+                )
+
+        await run_experiment(project_dir, exp_id, CapturingRunner(), max_turns=2)
+        assert len(advisor_prompts) >= 1
+        assert "Research Context" not in advisor_prompts[0]
+
     @pytest.mark.asyncio
     async def test_callback_exception_is_swallowed(
         self, tmp_path: Path

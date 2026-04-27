@@ -110,6 +110,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
         max_experiments = remote_parsed.get("max_experiments")
         run_instructions = remote_parsed.get("instructions", "")
         review_criteria = False
+        advisor_first = True
 
         # Show summary
         click.echo("\n  Run settings (remote):")
@@ -150,6 +151,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
         max_experiments = None
         run_instructions = ""
         review_criteria = False
+        advisor_first = True  # default — overridable in Custom settings
 
         if choice == "Custom settings":
             try:
@@ -194,6 +196,16 @@ def cmd_run(session: ReplSession, args: str) -> None:
                 default=1,
             )
             review_criteria = rc_choice.startswith("Yes")
+
+            af_choice = _prompt_numbered(
+                "\n  Ask advisor first to suggest a name and direction?",
+                [
+                    "Yes — advisor proposes name/hypothesis before planner (default)",
+                    "No — planner picks the first method directly",
+                ],
+                default=1,
+            )
+            advisor_first = af_choice.startswith("Yes")
 
         # Show settings summary
         click.echo()
@@ -281,6 +293,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
             instructions=run_instructions,
             max_experiments=max_experiments,
             review_criteria=review_criteria,
+            advisor_first=advisor_first,
         )
         session.experiments_run += 1
     finally:

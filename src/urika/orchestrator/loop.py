@@ -529,9 +529,31 @@ async def run_experiment(
                             project_dir=project_dir,
                             experiment_id=experiment_id,
                         )
+                        # Inject the rolling advisor-history summary so
+                        # the criteria-review advisor sees what's been
+                        # discussed before deciding whether to raise the
+                        # bar — same context the other advisor paths get.
+                        review_input = (
+                            f"{eval_result.text_output}\n\n{review_prompt}"
+                        )
+                        try:
+                            from urika.core.advisor_memory import (
+                                load_context_summary,
+                            )
+
+                            _ctx = load_context_summary(project_dir)
+                            if _ctx:
+                                review_input = (
+                                    f"## Research Context (from previous sessions)\n\n"
+                                    f"{_ctx}\n\n---\n\n{review_input}"
+                                )
+                        except Exception as exc:
+                            logger.warning(
+                                "Advisor context summary unavailable: %s", exc
+                            )
                         review_result = await runner.run(
                             review_config,
-                            f"{eval_result.text_output}\n\n{review_prompt}",
+                            review_input,
                             on_message=on_message,
                         )
                         _total_tokens_in += review_result.tokens_in
@@ -603,8 +625,28 @@ async def run_experiment(
                 except Exception as exc:
                     logger.warning("User input retrieval failed: %s", exc)
 
-            # Pass evaluator output + any user input to advisor
+            # Pass evaluator output + any user input to advisor.
+            # Inject the rolling advisor-history summary so the agent
+            # sees what it (and the user) has been discussing across
+            # sessions — same context the standalone advisor and the
+            # meta-loop already get. Closes the inconsistency where
+            # the per-turn end-of-loop advisor was the only path
+            # without explicit history injection.
             advisor_prompt = eval_result.text_output
+            try:
+                from urika.core.advisor_memory import load_context_summary
+
+                _ctx_summary = load_context_summary(project_dir)
+                if _ctx_summary:
+                    advisor_prompt = (
+                        f"## Research Context (from previous sessions)\n\n"
+                        f"{_ctx_summary}\n\n"
+                        f"---\n\n"
+                        f"{advisor_prompt}"
+                    )
+            except Exception as exc:
+                # Summary is best-effort — never fail the turn over it.
+                logger.warning("Advisor context summary unavailable: %s", exc)
             if user_inject:
                 advisor_prompt = f"User instruction: {user_inject}\n\n{advisor_prompt}"
 
