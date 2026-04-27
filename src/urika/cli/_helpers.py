@@ -179,11 +179,23 @@ def _probe_endpoint(url: str) -> tuple[bool, str]:
     import urllib.error
     import urllib.request
 
+    # Validate scheme upfront so we return a useful message instead of
+    # surfacing urllib's cryptic "unknown url type: <scheme>" — which
+    # users tend to hit when they paste a URL with a label prefix
+    # ("Tailscale: http://...") or omit the protocol entirely
+    # (host:port without "http://").
+    stripped = url.strip()
+    if not stripped:
+        return False, "URL is empty"
+    if not (stripped.startswith("http://") or stripped.startswith("https://")):
+        return False, "URL must start with http:// or https://"
+
     # Bypass any system HTTP(S)_PROXY env vars: private endpoints
     # (Tailscale, LAN, localhost) almost always need a direct
     # connection; routing them through a corporate proxy is the wrong
     # default and the most common cause of "url error: str" failures.
     no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    url = stripped
 
     last_reason: str | None = None
 

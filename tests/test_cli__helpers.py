@@ -103,6 +103,33 @@ def test_test_endpoint_treats_2xx_as_reachable(monkeypatch) -> None:
     assert _test_endpoint("http://example.invalid:11434") is True
 
 
+def test_probe_endpoint_rejects_url_without_http_scheme() -> None:
+    """User-pasted URLs with a label prefix ('Tailscale: http://...')
+    or no scheme at all ('host:port') get a clear up-front rejection
+    rather than urllib's cryptic 'unknown url type: <scheme>'."""
+    from urika.cli._helpers import _probe_endpoint
+
+    reachable, detail = _probe_endpoint("Tailscale: http://100.127.175.6:4200")
+    assert reachable is False
+    assert "http://" in detail and "https://" in detail
+
+    reachable, detail = _probe_endpoint("100.127.175.6:4200")
+    assert reachable is False
+    assert "http://" in detail
+
+
+def test_probe_endpoint_strips_whitespace() -> None:
+    """Leading / trailing whitespace shouldn't cause a scheme rejection."""
+    from urika.cli._helpers import _probe_endpoint
+
+    # Even though we won't actually connect, the validator should accept
+    # a stripped http:// URL and proceed to the network attempt.
+    reachable, detail = _probe_endpoint("   http://example.invalid:11434   ")
+    # We don't care about reachable here — just that we got past the
+    # scheme check (the detail wouldn't mention http:// scheme advice).
+    assert "URL must start with" not in detail
+
+
 def test_probe_endpoint_bypasses_system_proxy(monkeypatch) -> None:
     """``_probe_endpoint`` must use a no-proxy opener — private
     endpoints (Tailscale, LAN, localhost) shouldn't be routed through
