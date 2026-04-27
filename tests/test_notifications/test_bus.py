@@ -181,6 +181,71 @@ class TestNotificationBus:
         finally:
             bus.stop()
 
+    def test_start_excludes_channels_that_fail_health_check(self, caplog):
+        """Channels failing health_check are removed from the bus and not started."""
+
+        class HealthyChannel(NotificationChannel):
+            started = False
+
+            def send(self, event):
+                pass
+
+            def start_listener(self, *args, **kwargs):
+                self.started = True
+
+        class UnhealthyChannel(NotificationChannel):
+            def send(self, event):
+                pass
+
+            def health_check(self):
+                return (False, "bad creds")
+
+            def start_listener(self, *args, **kwargs):
+                raise AssertionError(
+                    "start_listener should not be called for unhealthy channel"
+                )
+
+        bus = NotificationBus(project_name="p")
+        healthy = HealthyChannel()
+        unhealthy = UnhealthyChannel()
+        bus.add_channel(healthy)
+        bus.add_channel(unhealthy)
+        with caplog.at_level(logging.WARNING, logger="urika.notifications.bus"):
+            bus.start()
+        try:
+            assert healthy in bus.channels
+            assert unhealthy not in bus.channels
+            assert healthy.started is True
+            # The warning message names the channel class and the failure reason
+            assert "UnhealthyChannel" in caplog.text
+            assert "bad creds" in caplog.text
+        finally:
+            bus.stop()
+
+    def test_start_handles_health_check_raising(self, caplog):
+        """A health_check() that raises is treated as unhealthy, not propagated."""
+
+        class ExplodingChannel(NotificationChannel):
+            def send(self, event):
+                pass
+
+            def health_check(self):
+                raise RuntimeError("kaboom")
+
+            def start_listener(self, *args, **kwargs):
+                raise AssertionError("listener must not start")
+
+        bus = NotificationBus(project_name="p")
+        ch = ExplodingChannel()
+        bus.add_channel(ch)
+        with caplog.at_level(logging.WARNING, logger="urika.notifications.bus"):
+            bus.start()
+        try:
+            assert ch not in bus.channels
+            assert "kaboom" in caplog.text
+        finally:
+            bus.stop()
+
     def test_stop_drains_queue(self):
         """Events queued before stop() are dispatched before thread exits."""
         bus = NotificationBus()

@@ -21,6 +21,11 @@ def send_test_through_bus(
 ) -> dict[str, dict[str, str]]:
     """Send a synthetic 'test' notification through every channel on *bus*.
 
+    Calls ``health_check()`` on each channel first. If the probe fails, the
+    result entry is ``{"status": "error", "message": "health check failed: ..."}``
+    and ``send()`` is NOT invoked — so callers (dashboard, CLI) see the actual
+    auth/config error instead of a silent swallow inside ``send()``.
+
     Returns a dict keyed by a stable per-channel name (class name + index for
     duplicates) where each value is ``{"status": "ok" | "error", "message": str}``.
     """
@@ -37,6 +42,20 @@ def send_test_through_bus(
         idx = seen.get(cls, 0)
         seen[cls] = idx + 1
         key = cls if idx == 0 else f"{cls}_{idx}"
+
+        # Probe credentials/config before send so we surface the real error
+        # rather than the listener-thread-swallow path inside send().
+        try:
+            ok, msg = ch.health_check()
+        except Exception as exc:
+            ok, msg = False, str(exc)
+        if not ok:
+            results[key] = {
+                "status": "error",
+                "message": f"health check failed: {msg}",
+            }
+            continue
+
         try:
             ch.send(event)
             results[key] = {"status": "ok", "message": ""}

@@ -214,13 +214,37 @@ class NotificationBus:
         controller: PauseController | None = None,
         session: object = None,
     ) -> None:
-        """Start the dispatch thread and channel listeners."""
+        """Start the dispatch thread and channel listeners.
+
+        Runs ``health_check()`` on each channel before starting its listener.
+        Channels that fail the health check are removed from ``self.channels``
+        with a WARNING log — subsequent ``notify()`` calls will skip them.
+        """
         self._controller = controller
         self._session = session
         self._thread = threading.Thread(
             target=self._dispatch_loop, name="urika-notifications", daemon=True
         )
         self._thread.start()
+
+        # Filter out unhealthy channels so dispatch and listeners only run on
+        # configurations we've actually verified can talk to the remote service.
+        healthy_channels: list[NotificationChannel] = []
+        for ch in self.channels:
+            try:
+                ok, msg = ch.health_check()
+            except Exception as exc:
+                ok, msg = False, f"health check raised: {exc}"
+            if not ok:
+                logger.warning(
+                    "Channel %s failed health check: %s — will not dispatch",
+                    type(ch).__name__,
+                    msg,
+                )
+                continue
+            healthy_channels.append(ch)
+        self.channels = healthy_channels
+
         for ch in self.channels:
             try:
                 ch.start_listener(controller, project_path=self._project_path, bus=self)
