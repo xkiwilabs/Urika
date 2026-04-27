@@ -20,22 +20,10 @@ if TYPE_CHECKING:
     from urika.orchestrator.pause import PauseController
 
 from urika.notifications.base import NotificationChannel
-from urika.notifications.events import EVENT_METADATA, EventMetadata
+from urika.notifications.events import EVENT_METADATA
+from urika.notifications.formatting import format_event_emoji, format_event_label
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Event-type helpers
-# ---------------------------------------------------------------------------
-
-# Fallback metadata for non-canonical event_types. Channels read EVENT_METADATA
-# (defined in events.py) for emoji + priority routing; this is the last-resort
-# default when the event_type is not registered there.
-_DEFAULT_METADATA = EventMetadata(
-    emoji="\u2139\ufe0f",  # ℹ️
-    priority="low",
-    label="Notification",
-)
 
 
 class SlackChannel(NotificationChannel):
@@ -399,13 +387,14 @@ class SlackChannel(NotificationChannel):
 
     def _build_high_priority(self, event: NotificationEvent) -> list[dict[str, Any]]:
         """Header + section + optional metric fields for high-priority events."""
-        emoji = EVENT_METADATA.get(event.event_type, _DEFAULT_METADATA).emoji
+        emoji = format_event_emoji(event)
+        label = format_event_label(event)
         blocks: list[dict[str, Any]] = [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"{emoji} {event.event_type.replace('_', ' ').title()}",
+                    "text": f"{emoji} {label}",
                     "emoji": True,
                 },
             },
@@ -443,7 +432,7 @@ class SlackChannel(NotificationChannel):
 
     def _build_medium_priority(self, event: NotificationEvent) -> list[dict[str, Any]]:
         """Simple section with emoji for medium-priority events."""
-        emoji = EVENT_METADATA.get(event.event_type, _DEFAULT_METADATA).emoji
+        emoji = format_event_emoji(event)
         return [
             {
                 "type": "section",

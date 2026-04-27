@@ -18,7 +18,8 @@ if TYPE_CHECKING:
     from urika.orchestrator.pause import PauseController
 
 from urika.notifications.base import NotificationChannel
-from urika.notifications.events import EVENT_METADATA, EventMetadata
+from urika.notifications.events import EVENT_METADATA
+from urika.notifications.formatting import format_event_emoji, format_event_label
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +28,6 @@ _ACTIVE_RUN_EVENTS = frozenset(
     {
         "experiment_started",
     }
-)
-
-# Fallback metadata for non-canonical event_types. The high-priority formatter
-# reads EVENT_METADATA for the emoji and falls back to this when an event_type
-# is not registered there.
-_DEFAULT_METADATA = EventMetadata(
-    emoji="\U0001f514",  # 🔔
-    priority="low",
-    label="Notification",
 )
 
 
@@ -396,9 +388,10 @@ def _esc(text: str) -> str:
 
 def _format_high(event: NotificationEvent) -> str:
     """Rich format for high-priority events."""
-    emoji = EVENT_METADATA.get(event.event_type, _DEFAULT_METADATA).emoji
+    emoji = format_event_emoji(event)
+    label = format_event_label(event)
     lines = [
-        f"<b>{emoji} {_esc(event.event_type.replace('_', ' ').title())}</b>",
+        f"<b>{emoji} {_esc(label)}</b>",
         f"<b>Project:</b> {_esc(event.project_name)}",
     ]
     if event.experiment_id:
