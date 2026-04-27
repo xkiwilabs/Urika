@@ -1,0 +1,92 @@
+{% extends "_base.html" %}
+
+{% block title %}Sessions · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Sessions{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Sessions</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .session-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .session-row .session-main { flex: 1 1 auto; min-width: 0; }
+  .session-row .session-meta {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .session-preview {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-preview--empty { font-weight: normal; font-style: italic; }
+  .session-detail { font-size: 0.9em; }
+  .btn-delete {
+    background: none;
+    border: none;
+    color: var(--text-muted, #888);
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    font: inherit;
+  }
+  .btn-delete:hover { color: var(--color-danger, #c0392b); }
+</style>
+
+  {% if sessions %}
+    <ul class="list" id="sessions-list">
+      {% for session in sessions %}
+        <li class="list-item session-row" data-session-id="{{ session.session_id }}">
+          <a
+            href="/projects/{{ project.name }}/advisor?session_id={{ session.session_id }}"
+            class="list-item-link session-main"
+          >
+            <div class="list-item-main">
+              {% if session.preview %}
+                <div class="list-item-title session-preview">{{ session.preview[:80] }}</div>
+              {% else %}
+                <div class="list-item-title session-preview session-preview--empty">(no preview)</div>
+              {% endif %}
+              <div class="list-item-detail text-muted session-detail">
+                {{ session.turn_count }} turn{{ '' if session.turn_count == 1 else 's' }}
+                · {{ session.updated }}
+              </div>
+            </div>
+          </a>
+          <div class="session-meta">
+            <a class="btn btn--small"
+               href="/projects/{{ project.name }}/advisor?session_id={{ session.session_id }}">
+              Resume
+            </a>
+            <button
+              type="button"
+              class="btn-delete"
+              hx-delete="/api/projects/{{ project.name }}/sessions/{{ session.session_id }}"
+              hx-confirm="Delete this session?"
+              hx-target="closest .session-row"
+              hx-swap="outerHTML swap:300ms"
+            >Delete</button>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <p>No sessions yet. Sessions are saved automatically as you chat with the advisor.</p>
+    </div>
+  {% endif %}
+{% endblock %}

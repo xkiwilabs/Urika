@@ -310,6 +310,21 @@ async def api_delete_experiment(name: str, exp_id: str, request: Request):
     )
 
 
+@router.delete("/projects/{name}/sessions/{session_id}")
+async def api_session_delete(name: str, session_id: str) -> Response:
+    """Trash an orchestrator session by ID. 204 on success, 404 if missing."""
+    from urika.core.orchestrator_sessions import delete_session
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    if not delete_session(summary.path, session_id):
+        raise HTTPException(status_code=404, detail="Unknown session")
+    return Response(status_code=204)
+
+
 @router.put("/projects/{name}/settings")
 async def api_project_settings_put(name: str, request: Request):
     """Atomically update project settings and record per-field revisions.

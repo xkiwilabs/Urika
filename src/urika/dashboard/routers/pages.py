@@ -449,6 +449,31 @@ def projectbook_asset(name: str, rest: str) -> FileResponse:
     return FileResponse(asset_path)
 
 
+@router.get("/projects/{name}/sessions", response_class=HTMLResponse)
+def project_sessions(request: Request, name: str) -> HTMLResponse:
+    """List recent orchestrator chat sessions for the project."""
+    from urika.core.orchestrator_sessions import list_sessions
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    sessions = list_sessions(summary.path, limit=20)
+
+    templates = request.app.state.templates
+    ctx = {
+        "project": summary,
+        "sessions": sessions,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(
+        request,
+        "sessions_list.html",
+        ctx,
+    )
+
+
 @router.get("/projects/{name}/experiments", response_class=HTMLResponse)
 def project_experiments(request: Request, name: str) -> HTMLResponse:
     registry = ProjectRegistry().list_all()
