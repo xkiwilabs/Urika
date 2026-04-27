@@ -9,8 +9,9 @@ Order to pick up later:
 
 1. **Notifications polish** — smallest, validates work already shipped
 2. **Orchestrator memory polish** — small, finishes an 80%-built feature
-3. **Project memory + agent instructions** — biggest scope, biggest unlocked value, needs its own plan first
-4. **Agent runtime abstraction** — defer; no current user pain
+3. **Secrets handling** — three-tier secrets store (process env → project `.env` → global keyring/file). Unblocks UI-based key setup, gates clean multi-SDK adoption. Plan: `2026-04-27-secrets-handling-proposal.md`. Folds in task #115 (round-trip test prompt).
+4. **Project memory + agent instructions** — biggest scope, biggest unlocked value, needs its own plan first
+5. **Agent runtime abstraction** — defer; no current user pain
 
 ---
 
@@ -103,13 +104,32 @@ This is its own plan. Recommend writing `dev/plans/2026-XX-XX-project-memory.md`
 
 ---
 
+## Secrets handling — full review
+
+See `dev/plans/2026-04-27-secrets-handling-proposal.md` for the full design. TL;DR:
+
+**Today:** Urika reads keys from `os.environ` only. Users `export` in their shell or `.bashrc` before `urika dashboard`. No `.env` loading anywhere. The `api_key_env` field in TOML stores the env var **name**, never the value. Urika never sees the actual key.
+
+**Proposed:** three-tier resolution `process env → project .env → global secrets store`. Global store is OS keyring (preferred) with `~/.urika/secrets.toml` (chmod 600) fallback. New Settings → Secrets tab in the dashboard with masked input + eye-toggle for set/update/clear.
+
+**Why now (well, soon):**
+- Dashboard has no path to "configure my private model end-to-end" — must drop to terminal.
+- Multi-SDK migration multiplies the env vars needed (Anthropic / OpenAI / Google / per-endpoint). Telling every user to export N variables doesn't scale.
+- Subscription-vs-API-key choice for Claude becomes UI-toggleable: unset `ANTHROPIC_API_KEY` → spawn `claude` CLI; set it → direct API.
+
+**Folds in:**
+- Task #115 (round-trip test prompt) — once secrets are settable from the UI, the Test button actually fires a chat request with the configured key.
+
+**Effort:** ~1 week.
+
 ## Priority rationale
 
 | Priority | Feature | Effort | Confidence | Gates |
 |----------|---------|--------|------------|-------|
 | 1 | Notifications polish | ~3 days | high | removes "dev-only" flag from existing code |
 | 2 | Orchestrator memory polish | ~1–2 days | high | finishes 80%-built feature |
-| 3 | Project memory + instructions | ~1 week (after plan) | medium | unlocks cross-run continuity |
-| 4 | Runtime abstraction | ~2 weeks | low | no current pain |
+| 3 | Secrets handling | ~1 week | high | gates UI-based key setup + multi-SDK adoption |
+| 4 | Project memory + instructions | ~1 week (after plan) | medium | unlocks cross-run continuity |
+| 5 | Runtime abstraction | ~2 weeks | low | depends on #3 (each adapter needs a key) |
 
-Picking #1 next gives a quick win that retires a feature flag. #2 follows naturally and tightens loose ends. #3 deserves a dedicated planning phase before any code lands. #4 stays parked.
+Picking #1 next gives a quick win that retires a feature flag. #2 follows naturally and tightens loose ends. #3 unblocks the dashboard "set up private model" flow end-to-end and is a hard prerequisite for #5 (every new adapter needs a secret). #4 deserves a dedicated planning phase before any code lands. #5 stays parked behind #3.
