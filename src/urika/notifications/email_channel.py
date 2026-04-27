@@ -52,6 +52,30 @@ class EmailChannel(NotificationChannel):
             self._send_email(self._pending)
             self._pending = []
 
+    def health_check(self) -> tuple[bool, str]:
+        """Probe SMTP connectivity, STARTTLS, login, and NOOP.
+
+        Uses a short timeout (5s) so the probe doesn't hang the bus startup.
+        Returns ``(True, "")`` on success, ``(False, error_message)`` otherwise.
+        """
+        if not self._to or not self._server:
+            return (False, "missing required config (to/smtp_server)")
+        try:
+            ctx = ssl.create_default_context()
+            with smtplib.SMTP(self._server, self._port, timeout=5) as smtp:
+                smtp.starttls(context=ctx)
+                password = (
+                    os.environ.get(self._password_env, "")
+                    if self._password_env
+                    else ""
+                )
+                if password:
+                    smtp.login(self._username, password)
+                smtp.noop()
+            return (True, "")
+        except Exception as exc:
+            return (False, str(exc))
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

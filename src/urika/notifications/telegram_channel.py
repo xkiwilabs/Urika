@@ -111,6 +111,28 @@ class TelegramChannel(NotificationChannel):
             self._listener_thread.join(timeout=5.0)
             self._listener_thread = None
 
+    def health_check(self) -> tuple[bool, str]:
+        """Probe the bot token via Telegram's ``getMe`` endpoint.
+
+        Runs in a fresh event loop synchronously. Returns ``(True, "")`` on
+        success, ``(False, error_message)`` on InvalidToken / TimedOut /
+        NetworkError / any other exception.
+        """
+        if not self._token:
+            return (False, "no bot token configured")
+        try:
+            from telegram import Bot
+
+            loop = asyncio.new_event_loop()
+            try:
+                bot = Bot(token=self._token)
+                loop.run_until_complete(bot.get_me())
+                return (True, "")
+            finally:
+                loop.close()
+        except Exception as exc:
+            return (False, str(exc))
+
     # ------------------------------------------------------------------
     # Message formatting
     # ------------------------------------------------------------------

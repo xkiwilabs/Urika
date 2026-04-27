@@ -89,6 +89,36 @@ class SlackChannel(NotificationChannel):
         except Exception as exc:
             logger.warning("Slack send failed: %s", exc)
 
+    def health_check(self) -> tuple[bool, str]:
+        """Probe the bot token via Slack's ``auth.test`` endpoint.
+
+        Returns ``(True, "")`` on success, ``(False, error_message)`` on failure.
+        Surfaces the Slack error code (e.g. ``invalid_auth``, ``token_revoked``)
+        when the failure is a SlackApiError.
+        """
+        try:
+            # auth_test is the canonical Slack endpoint for "is my bot token valid?"
+            # Returns user/team info on success; raises SlackApiError on bad token.
+            self._client.auth_test()
+            return (True, "")
+        except Exception as exc:
+            # SlackApiError carries .response.get("error") with details like
+            # "invalid_auth", "token_revoked", etc. Surface that if present.
+            try:
+                from slack_sdk.errors import SlackApiError
+
+                if isinstance(exc, SlackApiError):
+                    response = getattr(exc, "response", None)
+                    if response is not None:
+                        try:
+                            err_code = response.get("error", str(exc))
+                        except Exception:
+                            err_code = str(exc)
+                        return (False, err_code)
+            except ImportError:
+                pass
+            return (False, str(exc))
+
     # ------------------------------------------------------------------
     # Inbound (Socket Mode)
     # ------------------------------------------------------------------
