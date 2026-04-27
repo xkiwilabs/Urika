@@ -601,6 +601,48 @@ def cmd_experiments(session: ReplSession, args: str) -> None:
     click.echo()
 
 
+@command(
+    "delete-experiment",
+    requires_project=True,
+    description="Move an experiment to project-local trash",
+)
+def cmd_delete_experiment(session: ReplSession, args: str) -> None:
+    from urika.core.experiment_delete import (
+        ActiveExperimentError,
+        ExperimentNotFoundError,
+        trash_experiment,
+    )
+
+    exp_id = args.strip()
+    if not exp_id:
+        click.echo("  Usage: /delete-experiment <exp_id>")
+        return
+
+    try:
+        click.confirm(
+            f"  Move experiment '{exp_id}' to "
+            f"{session.project_path}/trash/? "
+            "(files preserved, experiment dir removed)",
+            abort=True,
+        )
+    except click.Abort:
+        click.echo("  Aborted.")
+        return
+
+    try:
+        result = trash_experiment(
+            session.project_path, session.project_name, exp_id
+        )
+    except ExperimentNotFoundError:
+        click.echo(f"  Experiment '{exp_id}' not found.")
+        return
+    except ActiveExperimentError as exc:
+        click.echo(f"  {exc}")
+        return
+
+    click.echo(f"  Moved '{exp_id}' to {result.trash_path}")
+
+
 @command("methods", requires_project=True, description="Show methods table")
 def cmd_methods(session: ReplSession, args: str) -> None:
     from urika.core.method_registry import load_methods

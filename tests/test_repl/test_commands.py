@@ -339,3 +339,106 @@ class TestCmdDelete:
         out = capsys.readouterr().out
         assert "Unregistered 'foo'" in out
         assert "already missing" in out
+
+
+class TestCmdDeleteExperiment:
+    """Tests for the /delete-experiment slash command (TUI/REPL)."""
+
+    def test_empty_args_prints_usage(self, tmp_path: Path, capsys) -> None:
+        from urika.repl_commands import cmd_delete_experiment
+
+        session = ReplSession()
+        session.load_project(tmp_path, "foo")
+        cmd_delete_experiment(session, "")
+        out = capsys.readouterr().out
+        assert "Usage: /delete-experiment" in out
+
+    def test_confirms_then_trashes(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from urika.repl_commands import cmd_delete_experiment
+        from urika.core.experiment_delete import TrashExperimentResult
+
+        session = ReplSession()
+        session.load_project(tmp_path, "foo")
+        called: dict = {}
+
+        def fake_trash(project_path, project_name, exp_id):
+            called["args"] = (project_path, project_name, exp_id)
+            return TrashExperimentResult(
+                project_name=project_name,
+                experiment_id=exp_id,
+                original_path=project_path / "experiments" / exp_id,
+                trash_path=project_path / "trash" / f"{exp_id}-x",
+            )
+
+        monkeypatch.setattr(
+            "urika.core.experiment_delete.trash_experiment", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
+        cmd_delete_experiment(session, "exp-001")
+
+        assert called["args"][1] == "foo"
+        assert called["args"][2] == "exp-001"
+        assert "Moved 'exp-001' to" in capsys.readouterr().out
+
+    def test_n_aborts_without_calling_trash(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from urika.repl_commands import cmd_delete_experiment
+
+        session = ReplSession()
+        session.load_project(tmp_path, "foo")
+        called: dict = {"hit": False}
+
+        def fake_trash(*a, **kw):
+            called["hit"] = True
+
+        def fake_confirm(*a, **kw):
+            raise click.Abort()
+
+        monkeypatch.setattr(
+            "urika.core.experiment_delete.trash_experiment", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", fake_confirm)
+        cmd_delete_experiment(session, "exp-001")
+        assert called["hit"] is False
+        assert "Aborted." in capsys.readouterr().out
+
+    def test_unknown_experiment_prints_error(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from urika.repl_commands import cmd_delete_experiment
+        from urika.core.experiment_delete import ExperimentNotFoundError
+
+        session = ReplSession()
+        session.load_project(tmp_path, "foo")
+
+        def fake_trash(project_path, project_name, exp_id):
+            raise ExperimentNotFoundError(exp_id)
+
+        monkeypatch.setattr(
+            "urika.core.experiment_delete.trash_experiment", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
+        cmd_delete_experiment(session, "exp-ghost")
+        assert "not found" in capsys.readouterr().out
+
+    def test_active_lock_prints_error(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from urika.repl_commands import cmd_delete_experiment
+        from urika.core.experiment_delete import ActiveExperimentError
+
+        session = ReplSession()
+        session.load_project(tmp_path, "foo")
+
+        def fake_trash(project_path, project_name, exp_id):
+            raise ActiveExperimentError(tmp_path / "exp/.lock")
+
+        monkeypatch.setattr(
+            "urika.core.experiment_delete.trash_experiment", fake_trash
+        )
+        monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
+        cmd_delete_experiment(session, "exp-001")
+        assert ".lock" in capsys.readouterr().out
