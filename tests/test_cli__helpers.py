@@ -72,11 +72,16 @@ def test_test_endpoint_treats_2xx_as_reachable(monkeypatch) -> None:
     import urllib.request
 
     class _FakeResponse:
+        status = 200
+
         def __enter__(self):
             return self
 
         def __exit__(self, *_):
             return False
+
+        def getcode(self) -> int:
+            return 200
 
     monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: _FakeResponse())
     assert _test_endpoint("http://example.invalid:11434") is True

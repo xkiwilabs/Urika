@@ -1280,7 +1280,7 @@ async def api_test_endpoint(request: Request) -> JSONResponse:
     """
     import os as _os
 
-    from urika.cli._helpers import _test_endpoint
+    from urika.cli._helpers import _probe_endpoint
 
     form = await request.form()
     base_url = (form.get("base_url") or "").strip()
@@ -1291,8 +1291,7 @@ async def api_test_endpoint(request: Request) -> JSONResponse:
         raise HTTPException(status_code=422, detail="base_url is required")
 
     try:
-        reachable = _test_endpoint(base_url)
-        details = "OK" if reachable else "endpoint not reachable in 3s"
+        reachable, details = _probe_endpoint(base_url)
     except Exception as e:  # noqa: BLE001 — surface the type, not the message.
         reachable = False
         # Don't leak ``str(e)`` — could carry creds embedded in a

@@ -157,39 +157,79 @@ def _ensure_project(project: str | None) -> str:
         raise SystemExit(0)
 
 
-def _test_endpoint(url: str) -> bool:
-    """Test if an API endpoint is reachable (3s timeout).
+def _probe_endpoint(url: str) -> tuple[bool, str]:
+    """Probe an API endpoint; return ``(reachable, detail)``.
 
-    Counts ANY HTTP response from the server as reachable — including
-    401 / 403 / 404. If the server can return a status code, the
-    endpoint exists and is up; auth rejection just means the probe
-    didn't send a key, not that the endpoint is broken.
+    ``reachable`` is True for any HTTP response from the server —
+    including 401 / 403 / 404 — because that proves the server is up
+    and the endpoint exists. Auth rejection just means the probe
+    didn't send a key.
 
-    Only connection-level failures (DNS error, refused, timeout) mean
-    "unreachable".
+    ``detail`` is a short human-readable summary suitable for surfacing
+    in the dashboard:
+
+    * On success: ``"OK"`` for 2xx, ``"reachable (HTTP <code>)"`` for
+      a non-2xx response.
+    * On failure: a one-line reason — ``"connection refused"``,
+      ``"name not resolved"``, ``"SSL error: <msg>"``, ``"timed out"``,
+      etc. Never includes the URL or auth-bearing strings.
     """
-    import urllib.request
+    import socket
+    import ssl
     import urllib.error
+    import urllib.request
 
-    # Try common health/version endpoints
-    for path in ["", "/api/tags", "/v1/models", "/models"]:
+    last_reason: str | None = None
+
+    for path in ("", "/api/tags", "/v1/models", "/models"):
+        test_url = url.rstrip("/") + path
         try:
-            test_url = url.rstrip("/") + path
             req = urllib.request.Request(
                 test_url,
                 headers={"User-Agent": "urika-endpoint-check"},
             )
-            with urllib.request.urlopen(req, timeout=3):
-                return True
-        except urllib.error.HTTPError:
-            # Server responded with a non-2xx status (e.g. 401 from an
-            # auth-protected endpoint, 404 from a path that doesn't
-            # exist). Either way the server is up and answering.
-            return True
-        except (urllib.error.URLError, TimeoutError, OSError):
-            # Connection-level failure — try the next path.
-            continue
-    return False
+        except (ValueError, TypeError) as e:
+            return False, f"invalid url: {type(e).__name__}"
+
+        try:
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                code = getattr(resp, "status", None) or resp.getcode()
+                if 200 <= code < 300:
+                    return True, "OK"
+                return True, f"reachable (HTTP {code})"
+        except urllib.error.HTTPError as e:
+            # Server responded with a non-2xx status — endpoint exists.
+            return True, f"reachable (HTTP {e.code})"
+        except urllib.error.URLError as e:
+            reason = e.reason
+            if isinstance(reason, ssl.SSLError):
+                last_reason = f"SSL error: {reason.reason or reason}"
+            elif isinstance(reason, socket.gaierror):
+                last_reason = "name not resolved (DNS)"
+            elif isinstance(reason, ConnectionRefusedError):
+                last_reason = "connection refused"
+            elif isinstance(reason, TimeoutError):
+                last_reason = "timed out"
+            elif isinstance(reason, OSError):
+                # Generic OS-level network error — strip path-like info.
+                last_reason = f"network error: {reason.strerror or type(reason).__name__}"
+            else:
+                last_reason = f"url error: {type(reason).__name__}"
+        except TimeoutError:
+            last_reason = "timed out"
+        except OSError as e:
+            last_reason = f"os error: {e.strerror or type(e).__name__}"
+
+    return False, last_reason or "no response"
+
+
+def _test_endpoint(url: str) -> bool:
+    """Test if an API endpoint is reachable (3s timeout).
+
+    Thin bool wrapper around :func:`_probe_endpoint` for legacy
+    callers that don't need the failure reason.
+    """
+    return _probe_endpoint(url)[0]
 
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:
