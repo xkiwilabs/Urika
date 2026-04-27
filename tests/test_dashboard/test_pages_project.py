@@ -130,6 +130,33 @@ def test_experiments_page_renders_sort_dropdown(client_with_experiments):
     assert "data-last-touched" in body
 
 
+def test_new_experiment_modal_has_advisor_first_checkbox(client_with_experiments):
+    """The redesigned modal shows an "Ask advisor to suggest the next
+    experiment" checkbox at the top, bound to ``advisorFirst`` Alpine
+    state. Default checked (the user opts out, not in)."""
+    r = client_with_experiments.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    assert "Ask advisor to suggest the next experiment" in body
+    assert "advisorFirst" in body
+    # Default true: state machine initializer sets advisorFirst: true.
+    assert "advisorFirst: true" in body
+
+
+def test_new_experiment_modal_uses_three_step_state_machine(client_with_experiments):
+    """The modal switches between compose / asking / review steps via
+    ``step`` Alpine state. All three branches must exist in the markup."""
+    r = client_with_experiments.get("/projects/alpha/experiments")
+    body = r.text
+    # The Alpine state machine has three explicit step values.
+    assert "step === 'compose'" in body
+    assert "step === 'asking'" in body
+    assert "step === 'review'" in body
+    # The Review step posts to /run with an editable name + hypothesis.
+    assert 'name="name"' in body
+    assert 'name="hypothesis"' in body
+
+
 def test_experiments_page_404_for_unknown(client_with_projects):
     r = client_with_projects.get("/projects/nonexistent/experiments")
     assert r.status_code == 404
@@ -240,9 +267,7 @@ def test_experiment_detail_404_for_unknown_project(client_with_runs):
     assert r.status_code == 404
 
 
-def test_experiment_report_route_renders_labbook_narrative(
-    tmp_path: Path, monkeypatch
-):
+def test_experiment_report_route_renders_labbook_narrative(tmp_path: Path, monkeypatch):
     """The "View report" route must render labbook/narrative.md when
     no report.md exists. The report agent writes narrative.md as part
     of the standard ``urika run`` flow; without this fallback the
@@ -668,30 +693,24 @@ def test_experiments_page_modal_includes_audience_options(
     assert 'value="expert"' in body
 
 
-def test_new_experiment_modal_has_no_name_field(client_with_projects):
-    """The redesigned modal must not ask for an experiment name — the
-    planning agent picks one during the run, matching ``urika run``."""
+def test_new_experiment_modal_compose_step_has_no_name_or_hypothesis_field(
+    client_with_projects,
+):
+    """The Compose step (the initial form) must not ask for name or
+    hypothesis. Those only appear in the Review step, populated by the
+    advisor's suggestion. The compose-step ids ``ne-name`` /
+    ``ne-hypothesis`` (which the old single-step modal used) must
+    therefore not appear; the review-step ids ``ne-review-name`` /
+    ``ne-review-hypothesis`` are allowed and expected."""
     r = client_with_projects.get("/projects/alpha/experiments")
     assert r.status_code == 200
     body = r.text
-    # The old modal had an explicit Experiment-name input; the new one
-    # has no such input at all. ``ne-name`` is the unique id we'd have
-    # used for it, so its absence proves the field is gone.
     assert 'id="ne-name"' not in body
-    # The form inside the new-experiment modal posts to /api/projects/.../run
-    # and contains no ``name="name"`` field. The page's <input> elements
-    # never use a literal ``name="name"`` attribute outside the old form,
-    # so a global check is sufficient here.
-    assert 'name="name"' not in body
-
-
-def test_new_experiment_modal_has_no_hypothesis_field(client_with_projects):
-    """Hypothesis is derived by the planning agent; the form must not ask."""
-    r = client_with_projects.get("/projects/alpha/experiments")
-    assert r.status_code == 200
-    body = r.text
     assert 'id="ne-hypothesis"' not in body
-    assert 'name="hypothesis"' not in body
+    # The Review step DOES expose name/hypothesis fields (advisor-first
+    # flow); their distinct ids prevent confusion with the old design.
+    assert 'id="ne-review-name"' in body
+    assert 'id="ne-review-hypothesis"' in body
 
 
 def test_new_experiment_modal_has_no_mode_field(client_with_projects):

@@ -117,6 +117,16 @@ def _update_repl_activity(event: str, detail: str) -> None:
     default=False,
     help="Use the deterministic Python orchestrator (default behavior for now).",
 )
+@click.option(
+    "--no-advisor",
+    "no_advisor",
+    is_flag=True,
+    default=False,
+    help=(
+        "Skip the advisor's next-experiment suggestion. Creates an empty "
+        "experiment instead and lets the orchestrator pick name/hypothesis."
+    ),
+)
 def run(
     project: str,
     experiment_id: str | None,
@@ -131,6 +141,7 @@ def run(
     json_output: bool = False,
     audience: str | None = None,
     legacy: bool = False,
+    no_advisor: bool = False,
 ) -> None:
     """Run an experiment using the orchestrator."""
     # TODO: When --legacy is False and TUI binary is available,
@@ -577,29 +588,45 @@ def run(
                     f"({len(pending)} pending)" if len(pending) > 1 else "",
                 )
         else:
-            # No pending — determine next experiment from state
-            experiment_id = _determine_next_experiment(
-                project_path,
-                project,
-                auto=auto or json_output,
-                instructions=instructions,
-                panel=panel,
-            )
-            if experiment_id is not None:
+            # No pending — determine next experiment from state.
+            # --no-advisor bypasses the advisor consultation: create an
+            # empty experiment so the orchestrator's turn-1 name-backfill
+            # picks the name from the first method instead.
+            if no_advisor:
+                from urika.core.experiment import create_experiment
+
+                exp = create_experiment(project_path, name="", hypothesis="")
+                experiment_id = exp.experiment_id
                 if not json_output:
                     print_step(
-                        f"Created new experiment: {experiment_id}",
-                        "based on advisor suggestions",
+                        f"Created empty experiment: {experiment_id}",
+                        "(advisor skipped via --no-advisor)",
                     )
-            elif experiment_id is None:
-                if not experiments:
-                    raise click.ClickException(
-                        "No experiments and no plan found. Create one with:\n"
-                        f"  urika experiment create {project} <experiment-name>"
-                    )
-                experiment_id = experiments[-1].experiment_id
-                if not json_output:
-                    print_step(f"All experiments completed. Re-running {experiment_id}")
+            else:
+                experiment_id = _determine_next_experiment(
+                    project_path,
+                    project,
+                    auto=auto or json_output,
+                    instructions=instructions,
+                    panel=panel,
+                )
+                if experiment_id is not None:
+                    if not json_output:
+                        print_step(
+                            f"Created new experiment: {experiment_id}",
+                            "based on advisor suggestions",
+                        )
+                elif experiment_id is None:
+                    if not experiments:
+                        raise click.ClickException(
+                            "No experiments and no plan found. Create one with:\n"
+                            f"  urika experiment create {project} <experiment-name>"
+                        )
+                    experiment_id = experiments[-1].experiment_id
+                    if not json_output:
+                        print_step(
+                            f"All experiments completed. Re-running {experiment_id}"
+                        )
 
     if not json_output:
         if resume:

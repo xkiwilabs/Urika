@@ -1360,6 +1360,165 @@ async def api_test_endpoint(request: Request) -> JSONResponse:
     )
 
 
+@router.post("/projects/{name}/suggest-experiment")
+async def api_suggest_experiment(name: str, request: Request):
+    """Run the advisor synchronously to suggest the next experiment.
+
+    Returns ``{name, hypothesis, instructions}`` for the modal's
+    Review step. The user can override before submitting to ``/run``.
+
+    Latency: ~5-15s. Wrapped in :func:`asyncio.shield` so client
+    disconnect doesn't cancel the advisor mid-thought.
+
+    Mirrors the prompt + parsing logic of
+    :func:`urika.cli.run_planning._determine_next_experiment` — same
+    advisor role, same JSON-shaped suggestion, just without the
+    interactive numbered prompt at the end.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    instructions = (form.get("instructions") or "").strip()
+
+    # Privacy gate: same pre-flight as /run, since this also calls an
+    # agent. Fails fast before spinning up the runner.
+    _validate_privacy_endpoint(summary.path)
+
+    # Gather project state for context — mirrors _determine_next_experiment.
+    from urika.core.experiment import list_experiments
+    from urika.core.progress import load_progress
+
+    existing_experiments = list_experiments(summary.path)
+    completed = [
+        e
+        for e in existing_experiments
+        if load_progress(summary.path, e.experiment_id).get("status") == "completed"
+    ]
+
+    methods_summary = ""
+    methods_path = summary.path / "methods.json"
+    if methods_path.exists():
+        try:
+            mdata = json.loads(methods_path.read_text(encoding="utf-8"))
+            mlist = mdata.get("methods", [])
+            if mlist:
+                methods_summary = f"{len(mlist)} methods tried. Best: "
+
+                def _best_metric_val(m: dict) -> float:
+                    nums = [
+                        v
+                        for v in m.get("metrics", {}).values()
+                        if isinstance(v, (int, float))
+                    ]
+                    return max(nums) if nums else 0
+
+                best = max(
+                    (m for m in mlist if m.get("metrics")),
+                    key=_best_metric_val,
+                    default=None,
+                )
+                if best:
+                    methods_summary += f"{best['name']} ({best.get('metrics', {})})"
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    criteria_summary = ""
+    criteria_path = summary.path / "criteria.json"
+    if criteria_path.exists():
+        try:
+            cdata = json.loads(criteria_path.read_text(encoding="utf-8"))
+            versions = cdata.get("versions", [])
+            if versions:
+                latest = versions[-1]
+                ctype = latest.get("criteria", {}).get("type", "unknown")
+                criteria_summary = f"Criteria: {ctype} (v{latest['version']})"
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    context = (
+        f"Project: {name}\n"
+        f"Completed experiments: {len(completed)}\n"
+        f"{methods_summary}\n{criteria_summary}\n"
+    )
+    if instructions:
+        context += f"\nUser instructions: {instructions}\n"
+    context += "\nPropose the next experiment."
+
+    # Run the advisor inline — short call (~5-15s), shielded so the
+    # client closing the modal mid-thought doesn't cancel the agent.
+    try:
+        from urika.agents.registry import AgentRegistry
+        from urika.agents.runner import get_runner
+        from urika.orchestrator.parsing import parse_suggestions
+
+        runner = get_runner()
+        agent_registry = AgentRegistry()
+        agent_registry.discover()
+        suggest_role = agent_registry.get("advisor_agent")
+        if suggest_role is None:
+            raise HTTPException(
+                status_code=500,
+                detail="advisor_agent role not found in registry",
+            )
+
+        config = suggest_role.build_config(project_dir=summary.path, experiment_id="")
+
+        result = await asyncio.shield(runner.run(config, context))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Advisor invocation failed: {exc}",
+        ) from exc
+
+    if not result.success:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Advisor failed: {result.error or 'no output'}",
+        )
+
+    parsed = parse_suggestions(result.text_output)
+    if not parsed or not parsed.get("suggestions"):
+        raise HTTPException(
+            status_code=500,
+            detail="Advisor did not return a parseable suggestion",
+        )
+
+    first = parsed["suggestions"][0]
+    suggested_name = (first.get("name") or "").strip()
+    suggested_hypothesis = (
+        first.get("method") or first.get("description") or ""
+    ).strip()
+
+    # Merge user's seed instructions with the advisor's instructions so
+    # the Review step's textarea has the full context. The user can edit
+    # before submitting.
+    merged_instructions_parts = []
+    if instructions:
+        merged_instructions_parts.append(instructions)
+    advisor_instructions = (first.get("instructions") or "").strip()
+    if advisor_instructions:
+        merged_instructions_parts.append(advisor_instructions)
+    elif suggested_hypothesis and suggested_hypothesis not in merged_instructions_parts:
+        # Fallback: if the advisor only gave name + method/description,
+        # echo the description into instructions so the user has
+        # something to edit beyond just the name + hypothesis.
+        merged_instructions_parts.append(suggested_hypothesis)
+    merged_instructions = "\n\n".join(merged_instructions_parts)
+
+    return JSONResponse(
+        {
+            "name": suggested_name,
+            "hypothesis": suggested_hypothesis,
+            "instructions": merged_instructions,
+        }
+    )
+
+
 @router.post("/projects/{name}/run")
 async def api_project_run_post(name: str, request: Request):
     """Materialize a new experiment and spawn ``urika run`` for it.
@@ -1455,12 +1614,20 @@ async def api_project_run_post(name: str, request: Request):
     # so a stale .lock isn't left behind.
     _validate_privacy_endpoint(summary.path)
 
-    # ``create_experiment`` still takes name + hypothesis as kwargs; the
-    # planning agent fills them in during the run. Pass empty strings so
-    # the experiment dir + experiment.json are still created with the
-    # required keys present (CLI's ``urika run`` does the same — derives
-    # both from the agent's first turn).
-    exp = create_experiment(summary.path, name="", hypothesis="")
+    # ``create_experiment`` still takes name + hypothesis as kwargs.
+    # When the modal's advisor-first flow runs, the user has already
+    # reviewed/edited a suggestion and POSTs the agreed name +
+    # hypothesis here. Otherwise both fields are absent and the
+    # orchestrator's turn-1 name-backfill kicks in (it only fills
+    # when ``experiment.name`` is empty, so passing a non-empty name
+    # through is safe).
+    name_field = (form.get("name") or "").strip()
+    hypothesis_field = (form.get("hypothesis") or "").strip()
+    exp = create_experiment(
+        summary.path,
+        name=name_field,
+        hypothesis=hypothesis_field,
+    )
     pid = spawn_experiment_run(
         name,
         summary.path,

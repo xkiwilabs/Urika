@@ -774,6 +774,55 @@ class TestRunCommand:
         )
         assert result.exit_code != 0
 
+    def test_run_no_advisor_skips_determine_next_experiment(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """``urika run --no-advisor`` must skip the advisor consultation
+        in ``_determine_next_experiment`` and create an empty experiment
+        directly, leaving name/hypothesis to the orchestrator's turn-1
+        backfill. Mirror of the dashboard's "advisor-first" checkbox
+        when unchecked.
+        """
+        _create_project(runner, urika_env)
+        # Pre-create one completed experiment so the "no pending" branch
+        # is taken (which is where _determine_next_experiment lives).
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            env=urika_env,
+        )
+        # Mark the existing experiment "completed" so it isn't picked
+        # up as pending — forces the new-experiment branch.
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        for exp_dir in (project_dir / "experiments").iterdir():
+            progress_path = exp_dir / "progress.json"
+            progress_path.write_text(
+                json.dumps(
+                    {
+                        "experiment_id": exp_dir.name,
+                        "status": "completed",
+                        "runs": [],
+                    }
+                )
+            )
+
+        with (
+            patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner"),
+            patch("urika.cli.run._determine_next_experiment") as mock_determine,
+            patch(
+                "urika.orchestrator.run_experiment", new_callable=AsyncMock
+            ) as mock_run,
+        ):
+            mock_run.return_value = {"status": "completed", "turns": 1, "error": None}
+            result = runner.invoke(
+                cli, ["run", "test-proj", "--no-advisor"], env=urika_env
+            )
+        assert result.exit_code == 0, result.output
+        # Advisor consultation must NOT have been called.
+        mock_determine.assert_not_called()
+        # An experiment was nonetheless created and run.
+        assert mock_run.called
+
 
 class TestRunContinueFlag:
     def test_continue_passes_resume_true(

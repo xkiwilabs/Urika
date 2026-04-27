@@ -696,6 +696,65 @@ def test_run_post_default_mode_succeeds_with_no_extras(run_client):
     assert call.get("max_experiments") is None
 
 
+def test_run_post_accepts_name_and_hypothesis_and_passes_to_create_experiment(
+    run_client,
+):
+    """The advisor-first flow's Review step posts ``name`` and
+    ``hypothesis`` form fields. The /run endpoint must thread them
+    through to ``create_experiment`` so the experiment dir is laid
+    down with the user-confirmed values, and the experiment_id slug
+    reflects the agreed name."""
+    client, spawn_calls, proj = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "explore decomposition",
+            "name": "Kaya Decomposition Counterfactual",
+            "hypothesis": "Decompose energy intensity using Kaya identity.",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    exp_id = body["experiment_id"]
+    # The slug derived from the agreed name lands in the experiment_id.
+    assert "kaya" in exp_id.lower()
+    # experiment.json carries the agreed name + hypothesis through.
+    exp_json = json.loads(
+        (proj / "experiments" / exp_id / "experiment.json").read_text()
+    )
+    assert exp_json["name"] == "Kaya Decomposition Counterfactual"
+    assert exp_json["hypothesis"] == "Decompose energy intensity using Kaya identity."
+    # Spawn was called with the resolved experiment_id.
+    assert spawn_calls and spawn_calls[0]["experiment_id"] == exp_id
+
+
+def test_run_post_empty_name_and_hypothesis_unchanged(run_client):
+    """Without name/hypothesis fields (i.e. advisor-first unchecked) the
+    endpoint behaves exactly as before — empty experiment is created and
+    the orchestrator's turn-1 backfill picks the name."""
+    client, spawn_calls, proj = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "audience": "expert",
+            "max_turns": "5",
+            "instructions": "",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    exp_id = body["experiment_id"]
+    exp_json = json.loads(
+        (proj / "experiments" / exp_id / "experiment.json").read_text()
+    )
+    assert exp_json["name"] == ""
+    assert exp_json["hypothesis"] == ""
+
+
 def test_run_post_auto_unlimited_translates_to_high_cap(run_client):
     """``auto_limit=unlimited`` → server sends a high max_experiments
     cap to the CLI so meta-orchestrator runs in unlimited mode (CLI
