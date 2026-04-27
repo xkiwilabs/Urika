@@ -1,0 +1,300 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import modal, action_label %}
+
+{% block title %}{{ (experiment.name or experiment.experiment_id) | humanize }} · Urika{% endblock %}
+{% block heading %}{{ (experiment.name or experiment.experiment_id) | humanize }}{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}/experiments">Experiments</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">{{ experiment.experiment_id }}</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <div class="card-title">{{ experiment.hypothesis }}</div>
+    <div class="card-meta">
+      <span class="tag tag--{{ experiment_status | tag_status }}">{{ experiment_status }}</span>
+      <span class="text-muted">{{ experiment.experiment_id }}</span>
+      <span class="text-muted">{{ experiment.created_at }}</span>
+      {% if experiment_status in ("failed", "paused", "stopped") %}
+        {# Resume runs ``urika run --experiment <id> --resume`` for
+           this experiment. Only visible when there's something to
+           resume; otherwise the user uses the new-experiment modal. #}
+        <form
+          method="post"
+          action="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/resume"
+          hx-post="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/resume"
+          hx-swap="none"
+          style="margin-left: auto;"
+        >
+          <button type="submit" class="btn btn--small btn--primary">
+            Resume
+          </button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <section class="artifacts">
+    <h2 class="section-heading">Outputs</h2>
+
+    <div class="artifact-row">
+      <div class="artifact-row-label">Report</div>
+      <div class="artifact-row-actions">
+        {% if has_report %}
+          <a class="btn btn--primary"
+             href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/report">
+            View report
+          </a>
+        {% endif %}
+        {% set rp = running_by_exp.get(("report", experiment.experiment_id)) %}
+        {% if rp %}
+          <a class="btn btn--secondary btn--running" href="{{ rp.log_url }}">
+            <span class="running-dot"></span>
+            Report running… view log
+          </a>
+        {% else %}
+          <button type="button" class="btn btn--secondary"
+                  @click="$dispatch('open-modal', { id: 'report' })">
+            {{ action_label("Generate", "report", has_report) }}
+          </button>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="artifact-row">
+      <div class="artifact-row-label">Presentation</div>
+      <div class="artifact-row-actions">
+        {% if has_presentation %}
+          <a class="btn btn--primary"
+             href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/presentation"
+             target="_blank" rel="noopener">
+            Open presentation &#8599;
+          </a>
+        {% endif %}
+        {% set pr = running_by_exp.get(("present", experiment.experiment_id)) %}
+        {% if pr %}
+          <a class="btn btn--secondary btn--running" href="{{ pr.log_url }}">
+            <span class="running-dot"></span>
+            Presentation running… view log
+          </a>
+        {% else %}
+          <button type="button" class="btn btn--secondary"
+                  @click="$dispatch('open-modal', { id: 'present' })">
+            {{ action_label("Generate", "presentation", has_presentation) }}
+          </button>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="artifact-row">
+      <div class="artifact-row-label">Run log</div>
+      <div class="artifact-row-actions">
+        {% if has_log %}
+          <a class="btn btn--secondary"
+             href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/log">
+            View live log
+          </a>
+        {% else %}
+          <span class="text-muted">No log yet — start a run</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="artifact-row">
+      <div class="artifact-row-label">Evaluation</div>
+      <div class="artifact-row-actions">
+        {% set ev = running_by_exp.get(("evaluate", experiment.experiment_id)) %}
+        {% if ev %}
+          <a class="btn btn--secondary btn--running" href="{{ ev.log_url }}">
+            <span class="running-dot"></span>
+            Evaluate running… view log
+          </a>
+        {% else %}
+          <button type="button" class="btn btn--secondary"
+                  @click="$dispatch('open-modal', { id: 'evaluate' })">
+            Evaluate
+          </button>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if artifact_files %}
+      <div class="artifact-row">
+        <div class="artifact-row-label">Files</div>
+        <div class="artifact-row-actions">
+          <ul class="artifact-files">
+            {% for f in artifact_files %}
+              <li>
+                <a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.name }}</a>
+                <span class="text-muted">{{ f.size }} bytes</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Runs</h2>
+    {% if runs %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Method</th>
+            <th>Metrics</th>
+            <th>Observation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in runs %}
+            <tr>
+              <td>{{ run.run_id }}</td>
+              <td>{{ run.method }}</td>
+              <td>
+                {% set metric_items = (run.metrics or {}).items() | list %}
+                {% if metric_items %}
+                  {% for key, value in metric_items %}
+                    {{ key }}={% if value is number %}{{ '%.3f' | format(value) }}{% else %}{{ value }}{% endif %}{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {{ (run.observation or '')[:80] }}{% if run.observation and run.observation|length > 80 %}…{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <p>No runs yet.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  {# ---- Danger zone -----------------------------------------------------
+     Move-to-trash for the experiment. Mirrors the project-settings
+     Danger zone (commit 511dc075): type-name confirm + HX-Redirect on
+     success. Active-lock guard renders a disabled button with the
+     blocking lock path so the user knows what to stop first.
+  #}
+  <section class="card danger-zone">
+    <h2>Danger zone</h2>
+    <p class="text-muted">
+      Moving the experiment to trash removes it from the experiments
+      list and moves its folder to
+      <code>{{ project.path }}/trash/{{ experiment.experiment_id }}-&lt;timestamp&gt;/</code>.
+      Files are preserved; empty the trash folder manually when you're sure.
+    </p>
+    {% if active_lock_path %}
+      <p class="text-warning">
+        Stop the running process first &mdash; lock file present at
+        <code>{{ active_lock_path }}</code>.
+      </p>
+      <button class="btn btn--danger" type="button" disabled>Move to trash</button>
+    {% else %}
+      <div x-data="{ typed: '' }" style="display: flex; flex-direction: column; gap: 0.5rem; max-width: 480px;">
+        <input
+          type="text"
+          class="input"
+          placeholder="Type the experiment id to confirm"
+          x-model="typed"
+          style="font: inherit; padding: 0.4rem;"
+        >
+        <button
+          class="btn btn--danger"
+          type="button"
+          :disabled="typed !== '{{ experiment.experiment_id }}'"
+          hx-delete="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}"
+          hx-confirm="Move '{{ experiment.experiment_id }}' to trash? Files are preserved at {{ project.path }}/trash/."
+        >Move to trash</button>
+      </div>
+    {% endif %}
+  </section>
+
+  {% call modal('present', action_label("Generate", "presentation", has_presentation)) %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/present"
+      hx-target="#present-feedback"
+      hx-swap="innerHTML"
+    >
+      <input type="hidden" name="experiment_id" value="{{ experiment.experiment_id }}">
+      <div class="form-row">
+        <label for="pr-instructions">Instructions (optional)</label>
+        <textarea id="pr-instructions" name="instructions" rows="3"
+                  placeholder="Steer the presentation (e.g. 'emphasize ensemble results')"></textarea>
+      </div>
+      <div class="form-row">
+        <label for="pr-audience">Audience</label>
+        <select id="pr-audience" name="audience">
+          {% for a in ["novice", "standard", "expert"] %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run</button>
+        <span id="present-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
+
+  {% call modal('report', action_label("Generate", "report", has_report)) %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/report"
+      hx-target="#report-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="rp-instructions">Instructions (optional)</label>
+        <textarea id="rp-instructions" name="instructions" rows="3"
+                  placeholder="Steer the report (e.g. 'focus on feature importance')"></textarea>
+      </div>
+      <div class="form-row">
+        <label for="rp-audience">Audience</label>
+        <select id="rp-audience" name="audience">
+          {% for a in ["novice", "standard", "expert"] %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run</button>
+        <span id="report-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
+
+  {% call modal('evaluate', 'Run evaluator') %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/evaluate"
+      hx-target="#evaluate-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="ev-instructions">Instructions (optional)</label>
+        <textarea id="ev-instructions" name="instructions" rows="3"
+                  placeholder="Steer the evaluator (e.g. 'check for overfitting')"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run evaluation</button>
+        <span id="evaluate-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
+{% endblock %}

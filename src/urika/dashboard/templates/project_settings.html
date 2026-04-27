@@ -1,0 +1,685 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import tabs %}
+
+{% block title %}Settings · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Settings{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Settings</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+  .form-row label { font-weight: 600; }
+  .form-row input[type="text"],
+  .form-row textarea,
+  .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
+  .form-help { color: var(--text-muted); font-size: var(--fs-xs); }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+  .models-grid { width: 100%; border-collapse: collapse; }
+  .models-grid--hybrid { table-layout: fixed; }
+  .models-grid th, .models-grid td {
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: middle;
+  }
+  .models-grid th { font-weight: var(--fw-semibold); color: var(--text-muted); font-size: var(--fs-xs); }
+  .models-grid td input,
+  .models-grid td select { width: 100%; font: inherit; padding: 0.3rem; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+  .privacy-summary { padding: var(--space-3); background: var(--bg-elevated); border-radius: 6px; }
+  .privacy-summary dt { font-weight: var(--fw-semibold); margin-top: var(--space-2); }
+  .privacy-summary dd { margin: 0 0 var(--space-2) 0; color: var(--text-muted); }
+  .privacy-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-top: var(--space-3);
+    background: var(--bg-elevated);
+  }
+  .privacy-block h4 { margin-top: 0; }
+  .channel-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .channel-block h4 { margin: 0 0 var(--space-2) 0; }
+  .radio-group { display: flex; flex-direction: column; gap: 0.25rem; }
+  .radio-group label { font-weight: normal; }
+</style>
+
+<form
+  hx-put="/api/projects/{{ project.name }}/settings"
+  hx-target="#settings-feedback"
+  hx-swap="innerHTML"
+  class="card"
+>
+  {% call(active) tabs("project-settings", [
+    {"id": "basics", "label": "Basics"},
+    {"id": "data", "label": "Data"},
+    {"id": "privacy", "label": "Privacy"},
+    {"id": "models", "label": "Models"},
+    {"id": "notifications", "label": "Notifications"}
+  ]) %}
+
+    {# ---- Basics tab ---------------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'basics'">
+      <div class="form-row">
+        <label>Project name</label>
+        <input type="text" value="{{ project.name }}" disabled>
+        <span class="form-help">Project name is immutable.</span>
+      </div>
+
+      <div class="form-row">
+        <label for="question">Research question</label>
+        <textarea id="question" name="question" rows="2">{{ project.question }}</textarea>
+      </div>
+
+      <div class="form-row">
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="5">{{ project.description }}</textarea>
+      </div>
+
+      <div class="form-row">
+        <label for="mode">Mode</label>
+        <select id="mode" name="mode">
+          {% for m in valid_modes %}
+            <option value="{{ m }}" {% if m == project.mode %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="audience">Audience</label>
+        <select id="audience" name="audience">
+          {% for a in valid_audiences %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    {# ---- Data tab ----------------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'data'" x-cloak>
+      <div class="form-row">
+        <label for="data_paths">Data paths</label>
+        <textarea id="data_paths" name="data_paths" rows="4"
+                  placeholder="data/file1.csv&#10;data/file2.parquet">{{ data_paths_text }}</textarea>
+        <span class="form-help">One path per line. Stored under <code>[project].data_paths</code>.</span>
+      </div>
+
+      <div class="form-row">
+        <label for="success_criteria">Success criteria</label>
+        <textarea id="success_criteria" name="success_criteria" rows="4"
+                  placeholder="rmse_max=0.5&#10;r2_min=0.8">{{ success_criteria_text }}</textarea>
+        <span class="form-help">One <code>key=value</code> pair per line. Values stored as strings.</span>
+      </div>
+    </div>
+
+    {# ---- Models tab --------------------------------------------------- #}
+    {# Always-three-columns layout (Agent / Endpoint / Model) per mode,
+       mirroring the global Models tab:
+         open    → Endpoint cell shows literal "open" (read-only); a
+                   hidden ``endpoint[<agent>]=open`` carries the value.
+                   Model column is a cloud-models <select>.
+         private → Endpoint cell shows literal "private" (read-only);
+                   the Model column ("Model (Endpoint)") is a <select>
+                   of named private endpoints — picking one sets BOTH
+                   ``endpoint[<agent>]`` (the endpoint name) AND
+                   ``model[<agent>]`` (its default_model) via hidden
+                   inputs Alpine-bound to local state.
+         hybrid  → Endpoint cell is a UI category <select> (open /
+                   private), NOT submitted directly. Model column
+                   swaps:
+                     cat=open    → cloud-models <select>
+                     cat=private → named-private-endpoint <select>
+                   Hidden ``endpoint[<agent>]`` and ``model[<agent>]``
+                   inputs carry the resolved values via Alpine
+                   :value bindings.
+       Field names remain on the existing scheme (``model[<agent>]`` /
+       ``endpoint[<agent>]``) — the project-settings API is unchanged. #}
+    <div class="tab-panel" x-show="active === 'models'" x-cloak>
+      <div class="form-row">
+        <label for="runtime_model">Project-wide model override</label>
+        {% if project_privacy_mode in ["open", "hybrid"] %}
+          {# Cloud project → dropdown of known Claude models. The
+             empty option means "inherit the global per-mode default". #}
+          <select id="runtime_model" name="runtime_model">
+            <option value="" {% if not runtime_model %}selected{% endif %}>(inherit global default: {{ runtime_model_placeholder }})</option>
+            {% for m in known_cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == runtime_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          {# Private mode → free-text (local server model names vary). #}
+          <input type="text" id="runtime_model" name="runtime_model"
+                 value="{{ runtime_model }}"
+                 placeholder="{{ runtime_model_placeholder }}">
+        {% endif %}
+        <span class="form-help">Sets <code>[runtime].model</code>. Leave blank to inherit the global per-mode default.</span>
+      </div>
+
+      {% if project_privacy_mode == "open" %}
+        {# Open mode: Endpoint cell = literal "open" + hidden input.
+           Model cell = cloud-models <select>. #}
+        <table class="models-grid">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Endpoint</th>
+              <th>Model</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in model_rows %}
+            <tr>
+              <td><code>{{ row.agent }}</code></td>
+              <td>
+                <span>open</span>
+                <input type="hidden" name="endpoint[{{ row.agent }}]" value="open">
+              </td>
+              <td>
+                <select name="model[{{ row.agent }}]">
+                  <option value="" {% if not row.model %}selected{% endif %}>(inherit{% if row.placeholder_model %}: {{ row.placeholder_model }}{% endif %})</option>
+                  {% for m in known_cloud_models %}
+                    <option value="{{ m }}"
+                            {% if m == row.model %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% elif project_privacy_mode == "private" %}
+        {# Private mode: Endpoint cell = literal "private". Model cell
+           = <select> of named private endpoints; two hidden inputs
+           carry the bundled endpoint name + its default_model. #}
+        {% if private_endpoint_options %}
+          <table class="models-grid">
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Endpoint</th>
+                <th>Model (Endpoint)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in model_rows %}
+              {% set initial_ep = row.endpoint if row.endpoint in private_endpoint_options|map(attribute='name')|list else private_endpoint_options[0].name %}
+              <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
+                <td><code>{{ row.agent }}</code></td>
+                <td><span>private</span></td>
+                <td>
+                  <select x-model="ep">
+                    {% for opt in private_endpoint_options %}
+                      <option value="{{ opt.name }}"
+                              {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
+                    {% endfor %}
+                  </select>
+                  <input type="hidden" name="endpoint[{{ row.agent }}]"
+                         :value="ep">
+                  <input type="hidden" name="model[{{ row.agent }}]"
+                         :value="(opts.find(o => o.name === ep) || {}).default_model || ''">
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="form-help">
+            No private endpoints with a default model are defined yet.
+            <a href="#" @click.prevent="active = 'privacy'">Configure endpoints</a>
+            on the Privacy tab first — give each one a default model so
+            it can be selected here.
+          </p>
+        {% endif %}
+      {% else %}
+        {# Hybrid mode: Endpoint cell = UI category <select> (open /
+           private), NOT submitted directly. Model cell swaps based on
+           the chosen category. Hidden inputs carry the resolved
+           [endpoint] + [model] values via Alpine :value bindings.
+           data_agent: locked to "private" (only option, disabled).
+           tool_builder: defaults to "private" but user-switchable. #}
+        <table class="models-grid models-grid--hybrid">
+          <thead>
+            <tr>
+              <th style="width: 20%;">Agent</th>
+              <th style="width: 40%;">Endpoint</th>
+              <th style="width: 40%;">Model (Endpoint)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in model_rows %}
+            {% set is_locked = row.agent == "data_agent" %}
+            {% set defaults_private = row.agent in ["data_agent", "tool_builder"] %}
+            {# Initial UI category. #}
+            {% if is_locked %}
+              {% set initial_cat = "private" %}
+            {% elif row.endpoint == "open" %}
+              {% set initial_cat = "open" %}
+            {% elif row.endpoint and row.endpoint != "inherit" and row.endpoint in private_endpoint_options|map(attribute='name')|list %}
+              {% set initial_cat = "private" %}
+            {% elif defaults_private %}
+              {% set initial_cat = "private" %}
+            {% else %}
+              {% set initial_cat = "open" %}
+            {% endif %}
+            {# Initial chosen private endpoint (used when cat=private). #}
+            {% if row.endpoint in private_endpoint_options|map(attribute='name')|list %}
+              {% set initial_ep = row.endpoint %}
+            {% elif private_endpoint_options %}
+              {% set initial_ep = private_endpoint_options[0].name %}
+            {% else %}
+              {% set initial_ep = "" %}
+            {% endif %}
+            {# Initial chosen cloud model (used when cat=open). Empty
+               string means "inherit global per-mode default". #}
+            {% set initial_cloud_model = row.model or "" %}
+            <tr x-data='{ cat: "{{ initial_cat }}", ep: "{{ initial_ep }}", cloud_model: "{{ initial_cloud_model }}", opts: {{ private_endpoint_options | tojson }} }'>
+              <td>
+                <code>{{ row.agent }}</code>
+                {% if is_locked %}
+                  <span class="form-help" style="display:block;">locked: data_agent must use a private endpoint</span>
+                {% endif %}
+              </td>
+              <td>
+                {# UI category select — NOT submitted directly (no name=).
+                   data_agent: only "private" + disabled (locked).
+                   tool_builder + others: both options. #}
+                <select x-model="cat" {% if is_locked %}disabled{% endif %}>
+                  {% if not is_locked %}
+                    <option value="open" {% if initial_cat == "open" %}selected{% endif %}>open</option>
+                  {% endif %}
+                  <option value="private" {% if initial_cat == "private" %}selected{% endif %}>private</option>
+                </select>
+                <input type="hidden" name="endpoint[{{ row.agent }}]"
+                       :value="cat === 'open' ? 'open' : ep">
+              </td>
+              <td>
+                {# Cloud variant: free dropdown of known cloud models.
+                   No name= — the hidden [model] input below carries it. #}
+                <select x-show="cat === 'open'" x-model="cloud_model">
+                  <option value="" {% if not row.model %}selected{% endif %}>(inherit{% if row.placeholder_model %}: {{ row.placeholder_model }}{% endif %})</option>
+                  {% for m in known_cloud_models %}
+                    <option value="{{ m }}"
+                            {% if m == row.model %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+                {# Private variant: <select> of named private endpoints. #}
+                <select x-show="cat === 'private'" x-cloak x-model="ep">
+                  {% for opt in private_endpoint_options %}
+                    <option value="{{ opt.name }}"
+                            {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
+                  {% endfor %}
+                </select>
+                <input type="hidden" name="model[{{ row.agent }}]"
+                       :value="cat === 'open' ? cloud_model : ((opts.find(o => o.name === ep) || {}).default_model || '')">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+      <span class="form-help">Per-agent overrides are written to <code>[runtime.models.&lt;agent&gt;]</code>.  Placeholders show the global per-mode default for the project's current mode.</span>
+    </div>
+
+    {# ---- Privacy tab (editable, mode is required) -------------------- #}
+    <div class="tab-panel" x-show="active === 'privacy'" x-cloak
+         x-data="{ pmode: '{{ project_privacy_mode }}' }">
+      <div class="form-row">
+        <label>Privacy mode for this project</label>
+        <div class="radio-group">
+          <label class="checkbox-row">
+            <input type="radio" name="project_privacy_mode" value="open"
+                   x-model="pmode"
+                   {% if project_privacy_mode == "open" %}checked{% endif %}>
+            <span>Open</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="radio" name="project_privacy_mode" value="private"
+                   x-model="pmode"
+                   {% if project_privacy_mode == "private" %}checked{% endif %}>
+            <span>Private</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="radio" name="project_privacy_mode" value="hybrid"
+                   x-model="pmode"
+                   {% if project_privacy_mode == "hybrid" %}checked{% endif %}>
+            <span>Hybrid</span>
+          </label>
+        </div>
+        <span class="form-help">
+          Mode is required and is set at project creation
+          (<code>urika new</code>).  Switching modes here writes a fresh
+          <code>[privacy]</code> block to <code>urika.toml</code>.
+        </span>
+      </div>
+
+      {# Open block #}
+      <div class="privacy-block" x-show="pmode === 'open'" x-cloak>
+        <h4>Open mode</h4>
+        <div class="form-row">
+          <label for="project_privacy_open_model">Cloud model</label>
+          <select id="project_privacy_open_model" name="project_privacy_open_model">
+            {% for m in cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == project_privacy_open_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      {# Private block.  Wrapped in its own Alpine scope so the Test
+         button can read the *live* URL + key-env values (not whatever
+         is saved in urika.toml).  Inputs use x-model to keep the
+         scope's ``ep`` mirror in sync with what the user types. #}
+      <div class="privacy-block" x-show="pmode === 'private'" x-cloak
+           x-data='{
+             ep: {
+               base_url: {{ project_privacy_private_url | tojson }},
+               api_key_env: {{ project_privacy_private_key_env | tojson }}
+             },
+             testing: false,
+             result: null,
+             testEndpoint() {
+               this.testing = true;
+               this.result = null;
+               const fd = new FormData();
+               fd.append("base_url", this.ep.base_url || "");
+               fd.append("api_key_env", this.ep.api_key_env || "");
+               fetch("/api/settings/test-endpoint", { method: "POST", body: fd })
+                 .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+                 .then(d => { this.result = d; this.testing = false; })
+                 .catch(e => {
+                   this.result = { reachable: false, details: e.message, api_key_set: false };
+                   this.testing = false;
+                 });
+             }
+           }'>
+        <h4>Private mode</h4>
+        {% if inherited_endpoint and inherited_endpoint.private %}
+          <p class="form-help privacy-inherits"
+             data-inherits-mode="private">
+            Inherits global endpoint:
+            <strong>{{ inherited_endpoint.private.name }}</strong>
+            (<code>{{ inherited_endpoint.private.base_url }}</code>).
+            Leave the URL blank to use it; type a URL to override
+            for this project.
+          </p>
+        {% endif %}
+        <div class="form-row">
+          <label for="project_privacy_private_url">Endpoint URL</label>
+          <input type="text" id="project_privacy_private_url"
+                 name="project_privacy_private_url"
+                 x-model="ep.base_url"
+                 value="{{ project_privacy_private_url }}"
+                 placeholder="http://localhost:11434">
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_private_key_env">API key env var</label>
+          <input type="text" id="project_privacy_private_key_env"
+                 name="project_privacy_private_key_env"
+                 x-model="ep.api_key_env"
+                 value="{{ project_privacy_private_key_env }}"
+                 placeholder="e.g. URIKA_API_KEY">
+          <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+            Enter the <strong>name</strong> of an environment variable (e.g.
+            <code>URIKA_API_KEY</code>), not the key itself. Leave blank if the
+            endpoint doesn't require auth.
+          </span>
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_private_model">Model name</label>
+          <input type="text" id="project_privacy_private_model"
+                 name="project_privacy_private_model"
+                 value="{{ project_privacy_private_model }}"
+                 placeholder="qwen3:14b">
+        </div>
+        {# Test endpoint button — Alpine state is shared with the inputs above.
+           Uses .endpoint-test (centered, natural-width) instead of .form-row
+           (which would stretch the button to full width). #}
+        <div class="endpoint-test">
+          <button type="button" class="btn btn--small btn--primary"
+                  @click="testEndpoint()"
+                  :disabled="testing || !ep.base_url">
+            <span class="running-dot" x-show="testing"></span>
+            <span x-text="testing ? 'Testing…' : 'Test endpoint'">Test endpoint</span>
+          </button>
+          <div x-show="result" x-cloak class="endpoint-test-result"
+               style="font-size: var(--fs-xs);">
+            <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
+              <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
+              <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>
+            </div>
+            <div class="text-muted" x-show="result?.api_key_env">
+              API key
+              <code x-text="result?.api_key_env"></code>:
+              <span :class="result?.api_key_set ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
+                    x-text="result?.api_key_set ? '✓ set' : '✗ unset'"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# Hybrid block.  Same Alpine pattern as the Private block —
+         scoped state mirrors the private URL + key-env inputs so the
+         Test button probes whatever the user has typed. #}
+      <div class="privacy-block" x-show="pmode === 'hybrid'" x-cloak
+           x-data='{
+             ep: {
+               base_url: {{ project_privacy_hybrid_private_url | tojson }},
+               api_key_env: {{ project_privacy_hybrid_private_key_env | tojson }}
+             },
+             testing: false,
+             result: null,
+             testEndpoint() {
+               this.testing = true;
+               this.result = null;
+               const fd = new FormData();
+               fd.append("base_url", this.ep.base_url || "");
+               fd.append("api_key_env", this.ep.api_key_env || "");
+               fetch("/api/settings/test-endpoint", { method: "POST", body: fd })
+                 .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+                 .then(d => { this.result = d; this.testing = false; })
+                 .catch(e => {
+                   this.result = { reachable: false, details: e.message, api_key_set: false };
+                   this.testing = false;
+                 });
+             }
+           }'>
+        <h4>Hybrid mode</h4>
+        {% if inherited_endpoint and inherited_endpoint.hybrid %}
+          <p class="form-help privacy-inherits"
+             data-inherits-mode="hybrid">
+            Inherits global endpoint:
+            <strong>{{ inherited_endpoint.hybrid.name }}</strong>
+            (<code>{{ inherited_endpoint.hybrid.base_url }}</code>).
+            Leave the private URL blank to use it; type a URL to
+            override for this project.
+          </p>
+        {% endif %}
+        <div class="form-row">
+          <label for="project_privacy_hybrid_cloud_model">Cloud model (most agents)</label>
+          <select id="project_privacy_hybrid_cloud_model"
+                  name="project_privacy_hybrid_cloud_model">
+            {% for m in cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == project_privacy_hybrid_cloud_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_hybrid_private_url">Private endpoint URL (data agents)</label>
+          <input type="text" id="project_privacy_hybrid_private_url"
+                 name="project_privacy_hybrid_private_url"
+                 x-model="ep.base_url"
+                 value="{{ project_privacy_hybrid_private_url }}"
+                 placeholder="http://localhost:11434">
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_hybrid_private_key_env">Private API key env var</label>
+          <input type="text" id="project_privacy_hybrid_private_key_env"
+                 name="project_privacy_hybrid_private_key_env"
+                 x-model="ep.api_key_env"
+                 value="{{ project_privacy_hybrid_private_key_env }}"
+                 placeholder="e.g. URIKA_API_KEY">
+          <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+            Enter the <strong>name</strong> of an environment variable (e.g.
+            <code>URIKA_API_KEY</code>), not the key itself.
+          </span>
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_hybrid_private_model">Private model name</label>
+          <input type="text" id="project_privacy_hybrid_private_model"
+                 name="project_privacy_hybrid_private_model"
+                 value="{{ project_privacy_hybrid_private_model }}"
+                 placeholder="qwen3:14b">
+        </div>
+        {# Test endpoint button — probes the private URL the user typed.
+           Uses .endpoint-test wrapper (centered, natural width). #}
+        <div class="endpoint-test">
+          <button type="button" class="btn btn--small btn--primary"
+                  @click="testEndpoint()"
+                  :disabled="testing || !ep.base_url">
+            <span class="running-dot" x-show="testing"></span>
+            <span x-text="testing ? 'Testing…' : 'Test endpoint'">Test endpoint</span>
+          </button>
+          <div x-show="result" x-cloak class="endpoint-test-result"
+               style="font-size: var(--fs-xs);">
+            <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
+              <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
+              <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>
+            </div>
+            <div class="text-muted" x-show="result?.api_key_env">
+              API key
+              <code x-text="result?.api_key_env"></code>:
+              <span :class="result?.api_key_set ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
+                    x-text="result?.api_key_set ? '✓ set' : '✗ unset'"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ---- Notifications tab (2-state: enabled / disabled) ------------- #}
+    <div class="tab-panel" x-show="active === 'notifications'" x-cloak>
+      <p class="form-help" style="margin-bottom: var(--space-3);">
+        Tick a channel to enable it for this project. New projects are
+        pre-seeded from the global Notifications settings (each channel
+        with <em>Auto-enable on new projects</em> turned on starts ticked
+        here). Channel connection details — SMTP host, Slack channel, etc.
+        — are shared globally.
+      </p>
+
+      {# Email #}
+      <div class="channel-block">
+        <h4>Email</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="project_notif_email_enabled" value="on"
+                   {% if notif_email_enabled %}checked{% endif %}>
+            <span>Enabled for this project</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label for="project_notif_email_extra_to">Extra recipients (comma-separated)</label>
+          <input type="text" id="project_notif_email_extra_to"
+                 name="project_notif_email_extra_to"
+                 value="{{ notif_email.get('extra_to', []) | join(', ') if notif_email.get('extra_to') else '' }}"
+                 placeholder="alice@example.com, bob@example.com">
+          <span class="form-help">Project-specific addresses appended to the global <code>to</code> list.</span>
+        </div>
+      </div>
+
+      {# Slack #}
+      <div class="channel-block">
+        <h4>Slack</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="project_notif_slack_enabled" value="on"
+                   {% if notif_slack_enabled %}checked{% endif %}>
+            <span>Enabled for this project</span>
+          </label>
+        </div>
+      </div>
+
+      {# Telegram #}
+      <div class="channel-block">
+        <h4>Telegram</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="project_notif_telegram_enabled" value="on"
+                   {% if notif_telegram_enabled %}checked{% endif %}>
+            <span>Enabled for this project</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label for="project_notif_telegram_override_chat_id">Override chat ID</label>
+          <input type="text" id="project_notif_telegram_override_chat_id"
+                 name="project_notif_telegram_override_chat_id"
+                 value="{{ notif_telegram.get('override_chat_id', '') }}"
+                 placeholder="(use a different chat than the global one)">
+        </div>
+      </div>
+    </div>
+
+  {% endcall %}
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn--primary">Save</button>
+    <span id="settings-feedback" class="text-muted"></span>
+  </div>
+</form>
+
+{# ---- Danger zone -----------------------------------------------------
+   Lives outside the settings <form> so the type-name confirm input
+   doesn't get submitted when the user saves regular settings. The
+   Move-to-trash button posts DELETE /api/projects/<name> directly via
+   HTMX; on success the server emits HX-Redirect: /projects so the
+   user lands back on the (now-shorter) project list.
+#}
+<section class="card danger-zone">
+  <h2>Danger zone</h2>
+  <p class="text-muted">
+    Moving the project to trash unregisters it from Urika and moves
+    the project folder to
+    <code>~/.urika/trash/{{ project.name }}-&lt;timestamp&gt;/</code>.
+    Files are preserved; empty the trash folder manually when you're sure.
+  </p>
+  {% if active_lock_path %}
+    <p class="text-warning">
+      Stop the running process first &mdash; lock file present at
+      <code>{{ active_lock_path }}</code>.
+    </p>
+    <button class="btn btn--danger" type="button" disabled>Move to trash</button>
+  {% else %}
+    <div x-data="{ typed: '' }" style="display: flex; flex-direction: column; gap: 0.5rem; max-width: 480px;">
+      <input
+        type="text"
+        class="input"
+        placeholder="Type the project name to confirm"
+        x-model="typed"
+        style="font: inherit; padding: 0.4rem;"
+      >
+      <button
+        class="btn btn--danger"
+        type="button"
+        :disabled="typed !== '{{ project.name }}'"
+        hx-delete="/api/projects/{{ project.name }}"
+        hx-confirm="Move '{{ project.name }}' to trash? Files are preserved at ~/.urika/trash/."
+      >Move to trash</button>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

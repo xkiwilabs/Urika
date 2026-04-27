@@ -1,0 +1,82 @@
+<aside class="sidebar" x-data="{ open: true }" :aria-expanded="open">
+  <a class="brand" href="/">
+    <pre class="wordmark" aria-label="URIKA">██╗   ██╗██████╗ ██╗██╗  ██╗ █████╗
+██║   ██║██╔══██╗██║██║ ██╔╝██╔══██╗
+██║   ██║██████╔╝██║█████╔╝ ███████║
+██║   ██║██╔══██╗██║██╔═██╗ ██╔══██║
+╚██████╔╝██║  ██║██║██║  ██╗██║  ██║
+ ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═╝</pre>
+    <div class="version-label">v{{ urika_version }}</div>
+  </a>
+  <nav class="sidebar-nav">
+    {% if docs is defined and docs %}
+      <a class="sidebar-link sidebar-link--back" href="/projects">← Back to projects</a>
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Documentation</div>
+        {% for d in docs %}
+          <a class="sidebar-link"
+             :class="{ 'sidebar-link--active': window.location.pathname === '/docs/{{ d.slug }}' }"
+             href="/docs/{{ d.slug }}">{{ d.label }}</a>
+        {% endfor %}
+      </div>
+    {% elif project %}
+      <a class="sidebar-link sidebar-link--back" href="/projects">← Back to projects</a>
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">{{ project.name | humanize }}</div>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname === '/projects/{{ project.name }}' }"
+           href="/projects/{{ project.name }}">Home</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/experiments') }"
+           href="/projects/{{ project.name }}/experiments">Experiments</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname === '/projects/{{ project.name }}/advisor' }"
+           href="/projects/{{ project.name }}/advisor">Advisor</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/knowledge') }"
+           href="/projects/{{ project.name }}/knowledge">Knowledge</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/methods') }"
+           href="/projects/{{ project.name }}/methods">Methods</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/tools') }"
+           href="/projects/{{ project.name }}/tools">Tools</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/data') }"
+           href="/projects/{{ project.name }}/data">Data</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/usage') }"
+           href="/projects/{{ project.name }}/usage">Usage</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/settings') }"
+           href="/projects/{{ project.name }}/settings">Settings</a>
+      </div>
+    {% else %}
+      <a class="sidebar-link"
+         :class="{ 'sidebar-link--active': window.location.pathname === '/projects' }"
+         href="/projects">Projects</a>
+      <a class="sidebar-link"
+         :class="{ 'sidebar-link--active': window.location.pathname === '/tools' }"
+         href="/tools">Tools</a>
+      <a class="sidebar-link"
+         :class="{ 'sidebar-link--active': window.location.pathname === '/settings' }"
+         href="/settings">Settings</a>
+    {% endif %}
+  </nav>
+  {% if docs is not defined or not docs %}
+  <div class="sidebar-section sidebar-section--bottom">
+    <a class="sidebar-link"
+       :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/docs') }"
+       href="/docs">Documentation</a>
+  </div>
+  {% endif %}
+  <div class="sidebar-footer">
+    <button
+      class="btn btn--ghost theme-toggle"
+      @click="document.dispatchEvent(new CustomEvent('urika:toggle-theme'))"
+      aria-label="Toggle theme"
+    >
+      <span x-data x-text="document.documentElement.dataset.theme === 'dark' ? '☀ Light' : '☾ Dark'"></span>
+    </button>
+  </div>
+</aside>

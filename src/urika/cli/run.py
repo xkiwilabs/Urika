@@ -24,6 +24,7 @@ from urika.cli._helpers import (
 from urika.cli.run_planning import (
     _determine_next_experiment,
     _print_dry_run_plan,
+    _run_advisor_first_for_experiment,
 )
 from urika.core.experiment import list_experiments
 from urika.core.progress import load_progress
@@ -53,7 +54,6 @@ def _update_repl_activity(event: str, detail: str) -> None:
             session.update_agent_activity(activity=detail)
     except Exception:
         pass
-
 
 
 @cli.command()
@@ -118,6 +118,17 @@ def _update_repl_activity(event: str, detail: str) -> None:
     default=False,
     help="Use the deterministic Python orchestrator (default behavior for now).",
 )
+@click.option(
+    "--advisor-first",
+    "advisor_first",
+    is_flag=True,
+    default=False,
+    help=(
+        "Run the advisor first to suggest a name + hypothesis + direction, "
+        "then proceed with the experiment. Meaningful when paired with "
+        "--experiment (the dashboard's handoff)."
+    ),
+)
 def run(
     project: str,
     experiment_id: str | None,
@@ -132,6 +143,7 @@ def run(
     json_output: bool = False,
     audience: str | None = None,
     legacy: bool = False,
+    advisor_first: bool = False,
 ) -> None:
     """Run an experiment using the orchestrator."""
     # TODO: When --legacy is False and TUI binary is available,
@@ -249,7 +261,9 @@ def run(
         elif choice.startswith("Custom"):
             try:
                 max_turns = int(
-                    interactive_prompt("Max turns per experiment", default=str(max_turns))
+                    interactive_prompt(
+                        "Max turns per experiment", default=str(max_turns)
+                    )
                 )
             except ValueError:
                 pass  # keep existing max_turns
@@ -264,9 +278,7 @@ def run(
             click.echo("    Mode:         single experiment")
         if instructions:
             instr_preview = (
-                instructions[:80] + "..."
-                if len(instructions) > 80
-                else instructions
+                instructions[:80] + "..." if len(instructions) > 80 else instructions
             )
             click.echo(f"    Instructions: {instr_preview}")
         click.echo()
@@ -612,6 +624,36 @@ def run(
     if panel is not None:
         panel.update(experiment_id=experiment_id)
 
+    # Advisor-first pass for the dashboard handoff: when the spawn
+    # arrived with both --experiment <id> AND --advisor-first, run the
+    # advisor before the orchestrator loop so the user sees its output
+    # in the same run.log alongside Planning / Task / Evaluator. Skip
+    # on resume — the advisor already ran on the original spawn.
+    #
+    # Wrap defensively: if the helper raises (SDK runner state issues,
+    # network blip, parse failure on advisor output, etc.) we log it
+    # and proceed to the orchestrator loop with the original
+    # instructions instead of letting the exception kill the
+    # subprocess. The orchestrator's name-backfill on turn 1 is the
+    # safety net for the experiment naming.
+    if advisor_first and not resume:
+        try:
+            instructions = _run_advisor_first_for_experiment(
+                project_path,
+                project,
+                experiment_id,
+                instructions=instructions,
+                panel=panel,
+            )
+        except Exception as exc:
+            if not json_output:
+                print_step(
+                    "Advisor-first pass failed; continuing to planner",
+                    f"({type(exc).__name__}: {exc})",
+                )
+        if not json_output:
+            print_step("Advisor-first complete — continuing to orchestrator")
+
     # Create pause controller and key listener for ESC-to-pause
     from urika.orchestrator.pause import KeyListener, PauseController
 
@@ -754,22 +796,46 @@ def run(
                         # Text block — agent is thinking
                         panel.set_thinking("Thinking\u2026")
 
-        result = asyncio.run(
-            run_experiment(
-                project_path,
-                experiment_id,
-                sdk_runner,
-                max_turns=max_turns,
-                resume=resume,
-                review_criteria=review_criteria,
-                on_progress=_on_progress,
-                on_message=_on_message,
-                instructions=instructions,
-                get_user_input=_get_user_input,
-                pause_controller=pause_ctrl,
-                audience=audience,
+        from urika.orchestrator.run_log import OrchestratorLogger
+
+        if os.environ.get("URIKA_NO_TEE"):
+            # Dashboard owns run.log writes when spawning us — skip the
+            # orchestrator-side tee so we don't double-write.
+            result = asyncio.run(
+                run_experiment(
+                    project_path,
+                    experiment_id,
+                    sdk_runner,
+                    max_turns=max_turns,
+                    resume=resume,
+                    review_criteria=review_criteria,
+                    on_progress=_on_progress,
+                    on_message=_on_message,
+                    instructions=instructions,
+                    get_user_input=_get_user_input,
+                    pause_controller=pause_ctrl,
+                    audience=audience,
+                )
             )
-        )
+        else:
+            run_log_path = project_path / "experiments" / experiment_id / "run.log"
+            with OrchestratorLogger(run_log_path):
+                result = asyncio.run(
+                    run_experiment(
+                        project_path,
+                        experiment_id,
+                        sdk_runner,
+                        max_turns=max_turns,
+                        resume=resume,
+                        review_criteria=review_criteria,
+                        on_progress=_on_progress,
+                        on_message=_on_message,
+                        instructions=instructions,
+                        get_user_input=_get_user_input,
+                        pause_controller=pause_ctrl,
+                        audience=audience,
+                    )
+                )
 
     finally:
         if _owns_bus and notif_bus is not None:
@@ -827,9 +893,13 @@ def run(
                                         best_method = r["method"]
                     if best_val is not None:
                         if 0 <= best_val <= 1:
-                            summary_text += f"Best: {best_method} ({best_metric}={best_val:.1%})"
+                            summary_text += (
+                                f"Best: {best_method} ({best_metric}={best_val:.1%})"
+                            )
                         else:
-                            summary_text += f"Best: {best_method} ({best_metric}={best_val:.4g})"
+                            summary_text += (
+                                f"Best: {best_method} ({best_metric}={best_val:.4g})"
+                            )
             except Exception:
                 pass
 
@@ -921,9 +991,6 @@ def run(
         print_step(f"Experiment finished with status: {run_status} ({turns} turns)")
 
     print_footer(duration_ms=elapsed_ms, turns=turns, status=run_status)
-
-
-
 
 
 # ── Re-exports from sibling modules (Phase 8 split) ───────────────

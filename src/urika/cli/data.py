@@ -143,7 +143,6 @@ def tools(category: str | None, project: str | None, json_output: bool) -> None:
             click.echo(f"  {tool.name()}  [{tool.category()}]  {tool.description()}")
 
 
-
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option(
@@ -219,7 +218,6 @@ def logs(project: str, experiment_id: str | None, json_output: bool) -> None:
         if run.get("next_step"):
             click.echo(f"    Next step: {run['next_step']}")
         click.echo("")
-
 
 
 @cli.group()
@@ -327,7 +325,6 @@ def knowledge_list(project: str, json_output: bool) -> None:
         click.echo(f"  {entry.id}  {entry.title}  [{entry.source_type}]")
 
 
-
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
@@ -418,6 +415,65 @@ def experiment_list(project: str) -> None:
         n_runs = len(progress.get("runs", []))
         exp_status = progress.get("status", "unknown")
         click.echo(f"  {exp.experiment_id}  {exp.name}  [{exp_status}, {n_runs} runs]")
+
+
+@experiment.command("delete")
+@click.argument("project", required=False, default=None)
+@click.argument("exp_id")
+@click.option("-f", "--force", is_flag=True, help="Skip confirmation prompt.")
+@click.option("--json", "json_output", is_flag=True, help="Emit JSON result.")
+def experiment_delete(
+    project: str | None, exp_id: str, force: bool, json_output: bool
+) -> None:
+    """Move an experiment to <project>/trash/.
+
+    The experiment directory is moved (not deleted) so artifacts are
+    preserved. Empty the project's trash folder manually when you're
+    sure.
+    """
+    from urika.core.experiment_delete import (
+        ActiveExperimentError,
+        ExperimentNotFoundError,
+        trash_experiment,
+    )
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    if not force:
+        try:
+            click.confirm(
+                f"Move experiment '{exp_id}' to {project_path}/trash/? "
+                "(files preserved)",
+                abort=True,
+            )
+        except click.Abort:
+            click.echo("Aborted.")
+            return
+
+    try:
+        result = trash_experiment(project_path, project, exp_id)
+    except ExperimentNotFoundError:
+        raise click.ClickException(
+            f"Experiment '{exp_id}' not found in project '{project}'."
+        )
+    except ActiveExperimentError as e:
+        raise click.ClickException(str(e))
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json(
+            {
+                "project_name": result.project_name,
+                "experiment_id": result.experiment_id,
+                "original_path": str(result.original_path),
+                "trash_path": str(result.trash_path),
+            }
+        )
+        return
+
+    click.echo(f"Moved '{exp_id}' to {result.trash_path}")
 
 
 # ── Venv subgroup ───────────────────────────────────────────

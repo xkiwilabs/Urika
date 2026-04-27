@@ -54,9 +54,7 @@ def _print_dry_run_plan(
     if resume:
         print_step("Resume:", "yes")
     if instructions:
-        preview = (
-            instructions[:80] + "..." if len(instructions) > 80 else instructions
-        )
+        preview = instructions[:80] + "..." if len(instructions) > 80 else instructions
         print_step("Instructions:", preview)
     click.echo()
     click.echo("  Pipeline stages (per experiment):")
@@ -300,3 +298,224 @@ def _determine_next_experiment(
     )
     print_success(f"Created experiment: {exp.experiment_id}")
     return exp.experiment_id
+
+
+def _run_advisor_first_for_experiment(
+    project_path: Path,
+    project_name: str,
+    experiment_id: str,
+    *,
+    instructions: str = "",
+    panel: object = None,
+) -> str:
+    """Call the advisor before the orchestrator loop and merge its output
+    into the existing experiment.
+
+    Used by the dashboard handoff path: the modal pre-creates an empty
+    experiment and spawns ``urika run --experiment <id> --advisor-first``.
+    The advisor's output streams to stdout via the same on-message
+    callback the rest of the run loop uses, so the dashboard's SSE log
+    tailer captures it alongside Planning / Task / Evaluator.
+
+    On a successful advisor pass, this helper:
+    * Updates ``experiment.json`` with the suggested name + hypothesis
+      (only if the existing values are empty — never overwrites a
+      non-empty name).
+    * Prepends the advisor's instructions to the user-supplied
+      instructions (if any) and returns the merged value so the caller
+      can pass the full context to the orchestrator.
+
+    On any failure (advisor fails, no parseable suggestion, etc.) the
+    experiment is left untouched and the original ``instructions`` are
+    returned unchanged — the orchestrator's turn-1 name-backfill takes
+    over as the safety net. The helper NEVER raises out — every path
+    is caught and degrades to "return original instructions".
+    """
+    try:
+        return _run_advisor_first_for_experiment_impl(
+            project_path,
+            project_name,
+            experiment_id,
+            instructions=instructions,
+            panel=panel,
+        )
+    except Exception:
+        # Final catch-all so a buggy advisor pass can never kill the
+        # subprocess before the orchestrator loop gets to run.
+        return instructions
+
+
+def _run_advisor_first_for_experiment_impl(
+    project_path: Path,
+    project_name: str,
+    experiment_id: str,
+    *,
+    instructions: str = "",
+    panel: object = None,
+) -> str:
+    """Inner implementation — see ``_run_advisor_first_for_experiment``."""
+    import asyncio
+    import json
+
+    from urika.cli_display import (
+        format_agent_output,
+        print_agent,
+        print_tool_use,
+    )
+
+    # Gather project state — mirrors _determine_next_experiment.
+    completed = [
+        e
+        for e in list_experiments(project_path)
+        if load_progress(project_path, e.experiment_id).get("status") == "completed"
+    ]
+
+    methods_summary = ""
+    methods_path = project_path / "methods.json"
+    if methods_path.exists():
+        try:
+            mdata = json.loads(methods_path.read_text(encoding="utf-8"))
+            mlist = mdata.get("methods", [])
+            if mlist:
+                methods_summary = f"{len(mlist)} methods tried. Best: "
+
+                def _best_metric_val(m: dict) -> float:
+                    nums = [
+                        v
+                        for v in m.get("metrics", {}).values()
+                        if isinstance(v, (int, float))
+                    ]
+                    return max(nums) if nums else 0
+
+                best = max(
+                    (m for m in mlist if m.get("metrics")),
+                    key=_best_metric_val,
+                    default=None,
+                )
+                if best:
+                    methods_summary += f"{best['name']} ({best.get('metrics', {})})"
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    criteria_summary = ""
+    criteria_path = project_path / "criteria.json"
+    if criteria_path.exists():
+        try:
+            cdata = json.loads(criteria_path.read_text(encoding="utf-8"))
+            versions = cdata.get("versions", [])
+            if versions:
+                latest = versions[-1]
+                ctype = latest.get("criteria", {}).get("type", "unknown")
+                criteria_summary = f"Criteria: {ctype} (v{latest['version']})"
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    context = (
+        f"Project: {project_name}\n"
+        f"Completed experiments: {len(completed)}\n"
+        f"{methods_summary}\n{criteria_summary}\n"
+    )
+    if instructions:
+        context += f"\nUser instructions: {instructions}\n"
+    context += "\nPropose the next experiment."
+
+    try:
+        from urika.agents.registry import AgentRegistry
+        from urika.agents.runner import get_runner
+
+        runner = get_runner()
+        registry = AgentRegistry()
+        registry.discover()
+        suggest_role = registry.get("advisor_agent")
+        if suggest_role is None:
+            return instructions
+
+        config = suggest_role.build_config(
+            project_dir=project_path, experiment_id=experiment_id
+        )
+
+        print_agent("advisor_agent")
+        if panel is not None:
+            panel.update(agent="advisor_agent", activity="Analyzing…")
+
+        def _on_msg(msg: object) -> None:
+            try:
+                model = getattr(msg, "model", None)
+                if model and panel is not None:
+                    panel.set_model(model)
+                if hasattr(msg, "content"):
+                    for block in msg.content:
+                        tool_name = getattr(block, "name", None)
+                        if tool_name:
+                            inp = getattr(block, "input", {}) or {}
+                            detail = ""
+                            if isinstance(inp, dict):
+                                detail = (
+                                    inp.get("command", "")
+                                    or inp.get("file_path", "")
+                                    or inp.get("pattern", "")
+                                )
+                            print_tool_use(tool_name, detail)
+                            if panel is not None:
+                                panel.set_thinking(tool_name)
+                        else:
+                            if panel is not None:
+                                panel.set_thinking("Thinking…")
+            except Exception:
+                pass
+
+        result = asyncio.run(runner.run(config, context, on_message=_on_msg))
+    except Exception:
+        return instructions
+
+    if not result.success:
+        return instructions
+
+    from urika.orchestrator.parsing import parse_suggestions
+
+    parsed = parse_suggestions(result.text_output)
+    if not parsed or not parsed.get("suggestions"):
+        return instructions
+
+    # Echo the advisor's text into the run log so the user sees the
+    # suggestion alongside the streamed tool-use output.
+    click.echo(format_agent_output(result.text_output))
+
+    first = parsed["suggestions"][0]
+    suggested_name = (first.get("name") or "").strip()
+    suggested_hypothesis = (
+        first.get("method") or first.get("description") or ""
+    ).strip()
+    advisor_instructions = (first.get("instructions") or "").strip()
+
+    # Backfill experiment.json — only when the existing field is empty,
+    # so we never overwrite a value the user already chose.
+    exp_json_path = project_path / "experiments" / experiment_id / "experiment.json"
+    if exp_json_path.exists():
+        try:
+            data = json.loads(exp_json_path.read_text(encoding="utf-8"))
+            changed = False
+            if not (data.get("name") or "").strip() and suggested_name:
+                data["name"] = suggested_name
+                changed = True
+            if not (data.get("hypothesis") or "").strip() and suggested_hypothesis:
+                data["hypothesis"] = suggested_hypothesis[:500]
+                changed = True
+            if changed:
+                exp_json_path.write_text(
+                    json.dumps(data, indent=2) + "\n", encoding="utf-8"
+                )
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Merge the advisor's instructions with the user's seed so the
+    # planning agent reads both. User instructions go first so they
+    # take primacy.
+    parts = []
+    if instructions:
+        parts.append(instructions)
+    if advisor_instructions:
+        parts.append(advisor_instructions)
+    elif suggested_hypothesis and suggested_hypothesis not in parts:
+        parts.append(suggested_hypothesis)
+    return "\n\n".join(parts)

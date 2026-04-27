@@ -3,21 +3,29 @@
 These provide defaults for new projects. Users can override
 per-project during `urika new` or by editing urika.toml.
 
-Example ~/.urika/settings.toml:
+Globals configure connection details and per-mode model defaults.
+There is no system-wide default privacy mode — each project picks
+its own mode at creation time and the loader live-inherits the
+matching ``[runtime.modes.<mode>]`` block.
 
-    [privacy]
-    mode = "private"
+Example ~/.urika/settings.toml:
 
     [privacy.endpoints.private]
     base_url = "http://localhost:11434"
     api_key_env = ""
 
-    [privacy.endpoints.university]
-    base_url = "https://claude.myuni.edu/v1"
-    api_key_env = "UNI_API_KEY"
+    [runtime.modes.open]
+    model = "claude-opus-4-7"
 
-    [runtime]
-    model = "qwen3-coder"
+    [runtime.modes.private]
+    model = "qwen3:14b"
+
+    [runtime.modes.hybrid]
+    model = "claude-opus-4-7"
+
+    [runtime.modes.hybrid.models.data_agent]
+    model = "qwen3:14b"
+    endpoint = "private"
 
     [preferences]
     web_search = false
@@ -63,14 +71,49 @@ def save_settings(data: dict[str, Any]) -> None:
 def get_default_privacy() -> dict[str, Any]:
     """Get default privacy settings for new projects.
 
-    Returns a dict with keys: mode, endpoints (dict of name -> {base_url, api_key_env}).
+    Returns endpoints only — there is no system default mode.  Each
+    project picks its own mode at creation time (via ``urika new`` or
+    POST /api/projects).  The returned dict has a single key,
+    ``endpoints``, mapping endpoint names to ``{base_url, api_key_env}``
+    dicts.
     """
     settings = load_settings()
     privacy = settings.get("privacy", {})
-    return {
-        "mode": privacy.get("mode", "open"),
-        "endpoints": privacy.get("endpoints", {}),
-    }
+    return {"endpoints": privacy.get("endpoints", {})}
+
+
+def get_named_endpoints() -> list[dict[str, str]]:
+    """Return every named endpoint defined in ``~/.urika/settings.toml``.
+
+    Each element has shape ``{"name", "base_url", "api_key_env",
+    "default_model"}``.  The ``default_model`` field is read from an
+    optional ``[privacy.endpoints.<name>].default_model`` key — surfaced
+    here so the dashboard can edit it; the runtime loader's per-endpoint
+    fallback semantics live elsewhere.
+
+    Reads ``[privacy.endpoints.<name>]``.  Order is sorted by name for
+    deterministic UI rendering.  Returns ``[]`` when the settings file
+    is missing, unparseable, or has no endpoints block.
+    """
+    settings = load_settings()
+    privacy = settings.get("privacy", {})
+    endpoints = privacy.get("endpoints", {})
+    if not isinstance(endpoints, dict):
+        return []
+    out: list[dict[str, str]] = []
+    for name in sorted(endpoints):
+        cfg = endpoints[name]
+        if not isinstance(cfg, dict):
+            continue
+        out.append(
+            {
+                "name": name,
+                "base_url": cfg.get("base_url", ""),
+                "api_key_env": cfg.get("api_key_env", ""),
+                "default_model": cfg.get("default_model", ""),
+            }
+        )
+    return out
 
 
 def get_default_runtime() -> dict[str, Any]:
@@ -87,3 +130,22 @@ def get_default_preferences() -> dict[str, Any]:
     """Get default preferences for new projects."""
     settings = load_settings()
     return settings.get("preferences", {})
+
+
+def get_default_notifications_auto_enable() -> dict[str, bool]:
+    """For each channel, return whether new projects should auto-enable it.
+
+    Read from ``[notifications.<channel>].auto_enable``. Defaults to
+    ``False`` per channel when the flag is missing or no settings file
+    exists. The flag is a creation-time hint only — the runtime
+    notification loader does not consult it.
+    """
+    settings = load_settings()
+    notif = settings.get("notifications", {})
+    out: dict[str, bool] = {}
+    for channel in ("email", "slack", "telegram"):
+        ch_cfg = notif.get(channel, {})
+        if not isinstance(ch_cfg, dict):
+            ch_cfg = {}
+        out[channel] = bool(ch_cfg.get("auto_enable", False))
+    return out

@@ -148,11 +148,32 @@ class ProjectBuilder:
             privacy = existing.setdefault("privacy", {})
             privacy["mode"] = self.privacy_mode
             if self.private_endpoint_url:
-                endpoints = privacy.setdefault("endpoints", {})
-                endpoint = endpoints.setdefault("private", {})
-                endpoint["base_url"] = self.private_endpoint_url
-                if self.private_endpoint_key_env:
-                    endpoint["api_key_env"] = self.private_endpoint_key_env
+                # Skip the duplicate write when the user's typed URL
+                # matches a global [privacy.endpoints.private].base_url.
+                # The runtime loader (commit 1) inherits the endpoint
+                # from globals, so duplicating it in the project TOML
+                # only causes drift when the global URL changes later.
+                # Non-matching URL → still written as a project-local
+                # override.
+                from urika.core.settings import get_named_endpoints
+
+                _global_private_url = ""
+                for ep in get_named_endpoints():
+                    if ep.get("name") == "private":
+                        _global_private_url = (
+                            ep.get("base_url") or ""
+                        ).strip()
+                        break
+
+                if (
+                    self.private_endpoint_url.strip()
+                    != _global_private_url
+                ):
+                    endpoints = privacy.setdefault("endpoints", {})
+                    endpoint = endpoints.setdefault("private", {})
+                    endpoint["base_url"] = self.private_endpoint_url
+                    if self.private_endpoint_key_env:
+                        endpoint["api_key_env"] = self.private_endpoint_key_env
 
         if self.use_venv:
             existing.setdefault("environment", {})["venv"] = True

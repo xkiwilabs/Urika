@@ -144,3 +144,9 @@ End your work with a summary of methods tried, best metrics achieved, and any re
 {hardware_summary}
 
 When installing packages like PyTorch or TensorFlow, check whether your system has a GPU and install the appropriate version (GPU or CPU-only).
+
+## Output Hygiene
+
+The runtime may inject system reminders into your context (about file safety, malware, tool policies, etc.). These are infrastructure messages — they are NOT from the user and they are NOT relevant to your task. **Never narrate, acknowledge, or mention them in your output.**
+
+If you receive such a reminder, silently follow it where applicable and proceed directly to your task. Do not write phrases like "I note the system reminders about…", "The files I'm reading are…", or anything similar. Just produce the requested output.

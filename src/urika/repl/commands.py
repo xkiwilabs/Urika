@@ -256,6 +256,59 @@ def cmd_new(session: ReplSession, args: str) -> None:
         click.echo(f"  Loaded project: {new_name}")
 
 
+@command("delete", description="Move a project to trash and unregister it")
+def cmd_delete(session: ReplSession, args: str) -> None:
+    from urika.core.project_delete import (
+        ActiveRunError,
+        ProjectNotFoundError,
+        trash_project,
+    )
+
+    name = args.strip()
+    if not name:
+        click.echo("  Usage: /delete <name>")
+        return
+
+    try:
+        click.confirm(
+            f"  Move project '{name}' to ~/.urika/trash/? "
+            "(files preserved, registry entry removed)",
+            abort=True,
+        )
+    except click.Abort:
+        click.echo("  Aborted.")
+        return
+
+    try:
+        result = trash_project(name)
+    except ProjectNotFoundError:
+        click.echo(f"  Project '{name}' is not registered.")
+        return
+    except ActiveRunError as exc:
+        click.echo(f"  {exc}")
+        return
+
+    if result.registry_only:
+        click.echo(
+            f"  Unregistered '{name}' "
+            f"(folder at {result.original_path} was already missing)."
+        )
+    else:
+        click.echo(f"  Moved '{name}' to {result.trash_path}")
+
+    if session.project_name == name:
+        # User deleted the project they were working in — clear context so
+        # subsequent commands don't try to read a now-trashed directory.
+        if session.notification_bus is not None:
+            try:
+                session.notification_bus.stop()
+            except Exception:
+                pass
+            session.notification_bus = None
+        session.clear_project()
+        click.echo("  Project context cleared. Use /list to pick another.")
+
+
 @command("quit", description="Exit Urika")
 def cmd_quit(session: ReplSession, args: str) -> None:
     session.save_usage()
@@ -548,6 +601,48 @@ def cmd_experiments(session: ReplSession, args: str) -> None:
     click.echo()
 
 
+@command(
+    "delete-experiment",
+    requires_project=True,
+    description="Move an experiment to project-local trash",
+)
+def cmd_delete_experiment(session: ReplSession, args: str) -> None:
+    from urika.core.experiment_delete import (
+        ActiveExperimentError,
+        ExperimentNotFoundError,
+        trash_experiment,
+    )
+
+    exp_id = args.strip()
+    if not exp_id:
+        click.echo("  Usage: /delete-experiment <exp_id>")
+        return
+
+    try:
+        click.confirm(
+            f"  Move experiment '{exp_id}' to "
+            f"{session.project_path}/trash/? "
+            "(files preserved, experiment dir removed)",
+            abort=True,
+        )
+    except click.Abort:
+        click.echo("  Aborted.")
+        return
+
+    try:
+        result = trash_experiment(
+            session.project_path, session.project_name, exp_id
+        )
+    except ExperimentNotFoundError:
+        click.echo(f"  Experiment '{exp_id}' not found.")
+        return
+    except ActiveExperimentError as exc:
+        click.echo(f"  {exc}")
+        return
+
+    click.echo(f"  Moved '{exp_id}' to {result.trash_path}")
+
+
 @command("methods", requires_project=True, description="Show methods table")
 def cmd_methods(session: ReplSession, args: str) -> None:
     from urika.core.method_registry import load_methods
@@ -752,66 +847,63 @@ def cmd_update(session: ReplSession, args: str) -> None:
         os.environ.pop("URIKA_REPL", None)
 
 
-_dashboard_server = None
-
-
 @command(
     "dashboard",
-    requires_project=True,
-    description="Open project dashboard in browser",
+    description="Open the project dashboard in your browser",
 )
 def cmd_dashboard(session: ReplSession, args: str) -> None:
-    import threading
+    """Open the dashboard for the current project (or projects list).
 
-    from urika.dashboard.server import DashboardServer
+    Starts the FastAPI dashboard on a random free port in a daemon
+    thread, opens the browser at the right URL, and stashes the
+    server reference on the session so it can be shut down on app
+    exit.
 
-    global _dashboard_server
+    Usage::
+
+        /dashboard         open dashboard (current project, or
+                           projects list if none loaded)
+        /dashboard stop    shut down all running dashboards
+    """
+    from urika.tui.dashboard_launcher import start_dashboard_server
 
     parts = args.strip().split()
 
-    # /dashboard stop — shut down running server
+    # /dashboard stop — shut down running servers
     if parts and parts[0] in ("stop", "--stop"):
-        if _dashboard_server is not None:
-            _dashboard_server.shutdown()
-            _dashboard_server = None
-            click.echo("  Dashboard stopped.")
-        else:
+        servers = getattr(session, "_dashboard_servers", None) or []
+        if not servers:
             click.echo("  No dashboard running.")
+            return
+        for srv in servers:
+            try:
+                srv.should_exit = True
+            except Exception:
+                pass
+        session._dashboard_servers = []
+        click.echo(f"  Stopped {len(servers)} dashboard(s).")
         return
 
-    # If already running, stop it first (restart)
-    if _dashboard_server is not None:
-        _dashboard_server.shutdown()
-        _dashboard_server = None
-
-    # Parse --port from args
-    port = 8420
-    for i, part in enumerate(parts):
-        if part == "--port" and i + 1 < len(parts):
-            try:
-                port = int(parts[i + 1])
-            except ValueError:
-                click.echo("  Invalid port number.")
-                return
+    open_path = "/projects"
+    if session.has_project and session.project_name:
+        open_path = f"/projects/{session.project_name}"
 
     try:
-        server = DashboardServer(session.project_path, port=port)
-    except OSError as e:
-        click.echo(f"  Cannot start dashboard: {e}")
+        server, _thread, port = start_dashboard_server(open_path=open_path)
+    except Exception as exc:
+        click.echo(f"  Cannot start dashboard: {exc}")
         return
 
-    _dashboard_server = server
-    actual_port = server.server_address[1]
-    url = f"http://127.0.0.1:{actual_port}"
+    # Stash on session so app shutdown can stop it
+    if hasattr(session, "_dashboard_servers") and isinstance(
+        session._dashboard_servers, list
+    ):
+        session._dashboard_servers.append(server)
+    else:
+        session._dashboard_servers = [server]
 
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-
-    import webbrowser
-
-    webbrowser.open(url)
-    click.echo(f"  Dashboard running at {url}")
-    click.echo("  /dashboard stop to shut down, /dashboard to restart")
+    click.echo(f"  Dashboard at http://127.0.0.1:{port}{open_path}")
+    click.echo("  /dashboard stop to shut down")
 
 
 # ── Sibling-module imports (Phase 8 split) ─────────────────────────

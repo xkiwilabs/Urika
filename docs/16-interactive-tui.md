@@ -133,6 +133,7 @@ Available at all times, regardless of whether a project is loaded.
 | `/list` | List all registered projects. The currently loaded project is marked with a diamond. |
 | `/new` | Create a new project using the same interactive builder flow as `urika new`. |
 | `/project <name>` | Load a project by name. Shows project mode, experiment count, and completion status. |
+| `/delete <name>` | Move a project to `~/.urika/trash/` and remove it from the registry. Prompts for confirmation. Refuses if any `.lock` is present. If the deleted project is currently loaded, the session context is cleared. |
 | `/quit` | Save session usage data and exit. |
 | `/tools` | List all available analysis tools. If a project is loaded, also includes project-specific tools. |
 | `/usage` | Show usage stats. With a loaded project: current session and historical totals. Without: usage across all projects. |
@@ -166,7 +167,7 @@ These require a project to be loaded first. Running them without a project shows
 | `/config show` | Show current configuration (project or global). |
 | `/config global` | Configure global defaults (used for new projects). |
 | `/config global show` | Show global defaults. |
-| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. |
+| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](19-dashboard.md) for pages, run launcher, and auth. |
 
 
 ## Run Settings

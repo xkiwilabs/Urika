@@ -9,26 +9,64 @@ from urika.cli._base import cli
 
 from urika.cli._helpers import (
     _resolve_project,
-    _ensure_project,
 )
 
 
 @cli.command("dashboard")
 @click.argument("project", required=False, default=None)
-@click.option("--port", default=8420, type=int, help="Server port (default: 8420)")
-def dashboard(project: str | None, port: int) -> None:
-    """Open the project dashboard in your browser."""
-    project = _ensure_project(project)
-    project_path, _config = _resolve_project(project)
+@click.option(
+    "--port",
+    default=None,
+    type=int,
+    help="Server port (default: random free port)",
+)
+@click.option(
+    "--auth-token",
+    default=None,
+    help=(
+        "Require this bearer token on all requests "
+        "(Authorization: Bearer <token>). /healthz and /static are exempt."
+    ),
+)
+def dashboard(
+    project: str | None,
+    port: int | None,
+    auth_token: str | None,
+) -> None:
+    """Open the dashboard in your browser.
 
-    click.echo(f"\n  Starting dashboard for {_config.name}...")
+    Without PROJECT, opens the projects list at ``/projects``.
+    With PROJECT, opens that project's page at ``/projects/<name>``.
+    """
+    from urika.tui.dashboard_launcher import start_dashboard_server
 
-    from urika.dashboard.server import start_dashboard
+    open_path = "/projects"
+    label = "Urika dashboard"
+    if project:
+        # Validate project exists; _resolve_project raises ClickException on miss
+        _path, _config = _resolve_project(project)
+        open_path = f"/projects/{project}"
+        label = f"{_config.name} dashboard"
+
+    click.echo(f"\n  Starting {label}...")
+    server, _thread, used_port = start_dashboard_server(
+        port=port,
+        open_path=open_path,
+        auth_token=auth_token,
+    )
+    click.echo(f"  Listening on http://127.0.0.1:{used_port}{open_path}")
+    if auth_token:
+        click.echo("  Auth: Authorization: Bearer <token> required.")
+    click.echo("  Press Ctrl+C to stop.")
 
     try:
-        start_dashboard(project_path, port=port)
+        # Keep the main thread alive while the daemon thread serves
+        import time
+
+        while not getattr(server, "should_exit", False):
+            time.sleep(0.5)
     except KeyboardInterrupt:
-        pass
+        server.should_exit = True
 
     click.echo("  Dashboard stopped.")
 
@@ -92,8 +130,11 @@ def config_command(
         click.echo(f"\n  {label}\n")
         p = settings.get("privacy", {})
         r = settings.get("runtime", {})
-        mode = p.get("mode", "open")
-        print_step(f"Privacy mode: {mode}")
+        if is_project:
+            mode = p.get("mode", "open")
+            print_step(f"Privacy mode: {mode}")
+        else:
+            print_step("Privacy mode: (set per project)")
         eps = p.get("endpoints", {})
         for ep_name, ep in eps.items():
             if isinstance(ep, dict):
@@ -103,16 +144,35 @@ def config_command(
                 if key:
                     label_ep += f" (key: ${key})"
                 print_step(label_ep)
-        if r.get("model"):
-            print_step(f"Default model: {r['model']}")
-        models = r.get("models", {})
-        for agent_name, agent_cfg in models.items():
-            if isinstance(agent_cfg, dict):
-                m = agent_cfg.get("model", "")
-                ep = agent_cfg.get("endpoint", "open")
-                print_step(f"  {agent_name}: {m} (endpoint: {ep})")
-            elif isinstance(agent_cfg, str):
-                print_step(f"  {agent_name}: {agent_cfg}")
+        if is_project:
+            if r.get("model"):
+                print_step(f"Default model: {r['model']}")
+            models = r.get("models", {})
+            for agent_name, agent_cfg in models.items():
+                if isinstance(agent_cfg, dict):
+                    m = agent_cfg.get("model", "")
+                    ep = agent_cfg.get("endpoint", "open")
+                    print_step(f"  {agent_name}: {m} (endpoint: {ep})")
+                elif isinstance(agent_cfg, str):
+                    print_step(f"  {agent_name}: {agent_cfg}")
+        else:
+            # Global per-mode defaults are stored under [runtime.modes.<mode>]
+            modes = r.get("modes", {}) or {}
+            for mode_name in ("open", "private", "hybrid"):
+                cfg = modes.get(mode_name)
+                if not isinstance(cfg, dict):
+                    continue
+                if cfg.get("model"):
+                    print_step(f"[{mode_name}] default: {cfg['model']}")
+                for agent_name, agent_cfg in (cfg.get("models", {}) or {}).items():
+                    if isinstance(agent_cfg, dict):
+                        m = agent_cfg.get("model", "")
+                        ep = agent_cfg.get("endpoint", "open")
+                        print_step(
+                            f"  [{mode_name}] {agent_name}: {m} (endpoint: {ep})"
+                        )
+                    elif isinstance(agent_cfg, str):
+                        print_step(f"  [{mode_name}] {agent_name}: {agent_cfg}")
         click.echo()
         return
 
@@ -138,6 +198,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
     import click
     from urika.cli_display import print_step, print_success, print_warning
     from urika.cli_helpers import (
+        UserCancelled,
         interactive_confirm,
         interactive_numbered,
         interactive_prompt,
@@ -179,7 +240,35 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             click.echo("  Cancelled.")
             return
 
-    settings.setdefault("privacy", {})["mode"] = mode
+    # Project-scoped writes still live under flat [privacy]/[runtime];
+    # globals now go under [runtime.modes.<mode>].  The runtime loader
+    # reads both and prefers the project values.
+    if is_project:
+        settings.setdefault("privacy", {})["mode"] = mode
+
+    def _set_default_model(model_name: str) -> None:
+        """Write the per-mode default model — global goes under
+        [runtime.modes.<mode>].model, project under [runtime].model."""
+        if is_project:
+            settings.setdefault("runtime", {})["model"] = model_name
+        else:
+            runtime = settings.setdefault("runtime", {})
+            modes_section = runtime.setdefault("modes", {})
+            modes_section.setdefault(mode, {})["model"] = model_name
+
+    def _set_per_agent(agent: str, model_name: str, endpoint: str) -> None:
+        """Write a per-agent override.  Global goes under
+        [runtime.modes.<mode>.models.<agent>], project under
+        [runtime.models.<agent>]."""
+        row = {"model": model_name, "endpoint": endpoint}
+        if is_project:
+            (settings.setdefault("runtime", {})
+                .setdefault("models", {}))[agent] = row
+        else:
+            runtime = settings.setdefault("runtime", {})
+            modes_section = runtime.setdefault("modes", {})
+            mode_cfg = modes_section.setdefault(mode, {})
+            mode_cfg.setdefault("models", {})[agent] = row
 
     # ── Open mode: pick cloud model ──
     if mode == "open":
@@ -191,13 +280,29 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             default=1,
         )
         model_name = choice.split(" —")[0].strip()
-        settings.setdefault("runtime", {})["model"] = model_name
-        # Clear any private endpoints
-        settings.get("privacy", {}).pop("endpoints", None)
+        _set_default_model(model_name)
+        # Clear any private endpoints (project-scope only — globals
+        # share endpoint defs across modes).
+        if is_project:
+            settings.get("privacy", {}).pop("endpoints", None)
         print_success(f"Mode: open · Model: {model_name}")
 
     # ── Private mode: configure endpoint + model ──
     elif mode == "private":
+        # Project-scope: if globals already define a usable private
+        # endpoint, the project doesn't need its own copy — leaving the
+        # URL blank tells the wizard "use the inherited one". Drop
+        # required=True in that case so blank input is a valid answer.
+        # Globals-scope: the wizard is configuring the global endpoint
+        # itself, so a URL is mandatory regardless.
+        from urika.core.settings import get_named_endpoints
+
+        _has_global_ep = any(
+            (ep.get("base_url") or "").strip()
+            for ep in get_named_endpoints()
+        )
+        _url_required = not (is_project and _has_global_ep)
+
         click.echo()
         ep_type = interactive_numbered(
             "  Private endpoint type:",
@@ -218,40 +323,68 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
 
             ep_url = interactive_prompt(
                 "  Server URL without /v1 (e.g. http://192.168.1.100:4200)"
+                + (" [blank = inherit from globals]" if not _url_required else ""),
+                required=_url_required,
             )
         else:
             from urika.cli_helpers import interactive_prompt
 
-            ep_url = interactive_prompt("  Server URL")
-
-        p = settings.setdefault("privacy", {})
-        ep = p.setdefault("endpoints", {}).setdefault("private", {})
-        ep["base_url"] = ep_url
-
-        # API key only for remote servers (not needed for Ollama/LM Studio)
-        if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
-            from urika.cli_helpers import interactive_prompt
-
-            key_env = interactive_prompt(
-                "  API key env var NAME, not the key itself (e.g. INFERENCE_HUB_KEY)",
-                default="",
+            ep_url = interactive_prompt(
+                "  Server URL"
+                + (" [blank = inherit from globals]" if not _url_required else ""),
+                required=_url_required,
             )
-            if key_env:
-                ep["api_key_env"] = key_env
+
+        # When the user typed a URL we honor it as a project-local
+        # override.  When blank AND globals have one, fall through —
+        # the runtime loader will inherit the global endpoint
+        # (commit 1).  Without globals, refuse to save a blank URL
+        # (runtime would raise MissingPrivateEndpointError).
+        ep_url = (ep_url or "").strip()
+        if not ep_url:
+            if not _has_global_ep:
+                raise UserCancelled()
+            # Blank URL + globals available: skip endpoint write entirely.
+            ep = None
+        else:
+            p = settings.setdefault("privacy", {})
+            ep = p.setdefault("endpoints", {}).setdefault("private", {})
+            ep["base_url"] = ep_url
+
+            # API key only for remote servers (not Ollama/LM Studio)
+            if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
+                from urika.cli_helpers import interactive_prompt
+
+                key_env = interactive_prompt(
+                    "  API key env var NAME, not the key itself (e.g. INFERENCE_HUB_KEY)",
+                    default="",
+                )
+                if key_env:
+                    ep["api_key_env"] = key_env
 
         from urika.cli_helpers import interactive_prompt
         from urika.core.settings import load_settings
 
         global_settings = load_settings()
-        global_model = global_settings.get("runtime", {}).get("model", "")
+        # Read the global per-mode default first; fall back to legacy
+        # flat [runtime].model for backward compat.
+        global_model = (
+            global_settings.get("runtime", {})
+            .get("modes", {})
+            .get("private", {})
+            .get("model", "")
+        ) or global_settings.get("runtime", {}).get("model", "")
 
         model_name = interactive_prompt(
             "  Model name" + (f" [{global_model}]" if global_model else " (e.g. qwen3:14b)"),
             default=global_model if global_model else "",
             required=True,
         )
-        settings.setdefault("runtime", {})["model"] = model_name
-        print_success(f"Mode: private · Endpoint: {ep_url} · Model: {model_name}")
+        _set_default_model(model_name)
+        _ep_label = ep_url if ep_url else "(inherits from globals)"
+        print_success(
+            f"Mode: private · Endpoint: {_ep_label} · Model: {model_name}"
+        )
 
     # ── Hybrid mode: cloud model + private endpoint for data agents ──
     elif mode == "hybrid":
@@ -264,7 +397,19 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             default=1,
         )
         cloud_model = choice.split(" —")[0].strip()
-        settings.setdefault("runtime", {})["model"] = cloud_model
+        _set_default_model(cloud_model)
+
+        # Project-scope: if globals already define a usable private
+        # endpoint, the project doesn't need its own copy — leaving the
+        # URL blank tells the wizard "use the inherited one". Drop
+        # required=True in that case.
+        from urika.core.settings import get_named_endpoints
+
+        _has_global_ep = any(
+            (ep.get("base_url") or "").strip()
+            for ep in get_named_endpoints()
+        )
+        _url_required = not (is_project and _has_global_ep)
 
         # Private endpoint for data agents
         click.echo()
@@ -288,32 +433,54 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
 
             ep_url = interactive_prompt(
                 "  Server URL without /v1 (e.g. http://192.168.1.100:4200)"
+                + (" [blank = inherit from globals]" if not _url_required else ""),
+                required=_url_required,
             )
         else:
             from urika.cli_helpers import interactive_prompt
 
-            ep_url = interactive_prompt("  Server URL")
-
-        p = settings.setdefault("privacy", {})
-        ep = p.setdefault("endpoints", {}).setdefault("private", {})
-        ep["base_url"] = ep_url
-
-        if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
-            from urika.cli_helpers import interactive_prompt
-
-            key_env = interactive_prompt(
-                "  API key environment variable name",
-                default="",
+            ep_url = interactive_prompt(
+                "  Server URL"
+                + (" [blank = inherit from globals]" if not _url_required else ""),
+                required=_url_required,
             )
-            if key_env:
-                ep["api_key_env"] = key_env
+
+        # Honor a typed URL as a project-local override.  Blank +
+        # globals available → skip endpoint write so the runtime loader
+        # inherits.  Blank + no globals → cancel (runtime would crash).
+        ep_url = (ep_url or "").strip()
+        if not ep_url:
+            if not _has_global_ep:
+                raise UserCancelled()
+        else:
+            p = settings.setdefault("privacy", {})
+            ep = p.setdefault("endpoints", {}).setdefault("private", {})
+            ep["base_url"] = ep_url
+
+            if "localhost" not in ep_url and "127.0.0.1" not in ep_url:
+                from urika.cli_helpers import interactive_prompt
+
+                key_env = interactive_prompt(
+                    "  API key environment variable name",
+                    default="",
+                )
+                if key_env:
+                    ep["api_key_env"] = key_env
 
         from urika.cli_helpers import interactive_prompt
         from urika.core.settings import load_settings
 
-        # Default from global settings if configured
+        # Default from global settings if configured. Prefer the new
+        # per-mode location; fall back to legacy flat keys.
         global_settings = load_settings()
         global_data_model = (
+            global_settings.get("runtime", {})
+            .get("modes", {})
+            .get("hybrid", {})
+            .get("models", {})
+            .get("data_agent", {})
+            .get("model", "")
+        ) or (
             global_settings.get("runtime", {})
             .get("models", {})
             .get("data_agent", {})
@@ -327,14 +494,15 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             required=True,
         )
 
-        # Set per-agent overrides
-        models = settings.setdefault("runtime", {}).setdefault("models", {})
-        models["data_agent"] = {"model": private_model, "endpoint": "private"}
-        # tool_builder uses cloud by default in hybrid (doesn't touch raw data)
+        # data_agent + tool_builder are forced-private in hybrid mode
+        # (see _PRIVATE_AGENTS in agents.config).
+        _set_per_agent("data_agent", private_model, "private")
+        _set_per_agent("tool_builder", private_model, "private")
 
+        _ep_label = ep_url if ep_url else "(inherits from globals)"
         print_success(
             f"Mode: hybrid · Cloud: {cloud_model} · "
-            f"Data agents: {private_model} via {ep_url}"
+            f"Data agents: {private_model} via {_ep_label}"
         )
 
     # ── Save ──

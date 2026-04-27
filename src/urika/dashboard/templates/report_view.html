@@ -1,0 +1,29 @@
+{% extends "_base.html" %}
+
+{% block title %}{% if title_override %}{{ title_override }}{% else %}Report · {{ experiment_id }}{% endif %} · Urika{% endblock %}
+{% block heading %}{% if title_override %}{{ title_override }}{% else %}Report: {{ experiment_id }}{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a class="breadcrumb-item" href="/projects">Projects</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+  {% if experiment_id %}
+    <span class="breadcrumb-separator">/</span>
+    <a class="breadcrumb-item" href="/projects/{{ project.name }}/experiments">Experiments</a>
+    <span class="breadcrumb-separator">/</span>
+    <a class="breadcrumb-item" href="/projects/{{ project.name }}/experiments/{{ experiment_id }}">{{ experiment_id }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Report</span>
+  {% else %}
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">{{ title_override or "Report" }}</span>
+  {% endif %}
+</nav>
+{% endblock %}
+
+{% block content %}
+<article class="card markdown-body">
+  {{ body_html | safe }}
+</article>
+{% endblock %}

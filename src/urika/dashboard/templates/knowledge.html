@@ -1,0 +1,78 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import modal %}
+
+{% block title %}Knowledge · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Knowledge{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Knowledge</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .page-actions { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
+    .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+    .form-row label { font-weight: 600; }
+    .form-row input { width: 100%; font: inherit; padding: 0.4rem; }
+    .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+  </style>
+
+  <div class="page-actions">
+    <button
+      class="btn btn--primary"
+      @click="$dispatch('open-modal', { id: 'add-knowledge' })"
+      type="button"
+    >+ Add knowledge</button>
+  </div>
+
+  {% if entries %}
+    <ul class="list">
+      {% for entry in entries %}
+        <li class="list-item">
+          <a
+            href="/projects/{{ project.name }}/knowledge/{{ entry.id }}"
+            class="list-item-link"
+          >
+            <div class="list-item-main">
+              <div class="list-item-title">{{ entry.title }}</div>
+              <div class="list-item-subtitle text-muted">{{ entry.id }}</div>
+            </div>
+            <div class="list-item-meta">
+              <span class="tag">{{ entry.source_type }}</span>
+              <span class="text-muted">{{ entry.added_at }}</span>
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <p>No knowledge ingested yet. Click <strong>+ Add knowledge</strong> above to ingest a URL or local file.</p>
+    </div>
+  {% endif %}
+
+  {% call modal('add-knowledge', 'Add knowledge') %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/knowledge"
+      hx-target="#add-knowledge-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="ak-source">URL or file path</label>
+        <input id="ak-source" name="source" type="text" required
+               placeholder="https://... or /path/to/paper.pdf">
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Add</button>
+        <span id="add-knowledge-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
+{% endblock %}

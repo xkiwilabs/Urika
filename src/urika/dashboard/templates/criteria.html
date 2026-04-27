@@ -1,0 +1,35 @@
+{% extends "_base.html" %}
+
+{% block title %}Criteria · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Success criteria{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Criteria</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+{% if criteria %}
+  <div class="card">
+    <dl class="criteria-list">
+      {% for k, v in criteria.items() %}
+        <dt>{{ k | humanize }}</dt>
+        <dd>{{ v }}</dd>
+      {% endfor %}
+    </dl>
+  </div>
+  <p class="text-muted" style="margin-top: var(--space-3);">
+    Edit success criteria in <a href="/projects/{{ project.name }}/settings">Project Settings → Data tab</a>.
+  </p>
+{% else %}
+  <div class="empty-state">
+    <p>No success criteria set.</p>
+    <p class="text-muted">Set them in the <a href="/projects/{{ project.name }}/settings">project settings</a>.</p>
+  </div>
+{% endif %}
+{% endblock %}

@@ -209,8 +209,6 @@ def print_header(
     min_width = 72
     max_width = 76
     content_width = min(max_width, max(min_width, len(info) + 20))
-    bar_top = "─" * (content_width - len(" Urika v0.1 "))
-    bar_bot = "─" * content_width
 
     B = _C.BLUE
     R = _C.RESET
@@ -228,8 +226,9 @@ def print_header(
 
         _ver = _pkg_version("urika")
     except Exception:
-        _ver = "0.1.0"
+        _ver = "0.0.0"
     ver = f"Version: {_ver}"
+    v_label = f"v{_ver}"
 
     def _pad(text: str, visible_len: int) -> str:
         """Pad to fill the box width, accounting for visible chars only."""
@@ -248,7 +247,7 @@ def print_header(
 
     # Recalculate width to fit logo
     w = max(w, logo_width + 4)
-    bar_top = "─" * (w - len(" v0.1 "))
+    bar_top = "─" * (w - len(f" {v_label} "))
     bar_bot = "─" * w
 
     def _center(text: str, icon: str = "") -> tuple[str, str]:
@@ -259,7 +258,7 @@ def print_header(
         right = total_pad - left
         return " " * left, " " * right
 
-    print(f"\n{B}╭─ v0.1 {bar_top}╮╮{R}")
+    print(f"\n{B}╭─ {v_label} {bar_top}╮╮{R}")
     print(f"{B}│{R}{' ' * w}{B}││{R}")
     for line in logo:
         total_pad = w - len(line)

@@ -1,0 +1,180 @@
+{% extends "_base.html" %}
+
+{% block title %}{{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}{{ project.name | humanize }}{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">{{ project.name | humanize }}</span>
+  </nav>
+{% endblock %}
+
+{% from "_macros.html" import modal, action_label %}
+
+{% block content %}
+  <div class="card">
+    {% if project.question %}
+      <div class="card-title project-question">{{ project.question }}</div>
+    {% endif %}
+    {% if project.description %}
+      <div class="card-body text-muted project-description">{{ project.description }}</div>
+    {% endif %}
+  </div>
+
+  <section class="project-actions" style="margin-top: var(--space-5);">
+    {% set fz = running_by_type.get("finalize") %}
+    {% if fz %}
+      <a class="btn btn--secondary btn--running" href="{{ fz.log_url }}">
+        <span class="running-dot"></span>
+        Finalize running… view log
+      </a>
+    {% else %}
+      <button type="button" class="btn btn--secondary"
+              @click="$dispatch('open-modal', { id: 'finalize' })">
+        {{ action_label("Finalize", "project", final_outputs.has_report and final_outputs.has_presentation) }}
+      </button>
+    {% endif %}
+    <span id="finalize-feedback" class="text-muted"></span>
+    {% set sm = running_by_type.get("summarize") %}
+    {% if sm %}
+      <a class="btn btn--secondary btn--running" href="{{ sm.log_url }}">
+        <span class="running-dot"></span>
+        Summarize running… view log
+      </a>
+    {% else %}
+      <button type="button" class="btn btn--secondary"
+              @click="$dispatch('open-modal', { id: 'summarize' })">
+        {{ action_label("Summarize", "project", has_summary) }}
+      </button>
+    {% endif %}
+    <span id="summarize-feedback" class="text-muted"></span>
+  </section>
+
+  {% call modal('summarize', action_label("Summarize", "project", has_summary)) %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/summarize"
+      hx-target="#summarize-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="sm-instructions">Instructions (optional)</label>
+        <textarea id="sm-instructions" name="instructions" rows="3"
+                  placeholder="Steer the summarizer (optional)"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run summarize</button>
+      </div>
+    </form>
+  {% endcall %}
+
+  {% call modal('finalize',
+    action_label("Finalize", "project", final_outputs.has_report and final_outputs.has_presentation)) %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/finalize"
+      hx-target="#finalize-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="fz-instructions">Instructions (optional)</label>
+        <textarea id="fz-instructions" name="instructions" rows="3"
+                  placeholder="Steer the finalizer (e.g. 'emphasize practical takeaways')"></textarea>
+      </div>
+      <div class="form-row">
+        <label for="fz-audience">Audience</label>
+        <select id="fz-audience" name="audience">
+          {% for a in ["novice", "standard", "expert"] %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" name="draft" value="on">
+        <span>Draft mode (write to projectbook/draft/, don't overwrite final outputs)</span>
+      </label>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run finalize</button>
+      </div>
+    </form>
+  {% endcall %}
+
+  {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation or has_summary %}
+    <section class="final-outputs">
+      <h2 class="section-heading">Final outputs</h2>
+      <div class="final-outputs-grid">
+        {% if final_outputs.has_findings %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/findings">
+            <div class="card-title">Findings</div>
+            <div class="card-body text-muted">Best method, key metrics, ranking.</div>
+          </a>
+        {% endif %}
+        {% if final_outputs.has_report %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/report">
+            <div class="card-title">Report</div>
+            <div class="card-body text-muted">Full narrative write-up.</div>
+          </a>
+        {% endif %}
+        {% if final_outputs.has_presentation %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/presentation" target="_blank" rel="noopener">
+            <div class="card-title">Presentation &#8599;</div>
+            <div class="card-body text-muted">Reveal.js slide deck.</div>
+          </a>
+        {% endif %}
+        {% if has_summary %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/summary">
+            <div class="card-title">Summary</div>
+            <div class="card-body text-muted">Latest project status snapshot.</div>
+          </a>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">Recent experiments</h2>
+      <div class="section-actions">
+        {# "+ New experiment" mirrors the button on the full experiments
+           list. Sends the user there with ?new=1 so the modal auto-opens
+           on arrival. Avoids duplicating the modal on the home page. #}
+        <a class="btn btn--primary btn--small"
+           href="/projects/{{ project.name }}/experiments?new=1">
+          + New experiment
+        </a>
+        {% if recent_experiments %}
+          <a class="btn btn--ghost btn--small"
+             href="/projects/{{ project.name }}/experiments">
+            See all →
+          </a>
+        {% endif %}
+      </div>
+    </div>
+    {% if recent_experiments %}
+      <ul class="list">
+        {% for exp in recent_experiments %}
+          <li class="list-item">
+            <a
+              href="/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}"
+              class="list-item-link"
+            >
+              <div class="list-item-main">
+                <div class="list-item-title">{{ (exp.name or exp.experiment_id) | humanize }}</div>
+                <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
+              </div>
+              <div class="list-item-meta">
+                <span class="tag tag--{{ exp.status | tag_status }}">{{ exp.status }}</span>
+              </div>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty-state">
+        <p>No experiments yet. Click <strong>+ New experiment</strong> above to start one.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

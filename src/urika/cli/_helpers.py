@@ -157,24 +157,103 @@ def _ensure_project(project: str | None) -> str:
         raise SystemExit(0)
 
 
-def _test_endpoint(url: str) -> bool:
-    """Test if an API endpoint is reachable (3s timeout)."""
-    import urllib.request
-    import urllib.error
+def _probe_endpoint(url: str) -> tuple[bool, str]:
+    """Probe an API endpoint; return ``(reachable, detail)``.
 
-    # Try common health/version endpoints
-    for path in ["", "/api/tags", "/v1/models"]:
+    ``reachable`` is True for any HTTP response from the server —
+    including 401 / 403 / 404 — because that proves the server is up
+    and the endpoint exists. Auth rejection just means the probe
+    didn't send a key.
+
+    ``detail`` is a short human-readable summary suitable for surfacing
+    in the dashboard:
+
+    * On success: ``"OK"`` for 2xx, ``"reachable (HTTP <code>)"`` for
+      a non-2xx response.
+    * On failure: a one-line reason — ``"connection refused"``,
+      ``"name not resolved"``, ``"SSL error: <msg>"``, ``"timed out"``,
+      etc. Never includes the URL or auth-bearing strings.
+    """
+    import socket
+    import ssl
+    import urllib.error
+    import urllib.request
+
+    # Validate scheme upfront so we return a useful message instead of
+    # surfacing urllib's cryptic "unknown url type: <scheme>" — which
+    # users tend to hit when they paste a URL with a label prefix
+    # ("Tailscale: http://...") or omit the protocol entirely
+    # (host:port without "http://").
+    stripped = url.strip()
+    if not stripped:
+        return False, "URL is empty"
+    if not (stripped.startswith("http://") or stripped.startswith("https://")):
+        return False, "URL must start with http:// or https://"
+
+    # Bypass any system HTTP(S)_PROXY env vars: private endpoints
+    # (Tailscale, LAN, localhost) almost always need a direct
+    # connection; routing them through a corporate proxy is the wrong
+    # default and the most common cause of "url error: str" failures.
+    no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    url = stripped
+
+    last_reason: str | None = None
+
+    for path in ("", "/api/tags", "/v1/models", "/models"):
+        test_url = url.rstrip("/") + path
         try:
-            test_url = url.rstrip("/") + path
             req = urllib.request.Request(
                 test_url,
                 headers={"User-Agent": "urika-endpoint-check"},
             )
-            with urllib.request.urlopen(req, timeout=3):
-                return True
-        except Exception:
-            continue
-    return False
+        except (ValueError, TypeError) as e:
+            return False, f"invalid url: {type(e).__name__}"
+
+        try:
+            with no_proxy_opener.open(req, timeout=3) as resp:
+                code = getattr(resp, "status", None) or resp.getcode()
+                if 200 <= code < 300:
+                    return True, "OK"
+                return True, f"reachable (HTTP {code})"
+        except urllib.error.HTTPError as e:
+            # Server responded with a non-2xx status — endpoint exists.
+            return True, f"reachable (HTTP {e.code})"
+        except urllib.error.URLError as e:
+            reason = e.reason
+            if isinstance(reason, ssl.SSLError):
+                last_reason = f"SSL error: {reason.reason or reason}"
+            elif isinstance(reason, socket.gaierror):
+                last_reason = "name not resolved (DNS)"
+            elif isinstance(reason, ConnectionRefusedError):
+                last_reason = "connection refused"
+            elif isinstance(reason, TimeoutError):
+                last_reason = "timed out"
+            elif isinstance(reason, OSError):
+                # Generic OS-level network error — strip path-like info.
+                last_reason = f"network error: {reason.strerror or type(reason).__name__}"
+            elif isinstance(reason, str):
+                # urllib sometimes wraps a plain string (typically from
+                # proxy / handler chain failures). Pass it through —
+                # the message is generally safe and tells the user what
+                # went wrong.
+                last_reason = reason
+            else:
+                last_reason = f"url error: {type(reason).__name__}"
+        except TimeoutError:
+            last_reason = "timed out"
+        except OSError as e:
+            last_reason = f"os error: {e.strerror or type(e).__name__}"
+
+    return False, last_reason or "no response"
+
+
+def _test_endpoint(url: str) -> bool:
+    """Test if an API endpoint is reachable (3s timeout).
+
+    Thin bool wrapper around :func:`_probe_endpoint` for legacy
+    callers that don't need the failure reason.
+    """
+    return _probe_endpoint(url)[0]
 
 
 def _prompt_numbered(prompt_text: str, options: list[str], default: int = 1) -> str:

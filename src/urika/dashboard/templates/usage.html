@@ -1,0 +1,214 @@
+{% extends "_base.html" %}
+
+{% block title %}Usage · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Usage{% endblock %}
+
+{% block extra_head %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Usage</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .totals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  .totals-card {
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    background: var(--surface-1, rgba(127, 127, 127, 0.05));
+  }
+  .totals-card-label {
+    font-size: 0.85rem;
+    color: var(--text-muted, #888);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .totals-card-value {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-top: 0.25rem;
+  }
+  .chart-wrap {
+    position: relative;
+    height: 240px;
+    margin-bottom: 1.5rem;
+  }
+  .usage-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+    font-size: 0.92rem;
+  }
+  .usage-table th, .usage-table td {
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    padding: 0.35rem 0.55rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .usage-table th {
+    background: var(--surface-2, rgba(127, 127, 127, 0.12));
+    font-weight: 600;
+  }
+</style>
+
+{% if sessions %}
+  <div class="totals-grid">
+    <div class="totals-card">
+      <div class="totals-card-label">Sessions</div>
+      <div class="totals-card-value">{{ totals.sessions }}</div>
+    </div>
+    <div class="totals-card">
+      <div class="totals-card-label">Total tokens</div>
+      <div class="totals-card-value">{{ totals.total_tokens_in + totals.total_tokens_out }}</div>
+    </div>
+    <div class="totals-card">
+      <div class="totals-card-label">Cost</div>
+      <div class="totals-card-value">${{ "%.2f"|format(totals.total_cost_usd) }}</div>
+    </div>
+    <div class="totals-card">
+      <div class="totals-card-label">Agent calls</div>
+      <div class="totals-card-value">{{ totals.total_agent_calls }}</div>
+    </div>
+    <div class="totals-card">
+      <div class="totals-card-label">Experiments</div>
+      <div class="totals-card-value">{{ totals.total_experiments }}</div>
+    </div>
+  </div>
+
+  <h2>Tokens over time</h2>
+  <div class="chart-wrap"><canvas id="chart-tokens"></canvas></div>
+
+  <h2>Cost over time</h2>
+  <div class="chart-wrap"><canvas id="chart-cost"></canvas></div>
+
+  <h2>Recent sessions</h2>
+  <table class="usage-table">
+    <thead>
+      <tr>
+        <th>Started</th>
+        <th>Duration (ms)</th>
+        <th>Tokens</th>
+        <th>Cost</th>
+        <th>Agent calls</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in recent_sessions %}
+        <tr>
+          <td>{{ s.started }}</td>
+          <td>{{ s.duration_ms }}</td>
+          <td>{{ (s.tokens_in or 0) + (s.tokens_out or 0) }}</td>
+          <td>${{ "%.4f"|format(s.cost_usd or 0) }}</td>
+          <td>{{ s.agent_calls or 0 }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <script type="application/json" id="usage-data">
+    {{ {"tokens": tokens_series, "cost": cost_series} | tojson }}
+  </script>
+  <script>
+    (function() {
+      function getThemeColors() {
+        var dark = document.documentElement.dataset.theme === 'dark';
+        return {
+          text: dark ? '#ddd' : '#222',
+          grid: dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)',
+        };
+      }
+
+      function buildOptions(yLabel) {
+        var c = getThemeColors();
+        return {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: {
+              ticks: { color: c.text, maxRotation: 0, autoSkip: true },
+              grid:  { color: c.grid },
+            },
+            y: {
+              title: { display: true, text: yLabel, color: c.text },
+              ticks: { color: c.text },
+              grid:  { color: c.grid },
+            },
+          },
+        };
+      }
+
+      function init() {
+        if (typeof Chart === 'undefined') {
+          // Chart.js still loading — try again on next tick.
+          setTimeout(init, 30);
+          return;
+        }
+        var raw = document.getElementById('usage-data');
+        if (!raw) return;
+        var payload;
+        try { payload = JSON.parse(raw.textContent); }
+        catch (e) { return; }
+
+        var tokensCanvas = document.getElementById('chart-tokens');
+        if (tokensCanvas) {
+          new Chart(tokensCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+              datasets: [{
+                label: 'Tokens',
+                data: payload.tokens || [],
+                borderColor: '#5b8def',
+                backgroundColor: 'rgba(91, 141, 239, 0.15)',
+                tension: 0.2,
+              }],
+            },
+            options: buildOptions('tokens (in + out)'),
+          });
+        }
+
+        var costCanvas = document.getElementById('chart-cost');
+        if (costCanvas) {
+          new Chart(costCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+              datasets: [{
+                label: 'Cost (USD)',
+                data: payload.cost || [],
+                borderColor: '#e08a3c',
+                backgroundColor: 'rgba(224, 138, 60, 0.15)',
+                tension: 0.2,
+              }],
+            },
+            options: buildOptions('USD'),
+          });
+        }
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+    })();
+  </script>
+{% else %}
+  <div class="empty-state">
+    <p>No usage recorded yet. Run an agent first.</p>
+  </div>
+{% endif %}
+{% endblock %}

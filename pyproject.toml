@@ -49,6 +49,10 @@ dependencies = [
     "rich>=13.0",
     # Clipboard integration for /copy slash command (terminal-agnostic fallback)
     "pyperclip>=1.8",
+    # Dashboard (FastAPI server + templating)
+    "fastapi>=0.110,<1.0",
+    "uvicorn[standard]>=0.27,<1.0",
+    "jinja2>=3.1",
 ]
 
 [project.optional-dependencies]

@@ -37,6 +37,17 @@ from urika.core.registry import ProjectRegistry
     "--data", "data_path", default=None, help="Path to data file or directory."
 )
 @click.option("--description", default=None, help="Project description.")
+@click.option(
+    "--privacy-mode",
+    "privacy_mode_flag",
+    default=None,
+    type=click.Choice(["open", "private", "hybrid"]),
+    help=(
+        "Data privacy mode (open/private/hybrid). In --json mode this is "
+        "the only way to pick non-open; private/hybrid additionally "
+        "require a configured private endpoint in global settings."
+    ),
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 def new(
     name: str | None,
@@ -44,6 +55,7 @@ def new(
     mode: str | None,
     data_path: str | None,
     description: str | None,
+    privacy_mode_flag: str | None = None,
     json_output: bool = False,
 ) -> None:
     """Create a new project."""
@@ -85,19 +97,37 @@ def new(
         name = interactive_prompt("Project name", required=True)
     name = _sanitize_project_name(name)
 
-    # Load saved defaults from ~/.urika/settings.toml
+    # Load saved endpoint connection details from ~/.urika/settings.toml.
+    # There is NO saved default mode — each project picks its mode fresh.
     from urika.core.settings import get_default_privacy
 
     _saved_privacy = get_default_privacy()
-    _saved_mode = _saved_privacy.get("mode", "open")
     _saved_endpoints = _saved_privacy.get("endpoints", {})
     _saved_private_ep = _saved_endpoints.get("private", {})
     _saved_url = _saved_private_ep.get("base_url", "")
     _saved_key_env = _saved_private_ep.get("api_key_env", "")
 
-    # In JSON mode, skip all interactive prompts — use saved defaults
+    # In JSON mode, skip all interactive prompts. The default privacy
+    # mode is ``open`` (cloud); the user may opt into private/hybrid via
+    # --privacy-mode, in which case we must have a configured private
+    # endpoint in globals or we abort here rather than letting the
+    # runtime fail at first agent run (post-Commit 1).
     if json_output:
-        privacy_mode_val = _saved_mode
+        privacy_mode_val = privacy_mode_flag or "open"
+        if privacy_mode_val in ("private", "hybrid"):
+            saved_url_str = (_saved_url or "").strip()
+            if not saved_url_str:
+                from urika.cli_helpers import output_json_error
+
+                output_json_error(
+                    f"Privacy mode '{privacy_mode_val}' requires a "
+                    f"configured private endpoint, but no "
+                    f"[privacy.endpoints.private].base_url is set in "
+                    f"global settings. Run `urika config` (or use the "
+                    f"dashboard's Privacy tab) before creating a "
+                    f"private/hybrid project in --json mode."
+                )
+                raise SystemExit(1)
         private_endpoint_url = _saved_url
         private_endpoint_key_env = _saved_key_env
         if data_path is not None:
@@ -109,18 +139,16 @@ def new(
         web_search = False
         use_venv = False
     else:
-        # Privacy mode — ask FIRST, before data path
-        _mode_default = {"open": 1, "private": 2, "hybrid": 3}.get(_saved_mode, 1)
-        _has_saved = _saved_mode != "open"
-        _saved_hint = f" (saved default: {_saved_mode})" if _has_saved else ""
+        # Privacy mode — ask FIRST, before data path. No pre-fill: each
+        # project picks its own mode regardless of any global config.
         privacy_choice = _prompt_numbered(
-            f"\nData privacy mode:{_saved_hint}",
+            "\nData privacy mode:",
             [
                 "Open — agents use cloud models, no restrictions",
                 "Private — all agents use private/local endpoints only",
                 "Hybrid — data reading is private, thinking uses cloud models",
             ],
-            default=_mode_default,
+            default=1,
         )
         _privacy_map = {"Open": "open", "Private": "private", "Hybrid": "hybrid"}
         privacy_mode_val = _privacy_map.get(
@@ -145,7 +173,17 @@ def new(
                 private_endpoint_url = interactive_prompt(
                     "Private endpoint URL",
                     default=_url_default,
+                    required=True,
                 )
+                # Defensive — if interactive_prompt somehow returned an
+                # empty string (e.g. EOF on piped stdin with no
+                # default), don't proceed with a blank base_url.
+                if not (private_endpoint_url or "").strip():
+                    print_error(
+                        "Private endpoint URL is required for "
+                        f"{privacy_mode_val} mode."
+                    )
+                    raise click.Abort()
                 private_endpoint_key_env = interactive_prompt(
                     "API key env var (empty for Ollama)",
                     default=_key_default,
@@ -273,6 +311,14 @@ def new(
     # JSON mode: fast path — just write project and return
     if json_output:
         project_dir = builder.write_project()
+        # Seed notifications channels from global auto_enable flags so
+        # JSON-mode projects match interactive ``urika new`` and the
+        # dashboard's POST /api/projects.
+        from urika.cli.config_notifications import (
+            seed_project_notifications_from_global,
+        )
+
+        seed_project_notifications_from_global(project_dir)
         registry = ProjectRegistry()
         registry.register(name, project_dir)
         from urika.cli_helpers import output_json
@@ -313,6 +359,18 @@ def new(
     # Write project files first so knowledge can be ingested
     with Spinner("Writing project files"):
         project_dir = builder.write_project()
+
+    # Seed notifications channels from global auto_enable flags. No
+    # interactive prompts here — the user configures auto_enable once
+    # via 'urika notifications' and every subsequent project picks it
+    # up. Mirrors the dashboard's POST /api/projects.
+    from urika.cli.config_notifications import seed_project_notifications_from_global
+
+    seeded_channels = seed_project_notifications_from_global(project_dir)
+    if seeded_channels and not json_output:
+        print_success(
+            f"Notifications auto-enabled: {', '.join(seeded_channels)}"
+        )
 
     # Ingest knowledge BEFORE agent Q&A — agents benefit from domain context
     if data_path and scan_result and has_knowledge:
@@ -544,6 +602,25 @@ def new(
             resume=False,
             max_experiments=None,
         )
+
+    # Offer to open the dashboard (interactive only — never in --json mode
+    # and never when stdout is not a TTY, e.g. inside CliRunner tests
+    # or piped stdout).
+    import sys
+
+    if not json_output and sys.stdout.isatty() and sys.stdin.isatty():
+        try:
+            if interactive_confirm("Open the dashboard now?", default=True):
+                import subprocess
+
+                subprocess.Popen(
+                    [sys.executable, "-m", "urika", "dashboard", name],
+                    start_new_session=True,
+                )
+                click.echo("  Dashboard launching in a new browser tab...")
+        except Exception:
+            # Don't let dashboard prompt failures block project creation flow
+            pass
 
 
 def _run_builder_agent_loop(

@@ -1,0 +1,1189 @@
+/* ============================================================
+   Urika Dashboard v2 — design system
+   Linear/Vercel-inspired: single accent, generous whitespace,
+   no uppercase tracking, restrained palette.
+   ============================================================ */
+
+/* ---------- Tokens (light) ---------- */
+:root {
+  /* Surfaces */
+  --bg: #ffffff;
+  --bg-elevated: #f1f5f9;
+  --bg-hover: #e2e8f0;
+  --bg-code: #f1f5f9;
+
+  /* Borders */
+  --border: #cbd5e1;
+  --border-strong: #94a3b8;
+
+  /* Text */
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --text-subtle: #94a3b8;
+
+  /* Accent */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-fg: #ffffff;
+
+  /* Semantic */
+  --success: #16a34a;
+  --warn: #ca8a04;
+  --error: #dc2626;
+
+  /* Typography */
+  --font-ui: 'Inter', -apple-system, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  --fs-xs: 13px;
+  --fs-sm: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 28px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --lh-tight: 1.3;
+  --lh-body: 1.55;
+
+  /* Spacing (4px unit) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Shadows */
+  --shadow-resting: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  /* Motion */
+  --transition: 150ms ease;
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --content-max: 1100px;
+}
+
+/* ---------- Tokens (dark) ---------- */
+[data-theme="dark"] {
+  --bg: #0a0a0a;
+  --bg-elevated: #1c1c1c;
+  --bg-hover: #262626;
+  --bg-code: #161616;
+
+  --border: #3a3a3a;
+  --border-strong: #525252;
+
+  --text: #fafafa;
+  --text-muted: #a3a3a3;
+  --text-subtle: #737373;
+
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-fg: #ffffff;
+
+  /* success/warn/error keep light values; they read fine on dark */
+}
+
+/* ---------- Resets ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+
+/* ---------- Layout primitives ---------- */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+  padding: var(--space-5) var(--space-4);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  transition: width var(--transition);
+}
+
+.sidebar[aria-expanded="false"] {
+  width: 64px;
+  padding: var(--space-5) var(--space-2);
+}
+
+.sidebar[aria-expanded="false"] .wordmark,
+.sidebar[aria-expanded="false"] .sidebar-section-label,
+.sidebar[aria-expanded="false"] .sidebar-link span {
+  display: none;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 0 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
+  text-decoration: none;
+}
+
+/* ASCII-art wordmark, same chunky box-drawing banner the CLI prints
+   via cli_display.print_header(). Sized to fit the 240px sidebar. */
+.wordmark {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: 6px;
+  line-height: 1;
+  letter-spacing: 0;
+  margin: 0;
+  white-space: pre;
+  user-select: none;
+  text-shadow:
+    1px 1px 0 color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.version-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-subtle);
+  letter-spacing: 0.04em;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sidebar-section-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.sidebar-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: var(--space-2) var(--space-4);
+  display: block;
+  border-radius: 6px;
+  transition: 150ms ease;
+  font-size: var(--fs-sm);
+}
+
+.sidebar-link:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.sidebar-link--active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.sidebar-link[aria-current="page"] {
+  background: var(--bg-hover);
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+
+.sidebar-link--back {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  margin-bottom: var(--space-3);
+}
+.sidebar-link--back:hover { color: var(--text); }
+
+.main {
+  flex: 1;
+  padding: var(--space-6) var(--space-7);
+  max-width: var(--content-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.page-title {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.page-title::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 0.8em;
+  background: var(--accent);
+  margin-right: var(--space-3);
+  vertical-align: -2px;
+  border-radius: 2px;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-footer .theme-toggle {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* ---------- Utility ---------- */
+.text-muted {
+  color: var(--text-muted);
+}
+
+.text-subtle {
+  color: var(--text-subtle);
+}
+
+/* ---------- Empty state ---------- */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-7) var(--space-5);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.empty-state-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--text);
+}
+
+/* ---------- Skeleton ---------- */
+.skeleton {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--bg-hover) 0%,
+    var(--bg-elevated) 50%,
+    var(--bg-hover) 100%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  height: 14px;
+  width: 100%;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ============================================================
+   Components (7)
+   ============================================================ */
+
+/* ---------- 1. Button ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition),
+    color var(--transition), box-shadow var(--transition);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.btn--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-fg);
+}
+
+.btn--secondary {
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.btn--secondary:hover {
+  background: var(--bg-hover);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.btn--ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.btn--danger {
+  background: var(--error);
+  color: #ffffff;
+  border-color: var(--error);
+}
+
+.btn--danger:hover {
+  background: color-mix(in srgb, var(--error) 85%, black);
+  border-color: color-mix(in srgb, var(--error) 85%, black);
+  color: #ffffff;
+}
+
+.btn--small {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-xs);
+}
+
+/* Running-state indicator on action buttons. Border + accent text colour
+   distinguish from idle siblings; the dot pulses to convey "in flight". */
+.btn--running {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+.btn--running:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+}
+.running-dot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-right: 0.45em;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: urika-pulse 1.4s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes urika-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 1.0; transform: scale(1.2); }
+}
+
+/* P3: Privacy-tab "Test endpoint" button + result.
+   The button is intentionally NOT placed inside a .form-row (which
+   stretches its children to full width); instead we use this small
+   wrapper that centers the button under the endpoint inputs and keeps
+   it at its natural width. */
+.endpoint-test {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.endpoint-test-result {
+  text-align: center;
+}
+.endpoint-test-result--ok { color: var(--success); }
+.endpoint-test-result--fail { color: var(--error); }
+
+/* ---------- Running-ops banner ---------- */
+/* Persistent strip at the top of every project-scoped page listing
+   currently-running operations as clickable chips.  Renders only when
+   there is at least one chip after self-link suppression. */
+.active-ops-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+}
+.active-ops-label {
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+}
+.active-op-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: var(--fw-medium);
+  text-transform: capitalize;
+  transition: background var(--transition);
+}
+.active-ops-clear-stale {
+  margin-left: auto;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+}
+.active-ops-clear-stale:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.active-op-chip:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--accent);
+}
+
+/* ---------- 2. Card ---------- */
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-resting);
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-hover);
+}
+
+.danger-zone {
+  border-color: color-mix(in srgb, var(--error) 50%, transparent);
+  background: color-mix(in srgb, var(--error) 8%, var(--bg-elevated));
+  margin-top: var(--space-5);
+}
+
+.danger-zone h2 {
+  color: var(--error);
+  margin-bottom: var(--space-3);
+}
+
+.danger-zone:hover {
+  border-color: color-mix(in srgb, var(--error) 60%, transparent);
+}
+
+.card-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--space-2);
+}
+
+.card-body {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* Inline metadata strip (status tag, ids, timestamps, optional action
+   button on the right via margin-left: auto). Used on experiment
+   detail and similar single-card pages. */
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* Research question + description preserve newlines and wrap fully
+   (rather than collapsing \n to whitespace and visually showing as
+   a single line). */
+.project-question,
+.project-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- List controls (search + sort above a list) ---------- */
+.list-controls {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.list-search, .list-sort {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.list-search { flex: 1; }
+.list-sort { min-width: 160px; }
+
+/* ---------- 3. List item ---------- */
+.list-item {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+/* Optional sibling action (e.g. Resume button on a failed/paused
+   experiment row). Sits on the right edge of the row, outside the
+   <a class="list-item-link"> wrapper so the click doesn't navigate. */
+.list-item > .list-item-link,
+.list-item > .list-item-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.list-item-action {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding-right: var(--space-5);
+}
+
+.list-item:last-child {
+  margin-bottom: 0;
+}
+
+.list-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.list-item--missing {
+  opacity: 0.6;
+}
+
+.list-item-link,
+.list-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  color: var(--text);
+  flex-wrap: wrap;
+}
+
+.list-item-link:hover {
+  color: var(--text);
+}
+
+
+.list-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 60%;
+}
+
+.list-item-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text);
+  /* Wrap long unbroken strings (method names, tool ids without
+     spaces) within the column instead of overflowing right. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.list-item-subtitle {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Optional third row in a list-item-main column — used for the runs +
+   last-touched line on experiments cards so the layout matches the
+   project-home "Recent experiments" cards instead of cramming meta
+   into the right-hand column. */
+.list-item-detail {
+  font-size: var(--fs-xs);
+  margin-top: var(--space-1);
+}
+
+.list-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+  color: var(--text-subtle);
+  min-width: 0;
+}
+
+/* In bare rows (methods, tools), the meta block sits BELOW main
+   on its own line and left-aligns with the title for visual
+   rhythm — no jumping between right- and left-alignment depending
+   on whether the meta fit inline. */
+.list-item-row > .list-item-meta {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  margin-top: var(--space-2);
+}
+
+/* ---------- 4. Breadcrumb ---------- */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.breadcrumb a {
+  color: var(--text-muted);
+  transition: color var(--transition);
+}
+
+.breadcrumb a:hover {
+  color: var(--text);
+}
+
+.breadcrumb-separator {
+  color: var(--text-subtle);
+  user-select: none;
+}
+
+.breadcrumb-current {
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+
+/* ---------- 5. Tag ---------- */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  line-height: 1.4;
+}
+
+.tag--running {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.tag--completed {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+}
+
+.tag--pending {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.tag--paused {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.tag--failed {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 30%, transparent);
+}
+
+/* ---------- 6. Metric ---------- */
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.metric-value {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ---------- 7. Log line ---------- */
+.log-line {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-body);
+  padding: 2px var(--space-3);
+  background: var(--bg-code);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-left: 2px solid transparent;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.log-line:hover {
+  background: var(--bg-hover);
+  border-left-color: var(--border-strong);
+}
+
+.log-line--error {
+  color: var(--error);
+}
+
+.log-line--warn {
+  color: var(--warn);
+}
+
+.log-line--muted {
+  color: var(--text-muted);
+}
+
+/* Agent-header line colors. Streaming log pages render headers like
+   "─── Planning Agent ───" and the URIKA banner box-drawing block;
+   urika-log-classify.js tags each line with the right modifier so we
+   can color the whole row in the agent's accent. Banner gets the
+   urika-blue accent. Generic-header fallback gets the muted accent. */
+.log-line--planning      { color: #4ade80; }   /* green */
+.log-line--task          { color: #06b6d4; }   /* cyan */
+.log-line--evaluator     { color: #facc15; }   /* yellow */
+.log-line--advisor       { color: #c084fc; }   /* magenta/violet */
+.log-line--report        { color: #fb923c; }   /* orange */
+.log-line--presentation  { color: #ec4899; }   /* pink */
+.log-line--tool-builder  { color: #a3e635; }   /* lime */
+.log-line--data          { color: #38bdf8; }   /* sky */
+.log-line--literature    { color: #fbbf24; }   /* amber */
+.log-line--project-builder { color: #93c5fd; } /* light blue */
+.log-line--summarizer    { color: #f472b6; }   /* pink-light */
+.log-line--finalizer     { color: #34d399; }   /* emerald */
+.log-line--agent         { color: var(--text); font-weight: var(--fw-semibold); }
+.log-line--banner        { color: var(--accent); }
+
+/* ---------- Live log footer (model · agent · tokens · cost · elapsed) ---------- */
+.log-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-2);
+}
+.log-footer-cell { display: inline-flex; gap: var(--space-1); }
+.log-footer-label { opacity: 0.6; }
+.log-footer-value { color: var(--text); }
+.log-footer-sep { opacity: 0.4; }
+
+/* ---------- Markdown body (report viewer, knowledge entries) ---------- */
+.markdown-body { line-height: var(--lh-body); }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-3);
+}
+.markdown-body h1 { font-size: var(--fs-xl); }
+.markdown-body h2 { font-size: var(--fs-lg); }
+.markdown-body h3 { font-size: var(--fs-md); }
+.markdown-body p { margin-bottom: var(--space-3); }
+.markdown-body code {
+  font-family: var(--font-mono);
+  background: var(--bg-code);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.markdown-body pre {
+  background: var(--bg-code);
+  padding: var(--space-3);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.markdown-body pre code { background: transparent; padding: 0; }
+.markdown-body table {
+  border-collapse: collapse;
+  margin: var(--space-3) 0;
+  /* Wide tables scroll horizontally inside their column rather than
+     pushing the page wider. */
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+}
+.markdown-body th { background: var(--bg-elevated); }
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
+.markdown-body figure {
+  max-width: 100%;
+  margin: var(--space-3) 0;
+}
+
+/* Section header with optional right-aligned actions (e.g.
+   "+ New experiment" + "See all →" buttons above the recent
+   experiments list on the project home). */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+.section-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* ---------- Experiment artifacts (Outputs section) ---------- */
+.artifacts { margin-top: var(--space-5); }
+.section-heading {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--space-3);
+  color: var(--accent);
+}
+.artifact-row {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.artifact-row-label {
+  width: 140px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.artifact-row-actions {
+  flex: 1;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.artifact-files { list-style: none; padding: 0; }
+.artifact-files li { padding: var(--space-1) 0; }
+
+/* ---------- Final outputs grid (project home) ---------- */
+.final-outputs {
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.final-outputs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+.card--linked {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: 150ms ease;
+}
+.card--linked:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0,0,0,.08);
+}
+
+/* ---------- Tabs ---------- */
+/* Hide tab panels gated by x-cloak until Alpine boots, so non-active
+   panels don't flash on initial page load. Alpine removes the attribute
+   during init and the rule then no longer applies. */
+[x-cloak] { display: none !important; }
+
+.tabs { margin-top: var(--space-3); }
+.tab-list {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
+}
+.tab-button {
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  border-bottom: 2px solid transparent;
+  transition: 150ms ease;
+}
+.tab-button:hover { color: var(--text); }
+.tab-button--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.tab-panel { padding: var(--space-3) 0; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: min(560px, 90vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.modal-close { font-size: 1.4em; }
+.modal-body { padding: var(--space-5); }
+
+/* ---------- Modal form layout ---------- */
+/* Block-level rows so labels stack above inputs and inputs span the
+   modal width. Used by every modal form (run / finalize / summarize /
+   build-tool / evaluate / report / present / advisor / new project). */
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.form-row > label { font-weight: var(--fw-semibold); }
+/* Text-like inputs span the row; radio + checkbox keep their native
+   inline layout (the privacy + notifications tabs use them inside
+   .form-row wrappers and broke when this rule matched too broadly). */
+.form-row > input:not([type="radio"]):not([type="checkbox"]),
+.form-row > textarea,
+.form-row > select {
+  width: 100%;
+  font: inherit;
+  padding: var(--space-2);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.form-row textarea { resize: vertical; min-height: 4.5rem; }
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+/* ---------- Advisor chat ---------- */
+.advisor-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: var(--space-4);
+}
+.message {
+  padding: var(--space-3) var(--space-4);
+  border-radius: 8px;
+  max-width: 80%;
+  white-space: pre-wrap;
+}
+.message--user {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  align-self: flex-end;
+  color: var(--text);
+}
+.message--advisor {
+  background: var(--bg-elevated);
+  align-self: flex-start;
+}
+.message--thinking {
+  opacity: 0.7;
+  font-style: italic;
+}
+.message--error {
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  color: var(--error);
+}
+.advisor-form textarea {
+  width: 100%;
+  min-height: 80px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+}
+.advisor-form textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Shared "thinking…" placeholder ---------- */
+/* Driven by /static/urika-thinking.js. The element gets this class
+   while the spinner is running and loses it on stop(). Urika blue
+   keeps the activity visible without competing with the log stream. */
+.urika-thinking {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  padding: var(--space-3);
+}
+
+/* ---------- Documentation viewer ---------- */
+/* Docs nav lives in the sidebar (third mode); the main panel is
+   just the rendered .markdown-body article inside a .card. */

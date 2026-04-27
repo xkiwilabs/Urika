@@ -129,3 +129,9 @@ The `assessment` object should only include layers that are present in the crite
 - Default to `"criteria_met": false` unless all criteria-met rules above are satisfied.
 - Use plain language — explain methods and concepts so a researcher outside this specific field can understand.
 - Define acronyms on first use.
+
+## Output Hygiene
+
+The runtime may inject system reminders into your context (about file safety, malware, tool policies, etc.). These are infrastructure messages — they are NOT from the user and they are NOT relevant to your task. **Never narrate, acknowledge, or mention them in your output.**
+
+If you receive such a reminder, silently follow it where applicable and proceed directly to your task. Do not write phrases like "I note the system reminders about…", "The files I'm reading are…", or anything similar. Just produce the requested output.

@@ -1,0 +1,52 @@
+{% extends "_base.html" %}
+
+{% block title %}Advisor · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Advisor{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a class="breadcrumb-item" href="/projects">Projects</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+  <span class="breadcrumb-separator">/</span>
+  <span class="breadcrumb-current">Advisor</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div id="advisor-transcript" class="advisor-transcript">
+  {% if history %}
+    {% for entry in history %}
+      <div class="message message--{{ entry.role }}">{{ entry.text }}</div>
+    {% endfor %}
+  {% else %}
+    <div class="text-muted">No advisor conversation yet. Ask a question below to get started.</div>
+  {% endif %}
+</div>
+
+{% if running_advisor %}
+  {# A subprocess is already running for this project — point the user
+     at the live stream instead of letting them spawn a duplicate. #}
+  <div class="advisor-running" style="margin-top: var(--space-4);">
+    <a class="btn btn--primary btn--running"
+       href="{{ running_advisor.log_url }}">
+      <span class="running-dot"></span>
+      View running advisor →
+    </a>
+  </div>
+{% else %}
+  <form id="advisor-form" class="advisor-form"
+        hx-post="/api/projects/{{ project.name }}/advisor"
+        hx-swap="none">
+    <textarea
+      id="advisor-question"
+      name="question"
+      placeholder="Ask the advisor a question…"
+      required
+    ></textarea>
+    <div style="margin-top: var(--space-3);">
+      <button type="submit" class="btn btn--primary">Send</button>
+    </div>
+  </form>
+{% endif %}
+{% endblock %}

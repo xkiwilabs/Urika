@@ -1,0 +1,59 @@
+{# src/urika/dashboard/templates/_macros.html #}
+
+{% macro tabs(name, panels) %}
+{# panels = list of {id, label} dicts; the caller supplies the panel
+   bodies as Jinja blocks named after the panel ids. #}
+<div x-data="{ active: '{{ panels[0].id }}' }" class="tabs">
+  <div class="tab-list" role="tablist">
+    {% for p in panels %}
+      <button
+        class="tab-button"
+        :class="{ 'tab-button--active': active === '{{ p.id }}' }"
+        @click="active = '{{ p.id }}'"
+        role="tab"
+        type="button"
+      >{{ p.label }}</button>
+    {% endfor %}
+  </div>
+  {{ caller(active='') }}
+</div>
+{% endmacro %}
+
+{% macro action_label(verb, noun, exists) -%}
+{# "Generate report" / "Re-generate report"; "Finalize project" / "Re-finalize project".
+   Use for any button or modal title where we toggle on prior-artifact existence. #}
+{%- if exists -%}Re-{{ verb | lower }} {{ noun }}{%- else -%}{{ verb }} {{ noun }}{%- endif -%}
+{%- endmacro %}
+
+{% macro modal(id, title) %}
+{# Usage:
+   {% call modal('new-experiment', 'New experiment') %}
+     <form ...>...</form>
+   {% endcall %}
+   Trigger with: <button @click="$dispatch('open-modal', { id: 'new-experiment' })">Open</button>
+#}
+<div
+  x-data="{ open: false }"
+  x-init="
+    window.addEventListener('open-modal', e => { if (e.detail && e.detail.id === '{{ id }}') open = true });
+    window.addEventListener('close-modal', e => { if (!e.detail || e.detail.id === '{{ id }}') open = false });
+  "
+  x-show="open"
+  x-cloak
+  class="modal-backdrop"
+  @click.self="open = false"
+  @keydown.escape.window="open = false"
+  role="dialog"
+  aria-modal="true"
+>
+  <div class="modal-panel">
+    <header class="modal-header">
+      <h2 class="modal-title">{{ title }}</h2>
+      <button class="btn btn--ghost modal-close" @click="open = false" aria-label="Close">×</button>
+    </header>
+    <div class="modal-body">
+      {{ caller() }}
+    </div>
+  </div>
+</div>
+{% endmacro %}

@@ -7,6 +7,25 @@ from pathlib import Path
 from typing import Callable
 
 
+class MissingPrivateEndpointError(RuntimeError):
+    """Raised when a privacy-sensitive agent run requires a configured
+    private endpoint that is missing from the runtime config.
+
+    The runtime used to silently fall back to the cloud endpoint and
+    only emit a ``warnings.warn(...)``.  That made it possible to run
+    a project in ``private`` (or ``hybrid``) mode while quietly
+    sending data to the Anthropic API — the opposite of the
+    user-facing privacy contract.
+
+    Now ``build_agent_env_for_endpoint`` raises this error when the
+    selected endpoint is missing, so the run aborts visibly and the
+    user is forced to fix the configuration before any
+    privacy-sensitive workload starts.
+    """
+
+    pass
+
+
 @dataclass
 class SecurityPolicy:
     """Filesystem and command boundaries for an agent.
@@ -104,8 +123,57 @@ class RuntimeConfig:
     endpoints: dict[str, EndpointConfig] = field(default_factory=dict)
 
 
+def _load_global_per_mode(mode: str) -> tuple[str, dict[str, AgentModelConfig]]:
+    """Read ``[runtime.modes.<mode>]`` from ``~/.urika/settings.toml``.
+
+    Returns ``(default_model, per_agent_overrides)`` extracted from
+    ``[runtime.modes.<mode>].model`` and
+    ``[runtime.modes.<mode>.models.<agent>]``.  Empty values are returned
+    when the file is missing, unparseable, or has no block for ``mode``.
+    """
+    import tomllib
+
+    from urika.core.settings import _settings_path
+
+    path = _settings_path()
+    if not path.exists():
+        return "", {}
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return "", {}
+
+    modes = data.get("runtime", {}).get("modes", {})
+    if not isinstance(modes, dict):
+        return "", {}
+    cfg = modes.get(mode, {})
+    if not isinstance(cfg, dict):
+        return "", {}
+
+    default_model = cfg.get("model", "") or ""
+    per_agent: dict[str, AgentModelConfig] = {}
+    for agent_name, agent_cfg in (cfg.get("models", {}) or {}).items():
+        if isinstance(agent_cfg, dict):
+            per_agent[agent_name] = AgentModelConfig(
+                endpoint=agent_cfg.get("endpoint", "open"),
+                model=agent_cfg.get("model", ""),
+            )
+        elif isinstance(agent_cfg, str):
+            per_agent[agent_name] = AgentModelConfig(model=agent_cfg)
+    return default_model, per_agent
+
+
 def load_runtime_config(project_dir: Path) -> RuntimeConfig:
-    """Load runtime config from urika.toml. Returns defaults if not configured."""
+    """Load runtime config from urika.toml. Returns defaults if not configured.
+
+    Project-level overrides always win.  When the project's ``urika.toml``
+    has no entry for a given agent (or no top-level ``[runtime].model``),
+    the loader falls back to ``[runtime.modes.<project_mode>]`` in
+    ``~/.urika/settings.toml``.  This is the live-inheritance bit of the
+    global-defaults model: projects pick a mode and get per-agent
+    defaults from globals without copying them at creation time.
+    """
     import tomllib
 
     toml_path = project_dir / "urika.toml"
@@ -140,11 +208,41 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
                     api_key_env=ep_cfg.get("api_key_env", ""),
                 )
 
+        # ── Live-inherit endpoint definitions from globals ────────────
+        # Project-level [privacy.endpoints.<name>] always wins on
+        # collision; globals fill in any name the project hasn't defined.
+        # Mirrors the per-mode model live-inheritance pattern below — the
+        # dashboard's POST /api/projects writes only [privacy].mode (not
+        # endpoint duplicates), so without this the loader would crash
+        # on the next agent invocation with MissingPrivateEndpointError.
+        from urika.core.settings import get_named_endpoints
+
+        for ep in get_named_endpoints():
+            ep_name = ep.get("name", "")
+            if not ep_name or ep_name in endpoints:
+                continue
+            endpoints[ep_name] = EndpointConfig(
+                base_url=ep.get("base_url", ""),
+                api_key_env=ep.get("api_key_env", ""),
+            )
+
+        # ── Live-inherit from global per-mode defaults ────────────────
+        # Project-level values always win; globals fill in the gaps for
+        # any agent (or the top-level model) that the project hasn't
+        # overridden.
+        project_mode = privacy.get("mode", "open")
+        global_default_model, global_per_agent = _load_global_per_mode(project_mode)
+        for agent_name, gcfg in global_per_agent.items():
+            if agent_name not in model_overrides:
+                model_overrides[agent_name] = gcfg
+
+        final_model = runtime.get("model", "") or global_default_model
+
         return RuntimeConfig(
             backend=runtime.get("backend", "claude"),
-            model=runtime.get("model", ""),
+            model=final_model,
             model_overrides=model_overrides,
-            privacy_mode=privacy.get("mode", "open"),
+            privacy_mode=project_mode,
             endpoints=endpoints,
         )
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -189,24 +287,31 @@ def build_agent_env_for_endpoint(
         endpoint_name = "private"
     elif runtime_config.privacy_mode == "hybrid":
         # Default hybrid: data_agent and tool_builder use private endpoint
-        _PRIVATE_AGENTS = {"data_agent"}
+        _PRIVATE_AGENTS = {"data_agent", "tool_builder"}
         if agent_name in _PRIVATE_AGENTS:
             endpoint_name = "private"
 
     if endpoint_name != "open":
         endpoint = runtime_config.endpoints.get(endpoint_name)
-        if endpoint is None:
-            import warnings
-
-            warnings.warn(
+        if endpoint is None or not endpoint.base_url:
+            # Hard fail — silently falling back to the cloud endpoint
+            # would violate the privacy contract.  The user must
+            # configure the endpoint before running privacy-sensitive
+            # work.
+            reason = (
+                f"is missing"
+                if endpoint is None
+                else "has no base_url"
+            )
+            raise MissingPrivateEndpointError(
                 f"Privacy mode '{runtime_config.privacy_mode}' "
-                f"requires endpoint '{endpoint_name}' but it "
-                f"is not defined in [privacy.endpoints."
-                f"{endpoint_name}] in urika.toml. Agent "
-                f"'{agent_name}' will use the default open "
-                f"endpoint. Define the endpoint or change "
-                f"the privacy mode to avoid this.",
-                stacklevel=2,
+                f"requires the '{endpoint_name}' endpoint to be "
+                f"configured for agent '{agent_name}', but "
+                f"[privacy.endpoints.{endpoint_name}] {reason}. "
+                f"Configure it in this project's urika.toml, in the "
+                f"global ~/.urika/settings.toml, or via `urika config` "
+                f"or the dashboard's Privacy tab before running this "
+                f"project."
             )
         if endpoint:
             if env is None:

@@ -1,0 +1,204 @@
+{% extends "_base.html" %}
+
+{% set _log_type = log_type or "run" %}
+
+{% block title %}Live log · {{ experiment_id }}{% if _log_type != "run" %} · {{ _log_type }}{% endif %} · {{ project.name | humanize }} · Urika{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a class="breadcrumb-item" href="/projects">Projects</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}/experiments">Experiments</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}/experiments/{{ experiment_id }}">{{ experiment_id }}</a>
+  <span class="breadcrumb-separator">/</span>
+  <span class="breadcrumb-current">Log{% if _log_type != "run" %} · {{ _log_type }}{% endif %}</span>
+</nav>
+{% endblock %}
+
+{% block heading %}Live log: {{ experiment_id }}{% if _log_type != "run" %} · {{ _log_type }}{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div id="log-status" class="text-muted">Connecting…</div>
+  <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
+  {# Sticky activity indicator below the scroll box: stays visible the
+     whole run so the user has a constant signal during quiet stretches
+     between tool calls. Only stopped on the completion event. #}
+  {% include "_thinking.html" %}
+
+  {% include "_log_footer.html" %}
+
+  <div id="log-prompts" style="margin-top: var(--space-4);"></div>
+
+  {% if _log_type == "run" %}
+  <div style="margin-top: var(--space-4); display: flex; gap: var(--space-3);">
+    <button class="btn btn--secondary" id="pause-btn">Pause (after current step)</button>
+    <button class="btn btn--danger" id="stop-btn">Stop now</button>
+  </div>
+  {% endif %}
+
+  <div id="log-completion" style="display: none; margin-top: var(--space-4);">
+    <p>Run complete.</p>
+    <a class="btn btn--primary"
+       href="/projects/{{ project.name }}/experiments/{{ experiment_id }}">
+      View experiment →
+    </a>
+    <a class="btn btn--secondary"
+       href="/projects/{{ project.name }}/experiments/{{ experiment_id }}/report"
+       id="link-report" style="display: none;">
+      View report
+    </a>
+    <a class="btn btn--secondary"
+       href="/projects/{{ project.name }}/experiments/{{ experiment_id }}/presentation"
+       target="_blank" rel="noopener"
+       id="link-presentation" style="display: none;">
+      Open presentation ↗
+    </a>
+  </div>
+</div>
+
+<script>
+(function () {
+  const url = "/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stream{% if _log_type != 'run' %}?type={{ _log_type }}{% endif %}";
+  const logEl = document.getElementById("log");
+  const statusEl = document.getElementById("log-status");
+  const completionEl = document.getElementById("log-completion");
+  const pauseBtn = document.getElementById("pause-btn");
+  const stopBtn = document.getElementById("stop-btn");
+
+  const es = new EventSource(url);
+
+  es.onopen = function () {
+    statusEl.textContent = "Streaming…";
+  };
+
+  es.onmessage = function (e) {
+    // Spinner stays running through the whole stream — see comment in
+    // summarize_log.html for the rationale.
+    const line = document.createElement("div");
+    line.textContent = e.data;
+    const cls = window.urikaClassifyLine ? window.urikaClassifyLine(e.data) : null;
+    if (cls) line.className = cls;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const promptHost = document.getElementById("log-prompts");
+
+  es.addEventListener("prompt", function (e) {
+    let payload = {};
+    try { payload = JSON.parse(e.data); } catch (_) { return; }
+    if (!payload.prompt_id || !payload.question) return;
+
+    // Build the inline answer form via DOM methods (no innerHTML) so
+    // the prompt question is rendered as text, not parsed as HTML.
+    const form = document.createElement("form");
+    form.className = "prompt-form card";
+
+    const question = document.createElement("p");
+    question.className = "prompt-question";
+    question.textContent = payload.question;
+    form.appendChild(question);
+
+    const textarea = document.createElement("textarea");
+    textarea.name = "answer";
+    textarea.rows = 2;
+    textarea.required = true;
+    form.appendChild(textarea);
+
+    const actions = document.createElement("div");
+    actions.className = "form-actions";
+    actions.style.marginTop = "var(--space-2)";
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className = "btn btn--primary";
+    submit.textContent = "Send";
+    actions.appendChild(submit);
+    form.appendChild(actions);
+
+    function showError(msg) {
+      const note = document.createElement("span");
+      note.className = "text-muted";
+      note.textContent = " " + msg;
+      actions.appendChild(note);
+    }
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const data = new FormData(form);
+      data.append("prompt_id", payload.prompt_id);
+      try {
+        const r = await fetch(
+          "/api/projects/{{ project.name }}/runs/{{ experiment_id }}/respond",
+          { method: "POST", body: data }
+        );
+        if (r.ok) {
+          form.remove();
+        } else {
+          showError("Error " + r.status);
+        }
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    promptHost.appendChild(form);
+  });
+
+  es.addEventListener("status", function (e) {
+    let payload = {};
+    try { payload = JSON.parse(e.data); } catch (_) {}
+    statusEl.textContent = payload.status === "completed" ? "Completed." : `Status: ${payload.status || "unknown"}`;
+    completionEl.style.display = "";
+    if (pauseBtn) pauseBtn.style.display = "none";
+    if (stopBtn) stopBtn.style.display = "none";
+    if (window._urikaThinkingHandle) {
+      window._urikaThinkingHandle.stop();
+      window._urikaThinkingHandle = null;
+    }
+    es.close();
+
+    // Probe for report / presentation existence so the buttons only
+    // appear when the artifact has actually been written.
+    fetch("/api/projects/{{ project.name }}/experiments/{{ experiment_id }}/artifacts")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        if (data.has_report) document.getElementById("link-report").style.display = "";
+        if (data.has_presentation) document.getElementById("link-presentation").style.display = "";
+      })
+      .catch(() => {});
+  });
+
+  es.onerror = function () {
+    statusEl.textContent = "Connection lost.";
+  };
+
+  if (pauseBtn) {
+    pauseBtn.addEventListener("click", function () {
+      pauseBtn.disabled = true;
+      fetch("/api/projects/{{ project.name }}/runs/{{ experiment_id }}/pause", {
+        method: "POST",
+      }).then(() => {
+        statusEl.textContent = "Pause requested. Waiting for current step to finish…";
+      });
+    });
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener("click", function () {
+      stopBtn.disabled = true;
+      if (pauseBtn) pauseBtn.disabled = true;
+      fetch("/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stop", {
+        method: "POST",
+      }).then(() => {
+        statusEl.textContent = "Stop signaled — terminating now.";
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

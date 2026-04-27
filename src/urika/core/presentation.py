@@ -46,7 +46,18 @@ def render_presentation(
 
     # Copy reveal.js template files
     template_dir = Path(__file__).parent.parent / "templates" / "presentation"
-    for f in ("reveal.min.js", "reveal.css", "theme-light.css", "theme-dark.css"):
+    for f in (
+        "reveal.min.js",
+        "reveal.css",
+        "theme-light.css",
+        "theme-dark.css",
+        # RevealNotes plugin: notes.js registers the S-key handler;
+        # notes.html is the popup window's template (the plugin opens
+        # it via window.open at a relative URL, so it must live next
+        # to the deck).
+        "notes.js",
+        "notes.html",
+    ):
         src = template_dir / f
         if src.exists():
             shutil.copy2(src, output_dir / f)
@@ -89,12 +100,26 @@ def render_presentation(
 
 
 def _render_title_slide(title: str, subtitle: str) -> str:
-    """Render the title slide."""
+    """Render the title slide.
+
+    Includes a small keyboard-shortcut hint reminding the viewer that
+    reveal.js exposes ``S`` (speaker notes), ``F`` (fullscreen), and
+    ``?`` (help overlay). Only on slide 1 — gets out of the way once
+    the user has seen it.
+    """
     sub = f'<p class="subtitle">{_escape(subtitle)}</p>' if subtitle else ""
+    hint = (
+        '<aside class="urika-keys-hint">'
+        "Press <kbd>S</kbd> for speaker notes "
+        "· <kbd>F</kbd> fullscreen "
+        "· <kbd>?</kbd> help"
+        "</aside>"
+    )
     return f"""
             <section class="title-slide">
                 <h1>{_escape(title)}</h1>
                 {sub}
+                {hint}
             </section>
 """
 

@@ -11,6 +11,7 @@ from urika.cli.project import (  # noqa: F401
     update_project,
     inspect,
     list_cmd,
+    delete,
     _run_builder_agent_loop,
     _ingest_knowledge,
 )

@@ -1,4 +1,4 @@
-"""Project-related CLI commands that stay compact: list, status.
+"""Project-related CLI commands that stay compact: list, status, delete.
 
 Larger commands live in their own modules and are re-exported below:
 
@@ -22,9 +22,37 @@ from urika.core.registry import ProjectRegistry
 
 @cli.command("list")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def list_cmd(json_output: bool) -> None:
+@click.option(
+    "--prune",
+    is_flag=True,
+    help="Unregister projects whose folders are missing before listing.",
+)
+def list_cmd(json_output: bool, prune: bool) -> None:
     """List all registered projects."""
     registry = ProjectRegistry()
+
+    if prune:
+        # Walk the registry and trash any entry whose path no longer exists.
+        # ``trash_project`` falls into its registry-only branch when the
+        # folder is gone, so this is silent and side-effect-free on disk.
+        from urika.core.project_delete import trash_project
+
+        stale = sorted(
+            name for name, path in registry.list_all().items() if not path.exists()
+        )
+        for name in stale:
+            trash_project(name)
+
+        if stale:
+            count = len(stale)
+            word = "entry" if count == 1 else "entries"
+            click.echo(f"Pruned {count} stale {word}: {', '.join(stale)}")
+        else:
+            click.echo("No stale entries.")
+
+        # Re-load registry so subsequent listing reflects the pruning.
+        registry = ProjectRegistry()
+
     projects = registry.list_all()
 
     if json_output:
@@ -95,6 +123,62 @@ def status(name: str | None, json_output: bool) -> None:
             click.echo(
                 f"  {exp.experiment_id}: {exp.name} [{exp_status}, {n_runs} runs]"
             )
+
+
+@cli.command()
+@click.argument("name")
+@click.option("-f", "--force", is_flag=True, help="Skip confirmation prompt.")
+@click.option("--json", "json_output", is_flag=True, help="Emit JSON result.")
+def delete(name: str, force: bool, json_output: bool) -> None:
+    """Move a project to ~/.urika/trash/ and unregister it.
+
+    The project directory is moved (not deleted) so artifacts are
+    preserved. Empty the trash manually when you're sure.
+    """
+    from urika.core.project_delete import (
+        ActiveRunError,
+        ProjectNotFoundError,
+        trash_project,
+    )
+
+    if not force:
+        try:
+            click.confirm(
+                f"Move project '{name}' to ~/.urika/trash/? "
+                "(files preserved, registry entry removed)",
+                abort=True,
+            )
+        except click.Abort:
+            click.echo("Aborted.")
+            return
+
+    try:
+        result = trash_project(name)
+    except ProjectNotFoundError:
+        raise click.ClickException(f"Project '{name}' is not registered.")
+    except ActiveRunError as e:
+        raise click.ClickException(str(e))
+
+    if json_output:
+        from urika.cli_helpers import output_json
+
+        output_json(
+            {
+                "name": result.name,
+                "original_path": str(result.original_path),
+                "trash_path": (str(result.trash_path) if result.trash_path else None),
+                "registry_only": result.registry_only,
+            }
+        )
+        return
+
+    if result.registry_only:
+        click.echo(
+            f"Unregistered '{name}' "
+            f"(folder at {result.original_path} was already missing)."
+        )
+    else:
+        click.echo(f"Moved '{name}' to {result.trash_path}")
 
 
 # ── Re-exports from sibling modules (Phase 8 split) ───────────────

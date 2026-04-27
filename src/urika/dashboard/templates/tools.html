@@ -1,0 +1,88 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import modal %}
+
+{% block title %}Tools{% if project %} · {{ project.name | humanize }}{% endif %} · Urika{% endblock %}
+{% block heading %}{% if scope == "global" %}Built-in tools{% else %}Custom tools{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    {% if project %}
+      <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+      <span class="breadcrumb-separator">/</span>
+      <span class="breadcrumb-current">Tools</span>
+    {% else %}
+      <span class="breadcrumb-current">Tools</span>
+    {% endif %}
+  </nav>
+{% endblock %}
+
+{% block content %}
+{% if scope == "project" %}
+  <section class="project-actions" style="margin-bottom: var(--space-5);">
+    {% set bt = running_by_type.get("build_tool") %}
+    {% if bt %}
+      <a class="btn btn--primary btn--running" href="{{ bt.log_url }}">
+        <span class="running-dot"></span>
+        Build tool running… view log
+      </a>
+    {% else %}
+      <button type="button" class="btn btn--primary"
+              @click="$dispatch('open-modal', { id: 'build-tool' })">
+        + Build tool
+      </button>
+    {% endif %}
+    <span id="build-tool-feedback" class="text-muted"></span>
+  </section>
+
+  {% call modal('build-tool', 'Build a custom tool') %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/tools/build"
+      hx-target="#build-tool-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="bt-instructions">Tool description</label>
+        <textarea id="bt-instructions" name="instructions" rows="4" required
+                  placeholder="Describe the tool to build (e.g., 'create a correlation heatmap tool using seaborn')"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Build tool</button>
+      </div>
+    </form>
+  {% endcall %}
+{% endif %}
+
+{% if tools %}
+  <ul class="list">
+    {% for t in tools %}
+      <li class="list-item">
+        <div class="list-item-row">
+          <div class="list-item-main">
+            <div class="list-item-title">{{ t.name | humanize }}</div>
+            <div class="list-item-subtitle">{{ t.description }}</div>
+          </div>
+          <div class="list-item-meta">
+            <span class="tag">{{ t.category }}</span>
+          </div>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="empty-state">
+    {% if scope == "project" %}
+      <p>No custom tools yet.</p>
+      <p class="text-muted">
+        Custom tools live at <code>{{ project.path }}/tools/*.py</code>.
+        The Tool Builder agent creates them; the
+        <a href="/tools">built-in tools</a> are listed at the global level.
+      </p>
+    {% else %}
+      <p>No built-in tools registered.</p>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

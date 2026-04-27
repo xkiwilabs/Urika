@@ -14,8 +14,39 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def read_and_clear_flag(project_dir: Path) -> str | None:
+    """Read and remove ``<project_dir>/.urika/pause_requested``.
+
+    Cross-process bridge: the dashboard (or any other out-of-process
+    caller) writes the literal string ``"pause"`` or ``"stop"`` into the
+    flag file; the orchestrator loop calls this helper at each turn
+    boundary to learn about the request.
+
+    Returns ``"pause"`` or ``"stop"`` when the file contains one of those
+    values; returns ``None`` when the file is missing, unreadable, or
+    contains anything else. The flag file is removed after a successful
+    read so a subsequent turn (or a future experiment in the same
+    project) doesn't re-trigger on stale state.
+    """
+    flag = project_dir / ".urika" / "pause_requested"
+    if not flag.exists():
+        return None
+    try:
+        content = flag.read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return None
+    try:
+        flag.unlink()
+    except OSError:
+        pass
+    if content in ("pause", "stop"):
+        return content
+    return None
 
 
 class PauseController:

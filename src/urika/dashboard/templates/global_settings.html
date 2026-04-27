@@ -1,0 +1,626 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import tabs %}
+
+{% block title %}Settings · Urika{% endblock %}
+{% block heading %}Global settings{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Settings</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+  .form-row label { font-weight: 600; }
+  .form-row input[type="text"],
+  .form-row input[type="number"],
+  .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
+  .form-help { color: var(--text-muted); font-size: var(--fs-xs); }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+  .models-grid { width: 100%; border-collapse: collapse; }
+  .models-grid--hybrid { table-layout: fixed; }
+  .models-grid th, .models-grid td {
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: middle;
+  }
+  .models-grid th { font-weight: var(--fw-semibold); color: var(--text-muted); font-size: var(--fs-xs); }
+  .models-grid td input,
+  .models-grid td select { width: 100%; font: inherit; padding: 0.3rem; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+  .privacy-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-top: var(--space-3);
+    background: var(--bg-elevated);
+  }
+  .privacy-block h4 { margin-top: 0; }
+  .channel-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .channel-block h4 { margin: 0 0 var(--space-2) 0; }
+</style>
+
+<form
+  hx-put="/api/settings"
+  hx-target="#settings-feedback"
+  hx-swap="innerHTML"
+  class="card"
+>
+  {% call(active) tabs("global-settings", [
+    {"id": "privacy", "label": "Privacy"},
+    {"id": "models", "label": "Models"},
+    {"id": "preferences", "label": "Preferences"},
+    {"id": "notifications", "label": "Notifications"}
+  ]) %}
+
+    {# ---- Privacy tab -------------------------------------------------- #}
+    {# Multi-endpoint editor.  Each row defines a named endpoint under
+       [privacy.endpoints.<name>] in ~/.urika/settings.toml.  The Models
+       tab's per-agent endpoint dropdown lists every endpoint defined
+       here (plus the implicit 'open' cloud endpoint).  Mode selection
+       still lives on each project (set at `urika new` time).
+
+       Submission: rather than rely on Alpine :name= bindings inside an
+       x-for template (which has timing edge cases with HTMX form
+       serialization), the entire endpoints array is serialized as
+       JSON into a single hidden #endpoints_json input on form
+       submit. The server's /api/settings handler accepts both the
+       indexed endpoints[<i>][name] shape and the JSON shape. #}
+    <div class="tab-panel" x-show="active === 'privacy'"
+         x-data='{ endpoints: {{ named_endpoints | tojson }} }'>
+      <p class="form-help" style="margin-bottom: var(--space-3);">
+        Define one or more named endpoints. Each can be referenced from
+        the Models tab to route specific agents through it. The runtime
+        loader treats <code>open</code> as the cloud (Claude) endpoint
+        implicitly; don't define one with that name.
+      </p>
+
+      {# Hidden input is the actual carrier for the multi-endpoint
+         submission. Alpine keeps :value reactively synced to the
+         endpoints array; HTMX serializes it like any normal form
+         field. Avoids the timing pitfalls of :name= bindings inside
+         <template x-for>. #}
+      <input type="hidden" name="endpoints_json"
+             :value="JSON.stringify(endpoints)">
+
+      <template x-for="(ep, idx) in endpoints" :key="idx">
+        <div class="privacy-block">
+          <h4 x-text="ep.name || '(unnamed endpoint)'"></h4>
+          <div class="form-row">
+            <label>Name (slug)</label>
+            <input type="text"
+                   x-model="ep.name"
+                   placeholder="e.g. private, ollama, vllm_small">
+            <span class="form-help">
+              Lowercase letters, digits, <code>-</code> and <code>_</code> only.
+              Reserved names: <code>open</code>.
+            </span>
+          </div>
+          <div class="form-row">
+            <label>Base URL</label>
+            <input type="text"
+                   x-model="ep.base_url"
+                   placeholder="http://localhost:11434">
+          </div>
+          <div class="form-row">
+            <label>API key env var (optional)</label>
+            <input type="text"
+                   x-model="ep.api_key_env"
+                   placeholder="e.g. INFERENCE_HUB_KEY">
+            <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+              Enter the <strong>name</strong> of an environment variable (e.g.
+              <code>INFERENCE_HUB_KEY</code>), not the key itself. Leave blank if
+              the endpoint doesn't require auth.
+            </span>
+          </div>
+          <div class="form-row">
+            <label>Default model (optional)</label>
+            <input type="text"
+                   x-model="ep.default_model"
+                   placeholder="e.g. qwen3:14b">
+          </div>
+          {# Per-row "Test endpoint" affordance.  Probes the URL via
+             POST /api/settings/test-endpoint and shows reachability +
+             whether the named API-key env var is actually set in the
+             dashboard's process.  Reads from live Alpine state so it
+             tests what's IN THE FORM, not what's saved. #}
+          <div class="endpoint-test" x-data="{
+                 testing: false,
+                 result: null,
+                 testEndpoint() {
+                   this.testing = true;
+                   this.result = null;
+                   const fd = new FormData();
+                   fd.append('base_url', ep.base_url || '');
+                   fd.append('api_key_env', ep.api_key_env || '');
+                   fetch('/api/settings/test-endpoint', { method: 'POST', body: fd })
+                     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+                     .then(d => { this.result = d; this.testing = false; })
+                     .catch(e => {
+                       this.result = { reachable: false, details: e.message, api_key_set: false };
+                       this.testing = false;
+                     });
+                 }
+               }">
+            <button type="button" class="btn btn--small btn--primary"
+                    @click="testEndpoint()"
+                    :disabled="testing || !ep.base_url">
+              <span class="running-dot" x-show="testing"></span>
+              <span x-text="testing ? 'Testing…' : 'Test endpoint'">Test endpoint</span>
+            </button>
+            <div x-show="result" x-cloak class="endpoint-test-result"
+                 style="font-size: var(--fs-xs);">
+              <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
+                <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
+                <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>
+              </div>
+              <div class="text-muted" x-show="result?.api_key_env">
+                API key
+                <code x-text="result?.api_key_env"></code>:
+                <span :class="result?.api_key_set ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
+                      x-text="result?.api_key_set ? '✓ set' : '✗ unset'"></span>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn btn--ghost"
+                  @click="endpoints.splice(idx, 1)">Remove</button>
+        </div>
+      </template>
+
+      <div style="margin-top: var(--space-3);">
+        <button type="button" class="btn btn--secondary"
+                @click="endpoints.push({name: '', base_url: '', api_key_env: '', default_model: ''})">
+          + Add endpoint
+        </button>
+      </div>
+    </div>
+
+    {# ---- Models tab — per-mode sub-tabs ------------------------------ #}
+    {# Sub-tabs (Open / Private / Hybrid) swap which mode's grid is
+       visible. Every grid is the same shape: a 3-column table with
+       Agent / Endpoint / Model. The Endpoint cell varies per mode
+       (read-only text vs UI-category select) but the visual rhythm
+       stays consistent across modes. #}
+    <div class="tab-panel" x-show="active === 'models'" x-cloak
+         x-data="{ mode: 'open' }">
+      <div class="tab-list" role="tablist" style="margin-bottom: var(--space-3);">
+        <button class="tab-button" type="button"
+                :class="{ 'tab-button--active': mode === 'open' }"
+                @click="mode = 'open'" role="tab">Open</button>
+        <button class="tab-button" type="button"
+                :class="{ 'tab-button--active': mode === 'private' }"
+                @click="mode = 'private'" role="tab">Private</button>
+        <button class="tab-button" type="button"
+                :class="{ 'tab-button--active': mode === 'hybrid' }"
+                @click="mode = 'hybrid'" role="tab">Hybrid</button>
+      </div>
+      <span class="form-help" style="display:block; margin-bottom: var(--space-3);">
+        Each mode has its own default model + per-agent grid. Projects
+        inherit the matching mode's grid at runtime.
+      </span>
+
+      {# ---- Open mode grid ------------------------------------------ #}
+      {# In open mode every agent uses the cloud (Claude) endpoint, so
+         the Endpoint cell renders as the literal text "open" (read-
+         only). A hidden ``[endpoint]=open`` carries the value to the
+         server. The Model column is a cloud-models <select>. #}
+      {% set grid = mode_grids["open"] %}
+      <div class="privacy-block" x-show="mode === 'open'" x-cloak>
+        <h4>Open mode</h4>
+        <div class="form-row">
+          <label for="runtime_modes_open_model">Default model for open mode</label>
+          <select id="runtime_modes_open_model"
+                  name="runtime_modes_open_model">
+            {% for m in known_cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == (grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <table class="models-grid">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Endpoint</th>
+              <th>Model</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in grid.rows %}
+            <tr>
+              <td><code>{{ row.agent }}</code></td>
+              <td>
+                <span>open</span>
+                <input type="hidden"
+                       name="runtime_modes_open_models[{{ row.agent }}][endpoint]"
+                       value="open">
+              </td>
+              <td>
+                <select name="runtime_modes_open_models[{{ row.agent }}][model]">
+                  {% for m in known_cloud_models %}
+                    <option value="{{ m }}"
+                            {% if m == (row.model or grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {# ---- Private mode grid --------------------------------------- #}
+      {# In private mode every agent uses a private endpoint, so the
+         Endpoint cell renders as the literal text "private" (read-
+         only). The Model column header is "Model (Endpoint)" to flag
+         the asymmetry: picking a row in this column actually selects
+         a named private endpoint AND its bundled default_model.
+         Hidden inputs carry both ``[endpoint]`` (the chosen endpoint
+         name) and ``[model]`` (its default_model). #}
+      {% set grid = mode_grids["private"] %}
+      <div class="privacy-block" x-show="mode === 'private'" x-cloak>
+        <h4>Private mode</h4>
+        {% if private_endpoint_options %}
+          <div class="form-row">
+            <label for="runtime_modes_private_model">Default endpoint for private mode</label>
+            <select id="runtime_modes_private_model"
+                    name="runtime_modes_private_model">
+              {% for opt in private_endpoint_options %}
+                <option value="{{ opt.default_model }}"
+                        {% if opt.default_model == grid.default_model or (loop.first and not grid.default_model) %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
+              {% endfor %}
+            </select>
+            <span class="form-help">
+              Picks the default model + endpoint for agents in private
+              mode that don't have their own per-agent override below.
+            </span>
+          </div>
+          <table class="models-grid">
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Endpoint</th>
+                <th>Model (Endpoint)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in grid.rows %}
+              {# Per-row Alpine state holds the chosen endpoint name. The
+                 visible <select> has no name= so it's not submitted; two
+                 hidden inputs carry [endpoint] and [model] derived from
+                 the local ``ep`` value. #}
+              {% set initial_ep = row.endpoint if row.endpoint in private_endpoint_options|map(attribute='name')|list else private_endpoint_options[0].name %}
+              <tr x-data='{ ep: "{{ initial_ep }}", opts: {{ private_endpoint_options | tojson }} }'>
+                <td><code>{{ row.agent }}</code></td>
+                <td><span>private</span></td>
+                <td>
+                  <select x-model="ep">
+                    {% for opt in private_endpoint_options %}
+                      <option value="{{ opt.name }}"
+                              {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
+                    {% endfor %}
+                  </select>
+                  <input type="hidden"
+                         name="runtime_modes_private_models[{{ row.agent }}][endpoint]"
+                         :value="ep">
+                  <input type="hidden"
+                         name="runtime_modes_private_models[{{ row.agent }}][model]"
+                         :value="(opts.find(o => o.name === ep) || {}).default_model || ''">
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="empty-state" style="margin-top: var(--space-3);">
+            <p><strong>Private mode is unavailable.</strong></p>
+            <p class="text-muted">
+              Private mode needs at least one named private endpoint with a default model.
+              <a href="#" @click.prevent="active = 'privacy'">Add one on the Privacy tab</a>
+              first.
+            </p>
+          </div>
+        {% endif %}
+      </div>
+
+      {# ---- Hybrid mode grid ---------------------------------------- #}
+      {# Hybrid's Endpoint cell is a UI category dropdown (open /
+         private), NOT directly submitted. It drives the Model column,
+         which swaps:
+           cat=open    → cloud-models <select>
+           cat=private → named-private-endpoints <select>
+         Hidden inputs carry the resolved [endpoint] and [model]:
+           cat=open    → endpoint=open,           model=<chosen cloud model>
+           cat=private → endpoint=<chosen ep>,    model=<that ep's default_model>
+         data_agent: category locked to "private" (only option, disabled).
+         tool_builder: defaults to "private" but user-switchable. #}
+      {% set grid = mode_grids["hybrid"] %}
+      <div class="privacy-block" x-show="mode === 'hybrid'" x-cloak>
+        <h4>Hybrid mode</h4>
+        {% if not private_endpoint_options %}
+        <div class="empty-state" style="margin-top: var(--space-3);">
+          <p><strong>Hybrid mode is unavailable.</strong></p>
+          <p class="text-muted">
+            Hybrid mode mixes cloud and private endpoints — it needs at
+            least one named private endpoint with a default model.
+            <a href="#" @click.prevent="active = 'privacy'">Add one on the Privacy tab</a>
+            first.
+          </p>
+        </div>
+        {% else %}
+        <div class="form-row">
+          <label for="runtime_modes_hybrid_model">Default model for hybrid mode</label>
+          <select id="runtime_modes_hybrid_model"
+                  name="runtime_modes_hybrid_model">
+            {% for m in known_cloud_models %}
+              <option value="{{ m }}"
+                      {% if m == (grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <table class="models-grid models-grid--hybrid">
+          <thead>
+            <tr>
+              <th style="width: 20%;">Agent</th>
+              <th style="width: 40%;">Endpoint</th>
+              <th style="width: 40%;">Model (Endpoint)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in grid.rows %}
+            {% set is_locked = row.agent == "data_agent" %}
+            {% set defaults_private = row.agent in ["data_agent", "tool_builder"] %}
+            {# Initial UI category:
+                 locked agent (data_agent) → "private"
+                 default-private agent (tool_builder) with no override → "private"
+                 explicit override on row pointing at a named endpoint → "private"
+                 explicit "open" override → "open"
+                 else → "open" #}
+            {% if is_locked %}
+              {% set initial_cat = "private" %}
+            {% elif row.endpoint == "open" %}
+              {% set initial_cat = "open" %}
+            {% elif row.endpoint in defined_endpoint_names %}
+              {% set initial_cat = "private" %}
+            {% elif defaults_private %}
+              {% set initial_cat = "private" %}
+            {% else %}
+              {% set initial_cat = "open" %}
+            {% endif %}
+            {# Initial chosen private endpoint (used when cat=private). #}
+            {% if row.endpoint in private_endpoint_options|map(attribute='name')|list %}
+              {% set initial_ep = row.endpoint %}
+            {% elif private_endpoint_options %}
+              {% set initial_ep = private_endpoint_options[0].name %}
+            {% else %}
+              {% set initial_ep = "" %}
+            {% endif %}
+            {# Initial chosen cloud model (used when cat=open). #}
+            {% set initial_cloud_model = row.model or grid.default_model or "claude-opus-4-7" %}
+            <tr x-data='{ cat: "{{ initial_cat }}", ep: "{{ initial_ep }}", cloud_model: "{{ initial_cloud_model }}", opts: {{ private_endpoint_options | tojson }} }'>
+              <td><code>{{ row.agent }}</code></td>
+              <td>
+                {# UI category select — NOT submitted directly (no name=).
+                   data_agent: only "private" + disabled (locked).
+                   tool_builder + others: both options. #}
+                <select x-model="cat" {% if is_locked %}disabled{% endif %}>
+                  {% if not is_locked %}
+                    <option value="open" {% if initial_cat == "open" %}selected{% endif %}>open</option>
+                  {% endif %}
+                  <option value="private" {% if initial_cat == "private" %}selected{% endif %}>private</option>
+                </select>
+                {# Hidden input carries the resolved endpoint:
+                   cat=open    → "open"
+                   cat=private → the chosen private endpoint name. #}
+                <input type="hidden"
+                       name="runtime_modes_hybrid_models[{{ row.agent }}][endpoint]"
+                       :value="cat === 'open' ? 'open' : ep">
+                {% if is_locked %}
+                  <div class="form-help">Locked: data_agent must use a private endpoint.</div>
+                {% endif %}
+              </td>
+              <td>
+                {# Cloud variant — a free <select> of known cloud models.
+                   No name=; the hidden [model] input below carries the
+                   resolved value. #}
+                <select x-show="cat === 'open'" x-model="cloud_model">
+                  {% for m in known_cloud_models %}
+                    <option value="{{ m }}"
+                            {% if m == initial_cloud_model %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+                {# Private variant — same shape as the Private mode grid:
+                   <select> of named private endpoints, label is
+                   "<default_model> (<endpoint_name>)". Drives ``ep``. #}
+                <select x-show="cat === 'private'" x-cloak x-model="ep">
+                  {% for opt in private_endpoint_options %}
+                    <option value="{{ opt.name }}"
+                            {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
+                  {% endfor %}
+                </select>
+                {# Hidden input carries the resolved model:
+                   cat=open    → the chosen cloud model
+                   cat=private → that endpoint's default_model. #}
+                <input type="hidden"
+                       name="runtime_modes_hybrid_models[{{ row.agent }}][model]"
+                       :value="cat === 'open' ? cloud_model : ((opts.find(o => o.name === ep) || {}).default_model || '')">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+
+      <span class="form-help">
+        Defaults are written to <code>[runtime.modes.&lt;mode&gt;]</code>
+        and per-agent overrides to
+        <code>[runtime.modes.&lt;mode&gt;.models.&lt;agent&gt;]</code>.
+      </span>
+    </div>
+
+    {# ---- Preferences tab --------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'preferences'" x-cloak>
+      <div class="form-row">
+        <label for="default_audience">Default audience</label>
+        <select id="default_audience" name="default_audience">
+          {% for a in valid_audiences %}
+            <option value="{{ a }}" {% if a == default_audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="default_max_turns">Default max turns per experiment</label>
+        <input type="number" id="default_max_turns" name="default_max_turns"
+               value="{{ default_max_turns }}" min="1" step="1">
+      </div>
+
+      <div class="form-row">
+        <label class="checkbox-row">
+          <input type="checkbox" name="web_search" value="on"
+                 {% if web_search %}checked{% endif %}>
+          <span>Enable web search</span>
+        </label>
+        <span class="form-help">Lets agents call the WebSearch tool when available.</span>
+      </div>
+
+      <div class="form-row">
+        <label class="checkbox-row">
+          <input type="checkbox" name="venv" value="on"
+                 {% if venv %}checked{% endif %}>
+          <span>Use project virtualenv</span>
+        </label>
+        <span class="form-help">Run agents inside the project's <code>.venv/</code>.</span>
+      </div>
+    </div>
+
+    {# ---- Notifications tab ------------------------------------------- #}
+    <div class="tab-panel" x-show="active === 'notifications'" x-cloak>
+      <p class="form-help" style="margin-bottom: var(--space-3);">
+        Connection details are shared across all projects. Tick
+        <em>Auto-enable on new projects</em> to opt every freshly
+        created project into a channel — existing projects are
+        unaffected and can still toggle the channel from their own
+        Notifications tab.
+      </p>
+      {# Email — connection details + auto-enable hint. #}
+      <div class="channel-block">
+        <h4>Email</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="notifications_email_auto_enable" value="on"
+                   {% if notif_email_auto_enable %}checked{% endif %}>
+            <span>Auto-enable on new projects</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_from">From address</label>
+          <input type="text" id="notifications_email_from" name="notifications_email_from"
+                 value="{{ notif_email.get('from_addr', '') }}"
+                 placeholder="bot@example.com">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_to">To (comma-separated)</label>
+          <input type="text" id="notifications_email_to" name="notifications_email_to"
+                 value="{{ notif_email.get('to', []) | join(', ') if notif_email.get('to') else '' }}"
+                 placeholder="alice@example.com, bob@example.com">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_smtp_host">SMTP host</label>
+          <input type="text" id="notifications_email_smtp_host"
+                 name="notifications_email_smtp_host"
+                 value="{{ notif_email.get('smtp_host', '') }}"
+                 placeholder="smtp.example.com">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_smtp_port">SMTP port</label>
+          <input type="number" id="notifications_email_smtp_port"
+                 name="notifications_email_smtp_port"
+                 value="{{ notif_email.get('smtp_port', 587) }}" min="1" step="1">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_smtp_user">SMTP user</label>
+          <input type="text" id="notifications_email_smtp_user"
+                 name="notifications_email_smtp_user"
+                 value="{{ notif_email.get('smtp_user', '') }}">
+        </div>
+        <div class="form-row">
+          <label for="notifications_email_smtp_password_env">SMTP password env var</label>
+          <input type="text" id="notifications_email_smtp_password_env"
+                 name="notifications_email_smtp_password_env"
+                 value="{{ notif_email.get('smtp_password_env', '') }}"
+                 placeholder="SMTP_PASSWORD">
+        </div>
+      </div>
+
+      {# Slack — connection details + auto-enable hint. #}
+      <div class="channel-block">
+        <h4>Slack</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="notifications_slack_auto_enable" value="on"
+                   {% if notif_slack_auto_enable %}checked{% endif %}>
+            <span>Auto-enable on new projects</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label for="notifications_slack_channel">Channel</label>
+          <input type="text" id="notifications_slack_channel"
+                 name="notifications_slack_channel"
+                 value="{{ notif_slack.get('channel', '') }}"
+                 placeholder="#urika">
+        </div>
+        <div class="form-row">
+          <label for="notifications_slack_token_env">Bot token env var</label>
+          <input type="text" id="notifications_slack_token_env"
+                 name="notifications_slack_token_env"
+                 value="{{ notif_slack.get('token_env', '') }}"
+                 placeholder="SLACK_BOT_TOKEN">
+        </div>
+      </div>
+
+      {# Telegram — connection details + auto-enable hint. #}
+      <div class="channel-block">
+        <h4>Telegram</h4>
+        <div class="form-row">
+          <label class="checkbox-row">
+            <input type="checkbox" name="notifications_telegram_auto_enable" value="on"
+                   {% if notif_telegram_auto_enable %}checked{% endif %}>
+            <span>Auto-enable on new projects</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label for="notifications_telegram_chat_id">Chat ID</label>
+          <input type="text" id="notifications_telegram_chat_id"
+                 name="notifications_telegram_chat_id"
+                 value="{{ notif_telegram.get('chat_id', '') }}">
+        </div>
+        <div class="form-row">
+          <label for="notifications_telegram_bot_token_env">Bot token env var</label>
+          <input type="text" id="notifications_telegram_bot_token_env"
+                 name="notifications_telegram_bot_token_env"
+                 value="{{ notif_telegram.get('bot_token_env', '') }}"
+                 placeholder="TELEGRAM_BOT_TOKEN">
+        </div>
+      </div>
+    </div>
+
+  {% endcall %}
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn--primary">Save</button>
+    <span id="settings-feedback" class="text-muted"></span>
+  </div>
+</form>
+{% endblock %}

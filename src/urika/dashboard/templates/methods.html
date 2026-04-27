@@ -1,0 +1,100 @@
+{% extends "_base.html" %}
+
+{% block title %}Methods · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Methods{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Methods</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .methods-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .methods-controls .select {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.95rem;
+  }
+  .metric-pill {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    margin-right: 0.25rem;
+    border-radius: 999px;
+    background: var(--surface-2, rgba(127, 127, 127, 0.12));
+    font-size: 0.85rem;
+    font-family: var(--font-mono, monospace);
+  }
+</style>
+
+{% if methods %}
+<div x-data="{ sortBy: 'name', desc: true }">
+  <div class="methods-controls">
+    <label>Sort by:
+      <select x-model="sortBy" @change="sortRows()" class="select">
+        <option value="name">Name</option>
+        {% for k in metric_keys %}
+          <option value="{{ k }}">{{ k }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn btn--ghost" @click="desc = !desc; sortRows()" x-text="desc ? '↓' : '↑'"></button>
+  </div>
+
+  <ul class="list" id="methods-list">
+    {% for m in methods %}
+      <li class="list-item"
+          data-sort-name="{{ m.name }}"
+          {% for k, v in m.metrics.items() %}data-sort-{{ k }}="{{ v }}"{% endfor %}>
+        <div class="list-item-row">
+          <div class="list-item-main">
+            <div class="list-item-title">{{ m.name | humanize }}</div>
+            <div class="list-item-subtitle">{{ m.description }}</div>
+          </div>
+          <div class="list-item-meta">
+            {% for k, v in m.metrics.items() %}
+              <span class="metric-pill">{{ k }}={% if v is number %}{{ "%.3f"|format(v) }}{% else %}{{ v }}{% endif %}</span>
+            {% endfor %}
+            <span class="tag">{{ m.status }}</span>
+          </div>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+
+  <script>
+    function sortRows() {
+      const list = document.getElementById('methods-list');
+      const rows = Array.from(list.children);
+      const ctx = Alpine.$data(list.parentElement);
+      const key = `data-sort-${ctx.sortBy}`;
+      rows.sort((a, b) => {
+        const av = a.getAttribute(key);
+        const bv = b.getAttribute(key);
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        const an = parseFloat(av), bn = parseFloat(bv);
+        if (!isNaN(an) && !isNaN(bn)) return ctx.desc ? bn - an : an - bn;
+        return ctx.desc ? bv.localeCompare(av) : av.localeCompare(bv);
+      });
+      rows.forEach(r => list.appendChild(r));
+    }
+  </script>
+</div>
+{% else %}
+<div class="empty-state">
+  <p>No methods registered yet.</p>
+  <p class="text-muted">Methods will appear here once experiments register them.</p>
+</div>
+{% endif %}
+{% endblock %}

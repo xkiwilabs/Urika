@@ -1,0 +1,198 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import modal %}
+
+{% block title %}Projects · Urika{% endblock %}
+{% block heading %}Projects{% endblock %}
+
+{% block content %}
+<style>
+  .page-actions { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
+  .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+  .form-row label { font-weight: 600; }
+  .form-row input, .form-row textarea, .form-row select { width: 100%; font: inherit; padding: 0.4rem; }
+  .form-row--inline { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+  .form-row--inline label { font-weight: 600; }
+  .form-row--inline input, .form-row--inline select { width: auto; }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+</style>
+
+  <div class="page-actions">
+    <button
+      class="btn btn--primary"
+      @click="$dispatch('open-modal', { id: 'new-project' })"
+      type="button"
+    >+ New project</button>
+  </div>
+
+  {% if projects %}
+    {# Live filter + sort over the rendered DOM. "newest" and "recent"
+       both sort by last_activity desc — when a separate created_at field
+       exists they could diverge. #}
+    <div class="list-controls" x-data="{ filter: '', sort: 'recent' }">
+      <input
+        type="text"
+        class="list-search"
+        placeholder="Search projects…"
+        x-model.debounce.150ms="filter"
+      >
+      <select class="list-sort" x-model="sort">
+        <option value="recent">Recent activity</option>
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="name">Name A–Z</option>
+      </select>
+    </div>
+
+    <ul class="list" id="projects-list">
+      {% for p in projects %}
+        <li class="list-item {{ 'list-item--missing' if p.missing else '' }}"
+            data-name="{{ p.name }}"
+            data-question="{{ p.question }}"
+            data-last-activity="{{ p.last_activity }}">
+          <a href="/projects/{{ p.name }}" class="list-item-link">
+            <div class="list-item-main">
+              <div class="list-item-title">{{ p.name | humanize }}</div>
+              {% if p.question %}
+                <div class="list-item-subtitle">{{ p.question }}</div>
+              {% endif %}
+            </div>
+            <div class="list-item-meta">
+              {% if p.missing %}
+                <span class="tag tag--failed">missing</span>
+                <button
+                  class="btn btn--ghost btn--small"
+                  type="button"
+                  hx-delete="/api/projects/{{ p.name }}"
+                  hx-confirm="Unregister '{{ p.name }}'? (folder is already missing)"
+                >Unregister</button>
+              {% else %}
+                <span class="text-muted">{{ p.experiment_count }} experiments</span>
+                <span class="tag">{{ p.mode }}</span>
+              {% endif %}
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <script>
+      (function() {
+        const root = document.querySelector('.list-controls');
+        const list = document.getElementById('projects-list');
+        if (!root || !list) return;
+        const items = Array.from(list.children);
+        function applyFilter() {
+          const ctx = (window.Alpine && Alpine.$data) ? Alpine.$data(root) : { filter: '', sort: 'recent' };
+          const q = (ctx.filter || '').toLowerCase();
+          const sort = ctx.sort || 'recent';
+          items.forEach(it => {
+            const haystack = (it.dataset.name + ' ' + it.dataset.question).toLowerCase();
+            it.style.display = haystack.includes(q) ? '' : 'none';
+          });
+          const visible = items.filter(it => it.style.display !== 'none');
+          visible.sort((a, b) => {
+            if (sort === 'name') return a.dataset.name.localeCompare(b.dataset.name);
+            if (sort === 'newest' || sort === 'recent') {
+              return (b.dataset.lastActivity || '').localeCompare(a.dataset.lastActivity || '');
+            }
+            if (sort === 'oldest') {
+              return (a.dataset.lastActivity || '').localeCompare(b.dataset.lastActivity || '');
+            }
+            return 0;
+          });
+          visible.forEach(it => list.appendChild(it));
+        }
+        root.addEventListener('change', applyFilter);
+        root.addEventListener('input', applyFilter);
+        applyFilter();
+      })();
+    </script>
+  {% else %}
+    <div class="empty-state">
+      <p>No projects yet. Click <strong>+ New project</strong> above to create one.</p>
+    </div>
+  {% endif %}
+
+  {% call modal('new-project', 'New project') %}
+    <form
+      hx-post="/api/projects"
+      hx-target="#new-project-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="np-name">Project name</label>
+        <input id="np-name" name="name" type="text"
+               pattern="[a-z0-9][a-z0-9-]*" required
+               placeholder="e.g. dht-target-selection">
+      </div>
+
+      <div class="form-row">
+        <label for="np-question">Research question</label>
+        <textarea id="np-question" name="question" rows="2" required></textarea>
+      </div>
+
+      <div class="form-row">
+        <label for="np-description">Description (optional)</label>
+        <textarea id="np-description" name="description" rows="3"></textarea>
+      </div>
+
+      <div class="form-row">
+        <label for="np-data-paths">Data path(s) (one per line)</label>
+        <textarea id="np-data-paths" name="data_paths" rows="3"
+                  placeholder="/path/to/data.csv"></textarea>
+      </div>
+
+      <div class="form-row form-row--inline">
+        <label for="np-mode">Mode</label>
+        <select id="np-mode" name="mode">
+          {% for m in valid_modes %}
+            <option value="{{ m }}" {% if m == "exploratory" %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="np-audience">Audience</label>
+        <select id="np-audience" name="audience">
+          {% for a in valid_audiences %}
+            <option value="{{ a }}" {% if a == "standard" %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="np-instructions">Instructions (optional)</label>
+        <textarea id="np-instructions" name="instructions" rows="3"
+                  placeholder="Steer the project_builder agent — e.g. 'focus on time-series methods'"></textarea>
+        <span class="form-help">
+          Captured for future builder-agent invocation. Not currently
+          consumed by the dashboard's POST /api/projects flow.
+        </span>
+      </div>
+
+      <div class="form-row form-row--inline" x-data="{ pmode: 'open' }">
+        <label for="np-privacy-mode">Privacy mode</label>
+        <select id="np-privacy-mode" name="privacy_mode" x-model="pmode">
+          <option value="open" selected>open — agents use Claude API (cloud)</option>
+          <option value="private">private — agents use local/private endpoints only</option>
+          <option value="hybrid">hybrid — data agents private, others cloud</option>
+        </select>
+        {# Hint shown only when the user picks private/hybrid AND there
+           is no globally-configured endpoint with a non-empty base_url.
+           The Submit button stays clickable on purpose — the server-side
+           422 is the source of truth; the hint just saves a round trip. #}
+        <template x-if="(pmode === 'private' || pmode === 'hybrid') && {{ has_private_endpoint | tojson }} === false">
+          <span class="text-warning" style="font-size: 0.85em;">
+            No private endpoint is configured.
+            <a href="/settings#privacy">Configure one on the Privacy tab</a>
+            before creating a {private,hybrid}-mode project.
+          </span>
+        </template>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Create project</button>
+        <span id="new-project-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
+{% endblock %}
