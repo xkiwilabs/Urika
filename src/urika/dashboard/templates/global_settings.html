@@ -636,6 +636,70 @@
                  placeholder="TELEGRAM_BOT_TOKEN">
         </div>
       </div>
+
+      {# Test-send affordance.  Sends a synthetic notification through
+         every channel the form configures (un-saved values), reports
+         per-channel success / failure.  Tests what's IN THE FORM, not
+         what's saved.  ``$el.closest('form')`` walks DOM ancestors to
+         find the surrounding <form> — more reliable than ``$root``
+         when nested inside the tabs macro's Alpine scope. #}
+      <div class="endpoint-test" x-data="{
+             testing: false,
+             results: null,
+             error: null,
+             sendTest() {
+               this.testing = true;
+               this.results = null;
+               this.error = null;
+               const form = this.$el.closest('form');
+               const fd = new FormData(form);
+               fetch('/api/settings/notifications/test-send', {
+                 method: 'POST',
+                 body: fd,
+               })
+                 .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+                 .then(d => { this.results = d.channels || []; this.testing = false; })
+                 .catch(err => {
+                   this.error = err.message || 'Request failed';
+                   this.testing = false;
+                 });
+             }
+           }" style="margin-top: var(--space-3);">
+        <button type="button"
+                class="btn btn--primary btn--small"
+                @click="sendTest()"
+                :disabled="testing">
+          <span class="running-dot" x-show="testing"></span>
+          <span x-text="testing ? 'Sending…' : 'Send test notification'">Send test notification</span>
+        </button>
+
+        <div x-show="results !== null && results.length === 0" x-cloak
+             class="endpoint-test-result"
+             style="margin-top: var(--space-2);">
+          <div class="endpoint-test-result--fail">
+            No channels configured. Fill in at least one channel above before sending a test.
+          </div>
+        </div>
+
+        <template x-for="ch in (results || [])" :key="ch.name">
+          <div class="endpoint-test-result" style="margin-top: var(--space-2);">
+            <div :class="ch.status === 'ok' ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
+              <span x-text="ch.status === 'ok' ? '✓ ' : '✗ '"></span>
+              <strong x-text="ch.name"></strong>
+              <span x-text="ch.status === 'ok' ? ' — sent' : ' — failed'"></span>
+              <template x-if="ch.message">
+                <div style="margin-top: 4px; font-size: var(--fs-xs); opacity: 0.85;"
+                     x-text="ch.message"></div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <div x-show="error" x-cloak class="endpoint-test-result"
+             style="margin-top: var(--space-2);">
+          <div class="endpoint-test-result--fail" x-text="error"></div>
+        </div>
+      </div>
     </div>
 
   {% endcall %}

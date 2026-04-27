@@ -832,6 +832,19 @@ def test_global_settings_notifications_tab_has_channels(settings_client):
     assert 'name="notifications_telegram_enabled"' not in body
 
 
+def test_global_settings_renders_send_test_notification_button(settings_client):
+    """The Notifications tab includes a Send-test button wired to
+    ``POST /api/settings/notifications/test-send`` so users can verify
+    their channel config without leaving the page. The button uses the
+    same Alpine ``endpoint-test`` pattern as the Privacy tab's Test
+    endpoint button."""
+    body = settings_client.get("/settings").text
+    assert "Send test notification" in body
+    assert "/api/settings/notifications/test-send" in body
+    # Click handler is wired and posts the surrounding form's values.
+    assert "sendTest()" in body
+
+
 def test_global_settings_auto_enable_checkbox_reflects_saved_value(
     settings_client, tmp_path
 ):
