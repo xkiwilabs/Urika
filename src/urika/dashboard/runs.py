@@ -360,6 +360,61 @@ def spawn_summarize(
     return proc.pid
 
 
+def spawn_advisor(
+    project_name: str,
+    project_path: Path,
+    question: str,
+    *,
+    executable: str | None = None,
+) -> int:
+    """Spawn ``urika advisor <project> <question>`` as a subprocess.
+
+    Writes the PID to ``<project>/projectbook/.advisor.lock`` and tees
+    stdout to ``<project>/projectbook/advisor.log``. The lock is removed
+    when the subprocess exits. Returns the PID.
+
+    The CLI's ``urika advisor`` command takes the question as a
+    positional argument; passing it explicitly skips the interactive
+    prompt fallback so the subprocess never blocks waiting on stdin.
+    The CLI itself appends the user message + advisor reply to
+    ``projectbook/advisor-history.json`` via ``append_exchange`` after
+    the run completes — the dashboard's ``/advisor`` page picks up the
+    new entries on next render. The dashboard does NOT need to write
+    history itself.
+
+    ``question`` is required — callers must validate before reaching
+    this helper; we still raise ``ValueError`` defensively to avoid
+    spawning a CLI invocation that would block on the interactive
+    prompt.
+    """
+    if not (question or "").strip():
+        raise ValueError("question is required")
+    book_dir = project_path / "projectbook"
+    book_dir.mkdir(parents=True, exist_ok=True)
+    log_path = book_dir / "advisor.log"
+    lock_path = book_dir / ".advisor.lock"
+
+    cmd = _python_cmd(executable) + [
+        "advisor",
+        project_name,
+        question,
+    ]
+
+    env = _build_env()
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+        env=env,
+    )
+    lock_path.write_text(str(proc.pid), encoding="utf-8")
+    _start_drainer(proc, log_path, lock_path)
+    return proc.pid
+
+
 def spawn_build_tool(
     project_name: str,
     project_path: Path,

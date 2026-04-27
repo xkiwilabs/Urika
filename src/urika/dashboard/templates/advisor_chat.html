@@ -24,87 +24,29 @@
   {% endif %}
 </div>
 
-<form id="advisor-form" class="advisor-form">
-  <textarea
-    id="advisor-question"
-    name="question"
-    placeholder="Ask the advisor a question…"
-    required
-  ></textarea>
-  <div style="margin-top: var(--space-3);">
-    <button type="submit" class="btn btn--primary">Send</button>
+{% if running_advisor %}
+  {# A subprocess is already running for this project — point the user
+     at the live stream instead of letting them spawn a duplicate. #}
+  <div class="advisor-running" style="margin-top: var(--space-4);">
+    <a class="btn btn--primary btn--running"
+       href="{{ running_advisor.log_url }}">
+      <span class="running-dot"></span>
+      View running advisor →
+    </a>
   </div>
-</form>
-
-<script src="/static/urika-thinking.js"></script>
-<script>
-(function () {
-  const form = document.getElementById('advisor-form');
-  const transcript = document.getElementById('advisor-transcript');
-  const textarea = document.getElementById('advisor-question');
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const question = textarea.value.trim();
-    if (!question) return;
-
-    // Append user message immediately
-    appendMessage('user', question);
-    textarea.value = '';
-    textarea.disabled = true;
-
-    // Animated thinking placeholder — shared helper from
-    // /static/urika-thinking.js. Slower spinner + jittered verb
-    // cadence + urika-blue colour come baked in.
-    const thinking = appendMessage('advisor', '');
-    thinking.classList.add('message--thinking');
-    const thinkingHandle = window.urikaThinking.start(thinking);
-    const stopThinking = () => {
-      if (thinkingHandle) thinkingHandle.stop();
-    };
-
-    try {
-      const data = new FormData();
-      data.append('question', question);
-      const r = await fetch("/api/projects/{{ project.name }}/advisor", {
-        method: "POST",
-        body: data,
-      });
-      if (r.ok) {
-        const body = await r.json();
-        stopThinking();
-        thinking.classList.remove('message--thinking');
-        thinking.textContent = body.response || body.answer || JSON.stringify(body);
-      } else {
-        stopThinking();
-        thinking.classList.remove('message--thinking');
-        thinking.classList.add('message--error');
-        let detail = `Error ${r.status}`;
-        try {
-          const errBody = await r.json();
-          if (errBody && errBody.detail) detail = `Error: ${errBody.detail}`;
-        } catch (_) {}
-        thinking.textContent = detail;
-      }
-    } catch (err) {
-      stopThinking();
-      thinking.classList.remove('message--thinking');
-      thinking.classList.add('message--error');
-      thinking.textContent = `Error: ${err.message}`;
-    } finally {
-      textarea.disabled = false;
-      textarea.focus();
-    }
-  });
-
-  function appendMessage(role, text) {
-    const div = document.createElement('div');
-    div.className = `message message--${role}`;
-    div.textContent = text;
-    transcript.appendChild(div);
-    transcript.scrollTop = transcript.scrollHeight;
-    return div;
-  }
-})();
-</script>
+{% else %}
+  <form id="advisor-form" class="advisor-form"
+        hx-post="/api/projects/{{ project.name }}/advisor"
+        hx-swap="none">
+    <textarea
+      id="advisor-question"
+      name="question"
+      placeholder="Ask the advisor a question…"
+      required
+    ></textarea>
+    <div style="margin-top: var(--space-3);">
+      <button type="submit" class="btn btn--primary">Send</button>
+    </div>
+  </form>
+{% endif %}
 {% endblock %}

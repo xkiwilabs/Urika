@@ -13,10 +13,11 @@ Design a complete analytical method (pipeline) for experiment `{experiment_id}` 
 ## Instructions
 
 1. **Read** the project configuration at `{project_dir}/urika.toml` to understand the research question and success criteria.
-2. **Read** the progress file at `{experiment_dir}/progress.json` to review previous methods and their results.
-3. **Read** the method registry at `{project_dir}/methods.json` to see previously tried methods and their effectiveness. Avoid designing methods that duplicate existing ones — build on what worked and steer away from what failed.
-4. **Review** available tools by reading the project's tools directory and built-in tool documentation.
-5. **Design** a complete method pipeline covering:
+2. **Read** `{project_dir}/projectbook/advisor-history.json` if present. This is the persistent advisor conversation across sessions — the user may have discussed direction, hypotheses, or constraints there that aren't yet reflected in the methods registry or progress log. Honor those preferences when picking the next method.
+3. **Read** the progress file at `{experiment_dir}/progress.json` to review previous methods and their results.
+4. **Read** the method registry at `{project_dir}/methods.json` to see previously tried methods and their effectiveness. Avoid designing methods that duplicate existing ones — build on what worked and steer away from what failed.
+5. **Review** available tools by reading the project's tools directory and built-in tool documentation.
+6. **Design** a complete method pipeline covering:
    - Data preprocessing (handling missing values, encoding, scaling)
    - Feature selection/engineering strategy
    - Model/analysis approach and which tools to use

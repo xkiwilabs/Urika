@@ -1,22 +1,27 @@
 """Tests for POST /api/projects/<name>/advisor.
 
-The advisor agent is called inline (not as a subprocess), so tests
-stub ``_run_advisor_inline`` via monkeypatch to avoid touching the
-real Claude SDK. We assert: (a) the inline runner gets called with
-the project path / question and its return value is shaped into a
-JSON ``{"response": ...}`` payload, (b) form validation rejects an
-empty question, (c) 404 is returned for unknown projects, and
-(d) RuntimeError surfaces as 500.
+The advisor agent is now spawned as a subprocess matching every other
+agent (summarize / finalize / report / present / evaluate / build-tool).
+Tests stub ``spawn_advisor`` via monkeypatch so we never invoke a real
+``urika advisor`` subprocess. We assert: (a) the spawn helper gets
+called with the project name + path + question, (b) HTMX requests
+HX-Redirect to the live log page, (c) blank/whitespace question is
+rejected with 422, (d) 404 for unknown projects, (e) a duplicate spawn
+while one is already running redirects to the live log instead of
+spawning, and (f) the privacy gate fires before spawn when private
+mode lacks an endpoint.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from urika.dashboard import runs as runs_module
 from urika.dashboard.app import create_app
 from urika.dashboard.routers import api as api_module
 
@@ -39,139 +44,165 @@ def advisor_client(tmp_path: Path, monkeypatch) -> tuple[TestClient, list[dict],
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
 
-    calls: list[dict] = []
+    spawn_calls: list[dict] = []
 
-    async def fake_run_advisor(project_path, project_name, question):
-        calls.append(
+    def fake_spawn(project_name, project_path, question, **_):
+        spawn_calls.append(
             {
-                "project_path": project_path,
                 "project_name": project_name,
+                "project_path": project_path,
                 "question": question,
             }
         )
-        return f"# Advice\n\nFor question '{question}': try X, then Y."
+        book_dir = project_path / "projectbook"
+        book_dir.mkdir(parents=True, exist_ok=True)
+        (book_dir / ".advisor.lock").write_text("88888")
+        (book_dir / "advisor.log").write_text("Spawned\n")
+        return 88888
 
-    monkeypatch.setattr(api_module, "_run_advisor_inline", fake_run_advisor)
+    monkeypatch.setattr(runs_module, "spawn_advisor", fake_spawn)
+    monkeypatch.setattr(api_module, "spawn_advisor", fake_spawn)
 
     app = create_app(project_root=tmp_path)
-    return TestClient(app), calls, proj
+    return TestClient(app), spawn_calls, proj
 
 
-def test_advisor_post_returns_response(advisor_client):
-    client, calls, proj = advisor_client
+def test_advisor_post_started(advisor_client):
+    client, spawn_calls, proj = advisor_client
     r = client.post(
         "/api/projects/alpha/advisor",
         data={"question": "what next?"},
     )
     assert r.status_code == 200
     body = r.json()
-    assert "response" in body
-    assert "what next?" in body["response"]
-    assert body["response"].startswith("# Advice")
+    assert body["status"] == "started"
+    assert body["pid"] == 88888
 
-    assert len(calls) == 1
-    assert calls[0]["project_path"] == proj
-    assert calls[0]["project_name"] == "alpha"
-    assert calls[0]["question"] == "what next?"
+    assert len(spawn_calls) == 1
+    assert spawn_calls[0]["project_name"] == "alpha"
+    assert spawn_calls[0]["project_path"] == proj
+    assert spawn_calls[0]["question"] == "what next?"
+
+
+def test_advisor_post_hx_redirect_to_log(advisor_client):
+    """HTMX requests should redirect to the live log streaming page."""
+    client, spawn_calls, _ = advisor_client
+    r = client.post(
+        "/api/projects/alpha/advisor",
+        data={"question": "what next?"},
+        headers={"hx-request": "true"},
+    )
+    assert r.status_code == 200
+    assert r.headers.get("hx-redirect") == "/projects/alpha/advisor/log"
+    assert len(spawn_calls) == 1
 
 
 def test_advisor_post_404_unknown_project(advisor_client):
-    client, calls, _ = advisor_client
+    client, spawn_calls, _ = advisor_client
     r = client.post(
         "/api/projects/nonexistent/advisor",
         data={"question": "anything"},
     )
     assert r.status_code == 404
-    assert calls == []
+    assert spawn_calls == []
 
 
-def test_advisor_post_missing_question(advisor_client):
-    client, calls, _ = advisor_client
-    r = client.post("/api/projects/alpha/advisor", data={})
-    assert r.status_code == 422
-    assert "question" in r.json()["detail"]
-    assert calls == []
-
-
-def test_advisor_post_blank_question(advisor_client):
-    client, calls, _ = advisor_client
+def test_advisor_post_blank_question_422(advisor_client):
+    """An empty or whitespace-only question is rejected before spawn."""
+    client, spawn_calls, _ = advisor_client
     r = client.post("/api/projects/alpha/advisor", data={"question": "   "})
     assert r.status_code == 422
-    assert calls == []
+    assert "question" in r.json()["detail"]
+    assert spawn_calls == []
 
 
-def test_advisor_post_persists_history(advisor_client):
-    """A successful POST writes both user and advisor entries to
-    projectbook/advisor-history.json with source="dashboard"."""
-    client, calls, proj = advisor_client
+def test_advisor_post_missing_question_422(advisor_client):
+    """Missing the question field at all is also rejected."""
+    client, spawn_calls, _ = advisor_client
+    r = client.post("/api/projects/alpha/advisor", data={})
+    assert r.status_code == 422
+    assert spawn_calls == []
+
+
+def test_advisor_post_when_already_running_redirects_to_log(advisor_client):
+    """HTMX POST while an advisor is already running must NOT spawn a
+    duplicate. Instead, respond with HX-Redirect to the live log."""
+    client, spawn_calls, proj = advisor_client
+    book = proj / "projectbook"
+    book.mkdir(exist_ok=True)
+    (book / ".advisor.lock").write_text(str(os.getpid()))
+
     r = client.post(
         "/api/projects/alpha/advisor",
-        data={"question": "what next?"},
+        headers={"hx-request": "true"},
+        data={"question": "another question"},
     )
     assert r.status_code == 200
-
-    history_path = proj / "projectbook" / "advisor-history.json"
-    assert history_path.exists(), "advisor-history.json must be created"
-    entries = json.loads(history_path.read_text(encoding="utf-8"))
-    assert len(entries) == 2
-    user_entry, advisor_entry = entries
-    assert user_entry["role"] == "user"
-    assert user_entry["text"] == "what next?"
-    assert user_entry["source"] == "dashboard"
-    assert advisor_entry["role"] == "advisor"
-    assert advisor_entry["source"] == "dashboard"
-    assert "Advice" in advisor_entry["text"]
+    assert r.headers.get("hx-redirect") == "/projects/alpha/advisor/log"
+    assert spawn_calls == []
 
 
-def test_advisor_post_does_not_persist_on_error(tmp_path, monkeypatch):
-    """A failed advisor run leaves history untouched."""
-    proj = _make_project(tmp_path, "alpha")
+def test_advisor_post_when_already_running_returns_409_without_hx(advisor_client):
+    """Non-HTMX caller (curl, scripts) must get a 409 with a JSON body
+    so they can detect the duplicate explicitly."""
+    client, spawn_calls, proj = advisor_client
+    book = proj / "projectbook"
+    book.mkdir(exist_ok=True)
+    (book / ".advisor.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/advisor",
+        data={"question": "another question"},
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["status"] == "already_running"
+    assert body["log_url"] == "/projects/alpha/advisor/log"
+    assert body["type"] == "advisor"
+    assert spawn_calls == []
+
+
+# ---- Privacy pre-flight check ---------------------------------------------
+
+
+def _make_private_project(tmp_path: Path, name: str = "alpha") -> Path:
+    proj = tmp_path / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n\n'
+        f'[privacy]\nmode = "private"\n'
+    )
+    return proj
+
+
+def test_advisor_post_privacy_gate_blocks_unconfigured_private(
+    tmp_path: Path, monkeypatch
+):
+    """Pre-flight gate: advisor on a private-mode project with no
+    private endpoint must 422 before the spawn helper runs."""
+    proj = _make_private_project(tmp_path, "alpha")
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text("", encoding="utf-8")
 
-    async def fake_run_advisor(*_, **__):
-        raise RuntimeError("LLM unavailable")
+    spawn_calls: list[dict] = []
 
-    monkeypatch.setattr(api_module, "_run_advisor_inline", fake_run_advisor)
+    def fake_spawn(*a, **kw):
+        spawn_calls.append({"args": a, "kwargs": kw})
+        return 1234
+
+    monkeypatch.setattr(runs_module, "spawn_advisor", fake_spawn)
+    monkeypatch.setattr(api_module, "spawn_advisor", fake_spawn)
 
     app = create_app(project_root=tmp_path)
     client = TestClient(app)
 
     r = client.post(
         "/api/projects/alpha/advisor",
-        data={"question": "what next?"},
+        data={"question": "any question"},
     )
-    assert r.status_code == 500
-
-    # On error, the route must not create an empty history file or
-    # write a stray user-only entry — bubbles up before the persist
-    # block runs.
-    history_path = proj / "projectbook" / "advisor-history.json"
-    assert not history_path.exists(), (
-        "advisor-history.json must not be written when the runner fails"
-    )
-
-
-def test_advisor_post_runtime_error_returns_500(tmp_path, monkeypatch):
-    proj = _make_project(tmp_path, "alpha")
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("URIKA_HOME", str(home))
-    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
-
-    async def fake_run_advisor(*_, **__):
-        raise RuntimeError("LLM unavailable")
-
-    monkeypatch.setattr(api_module, "_run_advisor_inline", fake_run_advisor)
-
-    app = create_app(project_root=tmp_path)
-    client = TestClient(app)
-
-    r = client.post(
-        "/api/projects/alpha/advisor",
-        data={"question": "what next?"},
-    )
-    assert r.status_code == 500
-    assert "LLM unavailable" in r.json()["detail"]
+    assert r.status_code == 422
+    assert spawn_calls == []

@@ -183,9 +183,7 @@ def project_home(request: Request, name: str) -> HTMLResponse:
         # Either the finalize flow's report.md OR the report-agent's
         # narrative.md (written at the end of every run). The view
         # route picks whichever exists.
-        "has_report": (book / "report.md").exists() or (
-            book / "narrative.md"
-        ).exists(),
+        "has_report": (book / "report.md").exists() or (book / "narrative.md").exists(),
         "has_presentation": (
             (book / "presentation.html").exists()
             or (book / "presentation" / "index.html").exists()
@@ -1296,10 +1294,15 @@ def project_advisor(name: str, request: Request) -> HTMLResponse:
 
     Reads ``projectbook/advisor-history.json`` (via
     :func:`urika.core.advisor_memory.load_history`) and renders one
-    message bubble per entry plus an input form. The form submits via
-    inline JS to the existing ``POST /api/projects/<n>/advisor``
-    endpoint and appends the response to the transcript without
-    reloading the page.
+    message bubble per entry. The composer form POSTs to
+    ``/api/projects/<n>/advisor``, which spawns the advisor agent as
+    a subprocess and HX-Redirects the browser to the live log.
+
+    If an advisor subprocess is already running for this project (a
+    live ``.advisor.lock`` exists), the composer is replaced by a
+    "View running advisor" link to the streaming log so the user
+    can rejoin the in-flight session instead of starting a parallel
+    one.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -1310,7 +1313,34 @@ def project_advisor(name: str, request: Request) -> HTMLResponse:
     history = load_history(summary.path)
     ctx = {"request": request, "project": summary, "history": history}
     ctx.update(_project_template_context(name, summary))
+    # Make running-advisor detection cheap for the template — the
+    # banner already has active_ops; this surfaces the advisor entry
+    # by type for the composer/affordance switch.
+    ctx["running_advisor"] = next(
+        (op for op in ctx.get("active_ops", []) if op.type == "advisor"), None
+    )
     return request.app.state.templates.TemplateResponse("advisor_chat.html", ctx)
+
+
+@router.get("/projects/{name}/advisor/log", response_class=HTMLResponse)
+def project_advisor_log(name: str, request: Request) -> HTMLResponse:
+    """Live-tail the project's advisor log via SSE.
+
+    Mirrors :func:`project_summarize_log` but reads from
+    ``projectbook/advisor.log`` (via the
+    ``/api/projects/<n>/advisor/stream`` endpoint) and watches
+    ``projectbook/.advisor.lock`` for completion. On completion the
+    template surfaces a "Back to advisor" link that returns to the
+    chat page where the freshly-persisted exchange is now visible
+    in the transcript.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    ctx = {"request": request, "project": summary}
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse("advisor_log.html", ctx)
 
 
 @router.get("/projects/{name}/run")

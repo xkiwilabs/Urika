@@ -3,11 +3,12 @@
 Covers:
   * The ``_thinking.html`` Jinja partial renders a ``[data-urika-thinking]``
     placeholder div + pulls in the JS helper.
-  * ``advisor_chat.html`` references the shared helper script (the
-    inline 50-line spinner code was retired in favour of
-    ``urikaThinking.start()``).
-  * Each project-level log page (run / summarize / finalize / tool-build)
-    includes the partial above the log <pre>.
+  * The advisor log page (``advisor_log.html``) includes the shared
+    thinking partial — same scaffolding as the other streaming log
+    pages. (The chat page itself no longer animates inline; it
+    HX-Redirects to the streaming view on submit.)
+  * Each project-level log page (run / summarize / finalize / tool-build /
+    advisor) includes the partial above the log <pre>.
   * The ``/static/urika-thinking.js`` asset is served and exposes
     ``urikaThinking.start``.
 """
@@ -72,10 +73,12 @@ def test_thinking_partial_renders_placeholder(thinking_client):
     assert "urikaThinking.start" in body
 
 
-def test_advisor_chat_includes_thinking_js(thinking_client):
-    r = thinking_client.get("/projects/alpha/advisor")
+def test_advisor_log_includes_thinking_partial(thinking_client):
+    r = thinking_client.get("/projects/alpha/advisor/log")
     assert r.status_code == 200
-    assert "/static/urika-thinking.js" in r.text
+    body = r.text
+    assert "data-urika-thinking" in body
+    assert "/static/urika-thinking.js" in body
 
 
 def test_run_log_includes_thinking_partial(thinking_client):
@@ -143,6 +146,11 @@ def test_thinking_placeholder_sits_below_log_on_tool_build(thinking_client):
 
 def test_thinking_placeholder_sits_below_log_on_run(thinking_client):
     body = thinking_client.get("/projects/alpha/experiments/exp-001/log").text
+    _assert_thinking_below_log(body)
+
+
+def test_thinking_placeholder_sits_below_log_on_advisor(thinking_client):
+    body = thinking_client.get("/projects/alpha/advisor/log").text
     _assert_thinking_below_log(body)
 
 

@@ -94,9 +94,7 @@ def test_spawn_report_does_not_pass_json(monkeypatch, tmp_path):
     from urika.dashboard.runs import spawn_report
 
     (tmp_path / "experiments" / "exp-001").mkdir(parents=True)
-    cmd = _captured_argv(
-        monkeypatch, spawn_report, "alpha", tmp_path, "exp-001"
-    )
+    cmd = _captured_argv(monkeypatch, spawn_report, "alpha", tmp_path, "exp-001")
     assert "--json" not in cmd
 
 
@@ -104,9 +102,7 @@ def test_spawn_evaluate_does_not_pass_json(monkeypatch, tmp_path):
     from urika.dashboard.runs import spawn_evaluate
 
     (tmp_path / "experiments" / "exp-001").mkdir(parents=True)
-    cmd = _captured_argv(
-        monkeypatch, spawn_evaluate, "alpha", tmp_path, "exp-001"
-    )
+    cmd = _captured_argv(monkeypatch, spawn_evaluate, "alpha", tmp_path, "exp-001")
     assert "--json" not in cmd
 
 
@@ -114,9 +110,7 @@ def test_spawn_present_does_not_pass_json(monkeypatch, tmp_path):
     from urika.dashboard.runs import spawn_present
 
     (tmp_path / "experiments" / "exp-001").mkdir(parents=True)
-    cmd = _captured_argv(
-        monkeypatch, spawn_present, "alpha", tmp_path, "exp-001"
-    )
+    cmd = _captured_argv(monkeypatch, spawn_present, "alpha", tmp_path, "exp-001")
     assert "--json" not in cmd
 
 
@@ -131,3 +125,44 @@ def test_spawn_build_tool_does_not_pass_json(monkeypatch, tmp_path):
         instructions="build a tool",
     )
     assert "--json" not in cmd
+
+
+def test_spawn_advisor_does_not_pass_json(monkeypatch, tmp_path):
+    from urika.dashboard.runs import spawn_advisor
+
+    cmd = _captured_argv(
+        monkeypatch,
+        spawn_advisor,
+        "alpha",
+        tmp_path,
+        "what should I try next?",
+    )
+    assert "--json" not in cmd
+
+
+def test_spawn_advisor_passes_question_as_positional(monkeypatch, tmp_path):
+    """The CLI's ``urika advisor`` command takes the question as a
+    positional argument; the spawn helper must pass it through so the
+    subprocess never blocks waiting on the interactive prompt."""
+    from urika.dashboard.runs import spawn_advisor
+
+    cmd = _captured_argv(
+        monkeypatch,
+        spawn_advisor,
+        "alpha",
+        tmp_path,
+        "what should I try next?",
+    )
+    assert "advisor" in cmd
+    assert "alpha" in cmd
+    assert "what should I try next?" in cmd
+
+
+def test_spawn_advisor_blank_question_raises(tmp_path):
+    """Defensive guard — empty/whitespace question must raise rather
+    than spawning a CLI invocation that would block on stdin."""
+    from urika.dashboard.runs import spawn_advisor
+    import pytest
+
+    with pytest.raises(ValueError, match="question is required"):
+        spawn_advisor("alpha", tmp_path, "   ")

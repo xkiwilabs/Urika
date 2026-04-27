@@ -1,0 +1,62 @@
+{% extends "_base.html" %}
+
+{% block title %}Advisor log · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Advisor log: {{ project.name | humanize }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a class="breadcrumb-item" href="/projects">Projects</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}/advisor">Advisor</a>
+  <span class="breadcrumb-separator">/</span>
+  <span class="breadcrumb-current">Log</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div id="log-status" class="text-muted">Connecting…</div>
+  <pre id="log" class="log-line" style="max-height: 600px; overflow: auto; padding: var(--space-4);"></pre>
+  {# Sticky activity indicator below the scroll box: stays visible the
+     whole run so the user has a constant signal during quiet stretches
+     between tool calls. Only stopped on the completion event. #}
+  {% include "_thinking.html" %}
+
+  <div id="log-completion" style="display: none; margin-top: var(--space-4);">
+    <p>Advisor finished. The exchange has been saved to the transcript.</p>
+    <a class="btn btn--primary" href="/projects/{{ project.name }}/advisor">Back to advisor →</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  const url = "/api/projects/{{ project.name }}/advisor/stream";
+  const logEl = document.getElementById("log");
+  const statusEl = document.getElementById("log-status");
+  const completionEl = document.getElementById("log-completion");
+  const es = new EventSource(url);
+  es.onopen = function () { statusEl.textContent = "Streaming…"; };
+  es.onmessage = function (e) {
+    // Spinner stays running through the whole stream — the constant
+    // visual cue is reassuring during quiet "thinking" pauses between
+    // tool calls. Only stopped on the completion event below.
+    const line = document.createElement("div");
+    line.textContent = e.data;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+  es.addEventListener("status", function (e) {
+    statusEl.textContent = "Completed.";
+    completionEl.style.display = "";
+    if (window._urikaThinkingHandle) {
+      window._urikaThinkingHandle.stop();
+      window._urikaThinkingHandle = null;
+    }
+    es.close();
+  });
+  es.onerror = function () { statusEl.textContent = "Connection lost."; };
+})();
+</script>
+{% endblock %}

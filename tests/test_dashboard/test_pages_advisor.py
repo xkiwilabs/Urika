@@ -2,12 +2,13 @@
 
 Reads ``projectbook/advisor-history.json`` via
 ``urika.core.advisor_memory.load_history`` and renders alternating
-user/advisor message bubbles plus an input form. Submission goes
-through the existing POST /api/projects/<n>/advisor endpoint via
-inline JS (not tested here — that's covered by test_api_advisor.py
-plus a JS-heavy end-to-end harness we don't run in CI).
+user/advisor message bubbles plus an input form. The form POSTs via
+HTMX to ``/api/projects/<n>/advisor`` which spawns the advisor as a
+subprocess and HX-Redirects to the live log page (covered by
+test_api_advisor.py).
 """
 
+import os
 from pathlib import Path
 import json
 
@@ -105,18 +106,55 @@ def test_advisor_link_in_sidebar(advisor_client):
     assert ">Advisor</a>" in body
 
 
-def test_advisor_page_has_rotating_spinner_and_verbs(advisor_client):
-    """The advisor chat must load the shared thinking helper so the
-    placeholder animates instead of being a static "Thinking…" string.
-    Mirrors the CLI/TUI's _spinner_frames / _activity_verbs in
-    urika.repl.main — the frames + verbs themselves now live in
-    /static/urika-thinking.js, but the page must reference it and call
-    urikaThinking.start() to spin up the placeholder."""
+def test_advisor_page_composer_posts_via_htmx(advisor_client):
+    """The composer form POSTs to /api/projects/<n>/advisor via HTMX
+    so the spawn endpoint can HX-Redirect to the live log page. The
+    inline "thinking" placeholder is gone — the streaming log page
+    owns the activity indicator now."""
     r = advisor_client.get("/projects/alpha/advisor")
     body = r.text
-    # The shared helper script is included.
-    assert "/static/urika-thinking.js" in body
-    # The page calls into the helper to start a placeholder.
-    assert "urikaThinking.start" in body
-    # No more static placeholder text.
+    # The form uses hx-post, not the old fetch+JSON inline JS.
+    assert 'hx-post="/api/projects/alpha/advisor"' in body
+    # No more static or animated placeholder on this page — it lives
+    # on the /advisor/log streaming view instead.
     assert "appendMessage('advisor', 'Thinking…')" not in body
+    assert "urikaThinking.start" not in body
+
+
+def test_advisor_page_shows_view_running_when_lock_active(advisor_client, tmp_path):
+    """When a live ``.advisor.lock`` exists for the project, the
+    composer is replaced by a "View running advisor" link to the live
+    log so the user rejoins the in-flight session instead of starting
+    a parallel one."""
+    proj = tmp_path / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / ".advisor.lock").write_text(str(os.getpid()))
+
+    r = advisor_client.get("/projects/alpha/advisor")
+    assert r.status_code == 200
+    body = r.text
+    # The composer must be hidden — no submit form, no question textarea.
+    assert 'hx-post="/api/projects/alpha/advisor"' not in body
+    assert "advisor-form" not in body
+    # The "view running" link must be present and point at the log page.
+    assert "View running advisor" in body
+    assert 'href="/projects/alpha/advisor/log"' in body
+
+
+def test_advisor_log_page_renders_with_sse_url(advisor_client):
+    """GET /projects/<n>/advisor/log returns the streaming page that
+    references the advisor SSE endpoint."""
+    r = advisor_client.get("/projects/alpha/advisor/log")
+    assert r.status_code == 200
+    body = r.text
+    # Streaming page scaffolding present.
+    assert 'id="log"' in body
+    assert "EventSource" in body
+    # Points at the advisor SSE stream specifically.
+    assert "/api/projects/alpha/advisor/stream" in body
+
+
+def test_advisor_log_page_404_unknown_project(advisor_client):
+    r = advisor_client.get("/projects/nonexistent/advisor/log")
+    assert r.status_code == 404

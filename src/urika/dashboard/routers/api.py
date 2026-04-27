@@ -21,6 +21,7 @@ from urika.core.settings import load_settings, save_settings
 from urika.core.workspace import _write_toml
 from urika.dashboard.projects import list_project_summaries, load_project_summary
 from urika.dashboard.runs import (
+    spawn_advisor,
     spawn_build_tool,
     spawn_evaluate,
     spawn_experiment_run,
@@ -2199,15 +2200,22 @@ async def api_project_present(name: str, request: Request):
 
 @router.post("/projects/{name}/advisor")
 async def api_project_advisor(name: str, request: Request):
-    """Run the advisor agent inline and return the response markdown.
+    """Spawn ``urika advisor <project> <question>`` as a subprocess.
 
-    Unlike finalize/present (which spawn subprocesses for long-running
-    work), the advisor is short and we call it synchronously inside
-    the request handler. The advisor agent's runner uses asyncio so
-    the route is async too — no threadpool hop needed.
+    Mirrors the ``/summarize`` endpoint shape: validates the project
+    exists, requires a non-empty ``question`` form field, refuses a
+    duplicate spawn when one is already running, and hands off to
+    ``spawn_advisor`` which Popens the CLI and detaches a daemon thread
+    to drain its stdout into ``projectbook/advisor.log``.
 
-    Returns ``{"response": <markdown_str>}`` on success. The browser
-    typically renders this in a modal or appends it to a chat panel.
+    The CLI subprocess writes the user message + advisor reply to
+    ``projectbook/advisor-history.json`` itself after the run
+    completes; the dashboard's ``/advisor`` transcript view picks
+    those entries up on next render.
+
+    Returns JSON with the spawned PID, or HX-Redirects to the live
+    log when called from HTMX so the user lands on the streaming
+    page immediately.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -2219,83 +2227,66 @@ async def api_project_advisor(name: str, request: Request):
     if not question:
         raise HTTPException(status_code=422, detail="question is required")
 
-    try:
-        response_md = await _run_advisor_inline(summary.path, name, question)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    # If an advisor is already running for this project, redirect to
+    # its live log instead of spawning a duplicate.
+    existing = _redirect_if_running(name, summary.path, "advisor", request)
+    if existing is not None:
+        return existing
 
-    # Persist the exchange to projectbook/advisor-history.json so the
-    # /projects/<n>/advisor page shows it on next reload. Mirrors what
-    # the CLI's `urika advisor` command does after a successful run
-    # (see urika.cli.agents.advisor). source="dashboard" distinguishes
-    # browser-originated exchanges from REPL/CLI ones in the audit log.
-    try:
-        from urika.core.advisor_memory import append_exchange
-        from urika.orchestrator.parsing import parse_suggestions
+    # Pre-flight privacy gate — same rule as /run, /finalize, /summarize.
+    _validate_privacy_endpoint(summary.path)
 
-        append_exchange(summary.path, role="user", text=question, source="dashboard")
-        parsed = parse_suggestions(response_md) or {}
-        suggestions = parsed.get("suggestions") if parsed else None
-        append_exchange(
-            summary.path,
-            role="advisor",
-            text=response_md,
-            source="dashboard",
-            suggestions=suggestions,
-        )
-    except Exception:
-        # History writing is best-effort — don't fail the user's
-        # advisor request if the audit log can't be updated.
-        pass
+    pid = spawn_advisor(name, summary.path, question)
 
-    return {"response": response_md}
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/advisor/log"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
+    return JSONResponse({"status": "started", "pid": pid})
 
 
-async def _run_advisor_inline(project_path, project_name: str, question: str) -> str:
-    """Build advisor config + context, await ``runner.run``, return text.
+@router.get("/projects/{name}/advisor/stream")
+async def api_advisor_stream(name: str):
+    """Server-sent-events tail of ``projectbook/advisor.log``.
 
-    Pulled out of the route so tests can stub this single function
-    instead of mocking the whole agent stack. Mirrors the in-process
-    pattern used by ``urika.cli.agents.advisor`` but trimmed for the
-    dashboard's request/response cycle (no rolling-summary update,
-    no suggestion offer, no usage recording).
+    Same shape as :func:`api_summarize_stream` but reads from
+    ``projectbook/advisor.log`` and watches ``.advisor.lock`` for
+    completion.
     """
-    try:
-        from urika.agents.runner import get_runner
-        from urika.agents.registry import AgentRegistry
-    except ImportError as exc:
-        raise RuntimeError(
-            "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
-        ) from exc
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    log_path = summary.path / "projectbook" / "advisor.log"
+    lock_path = summary.path / "projectbook" / ".advisor.lock"
 
-    runner = get_runner()
-    registry = AgentRegistry()
-    registry.discover()
-    role = registry.get("advisor_agent")
-    if role is None:
-        raise RuntimeError("Advisor agent not found in registry.")
+    async def event_stream():
+        position = 0
+        if log_path.exists():
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    yield f"data: {line.rstrip()}\n\n"
+                position = f.tell()
 
-    config = role.build_config(project_dir=project_path, experiment_id="")
-    config.max_turns = 25  # Standalone chat needs more turns than in-loop advisor.
+        while lock_path.exists() or log_path.exists():
+            new_data = ""
+            if log_path.exists():
+                with open(log_path, "r", encoding="utf-8") as f:
+                    f.seek(position)
+                    new_data = f.read()
+                    position = f.tell()
+            if new_data:
+                for line in new_data.splitlines():
+                    yield f"data: {line}\n\n"
+            if not lock_path.exists():
+                yield (
+                    f"event: status\ndata: {json.dumps({'status': 'completed'})}\n\n"
+                )
+                return
+            await asyncio.sleep(0.5)
 
-    context = f"Project: {project_name}\n"
-    try:
-        from urika.core.advisor_memory import load_context_summary
+        yield (f"event: status\ndata: {json.dumps({'status': 'no_log'})}\n\n")
 
-        summary_text = load_context_summary(project_path)
-        if summary_text:
-            context += (
-                f"\n## Research Context (from previous sessions)\n\n{summary_text}\n\n"
-            )
-    except Exception:
-        pass
-    context += f"\nUser: {question}\n"
-
-    result = await runner.run(config, context, on_message=lambda m: None)
-
-    if not result.success:
-        raise RuntimeError(result.error or "Advisor failed")
-    return (result.text_output or "").strip()
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.post("/projects/{name}/knowledge")

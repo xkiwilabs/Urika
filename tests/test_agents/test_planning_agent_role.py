@@ -60,3 +60,11 @@ class TestPlanningAgentRole:
         registry = AgentRegistry()
         registry.discover()
         assert "planning_agent" in registry.list_all()
+
+    def test_prompt_mentions_advisor_history(self, tmp_path: Path) -> None:
+        """The planner must read ``projectbook/advisor-history.json``
+        before deciding the next method so per-turn planning honors
+        the user's persistent advisor conversation."""
+        role = get_role()
+        config = role.build_config(tmp_path, experiment_id="exp-001")
+        assert "projectbook/advisor-history.json" in config.system_prompt

@@ -61,6 +61,22 @@ def test_live_finalize_lock_returned(project_path: Path) -> None:
     assert op.log_url == "/projects/foo/finalize/log"
 
 
+def test_live_advisor_lock_returned(project_path: Path) -> None:
+    lock = project_path / "projectbook" / ".advisor.lock"
+    _write_lock(lock, os.getpid())
+
+    ops = list_active_operations("foo", project_path)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert isinstance(op, ActiveOp)
+    assert op.type == "advisor"
+    assert op.project_name == "foo"
+    assert op.experiment_id is None
+    assert op.lock_path == lock
+    assert op.log_url == "/projects/foo/advisor/log"
+
+
 def test_live_build_tool_lock_returned(project_path: Path) -> None:
     lock = project_path / "tools" / ".build.lock"
     _write_lock(lock, os.getpid())

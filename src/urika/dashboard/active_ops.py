@@ -18,7 +18,7 @@ class ActiveOp:
     """A running agent operation, located by its lock file."""
 
     type: str  # "run" | "evaluate" | "report" | "present" |
-    # "summarize" | "finalize" | "build_tool"
+    # "summarize" | "finalize" | "build_tool" | "advisor"
     project_name: str
     experiment_id: str | None  # None for project-level ops
     lock_path: Path
@@ -32,6 +32,7 @@ _PROJECT_LEVEL_LOCKS: tuple[tuple[str, str, str], ...] = (
     # (lock relative path, op type, log url template — uses {project} placeholder)
     ("projectbook/.finalize.lock", "finalize", "/projects/{project}/finalize/log"),
     ("projectbook/.summarize.lock", "summarize", "/projects/{project}/summarize/log"),
+    ("projectbook/.advisor.lock", "advisor", "/projects/{project}/advisor/log"),
     ("tools/.build.lock", "build_tool", "/projects/{project}/tools/build/log"),
 )
 
@@ -105,7 +106,7 @@ class ClearedLock:
 
     path: Path
     pid: int | None  # None when the file was empty / non-numeric
-    reason: str       # "dead" | "empty" | "non-numeric"
+    reason: str  # "dead" | "empty" | "non-numeric"
 
 
 def _all_known_lock_paths(project_path: Path) -> list[Path]:
