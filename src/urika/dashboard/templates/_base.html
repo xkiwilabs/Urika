@@ -40,8 +40,13 @@
               {% set _ = _ns.chips.append(op) %}
             {% endif %}
           {% endfor %}
-          {% if _ns.chips %}
-            <div class="active-ops-banner" role="status" aria-live="polite">
+          {# Banner renders whenever ANY op is active for this project,
+             even if every chip is self-link-suppressed on the current
+             page. That way the "Clear stale" recovery button is
+             always reachable from a project page when something is
+             reported running. #}
+          <div class="active-ops-banner" role="status" aria-live="polite">
+            {% if _ns.chips %}
               <span class="active-ops-label">Running:</span>
               {% for op in _ns.chips %}
                 <a class="active-op-chip" href="{{ op.log_url }}">
@@ -50,20 +55,25 @@
                   {% if op.experiment_id %} · {{ op.experiment_id }}{% endif %}
                 </a>
               {% endfor %}
-              {# Stale-lock recovery. POSTs to clear-stale which only
-                 removes locks whose PID is dead / empty / corrupt; live
-                 locks stay put. So clicking it during a real run is
-                 a no-op — the chips above won't disappear. #}
-              <button type="button"
-                      class="active-ops-clear-stale"
-                      hx-post="/api/projects/{{ project.name }}/active-ops/clear-stale"
-                      hx-swap="none"
-                      hx-on::after-request="window.location.reload()"
-                      title="Remove lock files for crashed/dead processes. Live runs are not affected.">
-                Clear stale
-              </button>
-            </div>
-          {% endif %}
+            {% else %}
+              {# All chips were suppressed (we're on the log page being
+                 pointed at). Still show the label + the recovery
+                 button so the user has a way out of a stale lock. #}
+              <span class="active-ops-label">Running on this page</span>
+            {% endif %}
+            {# Stale-lock recovery. POSTs to clear-stale which only
+               removes locks whose PID is dead / empty / corrupt; live
+               locks stay put. So clicking it during a real run is a
+               no-op — the chips above won't disappear. #}
+            <button type="button"
+                    class="active-ops-clear-stale"
+                    hx-post="/api/projects/{{ project.name }}/active-ops/clear-stale"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
+                    title="Remove lock files for crashed/dead processes. Live runs are not affected.">
+              Clear stale
+            </button>
+          </div>
         {% endif %}
         <h1 class="page-title">{% block heading %}{% endblock %}</h1>
       </header>
