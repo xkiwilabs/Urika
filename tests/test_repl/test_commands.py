@@ -442,3 +442,121 @@ class TestCmdDeleteExperiment:
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete_experiment(session, "exp-001")
         assert ".lock" in capsys.readouterr().out
+
+
+class TestFormatRelative:
+    """Tests for the _format_relative timedelta humanizer."""
+
+    def test_humanizes_timedelta(self) -> None:
+        from datetime import timedelta
+        from urika.repl.commands import _format_relative
+
+        assert _format_relative(timedelta(seconds=30)) == "just now"
+        assert _format_relative(timedelta(minutes=1)) == "1 minute ago"
+        assert _format_relative(timedelta(minutes=5)) == "5 minutes ago"
+        assert _format_relative(timedelta(hours=1)) == "1 hour ago"
+        assert _format_relative(timedelta(hours=3)) == "3 hours ago"
+        assert _format_relative(timedelta(days=2)) == "2 days ago"
+        assert _format_relative(timedelta(days=45)) == "1 month ago"
+        assert _format_relative(timedelta(days=400)) == "1 year ago"
+
+
+class TestCmdProjectSessionHint:
+    """Tests for the project-switch hook that surfaces the most recent
+    orchestrator session with a relative-time + preview snippet."""
+
+    def _make_project(self, tmp_path: Path, name: str = "demo") -> Path:
+        """Write a minimal urika.toml so load_project_config succeeds."""
+        from urika.core.models import ProjectConfig
+        from urika.core.workspace import _write_toml
+
+        project_path = tmp_path / name
+        project_path.mkdir(parents=True, exist_ok=True)
+        config = ProjectConfig(
+            name=name,
+            question="Why is the sky blue?",
+            mode="exploratory",
+        )
+        _write_toml(project_path / "urika.toml", config.to_toml_dict())
+        return project_path
+
+    def test_shows_session_preview_inline(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        """When a recent session has a preview, the hook shows it inline
+        with a relative-time stamp and the resume prompt."""
+        from datetime import datetime, timedelta, timezone
+
+        from urika.core.orchestrator_sessions import (
+            OrchestratorSession,
+            save_session,
+        )
+        from urika.repl.commands import cmd_project
+
+        project_path = self._make_project(tmp_path, "demo")
+
+        # Persist a session whose updated time is ~2 hours ago.
+        two_hours_ago = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).isoformat()
+        s = OrchestratorSession(
+            session_id="20260428-160000",
+            started=two_hours_ago,
+            updated=two_hours_ago,
+            preview="Why are tree counts so skewed in this dataset",
+        )
+        save_session(project_path, s)
+        # save_session bumps `updated` to now; rewrite directly so we
+        # actually test the relative-time path.
+        import json
+
+        sf = project_path / ".urika" / "sessions" / "20260428-160000.json"
+        data = json.loads(sf.read_text())
+        data["updated"] = two_hours_ago
+        sf.write_text(json.dumps(data, indent=2))
+
+        # Stub the registry so the command finds our project.
+        class FakeRegistry:
+            def __init__(self, *a, **kw) -> None:
+                pass
+
+            def get(self, _name: str) -> Path:
+                return project_path
+
+        monkeypatch.setattr(
+            "urika.core.registry.ProjectRegistry", FakeRegistry
+        )
+
+        session = ReplSession()
+        cmd_project(session, "demo")
+
+        out = capsys.readouterr().out
+        assert "tree counts so skewed" in out
+        assert "/resume-session" in out
+        # Relative-time fragment present (matches "2 hours ago" or close).
+        assert "hour" in out or "hours" in out
+
+    def test_no_session_no_hint(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        """When the project has no sessions, no hint is printed."""
+        from urika.repl.commands import cmd_project
+
+        project_path = self._make_project(tmp_path, "empty")
+
+        class FakeRegistry:
+            def __init__(self, *a, **kw) -> None:
+                pass
+
+            def get(self, _name: str) -> Path:
+                return project_path
+
+        monkeypatch.setattr(
+            "urika.core.registry.ProjectRegistry", FakeRegistry
+        )
+
+        session = ReplSession()
+        cmd_project(session, "empty")
+        out = capsys.readouterr().out
+        assert "Previous session" not in out
+        assert "/resume-session" not in out

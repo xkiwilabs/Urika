@@ -62,6 +62,27 @@ def _get_repl_session():
     return _repl_session_ref
 
 
+def _format_relative(delta) -> str:
+    """Render a timedelta as 'just now', '5 minutes ago', '3 hours ago', '2 days ago', etc."""
+    seconds = int(delta.total_seconds())
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        m = seconds // 60
+        return f"{m} minute{'s' if m != 1 else ''} ago"
+    if seconds < 86400:
+        h = seconds // 3600
+        return f"{h} hour{'s' if h != 1 else ''} ago"
+    days = seconds // 86400
+    if days < 30:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    months = days // 30
+    if months < 12:
+        return f"{months} month{'s' if months != 1 else ''} ago"
+    years = days // 365
+    return f"{years} year{'s' if years != 1 else ''} ago"
+
+
 # ── Global commands ─────────────────────────────────────────
 
 
@@ -201,12 +222,35 @@ def cmd_project(session: ReplSession, args: str) -> None:
 
         recent = get_most_recent(session.project_path)
         if recent:
-            from datetime import datetime
+            from datetime import datetime, timezone
 
-            updated = datetime.fromisoformat(recent.updated).strftime("%Y-%m-%d %H:%M")
-            click.echo(
-                f"  Previous session from {updated} available. Type /resume-session to reload."
-            )
+            # Relative time string
+            try:
+                updated_dt = datetime.fromisoformat(
+                    recent.updated.replace("Z", "+00:00")
+                )
+                if updated_dt.tzinfo is None:
+                    updated_dt = updated_dt.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                relative = _format_relative(now - updated_dt)
+            except Exception:
+                relative = recent.updated
+
+            # Preview snippet
+            preview = (recent.preview or "").strip()
+            if preview:
+                preview_short = preview[:60]
+                if len(preview) > 60:
+                    preview_short = preview_short.rsplit(" ", 1)[0] + "…"
+                click.echo(
+                    f'  Previous session from {relative}: "{preview_short}"'
+                )
+                click.echo("  Type /resume-session to continue.")
+            else:
+                click.echo(
+                    f"  Previous session from {relative} available. "
+                    "Type /resume-session to continue."
+                )
     except Exception:
         pass
 
