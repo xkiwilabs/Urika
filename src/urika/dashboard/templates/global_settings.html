@@ -540,7 +540,7 @@
           <label for="notifications_email_smtp_host">SMTP host</label>
           <input type="text" id="notifications_email_smtp_host"
                  name="notifications_email_smtp_host"
-                 value="{{ notif_email.get('smtp_host', '') }}"
+                 value="{{ notif_email.get('smtp_server', notif_email.get('smtp_host', '')) }}"
                  placeholder="smtp.example.com">
         </div>
         <div class="form-row">
@@ -553,7 +553,12 @@
           <label for="notifications_email_smtp_user">SMTP user</label>
           <input type="text" id="notifications_email_smtp_user"
                  name="notifications_email_smtp_user"
-                 value="{{ notif_email.get('smtp_user', '') }}">
+                 value="{{ notif_email.get('smtp_user', '') }}"
+                 placeholder="defaults to From address">
+          <small class="form-help">
+            The SMTP login username. For Gmail / Outlook this is your full
+            email address — leave blank to use the From address above.
+          </small>
         </div>
         <div class="form-row">
           <label for="notifications_email_smtp_password_env">SMTP password env var</label>

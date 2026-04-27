@@ -1402,8 +1402,15 @@ def test_global_settings_put_notifications_email_writes_section(
     email = s["notifications"]["email"]
     assert email["from_addr"] == "bot@example.com"
     assert email["to"] == ["alice@example.com", "bob@example.com"]
-    assert email["smtp_host"] == "smtp.example.com"
+    # Canonical TOML key is ``smtp_server`` (matches EmailChannel + CLI);
+    # the form field is ``smtp_host`` for clarity but persists under
+    # the channel-readable key.
+    assert email["smtp_server"] == "smtp.example.com"
     assert email["smtp_port"] == 587
+    # When the form's smtp_user matches from_addr, EmailChannel's own
+    # default kicks in — we can persist either way; current behaviour is
+    # to persist explicit smtp_user when the user filled it in.
+    assert email["smtp_user"] == "bot"
 
 
 def test_global_settings_put_notifications_slack_writes_section(

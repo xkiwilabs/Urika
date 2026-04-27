@@ -1233,17 +1233,26 @@ async def api_global_settings_put(request: Request):
         smtp_port = int(smtp_port_raw) if smtp_port_raw else 587
     except ValueError:
         smtp_port = 587
+    smtp_user_raw = (form.get("notifications_email_smtp_user") or "").strip()
     email_section = {
         "from_addr": (form.get("notifications_email_from") or "").strip(),
         "to": email_to,
-        "smtp_host": (form.get("notifications_email_smtp_host") or "").strip(),
+        # Persist as ``smtp_server`` to match what EmailChannel and the
+        # CLI config flow read at runtime — the form field is named
+        # ``smtp_host`` for clarity but the canonical TOML key is
+        # ``smtp_server`` (chosen by the original CLI implementation).
+        "smtp_server": (form.get("notifications_email_smtp_host") or "").strip(),
         "smtp_port": smtp_port,
-        "smtp_user": (form.get("notifications_email_smtp_user") or "").strip(),
         "smtp_password_env": (
             form.get("notifications_email_smtp_password_env") or ""
         ).strip(),
         "auto_enable": email_auto_enable,
     }
+    # Only persist smtp_user when explicitly set — empty means "fall back
+    # to From address" via EmailChannel's own default. Storing an empty
+    # string here would override the fallback with "".
+    if smtp_user_raw:
+        email_section["smtp_user"] = smtp_user_raw
     # Only persist the section if something is set; otherwise drop it.
     # ``auto_enable`` and ``smtp_port`` alone aren't enough — those are
     # defaults that would survive even when the user hasn't entered any
