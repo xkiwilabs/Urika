@@ -566,6 +566,15 @@
                  name="notifications_email_smtp_password_env"
                  value="{{ notif_email.get('smtp_password_env', '') }}"
                  placeholder="SMTP_PASSWORD">
+          <small class="form-help">
+            The <em>name</em> of an environment variable that carries the SMTP
+            password — the value never lives in <code>settings.toml</code>.
+            For Gmail you must use a 16-character
+            <a href="https://myaccount.google.com/apppasswords" target="_blank"
+               rel="noopener">App Password</a>
+            (regular account passwords are rejected). Export the env var in
+            the shell that launches Urika.
+          </small>
         </div>
       </div>
 
