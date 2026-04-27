@@ -481,6 +481,10 @@ h4 {
   50%      { opacity: 1.0; transform: scale(1.2); }
 }
 
+/* P3: Privacy-tab "Test endpoint" button result colors. */
+.endpoint-test-result--ok { color: var(--success); }
+.endpoint-test-result--fail { color: var(--error); }
+
 /* ---------- Running-ops banner ---------- */
 /* Persistent strip at the top of every project-scoped page listing
    currently-running operations as clickable chips.  Renders only when

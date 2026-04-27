@@ -1257,6 +1257,62 @@ async def api_global_settings_put(request: Request):
     return HTMLResponse(content='<span class="text-success">Saved</span>')
 
 
+@router.post("/settings/test-endpoint")
+async def api_test_endpoint(request: Request) -> JSONResponse:
+    """Probe a private model endpoint for reachability.
+
+    Pure read-only check used by the Privacy tab's "Test" button —
+    the dashboard's analogue of the CLI's
+    ``urika.cli._helpers._test_endpoint``.  NEVER writes to
+    ``settings.toml``; the caller still has to save explicitly.
+
+    Body fields (form-encoded):
+      * ``base_url`` (required) — the endpoint URL to probe.
+      * ``api_key_env`` (optional) — name of an env var that should
+        carry the bearer token.  Empty / missing means "open
+        endpoint, no key needed".
+
+    Response (always JSON, status 200 even on unreachable):
+      ``{reachable, api_key_env, api_key_set, details}``.
+
+    ``details`` is a short generic string — never ``str(exception)``,
+    which can carry creds embedded in misconfigured proxy URLs.
+    """
+    import os as _os
+
+    from urika.cli._helpers import _test_endpoint
+
+    form = await request.form()
+    base_url = (form.get("base_url") or "").strip()
+    raw_key_env = (form.get("api_key_env") or "").strip()
+    api_key_env: str | None = raw_key_env or None
+
+    if not base_url:
+        raise HTTPException(status_code=422, detail="base_url is required")
+
+    try:
+        reachable = _test_endpoint(base_url)
+        details = "OK" if reachable else "endpoint not reachable in 3s"
+    except Exception as e:  # noqa: BLE001 — surface the type, not the message.
+        reachable = False
+        # Don't leak ``str(e)`` — could carry creds embedded in a
+        # misconfigured proxy URL or auth header.
+        details = f"error: {type(e).__name__}"
+
+    api_key_set = False
+    if api_key_env:
+        api_key_set = bool(_os.environ.get(api_key_env, "").strip())
+
+    return JSONResponse(
+        {
+            "reachable": reachable,
+            "api_key_env": api_key_env,
+            "api_key_set": api_key_set,
+            "details": details,
+        }
+    )
+
+
 @router.post("/projects/{name}/run")
 async def api_project_run_post(name: str, request: Request):
     """Materialize a new experiment and spawn ``urika run`` for it.

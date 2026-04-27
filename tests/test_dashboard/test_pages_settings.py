@@ -169,13 +169,11 @@ def _set_project_privacy(tmp_path, mode: str) -> None:
     globals settings file would render an empty dropdown.
     """
     proj = tmp_path / "alpha" / "urika.toml"
-    proj.write_text(
-        proj.read_text() + f'\n[privacy]\nmode = "{mode}"\n'
-    )
+    proj.write_text(proj.read_text() + f'\n[privacy]\nmode = "{mode}"\n')
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n',
         encoding="utf-8",
@@ -230,7 +228,7 @@ def test_project_settings_models_private_mode_endpoint_cell_is_text(
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n',
@@ -241,8 +239,8 @@ def test_project_settings_models_private_mode_endpoint_cell_is_text(
     # Locate task_agent's row block from agent <code> through the
     # hidden [model] input — assertions live within that fragment.
     m = re.search(
-        r'<td><code>task_agent</code></td>'
-        r'.*?'
+        r"<td><code>task_agent</code></td>"
+        r".*?"
         r'name="model\[task_agent\]"',
         body,
         flags=re.DOTALL,
@@ -271,7 +269,7 @@ def test_project_settings_models_private_mode_empty_state_when_no_default_model(
     home.mkdir(exist_ok=True)
     # Endpoint defined but no default_model — not eligible.
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n',
         encoding="utf-8",
@@ -298,9 +296,7 @@ def test_project_settings_models_hybrid_data_agent_locked_private(
     assert body.count("locked: data_agent must use a private endpoint") == 1
 
 
-def test_project_settings_runtime_model_is_select_in_open_mode(
-    tmp_path, monkeypatch
-):
+def test_project_settings_runtime_model_is_select_in_open_mode(tmp_path, monkeypatch):
     """Project Models tab's project-wide model override is a <select>
     of known Claude models when the project's mode is ``open``."""
     import json
@@ -313,16 +309,16 @@ def test_project_settings_runtime_model_is_select_in_open_mode(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "open"\n'
     )
     home = tmp_path / "home"
@@ -343,9 +339,7 @@ def test_project_settings_runtime_model_is_select_in_open_mode(
     assert 'value="claude-haiku-4-5"' in block
 
 
-def test_project_settings_runtime_model_is_text_in_private_mode(
-    tmp_path, monkeypatch
-):
+def test_project_settings_runtime_model_is_text_in_private_mode(tmp_path, monkeypatch):
     """In private mode the project-wide model override stays free-text —
     local model names don't fit a fixed dropdown."""
     import json
@@ -358,16 +352,16 @@ def test_project_settings_runtime_model_is_text_in_private_mode(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "private"\n'
     )
     home = tmp_path / "home"
@@ -379,9 +373,7 @@ def test_project_settings_runtime_model_is_text_in_private_mode(
     # No <select name="runtime_model"> in private mode.
     assert re.search(r'<select[^>]*name="runtime_model"', body) is None
     # A text input exists.
-    assert re.search(
-        r'<input[^>]*type="text"[^>]*name="runtime_model"', body
-    )
+    assert re.search(r'<input[^>]*type="text"[^>]*name="runtime_model"', body)
 
 
 def test_project_settings_open_mode_per_agent_model_is_cloud_select(
@@ -400,16 +392,16 @@ def test_project_settings_open_mode_per_agent_model_is_cloud_select(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "open"\n'
     )
     home = tmp_path / "home"
@@ -448,16 +440,16 @@ def test_project_settings_models_hybrid_endpoint_dropdown_lists_named_endpoints(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "hybrid"\n'
     )
     home = tmp_path / "home"
@@ -465,12 +457,12 @@ def test_project_settings_models_hybrid_endpoint_dropdown_lists_named_endpoints(
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n'
-        '\n'
-        '[privacy.endpoints.ollama]\n'
+        "\n"
+        "[privacy.endpoints.ollama]\n"
         'base_url = "http://localhost:11435"\n'
         'api_key_env = ""\n'
         'default_model = "llama3:8b"\n'
@@ -483,8 +475,8 @@ def test_project_settings_models_hybrid_endpoint_dropdown_lists_named_endpoints(
     # <td>\n<code>...</code>\n...</td> block so the regex tolerates
     # whitespace.
     m = re.search(
-        r'<code>task_agent</code>'
-        r'.*?'
+        r"<code>task_agent</code>"
+        r".*?"
         r'name="model\[task_agent\]"',
         body,
         flags=re.DOTALL,
@@ -517,13 +509,13 @@ def test_project_settings_put_per_agent_endpoint_accepts_named_endpoint(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
     )
     home = tmp_path / "home"
@@ -531,7 +523,7 @@ def test_project_settings_put_per_agent_endpoint_accepts_named_endpoint(
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.ollama]\n'
+        "[privacy.endpoints.ollama]\n"
         'base_url = "http://localhost:11435"\n'
         'api_key_env = ""\n'
     )
@@ -565,13 +557,13 @@ def test_project_settings_put_per_agent_endpoint_rejects_undefined_name(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
     )
     home = tmp_path / "home"
@@ -580,7 +572,7 @@ def test_project_settings_put_per_agent_endpoint_rejects_undefined_name(
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
     # Globals define only ``private`` — ``does_not_exist`` is unknown.
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
     )
@@ -621,34 +613,38 @@ def test_project_settings_models_placeholder_from_global_per_mode(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "private"\n'
     )
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
-    (home / "projects.json").write_text(json.dumps({
-        "alpha": str(proj),
-    }))
+    (home / "projects.json").write_text(
+        json.dumps(
+            {
+                "alpha": str(proj),
+            }
+        )
+    )
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n'
-        '\n'
-        '[runtime.modes.private]\n'
+        "\n"
+        "[runtime.modes.private]\n"
         'model = "qwen3:14b"\n'
-        '\n'
-        '[runtime.modes.private.models.task_agent]\n'
+        "\n"
+        "[runtime.modes.private.models.task_agent]\n"
         'model = "qwen3:32b"\n'
         'endpoint = "private"\n'
     )
@@ -665,9 +661,7 @@ def test_project_settings_models_placeholder_from_global_per_mode(
 # ---- New always-three-columns layout: explicit shape assertions ---------
 
 
-def test_project_settings_models_open_mode_three_column_table(
-    tmp_path, monkeypatch
-):
+def test_project_settings_models_open_mode_three_column_table(tmp_path, monkeypatch):
     """Project's open-mode Models grid is a 3-column table:
     Agent / Endpoint / Model. Endpoint cell shows literal "open"
     text; Model cell is a cloud-models <select>."""
@@ -680,16 +674,16 @@ def test_project_settings_models_open_mode_three_column_table(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "open"\n'
     )
     home = tmp_path / "home"
@@ -709,9 +703,7 @@ def test_project_settings_models_open_mode_three_column_table(
     assert 'value="open"' in body
 
 
-def test_project_settings_models_private_mode_three_column_table(
-    tmp_path, monkeypatch
-):
+def test_project_settings_models_private_mode_three_column_table(tmp_path, monkeypatch):
     """Project's private-mode Models grid is a 3-column table:
     Agent / Endpoint / Model (Endpoint). Endpoint cell shows literal
     "private" text; Model cell is a <select> of named private
@@ -725,16 +717,16 @@ def test_project_settings_models_private_mode_three_column_table(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "private"\n'
     )
     home = tmp_path / "home"
@@ -742,7 +734,7 @@ def test_project_settings_models_private_mode_three_column_table(
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n',
@@ -761,9 +753,7 @@ def test_project_settings_models_private_mode_three_column_table(
     assert 'name="model[task_agent]"' in body
 
 
-def test_project_settings_models_hybrid_mode_three_column_table(
-    tmp_path, monkeypatch
-):
+def test_project_settings_models_hybrid_mode_three_column_table(tmp_path, monkeypatch):
     """Project's hybrid-mode Models grid is a 3-column table:
     Agent / Endpoint / Model (Endpoint). Endpoint cell is a UI
     category <select> with two options (open / private). Model cell
@@ -779,16 +769,16 @@ def test_project_settings_models_hybrid_mode_three_column_table(
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "hybrid"\n'
     )
     home = tmp_path / "home"
@@ -796,7 +786,7 @@ def test_project_settings_models_hybrid_mode_three_column_table(
     monkeypatch.setenv("URIKA_HOME", str(home))
     (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n',
@@ -812,8 +802,8 @@ def test_project_settings_models_hybrid_mode_three_column_table(
 
     # task_agent: NOT locked. Visible category select has both options.
     m = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>task_agent</code>'
-        r'.*?</tr>',
+        r"<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>task_agent</code>"
+        r".*?</tr>",
         body,
         flags=re.DOTALL,
     )
@@ -835,8 +825,8 @@ def test_project_settings_models_hybrid_mode_three_column_table(
 
     # data_agent: locked. Category select is disabled + only private.
     m_data = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>data_agent</code>'
-        r'.*?</tr>',
+        r"<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>data_agent</code>"
+        r".*?</tr>",
         body,
         flags=re.DOTALL,
     )
@@ -855,8 +845,8 @@ def test_project_settings_models_hybrid_mode_three_column_table(
 
     # tool_builder: NOT locked. Both options, ``private`` pre-selected.
     m_tb = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>tool_builder</code>'
-        r'.*?</tr>',
+        r"<tr[^>]*x-data=[^>]*>\s*<td>\s*<code>tool_builder</code>"
+        r".*?</tr>",
         body,
         flags=re.DOTALL,
     )
@@ -916,6 +906,7 @@ def test_settings_page_disables_button_when_lock_present(tmp_path, monkeypatch):
     # Drop a live PID lock file under experiments/exp-001/. Use this
     # process's PID so the live-PID check treats it as active.
     import os
+
     exp_dir = proj / "experiments" / "exp-001"
     exp_dir.mkdir(parents=True)
     (exp_dir / ".lock").write_text(str(os.getpid()))
@@ -934,3 +925,25 @@ def test_settings_page_disables_button_when_lock_present(tmp_path, monkeypatch):
     assert ".lock" in body
     # No active danger button when locked.
     assert 'hx-delete="/api/projects/alpha"' not in body
+
+
+# ---- P3: "Test endpoint" button on Privacy tabs --------------------------
+
+
+def test_global_settings_privacy_tab_renders_test_button(settings_client):
+    """Phase P3: each endpoint row on the global Privacy tab must
+    render a 'Test' button wired to the new POST endpoint."""
+    body = settings_client.get("/settings").text
+    # The button label and the click handler that calls the endpoint.
+    assert ">Test<" in body or ">Testing" in body
+    assert "testEndpoint()" in body
+    assert "/api/settings/test-endpoint" in body
+
+
+def test_project_settings_privacy_tab_renders_test_button(client_with_projects):
+    """Phase P3: the Project Privacy tab gets the same Test button next
+    to each endpoint row (Private + Hybrid blocks)."""
+    body = client_with_projects.get("/projects/alpha/settings").text
+    assert ">Test<" in body or ">Testing" in body
+    assert "testEndpoint()" in body
+    assert "/api/settings/test-endpoint" in body

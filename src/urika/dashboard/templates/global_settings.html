@@ -124,6 +124,49 @@
                    x-model="ep.default_model"
                    placeholder="e.g. qwen3:14b">
           </div>
+          {# Per-row "Test endpoint" affordance.  Probes the URL via
+             POST /api/settings/test-endpoint and shows reachability +
+             whether the named API-key env var is actually set in the
+             dashboard's process.  Reads from live Alpine state so it
+             tests what's IN THE FORM, not what's saved. #}
+          <div class="form-row" x-data="{
+                 testing: false,
+                 result: null,
+                 testEndpoint() {
+                   this.testing = true;
+                   this.result = null;
+                   const fd = new FormData();
+                   fd.append('base_url', ep.base_url || '');
+                   fd.append('api_key_env', ep.api_key_env || '');
+                   fetch('/api/settings/test-endpoint', { method: 'POST', body: fd })
+                     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+                     .then(d => { this.result = d; this.testing = false; })
+                     .catch(e => {
+                       this.result = { reachable: false, details: e.message, api_key_set: false };
+                       this.testing = false;
+                     });
+                 }
+               }">
+            <button type="button" class="btn btn--small btn--ghost"
+                    @click="testEndpoint()"
+                    :disabled="testing || !ep.base_url">
+              <span class="running-dot" x-show="testing"></span>
+              <span x-text="testing ? 'Testing…' : 'Test'">Test</span>
+            </button>
+            <div x-show="result" x-cloak class="endpoint-test-result"
+                 style="margin-top: var(--space-2); font-size: var(--fs-xs);">
+              <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
+                <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
+                <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>
+              </div>
+              <div class="text-muted" x-show="result?.api_key_env">
+                API key
+                <code x-text="result?.api_key_env"></code>:
+                <span :class="result?.api_key_set ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
+                      x-text="result?.api_key_set ? '✓ set' : '✗ unset'"></span>
+              </div>
+            </div>
+          </div>
           <button type="button" class="btn btn--ghost"
                   @click="endpoints.splice(idx, 1)">Remove</button>
         </div>

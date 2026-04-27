@@ -380,8 +380,33 @@
         </div>
       </div>
 
-      {# Private block #}
-      <div class="privacy-block" x-show="pmode === 'private'" x-cloak>
+      {# Private block.  Wrapped in its own Alpine scope so the Test
+         button can read the *live* URL + key-env values (not whatever
+         is saved in urika.toml).  Inputs use x-model to keep the
+         scope's ``ep`` mirror in sync with what the user types. #}
+      <div class="privacy-block" x-show="pmode === 'private'" x-cloak
+           x-data='{
+             ep: {
+               base_url: {{ project_privacy_private_url | tojson }},
+               api_key_env: {{ project_privacy_private_key_env | tojson }}
+             },
+             testing: false,
+             result: null,
+             testEndpoint() {
+               this.testing = true;
+               this.result = null;
+               const fd = new FormData();
+               fd.append("base_url", this.ep.base_url || "");
+               fd.append("api_key_env", this.ep.api_key_env || "");
+               fetch("/api/settings/test-endpoint", { method: "POST", body: fd })
+                 .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+                 .then(d => { this.result = d; this.testing = false; })
+                 .catch(e => {
+                   this.result = { reachable: false, details: e.message, api_key_set: false };
+                   this.testing = false;
+                 });
+             }
+           }'>
         <h4>Private mode</h4>
         {% if inherited_endpoint and inherited_endpoint.private %}
           <p class="form-help privacy-inherits"
@@ -397,6 +422,7 @@
           <label for="project_privacy_private_url">Endpoint URL</label>
           <input type="text" id="project_privacy_private_url"
                  name="project_privacy_private_url"
+                 x-model="ep.base_url"
                  value="{{ project_privacy_private_url }}"
                  placeholder="http://localhost:11434">
         </div>
@@ -404,6 +430,7 @@
           <label for="project_privacy_private_key_env">API key env var</label>
           <input type="text" id="project_privacy_private_key_env"
                  name="project_privacy_private_key_env"
+                 x-model="ep.api_key_env"
                  value="{{ project_privacy_private_key_env }}"
                  placeholder="(optional)">
         </div>
@@ -414,10 +441,56 @@
                  value="{{ project_privacy_private_model }}"
                  placeholder="qwen3:14b">
         </div>
+        {# Test endpoint button — Alpine state is shared with the inputs above. #}
+        <div class="form-row">
+          <button type="button" class="btn btn--small btn--ghost"
+                  @click="testEndpoint()"
+                  :disabled="testing || !ep.base_url">
+            <span class="running-dot" x-show="testing"></span>
+            <span x-text="testing ? 'Testing…' : 'Test'">Test</span>
+          </button>
+          <div x-show="result" x-cloak class="endpoint-test-result"
+               style="margin-top: var(--space-2); font-size: var(--fs-xs);">
+            <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
+              <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
+              <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>
+            </div>
+            <div class="text-muted" x-show="result?.api_key_env">
+              API key
+              <code x-text="result?.api_key_env"></code>:
+              <span :class="result?.api_key_set ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
+                    x-text="result?.api_key_set ? '✓ set' : '✗ unset'"></span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {# Hybrid block #}
-      <div class="privacy-block" x-show="pmode === 'hybrid'" x-cloak>
+      {# Hybrid block.  Same Alpine pattern as the Private block —
+         scoped state mirrors the private URL + key-env inputs so the
+         Test button probes whatever the user has typed. #}
+      <div class="privacy-block" x-show="pmode === 'hybrid'" x-cloak
+           x-data='{
+             ep: {
+               base_url: {{ project_privacy_hybrid_private_url | tojson }},
+               api_key_env: {{ project_privacy_hybrid_private_key_env | tojson }}
+             },
+             testing: false,
+             result: null,
+             testEndpoint() {
+               this.testing = true;
+               this.result = null;
+               const fd = new FormData();
+               fd.append("base_url", this.ep.base_url || "");
+               fd.append("api_key_env", this.ep.api_key_env || "");
+               fetch("/api/settings/test-endpoint", { method: "POST", body: fd })
+                 .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+                 .then(d => { this.result = d; this.testing = false; })
+                 .catch(e => {
+                   this.result = { reachable: false, details: e.message, api_key_set: false };
+                   this.testing = false;
+                 });
+             }
+           }'>
         <h4>Hybrid mode</h4>
         {% if inherited_endpoint and inherited_endpoint.hybrid %}
           <p class="form-help privacy-inherits"
@@ -443,6 +516,7 @@
           <label for="project_privacy_hybrid_private_url">Private endpoint URL (data agents)</label>
           <input type="text" id="project_privacy_hybrid_private_url"
                  name="project_privacy_hybrid_private_url"
+                 x-model="ep.base_url"
                  value="{{ project_privacy_hybrid_private_url }}"
                  placeholder="http://localhost:11434">
         </div>
@@ -450,6 +524,7 @@
           <label for="project_privacy_hybrid_private_key_env">Private API key env var</label>
           <input type="text" id="project_privacy_hybrid_private_key_env"
                  name="project_privacy_hybrid_private_key_env"
+                 x-model="ep.api_key_env"
                  value="{{ project_privacy_hybrid_private_key_env }}"
                  placeholder="(optional)">
         </div>
@@ -459,6 +534,28 @@
                  name="project_privacy_hybrid_private_model"
                  value="{{ project_privacy_hybrid_private_model }}"
                  placeholder="qwen3:14b">
+        </div>
+        {# Test endpoint button — probes the private URL the user typed. #}
+        <div class="form-row">
+          <button type="button" class="btn btn--small btn--ghost"
+                  @click="testEndpoint()"
+                  :disabled="testing || !ep.base_url">
+            <span class="running-dot" x-show="testing"></span>
+            <span x-text="testing ? 'Testing…' : 'Test'">Test</span>
+          </button>
+          <div x-show="result" x-cloak class="endpoint-test-result"
+               style="margin-top: var(--space-2); font-size: var(--fs-xs);">
+            <div :class="result?.reachable ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
+              <span x-text="result?.reachable ? '✓ Reachable' : '✗ Unreachable'"></span>
+              <span class="text-muted" x-show="result?.details" x-text="': ' + result?.details"></span>
+            </div>
+            <div class="text-muted" x-show="result?.api_key_env">
+              API key
+              <code x-text="result?.api_key_env"></code>:
+              <span :class="result?.api_key_set ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
+                    x-text="result?.api_key_set ? '✓ set' : '✗ unset'"></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
