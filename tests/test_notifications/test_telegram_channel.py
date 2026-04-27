@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 
-def test_telegram_formats_every_canonical_event_with_emoji_not_default():
-    """Every canonical event must produce its EVENT_METADATA emoji, not the 🔔 fallback."""
+def test_telegram_routes_canonical_events_by_metadata_priority():
+    """Canonical event_types route through _format_message based on EVENT_METADATA."""
     from urika.notifications.events import (
         CANONICAL_EVENT_TYPES,
         EVENT_METADATA,
@@ -15,17 +15,17 @@ def test_telegram_formats_every_canonical_event_with_emoji_not_default():
     for evt_type in CANONICAL_EVENT_TYPES:
         event = NotificationEvent(
             event_type=evt_type,
-            project_name="p",
-            summary="s",
-            priority="high",  # force the high-priority format path
+            project_name="proj",
+            summary="summary text",
         )
         text = TelegramChannel._format_message(event)
-        expected_emoji = EVENT_METADATA[evt_type].emoji
-        assert expected_emoji in text, (
-            f"{evt_type} message missing expected emoji {expected_emoji!r}: {text!r}"
-        )
-        # The bare-fallback bell must not appear unless it is the canonical emoji.
-        if expected_emoji != "\U0001f514":
-            assert "\U0001f514" not in text, (
-                f"{evt_type} fell through to default 🔔 emoji: {text!r}"
+        meta = EVENT_METADATA[evt_type]
+        if meta.priority == "high":
+            # _format_high is invoked → emoji + label appear
+            assert meta.emoji in text, (
+                f"high-priority {evt_type} missing emoji {meta.emoji!r} in {text!r}"
             )
+        else:
+            # _format_default is invoked → minimal one-liner
+            assert "proj" in text
+            assert "summary text" in text

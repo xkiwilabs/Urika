@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # (defined in events.py) for emoji + priority routing; this is the last-resort
 # default when the event_type is not registered there.
 _DEFAULT_METADATA = EventMetadata(
-    emoji="\u2139\ufe0f",  # \u2139\ufe0f
+    emoji="\u2139\ufe0f",  # ℹ️
     priority="low",
     label="Notification",
 )

@@ -117,8 +117,18 @@ class TelegramChannel(NotificationChannel):
 
     @staticmethod
     def _format_message(event: NotificationEvent) -> str:
-        """Build an HTML-formatted Telegram message from *event*."""
-        if event.priority == "high":
+        """Build an HTML-formatted Telegram message from *event*.
+
+        Priority routing is driven by ``EVENT_METADATA`` for canonical
+        event_types and falls back to ``event.priority`` for anything not
+        registered there. An explicit high ``event.priority`` from the caller
+        promotes the routing — callers can bump a notification up but the
+        canonical floor still applies.
+        """
+        meta = EVENT_METADATA.get(event.event_type)
+        canonical_priority = meta.priority if meta else event.priority
+        priority = "high" if event.priority == "high" else canonical_priority
+        if priority == "high":
             return _format_high(event)
         return _format_default(event)
 
