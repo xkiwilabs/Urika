@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from urika.orchestrator.pause import PauseController
 
 from urika.notifications.base import NotificationChannel
+from urika.notifications.events import EVENT_METADATA, EventMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +28,14 @@ logger = logging.getLogger(__name__)
 # Event-type helpers
 # ---------------------------------------------------------------------------
 
-_HIGH_PRIORITY_TYPES = {"criteria_met", "experiment_failed", "experiment_completed"}
-_MEDIUM_PRIORITY_TYPES = {"paused"}
-_LOW_PRIORITY_TYPES = {"turn_started", "run_recorded"}
-
-_EMOJI_MAP: dict[str, str] = {
-    "criteria_met": "\u2705",  # checkmark
-    "experiment_failed": "\u274c",  # cross
-    "experiment_completed": "\U0001f3c1",  # flag
-    "paused": "\u23f8\ufe0f",  # pause
-}
+# Fallback metadata for non-canonical event_types. Channels read EVENT_METADATA
+# (defined in events.py) for emoji + priority routing; this is the last-resort
+# default when the event_type is not registered there.
+_DEFAULT_METADATA = EventMetadata(
+    emoji="\u2139\ufe0f",  # \u2139\ufe0f
+    priority="low",
+    label="Notification",
+)
 
 
 class SlackChannel(NotificationChannel):
@@ -348,22 +347,29 @@ class SlackChannel(NotificationChannel):
     # ------------------------------------------------------------------
 
     def _build_blocks(self, event: NotificationEvent) -> list[dict[str, Any]]:
-        """Build Slack Block Kit blocks based on event type and priority."""
-        event_type = event.event_type
-        blocks: list[dict[str, Any]] = []
+        """Build Slack Block Kit blocks based on event type and priority.
 
-        if event_type in _HIGH_PRIORITY_TYPES:
-            blocks = self._build_high_priority(event)
-        elif event_type in _MEDIUM_PRIORITY_TYPES:
-            blocks = self._build_medium_priority(event)
+        Priority routing is driven by ``EVENT_METADATA`` for canonical
+        event_types and falls back to ``event.priority`` for anything not
+        registered there. An explicit high ``event.priority`` from the caller
+        promotes the routing — callers can bump a notification up but the
+        canonical floor still applies.
+        """
+        meta = EVENT_METADATA.get(event.event_type)
+        canonical_priority = meta.priority if meta else event.priority
+        # Caller-supplied "high" wins over a lower canonical priority.
+        priority = "high" if event.priority == "high" else canonical_priority
+
+        if priority == "high":
+            return self._build_high_priority(event)
+        elif priority == "medium":
+            return self._build_medium_priority(event)
         else:
-            blocks = self._build_low_priority(event)
-
-        return blocks
+            return self._build_low_priority(event)
 
     def _build_high_priority(self, event: NotificationEvent) -> list[dict[str, Any]]:
         """Header + section + optional metric fields for high-priority events."""
-        emoji = _EMOJI_MAP.get(event.event_type, "\u2139\ufe0f")
+        emoji = EVENT_METADATA.get(event.event_type, _DEFAULT_METADATA).emoji
         blocks: list[dict[str, Any]] = [
             {
                 "type": "header",
@@ -407,7 +413,7 @@ class SlackChannel(NotificationChannel):
 
     def _build_medium_priority(self, event: NotificationEvent) -> list[dict[str, Any]]:
         """Simple section with emoji for medium-priority events."""
-        emoji = _EMOJI_MAP.get(event.event_type, "\u2139\ufe0f")
+        emoji = EVENT_METADATA.get(event.event_type, _DEFAULT_METADATA).emoji
         return [
             {
                 "type": "section",

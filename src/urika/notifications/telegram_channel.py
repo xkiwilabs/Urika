@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from urika.orchestrator.pause import PauseController
 
 from urika.notifications.base import NotificationChannel
+from urika.notifications.events import EVENT_METADATA, EventMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +29,14 @@ _ACTIVE_RUN_EVENTS = frozenset(
     }
 )
 
-# Emoji map for high-priority event types.
-_EMOJI: dict[str, str] = {
-    "criteria_met": "\u2705",  # ✅
-    "experiment_failed": "\u274c",  # ❌
-    "experiment_completed": "\U0001f3c1",  # 🏁
-    "meta_completed": "\U0001f3c1",  # 🏁
-}
+# Fallback metadata for non-canonical event_types. The high-priority formatter
+# reads EVENT_METADATA for the emoji and falls back to this when an event_type
+# is not registered there.
+_DEFAULT_METADATA = EventMetadata(
+    emoji="\U0001f514",  # 🔔
+    priority="low",
+    label="Notification",
+)
 
 
 class TelegramChannel(NotificationChannel):
@@ -362,7 +364,7 @@ def _esc(text: str) -> str:
 
 def _format_high(event: NotificationEvent) -> str:
     """Rich format for high-priority events."""
-    emoji = _EMOJI.get(event.event_type, "\U0001f514")  # 🔔 default
+    emoji = EVENT_METADATA.get(event.event_type, _DEFAULT_METADATA).emoji
     lines = [
         f"<b>{emoji} {_esc(event.event_type.replace('_', ' ').title())}</b>",
         f"<b>Project:</b> {_esc(event.project_name)}",

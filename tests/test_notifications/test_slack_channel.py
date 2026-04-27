@@ -248,3 +248,40 @@ def test_is_authorized_realistic_message_event_payload_blocked():
         },
     }
     assert channel._is_authorized(event_payload) is False
+
+
+# ---------------------------------------------------------------------------
+# Canonical event metadata coverage
+# ---------------------------------------------------------------------------
+
+
+def test_slack_formats_every_canonical_event_with_emoji_not_default():
+    """Every canonical event must produce its EVENT_METADATA emoji, not the ℹ default."""
+    from urika.notifications.events import (
+        CANONICAL_EVENT_TYPES,
+        EVENT_METADATA,
+        NotificationEvent,
+    )
+    from urika.notifications.slack_channel import SlackChannel
+
+    ch = SlackChannel({"channel": "#test", "bot_token_env": ""})
+    for evt_type in CANONICAL_EVENT_TYPES:
+        event = NotificationEvent(
+            event_type=evt_type,
+            project_name="p",
+            summary="s",
+            priority="high",  # force the high path so the header is built
+        )
+        blocks = ch._build_blocks(event)
+        header_text = next(
+            (b["text"]["text"] for b in blocks if b.get("type") == "header"),
+            "",
+        )
+        expected_emoji = EVENT_METADATA[evt_type].emoji
+        assert expected_emoji in header_text, (
+            f"{evt_type} header missing expected emoji {expected_emoji!r}: {header_text!r}"
+        )
+        # And the default fallback must not appear
+        assert "ℹ" not in header_text, (
+            f"{evt_type} fell through to default ℹ emoji: {header_text!r}"
+        )
