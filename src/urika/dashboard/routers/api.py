@@ -1630,6 +1630,29 @@ def api_active_ops(name: str) -> list[dict]:
     ]
 
 
+@router.get("/projects/{name}/usage/totals")
+def api_usage_totals(name: str) -> dict:
+    """Live usage totals for the project — polled by the log-page footer.
+
+    Reads from ``urika.core.usage.get_totals`` which already aggregates
+    the project's session records into ``tokens_in / tokens_out /
+    cost_usd / agent_calls``. Read-only.
+    """
+    from urika.core.usage import get_totals
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    totals = get_totals(summary.path)
+    return {
+        "tokens_in": totals.get("total_tokens_in", 0),
+        "tokens_out": totals.get("total_tokens_out", 0),
+        "cost_usd": totals.get("total_cost_usd", 0.0),
+        "agent_calls": totals.get("total_agent_calls", 0),
+    }
+
+
 _EXPERIMENT_LOG_TYPES: dict[str, tuple[str, str]] = {
     # type → (log_filename, lock_filename)
     "run": ("run.log", ".lock"),

@@ -81,5 +81,11 @@
     </main>
   </div>
   <script src="/static/urika-active-ops-poll.js"></script>
+  {# Log-page helpers: both scripts are no-ops on pages that don't
+     contain their target elements (querySelector returns null and
+     they exit early). Loaded site-wide so the SSE templates don't
+     each have to remember to include them. #}
+  <script src="/static/urika-log-classify.js"></script>
+  <script src="/static/urika-log-footer.js"></script>
 </body>
 </html>

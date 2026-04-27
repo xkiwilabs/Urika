@@ -24,6 +24,8 @@
      between tool calls. Only stopped on the completion event. #}
   {% include "_thinking.html" %}
 
+  {% include "_log_footer.html" %}
+
   <div id="log-completion" style="display: none; margin-top: var(--space-4);">
     <p>Tool build complete.</p>
     <a class="btn btn--primary" href="/projects/{{ project.name }}/tools">Back to tools →</a>
@@ -43,6 +45,8 @@
     // summarize_log.html for the rationale.
     const line = document.createElement("div");
     line.textContent = e.data;
+    const cls = window.urikaClassifyLine ? window.urikaClassifyLine(e.data) : null;
+    if (cls) line.className = cls;
     logEl.appendChild(line);
     logEl.scrollTop = logEl.scrollHeight;
   };

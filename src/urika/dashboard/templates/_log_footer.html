@@ -1,0 +1,37 @@
+{# Live status footer for streaming log pages. The driver script
+   `/static/urika-log-footer.js` (loaded site-wide via _base.html)
+   populates these fields:
+
+   * model — first claude-/gpt-/gemini-/qwen- token spotted in the stream
+   * agent — most recent agent header (e.g. "─── Planning Agent ───")
+   * tokens / cost — polled from /api/projects/<n>/usage/totals every 5s
+   * elapsed — client-side timer started on page load
+
+   Fields are unset (—) until data is available; the script is a no-op
+   on pages that don't contain a [data-log-footer] block. #}
+<div class="log-footer" data-log-footer>
+  <span class="log-footer-cell">
+    <span class="log-footer-label">model</span>
+    <span class="log-footer-value" data-footer-model>—</span>
+  </span>
+  <span class="log-footer-sep">·</span>
+  <span class="log-footer-cell">
+    <span class="log-footer-label">agent</span>
+    <span class="log-footer-value" data-footer-agent>—</span>
+  </span>
+  <span class="log-footer-sep">·</span>
+  <span class="log-footer-cell">
+    <span class="log-footer-label">tokens</span>
+    <span class="log-footer-value" data-footer-tokens>0</span>
+  </span>
+  <span class="log-footer-sep">·</span>
+  <span class="log-footer-cell">
+    <span class="log-footer-label">cost</span>
+    <span class="log-footer-value" data-footer-cost>$0.00</span>
+  </span>
+  <span class="log-footer-sep">·</span>
+  <span class="log-footer-cell">
+    <span class="log-footer-label">elapsed</span>
+    <span class="log-footer-value" data-footer-elapsed>00:00</span>
+  </span>
+</div>

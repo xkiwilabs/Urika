@@ -870,6 +870,44 @@ h4 {
   color: var(--text-muted);
 }
 
+/* Agent-header line colors. Streaming log pages render headers like
+   "─── Planning Agent ───" and the URIKA banner box-drawing block;
+   urika-log-classify.js tags each line with the right modifier so we
+   can color the whole row in the agent's accent. Banner gets the
+   urika-blue accent. Generic-header fallback gets the muted accent. */
+.log-line--planning      { color: #4ade80; }   /* green */
+.log-line--task          { color: #06b6d4; }   /* cyan */
+.log-line--evaluator     { color: #facc15; }   /* yellow */
+.log-line--advisor       { color: #c084fc; }   /* magenta/violet */
+.log-line--report        { color: #fb923c; }   /* orange */
+.log-line--presentation  { color: #ec4899; }   /* pink */
+.log-line--tool-builder  { color: #a3e635; }   /* lime */
+.log-line--data          { color: #38bdf8; }   /* sky */
+.log-line--literature    { color: #fbbf24; }   /* amber */
+.log-line--project-builder { color: #93c5fd; } /* light blue */
+.log-line--summarizer    { color: #f472b6; }   /* pink-light */
+.log-line--finalizer     { color: #34d399; }   /* emerald */
+.log-line--agent         { color: var(--text); font-weight: var(--fw-semibold); }
+.log-line--banner        { color: var(--accent); }
+
+/* ---------- Live log footer (model · agent · tokens · cost · elapsed) ---------- */
+.log-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-2);
+}
+.log-footer-cell { display: inline-flex; gap: var(--space-1); }
+.log-footer-label { opacity: 0.6; }
+.log-footer-value { color: var(--text); }
+.log-footer-sep { opacity: 0.4; }
+
 /* ---------- Markdown body (report viewer, knowledge entries) ---------- */
 .markdown-body { line-height: var(--lh-body); }
 .markdown-body h1, .markdown-body h2, .markdown-body h3 {
