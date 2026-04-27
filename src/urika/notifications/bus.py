@@ -286,7 +286,47 @@ class NotificationBus:
                 priority="high",
             )
 
-        # Paused
+        # Run status events from end-of-experiment phase messages.
+        # These are also emitted directly by cli/run.py — TUI/dashboard
+        # orchestrator flows that don't go through the CLI need them here.
+        # Priorities mirror EVENT_METADATA in events.py.
+        # NOTE: the specific "Experiment paused" check must run BEFORE the
+        # generic "Paused" fallback below so it takes precedence.
+        if event == "phase":
+            if "Experiment completed" in detail:
+                return NotificationEvent(
+                    event_type="experiment_completed",
+                    project_name=self.project_name,
+                    experiment_id=self._experiment_id,
+                    summary=detail,
+                    priority="high",
+                )
+            if "Experiment failed" in detail:
+                return NotificationEvent(
+                    event_type="experiment_failed",
+                    project_name=self.project_name,
+                    experiment_id=self._experiment_id,
+                    summary=detail,
+                    priority="high",
+                )
+            if "Experiment paused" in detail:
+                return NotificationEvent(
+                    event_type="experiment_paused",
+                    project_name=self.project_name,
+                    experiment_id=self._experiment_id,
+                    summary=detail,
+                    priority="medium",
+                )
+            if "Experiment stopped" in detail:
+                return NotificationEvent(
+                    event_type="experiment_stopped",
+                    project_name=self.project_name,
+                    experiment_id=self._experiment_id,
+                    summary=detail,
+                    priority="medium",
+                )
+
+        # Paused (generic fallback — orchestrator emits "Paused after turn N")
         if event == "phase" and "Paused" in detail:
             return NotificationEvent(
                 event_type="paused",

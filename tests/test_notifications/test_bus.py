@@ -6,6 +6,8 @@ import logging
 import time
 from pathlib import Path
 
+import pytest
+
 from urika.notifications.base import NotificationChannel
 from urika.notifications.bus import NotificationBus
 from urika.notifications.events import NotificationEvent
@@ -146,6 +148,23 @@ class TestNotificationBus:
             assert len(fake.events) == 0
         finally:
             bus.stop()
+
+    @pytest.mark.parametrize("phase_text,expected_event_type", [
+        ("Experiment completed", "experiment_completed"),
+        ("Experiment failed: timed out", "experiment_failed"),
+        ("Experiment paused after turn 3", "experiment_paused"),
+        ("Experiment stopped by user", "experiment_stopped"),
+    ])
+    def test_map_progress_event_emits_run_status(
+        self, phase_text, expected_event_type
+    ):
+        """Run-status phase events map to the canonical event types."""
+        bus = NotificationBus(project_name="p")
+        notif = bus._map_progress_event("phase", phase_text)
+        assert notif is not None, (
+            f"phase={phase_text!r} should produce a NotificationEvent"
+        )
+        assert notif.event_type == expected_event_type
 
     def test_set_experiment(self):
         """set_experiment updates the context for subsequent events."""
