@@ -41,7 +41,15 @@ def save_session(project_dir: Path, experiment_id: str, state: SessionState) -> 
 
 
 def acquire_lock(project_dir: Path, experiment_id: str) -> bool:
-    """Acquire an experiment lock. Returns False if already locked (by a live process)."""
+    """Acquire an experiment lock. Returns False if already locked (by a live process).
+
+    A lock that already contains *our* own PID is treated as already
+    acquired and returns True. This handles the dashboard handoff: the
+    spawn helper pre-writes the lock with the subprocess's PID before
+    `urika run` boots up, and when the subprocess then calls
+    ``acquire_lock`` it would otherwise see its own PID, conclude the
+    "other process" is alive, and refuse to acquire its own lock.
+    """
     path = _lock_path(project_dir, experiment_id)
     if path.exists():
         # Check if the lock is stale (owning process is dead)
@@ -49,6 +57,10 @@ def acquire_lock(project_dir: Path, experiment_id: str) -> bool:
             pid_str = path.read_text().strip()
             if pid_str:
                 pid = int(pid_str)
+                if pid == os.getpid():
+                    # Same process (e.g. dashboard wrote the lock with
+                    # our PID before we started). Already ours — done.
+                    return True
                 os.kill(pid, 0)  # Check if process is alive (doesn't actually kill)
                 return False  # Process is alive — lock is valid
             else:

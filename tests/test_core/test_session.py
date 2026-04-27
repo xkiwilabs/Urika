@@ -171,11 +171,48 @@ class TestLocking:
         assert acquire_lock(project_dir, experiment_id) is True
         assert is_locked(project_dir, experiment_id) is True
 
-    def test_acquire_lock_twice_fails(
+    def test_acquire_lock_twice_in_same_process_is_idempotent(
         self, project_dir: Path, experiment_id: str
     ) -> None:
-        acquire_lock(project_dir, experiment_id)
+        """A second acquire from the same process succeeds — the lock
+        already contains our PID. This is what makes the dashboard
+        handoff work: spawn_experiment_run pre-writes the lock with
+        the subprocess's PID, then the subprocess's own acquire_lock
+        sees its own PID and treats it as already owned."""
+        assert acquire_lock(project_dir, experiment_id) is True
+        assert acquire_lock(project_dir, experiment_id) is True
+
+    def test_acquire_lock_blocks_when_other_live_process_owns_it(
+        self, project_dir: Path, experiment_id: str, monkeypatch
+    ) -> None:
+        """Pre-seed the lock with another live PID. acquire_lock must
+        refuse — that's a real cross-process conflict."""
+        import os
+        from urika.core.session import _lock_path
+
+        # Use a real different live PID — PPID (the test runner's parent
+        # process) is guaranteed to exist and is not us.
+        ppid = os.getppid()
+        if ppid == os.getpid() or ppid == 0:
+            # Edge case (init process or same-as-self) — fall back to a
+            # fake live-pid stub.
+            monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+            other_pid = 99999998
+        else:
+            other_pid = ppid
+
+        _lock_path(project_dir, experiment_id).write_text(str(other_pid))
         assert acquire_lock(project_dir, experiment_id) is False
+
+    def test_acquire_lock_clears_stale_lock_with_dead_pid(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        """A lock containing a dead PID is stale — acquire_lock cleans
+        it up and succeeds."""
+        from urika.core.session import _lock_path
+
+        _lock_path(project_dir, experiment_id).write_text("99999998")
+        assert acquire_lock(project_dir, experiment_id) is True
 
     def test_release_lock(self, project_dir: Path, experiment_id: str) -> None:
         acquire_lock(project_dir, experiment_id)
@@ -217,10 +254,28 @@ class TestStartSession:
         assert loaded is not None
         assert loaded.status == "running"
 
-    def test_start_raises_if_locked(
-        self, project_dir: Path, experiment_id: str
+    def test_start_raises_if_locked_by_other_process(
+        self, project_dir: Path, experiment_id: str, monkeypatch
     ) -> None:
-        start_session(project_dir, experiment_id)
+        """A pre-existing lock owned by ANOTHER live process blocks
+        ``start_session``. Same-process re-start is now idempotent at
+        the lock layer (covered by the acquire_lock idempotency test);
+        cross-process conflicts still raise."""
+        from urika.core.session import _lock_path
+
+        import os
+
+        ppid = os.getppid()
+        if ppid == os.getpid() or ppid == 0:
+            monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+            other_pid = 99999998
+        else:
+            other_pid = ppid
+
+        _lock_path(project_dir, experiment_id).parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        _lock_path(project_dir, experiment_id).write_text(str(other_pid))
         with pytest.raises(RuntimeError, match="already running"):
             start_session(project_dir, experiment_id)
 
@@ -272,10 +327,29 @@ class TestResumeSession:
         resumed = resume_session(project_dir, experiment_id)
         assert resumed.current_turn == 10
 
-    def test_resume_raises_if_running(
-        self, project_dir: Path, experiment_id: str
+    def test_resume_raises_if_running_by_other_process(
+        self, project_dir: Path, experiment_id: str, monkeypatch
     ) -> None:
+        """Resume from a different process is blocked by a live
+        cross-process lock. (Same-process resume is idempotent at the
+        lock layer — see TestLocking.)"""
+        from urika.core.session import _lock_path
+
+        import os
+
+        # Set up a stopped session so resume has something to resume.
         start_session(project_dir, experiment_id)
+        pause_session(project_dir, experiment_id)
+
+        # Now seed a lock owned by another live PID.
+        ppid = os.getppid()
+        if ppid == os.getpid() or ppid == 0:
+            monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+            other_pid = 99999998
+        else:
+            other_pid = ppid
+
+        _lock_path(project_dir, experiment_id).write_text(str(other_pid))
         with pytest.raises(RuntimeError, match="already running"):
             resume_session(project_dir, experiment_id)
 
@@ -419,14 +493,35 @@ class TestStaleLockDetection:
         # Should acquire because PID 99999999 is dead
         assert acquire_lock(tmp_path, "exp-001") is True
 
-    def test_live_lock_blocks(self, tmp_path: Path) -> None:
-        """Lock from live process blocks acquisition."""
+    def test_live_lock_from_other_process_blocks(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A lock owned by ANOTHER live process blocks acquisition.
+        Same-process locks are idempotent (TestLocking covers that)."""
+        import os
+
+        ppid = os.getppid()
+        if ppid == os.getpid() or ppid == 0:
+            monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+            other_pid = 99999998
+        else:
+            other_pid = ppid
+
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(str(other_pid))
+        assert acquire_lock(tmp_path, "exp-001") is False
+
+    def test_live_lock_with_own_pid_is_idempotent(self, tmp_path: Path) -> None:
+        """The dashboard handoff case: spawn helper writes the lock with
+        the subprocess's PID, then the subprocess's own acquire_lock
+        sees its own PID and treats the lock as already owned."""
         import os
 
         lock = _lock_path(tmp_path, "exp-001")
         lock.parent.mkdir(parents=True, exist_ok=True)
-        lock.write_text(str(os.getpid()))  # Current process — alive
-        assert acquire_lock(tmp_path, "exp-001") is False
+        lock.write_text(str(os.getpid()))
+        assert acquire_lock(tmp_path, "exp-001") is True
 
     def test_lock_writes_pid(self, tmp_path: Path) -> None:
         """New lock files contain the PID."""
