@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from urika.core.project_delete import _is_active_run_lock
+from urika.core.project_delete import _is_active_run_lock, _pid_is_alive
 
 
 @dataclass(frozen=True)
@@ -97,3 +97,82 @@ def list_active_operations(project_name: str, project_path: Path) -> list[Active
                     break
 
     return ops
+
+
+@dataclass(frozen=True)
+class ClearedLock:
+    """A run-lock file that ``clear_stale_locks`` removed."""
+
+    path: Path
+    pid: int | None  # None when the file was empty / non-numeric
+    reason: str       # "dead" | "empty" | "non-numeric"
+
+
+def _all_known_lock_paths(project_path: Path) -> list[Path]:
+    """Every spot we know agents drop run-locks. Used by stale-clear."""
+    paths: list[Path] = []
+    for rel, _op_type, _url in _PROJECT_LEVEL_LOCKS:
+        paths.append(project_path / rel)
+    exp_root = project_path / "experiments"
+    if exp_root.is_dir():
+        for exp_dir in exp_root.iterdir():
+            if not exp_dir.is_dir():
+                continue
+            for lock_name, _op_type, _log_type in _EXPERIMENT_LEVEL_LOCKS:
+                paths.append(exp_dir / lock_name)
+    return paths
+
+
+def clear_stale_locks(project_path: Path) -> list[ClearedLock]:
+    """Remove run-lock files that no longer correspond to a live PID.
+
+    Walks every known lock location. For each existing lock file:
+    - empty file → remove (no PID was ever written; agent crashed
+      between create + write_text)
+    - non-numeric content → remove (corrupted)
+    - PID present but ``os.kill(pid, 0)`` says the process is dead →
+      remove
+
+    Live-PID locks are LEFT ALONE. If a user has a real running agent
+    they don't want it killed by accident; the equivalent of ``kill``
+    isn't this helper's job.
+
+    Returns the list of files removed so the caller can surface them
+    to the user.
+    """
+    cleared: list[ClearedLock] = []
+    if not project_path.exists():
+        return cleared
+
+    for lock in _all_known_lock_paths(project_path):
+        if not lock.is_file():
+            continue
+        try:
+            content = lock.read_text(encoding="utf-8").strip()
+        except OSError:
+            # Treat unreadable locks as live to avoid accidental
+            # destruction; user can fall back to terminal.
+            continue
+        if not content:
+            try:
+                lock.unlink()
+                cleared.append(ClearedLock(path=lock, pid=None, reason="empty"))
+            except OSError:
+                pass
+            continue
+        try:
+            pid = int(content)
+        except ValueError:
+            try:
+                lock.unlink()
+                cleared.append(ClearedLock(path=lock, pid=None, reason="non-numeric"))
+            except OSError:
+                pass
+            continue
+        if not _pid_is_alive(pid):
+            try:
+                lock.unlink()
+                cleared.append(ClearedLock(path=lock, pid=pid, reason="dead"))
+            except OSError:
+                pass
+    return cleared

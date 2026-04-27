@@ -533,6 +533,21 @@ h4 {
   text-transform: capitalize;
   transition: background var(--transition);
 }
+.active-ops-clear-stale {
+  margin-left: auto;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+}
+.active-ops-clear-stale:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
 .active-op-chip:hover {
   background: color-mix(in srgb, var(--accent) 10%, var(--bg));
   color: var(--accent);

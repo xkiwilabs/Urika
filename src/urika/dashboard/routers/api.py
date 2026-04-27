@@ -1514,6 +1514,40 @@ def api_projectbook_artifacts(name: str):
     }
 
 
+@router.post("/projects/{name}/active-ops/clear-stale")
+def api_clear_stale_locks(name: str) -> dict:
+    """Remove run-lock files whose recorded PID is no longer alive.
+
+    User-facing recovery for the case where a previous agent
+    subprocess crashed without removing its ``.lock`` file. Without
+    this, the running-op detector keeps reporting the project as
+    "running" forever and the user can't start new experiments or
+    resume the failed one.
+
+    Only locks where the PID is dead, the file is empty, or the
+    content is non-numeric get removed. Locks pointing at live PIDs
+    are LEFT ALONE — this isn't a kill operation.
+    """
+    from urika.dashboard.active_ops import clear_stale_locks
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    cleared = clear_stale_locks(summary.path)
+    return {
+        "cleared": [
+            {
+                "path": str(c.path),
+                "pid": c.pid,
+                "reason": c.reason,
+            }
+            for c in cleared
+        ],
+        "count": len(cleared),
+    }
+
+
 @router.get("/projects/{name}/active-ops")
 def api_active_ops(name: str) -> list[dict]:
     """Return the project's currently-running agent operations.
