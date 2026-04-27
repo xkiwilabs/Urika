@@ -23,6 +23,22 @@
       <span class="tag tag--{{ experiment_status | tag_status }}">{{ experiment_status }}</span>
       <span class="text-muted">{{ experiment.experiment_id }}</span>
       <span class="text-muted">{{ experiment.created_at }}</span>
+      {% if experiment_status in ("failed", "paused", "stopped") %}
+        {# Resume runs ``urika run --experiment <id> --resume`` for
+           this experiment. Only visible when there's something to
+           resume; otherwise the user uses the new-experiment modal. #}
+        <form
+          method="post"
+          action="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/resume"
+          hx-post="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/resume"
+          hx-swap="none"
+          style="margin-left: auto;"
+        >
+          <button type="submit" class="btn btn--small btn--primary">
+            Resume
+          </button>
+        </form>
+      {% endif %}
     </div>
   </div>
 

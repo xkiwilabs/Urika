@@ -83,6 +83,22 @@
               <span class="text-muted">{{ exp.last_touched }}</span>
             </div>
           </a>
+          {# Resume button — only on experiments that stopped without
+             completing. Sits outside the <a> wrapper so the click
+             doesn't navigate to the detail page. #}
+          {% if exp.status in ("failed", "paused", "stopped") %}
+            <form
+              method="post"
+              action="/api/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}/resume"
+              hx-post="/api/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}/resume"
+              hx-swap="none"
+              class="list-item-action"
+            >
+              <button type="submit" class="btn btn--small btn--primary">
+                Resume
+              </button>
+            </form>
+          {% endif %}
         </li>
       {% endfor %}
     </ul>
@@ -122,8 +138,15 @@
        toggles → audience → instructions, since the open-ended
        instructions field is the most attention-heavy and belongs at
        the end. #}
+    {# Three modes mapped onto the CLI:
+       * default  — single experiment, advisor picks the next method
+       * auto + capped     — meta-orchestrator runs up to N experiments
+       * auto + unlimited  — meta-orchestrator runs until the advisor stops
+       The Resume option is NOT here — it lives per-experiment on the
+       experiments list / experiment detail (only valid for already-
+       failed / paused / stopped experiments). #}
     <form
-      x-data="{ auto: false }"
+      x-data="{ auto: false, autoLimit: 'capped' }"
       hx-post="/api/projects/{{ project.name }}/run"
       hx-target="#new-experiment-feedback"
       hx-swap="innerHTML"
@@ -138,19 +161,32 @@
         <span>Auto mode (no confirmation prompts)</span>
       </label>
 
-      <div class="form-row" x-show="auto" x-cloak style="margin-left: 1.5rem;">
-        <label for="ne-max-experiments">Max experiments</label>
-        <input id="ne-max-experiments" name="max_experiments" type="number" min="1" value="5">
+      <div x-show="auto" x-cloak style="margin-left: 1.5rem;">
+        <label class="checkbox-row">
+          <input type="radio" name="auto_limit" value="capped"
+                 x-model="autoLimit" :disabled="!auto">
+          <span>Stop after a fixed number of experiments</span>
+        </label>
+        <div class="form-row" x-show="autoLimit === 'capped'" x-cloak
+             style="margin-left: 1.5rem;">
+          <label for="ne-max-experiments">Max experiments</label>
+          {# :disabled when auto is off OR the unlimited radio is picked
+             — disabled inputs are excluded from the form submission, so
+             the server sees no max_experiments value in those cases. #}
+          <input id="ne-max-experiments" name="max_experiments"
+                 type="number" min="1" value="5"
+                 :disabled="!auto || autoLimit !== 'capped'">
+        </div>
+        <label class="checkbox-row">
+          <input type="radio" name="auto_limit" value="unlimited"
+                 x-model="autoLimit" :disabled="!auto">
+          <span>Run until advisor decides to stop</span>
+        </label>
       </div>
 
       <label class="checkbox-row">
         <input type="checkbox" name="review_criteria" value="on">
         <span>Review criteria when met</span>
-      </label>
-
-      <label class="checkbox-row">
-        <input type="checkbox" name="resume" value="on">
-        <span>Resume paused/failed experiment</span>
       </label>
 
       <div class="form-row" style="margin-top: var(--space-4);">

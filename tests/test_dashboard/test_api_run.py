@@ -116,9 +116,14 @@ def test_run_post_forwards_optional_flags_to_spawn(run_client):
 
 
 def test_run_post_forwards_advanced_flags(run_client):
-    """Advanced toggles (auto/max_experiments/review_criteria/resume) from
-    the modal must be forwarded as kwargs to spawn_experiment_run so the
-    spawned ``urika run`` subprocess receives the right CLI flags."""
+    """Advanced toggles (auto/max_experiments/review_criteria) from the
+    modal must be forwarded as kwargs to spawn_experiment_run so the
+    spawned ``urika run`` subprocess receives the right CLI flags.
+
+    Resume is intentionally NOT in this set — it's a per-experiment
+    action exposed on the experiments list (failed/paused/stopped
+    rows get their own Resume button → POST /experiments/<id>/resume),
+    not a "new experiment" option."""
     client, spawn_calls, _ = run_client
     r = client.post(
         "/api/projects/alpha/run",
@@ -130,7 +135,6 @@ def test_run_post_forwards_advanced_flags(run_client):
             "auto": "on",
             "max_experiments": "3",
             "review_criteria": "on",
-            "resume": "on",
         },
     )
     assert r.status_code == 200
@@ -139,7 +143,8 @@ def test_run_post_forwards_advanced_flags(run_client):
     assert call.get("auto") is True
     assert call.get("max_experiments") == 3
     assert call.get("review_criteria") is True
-    assert call.get("resume") is True
+    # /run never sets resume — the new-experiment modal doesn't carry it.
+    assert call.get("resume") is False
 
 
 def test_run_post_max_experiments_without_auto_returns_422(run_client):
@@ -581,3 +586,87 @@ def test_run_post_other_experiment_stale_lock_does_not_block(run_client):
     )
     assert r.status_code == 200
     assert len(spawn_calls) == 1
+
+
+def test_run_post_default_mode_succeeds_with_no_extras(run_client):
+    """Pressing Run with no advanced options changed must just work.
+    Bug fix: the modal's Max-experiments input was hidden via x-show
+    when Auto was unchecked but still submitted its default value (5),
+    causing the server to 422 on
+    ``max_experiments requires --auto``. The modal now disables the
+    input when Auto is off so it's excluded from the form payload —
+    pin that contract here at the API layer."""
+    client, spawn_calls, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "audience": "expert",
+            "max_turns": "10",
+            "instructions": "",
+            # Auto unchecked → max_experiments not submitted at all.
+        },
+    )
+    assert r.status_code == 200
+    assert len(spawn_calls) == 1
+    call = spawn_calls[0]
+    assert call.get("auto") is False
+    assert call.get("max_experiments") is None
+
+
+def test_run_post_auto_unlimited_translates_to_high_cap(run_client):
+    """``auto_limit=unlimited`` → server sends a high max_experiments
+    cap to the CLI so meta-orchestrator runs in unlimited mode (CLI
+    sets ``meta_mode = "unlimited" if auto`` only when
+    --max-experiments is set)."""
+    client, spawn_calls, _ = run_client
+    r = client.post(
+        "/api/projects/alpha/run",
+        headers={"accept": "application/json"},
+        data={
+            "audience": "expert",
+            "max_turns": "10",
+            "instructions": "",
+            "auto": "on",
+            "auto_limit": "unlimited",
+        },
+    )
+    assert r.status_code == 200
+    call = spawn_calls[0]
+    assert call.get("auto") is True
+    assert call.get("max_experiments") == 999  # large effective cap
+
+
+# ---- POST /experiments/<id>/resume ----
+
+
+def test_resume_post_spawns_run_with_resume_flag(run_client):
+    """Resume on a per-experiment row spawns ``urika run --experiment
+    <id> --resume`` for that experiment, and HX-Redirects to its log."""
+    client, spawn_calls, proj = run_client
+    exp = proj / "experiments" / "exp-001"
+    exp.mkdir(parents=True, exist_ok=True)
+    (exp / "experiment.json").write_text("{}")
+
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/resume",
+        headers={"hx-request": "true"},
+    )
+    assert r.status_code == 200
+    assert r.headers.get("hx-redirect") == "/projects/alpha/experiments/exp-001/log"
+    assert len(spawn_calls) == 1
+    call = spawn_calls[0]
+    assert call.get("experiment_id") == "exp-001"
+    assert call.get("resume") is True
+
+
+def test_resume_post_404_for_unknown_project(run_client):
+    client, _, _ = run_client
+    r = client.post("/api/projects/nonexistent/experiments/exp-001/resume")
+    assert r.status_code == 404
+
+
+def test_resume_post_422_for_unknown_experiment(run_client):
+    client, _, _ = run_client
+    r = client.post("/api/projects/alpha/experiments/exp-bogus/resume")
+    assert r.status_code == 422

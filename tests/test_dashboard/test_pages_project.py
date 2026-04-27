@@ -538,19 +538,22 @@ def test_new_experiment_modal_shows_all_options_inline(
 ):
     """All run flags are surfaced inline — no Advanced collapsible.
     Users hit these every run; hiding them behind a toggle just adds
-    a click. The form's only Alpine state is ``auto`` (so the
-    Max experiments input can show conditionally)."""
+    a click. ``auto_limit`` lets the user pick capped vs unlimited
+    autonomous mode. ``resume`` is NOT in this modal — it's a
+    per-experiment action exposed on the experiments list."""
     r = client_with_projects.get("/projects/alpha/experiments")
     assert r.status_code == 200
     body = r.text
     # No Advanced toggle button.
     assert "showAdvanced" not in body
-    # All four flag fields render inline.
+    # All run-flag fields render inline.
     assert 'name="max_turns"' in body
     assert 'name="auto"' in body
     assert 'name="max_experiments"' in body
+    assert 'name="auto_limit"' in body
     assert 'name="review_criteria"' in body
-    assert 'name="resume"' in body
+    # Resume is per-experiment now, NOT a new-experiment option.
+    assert 'name="resume"' not in body
 
 
 def test_new_experiment_modal_audience_above_instructions(client_with_projects):

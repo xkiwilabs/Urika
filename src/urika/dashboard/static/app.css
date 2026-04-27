@@ -578,6 +578,17 @@ h4 {
   font-size: var(--fs-sm);
 }
 
+/* Inline metadata strip (status tag, ids, timestamps, optional action
+   button on the right via margin-left: auto). Used on experiment
+   detail and similar single-card pages. */
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
 /* Research question + description preserve newlines and wrap fully
    (rather than collapsing \n to whitespace and visually showing as
    a single line). */
@@ -606,12 +617,31 @@ h4 {
 
 /* ---------- 3. List item ---------- */
 .list-item {
-  display: block;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   margin-bottom: var(--space-2);
   transition: background var(--transition), border-color var(--transition);
+}
+
+/* Optional sibling action (e.g. Resume button on a failed/paused
+   experiment row). Sits on the right edge of the row, outside the
+   <a class="list-item-link"> wrapper so the click doesn't navigate. */
+.list-item > .list-item-link,
+.list-item > .list-item-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.list-item-action {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding-right: var(--space-5);
 }
 
 .list-item:last-child {

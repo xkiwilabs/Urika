@@ -1343,8 +1343,20 @@ async def api_project_run_post(name: str, request: Request):
     # Advanced options — mirror the corresponding ``urika run`` flags.
     auto = bool(form.get("auto"))
     max_experiments_raw = (form.get("max_experiments") or "").strip()
+    auto_limit = (form.get("auto_limit") or "capped").strip()
     review_criteria = bool(form.get("review_criteria"))
-    resume = bool(form.get("resume"))
+    # Resume is intentionally NOT read here — resume is a per-experiment
+    # action exposed on the experiments list (failed / paused / stopped
+    # rows get their own button), not a "new experiment" option.
+    resume = False
+
+    # Autonomous-unlimited mode: the user picked "Run until advisor
+    # decides to stop". The CLI's meta-orchestrator only runs the
+    # multi-experiment path when --max-experiments is set, but treats
+    # the value as just a cap (meta_mode = "unlimited" if --auto). Send
+    # a large cap so it acts as effectively unbounded.
+    if auto and auto_limit == "unlimited":
+        max_experiments_raw = "999"
 
     if audience not in VALID_AUDIENCES:
         raise HTTPException(
@@ -1999,6 +2011,41 @@ async def api_experiment_evaluate(name: str, exp_id: str, request: Request):
 
     if request.headers.get("hx-request") == "true":
         log_url = f"/projects/{name}/experiments/{exp_id}/log?type=evaluate"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
+    return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
+
+
+@router.post("/projects/{name}/experiments/{exp_id}/resume")
+async def api_experiment_resume(name: str, exp_id: str, request: Request):
+    """Resume a paused / failed / stopped experiment.
+
+    Spawns ``urika run --experiment <exp_id> --resume`` so the
+    orchestrator picks up where it left off. Validates the project
+    and experiment exist; runs the same privacy + already-running
+    pre-flight checks as the new-experiment endpoint. Returns an
+    HX-Redirect to the live log on HTMX, JSON elsewhere.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not (summary.path / "experiments" / exp_id).is_dir():
+        raise HTTPException(status_code=422, detail="Unknown experiment")
+
+    existing = _redirect_if_running(name, summary.path, "run", request)
+    if existing is not None:
+        return existing
+
+    _validate_privacy_endpoint(summary.path)
+
+    pid = spawn_experiment_run(
+        name,
+        summary.path,
+        exp_id,
+        resume=True,
+    )
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/experiments/{exp_id}/log"
         return Response(status_code=200, headers={"HX-Redirect": log_url})
     return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
 
