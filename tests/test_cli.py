@@ -187,7 +187,10 @@ class TestNewCommand:
         )
         assert result.exit_code != 0
         # Output is a JSON error blob carrying the fix instruction.
-        assert "private endpoint" in result.output.lower() or "endpoint" in result.output.lower()
+        assert (
+            "private endpoint" in result.output.lower()
+            or "endpoint" in result.output.lower()
+        )
 
     def test_json_hybrid_mode_without_endpoint_aborts(
         self, runner: CliRunner, urika_env: dict[str, str]
@@ -220,8 +223,7 @@ class TestNewCommand:
         # Seed a global endpoint
         settings = Path(urika_env["URIKA_HOME"]) / "settings.toml"
         settings.write_text(
-            "[privacy.endpoints.private]\n"
-            'base_url = "http://localhost:11434"\n',
+            '[privacy.endpoints.private]\nbase_url = "http://localhost:11434"\n',
             encoding="utf-8",
         )
         result = runner.invoke(
@@ -407,6 +409,120 @@ class TestExperimentListCommand:
         result = runner.invoke(cli, ["experiment", "list", "nope"], env=urika_env)
         assert result.exit_code != 0
         assert "not found" in result.output
+
+
+def _create_experiment_for_delete(
+    runner: CliRunner, urika_env: dict[str, str], exp_name: str = "baseline"
+) -> str:
+    """Create a project + one experiment, return the project_dir for assertions."""
+    _create_project(runner, urika_env)
+    result = runner.invoke(
+        cli,
+        ["experiment", "create", "test-proj", exp_name, "--hypothesis", "H"],
+        env=urika_env,
+    )
+    assert result.exit_code == 0, result.output
+    # Returns "exp-001\n"
+    return result.output.strip()
+
+
+class TestExperimentDeleteCommand:
+    def test_delete_force_moves_experiment(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        exp_id = _create_experiment_for_delete(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        exp_dir = project_dir / "experiments" / exp_id
+
+        result = runner.invoke(
+            cli,
+            ["experiment", "delete", "test-proj", exp_id, "--force"],
+            env=urika_env,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert f"Moved '{exp_id}' to" in result.output
+        assert not exp_dir.exists()
+        # Trash dir is project-local
+        trash_root = project_dir / "trash"
+        assert trash_root.exists()
+        moved = list(trash_root.iterdir())
+        assert len(moved) == 1
+        assert moved[0].name.startswith(f"{exp_id}-")
+
+    def test_delete_n_confirm_aborts(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        exp_id = _create_experiment_for_delete(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        exp_dir = project_dir / "experiments" / exp_id
+
+        result = runner.invoke(
+            cli,
+            ["experiment", "delete", "test-proj", exp_id],
+            env=urika_env,
+            input="n\n",
+        )
+
+        assert result.exit_code in (0, 1)
+        assert "Aborted" in result.output
+        # Experiment untouched
+        assert exp_dir.exists()
+
+    def test_delete_unknown_experiment_errors(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _create_project(runner, urika_env)
+
+        result = runner.invoke(
+            cli,
+            ["experiment", "delete", "test-proj", "exp-missing", "--force"],
+            env=urika_env,
+        )
+
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+    def test_delete_active_lock_errors(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        import os as _os
+
+        exp_id = _create_experiment_for_delete(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        exp_dir = project_dir / "experiments" / exp_id
+        lock_path = exp_dir / ".lock"
+        lock_path.write_text(str(_os.getpid()), encoding="utf-8")
+
+        result = runner.invoke(
+            cli,
+            ["experiment", "delete", "test-proj", exp_id, "--force"],
+            env=urika_env,
+        )
+
+        assert result.exit_code != 0
+        assert str(lock_path) in result.output
+        assert exp_dir.exists()
+
+    def test_delete_json_output(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        exp_id = _create_experiment_for_delete(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+
+        result = runner.invoke(
+            cli,
+            ["experiment", "delete", "test-proj", exp_id, "--force", "--json"],
+            env=urika_env,
+        )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["project_name"] == "test-proj"
+        assert data["experiment_id"] == exp_id
+        assert isinstance(data["trash_path"], str)
+        assert Path(data["trash_path"]).parent == project_dir / "trash"
+        assert Path(data["trash_path"]).exists()
 
 
 class TestResultsCommand:
@@ -638,8 +754,7 @@ class TestRunCommand:
         mock_sdk.assert_not_called()
         # Output should identify this as a dry run.
         assert (
-            "dry run" in result.output.lower()
-            or "would run" in result.output.lower()
+            "dry run" in result.output.lower() or "would run" in result.output.lower()
         )
         # Output should mention the pipeline stages.
         out_lower = result.output.lower()
@@ -677,9 +792,7 @@ class TestRunContinueFlag:
             ) as mock_run,
         ):
             mock_run.return_value = {"status": "completed", "turns": 3, "error": None}
-            result = runner.invoke(
-                cli, ["run", "test-proj", "--resume"], env=urika_env
-            )
+            result = runner.invoke(cli, ["run", "test-proj", "--resume"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert mock_run.call_args.kwargs["resume"] is True
         assert "Resuming experiment" in result.output
@@ -972,7 +1085,11 @@ class TestInspectCommand:
         # data/ directory exists from project creation but has no CSVs
         result = runner.invoke(cli, ["inspect", "test-proj"], env=urika_env)
         assert result.exit_code != 0
-        assert "No supported data files" in result.output or "No CSV files" in result.output or "No data/" in result.output
+        assert (
+            "No supported data files" in result.output
+            or "No CSV files" in result.output
+            or "No data/" in result.output
+        )
 
     def test_inspect_nonexistent_project(
         self, runner: CliRunner, urika_env: dict[str, str]

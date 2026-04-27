@@ -99,6 +99,20 @@
               </button>
             </form>
           {% endif %}
+          {# Delete button — visible on every row regardless of status.
+             Users want to clean up completed-but-throwaway experiments
+             too. Ghost style so it doesn't compete visually with the
+             primary Resume action. #}
+          <form
+            class="list-item-action"
+            hx-delete="/api/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}"
+            hx-confirm="Move {{ exp.experiment_id }} to trash? Files preserved at {{ project.path }}/trash/."
+            hx-swap="none"
+          >
+            <button type="submit" class="btn btn--small btn--ghost">
+              Delete
+            </button>
+          </form>
         </li>
       {% endfor %}
     </ul>

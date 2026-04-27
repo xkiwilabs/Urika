@@ -1527,6 +1527,18 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
     active = list_active_operations(name, summary.path)
     running_by_exp = {(op.type, op.experiment_id): op for op in active}
 
+    # Danger zone: block trash if a live run-lock PID file is present
+    # under the experiment dir. Reuse the core helper so the UI matches
+    # the server-side rule exactly (and JSON write mutexes don't trigger
+    # a false positive).
+    from urika.core.project_delete import _find_active_lock
+
+    active_lock_path: Path | None = None
+    try:
+        active_lock_path = _find_active_lock(exp_dir)
+    except OSError:
+        active_lock_path = None
+
     templates = request.app.state.templates
     ctx = {
         "request": request,
@@ -1542,5 +1554,6 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
         # Banner reads the flat list — include it alongside the
         # per-button (type, exp_id) map.
         "active_ops": active,
+        "active_lock_path": active_lock_path,
     }
     return templates.TemplateResponse("experiment_detail.html", ctx)

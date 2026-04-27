@@ -184,6 +184,46 @@
     {% endif %}
   </section>
 
+  {# ---- Danger zone -----------------------------------------------------
+     Move-to-trash for the experiment. Mirrors the project-settings
+     Danger zone (commit 511dc075): type-name confirm + HX-Redirect on
+     success. Active-lock guard renders a disabled button with the
+     blocking lock path so the user knows what to stop first.
+  #}
+  <section class="card danger-zone">
+    <h2>Danger zone</h2>
+    <p class="text-muted">
+      Moving the experiment to trash removes it from the experiments
+      list and moves its folder to
+      <code>{{ project.path }}/trash/{{ experiment.experiment_id }}-&lt;timestamp&gt;/</code>.
+      Files are preserved; empty the trash folder manually when you're sure.
+    </p>
+    {% if active_lock_path %}
+      <p class="text-warning">
+        Stop the running process first &mdash; lock file present at
+        <code>{{ active_lock_path }}</code>.
+      </p>
+      <button class="btn btn--danger" type="button" disabled>Move to trash</button>
+    {% else %}
+      <div x-data="{ typed: '' }" style="display: flex; flex-direction: column; gap: 0.5rem; max-width: 480px;">
+        <input
+          type="text"
+          class="input"
+          placeholder="Type the experiment id to confirm"
+          x-model="typed"
+          style="font: inherit; padding: 0.4rem;"
+        >
+        <button
+          class="btn btn--danger"
+          type="button"
+          :disabled="typed !== '{{ experiment.experiment_id }}'"
+          hx-delete="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}"
+          hx-confirm="Move '{{ experiment.experiment_id }}' to trash? Files are preserved at {{ project.path }}/trash/."
+        >Move to trash</button>
+      </div>
+    {% endif %}
+  </section>
+
   {% call modal('present', action_label("Generate", "presentation", has_presentation)) %}
     <form
       hx-post="/api/projects/{{ project.name }}/present"

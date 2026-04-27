@@ -218,6 +218,56 @@ def test_experiment_detail_404_for_unknown_project(client_with_runs):
     assert r.status_code == 404
 
 
+def test_experiment_detail_shows_danger_zone(client_with_runs):
+    """Type-name confirm + Move-to-trash button gated on the exp_id."""
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001")
+    assert r.status_code == 200
+    body = r.text
+    assert "Danger zone" in body
+    assert 'hx-delete="/api/projects/alpha/experiments/exp-001"' in body
+    assert "typed !== 'exp-001'" in body
+    # Trash dir explanation mentions the project-local trash path
+    assert "trash" in body
+
+
+def test_experiment_detail_danger_zone_disabled_when_locked(
+    tmp_path: Path, monkeypatch
+):
+    """A live .lock under the experiment dir disables the Move-to-trash button."""
+    import os
+
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    lock = proj / "experiments" / "exp-001" / ".lock"
+    lock.write_text(str(os.getpid()))
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    r = client.get("/projects/alpha/experiments/exp-001")
+    assert r.status_code == 200
+    body = r.text
+    assert "Danger zone" in body
+    # The blocking lock path is rendered for the user.
+    assert str(lock) in body
+    # The disabled button is rendered (no hx-delete on the disabled variant).
+    assert "Move to trash" in body
+    assert 'type="button" disabled' in body
+
+
+def test_experiments_list_shows_delete_button_for_every_row(client_with_experiments):
+    """Every experiment row gets a Delete button regardless of status."""
+    r = client_with_experiments.get("/projects/alpha/experiments")
+    assert r.status_code == 200
+    body = r.text
+    # The seven experiments are all "completed"; a Delete button must
+    # still appear for each one.
+    for i in range(1, 8):
+        assert f'hx-delete="/api/projects/alpha/experiments/exp-{i:03d}"' in body
+
+
 def _make_project_with_methods(root: Path, name: str, methods: list[dict]) -> Path:
     proj = root / name
     proj.mkdir(parents=True)
@@ -491,9 +541,7 @@ def test_new_experiment_modal_has_no_mode_field(client_with_projects):
     assert 'name="mode"' not in body
 
 
-def test_new_experiment_modal_pre_selects_project_audience(
-    tmp_path: Path, monkeypatch
-):
+def test_new_experiment_modal_pre_selects_project_audience(tmp_path: Path, monkeypatch):
     """The Audience dropdown must pre-select the project's configured
     audience — same pattern as project_home.html."""
     from fastapi.testclient import TestClient
@@ -633,6 +681,7 @@ def test_run_log_presentation_link_opens_in_new_tab(client_run_log):
     body = r.text
     # Find the presentation link and assert the attrs sit on the same tag.
     import re
+
     match = re.search(
         r'<a[^>]*id="link-presentation"[^>]*>',
         body,
@@ -640,12 +689,8 @@ def test_run_log_presentation_link_opens_in_new_tab(client_run_log):
     )
     assert match, "presentation link not found on run log page"
     tag = match.group(0)
-    assert 'target="_blank"' in tag, (
-        f"presentation link missing target=_blank: {tag!r}"
-    )
-    assert 'rel="noopener"' in tag, (
-        f"presentation link missing rel=noopener: {tag!r}"
-    )
+    assert 'target="_blank"' in tag, f"presentation link missing target=_blank: {tag!r}"
+    assert 'rel="noopener"' in tag, f"presentation link missing rel=noopener: {tag!r}"
 
 
 def test_run_log_page_type_unknown_falls_back_to_run(client_run_log):

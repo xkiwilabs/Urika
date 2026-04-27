@@ -478,3 +478,24 @@ Commit: `docs(smoke): project delete + trash smoke checklist`
 Use **superpowers:subagent-driven-development**. Dispatch one subagent per task in order. Phase 1 must complete before any other phase starts (everything depends on the core helper). Phases 2 / 3 / 4 can each go in their own subagent batch sequentially. Phase 5 closes out.
 
 **No `Co-Authored-By: Claude` lines in any commit.**
+
+---
+
+## Extension — experiment-level trash (2026-04-26)
+
+Same trash semantics ported one level down. Lets users discard a bad/wrong experiment, clean up clutter before sharing, or recover from a crashed experiment that materialized but never wrote progress.
+
+**Surfaces:**
+- Core helper: `src/urika/core/experiment_delete.py` (`trash_experiment(project_path, project_name, exp_id)`)
+- CLI: `urika experiment delete <project> <exp_id>` with `--force` and `--json`
+- Dashboard API: `DELETE /api/projects/<n>/experiments/<exp_id>` (404 unknown project, 422 unknown experiment / active lock, HX-Redirect to `/projects/<n>/experiments` on HTMX)
+- Dashboard UI: small ghost-style Delete button on every experiment row (not gated on status), and a Danger zone on the experiment detail page mirroring the project-settings type-name confirm
+
+**Differences from the project-trash design:**
+- Trash root is **project-local** (`<project>/trash/<exp_id>-<ts>/`), NOT `~/.urika/trash/`. Keeps related artifacts together, survives project rename/move, avoids cross-project name collisions.
+- Reuses `_is_active_run_lock`, `_pid_is_alive`, `_urika_home`, `_find_active_lock`, `_timestamp`, `MANIFEST_NAME` from `urika.core.project_delete`. Only the result dataclass + the orchestration shape are duplicated.
+- Manifest carries `kind: "experiment"`, `project_name`, `experiment_id` (vs. `registered_name` for projects). Deletion-log lines carry `kind: "experiment"` too so a single tail of `~/.urika/deletion-log.jsonl` can mix both.
+- No registry mutation — experiments aren't in the central registry.
+- No `registry_only` branch (an experiment dir either exists or doesn't; if it doesn't, that's a 422/ExperimentNotFoundError).
+
+**Tests:** 22 new (8 core + 5 CLI + 6 API + 3 page render). Full suite goes from 2171 → 2193.

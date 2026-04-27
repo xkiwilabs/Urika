@@ -262,6 +262,51 @@ async def api_delete_project(name: str, request: Request):
     return JSONResponse(payload)
 
 
+@router.delete("/projects/{name}/experiments/{exp_id}")
+async def api_delete_experiment(name: str, exp_id: str, request: Request):
+    """Move an experiment to ``<project>/trash/`` and return the result.
+
+    Thin wrapper over :func:`urika.core.experiment_delete.trash_experiment`.
+    Active ``.lock`` files anywhere under the experiment block the
+    operation (422). Unknown project → 404, unknown experiment → 422.
+
+    HTMX callers receive an ``HX-Redirect: /projects/<name>/experiments``
+    header so the page navigates back to the experiments list (which no
+    longer contains the trashed experiment).
+    """
+    from urika.core.experiment_delete import (
+        ActiveExperimentError,
+        ExperimentNotFoundError,
+        trash_experiment,
+    )
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not (summary.path / "experiments" / exp_id).is_dir():
+        raise HTTPException(status_code=422, detail="Unknown experiment")
+
+    try:
+        result = trash_experiment(summary.path, name, exp_id)
+    except ExperimentNotFoundError:
+        raise HTTPException(status_code=422, detail="Unknown experiment")
+    except ActiveExperimentError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if request.headers.get("hx-request") == "true":
+        return Response(
+            status_code=200,
+            headers={"HX-Redirect": f"/projects/{name}/experiments"},
+        )
+    return JSONResponse(
+        {
+            "experiment_id": result.experiment_id,
+            "trash_path": str(result.trash_path),
+        }
+    )
+
+
 @router.put("/projects/{name}/settings")
 async def api_project_settings_put(name: str, request: Request):
     """Atomically update project settings and record per-field revisions.
