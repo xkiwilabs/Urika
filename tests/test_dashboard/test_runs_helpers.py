@@ -175,6 +175,42 @@ def test_spawn_advisor_blank_question_raises(tmp_path):
         spawn_advisor("alpha", tmp_path, "   ")
 
 
+def test_spawn_experiment_run_advisor_first_appends_flag(monkeypatch, tmp_path):
+    """When the dashboard's "Ask advisor first" checkbox is on, the spawn
+    helper must append ``--advisor-first`` to the CLI command so the
+    spawned ``urika run`` runs the advisor before the orchestrator loop.
+    """
+    from urika.dashboard.runs import spawn_experiment_run
+
+    (tmp_path / "experiments" / "exp-001").mkdir(parents=True)
+    cmd = _captured_argv(
+        monkeypatch,
+        spawn_experiment_run,
+        "alpha",
+        tmp_path,
+        "exp-001",
+        advisor_first=True,
+    )
+    assert "--advisor-first" in cmd
+
+
+def test_spawn_experiment_run_advisor_first_omitted_when_false(monkeypatch, tmp_path):
+    """When the checkbox is off (the default), the spawn helper must NOT
+    pass ``--advisor-first`` so the CLI skips the pre-loop advisor pass.
+    """
+    from urika.dashboard.runs import spawn_experiment_run
+
+    (tmp_path / "experiments" / "exp-001").mkdir(parents=True)
+    cmd = _captured_argv(
+        monkeypatch,
+        spawn_experiment_run,
+        "alpha",
+        tmp_path,
+        "exp-001",
+    )
+    assert "--advisor-first" not in cmd
+
+
 # ---------- Detached-spawn invariants ----------
 #
 # The whole point of ``_spawn_detached`` is that the child outlives

@@ -154,215 +154,91 @@
        The Resume option is NOT here — it lives per-experiment on the
        experiments list / experiment detail (only valid for already-
        failed / paused / stopped experiments). #}
-    {# Three-step state machine for the advisor-first flow:
-       * compose  — main form (max turns, auto, audience, instructions)
-       * asking   — thinking placeholder while the advisor responds
-       * review   — editable name + hypothesis + instructions pre-filled
-                    from the advisor's suggestion, then submit to /run
-
-       When advisor-first is unchecked (or skipped via "Back to edit"
-       from review), the form posts directly to /run with empty name
-       and hypothesis — same as before this feature was added. #}
-    <div
-      x-data="{
-        step: 'compose',
-        advisorFirst: true,
-        suggestion: { name: '', hypothesis: '', instructions: '' },
-        error: null,
-        async askAdvisor() {
-          this.step = 'asking';
-          this.error = null;
-          try {
-            const fd = new FormData(this.$refs.composeForm);
-            const r = await fetch('/api/projects/{{ project.name }}/suggest-experiment', {
-              method: 'POST', body: fd
-            });
-            if (!r.ok) {
-              let detail = await r.text();
-              try { detail = JSON.parse(detail).detail || detail; } catch (e) {}
-              throw new Error(detail);
-            }
-            const data = await r.json();
-            this.suggestion = {
-              name: data.name || '',
-              hypothesis: data.hypothesis || '',
-              instructions: data.instructions || '',
-            };
-            this.step = 'review';
-          } catch (e) {
-            this.error = e.message || String(e);
-            this.step = 'compose';
-          }
-        },
-        composeSubmit() {
-          if (this.advisorFirst) {
-            this.askAdvisor();
-            return false;
-          }
-          this.$refs.runForm.requestSubmit();
-          return false;
-        }
-      }"
+    {# When the "Ask advisor first" checkbox is on, the advisor runs as
+       the FIRST step inside ``urika run`` (via --advisor-first) and its
+       output streams in the experiment run log alongside Planning /
+       Task / Evaluator. No separate sync popup, no review step. #}
+    <form
+      x-data="{ auto: false, autoLimit: 'capped' }"
+      hx-post="/api/projects/{{ project.name }}/run"
+      hx-target="#new-experiment-feedback"
+      hx-swap="innerHTML"
     >
-      {# ----------------------------------------------------------------
-         STEP 1: compose — main form with advisor-first checkbox
-         ---------------------------------------------------------------- #}
-      <form
-        x-show="step === 'compose'"
-        x-ref="composeForm"
-        @submit.prevent="composeSubmit()"
-        x-data="{ auto: false, autoLimit: 'capped' }"
-      >
-        <label class="checkbox-row" style="margin-bottom: 0.5rem;">
-          <input type="checkbox" x-model="advisorFirst">
-          <span>
-            <strong>Ask advisor to suggest the next experiment</strong>
-            <small class="text-muted" style="display: block;">
-              Uses the advisor agent to pick a name, hypothesis, and
-              starting direction based on the project's current state.
-            </small>
-          </span>
-        </label>
+      <label class="checkbox-row" style="margin-bottom: 0.5rem;">
+        <input type="checkbox" name="advisor_first" value="on" checked>
+        <span>
+          <strong>Ask advisor to suggest the next experiment first</strong>
+          <small class="text-muted" style="display: block;">
+            The advisor reviews the project and proposes a name +
+            direction before the planning agent picks the first method.
+            The advisor's output appears in the run log alongside the
+            other agents.
+          </small>
+        </span>
+      </label>
 
-        <div x-show="error" x-cloak class="text-muted" style="color: var(--color-danger, #c00); margin-bottom: 0.5rem;">
-          <span x-text="error"></span>
-        </div>
-
-        <div class="form-row">
-          <label for="ne-max-turns">Max turns</label>
-          <input id="ne-max-turns" name="max_turns" type="number" min="1" value="10">
-        </div>
-
-        <label class="checkbox-row">
-          <input type="checkbox" name="auto" value="on" x-model="auto">
-          <span>Auto mode (no confirmation prompts)</span>
-        </label>
-
-        <div x-show="auto" x-cloak style="margin-left: 1.5rem;">
-          <label class="checkbox-row">
-            <input type="radio" name="auto_limit" value="capped"
-                   x-model="autoLimit" :disabled="!auto">
-            <span>Stop after a fixed number of experiments</span>
-          </label>
-          <div class="form-row" x-show="autoLimit === 'capped'" x-cloak
-               style="margin-left: 1.5rem;">
-            <label for="ne-max-experiments">Max experiments</label>
-            {# :disabled when auto is off OR the unlimited radio is picked
-               — disabled inputs are excluded from the form submission, so
-               the server sees no max_experiments value in those cases. #}
-            <input id="ne-max-experiments" name="max_experiments"
-                   type="number" min="1" value="5"
-                   :disabled="!auto || autoLimit !== 'capped'">
-          </div>
-          <label class="checkbox-row">
-            <input type="radio" name="auto_limit" value="unlimited"
-                   x-model="autoLimit" :disabled="!auto">
-            <span>Run until advisor decides to stop</span>
-          </label>
-        </div>
-
-        <label class="checkbox-row">
-          <input type="checkbox" name="review_criteria" value="on">
-          <span>Review criteria when met</span>
-        </label>
-
-        <div class="form-row" style="margin-top: var(--space-4);">
-          <label for="ne-audience">Audience</label>
-          <select id="ne-audience" name="audience">
-            {% for a in valid_audiences %}
-              <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
-            {% endfor %}
-          </select>
-        </div>
-
-        <div class="form-row">
-          <label for="ne-instructions">Instructions (optional)</label>
-          <textarea
-            id="ne-instructions"
-            name="instructions"
-            rows="4"
-            placeholder="Optional — leave blank to let the planning agent decide."
-          ></textarea>
-        </div>
-
-        <div class="form-actions">
-          <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
-          <button type="submit" class="btn btn--primary">
-            <span x-show="advisorFirst">Ask advisor</span>
-            <span x-show="!advisorFirst">Run experiment</span>
-          </button>
-        </div>
-      </form>
-
-      {# ----------------------------------------------------------------
-         STEP 2: asking — thinking placeholder while the advisor responds
-         ---------------------------------------------------------------- #}
-      <div x-show="step === 'asking'" x-cloak>
-        <p class="text-muted" style="margin-bottom: 0.5rem;">
-          Asking the advisor for a suggestion…
-        </p>
-        {% include "_thinking.html" %}
+      <div class="form-row">
+        <label for="ne-max-turns">Max turns</label>
+        <input id="ne-max-turns" name="max_turns" type="number" min="1" value="10">
       </div>
 
-      {# ----------------------------------------------------------------
-         STEP 3: review — editable suggestion, posts to /run on confirm
-         ---------------------------------------------------------------- #}
-      <form
-        x-show="step === 'review'"
-        x-ref="runForm"
-        x-cloak
-        hx-post="/api/projects/{{ project.name }}/run"
-        hx-target="#new-experiment-feedback"
-        hx-swap="innerHTML"
-      >
-        <p class="text-muted" style="margin-bottom: 0.5rem;">
-          Review the advisor's suggestion. You can edit any field
-          before running.
-        </p>
+      <label class="checkbox-row">
+        <input type="checkbox" name="auto" value="on" x-model="auto">
+        <span>Auto mode (no confirmation prompts)</span>
+      </label>
 
-        <div class="form-row">
-          <label for="ne-review-name">Name</label>
-          <input id="ne-review-name" name="name" type="text" x-model="suggestion.name">
+      <div x-show="auto" x-cloak style="margin-left: 1.5rem;">
+        <label class="checkbox-row">
+          <input type="radio" name="auto_limit" value="capped"
+                 x-model="autoLimit" :disabled="!auto">
+          <span>Stop after a fixed number of experiments</span>
+        </label>
+        <div class="form-row" x-show="autoLimit === 'capped'" x-cloak
+             style="margin-left: 1.5rem;">
+          <label for="ne-max-experiments">Max experiments</label>
+          {# :disabled when auto is off OR the unlimited radio is picked
+             — disabled inputs are excluded from the form submission, so
+             the server sees no max_experiments value in those cases. #}
+          <input id="ne-max-experiments" name="max_experiments"
+                 type="number" min="1" value="5"
+                 :disabled="!auto || autoLimit !== 'capped'">
         </div>
+        <label class="checkbox-row">
+          <input type="radio" name="auto_limit" value="unlimited"
+                 x-model="autoLimit" :disabled="!auto">
+          <span>Run until advisor decides to stop</span>
+        </label>
+      </div>
 
-        <div class="form-row">
-          <label for="ne-review-hypothesis">Hypothesis</label>
-          <textarea id="ne-review-hypothesis" name="hypothesis" rows="3"
-                    x-model="suggestion.hypothesis"></textarea>
-        </div>
+      <label class="checkbox-row">
+        <input type="checkbox" name="review_criteria" value="on">
+        <span>Review criteria when met</span>
+      </label>
 
-        <div class="form-row">
-          <label for="ne-review-instructions">Instructions</label>
-          <textarea id="ne-review-instructions" name="instructions" rows="6"
-                    x-model="suggestion.instructions"></textarea>
-        </div>
+      <div class="form-row" style="margin-top: var(--space-4);">
+        <label for="ne-audience">Audience</label>
+        <select id="ne-audience" name="audience">
+          {% for a in valid_audiences %}
+            <option value="{{ a }}" {% if a == project.audience %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-        {# Hidden fields carry forward the compose-step values. The
-           form submitted in this step posts to /run, so it needs all
-           the same form fields the compose step would have posted. #}
-        <input type="hidden" name="max_turns"
-               :value="$refs.composeForm?.querySelector('[name=max_turns]')?.value || '10'">
-        <input type="hidden" name="audience"
-               :value="$refs.composeForm?.querySelector('[name=audience]')?.value || ''">
-        <input type="hidden" name="auto"
-               :value="$refs.composeForm?.querySelector('[name=auto]')?.checked ? 'on' : ''">
-        <input type="hidden" name="auto_limit"
-               :value="$refs.composeForm?.querySelector('[name=auto_limit]:checked')?.value || 'capped'">
-        <input type="hidden" name="max_experiments"
-               :value="(() => {
-                 const el = $refs.composeForm?.querySelector('[name=max_experiments]');
-                 return el && !el.disabled ? el.value : '';
-               })()">
-        <input type="hidden" name="review_criteria"
-               :value="$refs.composeForm?.querySelector('[name=review_criteria]')?.checked ? 'on' : ''">
+      <div class="form-row">
+        <label for="ne-instructions">Instructions (optional)</label>
+        <textarea
+          id="ne-instructions"
+          name="instructions"
+          rows="4"
+          placeholder="Optional — leave blank to let the planning agent decide."
+        ></textarea>
+      </div>
 
-        <div class="form-actions">
-          <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
-          <button type="button" class="btn btn--ghost" @click="step = 'compose'">Back to edit</button>
-          <button type="submit" class="btn btn--primary">Run experiment</button>
-          <span id="new-experiment-feedback" class="text-muted"></span>
-        </div>
-      </form>
-    </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run experiment</button>
+        <span id="new-experiment-feedback" class="text-muted"></span>
+      </div>
+    </form>
   {% endcall %}
 {% endblock %}

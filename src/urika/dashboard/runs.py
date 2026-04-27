@@ -182,6 +182,7 @@ def spawn_experiment_run(
     max_experiments: int | None = None,
     review_criteria: bool = False,
     resume: bool = False,
+    advisor_first: bool = False,
     executable: str | None = None,
 ) -> int:
     """Spawn ``urika run <project> --experiment <exp_id>`` as a subprocess.
@@ -201,6 +202,9 @@ def spawn_experiment_run(
     * ``max_experiments`` → ``--max-experiments`` (only meaningful with auto)
     * ``review_criteria`` → ``--review-criteria``
     * ``resume`` → ``--resume`` (resume an interrupted run)
+    * ``advisor_first`` → ``--advisor-first`` (run the advisor before the
+      orchestrator loop so the user sees its output stream in run.log
+      alongside the other agents)
 
     Empty/None/False values are simply not appended to the command line.
 
@@ -233,6 +237,8 @@ def spawn_experiment_run(
         cmd.append("--review-criteria")
     if resume:
         cmd.append("--resume")
+    if advisor_first:
+        cmd.append("--advisor-first")
 
     env = _build_env(no_tee=True)
     return _spawn_detached(cmd, env, log_path, lock_path)

@@ -131,30 +131,34 @@ def test_experiments_page_renders_sort_dropdown(client_with_experiments):
 
 
 def test_new_experiment_modal_has_advisor_first_checkbox(client_with_experiments):
-    """The redesigned modal shows an "Ask advisor to suggest the next
-    experiment" checkbox at the top, bound to ``advisorFirst`` Alpine
-    state. Default checked (the user opts out, not in)."""
+    """The redesigned modal shows an "Ask advisor first" checkbox at the
+    top of the new-experiment form. Default checked — the user opts
+    out, not in. The checkbox posts ``advisor_first=on`` to /run, which
+    threads it through to the CLI's --advisor-first flag."""
     r = client_with_experiments.get("/projects/alpha/experiments")
     assert r.status_code == 200
     body = r.text
     assert "Ask advisor to suggest the next experiment" in body
-    assert "advisorFirst" in body
-    # Default true: state machine initializer sets advisorFirst: true.
-    assert "advisorFirst: true" in body
+    assert 'name="advisor_first"' in body
+    # Default checked.
+    assert 'type="checkbox" name="advisor_first" value="on" checked' in body
 
 
-def test_new_experiment_modal_uses_three_step_state_machine(client_with_experiments):
-    """The modal switches between compose / asking / review steps via
-    ``step`` Alpine state. All three branches must exist in the markup."""
+def test_new_experiment_modal_no_three_step_state_machine(client_with_experiments):
+    """Regression guard: the old advisor-first implementation used a
+    three-step Alpine state machine (compose / asking / review) with a
+    separate /suggest-experiment endpoint. The simpler shape replaces
+    that with a single checkbox + CLI flag passthrough — none of the
+    old state markers must be present."""
     r = client_with_experiments.get("/projects/alpha/experiments")
     body = r.text
-    # The Alpine state machine has three explicit step values.
-    assert "step === 'compose'" in body
-    assert "step === 'asking'" in body
-    assert "step === 'review'" in body
-    # The Review step posts to /run with an editable name + hypothesis.
-    assert 'name="name"' in body
-    assert 'name="hypothesis"' in body
+    assert "step === 'compose'" not in body
+    assert "step === 'asking'" not in body
+    assert "step === 'review'" not in body
+    assert "suggest-experiment" not in body
+    # The Review-step name/hypothesis inputs are gone.
+    assert 'name="name"' not in body
+    assert 'name="hypothesis"' not in body
 
 
 def test_experiments_page_404_for_unknown(client_with_projects):
@@ -693,24 +697,20 @@ def test_experiments_page_modal_includes_audience_options(
     assert 'value="expert"' in body
 
 
-def test_new_experiment_modal_compose_step_has_no_name_or_hypothesis_field(
+def test_new_experiment_modal_has_no_name_or_hypothesis_field(
     client_with_projects,
 ):
-    """The Compose step (the initial form) must not ask for name or
-    hypothesis. Those only appear in the Review step, populated by the
-    advisor's suggestion. The compose-step ids ``ne-name`` /
-    ``ne-hypothesis`` (which the old single-step modal used) must
-    therefore not appear; the review-step ids ``ne-review-name`` /
-    ``ne-review-hypothesis`` are allowed and expected."""
+    """The redesigned modal mirrors ``urika run`` exactly: no name, no
+    hypothesis, no mode. Either the advisor-first pre-loop step (when
+    the checkbox is on) or the orchestrator's turn-1 backfill (when
+    it's off) fills both fields once the run actually starts."""
     r = client_with_projects.get("/projects/alpha/experiments")
     assert r.status_code == 200
     body = r.text
     assert 'id="ne-name"' not in body
     assert 'id="ne-hypothesis"' not in body
-    # The Review step DOES expose name/hypothesis fields (advisor-first
-    # flow); their distinct ids prevent confusion with the old design.
-    assert 'id="ne-review-name"' in body
-    assert 'id="ne-review-hypothesis"' in body
+    assert 'name="name"' not in body
+    assert 'name="hypothesis"' not in body
 
 
 def test_new_experiment_modal_has_no_mode_field(client_with_projects):

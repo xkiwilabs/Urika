@@ -774,53 +774,72 @@ class TestRunCommand:
         )
         assert result.exit_code != 0
 
-    def test_run_no_advisor_skips_determine_next_experiment(
+    def test_run_advisor_first_flag_calls_advisor_before_loop(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
-        """``urika run --no-advisor`` must skip the advisor consultation
-        in ``_determine_next_experiment`` and create an empty experiment
-        directly, leaving name/hypothesis to the orchestrator's turn-1
-        backfill. Mirror of the dashboard's "advisor-first" checkbox
-        when unchecked.
+        """``urika run <project> --experiment <id> --advisor-first`` must
+        call the pre-loop advisor helper, which writes the suggested name
+        + hypothesis into experiment.json before the orchestrator loop
+        starts. Mirrors the dashboard handoff: the modal pre-creates an
+        empty experiment with the advisor_first flag set, and the CLI
+        runs the advisor as the first visible step in the run log.
         """
         _create_project(runner, urika_env)
-        # Pre-create one completed experiment so the "no pending" branch
-        # is taken (which is where _determine_next_experiment lives).
-        runner.invoke(
+        result_create = runner.invoke(
             cli,
-            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
+            ["experiment", "create", "test-proj", "", "--hypothesis", ""],
             env=urika_env,
         )
-        # Mark the existing experiment "completed" so it isn't picked
-        # up as pending — forces the new-experiment branch.
+        assert result_create.exit_code == 0, result_create.output
+
         project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
-        for exp_dir in (project_dir / "experiments").iterdir():
-            progress_path = exp_dir / "progress.json"
-            progress_path.write_text(
-                json.dumps(
-                    {
-                        "experiment_id": exp_dir.name,
-                        "status": "completed",
-                        "runs": [],
-                    }
-                )
+        exp_dir = next((project_dir / "experiments").iterdir())
+        exp_id = exp_dir.name
+
+        def fake_advisor_first(
+            project_path, project_name, experiment_id, *, instructions="", panel=None
+        ):
+            # Stub the advisor: backfill the experiment.json the way the
+            # real helper would, then return the merged instructions.
+            exp_json_path = (
+                project_path / "experiments" / experiment_id / "experiment.json"
             )
+            data = json.loads(exp_json_path.read_text(encoding="utf-8"))
+            data["name"] = "stub-suggested-name"
+            data["hypothesis"] = "stub-suggested-hypothesis"
+            exp_json_path.write_text(
+                json.dumps(data, indent=2) + "\n", encoding="utf-8"
+            )
+            return "stub advisor instructions"
 
         with (
             patch("urika.agents.adapters.claude_sdk.ClaudeSDKRunner"),
-            patch("urika.cli.run._determine_next_experiment") as mock_determine,
+            patch(
+                "urika.cli.run._run_advisor_first_for_experiment",
+                side_effect=fake_advisor_first,
+            ) as mock_advisor,
             patch(
                 "urika.orchestrator.run_experiment", new_callable=AsyncMock
             ) as mock_run,
         ):
             mock_run.return_value = {"status": "completed", "turns": 1, "error": None}
             result = runner.invoke(
-                cli, ["run", "test-proj", "--no-advisor"], env=urika_env
+                cli,
+                ["run", "test-proj", "--experiment", exp_id, "--advisor-first"],
+                env=urika_env,
             )
         assert result.exit_code == 0, result.output
-        # Advisor consultation must NOT have been called.
-        mock_determine.assert_not_called()
-        # An experiment was nonetheless created and run.
+        # The advisor stub was called with the experiment id we created.
+        assert mock_advisor.called
+        call_args = mock_advisor.call_args
+        assert call_args.args[2] == exp_id
+        # And it ran before the orchestrator loop, with the experiment
+        # backfilled by the time the loop got the file.
+        exp_json = json.loads(
+            (project_dir / "experiments" / exp_id / "experiment.json").read_text()
+        )
+        assert exp_json["name"] == "stub-suggested-name"
+        assert exp_json["hypothesis"] == "stub-suggested-hypothesis"
         assert mock_run.called
 
 
