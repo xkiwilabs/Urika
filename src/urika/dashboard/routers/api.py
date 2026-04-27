@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import signal
 import tomllib
 from pathlib import Path
 
@@ -2366,14 +2368,66 @@ async def api_run_respond(name: str, exp_id: str, request: Request):
 
 @router.post("/projects/{name}/runs/{exp_id}/stop")
 def api_run_stop(name: str, exp_id: str) -> dict:
-    """Request a graceful stop of an in-flight experiment run.
+    """Send SIGTERM to the running experiment subprocess.
 
-    Writes ``"stop"`` to ``<project>/.urika/pause_requested``; the
-    orchestrator's PauseController polls that file and tears the run
-    down at the next safe checkpoint. The flag is project-level
-    (only one active run per project today), so ``exp_id`` is echoed
-    back for symmetry with the streaming/launcher URLs but does not
-    influence the file path.
+    Reads the PID from ``<exp>/.lock`` and signals it. The orchestrator
+    subprocess's in-flight HTTP request to the LLM gets a
+    ``ConnectionResetError`` (which the runner catches) and the run
+    tears down. The drainer thread cleans up the lock file. Status
+    will be ``stopped`` in the orchestrator's final teardown — or
+    ``failed`` if it dies before reaching its cleanup path. Both are
+    resumable from the dashboard's Resume button.
+
+    Returns ``{"status": "stop_signaled", "pid": pid}`` on success or
+    ``{"status": "not_running"}`` when no live process is found
+    (lock missing, unreadable, or PID dead).
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    lock_path = summary.path / "experiments" / exp_id / ".lock"
+    if not lock_path.exists():
+        return {"status": "not_running"}
+    try:
+        pid_text = lock_path.read_text(encoding="utf-8").strip()
+        pid = int(pid_text)
+    except (OSError, ValueError):
+        return {"status": "not_running"}
+
+    # Probe whether the PID is still alive by sending signal 0
+    # (existence check; raises ProcessLookupError if the process is gone).
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return {"status": "not_running"}
+    except PermissionError:
+        # Process exists but we can't signal it — treat as "running"
+        # and fall through to the SIGTERM attempt below.
+        pass
+    except OSError:
+        return {"status": "not_running"}
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        return {"status": "not_running"}
+
+    return {"status": "stop_signaled", "pid": pid}
+
+
+@router.post("/projects/{name}/runs/{exp_id}/pause")
+def api_run_pause(name: str, exp_id: str) -> dict:
+    """Request a graceful pause at the next turn boundary.
+
+    Writes ``"pause"`` to ``<project>/.urika/pause_requested``. The
+    orchestrator loop polls this file each turn and forwards the
+    request into its in-memory ``PauseController``; the existing
+    turn-loop check then pauses the session at the next safe
+    checkpoint. The flag is project-level (only one active run per
+    project today), so ``exp_id`` is echoed back for symmetry with
+    the streaming/launcher URLs but does not influence the file path.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -2382,6 +2436,6 @@ def api_run_stop(name: str, exp_id: str) -> dict:
 
     flag_dir = summary.path / ".urika"
     flag_dir.mkdir(parents=True, exist_ok=True)
-    (flag_dir / "pause_requested").write_text("stop", encoding="utf-8")
+    (flag_dir / "pause_requested").write_text("pause", encoding="utf-8")
 
-    return {"status": "stop_requested", "experiment_id": exp_id}
+    return {"status": "pause_requested", "experiment_id": exp_id}

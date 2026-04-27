@@ -32,8 +32,9 @@
   <div id="log-prompts" style="margin-top: var(--space-4);"></div>
 
   {% if _log_type == "run" %}
-  <div style="margin-top: var(--space-4);">
-    <button class="btn btn--secondary" id="stop-btn">Stop run</button>
+  <div style="margin-top: var(--space-4); display: flex; gap: var(--space-3);">
+    <button class="btn btn--secondary" id="pause-btn">Pause (after current step)</button>
+    <button class="btn btn--danger" id="stop-btn">Stop now</button>
   </div>
   {% endif %}
 
@@ -63,6 +64,7 @@
   const logEl = document.getElementById("log");
   const statusEl = document.getElementById("log-status");
   const completionEl = document.getElementById("log-completion");
+  const pauseBtn = document.getElementById("pause-btn");
   const stopBtn = document.getElementById("stop-btn");
 
   const es = new EventSource(url);
@@ -147,6 +149,7 @@
     try { payload = JSON.parse(e.data); } catch (_) {}
     statusEl.textContent = payload.status === "completed" ? "Completed." : `Status: ${payload.status || "unknown"}`;
     completionEl.style.display = "";
+    if (pauseBtn) pauseBtn.style.display = "none";
     if (stopBtn) stopBtn.style.display = "none";
     if (window._urikaThinkingHandle) {
       window._urikaThinkingHandle.stop();
@@ -170,12 +173,25 @@
     statusEl.textContent = "Connection lost.";
   };
 
+  if (pauseBtn) {
+    pauseBtn.addEventListener("click", function () {
+      pauseBtn.disabled = true;
+      fetch("/api/projects/{{ project.name }}/runs/{{ experiment_id }}/pause", {
+        method: "POST",
+      }).then(() => {
+        statusEl.textContent = "Pause requested. Waiting for current step to finish…";
+      });
+    });
+  }
+
   if (stopBtn) {
     stopBtn.addEventListener("click", function () {
+      stopBtn.disabled = true;
+      if (pauseBtn) pauseBtn.disabled = true;
       fetch("/api/projects/{{ project.name }}/runs/{{ experiment_id }}/stop", {
         method: "POST",
       }).then(() => {
-        statusEl.textContent = "Stop requested. Waiting for current step to finish…";
+        statusEl.textContent = "Stop signaled — terminating now.";
       });
     });
   }

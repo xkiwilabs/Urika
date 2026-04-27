@@ -288,9 +288,9 @@ def test_experiments_list_does_not_have_inline_delete_button(
     popups would compete with that and offer weaker friction.
     """
     body = client_with_experiments.get("/projects/alpha/experiments").text
-    assert (
-        'hx-delete="/api/projects/alpha/experiments/' not in body
-    ), "row-level Delete button found; should only live in Danger zone"
+    assert 'hx-delete="/api/projects/alpha/experiments/' not in body, (
+        "row-level Delete button found; should only live in Danger zone"
+    )
 
 
 def test_experiments_list_status_says_running_when_lock_alive(
@@ -739,8 +739,10 @@ def test_run_log_page_type_evaluate_carries_query_in_sse_url(client_run_log):
     assert "/api/projects/alpha/runs/exp-001/stream?type=evaluate" in body
     # Heading should reflect the agent type
     assert "evaluate" in body
-    # The Stop run button is run-only — hidden for evaluate/report/present
+    # The Pause/Stop run buttons are run-only — hidden for
+    # evaluate/report/present
     assert 'id="stop-btn"' not in body
+    assert 'id="pause-btn"' not in body
 
 
 def test_run_log_page_type_report_carries_query_in_sse_url(client_run_log):
@@ -748,6 +750,7 @@ def test_run_log_page_type_report_carries_query_in_sse_url(client_run_log):
     assert r.status_code == 200
     assert "/api/projects/alpha/runs/exp-001/stream?type=report" in r.text
     assert 'id="stop-btn"' not in r.text
+    assert 'id="pause-btn"' not in r.text
 
 
 def test_run_log_page_type_present_carries_query_in_sse_url(client_run_log):
@@ -755,6 +758,37 @@ def test_run_log_page_type_present_carries_query_in_sse_url(client_run_log):
     assert r.status_code == 200
     assert "/api/projects/alpha/runs/exp-001/stream?type=present" in r.text
     assert 'id="stop-btn"' not in r.text
+    assert 'id="pause-btn"' not in r.text
+
+
+def test_run_log_has_both_pause_and_stop_buttons(client_run_log):
+    """The default run log page must surface both Pause (graceful) and
+    Stop (immediate kill) buttons. Pause is btn--secondary; Stop is
+    btn--danger so it reads visually red."""
+    r = client_run_log.get("/projects/alpha/experiments/exp-001/log")
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="pause-btn"' in body
+    assert 'id="stop-btn"' in body
+    # Stop fires the kill endpoint; Pause fires the flag-write endpoint.
+    assert "/api/projects/alpha/runs/exp-001/stop" in body
+    assert "/api/projects/alpha/runs/exp-001/pause" in body
+    # Stop is the destructive action — class must include btn--danger.
+    assert "btn--danger" in body
+
+
+def test_run_log_pause_button_only_on_run_type(client_run_log):
+    """The pause button is run-only — same gating as the stop button.
+    Verified in test_run_log_page_type_*_carries_query_in_sse_url above
+    for evaluate/report/present; this test pins the contract directly."""
+    for log_type in ("evaluate", "report", "present"):
+        r = client_run_log.get(
+            f"/projects/alpha/experiments/exp-001/log?type={log_type}"
+        )
+        assert r.status_code == 200
+        assert 'id="pause-btn"' not in r.text, (
+            f"pause-btn must not appear for type={log_type}"
+        )
 
 
 def test_run_log_presentation_link_opens_in_new_tab(client_run_log):
@@ -781,7 +815,8 @@ def test_run_log_presentation_link_opens_in_new_tab(client_run_log):
 
 def test_run_log_page_type_unknown_falls_back_to_run(client_run_log):
     """An unknown ?type value silently degrades to run — the page still
-    renders, the SSE URL has no query string, and the Stop button is back."""
+    renders, the SSE URL has no query string, and both Pause and Stop
+    buttons are back."""
     r = client_run_log.get("/projects/alpha/experiments/exp-001/log?type=bogus")
     assert r.status_code == 200
     body = r.text
@@ -789,6 +824,7 @@ def test_run_log_page_type_unknown_falls_back_to_run(client_run_log):
     assert '/api/projects/alpha/runs/exp-001/stream"' in body
     assert "?type=" not in body.split("EventSource")[1].split(";")[0]
     assert 'id="stop-btn"' in body
+    assert 'id="pause-btn"' in body
 
 
 def test_report_view_renders_markdown(client_with_runs):

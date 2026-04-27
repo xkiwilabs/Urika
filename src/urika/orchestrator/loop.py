@@ -56,9 +56,9 @@ from urika.orchestrator.parsing import (
     parse_run_records,
     parse_suggestions,
 )
+from urika.orchestrator.pause import read_and_clear_flag
 
 logger = logging.getLogger(__name__)
-
 
 
 async def run_experiment(
@@ -183,6 +183,17 @@ async def run_experiment(
         logger.warning("Knowledge scan failed: %s", exc)
 
     for turn in range(start_turn, max_turns + 1):
+        # Cross-process pause/stop: the dashboard (and other out-of-
+        # process callers) signal by writing to <project>/.urika/
+        # pause_requested. Forward any such signal into the in-memory
+        # controller so the existing checks below handle it uniformly.
+        if pause_controller is not None:
+            _flag = read_and_clear_flag(project_dir)
+            if _flag == "stop":
+                pause_controller.request_stop()
+            elif _flag == "pause":
+                pause_controller.request_pause()
+
         # Check for pause/stop request before starting this turn
         if pause_controller is not None and pause_controller.is_stop_requested():
             from urika.core.session import stop_session
@@ -227,11 +238,18 @@ async def run_experiment(
                 _total_agent_calls += 1
 
                 _err = _check_result(
-                    plan_result, "planning_agent",
-                    project_dir, experiment_id, progress,
+                    plan_result,
+                    "planning_agent",
+                    project_dir,
+                    experiment_id,
+                    progress,
                 )
                 if _err:
-                    _status = "paused" if plan_result.error_category in _PAUSABLE_ERRORS else "failed"
+                    _status = (
+                        "paused"
+                        if plan_result.error_category in _PAUSABLE_ERRORS
+                        else "failed"
+                    )
                     return _usage_dict(_status, turn, error=_err)
 
                 method_plan = parse_method_plan(plan_result.text_output)
@@ -293,12 +311,8 @@ async def run_experiment(
                         "Raw data must be profiled locally before cloud "
                         "agents can run."
                     )
-                    fail_session(
-                        project_dir, experiment_id, error=_data_error
-                    )
-                    return _usage_dict(
-                        "failed", turn, error=_data_error
-                    )
+                    fail_session(project_dir, experiment_id, error=_data_error)
+                    return _usage_dict("failed", turn, error=_data_error)
 
                 progress("agent", "Data agent \u2014 extracting features")
                 data_config = data_role.build_config(
@@ -322,12 +336,8 @@ async def run_experiment(
                         "cloud agents can run. "
                         "Start your local model or switch to open mode."
                     )
-                    fail_session(
-                        project_dir, experiment_id, error=_data_error
-                    )
-                    return _usage_dict(
-                        "failed", turn, error=_data_error
-                    )
+                    fail_session(project_dir, experiment_id, error=_data_error)
+                    return _usage_dict("failed", turn, error=_data_error)
 
                 if data_result.text_output:
                     task_input = data_result.text_output + "\n\n" + task_input
@@ -357,11 +367,18 @@ async def run_experiment(
             _total_agent_calls += 1
 
             _err = _check_result(
-                task_result, "task_agent",
-                project_dir, experiment_id, progress,
+                task_result,
+                "task_agent",
+                project_dir,
+                experiment_id,
+                progress,
             )
             if _err:
-                _status = "paused" if task_result.error_category in _PAUSABLE_ERRORS else "failed"
+                _status = (
+                    "paused"
+                    if task_result.error_category in _PAUSABLE_ERRORS
+                    else "failed"
+                )
                 return _usage_dict(_status, turn, error=_err)
 
             # Parse and record runs
@@ -430,11 +447,18 @@ async def run_experiment(
             _total_agent_calls += 1
 
             _err = _check_result(
-                eval_result, "evaluator",
-                project_dir, experiment_id, progress,
+                eval_result,
+                "evaluator",
+                project_dir,
+                experiment_id,
+                progress,
             )
             if _err:
-                _status = "paused" if eval_result.error_category in _PAUSABLE_ERRORS else "failed"
+                _status = (
+                    "paused"
+                    if eval_result.error_category in _PAUSABLE_ERRORS
+                    else "failed"
+                )
                 return _usage_dict(_status, turn, error=_err)
 
             evaluation = parse_evaluation(eval_result.text_output)
@@ -572,11 +596,18 @@ async def run_experiment(
             _total_agent_calls += 1
 
             _err = _check_result(
-                suggest_result, "advisor_agent",
-                project_dir, experiment_id, progress,
+                suggest_result,
+                "advisor_agent",
+                project_dir,
+                experiment_id,
+                progress,
             )
             if _err:
-                _status = "paused" if suggest_result.error_category in _PAUSABLE_ERRORS else "failed"
+                _status = (
+                    "paused"
+                    if suggest_result.error_category in _PAUSABLE_ERRORS
+                    else "failed"
+                )
                 return _usage_dict(_status, turn, error=_err)
 
             suggestions = parse_suggestions(suggest_result.text_output)
@@ -636,7 +667,11 @@ async def run_experiment(
     # Reached max_turns without criteria being met
     complete_session(project_dir, experiment_id)
     report_usage = await _generate_reports(
-        project_dir, experiment_id, progress, runner=runner, on_message=on_message,
+        project_dir,
+        experiment_id,
+        progress,
+        runner=runner,
+        on_message=on_message,
         audience=audience,
     )
     _total_tokens_in += report_usage.get("tokens_in", 0)

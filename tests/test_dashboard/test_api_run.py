@@ -308,16 +308,78 @@ def test_new_experiment_form_no_longer_requires_name_or_hypothesis(run_client):
     assert len(spawn_calls) == 1
 
 
-def test_run_stop_writes_flag(run_client):
+def test_run_stop_sends_sigterm_to_lock_pid(run_client, monkeypatch):
+    """Stop reads <exp>/.lock for the PID and sends SIGTERM. We use the
+    test process's own PID (always alive) and monkeypatch ``os.kill`` so
+    we can capture the signal call without actually killing pytest."""
+    import os
+    import signal
+
+    from urika.dashboard.routers import api as api_module
+
     client, _, proj = run_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".lock").write_text(str(os.getpid()), encoding="utf-8")
+
+    kill_calls: list[tuple[int, int]] = []
+
+    def fake_kill(pid: int, sig: int) -> None:
+        kill_calls.append((pid, sig))
+        # The probe call (signal 0) must succeed silently — the real
+        # PID is alive — and the SIGTERM call should also do nothing.
+
+    monkeypatch.setattr(api_module.os, "kill", fake_kill)
+
     r = client.post("/api/projects/alpha/runs/exp-001/stop")
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] == "stop_requested"
-    assert body["experiment_id"] == "exp-001"
-    flag_path = proj / ".urika" / "pause_requested"
-    assert flag_path.exists()
-    assert flag_path.read_text() == "stop"
+    assert body["status"] == "stop_signaled"
+    assert body["pid"] == os.getpid()
+
+    # First call probes with signal 0; second sends SIGTERM.
+    assert (os.getpid(), 0) in kill_calls
+    assert (os.getpid(), signal.SIGTERM) in kill_calls
+
+
+def test_run_stop_returns_not_running_when_no_lock(run_client):
+    """No .lock file → nothing is in flight, return not_running."""
+    client, _, proj = run_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    # Explicitly no .lock written.
+    r = client.post("/api/projects/alpha/runs/exp-001/stop")
+    assert r.status_code == 200
+    assert r.json() == {"status": "not_running"}
+
+
+def test_run_stop_returns_not_running_when_pid_dead(run_client):
+    """Lock file with a PID that doesn't exist → not_running.
+
+    99999998 is far above any plausible live PID on a typical system.
+    The endpoint probes with signal 0 first, gets ProcessLookupError,
+    and returns the not_running status without attempting SIGTERM.
+    """
+    client, _, proj = run_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".lock").write_text("99999998", encoding="utf-8")
+
+    r = client.post("/api/projects/alpha/runs/exp-001/stop")
+    assert r.status_code == 200
+    assert r.json() == {"status": "not_running"}
+
+
+def test_run_stop_returns_not_running_when_lock_unreadable(run_client):
+    """Lock file with non-integer content → treat as not running."""
+    client, _, proj = run_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".lock").write_text("not-a-pid", encoding="utf-8")
+
+    r = client.post("/api/projects/alpha/runs/exp-001/stop")
+    assert r.status_code == 200
+    assert r.json() == {"status": "not_running"}
 
 
 def test_run_stop_404_unknown_project(run_client):
@@ -326,13 +388,33 @@ def test_run_stop_404_unknown_project(run_client):
     assert r.status_code == 404
 
 
-def test_run_stop_creates_dotdir_if_missing(run_client):
+def test_run_pause_writes_flag_file(run_client):
+    """Pause writes "pause" to <project>/.urika/pause_requested. The
+    orchestrator polls this file at each turn boundary."""
+    client, _, proj = run_client
+    r = client.post("/api/projects/alpha/runs/exp-001/pause")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "pause_requested"
+    assert body["experiment_id"] == "exp-001"
+    flag_path = proj / ".urika" / "pause_requested"
+    assert flag_path.exists()
+    assert flag_path.read_text() == "pause"
+
+
+def test_run_pause_creates_dotdir_if_missing(run_client):
     """The .urika dir doesn't exist by default; the endpoint must mkdir it."""
     client, _, proj = run_client
     assert not (proj / ".urika").exists()
-    r = client.post("/api/projects/alpha/runs/exp-001/stop")
+    r = client.post("/api/projects/alpha/runs/exp-001/pause")
     assert r.status_code == 200
     assert (proj / ".urika").is_dir()
+
+
+def test_run_pause_404_unknown_project(run_client):
+    client, _, _ = run_client
+    r = client.post("/api/projects/nonexistent/runs/exp-001/pause")
+    assert r.status_code == 404
 
 
 # ---- POST /api/projects/<n>/runs/<exp_id>/respond (Task 11F.2) ------------
