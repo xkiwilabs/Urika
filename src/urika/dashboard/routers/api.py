@@ -1451,6 +1451,34 @@ def api_projectbook_artifacts(name: str):
     }
 
 
+@router.get("/projects/{name}/active-ops")
+def api_active_ops(name: str) -> list[dict]:
+    """Return the project's currently-running agent operations.
+
+    Polled by the in-page ``urika-active-ops-poll.js`` script every few
+    seconds; when the returned set changes (op started OR finished) the
+    page reloads so the running banner and trigger-button states catch
+    up without a manual refresh. Server is read-only — same shape as
+    ``list_active_operations`` minus ``lock_path`` (a server-side
+    absolute path that's not useful to clients).
+    """
+    from urika.dashboard.active_ops import list_active_operations
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    ops = list_active_operations(name, summary.path)
+    return [
+        {
+            "type": op.type,
+            "experiment_id": op.experiment_id,
+            "log_url": op.log_url,
+        }
+        for op in ops
+    ]
+
+
 _EXPERIMENT_LOG_TYPES: dict[str, tuple[str, str]] = {
     # type → (log_filename, lock_filename)
     "run": ("run.log", ".lock"),

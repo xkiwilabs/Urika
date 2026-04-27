@@ -10,6 +10,7 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body
+  {% if project %}data-project-name="{{ project.name }}"{% endif %}
   x-data="{ theme: localStorage.getItem('urika-theme') || 'dark' }"
   x-init="
     document.documentElement.dataset.theme = theme;
@@ -57,5 +58,6 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <script src="/static/urika-active-ops-poll.js"></script>
 </body>
 </html>

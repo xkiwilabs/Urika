@@ -155,3 +155,44 @@ def test_banner_absent_on_global_pages(banner_client) -> None:
         assert "active-ops-banner" not in r.text, (
             f"banner unexpectedly present on {path}"
         )
+
+
+def test_project_pages_include_active_ops_poll_script(banner_client) -> None:
+    """Project-scoped pages tag <body> with the project name and load
+    the polling script so banner + buttons can auto-refresh."""
+    client, _ = banner_client
+
+    r = client.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    assert '<script src="/static/urika-active-ops-poll.js">' in body
+    assert 'data-project-name="alpha"' in body
+
+
+def test_global_pages_omit_data_project_name_attribute(banner_client) -> None:
+    """Global pages have no project context and must not advertise one
+    on <body> — the script keys off that attribute to decide whether
+    to poll."""
+    client, _ = banner_client
+
+    r = client.get("/projects")
+    assert r.status_code == 200
+    body = r.text
+    # The <body ...> opening tag must not carry a data-project-name attr.
+    body_idx = body.find("<body")
+    body_open_full = body[body_idx : body.find(">", body_idx) + 1]
+    assert "data-project-name" not in body_open_full
+
+
+def test_static_urika_active_ops_poll_js_served(banner_client) -> None:
+    """The poll script file is served as JavaScript and contains the
+    key behaviours we depend on."""
+    client, _ = banner_client
+
+    r = client.get("/static/urika-active-ops-poll.js")
+    assert r.status_code == 200
+    ctype = r.headers.get("content-type", "")
+    assert "javascript" in ctype.lower(), ctype
+    body = r.text
+    assert "data-project-name" in body
+    assert "setInterval" in body
