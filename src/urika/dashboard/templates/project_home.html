@@ -134,7 +134,24 @@
   {% endif %}
 
   <section class="section">
-    <h2 class="section-title">Recent experiments</h2>
+    <div class="section-header">
+      <h2 class="section-title">Recent experiments</h2>
+      <div class="section-actions">
+        {# "+ New experiment" mirrors the button on the full experiments
+           list. Sends the user there with ?new=1 so the modal auto-opens
+           on arrival. Avoids duplicating the modal on the home page. #}
+        <a class="btn btn--primary btn--small"
+           href="/projects/{{ project.name }}/experiments?new=1">
+          + New experiment
+        </a>
+        {% if recent_experiments %}
+          <a class="btn btn--ghost btn--small"
+             href="/projects/{{ project.name }}/experiments">
+            See all →
+          </a>
+        {% endif %}
+      </div>
+    </div>
     {% if recent_experiments %}
       <ul class="list">
         {% for exp in recent_experiments %}
@@ -156,7 +173,7 @@
       </ul>
     {% else %}
       <div class="empty-state">
-        <p>No experiments yet. Start one from the Run page.</p>
+        <p>No experiments yet. Click <strong>+ New experiment</strong> above to start one.</p>
       </div>
     {% endif %}
   </section>

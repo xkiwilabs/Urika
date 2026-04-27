@@ -69,6 +69,15 @@
         <li class="list-item"
             data-experiment-id="{{ exp.experiment_id }}"
             data-last-touched="{{ exp.last_touched }}">
+          {# Card layout mirrors the project-home "Recent experiments"
+             cards: title and experiment_id stacked in the main column,
+             plus a third muted line with run count + last-touched
+             timestamp. Status tag sits on the right.
+
+             Delete is intentionally NOT here — destructive ops live on
+             the experiment detail page's Danger zone (type-name confirm).
+             Row stays click-to-view; only Resume sits outside the link
+             for failed/paused/stopped experiments. #}
           <a
             href="/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}"
             class="list-item-link"
@@ -76,16 +85,17 @@
             <div class="list-item-main">
               <div class="list-item-title">{{ exp.name | humanize }}</div>
               <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
+              <div class="list-item-detail text-muted">
+                {{ exp.runs_count }} run{{ '' if exp.runs_count == 1 else 's' }}
+                · {{ exp.last_touched }}
+              </div>
             </div>
             <div class="list-item-meta">
               <span class="tag tag--{{ exp.status | tag_status }}">{{ exp.status }}</span>
-              <span class="text-muted">{{ exp.runs_count }} run{{ '' if exp.runs_count == 1 else 's' }}</span>
-              <span class="text-muted">{{ exp.last_touched }}</span>
             </div>
           </a>
-          {# Resume button — only on experiments that stopped without
-             completing. Sits outside the <a> wrapper so the click
-             doesn't navigate to the detail page. #}
+          {# Resume button only on stopped/failed/paused. Sits outside
+             the <a> so clicking it doesn't navigate to the detail page. #}
           {% if exp.status in ("failed", "paused", "stopped") %}
             <form
               method="post"
@@ -99,20 +109,6 @@
               </button>
             </form>
           {% endif %}
-          {# Delete button — visible on every row regardless of status.
-             Users want to clean up completed-but-throwaway experiments
-             too. Ghost style so it doesn't compete visually with the
-             primary Resume action. #}
-          <form
-            class="list-item-action"
-            hx-delete="/api/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}"
-            hx-confirm="Move {{ exp.experiment_id }} to trash? Files preserved at {{ project.path }}/trash/."
-            hx-swap="none"
-          >
-            <button type="submit" class="btn btn--small btn--ghost">
-              Delete
-            </button>
-          </form>
         </li>
       {% endfor %}
     </ul>

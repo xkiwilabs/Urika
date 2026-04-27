@@ -713,6 +713,15 @@ h4 {
   word-break: break-word;
 }
 
+/* Optional third row in a list-item-main column — used for the runs +
+   last-touched line on experiments cards so the layout matches the
+   project-home "Recent experiments" cards instead of cramming meta
+   into the right-hand column. */
+.list-item-detail {
+  font-size: var(--fs-xs);
+  margin-top: var(--space-1);
+}
+
 .list-item-meta {
   display: flex;
   align-items: center;
@@ -906,6 +915,23 @@ h4 {
 .markdown-body figure {
   max-width: 100%;
   margin: var(--space-3) 0;
+}
+
+/* Section header with optional right-aligned actions (e.g.
+   "+ New experiment" + "See all →" buttons above the recent
+   experiments list on the project home). */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+.section-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
 }
 
 /* ---------- Experiment artifacts (Outputs section) ---------- */

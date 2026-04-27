@@ -77,6 +77,28 @@ def test_project_home_lists_recent_experiments(client_with_experiments):
     assert "exp-002" not in body
 
 
+def test_project_home_recent_experiments_has_new_and_see_all_buttons(
+    client_with_experiments,
+):
+    """Above the recent-experiments list there must be a New
+    experiment button (linking to ?new=1 so the modal auto-opens on
+    arrival) and a See all link to the full experiments list."""
+    body = client_with_experiments.get("/projects/alpha").text
+    assert 'href="/projects/alpha/experiments?new=1"' in body
+    assert "+ New experiment" in body
+    assert 'href="/projects/alpha/experiments"' in body
+    assert "See all" in body
+
+
+def test_project_home_no_see_all_when_no_experiments(client_with_projects):
+    """When the recent-experiments list is empty, See all hides — but
+    the New experiment button stays so the user has a way to start one."""
+    body = client_with_projects.get("/projects/alpha").text
+    # alpha (in client_with_projects) has no experiments dirs.
+    assert "See all" not in body
+    assert "+ New experiment" in body
+
+
 def test_project_home_sidebar_shows_project_links(client_with_projects):
     r = client_with_projects.get("/projects/alpha")
     body = r.text
@@ -257,15 +279,32 @@ def test_experiment_detail_danger_zone_disabled_when_locked(
     assert 'type="button" disabled' in body
 
 
-def test_experiments_list_shows_delete_button_for_every_row(client_with_experiments):
-    """Every experiment row gets a Delete button regardless of status."""
-    r = client_with_experiments.get("/projects/alpha/experiments")
-    assert r.status_code == 200
-    body = r.text
-    # The seven experiments are all "completed"; a Delete button must
-    # still appear for each one.
-    for i in range(1, 8):
-        assert f'hx-delete="/api/projects/alpha/experiments/exp-{i:03d}"' in body
+def test_experiments_list_does_not_have_inline_delete_button(
+    client_with_experiments,
+):
+    """Delete is NOT a row-level action — it lives only in the
+    experiment-detail page's Danger zone (with type-name confirmation,
+    appropriate friction for a destructive op). Per-row hx-confirm
+    popups would compete with that and offer weaker friction.
+    """
+    body = client_with_experiments.get("/projects/alpha/experiments").text
+    assert (
+        'hx-delete="/api/projects/alpha/experiments/' not in body
+    ), "row-level Delete button found; should only live in Danger zone"
+
+
+def test_experiments_list_card_layout_has_three_main_rows(
+    client_with_experiments,
+):
+    """Experiment cards on the list page mirror the project-home
+    "Recent experiments" cards: title, experiment_id, and a third
+    muted line with run count + last-touched timestamp. Status tag
+    sits alone in the meta column."""
+    body = client_with_experiments.get("/projects/alpha/experiments").text
+    assert "list-item-detail" in body
+    # Three pieces of info on the first card.
+    assert "exp-007" in body
+    assert "0 runs" in body or "1 run" in body or "2 runs" in body
 
 
 def _make_project_with_methods(root: Path, name: str, methods: list[dict]) -> Path:
