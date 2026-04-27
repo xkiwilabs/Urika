@@ -52,20 +52,27 @@ def test_python_cmd_respects_explicit_executable():
 
 
 def _captured_argv(monkeypatch, spawn_callable, *args, **kwargs):
-    """Invoke a spawn helper with subprocess.Popen captured."""
+    """Invoke a spawn helper with subprocess.Popen captured.
+
+    The dashboard now detaches subprocesses (stdout goes straight to a
+    file, no pipe), so ``FakeProc.stdout`` is irrelevant — the spawn
+    helper never reads from it. We still expose ``wait()`` because the
+    reaper thread calls it; returning immediately lets the reaper exit
+    promptly so it cleans up the lock file before the test finishes.
+    """
     import subprocess
 
     captured = {}
 
     class FakeProc:
         pid = 12345
-        stdout = None
 
         def wait(self):
             return 0
 
     def fake_popen(cmd, **popen_kwargs):
         captured["cmd"] = cmd
+        captured["popen_kwargs"] = popen_kwargs
         return FakeProc()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
@@ -166,3 +173,125 @@ def test_spawn_advisor_blank_question_raises(tmp_path):
 
     with pytest.raises(ValueError, match="question is required"):
         spawn_advisor("alpha", tmp_path, "   ")
+
+
+# ---------- Detached-spawn invariants ----------
+#
+# The whole point of ``_spawn_detached`` is that the child outlives
+# the dashboard. Two structural invariants make that work:
+#   1. The child's stdout/stderr write directly to the log file
+#      (NOT a pipe through the dashboard) — so SIGPIPE on dashboard
+#      exit can't kill the child.
+#   2. The child runs in its own session/process group — so a
+#      Ctrl+C in the dashboard's terminal doesn't propagate to the
+#      child via the controlling-terminal signal path.
+#
+# These tests pin both invariants so a future refactor can't silently
+# regress them.
+
+
+def test_spawn_detached_uses_start_new_session_and_no_pipe(monkeypatch, tmp_path):
+    import subprocess
+    import sys as _sys
+
+    from urika.dashboard.runs import spawn_finalize
+
+    captured = {}
+
+    class FakeProc:
+        pid = 99001
+
+        def wait(self):
+            return 0
+
+    def fake_popen(cmd, **popen_kwargs):
+        captured["cmd"] = cmd
+        captured["popen_kwargs"] = popen_kwargs
+        return FakeProc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    spawn_finalize("alpha", tmp_path)
+
+    kw = captured["popen_kwargs"]
+    # stdout must be a real file object, NOT subprocess.PIPE — that's
+    # how the child survives our exit (no pipe → no SIGPIPE).
+    assert kw["stdout"] is not subprocess.PIPE
+    assert hasattr(kw["stdout"], "fileno"), (
+        "stdout must be a file-like object with a fileno (the open log file), "
+        "not a pipe; the child must write directly to disk"
+    )
+    assert kw["stderr"] == subprocess.STDOUT
+    assert kw["stdin"] == subprocess.DEVNULL
+    assert kw.get("close_fds") is True
+
+    # Session/process-group isolation, platform-conditional.
+    if _sys.platform == "win32":
+        assert kw.get("creationflags", 0) & subprocess.CREATE_NEW_PROCESS_GROUP
+        assert "start_new_session" not in kw
+    else:
+        assert kw.get("start_new_session") is True
+
+
+def test_spawn_writes_lock_with_pid(monkeypatch, tmp_path):
+    """After spawn, the lock file should contain the child's PID.
+
+    Used by ``_is_active_run_lock`` and the active-ops banner to
+    detect running operations across dashboard restarts.
+    """
+    import subprocess
+
+    from urika.dashboard.runs import spawn_finalize
+
+    class FakeProc:
+        pid = 424242
+
+        def wait(self):
+            # Block briefly so the test can assert the lock exists
+            # with the PID before the reaper thread removes it.
+            import time
+
+            time.sleep(0.5)
+            return 0
+
+    def fake_popen(cmd, **popen_kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    spawn_finalize("alpha", tmp_path)
+
+    lock_path = tmp_path / "projectbook" / ".finalize.lock"
+    assert lock_path.is_file()
+    assert lock_path.read_text(encoding="utf-8") == "424242"
+
+
+def test_reaper_removes_lock_when_child_exits(monkeypatch, tmp_path):
+    """The reaper daemon thread must unlink the lock once ``proc.wait()``
+    returns, so SSE tailers can detect completion and the active-ops
+    banner stops reporting the operation."""
+    import subprocess
+
+    from urika.dashboard.runs import _DAEMON_THREADS, spawn_finalize
+
+    class FakeProc:
+        pid = 77777
+
+        def wait(self):
+            return 0  # exits immediately
+
+    def fake_popen(cmd, **popen_kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    # Snapshot before spawn so we can identify the new reaper thread.
+    before = list(_DAEMON_THREADS)
+    spawn_finalize("alpha", tmp_path)
+    new_threads = [t for t in _DAEMON_THREADS if t not in before]
+    assert new_threads, "spawn should register a reaper thread"
+    new_threads[-1].join(timeout=5.0)
+
+    lock_path = tmp_path / "projectbook" / ".finalize.lock"
+    assert not lock_path.exists(), (
+        "reaper must unlink the lock once the child exits, so SSE tailers "
+        "and the active-ops banner can detect completion"
+    )
