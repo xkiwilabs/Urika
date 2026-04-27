@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from urika.notifications.events import NotificationEvent
+from urika.notifications.events import (
+    CANONICAL_EVENT_TYPES,
+    EVENT_METADATA,
+    NotificationEvent,
+)
 
 
 class TestNotificationEvent:
@@ -47,3 +51,29 @@ class TestNotificationEvent:
         )
         assert event.details["metrics"]["rmse"] == 0.42
         assert event.details["method"] == "random_forest"
+
+
+def test_canonical_event_set_covers_all_emitters():
+    """Every event_type emitted by the codebase must be canonical."""
+    expected = {
+        "experiment_started",
+        "experiment_completed",
+        "experiment_failed",
+        "experiment_paused",
+        "experiment_stopped",
+        "meta_completed",
+        "meta_paused",
+        "criteria_met",
+        "paused",   # legacy from on_progress mapper — keep for back-compat
+        "test",     # used by --test sends
+    }
+    assert expected.issubset(CANONICAL_EVENT_TYPES)
+
+
+def test_event_metadata_has_emoji_priority_label_for_each():
+    for evt in CANONICAL_EVENT_TYPES:
+        meta = EVENT_METADATA.get(evt)
+        assert meta is not None, f"missing metadata for {evt}"
+        assert meta.get("emoji"), f"missing emoji for {evt}"
+        assert meta.get("priority") in {"low", "medium", "high"}
+        assert meta.get("label"), f"missing label for {evt}"
