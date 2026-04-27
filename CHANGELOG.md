@@ -71,6 +71,25 @@ A polish-and-foundations release. User-visible improvements to presentations and
 
 ## [Unreleased]
 
+### Changed
+
+**Notifications polish**
+
+- Canonical event-type vocabulary in `notifications/events.py` (`EVENT_METADATA` keyed by frozen `EventMetadata` dataclass with emoji, priority, label). All channels (Slack, Telegram) read from this single source of truth instead of maintaining their own per-event maps. Previously dropped events (`experiment_paused`, `experiment_stopped`, `meta_paused`, `meta_completed` on Slack) now render with their proper emoji and route through the right priority builder.
+- Bus mapper (`_map_progress_event`) now translates orchestrator phase strings for `experiment_completed`, `experiment_failed`, `experiment_paused`, `experiment_stopped`. The orchestrator emits canonical phase events at every termination point so non-CLI surfaces (TUI direct-orchestrator-call, future programmatic callers) get notifications without going through the CLI direct-`notify()` path.
+- Per-channel `health_check()` probes auth/config (Slack `auth_test`, Telegram `Bot.get_me`, Email SMTP `NOOP`). Failing channels are excluded from dispatch at `bus.start()` with a clear WARNING log instead of dying silently mid-run.
+- New dashboard endpoint `POST /api/settings/notifications/test-send` plus a Send-test button on Settings → Notifications. Tests un-saved form data so users can validate creds before clicking Save. Reports per-channel success / specific auth-error message inline.
+- Slack settings tab now exposes the previously-missing inbound config fields (App token env var, Allowed channels, Allowed users) so Socket Mode commands can be enabled without hand-editing TOML.
+- Shared formatter helpers in `notifications/formatting.py` (`format_event_emoji`, `format_event_label`, `format_event_summary_line`) eliminate duplication across Slack and Telegram channels.
+
+### Documentation
+
+- `docs/17-notifications.md` adds Troubleshooting and Caveats sections at the end. Per-channel troubleshooting tables (Email / Slack / Telegram) cover the most common auth and configuration failures with symptom → cause → fix. Caveats document the inline-keyboard scope, email batching, per-process health-check filtering, and other behaviours users should know up front.
+
+### Tests
+
+- 2288 → 2321 tests (+33). New coverage for canonical event metadata, channel emoji/priority routing, bus mapper run-status branches, send-test helper, dashboard test-send endpoint, Slack inbound-field round-trip, per-channel health checks, and bus startup filtering.
+
 
 ## [0.1.0] - 2026-03-30
 
