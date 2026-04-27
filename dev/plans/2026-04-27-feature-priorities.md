@@ -122,6 +122,16 @@ See `dev/plans/2026-04-27-secrets-handling-proposal.md` for the full design. TL;
 
 **Effort:** ~1 week.
 
+## Small fixes — pick up opportunistically
+
+These are sub-day items that don't warrant a full feature slot but
+should land before the priorities below ship for real.
+
+| ID | Item | Effort | Why |
+|----|------|--------|-----|
+| #115 | Test-endpoint round-trip prompt | ~½ day | Folds into secrets handling (#3) when that ships, but useful standalone too. After reachability passes, fire a real chat-completion request with the configured key so users know the key works end-to-end. |
+| #117 | Detach spawned subprocesses from dashboard lifetime | ~½ day | Today, Ctrl+C-ing the dashboard kills any running experiment via SIGPIPE on next stdout write (subprocess stdout is piped through the dashboard). Fix: `subprocess.Popen(..., start_new_session=True)` + redirect stdout straight to `<exp>/run.log` instead of through a pipe. The SSE tailer reads the file directly, which it already does. Then dashboard restart is safe — experiments keep running, log keeps growing, next dashboard pickup works seamlessly. Adds operational robustness for long autonomous runs. |
+
 ## Priority rationale
 
 | Priority | Feature | Effort | Confidence | Gates |
