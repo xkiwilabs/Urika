@@ -1314,7 +1314,11 @@ def project_finalize_log(name: str, request: Request) -> HTMLResponse:
 
 
 @router.get("/projects/{name}/advisor", response_class=HTMLResponse)
-def project_advisor(name: str, request: Request) -> HTMLResponse:
+def project_advisor(
+    name: str,
+    request: Request,
+    session_id: str | None = None,
+) -> HTMLResponse:
     """Render the advisor chat panel.
 
     Reads ``projectbook/advisor-history.json`` (via
@@ -1322,6 +1326,13 @@ def project_advisor(name: str, request: Request) -> HTMLResponse:
     message bubble per entry. The composer form POSTs to
     ``/api/projects/<n>/advisor``, which spawns the advisor agent as
     a subprocess and HX-Redirects the browser to the live log.
+
+    When called with ``?session_id=<id>``, also loads the orchestrator
+    chat session with that ID and renders its recent messages above
+    the advisor transcript as read-only "Prior session" context. New
+    advisor exchanges always append to advisor-history, not back to the
+    orchestrator session — TUI/REPL stays the canonical write surface
+    for orchestrator sessions.
 
     If an advisor subprocess is already running for this project (a
     live ``.advisor.lock`` exists), the composer is replaced by a
@@ -1334,9 +1345,33 @@ def project_advisor(name: str, request: Request) -> HTMLResponse:
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
     from urika.core.advisor_memory import load_history
+    from urika.core.orchestrator_sessions import load_session
 
     history = load_history(summary.path)
-    ctx = {"request": request, "project": summary, "history": history}
+
+    prior_session = None
+    prior_session_messages: list[dict] = []
+    if session_id:
+        session = load_session(summary.path, session_id)
+        if session is not None:
+            prior_session = {
+                "session_id": session.session_id,
+                "started": session.started,
+                "updated": session.updated,
+            }
+            prior_session_messages = list(session.recent_messages or [])
+        # If session_id was given but missing, fall through silently —
+        # template can show a "Session not found" notice based on
+        # ``session_id`` being set but ``prior_session`` being None.
+
+    ctx = {
+        "request": request,
+        "project": summary,
+        "history": history,
+        "session_id": session_id,
+        "prior_session": prior_session,
+        "prior_session_messages": prior_session_messages,
+    }
     ctx.update(_project_template_context(name, summary))
     # Make running-advisor detection cheap for the template — the
     # banner already has active_ops; this surfaces the advisor entry
@@ -1344,7 +1379,9 @@ def project_advisor(name: str, request: Request) -> HTMLResponse:
     ctx["running_advisor"] = next(
         (op for op in ctx.get("active_ops", []) if op.type == "advisor"), None
     )
-    return request.app.state.templates.TemplateResponse("advisor_chat.html", ctx)
+    return request.app.state.templates.TemplateResponse(
+        request, "advisor_chat.html", ctx
+    )
 
 
 @router.get("/projects/{name}/advisor/log", response_class=HTMLResponse)

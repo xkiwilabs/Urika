@@ -158,3 +158,75 @@ def test_advisor_log_page_renders_with_sse_url(advisor_client):
 def test_advisor_log_page_404_unknown_project(advisor_client):
     r = advisor_client.get("/projects/nonexistent/advisor/log")
     assert r.status_code == 404
+
+
+def test_advisor_page_no_session_id_renders_normal_history(
+    client_with_projects, tmp_path
+):
+    """No ?session_id= → no prior-session block on the page."""
+    r = client_with_projects.get("/projects/alpha/advisor")
+    assert r.status_code == 200
+    assert "Prior session" not in r.text
+
+
+def test_advisor_page_with_session_id_renders_prior_session_messages(
+    client_with_projects, tmp_path
+):
+    from urika.core.orchestrator_sessions import OrchestratorSession, save_session
+
+    project_path = tmp_path / "alpha"
+    s = OrchestratorSession(
+        session_id="20260428-140000",
+        started="2026-04-28T14:00:00Z",
+        updated="2026-04-28T14:30:00Z",
+        recent_messages=[
+            {"role": "user", "content": "What model for tree count data?"},
+            {"role": "assistant", "content": "Try negative binomial regression"},
+        ],
+    )
+    save_session(project_path, s)
+
+    r = client_with_projects.get(
+        "/projects/alpha/advisor?session_id=20260428-140000"
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert "Prior session" in body
+    assert "20260428-140000" in body
+    assert "tree count data" in body
+    assert "negative binomial regression" in body
+
+
+def test_advisor_page_with_unknown_session_id_renders_not_found_notice(
+    client_with_projects, tmp_path
+):
+    r = client_with_projects.get(
+        "/projects/alpha/advisor?session_id=does-not-exist"
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert "not found" in body.lower() or "session" in body.lower()
+    # Specifically, the bad ID should be echoed somewhere so the user
+    # can see what happened
+    assert "does-not-exist" in body
+
+
+def test_advisor_page_with_empty_session_renders_no_messages_notice(
+    client_with_projects, tmp_path
+):
+    from urika.core.orchestrator_sessions import OrchestratorSession, save_session
+
+    project_path = tmp_path / "alpha"
+    s = OrchestratorSession(
+        session_id="20260428-150000",
+        started="2026-04-28T15:00:00Z",
+        updated="2026-04-28T15:00:00Z",
+        recent_messages=[],
+    )
+    save_session(project_path, s)
+
+    r = client_with_projects.get(
+        "/projects/alpha/advisor?session_id=20260428-150000"
+    )
+    assert r.status_code == 200
+    assert "no messages" in r.text.lower()
