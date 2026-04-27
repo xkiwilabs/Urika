@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from urika.notifications.email_channel import EmailChannel
@@ -114,8 +113,14 @@ class TestEmailChannel:
         body = FakeSMTP.instances[0].sent[0][2]
         assert "queued event" in body
 
-    def test_send_error_logged(self, monkeypatch, caplog):
-        """Mock SMTP to raise, verify no exception and warning logged."""
+    def test_send_error_propagates(self, monkeypatch):
+        """Mock SMTP to raise, verify exception propagates up to caller.
+
+        Regression: previously _send_email swallowed all exceptions, hiding
+        real failures from the bus dispatcher and the dashboard test-send
+        endpoint (which would report a silent "ok" while no email arrived).
+        """
+        import pytest
 
         def raise_on_smtp(*args: Any, **kwargs: Any) -> None:
             raise ConnectionRefusedError("connection refused")
@@ -125,13 +130,34 @@ class TestEmailChannel:
         )
         ch = EmailChannel(_email_config())
 
-        with caplog.at_level(
-            logging.WARNING, logger="urika.notifications.email_channel"
-        ):
-            # Should not raise
+        with pytest.raises(ConnectionRefusedError):
             ch.send(_make_event("fail event", priority="high"))
 
-        assert "Failed to send email notification" in caplog.text
+    def test_send_raises_on_smtp_failure(self):
+        """Regression: send-time failures must propagate so test-send surfaces them.
+
+        Previously _send_email caught all exceptions internally, hiding real
+        failures from the bus dispatcher and dashboard test-send.
+        """
+        import pytest
+
+        ch = EmailChannel(
+            {
+                "from_addr": "bot@example.com",
+                "to": ["alice@example.com"],
+                "smtp_server": "127.0.0.1",
+                "smtp_port": 1,  # nothing listening
+            }
+        )
+
+        event = NotificationEvent(
+            event_type="test",
+            project_name="p",
+            summary="s",
+            priority="medium",
+        )
+        with pytest.raises(Exception):
+            ch.send(event)
 
     def test_html_contains_summary(self, monkeypatch):
         """Capture the email body and verify it contains the event summary."""

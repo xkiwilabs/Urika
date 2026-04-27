@@ -67,6 +67,37 @@ class TestTelegramHealthCheck:
 
     # Skip the "valid token" test — it would require network access.
 
+    def test_telegram_health_check_works_from_async_context(self):
+        """Regression: health_check called from inside a running event loop
+        must not raise 'Cannot run the event loop while another loop is running'.
+        """
+        import asyncio
+
+        try:
+            from urika.notifications.telegram_channel import TelegramChannel
+        except ImportError:
+            pytest.skip("python-telegram-bot not installed")
+        try:
+            ch = TelegramChannel({"chat_id": "123", "bot_token_env": ""})
+        except ImportError:
+            pytest.skip("python-telegram-bot not installed")
+
+        async def run_in_loop():
+            return ch.health_check()
+
+        # asyncio.run creates and manages a loop, mimicking FastAPI's context.
+        ok, msg = asyncio.run(run_in_loop())
+        # No event-loop conflict error allowed:
+        assert "another loop" not in msg.lower(), (
+            f"unexpected event-loop error: {msg}"
+        )
+        assert "while another" not in msg.lower(), (
+            f"unexpected event-loop error: {msg}"
+        )
+        # With empty token, expect the "no bot token configured" failure cleanly:
+        assert ok is False
+        assert "no bot token" in msg.lower()
+
 
 class TestEmailHealthCheck:
     def test_returns_false_when_missing_required_config(self):

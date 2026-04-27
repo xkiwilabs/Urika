@@ -52,26 +52,49 @@ class TelegramChannel(NotificationChannel):
     # ------------------------------------------------------------------
 
     def send(self, event: NotificationEvent) -> None:  # noqa: D401
-        """Send *event* as a Telegram message. Never raises."""
+        """Send *event* as a Telegram message.
+
+        Runs the async ``send_message`` call in a fresh OS thread so callers
+        already inside an asyncio event loop (e.g. FastAPI handlers) don't
+        conflict with the new loop we create. Errors are logged and swallowed
+        for the bus dispatch path; the bus itself wraps ``send`` in a try/except
+        so callers like the dashboard test-send still see real failures.
+        """
         try:
             import telegram
 
-            bot = telegram.Bot(token=self._token)
             text = self._format_message(event)
             reply_markup = self._build_keyboard(event)
+            token = self._token
+            chat_id = self._chat_id
 
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    bot.send_message(
-                        chat_id=self._chat_id,
-                        text=text,
-                        parse_mode="HTML",
-                        reply_markup=reply_markup,
-                    )
-                )
-            finally:
-                loop.close()
+            error: list[BaseException | None] = [None]
+
+            def _do_send() -> None:
+                try:
+                    loop = asyncio.new_event_loop()
+                    try:
+                        bot = telegram.Bot(token=token)
+                        loop.run_until_complete(
+                            bot.send_message(
+                                chat_id=chat_id,
+                                text=text,
+                                parse_mode="HTML",
+                                reply_markup=reply_markup,
+                            )
+                        )
+                    finally:
+                        loop.close()
+                except BaseException as exc:  # noqa: BLE001
+                    error[0] = exc
+
+            t = threading.Thread(target=_do_send, daemon=True)
+            t.start()
+            t.join(timeout=15)
+            if t.is_alive():
+                raise TimeoutError("Telegram send timed out after 15s")
+            if error[0] is not None:
+                raise error[0]
         except Exception as exc:
             logger.warning("Telegram send failed: %s", exc)
 
@@ -106,24 +129,37 @@ class TelegramChannel(NotificationChannel):
     def health_check(self) -> tuple[bool, str]:
         """Probe the bot token via Telegram's ``getMe`` endpoint.
 
-        Runs in a fresh event loop synchronously. Returns ``(True, "")`` on
-        success, ``(False, error_message)`` on InvalidToken / TimedOut /
-        NetworkError / any other exception.
+        Runs the async probe in a fresh OS thread so a caller already inside
+        an asyncio event loop (e.g. a FastAPI handler) doesn't conflict with
+        the new loop we create. Returns ``(True, "")`` on success,
+        ``(False, error_message)`` on InvalidToken / TimedOut / NetworkError
+        / any other exception.
         """
         if not self._token:
             return (False, "no bot token configured")
-        try:
-            from telegram import Bot
 
-            loop = asyncio.new_event_loop()
+        result: list[tuple[bool, str]] = [(False, "health check did not run")]
+
+        def _probe() -> None:
             try:
-                bot = Bot(token=self._token)
-                loop.run_until_complete(bot.get_me())
-                return (True, "")
-            finally:
-                loop.close()
-        except Exception as exc:
-            return (False, str(exc))
+                from telegram import Bot
+
+                loop = asyncio.new_event_loop()
+                try:
+                    bot = Bot(token=self._token)
+                    loop.run_until_complete(bot.get_me())
+                    result[0] = (True, "")
+                finally:
+                    loop.close()
+            except Exception as exc:  # noqa: BLE001
+                result[0] = (False, str(exc))
+
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=10)
+        if t.is_alive():
+            return (False, "health check timed out after 10s")
+        return result[0]
 
     # ------------------------------------------------------------------
     # Message formatting

@@ -81,38 +81,42 @@ class EmailChannel(NotificationChannel):
     # ------------------------------------------------------------------
 
     def _send_email(self, events: list[NotificationEvent]) -> None:
-        """Build and send an HTML email. All errors are caught and logged."""
+        """Build and send an HTML email.
+
+        Errors are NOT swallowed here — they propagate so that the bus
+        dispatcher (which has its own try/except) and the dashboard test-send
+        path see real send failures instead of a silent "ok". Without this,
+        SMTP-relay rejections, sender-not-allowed errors, or auth failures
+        would log internally but report success to callers.
+        """
         if not events or not self._to:
             return
 
-        try:
-            subject = self._build_subject(events)
-            html = self._build_html(events)
+        subject = self._build_subject(events)
+        html = self._build_html(events)
 
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = self._from
-            msg["To"] = ", ".join(self._to)
-            msg.attach(MIMEText(html, "html"))
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = self._from
+        msg["To"] = ", ".join(self._to)
+        msg.attach(MIMEText(html, "html"))
 
-            password = (
-                os.environ.get(self._password_env, "") if self._password_env else ""
-            )
+        password = (
+            os.environ.get(self._password_env, "") if self._password_env else ""
+        )
 
-            ctx = ssl.create_default_context()
-            with smtplib.SMTP(self._server, self._port, timeout=15) as smtp:
-                smtp.starttls(context=ctx)
-                if password:
-                    smtp.login(self._username, password)
-                smtp.sendmail(self._from, self._to, msg.as_string())
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP(self._server, self._port, timeout=15) as smtp:
+            smtp.starttls(context=ctx)
+            if password:
+                smtp.login(self._username, password)
+            smtp.sendmail(self._from, self._to, msg.as_string())
 
-            logger.info(
-                "Email notification sent to %s (%d event(s))",
-                ", ".join(self._to),
-                len(events),
-            )
-        except Exception:
-            logger.exception("Failed to send email notification")
+        logger.info(
+            "Email notification sent to %s (%d event(s))",
+            ", ".join(self._to),
+            len(events),
+        )
 
     # ------------------------------------------------------------------
     # Formatting
