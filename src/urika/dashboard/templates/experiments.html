@@ -83,7 +83,7 @@
             class="list-item-link"
           >
             <div class="list-item-main">
-              <div class="list-item-title">{{ exp.name | humanize }}</div>
+              <div class="list-item-title">{{ (exp.name or exp.experiment_id) | humanize }}</div>
               <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
               <div class="list-item-detail text-muted">
                 {{ exp.runs_count }} run{{ '' if exp.runs_count == 1 else 's' }}

@@ -403,6 +403,30 @@ async def run_experiment(
                 )
                 progress("result", f"Registered method: {run.method}")
 
+            # Backfill experiment.name from the first registered method
+            # when the dashboard pre-created the experiment with an
+            # empty name (the dashboard's "+ New experiment" flow
+            # bypasses the planning-agent naming the CLI does in
+            # _determine_next_experiment). Don't touch the experiment
+            # ID — only the displayed name.
+            if runs:
+                exp_json = project_dir / "experiments" / experiment_id / "experiment.json"
+                try:
+                    if exp_json.exists():
+                        meta = json.loads(exp_json.read_text(encoding="utf-8"))
+                        if not (meta.get("name") or "").strip():
+                            meta["name"] = runs[0].method.replace("_", " ").title()
+                            if not (meta.get("hypothesis") or "").strip():
+                                meta["hypothesis"] = runs[0].observation or ""
+                            exp_json.write_text(
+                                json.dumps(meta, indent=2) + "\n",
+                                encoding="utf-8",
+                            )
+                except (OSError, ValueError, json.JSONDecodeError):
+                    # Non-fatal — name backfill is cosmetic. Don't
+                    # break the run if we can't update it.
+                    pass
+
                 # Update leaderboard — determine primary metric and direction
                 if run.metrics:
                     primary_metric, direction = _detect_primary_metric(run.metrics)

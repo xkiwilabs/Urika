@@ -240,6 +240,82 @@ def test_experiment_detail_404_for_unknown_project(client_with_runs):
     assert r.status_code == 404
 
 
+def test_experiment_report_route_renders_labbook_narrative(
+    tmp_path: Path, monkeypatch
+):
+    """The "View report" route must render labbook/narrative.md when
+    no report.md exists. The report agent writes narrative.md as part
+    of the standard ``urika run`` flow; without this fallback the
+    dashboard says "no report" after a successful run."""
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    labbook = proj / "experiments" / "exp-001" / "labbook"
+    labbook.mkdir(parents=True, exist_ok=True)
+    (labbook / "narrative.md").write_text(
+        "# Findings narrative\n\nDetails here.\n", encoding="utf-8"
+    )
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha/experiments/exp-001/report").text
+    assert "Findings narrative" in body
+
+
+def test_experiment_detail_shows_view_report_when_only_narrative_exists(
+    tmp_path: Path, monkeypatch
+):
+    """has_report flag must accept either report.md OR
+    labbook/narrative.md so the "View report" button surfaces after
+    every successful run."""
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    labbook = proj / "experiments" / "exp-001" / "labbook"
+    labbook.mkdir(parents=True, exist_ok=True)
+    (labbook / "narrative.md").write_text("# x\n\nyz", encoding="utf-8")
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha/experiments/exp-001").text
+    assert "View report" in body
+
+
+def test_experiments_list_falls_back_to_experiment_id_when_name_empty(
+    tmp_path: Path, monkeypatch
+):
+    """Empty experiment.name must NOT render as a blank title — fall
+    back to the experiment_id so the row stays scannable. Covers the
+    dashboard's pre-create-with-empty-name handoff before the
+    orchestrator's first-turn name backfill kicks in."""
+    proj = _make_project_with_experiments(tmp_path, "alpha", 1)
+    exp_json = proj / "experiments" / "exp-001" / "experiment.json"
+    exp_json.write_text(
+        json.dumps(
+            {
+                "experiment_id": "exp-001",
+                "name": "",
+                "hypothesis": "",
+                "status": "completed",
+                "created_at": "2026-04-25T00:00:00Z",
+            }
+        )
+    )
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha/experiments").text
+    assert "Exp-001" in body or "exp-001" in body
+
+
 def test_experiment_detail_shows_danger_zone(client_with_runs):
     """Type-name confirm + Move-to-trash button gated on the exp_id."""
     r = client_with_runs.get("/projects/alpha/experiments/exp-001")

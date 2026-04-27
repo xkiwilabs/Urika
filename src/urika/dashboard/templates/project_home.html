@@ -161,7 +161,7 @@
               class="list-item-link"
             >
               <div class="list-item-main">
-                <div class="list-item-title">{{ exp.name | humanize }}</div>
+                <div class="list-item-title">{{ (exp.name or exp.experiment_id) | humanize }}</div>
                 <div class="list-item-subtitle">{{ exp.experiment_id }}</div>
               </div>
               <div class="list-item-meta">

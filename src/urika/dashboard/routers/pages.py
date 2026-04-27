@@ -180,7 +180,12 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     book = summary.path / "projectbook"
     final_outputs = {
         "has_findings": (book / "findings.json").exists(),
-        "has_report": (book / "report.md").exists(),
+        # Either the finalize flow's report.md OR the report-agent's
+        # narrative.md (written at the end of every run). The view
+        # route picks whichever exists.
+        "has_report": (book / "report.md").exists() or (
+            book / "narrative.md"
+        ).exists(),
         "has_presentation": (
             (book / "presentation.html").exists()
             or (book / "presentation" / "index.html").exists()
@@ -270,8 +275,15 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    report_path = summary.path / "projectbook" / "report.md"
-    if not report_path.exists():
+    # Prefer the finalize flow's polished report.md; fall back to the
+    # report-agent's narrative.md (written at the end of every
+    # ``urika run``). Whichever exists is what we render.
+    book = summary.path / "projectbook"
+    report_path = next(
+        (p for p in (book / "report.md", book / "narrative.md") if p.exists()),
+        None,
+    )
+    if report_path is None:
         raise HTTPException(status_code=404, detail="No final report")
     from urika.dashboard.render import render_markdown
 
@@ -1406,8 +1418,18 @@ def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    report_path = summary.path / "experiments" / exp_id / "report.md"
-    if not report_path.exists():
+    # Look for either the finalize flow's ``report.md`` (preferred —
+    # polished, post-finalize) or the report-agent's
+    # ``labbook/narrative.md`` (per-experiment narrative produced by
+    # ``urika run``'s default report-generation pass). Whichever
+    # exists is what we render.
+    exp_dir = summary.path / "experiments" / exp_id
+    candidates = [
+        exp_dir / "report.md",
+        exp_dir / "labbook" / "narrative.md",
+    ]
+    report_path = next((p for p in candidates if p.exists()), None)
+    if report_path is None:
         raise HTTPException(status_code=404, detail="No report for this experiment")
 
     from urika.dashboard.render import render_markdown
@@ -1534,7 +1556,12 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
         experiment_status = "running"
     else:
         experiment_status = progress.get("status") or exp.status
-    has_report = (exp_dir / "report.md").exists()
+    # Either the finalize flow's report.md OR the report-agent's
+    # labbook/narrative.md (written by ``urika run`` at the end of every
+    # successful run). Both surface as "View report".
+    has_report = (exp_dir / "report.md").exists() or (
+        exp_dir / "labbook" / "narrative.md"
+    ).exists()
     # Presentation may be a single file (presentation.html) or a directory
     # containing index.html — accept both forms (matches the actual
     # presentation_agent output and the existing serve route).
