@@ -1414,6 +1414,15 @@ async def api_notifications_test_send(request: Request) -> JSONResponse:
     from urika.notifications.test_send import send_test_through_bus
 
     form = await request.form()
+
+    # Refresh secrets.env into os.environ so credentials added to the
+    # secrets file by `urika notifications` (in another shell) since the
+    # dashboard process started become visible to channel constructors.
+    # load_secrets only sets vars that aren't already in os.environ, so
+    # pre-existing exports take precedence.
+    from urika.core.secrets import load_secrets
+    load_secrets()
+
     bus = NotificationBus(project_name="test")
     construction_errors: list[dict[str, str]] = []
 

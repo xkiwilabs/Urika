@@ -141,6 +141,37 @@ def test_test_send_does_not_persist_settings(settings_client, tmp_path):
         assert not settings_toml.exists()
 
 
+def test_test_send_refreshes_secrets_env(settings_client, tmp_path, monkeypatch):
+    """Regression: test-send must reload secrets.env so newly-added vars
+    are visible to channel constructors. Otherwise the long-lived dashboard
+    process can't see credentials added via `urika notifications` in
+    another shell since startup."""
+    import os
+
+    # Point the secrets file at a temp location and write a fresh secret
+    secrets_path = tmp_path / "secrets.env"
+    secrets_path.write_text("FRESH_TOKEN=xoxb-just-added\n")
+    monkeypatch.setattr(
+        "urika.core.secrets._SECRETS_PATH", secrets_path
+    )
+    # Ensure the variable is NOT already in os.environ
+    monkeypatch.delenv("FRESH_TOKEN", raising=False)
+    assert "FRESH_TOKEN" not in os.environ
+
+    r = settings_client.post(
+        "/api/settings/notifications/test-send",
+        data={
+            "notifications_slack_channel": "#urika",
+            "notifications_slack_token_env": "FRESH_TOKEN",
+        },
+    )
+    assert r.status_code == 200
+    # The endpoint should have called load_secrets() and the FRESH_TOKEN
+    # value is now visible to subsequent channel reads (we don't assert
+    # the channel succeeded — just that the var was loaded).
+    assert os.environ.get("FRESH_TOKEN") == "xoxb-just-added"
+
+
 def test_test_send_construction_failure_surfaces_in_response(
     settings_client, monkeypatch
 ):

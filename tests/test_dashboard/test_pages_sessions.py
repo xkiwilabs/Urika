@@ -17,6 +17,18 @@ def test_sessions_list_empty_state(client_with_projects):
     assert "No sessions yet" in r.text
 
 
+def test_sessions_empty_state_credits_orchestrator_chat_not_advisor(client_with_projects):
+    """Sessions are saved from REPL/TUI orchestrator chat, not the advisor.
+    The empty-state copy must not mislead users into thinking advisor
+    chat creates sessions."""
+    r = client_with_projects.get("/projects/alpha/sessions")
+    assert r.status_code == 200
+    body = r.text
+    assert "orchestrator" in body.lower()
+    # Old wrong claim must be gone
+    assert "as you chat with the advisor" not in body
+
+
 def test_sessions_list_renders_recent_sessions_with_previews(
     client_with_projects, tmp_path
 ):

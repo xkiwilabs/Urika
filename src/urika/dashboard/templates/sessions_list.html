@@ -86,7 +86,14 @@
     </ul>
   {% else %}
     <div class="empty-state">
-      <p>No sessions yet. Sessions are saved automatically as you chat with the advisor.</p>
+      <p>
+        No sessions yet. Sessions are saved automatically when you chat with the
+        orchestrator from the terminal — launch <code>urika</code> and start typing,
+        or use slash commands like <code>/run</code>, <code>/advisor</code>, or
+        <code>/inspect</code>. Each conversation persists here so you can resume
+        it later via the <strong>Resume</strong> button below or
+        <code>/resume-session</code> in the terminal.
+      </p>
     </div>
   {% endif %}
 {% endblock %}
