@@ -51,6 +51,8 @@ The dashboard is a multi-page app. Each route is a server-rendered Jinja templat
 | `/projects/<name>/tools` | Registered tools listing (read-only viewer for the project tool registry). |
 | `/projects/<name>/criteria` | Versioned success-criteria viewer (read-only). |
 | `/projects/<name>/advisor` | Advisor chat panel — persistent transcript per project (see below). |
+| `/projects/<name>/advisor/log` | Live SSE stream of the running `urika advisor` subprocess (see below). |
+| `/projects/<name>/sessions` | Recent orchestrator chat sessions, newest first, with Resume / Delete actions (see below). |
 | `/projects/<name>/data` | Data sources registered for the project (Phase 13). |
 | `/projects/<name>/data/inspect?path=...` | Schema, missing counts, head/tail preview for one file (Phase 13). |
 | `/projects/<name>/usage` | Token / cost time-series charts and recent sessions table (Phase 13). |
@@ -103,6 +105,55 @@ The live-log page renders this as an inline answer form below the streamed log. 
 ## Advisor chat
 
 `/projects/<name>/advisor` is the in-browser chat surface for the advisor agent. The page renders the persistent advisor transcript stored under `projectbook/advisor-history.json`, with a "Send" composer at the bottom. Submitting posts to `POST /api/projects/<name>/advisor`, which appends the user message, runs the advisor agent, appends the response, and returns an HTMX fragment with the new exchange. History persists across reloads — the same store is shared with the CLI's `urika advisor` and the TUI's `/advisor` slash command. See [Advisor](06-advisor-and-instructions.md) for the underlying memory model.
+
+### Advisor subprocess + log streaming
+
+The dashboard's advisor is a real subprocess of `urika advisor`, not an
+in-process call. Submitting a message:
+
+1. `POST /api/projects/<n>/advisor` writes a `.advisor.lock` file (PID),
+   spawns `urika advisor` as a detached subprocess, drains stdout into
+   `projectbook/advisor.log`, and HX-Redirects the browser to the live
+   stream page.
+2. The live stream page (`GET /projects/<n>/advisor/log`, template
+   `advisor_log.html`) tails the log file via SSE
+   (`GET /api/projects/<n>/advisor/stream`).
+3. On completion: the advisor's user message + response are persisted to
+   `projectbook/advisor-history.json` (the same store used by CLI
+   `urika advisor` and TUI `/advisor`).
+4. While the subprocess is alive, the running-ops banner shows an
+   "advisor" chip — running advisor and a separate experiment run can
+   coexist (different lock files, different log streams).
+
+The transcript view at `GET /projects/<n>/advisor` reads the persisted
+history. When called with `?session_id=<id>`, it also pre-loads an
+orchestrator chat session's messages above the transcript as read-only
+context (the **Resume** button on the Sessions list links here).
+
+
+## Sessions list
+
+### `/projects/<n>/sessions`
+
+Lists recent orchestrator chat sessions for the project, newest first.
+Sessions are persisted automatically when you chat with the orchestrator
+from the terminal (REPL/TUI) — launch `urika` and start typing, or use
+slash commands. Each row shows:
+
+- The session's first user message (preview, truncated to 80 characters).
+- Turn count (number of user-assistant exchanges).
+- Last-updated timestamp.
+- **Resume** button — navigates to `/projects/<n>/advisor?session_id=<id>`,
+  which pre-loads the prior session's messages above the advisor composer
+  as read-only context.
+- **Delete** button — `DELETE /api/projects/<n>/sessions/<id>` trashes
+  the session JSON file. HTMX-driven row swap-out on success.
+
+Sessions auto-prune to the most recent 20 per project on each save (see
+`src/urika/core/orchestrator_sessions.py`).
+
+Empty state: "No sessions yet. Sessions are saved automatically when you
+chat with the orchestrator from the terminal."
 
 
 ## Finalize button + log page
@@ -293,6 +344,27 @@ Two settings pages share the same tabbed form pattern. Tabs are a small Alpine.j
 
 Both pages POST to a `PUT /api/...` endpoint that validates the payload and saves through the same `_write_toml` helper used by the CLI's `urika config`. See [Configuration](13-configuration.md) for the underlying file formats.
 
+### Send-test notification button
+
+The Notifications tab on the global Settings page includes a **Send test
+notification** button. Clicking it:
+
+1. Calls `POST /api/settings/notifications/test-send` with the current form
+   contents (un-saved) so you can validate credentials before clicking Save.
+2. The endpoint reloads `~/.urika/secrets.env` (so credentials added by
+   `urika notifications` in another shell are visible without restarting
+   the dashboard) and constructs each enabled channel.
+3. Each channel's `health_check()` is called first (SMTP NOOP for email,
+   `auth_test` for Slack, `Bot.get_me()` for Telegram); failures are
+   reported with the SDK's actual error string.
+4. Channels that pass health-check then send a synthetic test event.
+5. Per-channel results render inline below the button — green tick for
+   sent, red cross with the error message for failures.
+
+This is the fastest way to debug a misconfigured channel: the button shows
+the real auth error (e.g. Slack `invalid_auth`, Gmail `530 Authentication
+Required`) instead of waiting for an experiment run to surface it.
+
 
 ## Theme toggle
 
@@ -365,7 +437,10 @@ The dashboard's HTMX/fetch endpoints (server-rendered pages above are the only t
 | `POST /api/projects/<n>/experiments/<id>/report` | Spawn the report subprocess for an experiment. | 13B |
 | `POST /api/projects/<n>/tools/build` | Spawn the tool-builder subprocess. | 13D |
 | `GET  /api/projects/<n>/tools/build/stream` | SSE stream of the tool-builder log. | 13D |
-| `POST /api/projects/<n>/advisor` | Send a chat message to the advisor; appends to `projectbook/advisor-history.json`. | 11E.1 |
+| `POST /api/projects/<n>/advisor` | Send a chat message to the advisor; spawns `urika advisor` and HX-Redirects to the log stream. | 11E.1 |
+| `GET  /api/projects/<n>/advisor/stream` | SSE endpoint tailing `projectbook/advisor.log` while the advisor subprocess runs. | v0.3 |
+| `DELETE /api/projects/<n>/sessions/<id>` | Trash an orchestrator chat session JSON file. HTMX-driven row swap. | v0.3 |
+| `POST /api/settings/notifications/test-send` | Send a test notification through every configured channel; returns per-channel success/failure JSON. | v0.3 |
 | `POST /api/projects/<n>/knowledge` | Add a knowledge entry from a path or URL. | 11E.3 |
 | `PUT  /api/projects/<n>/settings/...` | Save settings tabs (basics/data/models/privacy/notifications). | — |
 | `PUT  /api/settings/...` | Save global settings tabs. | — |
