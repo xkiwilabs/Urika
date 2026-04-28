@@ -58,7 +58,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/core/report_writer.py` — Versioned file writer (timestamped backups)
 - `src/urika/core/presentation.py` — Render slide JSON into reveal.js HTML presentations
 - `src/urika/core/advisor_memory.py` — Persistent advisor conversation history and rolling context summaries
-- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent, presentation_agent, report_agent, project_builder, data_agent, finalizer), registry, config, Claude SDK adapter, audience.py
+- `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent, presentation_agent, report_agent, project_builder, data_agent, finalizer, project_summarizer), registry, config, Claude SDK adapter, audience.py
 - `src/urika/orchestrator/` — Experiment loop (planning→task→evaluator→advisor), autonomous mode (experiment-to-experiment), finalize sequence (finalizer→report→presentation→README), output parsing, knowledge integration, conversational OrchestratorChat (maintains conversation state, calls subagents via Bash, recommends slash commands for long-running operations)
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
 - `src/urika/methods/` — Agent-created analytical pipelines (IMethod ABC, MethodRegistry), zero built-ins — agents create methods at runtime
@@ -70,7 +70,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Project Status
 
-1380+ tests (including 56 TUI tests). Foundation, agents (11 roles + orchestrator), orchestrator (experiment + meta + finalize + conversational chat with subagent invocation), evaluation, methods (agent-created), tools (24 built-in), knowledge pipeline, CLI (20+ commands), Textual TUI (default, three-zone layout with interactive stdin bridge), classic REPL (fallback via --classic), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, dashboard, audience modes, persistent advisor memory, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (35 experiments, 288 methods).
+1380+ tests (including 56 TUI tests). Foundation, agents (12 roles + orchestrator), orchestrator (experiment + meta + finalize + conversational chat with subagent invocation), evaluation, methods (agent-created), tools (24 built-in), knowledge pipeline, CLI (20+ commands), Textual TUI (default, three-zone layout with interactive stdin bridge), classic REPL (fallback via --classic), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, dashboard, audience modes, persistent advisor memory, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (35 experiments, 288 methods).
 
 ## Development
 

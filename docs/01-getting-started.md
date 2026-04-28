@@ -106,7 +106,7 @@ This installs everything you need for statistical analysis, machine learning, vi
 
 | Package | What it provides |
 |---------|-----------------|
-| claude-agent-sdk | Agent runtime (all 11 agent roles) |
+| claude-agent-sdk | Agent runtime (all 12 agent roles) |
 | numpy, pandas | Data manipulation |
 | scipy | Scientific computing, statistical tests |
 | scikit-learn | ML basics: SVM, classification, clustering, regression, cross-validation, PCA, preprocessing, pipelines |

@@ -46,10 +46,11 @@ This means every method is tailored to your specific dataset and research questi
 
 ## Tools
 
-Tools are built-in analysis building blocks that agents can use when constructing methods. Urika ships with **18 built-in tools**:
+Tools are built-in analysis building blocks that agents can use when constructing methods. Urika ships with **24 built-in tools**:
 
 | Tool | Category | Description |
 |------|----------|-------------|
+| `cluster_analysis` | exploration | KMeans / DBSCAN / HDBSCAN clustering |
 | `correlation_analysis` | exploration | Correlation matrices and pairwise analysis |
 | `cross_validation` | preprocessing | K-fold cross-validation |
 | `data_profiler` | exploration | Dataset profiling and summary statistics |
@@ -58,14 +59,19 @@ Tools are built-in analysis building blocks that agents can use when constructin
 | `gradient_boosting` | regression | Gradient boosting regression |
 | `group_split` | preprocessing | Split data by group membership |
 | `hypothesis_tests` | statistical_test | Statistical hypothesis testing |
+| `linear_mixed_model` | regression | Mixed-effects regression via statsmodels |
 | `linear_regression` | regression | Linear regression fitting and diagnostics |
 | `logistic_regression` | classification | Logistic regression for classification |
 | `mann_whitney_u` | statistical_test | Mann-Whitney U non-parametric test |
 | `one_way_anova` | statistical_test | One-way ANOVA |
 | `outlier_detection` | exploration | Detect and flag outliers |
 | `paired_t_test` | statistical_test | Paired t-test |
+| `pca` | dimensionality_reduction | Principal Component Analysis |
+| `polynomial_regression` | regression | Polynomial features + linear regression |
 | `random_forest` | regression | Random forest regression |
 | `random_forest_classifier` | classification | Random forest classification |
+| `regularized_regression` | regression | Ridge / Lasso / ElasticNet regression |
+| `time_series_decomposition` | time_series | STL / additive / multiplicative decomposition |
 | `train_val_test_split` | preprocessing | Train/validation/test data splitting |
 | `visualization` | exploration | Chart and plot generation |
 
@@ -81,7 +87,7 @@ urika tools --project my-study    # includes project-specific tools
 
 ## Agents
 
-Urika uses eleven specialized agent roles, each with a distinct responsibility. All agents run on the Claude Agent SDK.
+Urika uses twelve specialized agent roles, each with a distinct responsibility. All agents run on the Claude Agent SDK.
 
 ### Project Builder
 
@@ -118,6 +124,18 @@ Writes narrative reports and summaries. Generates experiment-level narratives an
 ### Presentation Agent
 
 Creates reveal.js slide decks from experiment results. Generates HTML presentations that can be opened in a browser.
+
+### Data Agent
+
+The only agent that reads raw data in hybrid privacy mode. Runs on a private endpoint and outputs sanitized summaries -- aggregated statistics, feature names, distributions, and processed DataFrames -- so other agents never see raw data.
+
+### Finalizer
+
+Consolidates all research into polished, standalone deliverables. Selects the best methods, writes each as a standalone Python script, and produces a structured findings summary, methods README, `requirements.txt`, and cross-platform reproduce scripts.
+
+### Project Summarizer
+
+Read-only agent that produces a comprehensive project status summary by reading project files, the projectbook, and experiment records. Exposed via the `urika summarize` command.
 
 ## The orchestrator loop
 

@@ -50,7 +50,7 @@ The `ToolRegistry` handles discovery and lookup:
 from urika.tools import ToolRegistry
 
 registry = ToolRegistry()
-registry.discover()           # Auto-discover all 18 built-in tools
+registry.discover()           # Auto-discover all 24 built-in tools
 registry.list_all()           # Sorted list of tool names
 registry.list_by_category("regression")  # Filter by category
 registry.get("linear_regression")        # Get a specific tool
@@ -61,7 +61,7 @@ Each tool module exports a `get_tool()` factory function that the registry calls
 
 ## Built-in Tools by Category
 
-Urika ships with 18 built-in tools organized into five categories.
+Urika ships with 24 built-in tools organized into seven categories.
 
 ### Exploration
 
@@ -121,6 +121,21 @@ Create histogram, scatter, and boxplot visualizations. Saves plots as PNG files 
 | Artifacts | PNG plot files |
 
 Scatter plots require exactly 2 columns. Requires `matplotlib` (included in base install).
+
+---
+
+#### cluster_analysis
+
+Unsupervised clustering using KMeans, DBSCAN, or HDBSCAN. KMeans partitions observations into a fixed number of clusters; DBSCAN and HDBSCAN are density-based and discover clusters of varying shapes without specifying `n_clusters` up front.
+
+| Property | Value |
+|----------|-------|
+| Category | `exploration` |
+| Params | `method` (`"kmeans"`, `"dbscan"`, or `"hdbscan"`), `n_clusters` (KMeans only), `eps` and `min_samples` (DBSCAN), `columns` (list or None for all numeric), `random_state` |
+| Outputs | `cluster_labels`, `cluster_summary` (size and centroids per cluster), `n_clusters_found` |
+| Metrics | `silhouette_score` (when at least two clusters are formed) |
+
+Agents use this to surface latent groupings in the data, validate that supervised labels are recoverable from features, or generate cluster-id features for downstream models. HDBSCAN requires the `hdbscan` package.
 
 ---
 
@@ -295,6 +310,51 @@ Gradient boosting regression using scikit-learn's `GradientBoostingRegressor`. P
 
 ---
 
+#### polynomial_regression
+
+Polynomial regression: expands a single predictor into polynomial features (`x`, `x^2`, ..., `x^d`) and fits an OLS model on the expanded basis using scikit-learn.
+
+| Property | Value |
+|----------|-------|
+| Category | `regression` |
+| Params | `x_col` (required), `y_col` (required), `degree` (default: 2) |
+| Outputs | `coefficients` (per polynomial term), `intercept`, `predictions` |
+| Metrics | `r2`, `rmse`, `mae` |
+
+Useful for capturing simple non-linear trends in a single predictor without moving to a fully non-parametric model.
+
+---
+
+#### regularized_regression
+
+Regularized linear regression. Supports Ridge (L2), Lasso (L1), and ElasticNet (mixed) via scikit-learn. Penalises large coefficients to control overfitting and -- in the Lasso case -- perform feature selection.
+
+| Property | Value |
+|----------|-------|
+| Category | `regression` |
+| Params | `target` (required), `features` (list or None for all numeric), `method` (`"ridge"`, `"lasso"`, or `"elastic_net"`, default: `"ridge"`), `alpha` (default: 1.0), `l1_ratio` (ElasticNet only) |
+| Outputs | `coefficients` (per feature), `intercept`, `feature_importance` (sorted by absolute coefficient) |
+| Metrics | `r2`, `rmse`, `mae` |
+
+Agents typically reach for this when there are many correlated features or the dataset is small relative to the number of predictors.
+
+---
+
+#### linear_mixed_model
+
+Linear mixed-effects regression via statsmodels' `MixedLM`. Models fixed effects (population-level coefficients) alongside random effects that capture per-group variability -- essential for repeated-measures designs where observations from the same participant or session are not independent.
+
+| Property | Value |
+|----------|-------|
+| Category | `regression` |
+| Params | `formula` (Patsy formula, e.g. `"y ~ x1 + x2"`), `groups` (column name identifying the grouping variable, e.g. participant ID), `re_formula` (optional random-effects formula) |
+| Outputs | `fixed_effects` (coefficient and standard error per term), `random_effects` (per-group BLUPs), `fit_summary` (text summary from statsmodels) |
+| Metrics | `aic`, `bic`, `log_likelihood` |
+
+A core tool for behavioral, neuroscience, and psychology data where trials are nested within participants.
+
+---
+
 ### Classification
 
 Tools for categorical outcome prediction.
@@ -322,10 +382,48 @@ Random forest classification using scikit-learn's `RandomForestClassifier`. Hand
 | Metrics | `accuracy`, `f1` |
 | Outputs | `note` (recommendation to use cross-validation for unbiased estimates) |
 
+---
+
+### Dimensionality Reduction
+
+Tools for projecting high-dimensional data into a lower-dimensional space while preserving structure.
+
+#### pca
+
+Principal Component Analysis via scikit-learn's `PCA`. Computes orthogonal components ordered by the variance they explain, and returns both the components themselves and the data projected onto them.
+
+| Property | Value |
+|----------|-------|
+| Category | `dimensionality_reduction` |
+| Params | `columns` (list or None for all numeric), `n_components` (default: 2) |
+| Outputs | `components` (loadings per feature per component), `transformed` (projected data), `explained_variance_ratio` (per component), `cumulative_variance_ratio` |
+| Metrics | `total_variance_explained`, `n_components` |
+
+Useful for visualising clustering structure in 2D, removing collinearity before regression, or summarising large feature sets into a small number of latent dimensions.
+
+---
+
+### Time Series
+
+Tools for analysing data ordered in time.
+
+#### time_series_decomposition
+
+Decompose a time series into trend, seasonal, and residual components using STL (default), classical additive, or classical multiplicative decomposition via statsmodels.
+
+| Property | Value |
+|----------|-------|
+| Category | `time_series` |
+| Params | `time_col` (required), `value_col` (required), `period` (required for additive/multiplicative; optional for STL), `method` (`"stl"`, `"additive"`, or `"multiplicative"`, default: `"stl"`) |
+| Outputs | `trend`, `seasonal`, `residual` (each indexed by the time column), `method` |
+| Metrics | `seasonal_strength`, `trend_strength` |
+
+Agents use this to inspect whether a series has structural seasonality before fitting models, or to feed detrended residuals into downstream regression.
+
 
 ## Project-Specific Tools
 
-Beyond the 18 built-in tools, the **tool builder** agent can create project-specific tools. There are two ways to trigger this:
+Beyond the 24 built-in tools, the **tool builder** agent can create project-specific tools. There are two ways to trigger this:
 
 ### 1. Automatically during experiments
 
@@ -419,7 +517,7 @@ Project tools appear alongside built-in tools in the registry and are available 
 
 ## Data Handling for Different Research Domains
 
-The 18 built-in tools focus on tabular data analysis (statistics, regression, classification, preprocessing). For non-tabular data — images, audio, time series, spatial/3D, neuroimaging — agents handle things differently:
+The 24 built-in tools focus on tabular data analysis (statistics, regression, classification, preprocessing). For non-tabular data — images, audio, time series, spatial/3D, neuroimaging — agents handle things differently:
 
 1. **Detection**: The source scanner recognises 40+ file extensions across all major research data types (CSV, HDF5, EDF, NIfTI, WAV, PNG, PLY, SPSS .sav, Stata .dta, and many more)
 2. **Profiling**: During project creation, Urika profiles what it can — image dimensions, audio duration/sample rate, HDF5 structure — giving agents context about the data

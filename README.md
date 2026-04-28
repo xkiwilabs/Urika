@@ -111,7 +111,7 @@ flowchart TD
     LIT -.-> P
 ```
 
-Eleven agents work together. Each experiment runs autonomously — agents plan, execute, evaluate, and iterate without intervention. You choose how to manage the *between-experiment* flow:
+Twelve agents work together. Each experiment runs autonomously — agents plan, execute, evaluate, and iterate without intervention. You choose how to manage the *between-experiment* flow:
 
 - **Guided** (`urika run`) — agents run one experiment autonomously, then you review results and decide what to try next. Best for exploratory work and complex domains where human judgment matters between experiments.
 - **Fully autonomous** (`urika run --max-experiments N`) — the system runs multiple experiments back-to-back, with the advisor agent deciding what to try next. Best when you've provided detailed context (see [Prompts and Context](docs/04-prompts-and-context.md)).
@@ -168,8 +168,8 @@ See [Models and Privacy](docs/12-models-and-privacy.md) for configuration detail
 | [Advisor Chat and Instructions](docs/06-advisor-and-instructions.md) | Standalone advisor conversations, steering agents, suggestion-to-run flow |
 | [Viewing Results](docs/07-viewing-results.md) | Reports, presentations, methods, leaderboard |
 | [Finalizing Projects](docs/08-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
-| [Agent System](docs/09-agent-system.md) | All 11 agent roles and how they interact |
-| [Built-in Tools](docs/10-built-in-tools.md) | 18 analysis tools agents use |
+| [Agent System](docs/09-agent-system.md) | All 12 agent roles and how they interact |
+| [Built-in Tools](docs/10-built-in-tools.md) | 24 analysis tools agents use |
 | [Knowledge Pipeline](docs/11-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
 | [Models and Privacy](docs/12-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
 | [Configuration](docs/13-configuration.md) | urika.toml, criteria, preferences |

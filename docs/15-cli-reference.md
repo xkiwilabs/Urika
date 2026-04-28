@@ -343,7 +343,7 @@ urika run [PROJECT] [OPTIONS]
 | `--dry-run` | Print the planned pipeline (agents, tools, writable directories) without invoking any agent. Useful for verifying configuration. |
 | `--instructions TEXT` | Guide the next experiment (e.g., "focus on tree-based models") |
 | `--review-criteria` | Re-run the criteria-review subroutine so the advisor can evolve project criteria based on accumulated experiment results (may raise the bar). |
-| `--audience [expert\|novice]` | Control explanation depth in reports and presentations (default: expert) |
+| `--audience [novice\|standard\|expert]` | Control explanation depth in reports and presentations (default: standard) |
 
 **Interactive settings:** When called with no flags, shows a settings dialog:
 
@@ -470,7 +470,7 @@ urika report [PROJECT] [--experiment ID]
 | Option | Description |
 |--------|-------------|
 | `--experiment ID` | Generate report for a specific experiment |
-| `--audience [expert\|novice]` | Control explanation depth (default: expert) |
+| `--audience [novice\|standard\|expert]` | Control explanation depth (default: standard) |
 
 When no experiment is specified, you are prompted to choose: a specific experiment, all experiments, or project-level reports.
 
@@ -492,7 +492,7 @@ Prompts you to choose: a specific experiment, all experiments, or a project-leve
 
 | Option | Description |
 |--------|-------------|
-| `--audience [expert\|novice]` | Control explanation depth (default: expert) |
+| `--audience [novice\|standard\|expert]` | Control explanation depth (default: standard) |
 
 ---
 
@@ -596,7 +596,7 @@ urika finalize [PROJECT] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--instructions TEXT` | Optional instructions for the finalizer agent (e.g., "focus on the random forest method") |
-| `--audience [expert\|novice]` | Control explanation depth in reports and presentations (default: expert) |
+| `--audience [novice\|standard\|expert]` | Control explanation depth in reports and presentations (default: standard) |
 | `--draft` | Interim summary -- outputs to `projectbook/draft/`, does not overwrite final outputs or write standalone scripts |
 
 **Examples:**

@@ -112,11 +112,12 @@ Control the level of explanation in reports and presentations:
 
 ```toml
 [preferences]
-audience = "expert"    # or "novice"
+audience = "standard"    # or "novice", "expert"
 ```
 
-- **expert** (default) — Assumes domain expertise. Concise, uses technical terminology freely.
-- **novice** — Explains every method in plain language. Adds "What this means" explanations, defines technical terms, walks through results step by step. Presentations include extra slides explaining approaches conceptually.
+- **standard** (default) — Verbose speaker notes for presentations and balanced explanation depth in reports. Sits between expert (terse, assumes domain expertise) and novice (full plain-English walkthrough). Targets a senior undergraduate or early Masters/PhD student who has heard of common methods but doesn't know their specifics.
+- **novice** — Explains every method in plain language. Adds "What this means" explainer slides before results, defines technical terms on first use, and walks through results step by step. Presentations include extra slides explaining approaches conceptually.
+- **expert** — Concise; assumes domain expertise; uses technical terminology freely. Use when writing for a paper-review audience.
 
 Override per-command with `--audience`:
 

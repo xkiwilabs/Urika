@@ -1,6 +1,6 @@
 # Agent System
 
-Urika uses a multi-agent architecture where specialized agents collaborate through a structured experiment loop. Each agent has a defined role, specific tool access, and security boundaries that control what it can read and write.
+Urika uses a multi-agent architecture where twelve specialized agents collaborate through a structured experiment loop. Each agent has a defined role, specific tool access, and security boundaries that control what it can read and write.
 
 
 ## Architecture Overview
@@ -202,6 +202,23 @@ Consolidates all research into polished, standalone deliverables. The Finalizer 
 | Blocked bash | `rm -rf`, `git push`, `git reset` |
 | Max turns | 20 |
 
+---
+
+### 12. Project Summarizer
+
+**Name:** `project_summarizer`
+
+Produces a comprehensive project status summary. Reads project configuration, the projectbook, experiment records, methods, and criteria, and writes a unified narrative summary covering progress, key findings, and outstanding questions. Exposed via the `urika summarize` command. Read-only -- it returns narrative text which the CLI writes to `projectbook/summary.md` using versioned file writing.
+
+| Property | Value |
+|----------|-------|
+| Tools | Read, Glob, Grep |
+| Writable dirs | None (read-only) |
+| Max turns | 15 |
+| Privacy | Respects the project's privacy mode; defaults to the open endpoint since the task is summarisation rather than raw-data access |
+| Inputs | Project files, projectbook, experiments, methods, criteria |
+| Outputs | `projectbook/summary.md` (written by the CLI from the agent's narrative) |
+
 
 ## The Orchestrator
 
@@ -281,6 +298,7 @@ These agents can read the entire project directory but cannot write to any files
 - Advisor Agent
 - Report Agent
 - Presentation Agent
+- Project Summarizer
 
 Note: The Finalizer agent has write access (see Writable Agents below).
 

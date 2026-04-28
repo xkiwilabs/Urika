@@ -10,8 +10,8 @@
 | [06 Advisor Chat and Instructions](06-advisor-and-instructions.md) | Standalone advisor conversations, steering agents, the suggestion-to-run flow |
 | [07 Viewing Results](07-viewing-results.md) | Reports, presentations, leaderboard, usage stats |
 | [08 Finalizing Projects](08-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
-| [09 Agent System](09-agent-system.md) | All 11 agent roles, orchestrator, security boundaries |
-| [10 Built-in Tools](10-built-in-tools.md) | 18 analysis tools agents use |
+| [09 Agent System](09-agent-system.md) | All 12 agent roles, orchestrator, security boundaries |
+| [10 Built-in Tools](10-built-in-tools.md) | 24 analysis tools agents use |
 | [11 Knowledge Pipeline](11-knowledge-pipeline.md) | Ingesting papers and PDFs, searching |
 | [12 Models and Privacy](12-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
 | [13 Configuration](13-configuration.md) | urika.toml, criteria, environment variables |
