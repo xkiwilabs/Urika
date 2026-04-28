@@ -210,18 +210,16 @@ Every chat with the orchestrator (whether free-text or a slash command
 that invokes the orchestrator) is part of a session. New sessions start
 when:
 
-- You launch a fresh `urika` (no `--resume`).
-- You explicitly type `/new-session` (planned).
+- You launch a fresh `urika`.
+- You explicitly type `/new-session` to start a fresh session without
+  exiting the TUI. This is useful when the previous conversation has
+  strayed off-topic and you want a clean slate without losing the
+  previous session's transcript (it remains on disk and can be resumed).
 
 ### Resume on launch
 
-```
-urika --resume                    # resume the most recent session for the most recent project
-urika --resume <session_id>       # resume a specific session
-```
-
-When you switch into a project that has a recent session, the REPL
-prints a one-line hint:
+When you launch `urika` and switch into a project that has a recent
+session, the REPL prints a one-line hint:
 
 ```
 Project myproject loaded.
@@ -229,8 +227,14 @@ Project myproject loaded.
   Type /resume-session to continue.
 ```
 
-Type `/resume-session` (or `/resume-session <id>` for a specific one)
-to load that session's transcript into the current REPL.
+Inside the running TUI, type:
+
+- `/resume-session` — pick from a list of recent sessions for the
+  current project (1-indexed, newest first).
+- `/resume-session <number>` — load the session at that position from
+  the list.
+
+Or browse and resume from the dashboard's **Sessions** tab.
 
 ### Listing sessions
 
@@ -247,8 +251,9 @@ prior session's messages as a read-only "Prior session" panel above the
 advisor transcript, so you can see what was discussed before and ask a
 follow-up via the advisor composer. **New advisor exchanges append to
 advisor history, not back to the original orchestrator session** — to
-continue writing into the original session, run
-``urika --resume <session_id>`` in the terminal.
+continue writing into the original session, launch `urika` in the
+terminal and run ``/resume-session`` (or ``/resume-session <number>``
+for a specific one; 1-indexed by recency).
 
 ### Session retention
 

@@ -8,7 +8,7 @@ The task agent, finalizer, and tool builder write Python code into your project 
 
 ### What this means in practice
 
-- **Inspect before rerunning.** Each experiment's generated code lives under `<project>/experiments/<id>/code/`. Read it before re-running an experiment or sharing the project with a collaborator.
+- **Inspect before rerunning.** Each experiment's generated method scripts live under `<project>/experiments/<id>/methods/` (the task agent can also write artefacts elsewhere within the experiment dir). Read them before re-running an experiment or sharing the project with a collaborator.
 - **Use `--dry-run` to preview.** `urika run --dry-run` prints the planned pipeline — which agents will run, which directories are writable, where task-agent Python will land — without invoking any agent. Use it when you want to know what's about to happen before it does.
 - **Don't run untrusted projects.** If someone sends you a Urika project directory, treat it like running a random Python script from that person. Agent-written code committed to the project can and will execute on `urika run`.
 - **Avoid shared hardware.** Do not run Urika on a machine where the user you're logged in as can write to files other users depend on. The agent's filesystem access is your user's filesystem access.
@@ -31,7 +31,7 @@ Concrete examples of the policies in effect:
 
 - The **evaluator** is read-only: `allowed_tools=["Read", "Glob", "Grep"]`, `writable_dirs=[]`.
 - The **presentation agent** cannot run code: `allowed_tools=["Read", "Glob", "Grep"]`, no Bash.
-- The **task agent** can execute generated Python under `experiments/<id>/code/` and can write to the methods registry.
+- The **task agent** can execute generated Python from `experiments/<id>/methods/` and write to the methods registry. The agent's writable scope is the entire `experiments/<id>/` subtree.
 - The **orchestrator chat** can invoke subagents via `urika ` CLI prefixes through Bash, but is blocked from reading raw data files directly (`cat */data/`, `head */data/`, etc.).
 
 ## Secrets

@@ -102,7 +102,7 @@ The live-log page renders this as an inline answer form below the streamed log. 
 
 ## Advisor chat
 
-`/projects/<name>/advisor` is the in-browser chat surface for the advisor agent. The page renders the persistent advisor transcript stored under `projectbook/advisor.json`, with a "Send" composer at the bottom. Submitting posts to `POST /api/projects/<name>/advisor`, which appends the user message, runs the advisor agent, appends the response, and returns an HTMX fragment with the new exchange. History persists across reloads — the same store is shared with the CLI's `urika advisor` and the TUI's `/advisor` slash command. See [Advisor](07-advisor.md) for the underlying memory model.
+`/projects/<name>/advisor` is the in-browser chat surface for the advisor agent. The page renders the persistent advisor transcript stored under `projectbook/advisor-history.json`, with a "Send" composer at the bottom. Submitting posts to `POST /api/projects/<name>/advisor`, which appends the user message, runs the advisor agent, appends the response, and returns an HTMX fragment with the new exchange. History persists across reloads — the same store is shared with the CLI's `urika advisor` and the TUI's `/advisor` slash command. See [Advisor](06-advisor-and-instructions.md) for the underlying memory model.
 
 
 ## Finalize button + log page
@@ -166,7 +166,7 @@ The sidebar is **mode-aware** — it shows different links depending on whether 
   - Global settings
 - **Project mode** (active on any `/projects/<name>/...` route):
   - A "← Back to projects" link returns the user to the registry.
-  - Project-scoped links (canonical order): Home, Experiments, Advisor, Knowledge, Methods, Tools, Data, Usage, Settings. Advisor sits second after Experiments so the conversational entry point is one click away; Methods/Tools/Data cluster the analytical surfaces; Usage and Settings close the list.
+  - Project-scoped links (canonical order): Home, Experiments, Advisor, Sessions, Knowledge, Methods, Tools, Data, Usage, Settings. Advisor sits second after Experiments so the conversational entry point is one click away; Sessions sits next to Advisor since the two are linked (Resume from Sessions pre-loads into the Advisor chat); Methods/Tools/Data cluster the analytical surfaces; Usage and Settings close the list.
 - **Footer**: the theme toggle (moved here in Phase 11A from its previous location in the page header).
 
 Sidebar links are muted by default, accent-coloured on hover, and accent + tinted-background when the current path matches the link's route. Active state is computed server-side from the request path.
@@ -365,7 +365,7 @@ The dashboard's HTMX/fetch endpoints (server-rendered pages above are the only t
 | `POST /api/projects/<n>/experiments/<id>/report` | Spawn the report subprocess for an experiment. | 13B |
 | `POST /api/projects/<n>/tools/build` | Spawn the tool-builder subprocess. | 13D |
 | `GET  /api/projects/<n>/tools/build/stream` | SSE stream of the tool-builder log. | 13D |
-| `POST /api/projects/<n>/advisor` | Send a chat message to the advisor; appends to `projectbook/advisor.json`. | 11E.1 |
+| `POST /api/projects/<n>/advisor` | Send a chat message to the advisor; appends to `projectbook/advisor-history.json`. | 11E.1 |
 | `POST /api/projects/<n>/knowledge` | Add a knowledge entry from a path or URL. | 11E.3 |
 | `PUT  /api/projects/<n>/settings/...` | Save settings tabs (basics/data/models/privacy/notifications). | — |
 | `PUT  /api/settings/...` | Save global settings tabs. | — |
@@ -385,7 +385,7 @@ For readers cross-referencing the Phase 13 plan (`dev/plans/2026-04-26-phase-13-
 - **Data inspection (13E).** New `/projects/<n>/data` page lists registered data sources from `urika.toml`'s `[project].data_paths`. `/data/inspect?path=...` shows column / dtype / missing / numeric stats plus head(10) and tail(10) preview, using the same loader registry the agents use. Path traversal is blocked by an allow-list validator against `data_paths` plus `<project>/data`.
 - **Usage charts (13F).** `/projects/<n>/usage` reads `usage.json`, shows totals plus token-over-time and cost-over-time line charts via Chart.js (4.4.1, CDN). Per-experiment / per-agent slices intentionally omitted — the usage schema doesn't carry that breakdown yet.
 - **Macro DRY (13G.1).** `action_label("Generate", "report", has_report)` → "Generate report" / "Re-generate report". One macro replaces four inlined ternaries across `project_home.html` and `experiment_detail.html`.
-- **Sidebar reorder (13G.2).** Canonical project-mode order is now Home / Experiments / Methods / Tools / Data / Knowledge / Advisor / Usage / Settings.
+- **Sidebar reorder (13G.2).** Canonical project-mode order is now Home / Experiments / Advisor / Sessions / Knowledge / Methods / Tools / Data / Usage / Settings. (Sessions was inserted alongside Advisor in v0.3.)
 
 
 ## Phase 11 additions at a glance
