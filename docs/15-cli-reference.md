@@ -283,6 +283,45 @@ urika experiment list [PROJECT]
 
 ---
 
+### `urika experiment delete`
+
+Move a single experiment to the project's local trash at `<project>/trash/`. The experiment directory is moved (not deleted) so artifacts are preserved. A manifest entry is written to `<project>/trash/.urika-trash-manifest.json` so you can identify it later.
+
+This mirrors `urika delete` (which trashes a whole project to `~/.urika/trash/`) but operates on one experiment within a project.
+
+```
+urika experiment delete [PROJECT] EXP_ID [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `PROJECT` | Project name (defaults to the most recent project if omitted) |
+| `EXP_ID` | Experiment ID to trash (e.g., `exp-003`) — required |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-f`, `--force` | Skip the confirmation prompt. |
+| `--json` | Emit the trash result as JSON (`project_name`, `experiment_id`, `original_path`, `trash_path`). |
+
+**Behavior:**
+
+- Refuses to trash an active experiment (one with a `.lock` file) — stop the run first.
+- Empty the project's `trash/` folder manually when you're sure (e.g., `rm -rf <project>/trash/<exp_id>-*`).
+
+**Examples:**
+
+```bash
+urika experiment delete my-study exp-003
+urika experiment delete my-study exp-003 --force
+urika experiment delete my-study exp-003 --json
+```
+
+---
+
 ### `urika run`
 
 Run an experiment using the orchestrator. This is the main command that drives the agent loop: planning, task execution, evaluation, and advisor suggestions.
@@ -301,8 +340,9 @@ urika run [PROJECT] [OPTIONS]
 | `--resume` | Resume a paused or failed experiment |
 | `-q`, `--quiet` | Suppress verbose tool-use streaming output |
 | `--auto` | Fully autonomous mode -- no confirmation prompts |
+| `--dry-run` | Print the planned pipeline (agents, tools, writable directories) without invoking any agent. Useful for verifying configuration. |
 | `--instructions TEXT` | Guide the next experiment (e.g., "focus on tree-based models") |
-| `--review-criteria` | Ask advisor to review criteria when met (may raise the bar) |
+| `--review-criteria` | Re-run the criteria-review subroutine so the advisor can evolve project criteria based on accumulated experiment results (may raise the bar). |
 | `--audience [expert\|novice]` | Control explanation depth in reports and presentations (default: expert) |
 
 **Interactive settings:** When called with no flags, shows a settings dialog:
@@ -351,11 +391,16 @@ max_turns_per_experiment = 10
 
 ## Viewing
 
-### `urika dashboard [PROJECT] [--port PORT]`
+### `urika dashboard [PROJECT] [OPTIONS]`
 
 Open a browser-based read-only dashboard for a project. Displays experiments, reports, figures, methods, and criteria in an interactive web interface.
 
-- **`--port PORT`** — Server port (default: 8420)
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--port PORT` | Server port (default: a random free port) |
+| `--auth-token TOKEN` | Require this bearer token on all requests (`Authorization: Bearer <token>`). `/healthz` and `/static` are exempt. See [Dashboard](19-dashboard.md) for the full auth flow. |
 
 The dashboard shows:
 - **Sidebar** — Curated project tree: experiments (with labbook, artifacts, presentations), projectbook, methods, criteria
@@ -592,6 +637,37 @@ urika build-tool my-project "install librosa and create an audio feature extract
 
 ---
 
+### `urika summarize`
+
+Run the **Project Summarizer** agent on a project. Reads project files (config, criteria, methods, leaderboard) and the experiment history, then writes a high-level summary to `projectbook/summary.md`.
+
+```
+urika summarize [PROJECT] [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `PROJECT` | Project name (prompted if omitted) |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--instructions TEXT` | Optional guidance to steer the summarizer (e.g., "focus on open questions"). |
+| `--json` | Output the summarizer result as JSON. |
+
+**Examples:**
+
+```bash
+urika summarize my-project
+urika summarize my-project --instructions "focus on what's still unknown"
+urika summarize my-project --json
+```
+
+---
+
 ## Knowledge
 
 ### `urika knowledge ingest`
@@ -734,6 +810,41 @@ urika config my-project --show   # show project settings
 For per-agent model overrides beyond what the interactive setup provides, edit `urika.toml` directly — see [Configuration](13-configuration.md).
 
 
+### `urika notifications`
+
+Configure notification channels (Email, Slack, Telegram). Credentials are saved to `~/.urika/secrets.env`. Channel settings live in `~/.urika/settings.toml` (global) or `<project>/urika.toml` (per-project). With no options, launches an interactive setup wizard.
+
+```
+urika notifications [OPTIONS]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--show` | Print the current notification configuration (channels, masked credentials, status). |
+| `--test` | Send a test notification through every enabled channel. With `--project`, uses the merged project + global config. |
+| `--disable` | Disable notifications for the project (project-level only — pair with `--project`). |
+| `--project NAME` | Switch to per-project setup: pick channels (allow-list), add extra recipients, override the Telegram chat ID. |
+
+**Behavior:**
+
+- **Global setup** (no `--project`): configure channel-level credentials and `auto_enable` flags for new projects.
+- **Project setup** (`--project NAME`): enable/disable individual channels for that project and add per-project overrides on top of the global config.
+
+**Examples:**
+
+```bash
+urika notifications                          # interactive global setup
+urika notifications --show                   # show current global config
+urika notifications --test                   # send a test on every enabled channel
+urika notifications --project my-study       # per-project channel allow-list
+urika notifications --project my-study --disable
+```
+
+See [Notifications](17-notifications.md) for the full feature guide, including event types, priority levels, and Slack interactive buttons.
+
+
 ## System
 
 ### `urika setup`
@@ -797,6 +908,33 @@ urika tools [--category CATEGORY] [--project NAME]
   visualization         [exploration]       Generate plots and figures
   ...
 ```
+
+---
+
+### `urika tui`
+
+Explicitly launch the interactive Urika TUI. Equivalent to running bare `urika` with no subcommand, but discoverable via `urika --help` and easy to invoke from scripts.
+
+```
+urika tui [PROJECT]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `PROJECT` | Optional project name to auto-load on launch. If omitted, the TUI starts without a project loaded. |
+
+**Examples:**
+
+```bash
+urika tui                 # launch the TUI (no project loaded)
+urika tui my-study        # launch and auto-load my-study
+```
+
+The TUI binary is searched in the following order: the `URIKA_TUI_BIN` environment variable, the system `PATH` (`urika-tui`), the local dev build (`packages/urika-tui/dist/urika-tui`), or run via `bun` from `packages/urika-tui/src/index.ts` if available. See [Interactive TUI](16-interactive-tui.md) for usage.
+
+---
 
 ### `urika --version`
 

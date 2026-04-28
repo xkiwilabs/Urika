@@ -137,6 +137,8 @@ Available at all times, regardless of whether a project is loaded.
 | `/quit` | Save session usage data and exit. |
 | `/tools` | List all available analysis tools. If a project is loaded, also includes project-specific tools. |
 | `/usage` | Show usage stats. With a loaded project: current session and historical totals. Without: usage across all projects. |
+| `/copy [N]` | Copy the last `N` output-panel lines to the clipboard via `pyperclip` (default `N = 40`). On headless Linux without `xclip`/`xsel`, prints the text inline so you can copy it manually. |
+| `/notifications [show\|test\|disable]` | Open the notification setup wizard from inside the TUI (same flow as `urika notifications`). Sub-args mirror the CLI: `show`, `test`, or `disable`. With a project loaded, runs project-scoped; otherwise global. |
 
 ### Project Commands
 
@@ -168,6 +170,9 @@ These require a project to be loaded first. Running them without a project shows
 | `/config global` | Configure global defaults (used for new projects). |
 | `/config global show` | Show global defaults. |
 | `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](19-dashboard.md) for pages, run launcher, and auth. |
+| `/pause` | Request a pause of the running experiment. The orchestrator pauses cleanly after the current subagent finishes its turn. Writes `<project>/.urika/pause_requested` (contents: `pause`). Resume with `/run` or `/resume`. |
+| `/stop` | Request an immediate stop of the running agent or experiment. Writes `<project>/.urika/pause_requested` (contents: `stop`); the orchestrator's pause controller picks it up at the next loop boundary. Use this when you want the run to end now rather than continue to the next experiment. |
+| `/delete-experiment <exp_id>` | Move an experiment to `<project>/trash/`. Mirrors `urika experiment delete`. Prompts for confirmation. Refuses if the experiment has a `.lock` file (active run). |
 
 
 ## Run Settings
