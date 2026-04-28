@@ -1409,8 +1409,11 @@ def test_global_settings_put_notifications_email_writes_section(
     assert email["smtp_port"] == 587
     # When the form's smtp_user matches from_addr, EmailChannel's own
     # default kicks in — we can persist either way; current behaviour is
-    # to persist explicit smtp_user when the user filled it in.
-    assert email["smtp_user"] == "bot"
+    # to persist the explicit value when the user filled it in. The
+    # canonical TOML key is ``username`` (matches EmailChannel's reader).
+    assert email["username"] == "bot"
+    # Canonical password env key — EmailChannel reads ``password_env``.
+    assert email["password_env"] == "SMTP_PW"
 
 
 def test_global_settings_put_notifications_slack_writes_section(
@@ -1430,7 +1433,8 @@ def test_global_settings_put_notifications_slack_writes_section(
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
     assert s["notifications"]["slack"]["channel"] == "#urika"
-    assert s["notifications"]["slack"]["token_env"] == "SLACK_TOKEN"
+    # Canonical key — SlackChannel reads ``bot_token_env``.
+    assert s["notifications"]["slack"]["bot_token_env"] == "SLACK_TOKEN"
 
 
 def test_global_settings_put_notifications_telegram_writes_section(
@@ -1610,7 +1614,12 @@ def test_global_settings_slack_inbound_fields_reflect_saved_values(
     """When the inbound-config fields are saved in ``settings.toml``,
     the form pre-populates them. ``allowed_channels`` /
     ``allowed_users`` are stored as TOML lists; the form renders them
-    as comma-separated strings."""
+    as comma-separated strings.
+
+    Uses the legacy ``token_env`` key on purpose — the template reads
+    the canonical ``bot_token_env`` first but falls back so existing
+    TOML files (written by the buggy SAVE handler) still populate.
+    """
     (tmp_path / "home" / "settings.toml").write_text(
         "[notifications.slack]\n"
         'channel = "#urika"\n'
@@ -1622,9 +1631,28 @@ def test_global_settings_slack_inbound_fields_reflect_saved_values(
     )
     body = settings_client.get("/settings").text
     assert "SLACK_APP_TOKEN" in body
+    # Legacy-key fallback: SLACK_BOT_TOKEN was written under ``token_env``
+    # (legacy) but the template should still render it because of the
+    # fallback in the bot_token_env field.
+    assert "SLACK_BOT_TOKEN" in body
     # Lists render as comma-joined strings.
     assert "#urika, #lab-runs" in body or "#urika,#lab-runs" in body
     assert "U01ABC, U02DEF" in body or "U01ABC,U02DEF" in body
+
+
+def test_global_settings_slack_canonical_bot_token_env_renders(
+    settings_client, tmp_path
+):
+    """When the TOML uses the canonical ``bot_token_env`` key, the form
+    pre-populates the bot token field — this is the post-fix path."""
+    (tmp_path / "home" / "settings.toml").write_text(
+        "[notifications.slack]\n"
+        'channel = "#urika"\n'
+        'bot_token_env = "SLACK_BOT_TOKEN_CANON"\n',
+        encoding="utf-8",
+    )
+    body = settings_client.get("/settings").text
+    assert "SLACK_BOT_TOKEN_CANON" in body
 
 
 def test_global_settings_put_writes_slack_inbound_config(
@@ -1674,10 +1702,246 @@ def test_global_settings_put_drops_empty_slack_inbound_fields(
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
     slack = s["notifications"]["slack"]
-    # Channel + token_env still present (those carry data); the empty
+    # Channel + bot_token_env still present (those carry data); the empty
     # inbound-config fields must not have written keys.
     assert slack["channel"] == "#urika"
-    assert slack["token_env"] == "SLACK_BOT_TOKEN"
+    # Canonical key — SlackChannel reads ``bot_token_env``.
+    assert slack["bot_token_env"] == "SLACK_BOT_TOKEN"
     assert "app_token_env" not in slack
     assert "allowed_channels" not in slack
     assert "allowed_users" not in slack
+
+
+# ---- Round-trip: SAVE → load → channel construction ----------------------
+#
+# Regression net for the 2026-04 audit that found 5 key-mismatch bugs:
+#   email password env  : smtp_password_env -> password_env
+#   email SMTP user     : smtp_user         -> username
+#   slack bot token env : token_env         -> bot_token_env
+#   project email "to"  : extra_to          -> to (loader merges)
+#   project telegram    : override_chat_id  -> chat_id (loader cfg.update)
+#
+# Each test below saves via the dashboard PUT, reads settings.toml,
+# constructs the actual channel, and asserts the channel sees the value.
+# A single one of these would have caught all five bugs at once.
+
+
+def test_round_trip_email_save_constructs_working_channel(
+    settings_client, tmp_path
+):
+    """Regression: dashboard SAVE must persist keys EmailChannel can read."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_email_from": "bot@example.com",
+            "notifications_email_to": "alice@example.com",
+            "notifications_email_smtp_host": "smtp.example.com",
+            "notifications_email_smtp_port": "587",
+            "notifications_email_smtp_user": "bot-login",
+            "notifications_email_smtp_password_env": "MY_PW",
+        },
+    )
+    assert r.status_code == 200
+
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    email_cfg = s["notifications"]["email"]
+
+    from urika.notifications.email_channel import EmailChannel
+
+    ch = EmailChannel(email_cfg)
+    assert ch._from == "bot@example.com"
+    # was being lost as smtp_user
+    assert ch._username == "bot-login"
+    # was being lost as smtp_password_env
+    assert ch._password_env == "MY_PW"
+    assert ch._server == "smtp.example.com"
+
+
+def test_round_trip_slack_save_constructs_working_channel(
+    settings_client, tmp_path, monkeypatch
+):
+    """Regression: dashboard SAVE must persist the slack bot token env
+    var name under the key SlackChannel reads. If the key is wrong, the
+    channel constructs a WebClient with an empty token and the
+    notification silently fails on the wire."""
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test-value")
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_slack_channel": "#urika",
+            "notifications_slack_token_env": "SLACK_BOT_TOKEN",
+        },
+    )
+    assert r.status_code == 200
+
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    slack_cfg = s["notifications"]["slack"]
+
+    # If bot_token_env is preserved, the WebClient gets the test token.
+    # If lost (old token_env bug), the channel would never find the env.
+    assert slack_cfg.get("bot_token_env") == "SLACK_BOT_TOKEN"
+
+    # Try to construct an actual SlackChannel (skip if slack-sdk not
+    # installed in the test env — the key check above is the load-bearing
+    # assertion).
+    try:
+        from urika.notifications.slack_channel import SlackChannel
+    except ImportError:
+        return
+    try:
+        ch = SlackChannel(slack_cfg)
+    except ImportError:
+        return  # slack-sdk missing — skip channel-level check
+    assert ch._channel == "#urika"
+
+
+def test_round_trip_telegram_save_constructs_working_channel(
+    settings_client, tmp_path
+):
+    """Regression: dashboard SAVE persists telegram bot_token_env under
+    the canonical key (this side was already correct — the test pins it
+    in place so a future refactor doesn't regress it)."""
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "10",
+            "notifications_telegram_chat_id": "12345",
+            "notifications_telegram_bot_token_env": "TG_TOKEN",
+        },
+    )
+    assert r.status_code == 200
+
+    s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    tg_cfg = s["notifications"]["telegram"]
+    assert tg_cfg["chat_id"] == "12345"
+    assert tg_cfg["bot_token_env"] == "TG_TOKEN"
+
+
+def test_round_trip_global_email_legacy_key_falls_back(
+    settings_client, tmp_path
+):
+    """Existing TOML files written by the buggy SAVE handler used the
+    non-canonical keys (smtp_user / smtp_password_env). The template
+    GETs read the canonical key first but fall back to the legacy key
+    so users don't see a blank form on first load after upgrade."""
+    (tmp_path / "home" / "settings.toml").write_text(
+        "[notifications.email]\n"
+        'from_addr = "bot@example.com"\n'
+        'to = ["alice@example.com"]\n'
+        'smtp_server = "smtp.example.com"\n'
+        'smtp_user = "legacy-bot"\n'
+        'smtp_password_env = "LEGACY_PW"\n',
+        encoding="utf-8",
+    )
+    body = settings_client.get("/settings").text
+    # Legacy values still populate the form fields.
+    assert "legacy-bot" in body
+    assert "LEGACY_PW" in body
+
+
+def test_round_trip_project_email_to_save_round_trips(
+    client_with_projects, tmp_path, monkeypatch
+):
+    """Regression: project SAVE must persist email overrides under the
+    canonical ``to`` key — the loader merges this into the global
+    ``to`` list (see ``_load_notification_config`` in
+    ``src/urika/notifications/__init__.py``). With the buggy ``extra_to``
+    key, project addresses never reached the channel.
+    """
+    from urika.notifications import _load_notification_config
+
+    # Save the per-project override via the dashboard PUT.
+    r = client_with_projects.put(
+        "/api/projects/alpha/settings",
+        data={
+            "name": "alpha",
+            "question": "q for alpha",
+            "mode": "exploratory",
+            "description": "",
+            "audience": "expert",
+            "project_notif_email_enabled": "on",
+            "project_notif_email_extra_to": "alice@example.com",
+            "project_notif_telegram_override_chat_id": "",
+        },
+    )
+    assert r.status_code == 200
+    proj_path = tmp_path / "alpha"
+    proj_toml = tomllib.loads((proj_path / "urika.toml").read_text())
+    # Persisted under canonical ``to`` — the loader will find it.
+    assert proj_toml["notifications"]["email"]["to"] == [
+        "alice@example.com"
+    ]
+
+    # End-to-end: stash a global email config and call the real loader.
+    # The loader reads ``~/.urika/settings.toml`` from
+    # ``Path.home() / ".urika" / "settings.toml"``, so point HOME at our
+    # temp dir.
+    home = tmp_path / "loader_home"
+    home.mkdir()
+    (home / ".urika").mkdir()
+    (home / ".urika" / "settings.toml").write_text(
+        "[notifications.email]\n"
+        'from_addr = "bot@example.com"\n'
+        'to = ["team@example.com"]\n'
+        'smtp_server = "smtp.example.com"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+
+    merged = _load_notification_config(proj_path)
+    # alice was added to the global recipients — exactly what users
+    # expect from a per-project "extra_to".
+    assert "team@example.com" in merged["email"]["to"]
+    assert "alice@example.com" in merged["email"]["to"]
+
+
+def test_round_trip_project_telegram_chat_id_save_round_trips(
+    client_with_projects, tmp_path, monkeypatch
+):
+    """Regression: project telegram override saved under canonical
+    ``chat_id``. Loader does ``cfg.update(project_ch)`` so the project
+    key MUST match the channel-readable key; old ``override_chat_id``
+    would just sit there unread by TelegramChannel.
+    """
+    from urika.notifications import _load_notification_config
+
+    r = client_with_projects.put(
+        "/api/projects/alpha/settings",
+        data={
+            "name": "alpha",
+            "question": "q for alpha",
+            "mode": "exploratory",
+            "description": "",
+            "audience": "expert",
+            "project_notif_telegram_enabled": "on",
+            "project_notif_telegram_override_chat_id": "999",
+            "project_notif_email_extra_to": "",
+        },
+    )
+    assert r.status_code == 200
+    proj_path = tmp_path / "alpha"
+    proj_toml = tomllib.loads((proj_path / "urika.toml").read_text())
+    # Persisted under canonical ``chat_id`` (form field name unchanged).
+    assert proj_toml["notifications"]["telegram"]["chat_id"] == "999"
+
+    # Loader merges global + project; project chat_id wins.
+    home = tmp_path / "loader_home_tg"
+    home.mkdir()
+    (home / ".urika").mkdir()
+    (home / ".urika" / "settings.toml").write_text(
+        "[notifications.telegram]\n"
+        'chat_id = "global-chat"\n'
+        'bot_token_env = "TG_TOKEN"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+
+    merged = _load_notification_config(proj_path)
+    assert merged["telegram"]["chat_id"] == "999"
+    # Global token still survives — only chat_id is overridden.
+    assert merged["telegram"]["bot_token_env"] == "TG_TOKEN"

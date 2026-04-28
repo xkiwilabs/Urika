@@ -345,11 +345,12 @@ async def api_project_settings_put(name: str, request: Request):
       ``[notifications].channels``; unchecked channels are simply
       absent (no sentinel). When no channel is enabled and no
       per-channel override is set, the entire ``[notifications]``
-      block is removed. Per-channel overrides
-      (``[notifications.email].extra_to``,
-      ``[notifications.telegram].override_chat_id``) survive
-      independently of the enabled checkbox so the user doesn't
-      lose typed values when toggling a channel off.
+      block is removed. Per-channel overrides survive independently
+      of the enabled checkbox so the user doesn't lose typed values
+      when toggling a channel off. Form fields keep the legacy names
+      (``extra_to``, ``override_chat_id``) but the persisted TOML uses
+      the canonical channel-readable keys (``to``, ``chat_id``) — the
+      config loader merges/overrides on those keys.
     * **Privacy**: ``project_privacy_mode`` ∈ {inherit, open, private,
       hybrid}; non-inherit values write a project-local ``[privacy]``
       override (mode + optional ``[privacy.endpoints.private]``).
@@ -724,16 +725,25 @@ def _apply_structured_settings(project_path, form) -> None:
 
         # Per-channel overrides — stashed even when the channel itself
         # is off so the user doesn't lose their typing on a disable.
+        # The form field is named ``extra_to`` (a misnomer — these
+        # addresses are merged into the channel's ``to`` list by the
+        # config loader, not stored separately). The canonical TOML key
+        # is ``to``: matches what ``build_active_notification_config``
+        # in src/urika/notifications/__init__.py merges from.
         email_extra = (form.get("project_notif_email_extra_to") or "").strip()
         email_extra_list = [a.strip() for a in email_extra.split(",") if a.strip()]
         if email_extra_list:
-            new_notif["email"] = {"extra_to": email_extra_list}
+            new_notif["email"] = {"to": email_extra_list}
 
+        # Telegram: form field ``override_chat_id`` is a UI label;
+        # canonical TOML key is ``chat_id`` — the loader does
+        # ``cfg.update(project_ch)`` so the project key must match the
+        # channel-readable key.
         telegram_chat = (
             form.get("project_notif_telegram_override_chat_id") or ""
         ).strip()
         if telegram_chat:
-            new_notif["telegram"] = {"override_chat_id": telegram_chat}
+            new_notif["telegram"] = {"chat_id": telegram_chat}
 
         old_notif = data.get("notifications", {}) or {}
 
@@ -1258,16 +1268,21 @@ async def api_global_settings_put(request: Request):
         # ``smtp_server`` (chosen by the original CLI implementation).
         "smtp_server": (form.get("notifications_email_smtp_host") or "").strip(),
         "smtp_port": smtp_port,
-        "smtp_password_env": (
+        # Canonical key — EmailChannel reads ``password_env``. (Earlier
+        # versions wrote ``smtp_password_env`` here, which the channel
+        # silently ignored, so saved credentials never reached SMTP.)
+        "password_env": (
             form.get("notifications_email_smtp_password_env") or ""
         ).strip(),
         "auto_enable": email_auto_enable,
     }
-    # Only persist smtp_user when explicitly set — empty means "fall back
+    # Only persist username when explicitly set — empty means "fall back
     # to From address" via EmailChannel's own default. Storing an empty
     # string here would override the fallback with "".
+    # Canonical key is ``username`` (matches EmailChannel); the form
+    # field is ``smtp_user`` for clarity.
     if smtp_user_raw:
-        email_section["smtp_user"] = smtp_user_raw
+        email_section["username"] = smtp_user_raw
     # Only persist the section if something is set; otherwise drop it.
     # ``auto_enable`` and ``smtp_port`` alone aren't enough — those are
     # defaults that would survive even when the user hasn't entered any
@@ -1281,9 +1296,14 @@ async def api_global_settings_put(request: Request):
         del notifications["email"]
 
     # Slack
+    # Canonical key is ``bot_token_env`` (matches SlackChannel). The form
+    # field stays ``notifications_slack_token_env`` for backward-compat
+    # with rendered HTML; only the persisted TOML key changes.
     slack_section: dict[str, object] = {
         "channel": (form.get("notifications_slack_channel") or "").strip(),
-        "token_env": (form.get("notifications_slack_token_env") or "").strip(),
+        "bot_token_env": (
+            form.get("notifications_slack_token_env") or ""
+        ).strip(),
         "auto_enable": slack_auto_enable,
     }
     # Inbound Socket Mode (optional). Empty fields are NOT written so the

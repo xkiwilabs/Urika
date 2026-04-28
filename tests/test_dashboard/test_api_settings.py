@@ -548,7 +548,11 @@ def test_settings_put_notifications_email_enabled_writes_channel(
 def test_settings_put_notifications_extra_to_writes_email_table(
     settings_client, tmp_path
 ):
-    """Email override with extra_to writes [notifications.email] with extra_to list."""
+    """Email override (form: extra_to) writes [notifications.email] under
+    the canonical ``to`` key — the loader merges it into the global ``to``
+    list. Earlier versions wrote the misnamed ``extra_to`` key, which the
+    loader would not find and the channel would not see.
+    """
     r = settings_client.put(
         "/api/projects/alpha/settings",
         data=_notif_basics(
@@ -558,7 +562,7 @@ def test_settings_put_notifications_extra_to_writes_email_table(
     )
     assert r.status_code == 200
     toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
-    assert toml["notifications"]["email"]["extra_to"] == [
+    assert toml["notifications"]["email"]["to"] == [
         "alice@example.com",
         "bob@example.com",
     ]
@@ -567,7 +571,11 @@ def test_settings_put_notifications_extra_to_writes_email_table(
 def test_settings_put_notifications_telegram_chat_id_override(
     settings_client, tmp_path
 ):
-    """Telegram override with override_chat_id writes [notifications.telegram]."""
+    """Telegram override (form: override_chat_id) writes
+    [notifications.telegram] under the canonical ``chat_id`` key — the
+    loader does ``cfg.update(project_ch)`` so the project key MUST match
+    the channel-readable key.
+    """
     r = settings_client.put(
         "/api/projects/alpha/settings",
         data=_notif_basics(
@@ -577,7 +585,7 @@ def test_settings_put_notifications_telegram_chat_id_override(
     )
     assert r.status_code == 200
     toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
-    assert toml["notifications"]["telegram"]["override_chat_id"] == "999"
+    assert toml["notifications"]["telegram"]["chat_id"] == "999"
 
 
 def test_settings_put_notifications_unchecked_excludes_channel(
@@ -646,8 +654,8 @@ def test_settings_put_notifications_overrides_persist_when_channel_off(
     notifs = toml.get("notifications", {})
     # No channel listed (email not checked)
     assert notifs.get("channels", []) == []
-    # But the override is preserved
-    assert notifs["email"]["extra_to"] == ["alice@example.com"]
+    # But the override is preserved — under the canonical ``to`` key.
+    assert notifs["email"]["to"] == ["alice@example.com"]
 
 
 # ---- Commit 9: server-side endpoint constraint enforcement ----------------

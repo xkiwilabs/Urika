@@ -594,9 +594,13 @@
         </div>
         <div class="form-row">
           <label for="project_notif_email_extra_to">Extra recipients (comma-separated)</label>
+          {# Canonical key is ``to`` — the loader merges these into the
+             global ``to`` list. Older TOML files used ``extra_to``;
+             prefer the canonical key but fall back so existing files
+             still populate the field. #}
           <input type="text" id="project_notif_email_extra_to"
                  name="project_notif_email_extra_to"
-                 value="{{ notif_email.get('extra_to', []) | join(', ') if notif_email.get('extra_to') else '' }}"
+                 value="{% set _to = notif_email.get('to', notif_email.get('extra_to', [])) %}{% if _to is iterable and _to is not string %}{{ _to | join(', ') }}{% else %}{{ _to or '' }}{% endif %}"
                  placeholder="alice@example.com, bob@example.com">
           <span class="form-help">Project-specific addresses appended to the global <code>to</code> list.</span>
         </div>
@@ -626,9 +630,13 @@
         </div>
         <div class="form-row">
           <label for="project_notif_telegram_override_chat_id">Override chat ID</label>
+          {# Canonical key is ``chat_id`` (loader does cfg.update so the
+             project key must match the channel-readable key). Legacy
+             TOML files used ``override_chat_id``; fall back so they
+             still populate the field. #}
           <input type="text" id="project_notif_telegram_override_chat_id"
                  name="project_notif_telegram_override_chat_id"
-                 value="{{ notif_telegram.get('override_chat_id', '') }}"
+                 value="{{ notif_telegram.get('chat_id', notif_telegram.get('override_chat_id', '')) }}"
                  placeholder="(use a different chat than the global one)">
         </div>
       </div>

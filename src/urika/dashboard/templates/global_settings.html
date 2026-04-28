@@ -553,7 +553,7 @@
           <label for="notifications_email_smtp_user">SMTP user</label>
           <input type="text" id="notifications_email_smtp_user"
                  name="notifications_email_smtp_user"
-                 value="{{ notif_email.get('smtp_user', '') }}"
+                 value="{{ notif_email.get('username', notif_email.get('smtp_user', '')) }}"
                  placeholder="defaults to From address">
           <small class="form-help">
             The SMTP login username. For Gmail / Outlook this is your full
@@ -564,7 +564,7 @@
           <label for="notifications_email_smtp_password_env">SMTP password env var</label>
           <input type="text" id="notifications_email_smtp_password_env"
                  name="notifications_email_smtp_password_env"
-                 value="{{ notif_email.get('smtp_password_env', '') }}"
+                 value="{{ notif_email.get('password_env', notif_email.get('smtp_password_env', '')) }}"
                  placeholder="SMTP_PASSWORD">
           <small class="form-help">
             The <em>name</em> of an environment variable that carries the SMTP
@@ -599,7 +599,7 @@
           <label for="notifications_slack_token_env">Bot token env var</label>
           <input type="text" id="notifications_slack_token_env"
                  name="notifications_slack_token_env"
-                 value="{{ notif_slack.get('token_env', '') }}"
+                 value="{{ notif_slack.get('bot_token_env', notif_slack.get('token_env', '')) }}"
                  placeholder="SLACK_BOT_TOKEN">
         </div>
         {# Inbound Socket Mode (optional) — enables /commands from Slack. #}
