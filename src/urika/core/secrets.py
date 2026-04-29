@@ -1,7 +1,16 @@
-"""Credential store at ~/.urika/secrets.env.
+"""Backward-compatible thin wrapper over :mod:`urika.core.vault`.
 
-Simple KEY=VALUE file loaded into os.environ at CLI startup. File is
-created with mode 0o600 (owner-only) and never committed to git.
+The v0.3 module exposed four module-level functions backed by a
+``KEY=VALUE`` file at ``~/.urika/secrets.env``. v0.4 reframes that as
+the FileBackend tier of the new :class:`SecretsVault`, with optional
+OS-keyring support behind the ``pip install urika[keyring]`` extra.
+
+This module preserves the v0.3 public API (``save_secret``,
+``get_secret``, ``load_secrets``, ``list_secrets``) so existing
+callers — CLI commands, dashboard endpoints, notifications — keep
+working unchanged. Tests that monkeypatch
+``urika.core.secrets.save_secret`` or ``urika.core.secrets.load_secrets``
+also continue to pass.
 """
 
 from __future__ import annotations
@@ -9,91 +18,68 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from urika.core.vault import SecretsVault
+
+# Public path for compatibility with v0.3 callers that referenced
+# ``_SECRETS_PATH`` directly (and the tests that monkeypatch it).
+# The vault's FileBackend is constructed against this path on each
+# call, so ``monkeypatch.setattr("urika.core.secrets._SECRETS_PATH", ...)``
+# continues to work as a redirection mechanism.
 _SECRETS_PATH = Path.home() / ".urika" / "secrets.env"
 
 
-def load_secrets() -> None:
-    """Load ~/.urika/secrets.env into os.environ.
+def _vault() -> SecretsVault:
+    """Return a fresh vault on each call.
 
-    Only sets variables that are not already set in the environment
-    (existing env vars take precedence). Silently skips if file
-    doesn't exist.
+    Constructed against the current value of ``_SECRETS_PATH`` so test
+    monkeypatches of that module attribute redirect storage as
+    expected. Cheap to construct (no I/O until used).
     """
-    if not _SECRETS_PATH.exists():
-        return
-    try:
-        for line in _SECRETS_PATH.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip()
-            # Remove surrounding quotes if present
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-                value = value[1:-1]
-            # Don't override existing env vars
-            if key not in os.environ:
-                os.environ[key] = value
-    except Exception:
-        pass  # Silently ignore read errors
+    return SecretsVault(global_path=_SECRETS_PATH)
+
+
+def load_secrets() -> None:
+    """Load global vault entries into ``os.environ``.
+
+    Existing process-env values are preserved (Tier 1 always wins).
+    Silently no-ops if the global store is empty or unreadable.
+    """
+    vault = _vault()
+    for name in vault.list_keys():
+        if name in os.environ:
+            continue
+        value = vault.get(name)
+        if value:
+            os.environ[name] = value
 
 
 def save_secret(key: str, value: str) -> None:
-    """Save or update a single key in secrets.env.
+    """Save or update a secret in the global vault store.
 
-    Creates the file if it doesn't exist. Sets chmod 600.
+    Mirrors v0.3 semantics: also updates ``os.environ[key]`` so the
+    value is immediately available in-process.
     """
-    _SECRETS_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    lines: list[str] = []
-    found = False
-    if _SECRETS_PATH.exists():
-        for line in _SECRETS_PATH.read_text().splitlines():
-            stripped = line.strip()
-            if stripped and not stripped.startswith("#") and "=" in stripped:
-                existing_key = stripped.partition("=")[0].strip()
-                if existing_key == key:
-                    lines.append(f"{key}={value}")
-                    found = True
-                    continue
-            lines.append(line)
-
-    if not found:
-        lines.append(f"{key}={value}")
-
-    _SECRETS_PATH.write_text("\n".join(lines) + "\n")
-    _SECRETS_PATH.chmod(0o600)
-    # Also update os.environ so the value is immediately available
-    os.environ[key] = value
+    _vault().set_global(key, value)
 
 
 def get_secret(key: str) -> str:
-    """Get a secret value. Checks os.environ first, then secrets.env."""
+    """Resolve a secret by name. Returns empty string if unset."""
     val = os.environ.get(key, "")
     if val:
         return val
-    # Force reload from file
-    load_secrets()
-    return os.environ.get(key, "")
+    # Re-resolve through the vault so users who edited the file by
+    # hand still see the value (matches v0.3 "force reload" behavior).
+    resolved = _vault().get(key)
+    if resolved:
+        os.environ[key] = resolved
+        return resolved
+    return ""
 
 
 def list_secrets() -> dict[str, str]:
-    """Return all keys in secrets.env (values masked)."""
-    result: dict[str, str] = {}
-    if not _SECRETS_PATH.exists():
-        return result
-    try:
-        for line in _SECRETS_PATH.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key = line.partition("=")[0].strip()
-            result[key] = "****"
-    except Exception:
-        pass
-    return result
+    """Return ``{name: '****'}`` for all global vault entries.
+
+    Values are masked to preserve the v0.3 contract — no caller has
+    ever expected real values from this function.
+    """
+    return {name: "****" for name in _vault().list_keys()}
