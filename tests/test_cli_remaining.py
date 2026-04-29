@@ -242,7 +242,6 @@ class TestConfigPrivateEndpointRequired:
         """Custom server URL (free-text) returning empty must abort the
         wizard with UserCancelled rather than save mode=private with
         no endpoint URL."""
-        import os
 
         from urika.cli.config import _config_interactive
         from urika.cli_helpers import UserCancelled

@@ -903,8 +903,6 @@ def global_settings(request: Request) -> HTMLResponse:
     to ``PUT /api/settings`` in a single payload.
     """
     s = load_settings()
-    privacy = s.get("privacy", {})
-    endpoints = privacy.get("endpoints", {}) or {}
     runtime = s.get("runtime", {}) or {}
     # Multi-endpoint editor on the Privacy tab. Each entry shape:
     #   {"name", "base_url", "api_key_env", "default_model"}

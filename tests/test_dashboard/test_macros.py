@@ -26,7 +26,6 @@ def test_tabs_macro_renders_tab_buttons():
 
 def test_modal_macro_renders(tmp_path):
     from jinja2 import Environment, FileSystemLoader
-    from pathlib import Path
     env = Environment(loader=FileSystemLoader("src/urika/dashboard/templates"))
     src = (
         '{% from "_macros.html" import modal %}'

@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from urika.dashboard.projects import (
-    ProjectSummary,
     list_project_summaries,
     load_project_summary,
 )

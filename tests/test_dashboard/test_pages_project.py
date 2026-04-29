@@ -1492,11 +1492,14 @@ def test_project_home_shows_full_multi_line_question(client_with_runs):
     proj = client_with_runs.app.state.project_root / "alpha"
     long_q = "Line one of the question.\nLine two with more details.\nLine three."
     # Rewrite urika.toml directly with a multi-line question.
+    # Build the escaped TOML value first to avoid backslashes inside an
+    # f-string expression (not allowed on Python 3.11).
+    escaped_q = long_q.replace("\n", "\\n")
     toml_path = proj / "urika.toml"
     toml_path.write_text(
         "[project]\n"
-        f'name = "alpha"\n'
-        f'question = "{long_q.replace(chr(10), "\\n")}"\n'
+        'name = "alpha"\n'
+        f'question = "{escaped_q}"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
         "\n"
