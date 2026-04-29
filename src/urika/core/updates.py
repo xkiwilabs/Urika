@@ -143,10 +143,18 @@ def _fetch_latest_release() -> str | None:
     return None
 
 
+def _strip_v_prefix(version: str) -> str:
+    """Strip a leading 'v' from a version string. GitHub tags are 'v0.3.0';
+    pyproject + parsed versions are '0.3.0'."""
+    return version[1:] if version.startswith("v") else version
+
+
 def format_update_message(info: dict) -> str:
     """Format a user-friendly update notification."""
+    current = _strip_v_prefix(str(info.get("current", "")))
+    latest = _strip_v_prefix(str(info.get("latest", "")))
     return (
-        f"Update available: v{info['current']} → "
-        f"v{info['latest']}  "
+        f"Update available: v{current} → "
+        f"v{latest}  "
         f"(git pull or pip install -e .)"
     )
