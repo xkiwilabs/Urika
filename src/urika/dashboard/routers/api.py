@@ -1678,16 +1678,41 @@ def _backend_label() -> str:
     return "file fallback (chmod 0600)"
 
 
-def _serialize_secret_row(row: dict) -> dict:
+def _serialize_secret_row(row: dict, vault=None) -> dict:
     """Project a vault row to JSON for the dashboard.
 
     Strips any value-bearing fields; only metadata + masked previews
-    leave the server.
+    leave the server. When a ``vault`` is supplied, re-attribute the
+    origin: a name that lives in the vault's project file gets
+    ``project``, in the global file gets ``global``, even when
+    ``os.environ`` carries the value too. This is the dashboard's
+    storage-tier perspective — the runtime tier (process env wins for
+    actual ``vault.get()``) is a separate concern that ``list_keys``
+    on the agent side handles correctly.
+
+    Without this re-attribution, a value that the dashboard wrote to
+    the vault and which is now also in ``os.environ`` (because
+    ``set_global`` pokes os.environ) would render as ``process`` on
+    every refresh — confusing for users who just saved it via the UI.
     """
+    name = row.get("name", "")
+    origin = row.get("origin", "unset")
+    if vault is not None and name:
+        # Project tier?
+        if vault.project_path is not None:
+            proj_path = vault.project_path / ".urika" / "secrets.env"
+            if proj_path.exists():
+                from urika.core.vault import _read_env_file
+
+                if name in _read_env_file(proj_path):
+                    origin = "project"
+        # Global tier?
+        if origin not in ("project",) and vault._global_backend.get(name) is not None:
+            origin = "global"
     return {
-        "name": row.get("name", ""),
-        "origin": row.get("origin", "unset"),
-        "set": bool(row.get("set", False)),
+        "name": name,
+        "origin": origin,
+        "set": origin != "unset",
         "description": row.get("description", "") or "",
         "last_modified": row.get("last_modified", "") or "",
         "masked_preview": row.get("masked_preview", "") or "",
@@ -1718,7 +1743,7 @@ async def api_list_secrets() -> JSONResponse:
     load_secrets()
 
     vault = _dashboard_vault()
-    rows = [_serialize_secret_row(r) for r in vault.list_with_origins()]
+    rows = [_serialize_secret_row(r, vault=vault) for r in vault.list_with_origins()]
     return JSONResponse({"secrets": rows, "backend": _backend_label()})
 
 
@@ -1760,6 +1785,9 @@ async def api_set_secret(request: Request) -> JSONResponse:
     # If the key is set in the process env but not the vault, refuse
     # the overwrite. Process env wins anyway so saving via the vault
     # would silently have no effect on subsequent get() calls.
+    # ``vault_has`` covers the across-request case where a prior
+    # set_global wrote to the file backend AND poked os.environ — that
+    # value is ours, not a genuine shell export.
     in_proc = bool(os.environ.get(name, "").strip())
     vault_has = vault._global_backend.get(name) is not None
     we_wrote = name in vault._our_writes
@@ -1807,6 +1835,153 @@ async def api_delete_secret(name: str) -> Response:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not existed:
         raise HTTPException(status_code=404, detail=f"{name} is not set in the vault")
+    return Response(status_code=204)
+
+
+# ---- Per-project secrets ---------------------------------------------------
+
+
+@router.get("/projects/{name}/secrets")
+async def api_list_project_secrets(name: str) -> JSONResponse:
+    """List secrets visible to a project (project tier + global tier).
+
+    Returns the union: project-level secrets get ``origin="project"``,
+    global ones keep their existing origin (``"keyring"`` / ``"file"``
+    surfaces here as ``"global"``, plus ``"process"`` and ``"unset"``).
+    """
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    vault = _dashboard_vault(project_path=summary.path)
+    rows = [_serialize_secret_row(r, vault=vault) for r in vault.list_with_origins()]
+    return JSONResponse({"secrets": rows, "backend": _backend_label()})
+
+
+@router.post("/projects/{name}/secrets")
+async def api_set_project_secret(name: str, request: Request) -> JSONResponse:
+    """Save a project-tier secret to ``<project>/.urika/secrets.env``."""
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    secret_name = (form.get("name") or "").strip()
+    value = (form.get("value") or "")
+    description = (form.get("description") or "").strip()
+
+    if not secret_name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not _DASHBOARD_SECRET_NAME_RE.match(secret_name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid secret name. Use uppercase letters, digits, and "
+                "underscores only."
+            ),
+        )
+    if not value:
+        raise HTTPException(status_code=400, detail="value is required")
+
+    vault = _dashboard_vault(project_path=summary.path)
+
+    # Refuse process-env overwrites — same rationale as the global
+    # endpoint: the shell value wins, so saving here would mislead.
+    # Treat presence in EITHER the project file OR the global file as
+    # "we own it" — both are vault-managed surfaces, so a value in
+    # os.environ that mirrors what's there is from a prior set, not a
+    # genuine shell export.
+    in_proc = bool(os.environ.get(secret_name, "").strip())
+    we_wrote = secret_name in vault._our_writes
+    proj_secrets_path = summary.path / ".urika" / "secrets.env"
+    proj_has = False
+    if proj_secrets_path.exists():
+        from urika.core.vault import _read_env_file
+
+        proj_has = secret_name in _read_env_file(proj_secrets_path)
+    global_has = vault._global_backend.get(secret_name) is not None
+    if in_proc and not proj_has and not global_has and not we_wrote:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{secret_name} is set in your shell environment. Clear it "
+                f"via `unset {secret_name}` in the shell that launched the "
+                f"dashboard, then refresh."
+            ),
+        )
+
+    vault.set_project(secret_name, value, project_path=summary.path, description=description)
+
+    from urika.core.vault import mask_value
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "name": secret_name,
+            "origin": "project",
+            "masked_preview": mask_value(value),
+        }
+    )
+
+
+@router.delete("/projects/{name}/secrets/{secret_name}")
+async def api_delete_project_secret(name: str, secret_name: str) -> Response:
+    """Remove a secret from the project tier.
+
+    The global tier (if set) remains effective. 204 on success, 404 if
+    no project-level entry exists.
+    """
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    # Refuse if the secret is set in the process env AND no project
+    # entry exists AND it's not in the global vault — that's a real
+    # shell export the user must clear via ``unset``. If it's in the
+    # global vault, the os.environ value came from our own
+    # ``load_secrets()``/``set_global()`` and the request is fine —
+    # we'll just no-op (404) on the project tier and the global tier
+    # remains effective.
+    vault = _dashboard_vault(project_path=summary.path)
+    proj_secrets_path = summary.path / ".urika" / "secrets.env"
+    proj_has = False
+    if proj_secrets_path.exists():
+        from urika.core.vault import _read_env_file
+
+        proj_has = secret_name in _read_env_file(proj_secrets_path)
+    global_has = vault._global_backend.get(secret_name) is not None
+    in_proc = bool(os.environ.get(secret_name, "").strip())
+    if not proj_has and not global_has and in_proc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{secret_name} is set in your shell environment, not the "
+                f"project tier. Clear it via `unset {secret_name}` in the "
+                f"shell that launched the dashboard."
+            ),
+        )
+
+    existed = vault.delete_project(secret_name, project_path=summary.path)
+    if not existed:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{secret_name} is not set in the project tier",
+        )
     return Response(status_code=204)
 
 
