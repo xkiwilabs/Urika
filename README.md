@@ -40,30 +40,11 @@ See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-tas
 
 1. Python >= 3.11
 2. **An API key for at least one supported model provider.** v0.3 ships with the Anthropic adapter, so you'll need an Anthropic API key (see "Set up API key" below). Adapters for OpenAI, Google ADK, and PI are planned for upcoming releases — when they land, you'll only need keys for the providers you actually use.
-3. **Claude Code CLI** — required by the Anthropic adapter (the only fully-supported adapter in v0.3):
+3. **Claude Code CLI** — required by the Anthropic adapter (the only fully-supported adapter in v0.3). See [Getting Started](docs/01-getting-started.md#step-1-install-claude-code-cli) for why it's needed even when using an API key.
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 ```
-
-> **Why is the Claude CLI required if Urika uses an API key?**
-> The [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-python)
-> that the Anthropic adapter depends on is a thin wrapper — it spawns the
-> `claude` CLI as a subprocess and communicates with it over stdin/stdout.
-> The CLI provides the agent loop, tool runtime (Read / Write / Bash /
-> Glob / etc.), permission system, and message streaming that Urika
-> builds on. Authentication is just one of the things the CLI handles:
-> when `ANTHROPIC_API_KEY` is set, the CLI uses the metered API (the
-> compliant path Urika requires); when it's unset it falls back to OAuth
-> subscription (which Urika's safety net actively blocks — see
-> [Provider compliance](docs/20-security.md#provider-compliance)).
->
-> **This is provider-specific, not a Urika-wide rule.** Future adapters
-> use different runtimes — the planned OpenAI adapter uses
-> `openai-agents-python` (pure HTTP, no CLI), Google ADK is pure Python,
-> and projects running entirely against private endpoints (Ollama, vLLM,
-> LiteLLM via `ANTHROPIC_BASE_URL`) don't need any cloud-provider CLI at
-> all. You install whichever runtimes you actually use.
 
 ### Set up API key
 
