@@ -19,6 +19,17 @@
 
 {% block content %}
 <style>
+  .usage-disclaimer {
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    border-left: 3px solid var(--accent, #4a90e2);
+    border-radius: 4px;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.85rem;
+    color: var(--text-muted, #666);
+    background: var(--surface-1, rgba(127, 127, 127, 0.04));
+  }
+  .usage-disclaimer strong { color: var(--text, inherit); }
   .totals-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -66,17 +77,28 @@
 </style>
 
 {% if sessions %}
+  <div class="usage-disclaimer">
+    <strong>Estimates only.</strong> Token counts and costs below are estimated
+    from what the model API returns and Urika's pricing table for the
+    configured Claude model. For authoritative usage and billing, check your
+    provider's console (e.g. <a href="https://console.anthropic.com/settings/usage"
+    target="_blank" rel="noopener">Anthropic console</a>). If you're using a
+    Claude Pro / Max subscription via the <code>claude</code> CLI, the
+    subscription covers the actual cost — the figures here reflect what the
+    same usage <em>would</em> cost on a metered API key.
+  </div>
+
   <div class="totals-grid">
     <div class="totals-card">
       <div class="totals-card-label">Sessions</div>
       <div class="totals-card-value">{{ totals.sessions }}</div>
     </div>
     <div class="totals-card">
-      <div class="totals-card-label">Total tokens</div>
+      <div class="totals-card-label">Total tokens (est.)</div>
       <div class="totals-card-value">{{ totals.total_tokens_in + totals.total_tokens_out }}</div>
     </div>
     <div class="totals-card">
-      <div class="totals-card-label">Cost</div>
+      <div class="totals-card-label">Est. cost</div>
       <div class="totals-card-value">${{ "%.2f"|format(totals.total_cost_usd) }}</div>
     </div>
     <div class="totals-card">
@@ -89,10 +111,10 @@
     </div>
   </div>
 
-  <h2>Tokens over time</h2>
+  <h2>Tokens over time (est.)</h2>
   <div class="chart-wrap"><canvas id="chart-tokens"></canvas></div>
 
-  <h2>Cost over time</h2>
+  <h2>Estimated cost over time</h2>
   <div class="chart-wrap"><canvas id="chart-cost"></canvas></div>
 
   <h2>Recent sessions</h2>
@@ -101,8 +123,8 @@
       <tr>
         <th>Started</th>
         <th>Duration (ms)</th>
-        <th>Tokens</th>
-        <th>Cost</th>
+        <th>Tokens (est.)</th>
+        <th>Est. cost</th>
         <th>Agent calls</th>
       </tr>
     </thead>
