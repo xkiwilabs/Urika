@@ -504,21 +504,17 @@ urika secrets test ANTHROPIC_API_KEY  # round-trip
 
 ---
 
-## Open questions (raise before starting)
+## Decisions locked in
 
-1. **`keyring` as a hard dep or extras?** The package is widely installed via pip but introduces platform-specific behavior. Recommend extras: `pip install urika[keyring]` enables the keyring backend; default install gets the file backend. This keeps the lean dep surface for headless / Docker / CI users.
+1. **`keyring` is an optional extra.** `pip install urika` gets the file-backend fallback; `pip install urika[keyring]` enables the OS keyring backend. Default install stays lean for headless/Docker/CI; users who want OS-level encryption opt in. The dashboard Secrets tab surfaces the active backend ("Storage: file fallback (chmod 0600). Install `urika[keyring]` for OS-level encryption.").
 
-2. **Secret descriptions: stored where?** Two options:
-   - (a) Sidecar in `~/.urika/secrets-meta.toml` — descriptions + last-modified + which tool registered it.
-   - (b) In the keyring's "comment" field where supported, file's leading `#` comment otherwise.
-   
-   Recommend (a) — cleaner, doesn't depend on backend quirks. Sidecar is plain text; descriptions are metadata not secrets.
+2. **Secret descriptions live in a sidecar TOML.** `~/.urika/secrets-meta.toml` (global) and `<project>/.urika/secrets-meta.toml` (project) hold per-secret metadata: description, last_modified, created_via, required_by_tools. Plain text, uniform across backends, descriptions are metadata not secrets so no encryption needed.
 
-3. **Project `.env` discovery — opt-in or auto?** Recommend auto: when a project is loaded, the vault automatically reads `<project>/.urika/secrets.env`. No opt-in needed; the file's mere presence is the opt-in signal. The dashboard offers a "create per-project secret" button that creates the file if absent.
+3. **Project `.env` discovery is automatic.** When a project is loaded, the vault automatically reads `<project>/.urika/secrets.env` if present. No opt-in flag — the file's existence IS the opt-in. The project template's auto-generated `.gitignore` includes `.urika/secrets.env`.
 
-4. **Should the vault unset `os.environ` on `delete_global`?** The vault writes to `os.environ` on `set_global` so the value is immediately available. Symmetrically, `delete_global` should unset it. But process-env-set values (Tier 1) should NOT be touched. Distinguish by tracking which keys WE wrote.
+4. **`delete_global` unsets `os.environ` ONLY for vault-set values.** The vault tracks which keys it wrote during the process lifetime (in-memory set). Deleting a vault-set key also unsets it from `os.environ`. Deleting a process-env-set key (Tier 1) raises a clear error: "Set in shell environment — clear via `unset KEY` in the shell that launched Urika, then refresh."
 
-5. **Migration from existing `~/.urika/secrets.env`?** None needed — the vault uses the same file as its FileBackend. Existing keys are picked up automatically.
+5. **Zero migration from existing `~/.urika/secrets.env`.** The vault uses the existing file as its FileBackend; existing keys are picked up automatically. Existing notifications + `urika config api-key` flows continue working via Phase C's vault refactor. Future `urika secrets migrate-to-keyring` is out of v0.4 scope.
 
 ---
 
