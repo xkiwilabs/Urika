@@ -96,9 +96,14 @@ def config_command(
     Without PROJECT, configures global defaults (~/.urika/settings.toml).
     With PROJECT, configures that project's urika.toml.
 
-    Special form ``urika config api-key`` runs the interactive
-    Anthropic-API-key setup (saves to ``~/.urika/secrets.env``).
-    Add ``--test`` to verify the saved key against api.anthropic.com.
+    Special forms:
+      * ``urika config api-key``  — interactive Anthropic-API-key setup
+        (saves to ``~/.urika/secrets.env``). Add ``--test`` to verify
+        the saved key against api.anthropic.com.
+      * ``urika config secret``   — interactive setup for an arbitrary
+        named secret (e.g. a private vLLM key, HuggingFace token,
+        third-party API credential). Saves to the global secrets vault
+        the same way; agents and tools read it via ``os.environ.get(NAME)``.
 
     Examples:
 
@@ -106,6 +111,7 @@ def config_command(
         urika config                     # interactive setup (global)
         urika config api-key             # interactive Anthropic API key setup
         urika config api-key --test      # verify the saved key works
+        urika config secret              # interactive setup for any named secret
         urika config my-project --show   # show project settings
         urika config my-project          # interactive setup (project)
     """
@@ -122,6 +128,17 @@ def config_command(
             _config_api_key_test()
             return
         _config_api_key_interactive()
+        return
+
+    # ── Special routing: "urika config secret" ──
+    # Generic named-secret setup — for credentials Urika doesn't know
+    # about specifically (private endpoint keys, HuggingFace tokens,
+    # custom-tool API keys). Saves to the global SecretsVault, which
+    # backs ~/.urika/secrets.env (or OS keyring when urika[keyring]
+    # is installed). Phase B's dashboard Settings → Secrets tab will
+    # add a UI for the same flow.
+    if project == "secret":
+        _config_secret_interactive()
         return
 
     # ── Determine target: global or project ──
@@ -713,6 +730,128 @@ def _print_api_key_test_result(key: str) -> bool:
     )
     click.echo("  API Keys, then re-run: urika config api-key")
     return False
+
+
+def _config_secret_interactive() -> None:
+    """Interactive setup for an arbitrary named secret.
+
+    Prompts for a name (e.g. ``LLM_INFERENCE_KEY``) and a value (masked).
+    Saves to the global ``SecretsVault`` — backs ``~/.urika/secrets.env``
+    on file backend, OS keyring on ``urika[keyring]`` install. Designed
+    for credentials Urika doesn't know about by name: private inference
+    endpoints, HuggingFace tokens, custom-tool API keys.
+
+    Common case: setting up hybrid mode where the data agent calls a
+    local vLLM. The Privacy tab's ``api_key_env`` field stores the
+    NAME of the env var; this command stores the VALUE under that name.
+
+    Phase B's dashboard Settings -> Secrets tab adds a UI for the same
+    flow. This CLI version stays for scriptability.
+    """
+    from urika.cli_display import print_step, print_success, print_warning
+
+    click.echo()
+    print_step("Set a named secret")
+    click.echo()
+    click.echo(
+        "  Use this to store credentials by name — e.g. an API key for a"
+    )
+    click.echo(
+        "  private vLLM endpoint, a HuggingFace token, or any other secret"
+    )
+    click.echo(
+        "  a tool / agent reads via ``os.environ.get(NAME)``."
+    )
+    click.echo()
+    click.echo(
+        "  Convention: uppercase letters, digits, and underscores"
+    )
+    click.echo(
+        "  (e.g. LLM_INFERENCE_KEY, HUGGINGFACE_HUB_TOKEN, WANDB_API_KEY)."
+    )
+    click.echo()
+
+    try:
+        name = click.prompt(
+            "  Variable name",
+            default="",
+            show_default=False,
+        ).strip()
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        click.echo("\n  Cancelled.")
+        return
+
+    if not name:
+        print_warning("No name entered — cancelled.")
+        return
+
+    # Sanity check: leading 'sk-' / 'hf_' / 'xoxb-' suggests the user
+    # pasted a value into the name field. Catch the common foot-gun
+    # before saving and creating noise.
+    looks_like_value = (
+        name.startswith(("sk-", "hf_", "xoxb-", "xapp-", "ghp_", "github_pat_"))
+        or " " in name
+        or len(name) > 64
+    )
+    if looks_like_value:
+        print_warning(
+            "That looks like a secret VALUE, not a name. The name is something"
+        )
+        click.echo(
+            "  like LLM_INFERENCE_KEY — uppercase letters / digits / underscores."
+        )
+        click.echo(
+            "  The value (sk-..., hf_..., etc.) gets entered next, masked."
+        )
+        try:
+            keep = click.confirm("  Continue with that name anyway?", default=False)
+        except (click.Abort, EOFError, KeyboardInterrupt):
+            click.echo("\n  Cancelled.")
+            return
+        if not keep:
+            click.echo("  Cancelled.")
+            return
+
+    try:
+        value = click.prompt(
+            f"  Value for {name}",
+            hide_input=True,
+            default="",
+            show_default=False,
+        ).strip()
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        click.echo("\n  Cancelled.")
+        return
+
+    if not value:
+        print_warning("No value entered — cancelled.")
+        return
+
+    try:
+        description = click.prompt(
+            "  Description (optional, for your records)",
+            default="",
+            show_default=False,
+        ).strip()
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        description = ""
+
+    from urika.core.vault import SecretsVault
+
+    vault = SecretsVault()
+    vault.set_global(name, value, description=description or "")
+
+    print_success(
+        f"Saved {name} (chmod 0600). Active in this shell and future Urika commands."
+    )
+    click.echo()
+    click.echo(
+        f"  Reference it in the dashboard's Privacy tab by entering"
+    )
+    click.echo(
+        f"  {name} in the 'API key env var' field — NOT the value itself."
+    )
+    click.echo()
 
 
 def _config_api_key_test() -> None:

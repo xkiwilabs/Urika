@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "urika"
-version = "0.3.0"
+version = "0.3.1"
 description = "Multi-agent scientific analysis platform"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -64,8 +64,11 @@ dl = [
     "torchaudio>=2.0",
     "timm>=0.9",
 ]
+keyring = [
+    "keyring>=24.0,<26.0",
+]
 all = [
-    "urika[dl]",
+    "urika[dl,keyring]",
 ]
 dev = [
     "urika[all]",

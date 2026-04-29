@@ -83,19 +83,24 @@ def cli(ctx, classic: bool) -> None:
             "\n"
         )
 
-    # Check for updates on every CLI invocation (cached, non-blocking)
+    # Check for updates on every CLI invocation (cached, non-blocking).
+    # Skip when stdout isn't a TTY \u2014 this catches CI runs, the test
+    # suite, and any consumer piping `urika ... --json` output. The
+    # banner would otherwise corrupt JSON output and clutter logs.
     try:
+        import sys as _sys
         from urika.core.updates import (
             check_for_updates,
             format_update_message,
         )
 
-        update_info = check_for_updates()
-        if update_info:
-            from urika.cli_display import _C
+        if _sys.stdout.isatty():
+            update_info = check_for_updates()
+            if update_info:
+                from urika.cli_display import _C
 
-            msg = format_update_message(update_info)
-            click.echo(f"{_C.DIM}  \u2191 {msg}{_C.RESET}")
+                msg = format_update_message(update_info)
+                click.echo(f"{_C.DIM}  \u2191 {msg}{_C.RESET}")
     except Exception:
         pass
 

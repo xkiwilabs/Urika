@@ -62,14 +62,16 @@ def docs_index(request: Request) -> HTMLResponse:
     docs_dir = _docs_dir()
     if docs_dir is None:
         return request.app.state.templates.TemplateResponse(
+            request,
             "docs.html",
-            {"request": request, "docs": [], "current": None, "body_html": None},
+            {"docs": [], "current": None, "body_html": None},
         )
     docs = _list_docs(docs_dir)
     if not docs:
         return request.app.state.templates.TemplateResponse(
+            request,
             "docs.html",
-            {"request": request, "docs": [], "current": None, "body_html": None},
+            {"docs": [], "current": None, "body_html": None},
         )
     # Prefer 01-getting-started; fall back to first numbered doc.
     first = next(
@@ -98,9 +100,9 @@ def docs_page(slug: str, request: Request) -> HTMLResponse:
         base_url="/docs",
     )
     return request.app.state.templates.TemplateResponse(
+        request,
         "docs.html",
         {
-            "request": request,
             "docs": docs,
             "current": current,
             "body_html": body_html,

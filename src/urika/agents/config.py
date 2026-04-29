@@ -299,7 +299,7 @@ def build_agent_env_for_endpoint(
             # configure the endpoint before running privacy-sensitive
             # work.
             reason = (
-                f"is missing"
+                "is missing"
                 if endpoint is None
                 else "has no base_url"
             )

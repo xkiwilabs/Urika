@@ -5,6 +5,20 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-04-29
+
+Hotfix release — dashboard crashed on first request for users with newer Starlette versions (≥0.40 or so) due to a removed deprecated API. Fresh `pip install urika` users on Windows hit this immediately on running `urika dashboard`.
+
+### Fixed
+
+- **Dashboard `TypeError: unhashable type: 'dict'` on first page load.** Newer Starlette versions removed the deprecated `TemplateResponse(name, context)` positional signature; the dict was being treated as Jinja `globals` and passed as a hash key, which fails. Migrated all 29 dashboard `TemplateResponse` call sites in `routers/pages.py` (26) and `routers/docs.py` (3) to the modern `TemplateResponse(request, name, context)` signature. Resolves the 269 v0.3-era deprecation warnings as a side benefit.
+- One existing call site that was already on the modern signature still carried a redundant `"request": request` entry in its context dict — dropped.
+
+### Tests
+
+- 2418 tests still pass; no behaviour change beyond the bug fix.
+
+
 ## [0.3.0] - 2026-04-29
 
 The "three interfaces, one platform" release. Urika now treats CLI, TUI, and dashboard as equal first-class interfaces, ships a hardened notifications subsystem with end-to-end test-send, finishes orchestrator session memory with a dashboard surface, and (most importantly) aligns with Anthropic's Consumer Terms §3.7 by requiring `ANTHROPIC_API_KEY` for all usage and actively blocking the subscription OAuth path the April 2026 enforcement targeted.

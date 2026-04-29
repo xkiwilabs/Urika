@@ -146,9 +146,9 @@ def projects_list(request: Request) -> HTMLResponse:
         (ep.get("base_url") or "").strip() for ep in get_named_endpoints()
     )
     return templates.TemplateResponse(
+        request,
         "projects_list.html",
         {
-            "request": request,
             "projects": summaries,
             "valid_modes": sorted(VALID_MODES),
             "valid_audiences": sorted(VALID_AUDIENCES),
@@ -196,7 +196,6 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     running_by_type = {op.type: op for op in active}
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "recent_experiments": recent,
         "final_outputs": final_outputs,
@@ -204,7 +203,7 @@ def project_home(request: Request, name: str) -> HTMLResponse:
         "running_by_type": running_by_type,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("project_home.html", ctx)
+    return templates.TemplateResponse(request, "project_home.html", ctx)
 
 
 # Keys finalize.json is documented to emit (see
@@ -252,13 +251,12 @@ def project_findings(request: Request, name: str) -> HTMLResponse:
     extras = {k: v for k, v in findings.items() if k not in WELL_KNOWN_FINDINGS_KEYS}
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "findings": findings,
         "extras": extras,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("findings.html", ctx)
+    return templates.TemplateResponse(request, "findings.html", ctx)
 
 
 @router.get("/projects/{name}/projectbook/report", response_class=HTMLResponse)
@@ -307,14 +305,15 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
         raw,
     )
     ctx = {
-        "request": request,
         "project": summary,
         "experiment_id": "",  # template handles empty
         "body_html": render_markdown(raw),
         "title_override": "Final report",
     }
     ctx.update(_project_template_context(name, summary))
-    return request.app.state.templates.TemplateResponse("report_view.html", ctx)
+    return request.app.state.templates.TemplateResponse(
+        request, "report_view.html", ctx
+    )
 
 
 @router.get("/projects/{name}/projectbook/summary", response_class=HTMLResponse)
@@ -341,14 +340,15 @@ def projectbook_summary(name: str, request: Request) -> HTMLResponse:
 
     raw = summary_path.read_text(encoding="utf-8")
     ctx = {
-        "request": request,
         "project": summary,
         "experiment_id": "",
         "body_html": render_markdown(raw),
         "title_override": "Project summary",
     }
     ctx.update(_project_template_context(name, summary))
-    return request.app.state.templates.TemplateResponse("report_view.html", ctx)
+    return request.app.state.templates.TemplateResponse(
+        request, "report_view.html", ctx
+    )
 
 
 @router.get("/projects/{name}/projectbook/presentation/{rest:path}")
@@ -506,7 +506,6 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
 
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "experiments": rows,
         "valid_modes": sorted(VALID_MODES),
@@ -514,7 +513,7 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
         "running_by_type": running_by_type,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("experiments.html", ctx)
+    return templates.TemplateResponse(request, "experiments.html", ctx)
 
 
 def _tools_to_rows(tool_registry) -> list[dict]:
@@ -542,9 +541,9 @@ def global_tools(request: Request) -> HTMLResponse:
     tool_registry = ToolRegistry()
     tool_registry.discover()
     return request.app.state.templates.TemplateResponse(
+        request,
         "tools.html",
         {
-            "request": request,
             "project": None,
             "tools": _tools_to_rows(tool_registry),
             "scope": "global",
@@ -577,7 +576,6 @@ def project_tools(name: str, request: Request) -> HTMLResponse:
     active = list_active_operations(name, summary.path)
     running_by_type = {op.type: op for op in active}
     ctx = {
-        "request": request,
         "project": summary,
         "tools": _tools_to_rows(tool_registry),
         "scope": "project",
@@ -587,7 +585,7 @@ def project_tools(name: str, request: Request) -> HTMLResponse:
         # other project page.
         "active_ops": active,
     }
-    return request.app.state.templates.TemplateResponse("tools.html", ctx)
+    return request.app.state.templates.TemplateResponse(request, "tools.html", ctx)
 
 
 @router.get("/projects/{name}/criteria", response_class=HTMLResponse)
@@ -609,9 +607,9 @@ def project_criteria(name: str, request: Request) -> HTMLResponse:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         criteria = data.get("project", {}).get("success_criteria", {}) or {}
-    ctx = {"request": request, "project": summary, "criteria": criteria}
+    ctx = {"project": summary, "criteria": criteria}
     ctx.update(_project_template_context(name, summary))
-    return request.app.state.templates.TemplateResponse("criteria.html", ctx)
+    return request.app.state.templates.TemplateResponse(request, "criteria.html", ctx)
 
 
 def _supported_data_extensions() -> set[str]:
@@ -741,13 +739,12 @@ def project_data(request: Request, name: str) -> HTMLResponse:
 
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "rows": rows,
         "data_paths": cfg.data_paths or [],
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("data_list.html", ctx)
+    return templates.TemplateResponse(request, "data_list.html", ctx)
 
 
 @router.get("/projects/{name}/data/inspect", response_class=HTMLResponse)
@@ -806,7 +803,6 @@ def project_data_inspect(request: Request, name: str, path: str = "") -> HTMLRes
         tail_rows = view.data.tail(10).to_dict("records")
 
     ctx = {
-        "request": request,
         "project": summary,
         "file_path": str(resolved),
         "file_name": resolved.name,
@@ -819,7 +815,7 @@ def project_data_inspect(request: Request, name: str, path: str = "") -> HTMLRes
         "tail_rows": tail_rows,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("data_inspect.html", ctx)
+    return templates.TemplateResponse(request, "data_inspect.html", ctx)
 
 
 @router.get("/projects/{name}/usage", response_class=HTMLResponse)
@@ -861,7 +857,6 @@ def project_usage(request: Request, name: str) -> HTMLResponse:
 
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "totals": totals,
         "sessions": sessions,
@@ -870,7 +865,7 @@ def project_usage(request: Request, name: str) -> HTMLResponse:
         "cost_series": cost_series,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("usage.html", ctx)
+    return templates.TemplateResponse(request, "usage.html", ctx)
 
 
 @router.get("/projects/{name}/methods", response_class=HTMLResponse)
@@ -884,13 +879,12 @@ def project_methods(request: Request, name: str) -> HTMLResponse:
     metric_keys = sorted({k for m in methods for k in m.get("metrics", {})})
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "methods": methods,
         "metric_keys": metric_keys,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("methods.html", ctx)
+    return templates.TemplateResponse(request, "methods.html", ctx)
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -903,8 +897,6 @@ def global_settings(request: Request) -> HTMLResponse:
     to ``PUT /api/settings`` in a single payload.
     """
     s = load_settings()
-    privacy = s.get("privacy", {})
-    endpoints = privacy.get("endpoints", {}) or {}
     runtime = s.get("runtime", {}) or {}
     # Multi-endpoint editor on the Privacy tab. Each entry shape:
     #   {"name", "base_url", "api_key_env", "default_model"}
@@ -984,9 +976,9 @@ def global_settings(request: Request) -> HTMLResponse:
     api_key_configured = bool(_os.environ.get("ANTHROPIC_API_KEY"))
 
     return templates.TemplateResponse(
+        request,
         "global_settings.html",
         {
-            "request": request,
             # Compliance banner state.
             "api_key_configured": api_key_configured,
             # Privacy tab — multi-endpoint editor.
@@ -1200,9 +1192,9 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
     templates = request.app.state.templates
     ctx_extra = _project_template_context(name, summary)
     return templates.TemplateResponse(
+        request,
         "project_settings.html",
         {
-            "request": request,
             "project": summary,
             "valid_modes": sorted(VALID_MODES),
             "valid_audiences": sorted(VALID_AUDIENCES),
@@ -1281,9 +1273,11 @@ def project_summarize_log(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    ctx = {"request": request, "project": summary}
+    ctx = {"project": summary}
     ctx.update(_project_template_context(name, summary))
-    return request.app.state.templates.TemplateResponse("summarize_log.html", ctx)
+    return request.app.state.templates.TemplateResponse(
+        request, "summarize_log.html", ctx
+    )
 
 
 @router.get("/projects/{name}/tools/build/log", response_class=HTMLResponse)
@@ -1298,9 +1292,11 @@ def project_tool_build_log(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    ctx = {"request": request, "project": summary}
+    ctx = {"project": summary}
     ctx.update(_project_template_context(name, summary))
-    return request.app.state.templates.TemplateResponse("tool_build_log.html", ctx)
+    return request.app.state.templates.TemplateResponse(
+        request, "tool_build_log.html", ctx
+    )
 
 
 @router.get("/projects/{name}/finalize/log", response_class=HTMLResponse)
@@ -1318,9 +1314,11 @@ def project_finalize_log(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    ctx = {"request": request, "project": summary}
+    ctx = {"project": summary}
     ctx.update(_project_template_context(name, summary))
-    return request.app.state.templates.TemplateResponse("finalize_log.html", ctx)
+    return request.app.state.templates.TemplateResponse(
+        request, "finalize_log.html", ctx
+    )
 
 
 @router.get("/projects/{name}/advisor", response_class=HTMLResponse)
@@ -1375,7 +1373,6 @@ def project_advisor(
         # ``session_id`` being set but ``prior_session`` being None.
 
     ctx = {
-        "request": request,
         "project": summary,
         "history": history,
         "session_id": session_id,
@@ -1410,9 +1407,11 @@ def project_advisor_log(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    ctx = {"request": request, "project": summary}
+    ctx = {"project": summary}
     ctx.update(_project_template_context(name, summary))
-    return request.app.state.templates.TemplateResponse("advisor_log.html", ctx)
+    return request.app.state.templates.TemplateResponse(
+        request, "advisor_log.html", ctx
+    )
 
 
 @router.get("/projects/{name}/run")
@@ -1437,12 +1436,11 @@ def project_knowledge(request: Request, name: str) -> HTMLResponse:
     entries = store.list_all()
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "entries": entries,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("knowledge.html", ctx)
+    return templates.TemplateResponse(request, "knowledge.html", ctx)
 
 
 @router.get(
@@ -1460,12 +1458,11 @@ def project_knowledge_entry(request: Request, name: str, entry_id: str) -> HTMLR
         raise HTTPException(status_code=404, detail="Unknown entry")
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "entry": entry,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("knowledge_entry.html", ctx)
+    return templates.TemplateResponse(request, "knowledge_entry.html", ctx)
 
 
 _EXPERIMENT_LOG_TYPES = {"run", "evaluate", "report", "present"}
@@ -1502,13 +1499,12 @@ def project_experiment_log(
     log_type = type if type in _EXPERIMENT_LOG_TYPES else "run"
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "experiment_id": exp_id,
         "log_type": log_type,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("run_log.html", ctx)
+    return templates.TemplateResponse(request, "run_log.html", ctx)
 
 
 @router.get(
@@ -1542,13 +1538,12 @@ def experiment_report(request: Request, name: str, exp_id: str) -> HTMLResponse:
     )
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "experiment_id": exp_id,
         "body_html": body_html,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse("report_view.html", ctx)
+    return templates.TemplateResponse(request, "report_view.html", ctx)
 
 
 # NOTE: must be registered BEFORE the bare ``/presentation`` route so
@@ -1706,7 +1701,6 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
 
     templates = request.app.state.templates
     ctx = {
-        "request": request,
         "project": summary,
         "experiment": exp,
         "experiment_status": experiment_status,
@@ -1721,4 +1715,4 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
         "active_ops": active,
         "active_lock_path": active_lock_path,
     }
-    return templates.TemplateResponse("experiment_detail.html", ctx)
+    return templates.TemplateResponse(request, "experiment_detail.html", ctx)
