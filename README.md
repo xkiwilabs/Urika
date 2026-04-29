@@ -39,12 +39,26 @@ See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-tas
 ### Prerequisites
 
 1. Python >= 3.11
-2. **Anthropic API key** — required (see step 3 below)
-3. Claude Code CLI — install first:
+2. **Anthropic API key** — required (see "Set up API key" below)
+3. **Claude Code CLI** — install first:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 ```
+
+> **Why is the Claude CLI required if Urika uses an API key?**
+> The [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-python)
+> that Urika depends on is a thin wrapper — it spawns the `claude` CLI
+> as a subprocess and communicates with it over stdin/stdout. The CLI
+> provides the agent loop, tool runtime (Read / Write / Bash / Glob /
+> etc.), permission system, and message streaming that Urika builds on.
+> Authentication is just one of the things the CLI handles: when
+> `ANTHROPIC_API_KEY` is set, the CLI uses the metered API (the
+> compliant path Urika requires); when it's unset it falls back to
+> OAuth subscription (which Urika's safety net actively blocks — see
+> [Provider compliance](docs/20-security.md#provider-compliance)). So
+> you install the CLI for the agent runtime, and you set the API key
+> for the auth.
 
 ### Set up API key
 

@@ -40,13 +40,26 @@ npm install -g @anthropic-ai/claude-code
 
 > **Note:** You need Node.js 18+ installed. If you don't have it: `sudo apt install nodejs npm` (Linux) or `brew install node` (macOS).
 
+### Why is the CLI required if Urika uses an API key?
+
+The Claude Agent SDK is a thin wrapper that spawns the `claude` CLI as a subprocess and communicates with it over stdin/stdout. The CLI is what actually:
+
+- runs the agent loop (multi-turn reasoning, tool calls, conversation state),
+- executes tools (Read, Write, Edit, Bash, Glob, Grep, …),
+- enforces the permission system (`bypassPermissions`, allowlists),
+- streams structured messages back.
+
+Authentication is just one piece. When you set `ANTHROPIC_API_KEY`, the CLI uses Anthropic's metered API for inference — that's the compliant path Urika requires. When the key is unset, the CLI would fall back to your local subscription OAuth login, which Urika's safety net actively blocks (see [Provider compliance](20-security.md#provider-compliance)).
+
+In short: **you install the CLI for the agent runtime; you set the API key for the auth.** Skipping the CLI install isn't an option — there's no other way to drive the agent.
+
 ### Verify installation
 
 ```bash
 claude --version
 ```
 
-If you see a version number, the CLI is installed and ready. (Login via `claude login` is only needed for direct interactive use of the CLI by a human — Urika authenticates via `ANTHROPIC_API_KEY`; see the callout below.)
+If you see a version number, the CLI is installed and ready. **Don't** run `claude login` for Urika — Urika reads `ANTHROPIC_API_KEY` directly. `claude login` is only relevant if you also use `claude` interactively as a human (typing into it yourself), which is a separate use case from running Urika.
 
 ## Step 2: Set up your Anthropic API key
 
