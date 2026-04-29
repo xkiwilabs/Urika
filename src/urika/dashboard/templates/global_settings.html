@@ -155,7 +155,8 @@
     {"id": "privacy", "label": "Privacy"},
     {"id": "models", "label": "Models"},
     {"id": "preferences", "label": "Preferences"},
-    {"id": "notifications", "label": "Notifications"}
+    {"id": "notifications", "label": "Notifications"},
+    {"id": "secrets", "label": "Secrets"}
   ]) %}
 
     {# ---- Privacy tab -------------------------------------------------- #}
@@ -811,6 +812,157 @@
       </div>
     </div>
 
+    {# ---- Secrets tab -------------------------------------------------- #}
+    {# Manage credentials Urika and its agents need (API keys, tokens,
+       passwords).  The Secrets tab uses its own CRUD endpoints under
+       /api/secrets — it does NOT share the surrounding settings form's
+       PUT.  Process-env-set secrets show up with the [process env]
+       badge and no Edit/Delete buttons (the user must `unset KEY` in
+       the shell that launched the dashboard). #}
+    <div class="tab-panel" x-show="active === 'secrets'" x-cloak
+         x-data="secretsTab()" x-init="loadSecrets()">
+      <p class="form-help" style="margin-bottom: var(--space-3);">
+        Manage credentials Urika and your agents need (API keys, tokens,
+        passwords). Values are stored encrypted in your OS keyring when
+        available, or in a chmod-0600 file at
+        <code>~/.urika/secrets.env</code> otherwise. Process environment
+        variables always take precedence — exports in your shell are
+        never overwritten.
+      </p>
+      <div class="form-help" style="margin-bottom: var(--space-3);">
+        Storage backend: <strong>{{ secrets_backend_label }}</strong>
+      </div>
+
+      <div style="margin-bottom: var(--space-3);">
+        <button type="button" class="btn btn--secondary"
+                @click="openAddForm()">
+          + Add secret
+        </button>
+      </div>
+
+      {# Add / Edit modal-ish form. Inline rather than a true modal so
+         it stays inside the tab. Hidden until the user clicks + Add or
+         a row's Set / Edit / Override button. #}
+      {# Inline pseudo-form. Cannot use a nested <form> here because the
+         Secrets tab lives inside the outer settings <form> — nested
+         <form> elements are invalid HTML. Use a div with explicit
+         button handlers + Enter-key shortcut on inputs. #}
+      <div class="privacy-block" x-show="formOpen" x-cloak
+           style="margin-bottom: var(--space-3);"
+           @keydown.enter.prevent="saveSecret()">
+        <h4 x-text="formMode === 'edit' ? 'Edit secret' : 'Add secret'"></h4>
+        <div class="form-row">
+          <label>Name</label>
+          <input type="text" x-model="form.name"
+                 :disabled="formMode === 'edit'"
+                 pattern="[A-Z][A-Z0-9_]*"
+                 title="Uppercase letters, digits, underscores only"
+                 placeholder="e.g. HUGGINGFACE_HUB_TOKEN">
+          <small class="form-help">
+            Same name your agent / tool reads via
+            <code>os.environ.get(NAME)</code>.
+          </small>
+        </div>
+        <div class="form-row">
+          <label>Value</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <input :type="showValue ? 'text' : 'password'"
+                   x-model="form.value"
+                   style="flex: 1;"
+                   placeholder="(leave blank to keep existing value)">
+            <button type="button" class="btn btn--ghost"
+                    @click="showValue = !showValue">
+              <span x-text="showValue ? 'Hide' : 'Show'"></span>
+            </button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Description (optional)</label>
+          <input type="text" x-model="form.description"
+                 placeholder="What is this for?">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn--primary"
+                  @click="saveSecret()"
+                  :disabled="saving">
+            <span x-text="saving ? 'Saving…' : 'Save'">Save</span>
+          </button>
+          <button type="button" class="btn btn--ghost"
+                  @click="closeForm()">Cancel</button>
+          <span x-show="formError" x-cloak class="text-danger"
+                x-text="formError"></span>
+        </div>
+      </div>
+
+      {# List of secrets — one row per name (known + set + process). #}
+      <div x-show="loading" class="form-help">Loading secrets…</div>
+      <div x-show="!loading && secrets.length === 0" x-cloak class="form-help">
+        No secrets configured yet. Click "+ Add secret" to start.
+      </div>
+      <template x-for="row in secrets" :key="row.name">
+        <div class="privacy-block">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2);">
+            <div style="flex: 1; min-width: 0;">
+              <h4 style="margin: 0 0 var(--space-1) 0;">
+                <code x-text="row.name"></code>
+                {# Origin badge — color via inline style so we don't
+                   need to wire new CSS classes. #}
+                <span x-show="row.origin === 'process'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #fff5e0; color: #5a3b00; border-radius: 4px;">
+                  process env
+                </span>
+                <span x-show="row.origin === 'global' || row.origin === 'keyring' || row.origin === 'file'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #d4edda; color: #155724; border-radius: 4px;"
+                      x-text="row.origin === 'keyring' ? 'keyring' : (row.origin === 'file' ? 'file' : 'global')">
+                </span>
+                <span x-show="row.origin === 'project'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #cfe2ff; color: #084298; border-radius: 4px;">
+                  project
+                </span>
+                <span x-show="row.origin === 'unset'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #e9ecef; color: #495057; border-radius: 4px;">
+                  unset
+                </span>
+              </h4>
+              <div class="form-help" x-show="row.description" x-cloak
+                   x-text="row.description"></div>
+              <div style="margin-top: 4px;" x-show="row.set" x-cloak>
+                <code style="font-size: var(--fs-xs);" x-text="row.masked_preview"></code>
+              </div>
+              <div class="form-help" x-show="row.origin === 'process'" x-cloak
+                   style="margin-top: 4px;">
+                In shell environment — to clear, run
+                <code>unset <span x-text="row.name"></span></code>
+                in the shell that launched the dashboard, then refresh.
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--space-2); flex-shrink: 0;">
+              {# ANTHROPIC_API_KEY gets a Test button (same endpoint as
+                 the compliance banner above). Other names: no Test
+                 button until Phase C extends per-provider tests. #}
+              <button type="button" class="btn btn--small"
+                      x-show="row.set && row.name === 'ANTHROPIC_API_KEY'" x-cloak
+                      @click="testSecret(row)">Test</button>
+              <button type="button" class="btn btn--small"
+                      x-show="row.origin !== 'process' && row.set" x-cloak
+                      @click="openEditForm(row)">Edit</button>
+              <button type="button" class="btn btn--small btn--primary"
+                      x-show="!row.set" x-cloak
+                      @click="openSetForm(row)">Set</button>
+              <button type="button" class="btn btn--small btn--danger"
+                      x-show="row.origin !== 'process' && row.set" x-cloak
+                      @click="deleteSecret(row)">Delete</button>
+            </div>
+          </div>
+          <div x-show="row._testResult" x-cloak class="endpoint-test-result"
+               style="margin-top: var(--space-2);">
+            <div :class="row._testResult?.ok ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
+                 x-text="(row._testResult?.ok ? '✓ ' : '✗ ') + (row._testResult?.message || '')"></div>
+          </div>
+        </div>
+      </template>
+    </div>
+
   {% endcall %}
 
   <div class="form-actions">
@@ -818,4 +970,150 @@
     <span id="settings-feedback" class="text-muted"></span>
   </div>
 </form>
+
+{# ---- Secrets tab Alpine component ----------------------------------- #}
+{# secretsTab() owns the GET /api/secrets list, the add/edit form
+   state, and the POST/DELETE round-trips.  Inlined here rather than
+   a static .js asset so it can co-exist with the rest of the page's
+   Alpine data without a separate manifest entry. #}
+<script>
+function secretsTab() {
+  return {
+    loading: true,
+    secrets: [],
+    formOpen: false,
+    formMode: 'add',
+    showValue: false,
+    saving: false,
+    formError: '',
+    form: { name: '', value: '', description: '' },
+
+    async loadSecrets() {
+      this.loading = true;
+      try {
+        const r = await fetch('/api/secrets');
+        if (!r.ok) {
+          this.secrets = [];
+          this.loading = false;
+          return;
+        }
+        const body = await r.json();
+        // Augment each row with a placeholder for inline test results.
+        this.secrets = (body.secrets || []).map(s => ({ ...s, _testResult: null }));
+      } catch (e) {
+        this.secrets = [];
+      }
+      this.loading = false;
+    },
+
+    openAddForm() {
+      this.formMode = 'add';
+      this.form = { name: '', value: '', description: '' };
+      this.showValue = false;
+      this.formError = '';
+      this.formOpen = true;
+    },
+
+    openSetForm(row) {
+      // "Set" on a known-but-unset row: pre-fill name + description
+      // from the registry hint.
+      this.formMode = 'add';
+      this.form = {
+        name: row.name,
+        value: '',
+        description: row.description || '',
+      };
+      this.showValue = false;
+      this.formError = '';
+      this.formOpen = true;
+    },
+
+    openEditForm(row) {
+      this.formMode = 'edit';
+      this.form = {
+        name: row.name,
+        value: '',  // empty = keep existing
+        description: row.description || '',
+      };
+      this.showValue = false;
+      this.formError = '';
+      this.formOpen = true;
+    },
+
+    closeForm() {
+      this.formOpen = false;
+      this.formError = '';
+    },
+
+    async saveSecret() {
+      this.saving = true;
+      this.formError = '';
+      // For edit-mode with empty value, skip — the user clicked Save
+      // without changing the value, and the backend would reject the
+      // empty value. Surface a friendly error instead.
+      if (this.formMode === 'edit' && !this.form.value) {
+        this.formError = 'Enter a new value to update, or click Cancel.';
+        this.saving = false;
+        return;
+      }
+      try {
+        const fd = new FormData();
+        fd.append('name', this.form.name);
+        fd.append('value', this.form.value);
+        if (this.form.description) fd.append('description', this.form.description);
+        const r = await fetch('/api/secrets', { method: 'POST', body: fd });
+        if (!r.ok) {
+          let msg = 'Save failed';
+          try {
+            const body = await r.json();
+            msg = body.detail || msg;
+          } catch (_) { /* non-json error body */ }
+          this.formError = msg;
+          this.saving = false;
+          return;
+        }
+        this.formOpen = false;
+        await this.loadSecrets();
+      } catch (e) {
+        this.formError = e.message || 'Save failed';
+      }
+      this.saving = false;
+    },
+
+    async deleteSecret(row) {
+      if (!confirm(`Delete secret ${row.name}? This cannot be undone.`)) return;
+      try {
+        const r = await fetch(`/api/secrets/${encodeURIComponent(row.name)}`, {
+          method: 'DELETE',
+        });
+        if (!r.ok && r.status !== 204) {
+          let msg = 'Delete failed';
+          try { msg = (await r.json()).detail || msg; } catch (_) {}
+          alert(msg);
+          return;
+        }
+        await this.loadSecrets();
+      } catch (e) {
+        alert(e.message || 'Delete failed');
+      }
+    },
+
+    async testSecret(row) {
+      // Currently only ANTHROPIC_API_KEY has a test endpoint.
+      if (row.name !== 'ANTHROPIC_API_KEY') {
+        row._testResult = { ok: null, message: 'no test available for this credential' };
+        return;
+      }
+      row._testResult = { ok: null, message: 'Testing…' };
+      try {
+        const r = await fetch('/api/settings/test-anthropic-key', { method: 'POST' });
+        const body = await r.json();
+        row._testResult = body;
+      } catch (e) {
+        row._testResult = { ok: false, message: e.message || 'Test failed' };
+      }
+    },
+  };
+}
+</script>
 {% endblock %}

@@ -1618,6 +1618,198 @@ async def api_test_endpoint(request: Request) -> JSONResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# Secrets vault — Settings → Secrets tab (global + per-project)
+# ---------------------------------------------------------------------------
+
+# Restrict secret names to valid env-var identifiers. Same shape as the
+# vault's _SECRET_NAME_RE but the dashboard accepts down to 1 character
+# in case a user wants a short name. The pattern is enforced both in the
+# HTML form and on the server.
+_DASHBOARD_SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def _dashboard_vault(project_path: Path | None = None):
+    """Build a SecretsVault rooted at ``URIKA_HOME`` (or ``~/.urika``).
+
+    The vault module's defaults point at ``Path.home() / ".urika"`` so
+    raw ``SecretsVault()`` would bypass URIKA_HOME — fine in production
+    where the env var is unset, but tests rely on URIKA_HOME redirecting
+    to a tmp dir. Always construct the vault with explicit paths so the
+    same object honors URIKA_HOME both at runtime and under pytest.
+
+    When ``keyring`` is installed AND probes successfully on the host,
+    the vault picks the keyring backend by default. We force a
+    FileBackend rooted at ``<URIKA_HOME>/secrets.env`` so the dashboard
+    UI is deterministic across machines (the user's existing
+    ``~/.urika/secrets.env`` is the same file the v0.3 notifications
+    flow already wrote to). Users who prefer the OS keyring can use the
+    CLI (``urika config secret``) which honors the keyring tier.
+    """
+    from urika.core.registry import _urika_home
+    from urika.core.vault import FileBackend, SecretsVault
+
+    home = _urika_home()
+    vault = SecretsVault(
+        project_path=project_path,
+        global_path=home / "secrets.env",
+    )
+    # Force FileBackend so URIKA_HOME redirection is honored uniformly.
+    # SecretsVault.__init__ already does this when global_path is passed,
+    # but be explicit for clarity.
+    vault._global_backend = FileBackend(path=home / "secrets.env")
+    vault._meta_path = home / "secrets-meta.toml"
+    return vault
+
+
+def _backend_label() -> str:
+    """Human label for the active global backend (file vs keyring).
+
+    Used by the global Secrets tab to show users what's storing their
+    credentials. The dashboard endpoints always use FileBackend (see
+    :func:`_dashboard_vault`), but the label reflects what the
+    ``urika config secret`` CLI would pick on this host so the user
+    knows whether OS-level encryption is available.
+    """
+    from urika.core.vault import _keyring_available
+
+    if _keyring_available():
+        return "OS keyring (managed via `urika config secret`)"
+    return "file fallback (chmod 0600)"
+
+
+def _serialize_secret_row(row: dict) -> dict:
+    """Project a vault row to JSON for the dashboard.
+
+    Strips any value-bearing fields; only metadata + masked previews
+    leave the server.
+    """
+    return {
+        "name": row.get("name", ""),
+        "origin": row.get("origin", "unset"),
+        "set": bool(row.get("set", False)),
+        "description": row.get("description", "") or "",
+        "last_modified": row.get("last_modified", "") or "",
+        "masked_preview": row.get("masked_preview", "") or "",
+    }
+
+
+@router.get("/secrets")
+async def api_list_secrets() -> JSONResponse:
+    """List global secrets with origin badges.
+
+    Returns ``{"secrets": [{name, origin, set, description,
+    last_modified, masked_preview}, ...], "backend": "..."}``.
+
+    Values are NEVER returned — only metadata + masked previews. The
+    list is the union of:
+
+    * Names set in the global file backend.
+    * Names set in the process environment that look like credentials
+      (uppercase env-var shape, not on the system denylist).
+    * Names from :data:`urika.core.known_secrets.KNOWN_SECRETS` whether
+      they're set or not (so the dashboard surfaces useful suggestions
+      even before the user adds anything).
+    """
+    from urika.core.secrets import load_secrets
+
+    # Refresh any keys stored in the file backend into os.environ so
+    # the origin attribution sees them.
+    load_secrets()
+
+    vault = _dashboard_vault()
+    rows = [_serialize_secret_row(r) for r in vault.list_with_origins()]
+    return JSONResponse({"secrets": rows, "backend": _backend_label()})
+
+
+@router.post("/secrets")
+async def api_set_secret(request: Request) -> JSONResponse:
+    """Create or update a global secret.
+
+    Body (form-encoded): ``{name, value, description?}``.
+
+    Refuses to overwrite a secret that is set in the process
+    environment but not the vault — that value originates from the
+    user's shell and would be misleading to "save" via the UI (the
+    process-env value would still win on subsequent ``get()`` calls).
+    """
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    value = (form.get("value") or "")
+    description = (form.get("description") or "").strip()
+
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not _DASHBOARD_SECRET_NAME_RE.match(name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid secret name. Use uppercase letters, digits, and "
+                "underscores only (e.g. HUGGINGFACE_HUB_TOKEN)."
+            ),
+        )
+    if not value:
+        raise HTTPException(status_code=400, detail="value is required")
+
+    vault = _dashboard_vault()
+
+    # If the key is set in the process env but not the vault, refuse
+    # the overwrite. Process env wins anyway so saving via the vault
+    # would silently have no effect on subsequent get() calls.
+    in_proc = bool(os.environ.get(name, "").strip())
+    vault_has = vault._global_backend.get(name) is not None
+    we_wrote = name in vault._our_writes
+    if in_proc and not vault_has and not we_wrote:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{name} is set in your shell environment. Clear it via "
+                f"`unset {name}` in the shell that launched the dashboard, "
+                f"then refresh and try again. The process-env value wins "
+                f"over anything saved here."
+            ),
+        )
+
+    vault.set_global(name, value, description=description)
+
+    from urika.core.vault import mask_value
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "name": name,
+            "origin": "global",
+            "masked_preview": mask_value(value),
+        }
+    )
+
+
+@router.delete("/secrets/{name}")
+async def api_delete_secret(name: str) -> Response:
+    """Delete a global secret. 204 on success, 404 if not present.
+
+    Refuses (400) when the secret originates from the process env
+    (no vault entry) — shell exports must be cleared via ``unset``.
+    """
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    vault = _dashboard_vault()
+    try:
+        existed = vault.delete_global(name)
+    except RuntimeError as exc:
+        # Pure process-env-only secrets: vault refuses to delete.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not existed:
+        raise HTTPException(status_code=404, detail=f"{name} is not set in the vault")
+    return Response(status_code=204)
+
+
 @router.post("/projects/{name}/run")
 async def api_project_run_post(name: str, request: Request):
     """Materialize a new experiment and spawn ``urika run`` for it.

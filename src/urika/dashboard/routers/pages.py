@@ -981,6 +981,15 @@ def global_settings(request: Request) -> HTMLResponse:
     load_secrets()
     api_key_configured = bool(_os.environ.get("ANTHROPIC_API_KEY"))
 
+    # Secrets tab — surface which global backend is active (file vs OS
+    # keyring). The dashboard write path always goes through FileBackend
+    # so the label is informational, not load-bearing.
+    from urika.core.vault import _keyring_available
+    if _keyring_available():
+        secrets_backend_label = "OS keyring (managed via `urika config secret`)"
+    else:
+        secrets_backend_label = "file fallback (chmod 0600)"
+
     return templates.TemplateResponse(
         request,
         "global_settings.html",
@@ -1025,6 +1034,8 @@ def global_settings(request: Request) -> HTMLResponse:
             "known_cloud_models": KNOWN_CLOUD_MODELS,
             "known_agents": KNOWN_AGENTS,
             "endpoint_choices": ENDPOINT_CHOICES,
+            # Secrets tab — backend label (file vs keyring).
+            "secrets_backend_label": secrets_backend_label,
         },
     )
 
