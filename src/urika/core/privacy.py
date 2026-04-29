@@ -43,6 +43,7 @@ def check_private_endpoint(project_dir: Path) -> tuple[bool, str]:
 
     # Ping the endpoint
     try:
+        import os
         import urllib.error
         import urllib.request
 
@@ -53,7 +54,29 @@ def check_private_endpoint(project_dir: Path) -> tuple[bool, str]:
         elif not test_url.endswith("/models"):
             test_url += "/models"
 
-        req = urllib.request.Request(test_url, method="GET")
+        # If the endpoint is auth-protected, send the configured bearer
+        # token. Without this, an endpoint that's actually running but
+        # gated behind a key returns 401/403 — which urlopen raises as
+        # HTTPError (subclass of URLError) and we'd mis-classify as
+        # "unreachable". Load credentials from the vault first so a key
+        # added via ``urika config secret`` since process start is
+        # visible.
+        headers: dict[str, str] = {}
+        api_key_env = (private_ep.get("api_key_env") or "").strip()
+        if api_key_env:
+            try:
+                from urika.core.secrets import load_secrets
+
+                load_secrets()
+            except Exception:
+                # Defensive: never fail the preflight on a credential
+                # loader hiccup; just proceed without a token.
+                pass
+            api_key = os.environ.get(api_key_env, "").strip()
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+
+        req = urllib.request.Request(test_url, method="GET", headers=headers)
         urllib.request.urlopen(req, timeout=5)
         return True, f"Local model connected ({base_url})"
     except urllib.error.URLError:
