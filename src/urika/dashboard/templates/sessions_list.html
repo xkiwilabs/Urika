@@ -17,16 +17,17 @@
 <style>
   .session-row {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 1.5rem;
   }
   .session-row .session-main { flex: 1 1 auto; min-width: 0; }
   .session-row .session-meta {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 1rem;
+    padding-right: 0.5rem;
   }
   .session-preview {
     font-weight: 600;
@@ -36,15 +37,6 @@
   }
   .session-preview--empty { font-weight: normal; font-style: italic; }
   .session-detail { font-size: 0.9em; }
-  .btn-delete {
-    background: none;
-    border: none;
-    color: var(--text-muted, #888);
-    cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    font: inherit;
-  }
-  .btn-delete:hover { color: var(--color-danger, #c0392b); }
 </style>
 
   {% if sessions %}
@@ -68,13 +60,13 @@
             </div>
           </a>
           <div class="session-meta">
-            <a class="btn btn--small"
+            <a class="btn btn--small btn--primary"
                href="/projects/{{ project.name }}/advisor?session_id={{ session.session_id }}">
               Resume
             </a>
             <button
               type="button"
-              class="btn-delete"
+              class="btn btn--small btn--danger"
               hx-delete="/api/projects/{{ project.name }}/sessions/{{ session.session_id }}"
               hx-confirm="Delete this session?"
               hx-target="closest .session-row"

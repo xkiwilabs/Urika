@@ -190,6 +190,48 @@ class TestInputBar:
             assert bar.cursor_position == len("/help ")
 
     @pytest.mark.asyncio
+    async def test_resume_session_does_not_suggest_project_or_experiment(
+        self, tmp_path
+    ) -> None:
+        """`/resume-session` takes a numeric session index, not a
+        project or experiment name. Tab completion must NOT suggest
+        a project name (the user reported this as confusing — they
+        thought the suggestion was an experiment id).
+
+        Regression: previously ``resume-session`` was in
+        ``_PROJECT_ARG_COMMANDS`` which caused the suggester to fall
+        through to ``_suggest_project`` and surface a project name
+        even though the command takes a session number.
+        """
+        from unittest.mock import patch
+
+        # Fabricate a fake project so _suggest_project would have
+        # something to return if it were (incorrectly) invoked.
+        (tmp_path / "alpha").mkdir()
+        fake_registry = {"alpha-study": tmp_path / "alpha"}
+
+        with patch(
+            "urika.core.registry.ProjectRegistry.list_all",
+            return_value=fake_registry,
+        ):
+            app = UrikaApp()
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                bar = app.query_one("InputBar")
+
+                # Empty argument after /resume-session — no suggestion.
+                assert (
+                    await bar.suggester.get_suggestion("/resume-session ")
+                    is None
+                )
+                # Partial argument — still no suggestion (must not
+                # match any project name).
+                assert (
+                    await bar.suggester.get_suggestion("/resume-session a")
+                    is None
+                )
+
+    @pytest.mark.asyncio
     async def test_suggester_completes_project_argument(
         self, tmp_path
     ) -> None:

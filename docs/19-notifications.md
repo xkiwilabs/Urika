@@ -94,6 +94,14 @@ Slack sends rich messages with formatted metrics, status indicators, and interac
 3. Add these scopes:
    - `chat:write` -- send messages
    - `chat:write.public` -- post to any public channel
+   - `app_mentions:read` -- read messages where the bot is `@`-mentioned
+   - `channels:history` -- read messages in public channels the bot has been added to (needed for inbound `/commands`)
+   - `groups:history` -- same, for private channels
+   - `im:history` -- same, for direct messages to the bot
+
+The last three (`*:history`) are required for inbound commands like
+`/status`, `/pause`, `/results`. Without them, the bot can post
+notifications but cannot read commands you type back.
 
 #### Step 3: Install to workspace
 
@@ -122,6 +130,77 @@ For Pause/Stop/Status/Results buttons in Slack messages:
 5. In Urika setup, enter the app token when prompted
 
 Without this step, you still get all notification messages -- you just won't have clickable buttons.
+
+#### Step 5b: Subscribe to message events (so the bot can read commands)
+
+For inbound commands (`/status`, `/pause`, free-text questions), the
+Slack app must subscribe to message events:
+
+1. In your Slack app settings, click **Event Subscriptions** in the sidebar -> **Enable Events**
+2. Under **Subscribe to bot events**, add:
+   - `message.channels` -- public channel messages
+   - `message.groups` -- private channel messages
+   - `message.im` -- direct messages to the bot
+   - `app_mention` -- so `@your-bot status` also works
+3. Save changes. Slack may prompt you to reinstall the app -- do so to pick up the new scopes.
+
+Socket Mode (Step 5) must be enabled for these events to reach Urika
+without a public webhook URL.
+
+#### How Slack commands work in Urika (NOT via Slack's Slash Commands API)
+
+Urika's Slack bot reads regular **channel messages**. When you type a
+message that starts with `/` (e.g. `/status`, `/pause`) in a channel
+where the bot is a member, the bot receives it as a normal message
+event, recognises the leading `/`, and routes it to Urika's command
+handler.
+
+**Do NOT register these commands in the Slack app's "Slash Commands"
+page.** Slack's native slash command machinery routes commands through
+a different Socket Mode envelope (`slash_commands`) that Urika does
+not currently listen to. If you register `/status` as a real Slack
+slash command, Slack will intercept it before the bot's message
+listener sees it, and the command will appear to do nothing.
+
+The required Slack app configuration is:
+
+1. **Bot Token Scopes** (Step 2 above): `chat:write`, `chat:write.public`, `app_mentions:read`, `channels:history`, `groups:history`, `im:history`.
+2. **Event Subscriptions** (Step 5b above): `message.channels`, `message.groups`, `message.im`, `app_mention`.
+3. **Socket Mode** (Step 5 above): enabled, with an app-level token (`xapp-...`).
+4. **Interactivity & Shortcuts** (Step 5 above): on — for the Pause/Stop/Status/Results buttons on `experiment_started` notifications.
+5. **NO entries on the "Slash Commands" page.** Leave that page empty.
+6. **Bot invited** to the channel (`/invite @your-bot-name` from inside the Slack channel).
+
+Available bot commands (just type them as regular messages in the
+channel where the bot is a member -- no Slack-side registration
+needed):
+
+| Command | What it does |
+|---|---|
+| `/status` | Project status |
+| `/results` | Top methods leaderboard |
+| `/methods` | Recently registered methods |
+| `/criteria` | Current success criteria |
+| `/experiments` | Recent experiments |
+| `/logs` | Recent run logs |
+| `/usage` | Token + cost summary |
+| `/pause` | Pause active run |
+| `/stop` | Stop active run |
+| `/resume` | Resume run |
+| `/help` | List of all available bot commands |
+
+Free text (no leading `/`) is routed to the orchestrator as an `ask`
+command, so you can have a conversation with the bot without using a
+slash prefix.
+
+Inline buttons (Pause / Stop / Status / Results) on `experiment_started`
+notifications use Slack's **interactivity** (Block Kit button) API,
+which Urika DOES handle. Those work whether or not slash commands are
+registered, as long as Step 5 (Socket Mode + Interactivity) is on.
+
+A future release may add native Slack slash command support (via the
+`slash_commands` Socket Mode envelope). For now, use the
+regular-message convention above.
 
 #### Restricting who can control the bot
 
