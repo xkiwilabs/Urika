@@ -716,7 +716,140 @@
       <div x-show="!loading && secrets.length === 0" x-cloak class="form-help">
         No secrets configured.
       </div>
-      <template x-for="row in secrets" :key="row.name">
+
+      {# Three sections, same as the global Secrets tab. The project
+         tab's row buttons differ (Override / Use global instead) so
+         the per-section blocks can't be DRY'd against the global tab. #}
+
+      {# ── LLM Providers ────────────────────────────────────────────── #}
+      <h3 class="form-help" x-show="!loading && providerRows().length"
+          x-cloak style="margin-top: var(--space-3); font-size: var(--fs-base); font-weight: 600;">
+        LLM Providers
+      </h3>
+      <template x-for="row in providerRows()" :key="row.name">
+        <div class="privacy-block">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2);">
+            <div style="flex: 1; min-width: 0;">
+              <h4 style="margin: 0 0 var(--space-1) 0;">
+                <code x-text="row.name"></code>
+                <span x-show="row.provider_display" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); color: var(--text-muted);"
+                      x-text="row.provider_display"></span>
+                <span x-show="row.origin === 'project'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #cfe2ff; color: #084298; border-radius: 4px;">
+                  project
+                </span>
+                <span x-show="row.origin === 'global' || row.origin === 'keyring' || row.origin === 'file'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #d4edda; color: #155724; border-radius: 4px;"
+                      x-text="row.origin === 'keyring' ? 'keyring' : (row.origin === 'file' ? 'file' : 'global')">
+                </span>
+                <span x-show="row.origin === 'process'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #fff5e0; color: #5a3b00; border-radius: 4px;">
+                  process env
+                </span>
+                <span x-show="row.origin === 'unset' && row.available !== false" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #e9ecef; color: #495057; border-radius: 4px;">
+                  unset
+                </span>
+                <span x-show="row.available === false" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #e9ecef; color: #495057; border-radius: 4px;">
+                  coming v0.5
+                </span>
+              </h4>
+              <div class="form-help" x-show="row.description" x-cloak
+                   x-text="row.description"></div>
+              <div style="margin-top: 4px;" x-show="row.set" x-cloak>
+                <code style="font-size: var(--fs-xs);" x-text="row.masked_preview"></code>
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--space-2); flex-shrink: 0;">
+              <button type="button" class="btn btn--small"
+                      x-show="row.origin === 'project' && row.available !== false" x-cloak
+                      @click="openEditForm(row)">Edit</button>
+              <button type="button" class="btn btn--small"
+                      x-show="(row.origin === 'global' || row.origin === 'keyring' || row.origin === 'file') && row.set && row.available !== false" x-cloak
+                      @click="openOverrideForm(row)">Override?</button>
+              <button type="button" class="btn btn--small btn--primary"
+                      x-show="row.origin === 'unset' && row.available !== false" x-cloak
+                      @click="openSetForm(row)">Set</button>
+              <button type="button" class="btn btn--small btn--danger"
+                      x-show="row.origin === 'project' && row.available !== false" x-cloak
+                      @click="deleteSecret(row)"
+                      title="Use global value instead">Use global instead</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      {# ── Used by your config ──────────────────────────────────────── #}
+      <h3 class="form-help" x-show="!loading && usedByConfigRows().length"
+          x-cloak style="margin-top: var(--space-3); font-size: var(--fs-base); font-weight: 600;">
+        Used by your config
+      </h3>
+      <template x-for="row in usedByConfigRows()" :key="row.name">
+        <div class="privacy-block">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2);">
+            <div style="flex: 1; min-width: 0;">
+              <h4 style="margin: 0 0 var(--space-1) 0;">
+                <code x-text="row.name"></code>
+                <span x-show="row.origin === 'process'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #fff5e0; color: #5a3b00; border-radius: 4px;">
+                  process env
+                </span>
+                <span x-show="row.origin === 'global' || row.origin === 'keyring' || row.origin === 'file'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #d4edda; color: #155724; border-radius: 4px;"
+                      x-text="row.origin === 'keyring' ? 'keyring' : (row.origin === 'file' ? 'file' : 'global')">
+                </span>
+                <span x-show="row.origin === 'project'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #cfe2ff; color: #084298; border-radius: 4px;">
+                  project
+                </span>
+                <span x-show="row.origin === 'unset'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #e9ecef; color: #495057; border-radius: 4px;">
+                  unset
+                </span>
+              </h4>
+              <div class="form-help" x-show="row.referenced_by" x-cloak
+                   style="margin-top: 4px;">
+                ↳ used by <span x-text="row.referenced_by"></span>
+              </div>
+              <div class="form-help" x-show="row.description" x-cloak
+                   x-text="row.description"></div>
+              <div style="margin-top: 4px;" x-show="row.set" x-cloak>
+                <code style="font-size: var(--fs-xs);" x-text="row.masked_preview"></code>
+              </div>
+              <div class="form-help" x-show="row.origin === 'process'" x-cloak
+                   style="margin-top: 4px;">
+                In shell environment — to clear, run
+                <code>unset <span x-text="row.name"></span></code>
+                in the shell that launched the dashboard.
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--space-2); flex-shrink: 0;">
+              <button type="button" class="btn btn--small"
+                      x-show="row.origin === 'project'" x-cloak
+                      @click="openEditForm(row)">Edit</button>
+              <button type="button" class="btn btn--small"
+                      x-show="(row.origin === 'global' || row.origin === 'keyring' || row.origin === 'file') && row.set" x-cloak
+                      @click="openOverrideForm(row)">Override?</button>
+              <button type="button" class="btn btn--small btn--primary"
+                      x-show="row.origin === 'unset'" x-cloak
+                      @click="openSetForm(row)">Set</button>
+              <button type="button" class="btn btn--small btn--danger"
+                      x-show="row.origin === 'project'" x-cloak
+                      @click="deleteSecret(row)"
+                      title="Use global value instead">Use global instead</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      {# ── Other Integrations ───────────────────────────────────────── #}
+      <h3 class="form-help" x-show="!loading && otherRows().length"
+          x-cloak style="margin-top: var(--space-3); font-size: var(--fs-base); font-weight: 600;">
+        Other Integrations
+      </h3>
+      <template x-for="row in otherRows()" :key="row.name">
         <div class="privacy-block">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2);">
             <div style="flex: 1; min-width: 0;">
@@ -752,10 +885,6 @@
               </div>
             </div>
             <div style="display: flex; gap: var(--space-2); flex-shrink: 0;">
-              {# Override-from-global: a non-project secret (global /
-                 keyring / file) gets an Override button. Unset rows get
-                 a Set button. Project rows get Edit + "Use global value
-                 instead" + Delete. #}
               <button type="button" class="btn btn--small"
                       x-show="row.origin === 'project'" x-cloak
                       @click="openEditForm(row)">Edit</button>
@@ -806,6 +935,19 @@ function projectSecretsTab(projectName) {
         case 'set': return 'Set project secret';
         default: return 'Add project secret';
       }
+    },
+
+    // Section filters — same shape as the global Secrets tab.
+    providerRows() {
+      return this.secrets.filter(r => r.category === 'provider');
+    },
+    usedByConfigRows() {
+      return this.secrets.filter(r => r.category === 'used_by_config');
+    },
+    otherRows() {
+      return this.secrets.filter(
+        r => r.category !== 'provider' && r.category !== 'used_by_config'
+      );
     },
 
     async loadSecrets() {

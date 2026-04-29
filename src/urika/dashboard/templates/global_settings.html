@@ -210,13 +210,27 @@
           </div>
           <div class="form-row">
             <label>API key env var (optional)</label>
-            <input type="text"
-                   x-model="ep.api_key_env"
-                   placeholder="e.g. INFERENCE_HUB_KEY">
+            <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+              <input type="text"
+                     x-model="ep.api_key_env"
+                     placeholder="env-var name (e.g. INFERENCE_HUB_KEY)"
+                     style="flex: 1 1 50%;"
+                     pattern="[A-Z][A-Z0-9_]*">
+              <input :type="ep.show_value ? 'text' : 'password'"
+                     x-model="ep.api_key_value"
+                     placeholder="value (paste here)"
+                     style="flex: 1 1 50%;"
+                     autocomplete="off">
+              <button type="button" class="btn btn--ghost"
+                      @click="ep.show_value = !ep.show_value"
+                      x-text="ep.show_value ? 'Hide' : 'Show'">Show</button>
+            </div>
             <span class="form-help text-muted" style="font-size: var(--fs-xs);">
-              Enter the <strong>name</strong> of an environment variable (e.g.
-              <code>INFERENCE_HUB_KEY</code>), not the key itself. Leave blank if
-              the endpoint doesn't require auth.
+              Both blank = open endpoint. Filling both saves the value to your
+              secrets vault under that name and configures this endpoint to
+              read from there. Leave the value blank (or the
+              <code>********</code> sentinel) to keep an existing stored
+              value unchanged.
             </span>
           </div>
           <div class="form-row">
@@ -275,7 +289,7 @@
 
       <div style="margin-top: var(--space-3);">
         <button type="button" class="btn btn--secondary"
-                @click="endpoints.push({name: '', base_url: '', api_key_env: '', default_model: ''})">
+                @click="endpoints.push({name: '', base_url: '', api_key_env: '', api_key_value: '', show_value: false, default_model: ''})">
           + Add endpoint
         </button>
       </div>
@@ -656,20 +670,34 @@
             email address — leave blank to use the From address above.
           </small>
         </div>
-        <div class="form-row">
+        <div class="form-row" x-data="{ show: false }">
           <label for="notifications_email_smtp_password_env">SMTP password env var</label>
-          <input type="text" id="notifications_email_smtp_password_env"
-                 name="notifications_email_smtp_password_env"
-                 value="{{ notif_email.get('password_env', notif_email.get('smtp_password_env', '')) }}"
-                 placeholder="SMTP_PASSWORD">
+          <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+            <input type="text" id="notifications_email_smtp_password_env"
+                   name="notifications_email_smtp_password_env"
+                   value="{{ notif_email.get('password_env', notif_email.get('smtp_password_env', '')) or 'URIKA_EMAIL_PASSWORD' }}"
+                   placeholder="URIKA_EMAIL_PASSWORD"
+                   style="flex: 1 1 50%;"
+                   pattern="[A-Z][A-Z0-9_]*">
+            <input :type="show ? 'text' : 'password'"
+                   name="notifications_email_smtp_password_value"
+                   value="{% if notif_email_password_set %}********{% endif %}"
+                   placeholder="value (paste here)"
+                   style="flex: 1 1 50%;"
+                   autocomplete="off">
+            <button type="button" class="btn btn--ghost"
+                    @click="show = !show"
+                    x-text="show ? 'Hide' : 'Show'">Show</button>
+          </div>
           <small class="form-help">
-            The <em>name</em> of an environment variable that carries the SMTP
-            password — the value never lives in <code>settings.toml</code>.
-            For Gmail you must use a 16-character
+            Pre-filled with the CLI's default name <code>URIKA_EMAIL_PASSWORD</code>;
+            override if you store the password under a different name. The value
+            never lives in <code>settings.toml</code> — it goes to the secrets
+            vault. Leave the value blank (or the <code>********</code> sentinel)
+            to keep the existing stored password unchanged. For Gmail use a
+            16-character
             <a href="https://myaccount.google.com/apppasswords" target="_blank"
-               rel="noopener">App Password</a>
-            (regular account passwords are rejected). Export the env var in
-            the shell that launches Urika.
+               rel="noopener">App Password</a>.
           </small>
         </div>
       </div>
@@ -691,20 +719,50 @@
                  value="{{ notif_slack.get('channel', '') }}"
                  placeholder="#urika">
         </div>
-        <div class="form-row">
+        <div class="form-row" x-data="{ show: false }">
           <label for="notifications_slack_token_env">Bot token env var</label>
-          <input type="text" id="notifications_slack_token_env"
-                 name="notifications_slack_token_env"
-                 value="{{ notif_slack.get('bot_token_env', notif_slack.get('token_env', '')) }}"
-                 placeholder="SLACK_BOT_TOKEN">
+          <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+            <input type="text" id="notifications_slack_token_env"
+                   name="notifications_slack_token_env"
+                   value="{{ notif_slack.get('bot_token_env', notif_slack.get('token_env', '')) or 'SLACK_BOT_TOKEN' }}"
+                   placeholder="SLACK_BOT_TOKEN"
+                   style="flex: 1 1 50%;"
+                   pattern="[A-Z][A-Z0-9_]*">
+            <input :type="show ? 'text' : 'password'"
+                   name="notifications_slack_token_value"
+                   value="{% if notif_slack_bot_token_set %}********{% endif %}"
+                   placeholder="value (paste here)"
+                   style="flex: 1 1 50%;"
+                   autocomplete="off">
+            <button type="button" class="btn btn--ghost"
+                    @click="show = !show"
+                    x-text="show ? 'Hide' : 'Show'">Show</button>
+          </div>
+          <small class="form-help">
+            Pre-filled with the CLI's default name. Pasted value lands in the
+            secrets vault, not <code>settings.toml</code>.
+          </small>
         </div>
         {# Inbound Socket Mode (optional) — enables /commands from Slack. #}
-        <div class="form-row">
+        <div class="form-row" x-data="{ show: false }">
           <label for="notifications_slack_app_token_env">App token env var (Socket Mode)</label>
-          <input type="text" id="notifications_slack_app_token_env"
-                 name="notifications_slack_app_token_env"
-                 value="{{ notif_slack.get('app_token_env', '') }}"
-                 placeholder="SLACK_APP_TOKEN">
+          <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+            <input type="text" id="notifications_slack_app_token_env"
+                   name="notifications_slack_app_token_env"
+                   value="{{ notif_slack.get('app_token_env', '') or 'SLACK_APP_TOKEN' }}"
+                   placeholder="SLACK_APP_TOKEN"
+                   style="flex: 1 1 50%;"
+                   pattern="[A-Z][A-Z0-9_]*">
+            <input :type="show ? 'text' : 'password'"
+                   name="notifications_slack_app_token_value"
+                   value="{% if notif_slack_app_token_set %}********{% endif %}"
+                   placeholder="value (paste here, optional)"
+                   style="flex: 1 1 50%;"
+                   autocomplete="off">
+            <button type="button" class="btn btn--ghost"
+                    @click="show = !show"
+                    x-text="show ? 'Hide' : 'Show'">Show</button>
+          </div>
         </div>
         <div class="form-row">
           <label for="notifications_slack_allowed_channels">Allowed channels (comma-separated)</label>
@@ -738,12 +796,29 @@
                  name="notifications_telegram_chat_id"
                  value="{{ notif_telegram.get('chat_id', '') }}">
         </div>
-        <div class="form-row">
+        <div class="form-row" x-data="{ show: false }">
           <label for="notifications_telegram_bot_token_env">Bot token env var</label>
-          <input type="text" id="notifications_telegram_bot_token_env"
-                 name="notifications_telegram_bot_token_env"
-                 value="{{ notif_telegram.get('bot_token_env', '') }}"
-                 placeholder="TELEGRAM_BOT_TOKEN">
+          <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+            <input type="text" id="notifications_telegram_bot_token_env"
+                   name="notifications_telegram_bot_token_env"
+                   value="{{ notif_telegram.get('bot_token_env', '') or 'TELEGRAM_BOT_TOKEN' }}"
+                   placeholder="TELEGRAM_BOT_TOKEN"
+                   style="flex: 1 1 50%;"
+                   pattern="[A-Z][A-Z0-9_]*">
+            <input :type="show ? 'text' : 'password'"
+                   name="notifications_telegram_bot_token_value"
+                   value="{% if notif_telegram_bot_token_set %}********{% endif %}"
+                   placeholder="value (paste here)"
+                   style="flex: 1 1 50%;"
+                   autocomplete="off">
+            <button type="button" class="btn btn--ghost"
+                    @click="show = !show"
+                    x-text="show ? 'Hide' : 'Show'">Show</button>
+          </div>
+          <small class="form-help">
+            Pre-filled with the CLI's default name. Pasted value lands in the
+            secrets vault, not <code>settings.toml</code>.
+          </small>
         </div>
       </div>
 
@@ -894,19 +969,149 @@
         </div>
       </div>
 
-      {# List of secrets — one row per name (known + set + process). #}
+      {# List of secrets, grouped into three sections:
+           1. LLM Providers      — row.category === 'provider'
+           2. Used by your config — row.category === 'used_by_config'
+           3. Other Integrations — row.category === 'other'
+         Each section renders the same row layout but is hidden when
+         empty. Locked providers (row.available === false) get a
+         "coming soon" badge instead of action buttons. #}
       <div x-show="loading" class="form-help">Loading secrets…</div>
       <div x-show="!loading && secrets.length === 0" x-cloak class="form-help">
         No secrets configured yet. Click "+ Add secret" to start.
       </div>
-      <template x-for="row in secrets" :key="row.name">
+
+      {# Reusable per-row markup is hard to template inline in Alpine
+         without fighting the framework, so we just repeat the block
+         three times with a different filter. The filter is the only
+         line that changes per section. #}
+
+      {# ── LLM Providers ────────────────────────────────────────────── #}
+      <h3 class="form-help" x-show="!loading && providerRows().length"
+          x-cloak style="margin-top: var(--space-3); font-size: var(--fs-base); font-weight: 600;">
+        LLM Providers
+      </h3>
+      <template x-for="row in providerRows()" :key="row.name">
         <div class="privacy-block">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2);">
             <div style="flex: 1; min-width: 0;">
               <h4 style="margin: 0 0 var(--space-1) 0;">
                 <code x-text="row.name"></code>
-                {# Origin badge — color via inline style so we don't
-                   need to wire new CSS classes. #}
+                <span x-show="row.provider_display" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); color: var(--text-muted);"
+                      x-text="row.provider_display"></span>
+                <span x-show="row.origin === 'process'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #fff5e0; color: #5a3b00; border-radius: 4px;">
+                  process env
+                </span>
+                <span x-show="row.origin === 'global' || row.origin === 'keyring' || row.origin === 'file'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #d4edda; color: #155724; border-radius: 4px;"
+                      x-text="row.origin === 'keyring' ? 'keyring' : (row.origin === 'file' ? 'file' : 'global')">
+                </span>
+                <span x-show="row.origin === 'unset' && row.available !== false" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #e9ecef; color: #495057; border-radius: 4px;">
+                  unset
+                </span>
+                <span x-show="row.available === false" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #e9ecef; color: #495057; border-radius: 4px;">
+                  coming v0.5
+                </span>
+              </h4>
+              <div class="form-help" x-show="row.description" x-cloak
+                   x-text="row.description"></div>
+              <div style="margin-top: 4px;" x-show="row.set" x-cloak>
+                <code style="font-size: var(--fs-xs);" x-text="row.masked_preview"></code>
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--space-2); flex-shrink: 0;">
+              <button type="button" class="btn btn--small"
+                      x-show="row.set && row.name === 'ANTHROPIC_API_KEY'" x-cloak
+                      @click="testSecret(row)">Test</button>
+              <button type="button" class="btn btn--small"
+                      x-show="row.origin !== 'process' && row.set && row.available !== false" x-cloak
+                      @click="openEditForm(row)">Edit</button>
+              <button type="button" class="btn btn--small btn--primary"
+                      x-show="!row.set && row.available !== false" x-cloak
+                      @click="openSetForm(row)">Set</button>
+              <button type="button" class="btn btn--small btn--danger"
+                      x-show="row.origin !== 'process' && row.set && row.available !== false" x-cloak
+                      @click="deleteSecret(row)">Delete</button>
+            </div>
+          </div>
+          <div x-show="row._testResult" x-cloak class="endpoint-test-result"
+               style="margin-top: var(--space-2);">
+            <div :class="row._testResult?.ok ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
+                 x-text="(row._testResult?.ok ? '✓ ' : '✗ ') + (row._testResult?.message || '')"></div>
+          </div>
+        </div>
+      </template>
+
+      {# ── Used by your config ──────────────────────────────────────── #}
+      <h3 class="form-help" x-show="!loading && usedByConfigRows().length"
+          x-cloak style="margin-top: var(--space-3); font-size: var(--fs-base); font-weight: 600;">
+        Used by your config
+      </h3>
+      <template x-for="row in usedByConfigRows()" :key="row.name">
+        <div class="privacy-block">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2);">
+            <div style="flex: 1; min-width: 0;">
+              <h4 style="margin: 0 0 var(--space-1) 0;">
+                <code x-text="row.name"></code>
+                <span x-show="row.origin === 'process'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #fff5e0; color: #5a3b00; border-radius: 4px;">
+                  process env
+                </span>
+                <span x-show="row.origin === 'global' || row.origin === 'keyring' || row.origin === 'file'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #d4edda; color: #155724; border-radius: 4px;"
+                      x-text="row.origin === 'keyring' ? 'keyring' : (row.origin === 'file' ? 'file' : 'global')">
+                </span>
+                <span x-show="row.origin === 'unset'" x-cloak
+                      style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #e9ecef; color: #495057; border-radius: 4px;">
+                  unset
+                </span>
+              </h4>
+              <div class="form-help" x-show="row.referenced_by" x-cloak
+                   style="margin-top: 4px;">
+                ↳ used by <span x-text="row.referenced_by"></span>
+              </div>
+              <div class="form-help" x-show="row.description" x-cloak
+                   x-text="row.description"></div>
+              <div style="margin-top: 4px;" x-show="row.set" x-cloak>
+                <code style="font-size: var(--fs-xs);" x-text="row.masked_preview"></code>
+              </div>
+              <div class="form-help" x-show="row.origin === 'process'" x-cloak
+                   style="margin-top: 4px;">
+                In shell environment — to clear, run
+                <code>unset <span x-text="row.name"></span></code>
+                in the shell that launched the dashboard, then refresh.
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--space-2); flex-shrink: 0;">
+              <button type="button" class="btn btn--small"
+                      x-show="row.origin !== 'process' && row.set" x-cloak
+                      @click="openEditForm(row)">Edit</button>
+              <button type="button" class="btn btn--small btn--primary"
+                      x-show="!row.set" x-cloak
+                      @click="openSetForm(row)">Set</button>
+              <button type="button" class="btn btn--small btn--danger"
+                      x-show="row.origin !== 'process' && row.set" x-cloak
+                      @click="deleteSecret(row)">Delete</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      {# ── Other Integrations ───────────────────────────────────────── #}
+      <h3 class="form-help" x-show="!loading && otherRows().length"
+          x-cloak style="margin-top: var(--space-3); font-size: var(--fs-base); font-weight: 600;">
+        Other Integrations
+      </h3>
+      <template x-for="row in otherRows()" :key="row.name">
+        <div class="privacy-block">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2);">
+            <div style="flex: 1; min-width: 0;">
+              <h4 style="margin: 0 0 var(--space-1) 0;">
+                <code x-text="row.name"></code>
                 <span x-show="row.origin === 'process'" x-cloak
                       style="font-size: var(--fs-xs); margin-left: var(--space-2); padding: 2px 6px; background: #fff5e0; color: #5a3b00; border-radius: 4px;">
                   process env
@@ -937,12 +1142,6 @@
               </div>
             </div>
             <div style="display: flex; gap: var(--space-2); flex-shrink: 0;">
-              {# ANTHROPIC_API_KEY gets a Test button (same endpoint as
-                 the compliance banner above). Other names: no Test
-                 button until Phase C extends per-provider tests. #}
-              <button type="button" class="btn btn--small"
-                      x-show="row.set && row.name === 'ANTHROPIC_API_KEY'" x-cloak
-                      @click="testSecret(row)">Test</button>
               <button type="button" class="btn btn--small"
                       x-show="row.origin !== 'process' && row.set" x-cloak
                       @click="openEditForm(row)">Edit</button>
@@ -953,11 +1152,6 @@
                       x-show="row.origin !== 'process' && row.set" x-cloak
                       @click="deleteSecret(row)">Delete</button>
             </div>
-          </div>
-          <div x-show="row._testResult" x-cloak class="endpoint-test-result"
-               style="margin-top: var(--space-2);">
-            <div :class="row._testResult?.ok ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'"
-                 x-text="(row._testResult?.ok ? '✓ ' : '✗ ') + (row._testResult?.message || '')"></div>
           </div>
         </div>
       </template>
@@ -987,6 +1181,21 @@ function secretsTab() {
     saving: false,
     formError: '',
     form: { name: '', value: '', description: '' },
+
+    // Section filters — three computed lists driven by row.category.
+    // Implemented as functions (not getters) because Alpine's x-for
+    // re-runs them on each render which keeps reactivity simple.
+    providerRows() {
+      return this.secrets.filter(r => r.category === 'provider');
+    },
+    usedByConfigRows() {
+      return this.secrets.filter(r => r.category === 'used_by_config');
+    },
+    otherRows() {
+      return this.secrets.filter(
+        r => r.category !== 'provider' && r.category !== 'used_by_config'
+      );
+    },
 
     async loadSecrets() {
       this.loading = true;

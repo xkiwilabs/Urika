@@ -899,8 +899,32 @@ def global_settings(request: Request) -> HTMLResponse:
     s = load_settings()
     runtime = s.get("runtime", {}) or {}
     # Multi-endpoint editor on the Privacy tab. Each entry shape:
-    #   {"name", "base_url", "api_key_env", "default_model"}
+    #   {"name", "base_url", "api_key_env", "api_key_value",
+    #    "show_value", "default_model"}
+    #
+    # ``api_key_value`` is a sentinel ("********") when the referenced
+    # env-var has a vault-stored value — the form treats unchanged
+    # sentinel-valued fields as "leave the existing secret alone" on
+    # save. Empty when the env-var is unset (so the user can paste a
+    # value to populate the vault for the first time).
     named_endpoints = get_named_endpoints()
+    _enriched_endpoints = []
+    if named_endpoints:
+        from urika.core.registry import _urika_home
+        from urika.core.vault import FileBackend
+
+        _ep_backend = FileBackend(path=_urika_home() / "secrets.env")
+        for _ep in named_endpoints:
+            _key_env = (_ep.get("api_key_env") or "").strip()
+            _stored = bool(_key_env and _ep_backend.get(_key_env))
+            _enriched_endpoints.append(
+                {
+                    **_ep,
+                    "api_key_value": "********" if _stored else "",
+                    "show_value": False,
+                }
+            )
+        named_endpoints = _enriched_endpoints
     runtime_modes = runtime.get("modes", {}) or {}
     runtime_models = runtime.get("models", {}) or {}
     prefs = s.get("preferences", {}) or {}
@@ -990,6 +1014,35 @@ def global_settings(request: Request) -> HTMLResponse:
     else:
         secrets_backend_label = "file fallback (chmod 0600)"
 
+    # Per-channel "is the password/token already saved in the vault?"
+    # flags, used by the Notifications tab to decide whether the value
+    # input gets the ``********`` sentinel pre-fill (saved value exists,
+    # don't surface it but don't clear it on submit) or starts blank
+    # (nothing stored, user enters a value to populate the vault).
+    from urika.core.registry import _urika_home
+    from urika.core.vault import FileBackend
+
+    _notif_backend = FileBackend(path=_urika_home() / "secrets.env")
+    _notif_email = notifications.get("email", {}) or {}
+    _notif_slack = notifications.get("slack", {}) or {}
+    _notif_telegram = notifications.get("telegram", {}) or {}
+    _email_pwd_env = (_notif_email.get("password_env") or "").strip()
+    _slack_bot_env = (_notif_slack.get("bot_token_env") or "").strip()
+    _slack_app_env = (_notif_slack.get("app_token_env") or "").strip()
+    _tg_bot_env = (_notif_telegram.get("bot_token_env") or "").strip()
+    notif_email_password_set = bool(
+        _email_pwd_env and _notif_backend.get(_email_pwd_env)
+    )
+    notif_slack_bot_token_set = bool(
+        _slack_bot_env and _notif_backend.get(_slack_bot_env)
+    )
+    notif_slack_app_token_set = bool(
+        _slack_app_env and _notif_backend.get(_slack_app_env)
+    )
+    notif_telegram_bot_token_set = bool(
+        _tg_bot_env and _notif_backend.get(_tg_bot_env)
+    )
+
     return templates.TemplateResponse(
         request,
         "global_settings.html",
@@ -1026,6 +1079,12 @@ def global_settings(request: Request) -> HTMLResponse:
             "notif_telegram_auto_enable": bool(
                 (notifications.get("telegram", {}) or {}).get("auto_enable", False)
             ),
+            # Vault-stored flags drive the ``********`` sentinel pre-fill
+            # in the paired-input value fields.
+            "notif_email_password_set": notif_email_password_set,
+            "notif_slack_bot_token_set": notif_slack_bot_token_set,
+            "notif_slack_app_token_set": notif_slack_app_token_set,
+            "notif_telegram_bot_token_set": notif_telegram_bot_token_set,
             # Choices
             "valid_modes": VALID_PRIVACY_MODES,
             "valid_privacy_modes": ["open", "private", "hybrid"],

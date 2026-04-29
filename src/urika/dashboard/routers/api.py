@@ -952,6 +952,10 @@ def _parse_endpoints_form(
                     "name": name,
                     "base_url": (item.get("base_url") or "").strip(),
                     "api_key_env": (item.get("api_key_env") or "").strip(),
+                    # NOT stripped — a user-pasted API key may legitimately
+                    # have edge whitespace they meant to include. The save
+                    # side decides whether to write it to the vault.
+                    "api_key_value": item.get("api_key_value") or "",
                     "default_model": (item.get("default_model") or "").strip(),
                 }
             )
@@ -960,7 +964,7 @@ def _parse_endpoints_form(
     # Find every index that appears in the form. We accept any of the
     # four bracketed keys as evidence that the row exists.
     indexed_re = re.compile(
-        r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|default_model)\]$"
+        r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|api_key_value|default_model)\]$"
     )
     indices: set[int] = set()
     has_field = False
@@ -1003,6 +1007,9 @@ def _parse_endpoints_form(
                 "api_key_env": (
                     form.get(f"endpoints[{idx}][api_key_env]") or ""
                 ).strip(),
+                "api_key_value": (
+                    form.get(f"endpoints[{idx}][api_key_value]") or ""
+                ),
                 "default_model": (
                     form.get(f"endpoints[{idx}][default_model]") or ""
                 ).strip(),
@@ -1085,6 +1092,15 @@ async def api_global_settings_put(request: Request):
         # Diff-apply: replace the endpoints map with what the user
         # submitted. Missing rows = deleted. Extra fields (e.g.
         # ``default_model``) survive.
+        #
+        # Paired-input vault writes: when the row carries both an
+        # ``api_key_env`` (env-var name) and a non-sentinel
+        # ``api_key_value``, save the value into the global secrets
+        # vault under that name. This is what makes the dashboard
+        # name+value flow atomic: the user enters a value once and
+        # the env-var reference + the secret itself land in their
+        # respective stores. NEVER write the value to settings.toml.
+        _vault_for_save = None
         new_endpoints: dict[str, dict[str, str]] = {}
         for ep in submitted_endpoints:
             row: dict[str, str] = {
@@ -1095,6 +1111,28 @@ async def api_global_settings_put(request: Request):
             if ep["default_model"]:
                 row["default_model"] = ep["default_model"]
             new_endpoints[ep["name"]] = row
+
+            key_env = (ep.get("api_key_env") or "").strip()
+            key_value = ep.get("api_key_value") or ""
+            # Skip the ******** sentinel — that's the form's "no
+            # change" signal. Empty string also means "leave alone".
+            if key_env and key_value and key_value != "********":
+                if _vault_for_save is None:
+                    _vault_for_save = _dashboard_vault()
+                try:
+                    _vault_for_save.set_global(
+                        key_env,
+                        key_value,
+                        description=f"used by privacy endpoint '{ep['name']}'",
+                    )
+                except Exception:
+                    # Vault write failures shouldn't tank the whole
+                    # settings save — surface them, but let the
+                    # settings.toml mutation proceed. The dashboard
+                    # already shows the env-var-set status on the
+                    # endpoint test affordance, so the user will
+                    # notice if the secret didn't land.
+                    pass
         endpoints.clear()
         endpoints.update(new_endpoints)
 
@@ -1250,6 +1288,30 @@ async def api_global_settings_put(request: Request):
     slack_auto_enable = form.get("notifications_slack_auto_enable") == "on"
     telegram_auto_enable = form.get("notifications_telegram_auto_enable") == "on"
 
+    # Helper: write a paired (env_var_name, value) to the vault if the
+    # value is non-empty and not the ``********`` sentinel. Returns the
+    # vault used so callers can chain multiple writes against the same
+    # instance (avoids re-importing per channel).
+    _vault_for_notif: list = []  # poor-man's nullable singleton
+
+    def _save_notif_secret(env_name: str, value: str, source: str) -> None:
+        env_name = (env_name or "").strip()
+        value = value or ""
+        if not env_name or not value or value == "********":
+            return
+        if not _vault_for_notif:
+            _vault_for_notif.append(_dashboard_vault())
+        try:
+            _vault_for_notif[0].set_global(
+                env_name,
+                value,
+                description=f"used by notifications: {source}",
+            )
+        except Exception:
+            # Vault write shouldn't tank the settings save — see
+            # privacy-endpoint comment above for rationale.
+            pass
+
     # Email
     email_to_raw = (form.get("notifications_email_to") or "").strip()
     email_to = [a.strip() for a in email_to_raw.split(",") if a.strip()]
@@ -1295,6 +1357,14 @@ async def api_global_settings_put(request: Request):
     elif "email" in notifications:
         del notifications["email"]
 
+    # Paired-input vault write for the email password (when the user
+    # supplied a non-sentinel value alongside the env-var name).
+    _save_notif_secret(
+        email_section.get("password_env", ""),
+        form.get("notifications_email_smtp_password_value") or "",
+        "email password",
+    )
+
     # Slack
     # Canonical key is ``bot_token_env`` (matches SlackChannel). The form
     # field stays ``notifications_slack_token_env`` for backward-compat
@@ -1338,6 +1408,18 @@ async def api_global_settings_put(request: Request):
     elif "slack" in notifications:
         del notifications["slack"]
 
+    # Paired-input vault writes for slack tokens.
+    _save_notif_secret(
+        slack_section.get("bot_token_env", ""),
+        form.get("notifications_slack_token_value") or "",
+        "slack bot token",
+    )
+    _save_notif_secret(
+        slack_section.get("app_token_env", ""),
+        form.get("notifications_slack_app_token_value") or "",
+        "slack app token (Socket Mode)",
+    )
+
     # Telegram
     telegram_section = {
         "chat_id": (form.get("notifications_telegram_chat_id") or "").strip(),
@@ -1353,6 +1435,13 @@ async def api_global_settings_put(request: Request):
         notifications["telegram"] = telegram_section
     elif "telegram" in notifications:
         del notifications["telegram"]
+
+    # Paired-input vault write for telegram bot token.
+    _save_notif_secret(
+        telegram_section.get("bot_token_env", ""),
+        form.get("notifications_telegram_bot_token_value") or "",
+        "telegram bot token",
+    )
 
     # Drop the notifications block entirely if no connection details
     # remain. Any pre-existing 'channels' list is left untouched —
@@ -1795,7 +1884,24 @@ def _serialize_secret_row(
         "masked_preview": row.get("masked_preview", "") or "",
         "category": _categorize_secret(name, referenced_names),
         "referenced_by": (refs or {}).get(name, ""),
+        # Default for non-provider rows: assume settable. The provider
+        # block below overrides this for LLM provider names whose
+        # adapter hasn't shipped yet (locked rows).
+        "available": True,
+        "provider_display": "",
     }
+    from urika.core.known_secrets import LLM_PROVIDERS
+
+    for prov in LLM_PROVIDERS:
+        if prov.name == name:
+            out["available"] = bool(prov.available)
+            out["provider_display"] = prov.display
+            # Prefer the provider's own description when no per-secret
+            # metadata override exists — gives the dashboard a richer
+            # blurb for locked rows than the bare KNOWN_SECRETS line.
+            if not out["description"]:
+                out["description"] = prov.description
+            break
     return out
 
 
@@ -1872,6 +1978,21 @@ async def api_set_secret(request: Request) -> JSONResponse:
         )
     if not value:
         raise HTTPException(status_code=400, detail="value is required")
+
+    # Refuse to set values for LLM provider names whose adapter hasn't
+    # shipped yet — those rows are roadmap placeholders.
+    from urika.core.known_secrets import LLM_PROVIDERS
+
+    for prov in LLM_PROVIDERS:
+        if prov.name == name and not prov.available:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{name} is reserved for the planned "
+                    f"{prov.display} adapter (v0.5). Configuration "
+                    f"available when that adapter ships."
+                ),
+            )
 
     vault = _dashboard_vault()
 

@@ -832,6 +832,40 @@ def test_global_settings_notifications_tab_has_channels(settings_client):
     assert 'name="notifications_telegram_enabled"' not in body
 
 
+def test_notifications_envvar_fields_default_to_cli_names(settings_client):
+    """When no value is saved yet, the env-var-name inputs default to
+    the CLI's hard-coded names (URIKA_EMAIL_PASSWORD, SLACK_BOT_TOKEN,
+    SLACK_APP_TOKEN, TELEGRAM_BOT_TOKEN) so users don't have to invent
+    a name."""
+    body = settings_client.get("/settings").text
+    # The pre-fill is HTML ``value=`` on a <input>, not a placeholder;
+    # we look for value= adjacent to the field name.
+    import re
+
+    def _has_value(field_name: str, expected: str) -> bool:
+        m = re.search(
+            rf'<input[^>]*name="{field_name}"[^>]*>',
+            body,
+        )
+        return bool(m and f'value="{expected}"' in m.group(0))
+
+    assert _has_value("notifications_email_smtp_password_env", "URIKA_EMAIL_PASSWORD")
+    assert _has_value("notifications_slack_token_env", "SLACK_BOT_TOKEN")
+    assert _has_value("notifications_slack_app_token_env", "SLACK_APP_TOKEN")
+    assert _has_value("notifications_telegram_bot_token_env", "TELEGRAM_BOT_TOKEN")
+
+
+def test_notifications_paired_value_inputs_present(settings_client):
+    """Each *_env field is paired with a masked *_value input on the
+    Notifications tab so users can paste the value at the same time
+    they enter the env-var name."""
+    body = settings_client.get("/settings").text
+    assert 'name="notifications_email_smtp_password_value"' in body
+    assert 'name="notifications_slack_token_value"' in body
+    assert 'name="notifications_slack_app_token_value"' in body
+    assert 'name="notifications_telegram_bot_token_value"' in body
+
+
 def test_global_settings_renders_send_test_notification_button(settings_client):
     """The Notifications tab includes a Send-test button wired to
     ``POST /api/settings/notifications/test-send`` so users can verify

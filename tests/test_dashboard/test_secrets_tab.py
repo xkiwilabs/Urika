@@ -258,6 +258,166 @@ def test_referenced_endpoint_secret_appears_under_used_by_config(
     assert row["origin"] == "unset"
 
 
+# ---- Three-section categorization + locked providers ----------------------
+
+
+def test_secrets_tab_has_three_sections(settings_client):
+    """The Secrets tab template renders three labelled sections."""
+    body = settings_client.get("/settings").text
+    assert "LLM Providers" in body
+    assert "Used by your config" in body
+    assert "Other Integrations" in body
+    # The Alpine filter functions are wired up.
+    assert "providerRows" in body
+    assert "usedByConfigRows" in body
+    assert "otherRows" in body
+
+
+def test_locked_provider_row_marks_unavailable(settings_client, tmp_path, monkeypatch):
+    """OPENAI_API_KEY / GOOGLE_API_KEY are flagged available=False so
+    the template can render the 'coming v0.5' badge instead of action
+    buttons."""
+    monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+
+    r = settings_client.get("/api/secrets")
+    assert r.status_code == 200
+    by_name = {item["name"]: item for item in r.json()["secrets"]}
+    assert by_name["OPENAI_API_KEY"]["available"] is False
+    assert by_name["GOOGLE_API_KEY"]["available"] is False
+    assert by_name["ANTHROPIC_API_KEY"]["available"] is True
+
+
+def test_post_secret_refuses_unavailable_provider_name(
+    settings_client, monkeypatch, tmp_path
+):
+    """Saving a value for a locked provider returns 400 with a
+    roadmap-aware message."""
+    monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    r = settings_client.post(
+        "/api/secrets",
+        data={"name": "OPENAI_API_KEY", "value": "sk-fake-test-value-padding"},
+    )
+    assert r.status_code == 400
+    body_text = r.text
+    assert "OPENAI_API_KEY" in body_text or "OpenAI" in body_text
+    assert "v0.5" in body_text
+
+
+def test_used_by_config_row_shows_annotation(
+    settings_client, monkeypatch, tmp_path
+):
+    """A referenced env-var carries a referenced_by annotation in the
+    JSON payload that the template surfaces as ``↳ used by ...``."""
+    test_env_name = "URIKA_TEST_REF_KEY_88"
+    monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+    monkeypatch.delenv(test_env_name, raising=False)
+    (tmp_path / "home" / "settings.toml").write_text(
+        f"[notifications.email]\n"
+        f'from_addr = "x@y.com"\n'
+        f"smtp_port = 587\n"
+        f'password_env = "{test_env_name}"\n',
+        encoding="utf-8",
+    )
+    r = settings_client.get("/api/secrets")
+    by_name = {item["name"]: item for item in r.json()["secrets"]}
+    assert test_env_name in by_name
+    assert by_name[test_env_name]["category"] == "used_by_config"
+    assert "email password" in by_name[test_env_name]["referenced_by"]
+
+
+def test_paired_input_save_writes_value_to_vault(
+    settings_client, monkeypatch, tmp_path
+):
+    """Saving the global settings form with a privacy-endpoint
+    api_key_env + api_key_value pair writes the value to the vault
+    under that name; no value lands in settings.toml."""
+    import json
+
+    monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    monkeypatch.delenv("TEST_VLLM_KEY", raising=False)
+
+    payload = json.dumps(
+        [
+            {
+                "name": "test_vllm",
+                "base_url": "http://example.com:4200",
+                "api_key_env": "TEST_VLLM_KEY",
+                "api_key_value": "sk-test-12345-abcdef",
+                "default_model": "qwen3:14b",
+            }
+        ]
+    )
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "endpoints_json": payload,
+            "default_audience": "expert",
+            "default_max_turns": "10",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # settings.toml should have the env-var NAME, not the value.
+    settings_toml = (tmp_path / "home" / "settings.toml").read_text()
+    assert "TEST_VLLM_KEY" in settings_toml
+    assert "sk-test-12345-abcdef" not in settings_toml
+
+    # The vault should have the value under the name.
+    secrets_env = (tmp_path / "home" / "secrets.env").read_text()
+    assert "TEST_VLLM_KEY=sk-test-12345-abcdef" in secrets_env
+
+
+def test_paired_input_sentinel_does_not_overwrite_existing_vault_value(
+    settings_client, monkeypatch, tmp_path
+):
+    """When the user submits ``********`` (the sentinel) the form
+    treats it as 'no change' and the vault value stays."""
+    import json
+
+    monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    monkeypatch.delenv("TEST_KEEP_KEY", raising=False)
+
+    # First, store an initial value via the secrets endpoint.
+    r1 = settings_client.post(
+        "/api/secrets",
+        data={"name": "TEST_KEEP_KEY", "value": "original-stored-value-padding"},
+    )
+    assert r1.status_code == 200, r1.text
+
+    # Now PUT settings with the sentinel — should NOT overwrite.
+    payload = json.dumps(
+        [
+            {
+                "name": "test_keep",
+                "base_url": "http://example.com:4200",
+                "api_key_env": "TEST_KEEP_KEY",
+                "api_key_value": "********",
+                "default_model": "qwen3:14b",
+            }
+        ]
+    )
+    r2 = settings_client.put(
+        "/api/settings",
+        data={
+            "endpoints_json": payload,
+            "default_audience": "expert",
+            "default_max_turns": "10",
+        },
+    )
+    assert r2.status_code == 200, r2.text
+
+    # Vault value unchanged.
+    secrets_env = (tmp_path / "home" / "secrets.env").read_text()
+    assert "TEST_KEEP_KEY=original-stored-value-padding" in secrets_env
+
+
 def test_secret_value_never_returned_in_list(settings_client, tmp_path, monkeypatch):
     """The full value never round-trips through the list endpoint —
     only metadata + masked preview leaves the server."""
