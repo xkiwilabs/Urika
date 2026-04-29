@@ -7,16 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.1] - 2026-04-29
 
-Hotfix release — dashboard crashed on first request for users with newer Starlette versions (≥0.40 or so) due to a removed deprecated API. Fresh `pip install urika` users on Windows hit this immediately on running `urika dashboard`.
+Hotfix release driven by first-time Windows install feedback. Three issues that blocked fresh `pip install urika` users — primarily on Windows, but the fixes are platform-agnostic and improve the experience everywhere.
 
 ### Fixed
 
-- **Dashboard `TypeError: unhashable type: 'dict'` on first page load.** Newer Starlette versions removed the deprecated `TemplateResponse(name, context)` positional signature; the dict was being treated as Jinja `globals` and passed as a hash key, which fails. Migrated all 29 dashboard `TemplateResponse` call sites in `routers/pages.py` (26) and `routers/docs.py` (3) to the modern `TemplateResponse(request, name, context)` signature. Resolves the 269 v0.3-era deprecation warnings as a side benefit.
-- One existing call site that was already on the modern signature still carried a redundant `"request": request` entry in its context dict — dropped.
+- **Dashboard `TypeError: unhashable type: 'dict'` on first page load.** Newer Starlette versions (≥0.40) removed the deprecated `TemplateResponse(name, context)` positional signature; the dict was being treated as Jinja `globals` and passed as a hash key, which fails. Migrated all 29 dashboard `TemplateResponse` call sites in `routers/pages.py` (26) and `routers/docs.py` (3) to the modern `TemplateResponse(request, name, context)` signature. Resolves the 269 v0.3-era deprecation warnings as a side benefit.
+- **Vault backend selection respects test monkeypatching.** `urika.core.secrets._vault()` now only forces a `FileBackend` when `_SECRETS_PATH` has been monkeypatched away from the home-directory default (so existing test redirection still works). Otherwise it lets `SecretsVault` pick the best available global backend — OS keyring when `urika[keyring]` is installed and probes successfully, file fallback otherwise. Matches what `urika config secret` writes to.
+- **Dashboard refreshes credentials on page render.** `/settings` (the global settings page) and `/api/settings/test-endpoint` now call `load_secrets()` before reading `ANTHROPIC_API_KEY` / private-endpoint env vars. Means a key added via `urika config api-key` or `urika config secret` (in another shell since the dashboard process started) becomes visible without restarting the dashboard.
+- **Privacy preflight sends bearer token to auth-protected private endpoints.** `urika.core.privacy.check_private_endpoint` was building the GET `/v1/models` request with no `Authorization` header. An auth-protected vLLM / LiteLLM / OpenAI-compatible local endpoint behind an API key returned 401/403, `urlopen` raised `URLError`, and the gate reported "Local model unreachable" — even though the endpoint was running and the agent runtime had the right key. Fix: when `api_key_env` names a set env var, the preflight sends `Authorization: Bearer <token>` (loaded via the same `load_secrets()` refresh as above). Unauthenticated endpoints (default Ollama) unaffected — no header sent when `api_key_env` is blank or the var is unset.
+
+### Added
+
+- **`urika config secret`** — interactive CLI command for storing arbitrary named credentials in the global vault (private vLLM keys, HuggingFace tokens, third-party API credentials). Mirrors `urika config api-key` but works for any name. Includes a foot-gun guard that catches users pasting a value (e.g. `sk-...`) into the name prompt and asks them to confirm. Same vault backs the credential indirection (`bot_token_env`, `api_key_env`, `password_env`) used elsewhere — the dashboard's Privacy and Notifications tabs continue to store names; this command stores values.
+- **Update banner now suppressed when stdout isn't a TTY** — was corrupting JSON output for `urika ... --json` consumers and adding noise to CI / piped sessions. Display also no longer prints `vv0.3.1` when GitHub tags use a `v` prefix.
 
 ### Tests
 
-- 2418 tests still pass; no behaviour change beyond the bug fix.
+- 2418 → 2421 (+3 regression tests for the privacy preflight bearer-token paths).
 
 
 ## [0.3.0] - 2026-04-29
