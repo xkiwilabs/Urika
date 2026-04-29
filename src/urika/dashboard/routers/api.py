@@ -1678,7 +1678,77 @@ def _backend_label() -> str:
     return "file fallback (chmod 0600)"
 
 
-def _serialize_secret_row(row: dict, vault=None) -> dict:
+# Provider names that always render in the "LLM Providers" section,
+# even when unset. The Secrets tab guarantees these rows appear so users
+# see the multi-provider roadmap.
+_PROVIDER_NAMES: frozenset[str] = frozenset(
+    {"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"}
+)
+
+
+def _discover_referenced_secrets(settings: dict) -> dict[str, str]:
+    """Return ``{env_var_name: 'used by ...'}`` discovered from settings.
+
+    Walks the privacy endpoints + notifications channels in a settings
+    dict and returns a map of every ``*_env`` reference, with a
+    short human-readable annotation explaining where the reference came
+    from. The Secrets tab uses this to populate the "Used by your
+    config" section.
+
+    Tolerant to malformed sections — sub-dicts that aren't actually
+    dicts are skipped silently rather than raised.
+    """
+    refs: dict[str, str] = {}
+
+    privacy = settings.get("privacy", {})
+    if isinstance(privacy, dict):
+        endpoints = privacy.get("endpoints", {}) or {}
+        if isinstance(endpoints, dict):
+            for name, ep in endpoints.items():
+                if not isinstance(ep, dict):
+                    continue
+                key_env = (ep.get("api_key_env") or "").strip()
+                if key_env:
+                    refs[key_env] = f"privacy endpoint '{name}'"
+
+    notif = settings.get("notifications", {})
+    if isinstance(notif, dict):
+        email = notif.get("email")
+        if isinstance(email, dict):
+            env = (email.get("password_env") or "").strip()
+            if env:
+                refs[env] = "notifications: email password"
+        slack = notif.get("slack")
+        if isinstance(slack, dict):
+            env = (slack.get("bot_token_env") or "").strip()
+            if env:
+                refs[env] = "notifications: slack bot token"
+            env = (slack.get("app_token_env") or "").strip()
+            if env:
+                refs[env] = "notifications: slack app token (Socket Mode)"
+        tg = notif.get("telegram")
+        if isinstance(tg, dict):
+            env = (tg.get("bot_token_env") or "").strip()
+            if env:
+                refs[env] = "notifications: telegram bot token"
+
+    return refs
+
+
+def _categorize_secret(name: str, referenced_names: set[str]) -> str:
+    """Return one of ``"provider"``, ``"used_by_config"``, ``"other"``."""
+    if name in _PROVIDER_NAMES:
+        return "provider"
+    if name in referenced_names:
+        return "used_by_config"
+    return "other"
+
+
+def _serialize_secret_row(
+    row: dict,
+    vault=None,
+    refs: dict[str, str] | None = None,
+) -> dict:
     """Project a vault row to JSON for the dashboard.
 
     Strips any value-bearing fields; only metadata + masked previews
@@ -1694,6 +1764,11 @@ def _serialize_secret_row(row: dict, vault=None) -> dict:
     the vault and which is now also in ``os.environ`` (because
     ``set_global`` pokes os.environ) would render as ``process`` on
     every refresh — confusing for users who just saved it via the UI.
+
+    When ``refs`` is supplied, the row also gets ``referenced_by`` (the
+    annotation from :func:`_discover_referenced_secrets`) and
+    ``category`` ("provider" / "used_by_config" / "other") so the
+    template can group rows into three sections.
     """
     name = row.get("name", "")
     origin = row.get("origin", "unset")
@@ -1709,41 +1784,59 @@ def _serialize_secret_row(row: dict, vault=None) -> dict:
         # Global tier?
         if origin not in ("project",) and vault._global_backend.get(name) is not None:
             origin = "global"
-    return {
+
+    referenced_names = set(refs.keys()) if refs else set()
+    out: dict = {
         "name": name,
         "origin": origin,
         "set": origin != "unset",
         "description": row.get("description", "") or "",
         "last_modified": row.get("last_modified", "") or "",
         "masked_preview": row.get("masked_preview", "") or "",
+        "category": _categorize_secret(name, referenced_names),
+        "referenced_by": (refs or {}).get(name, ""),
     }
+    return out
 
 
 @router.get("/secrets")
 async def api_list_secrets() -> JSONResponse:
-    """List global secrets with origin badges.
+    """List global secrets with origin badges + categorization.
 
     Returns ``{"secrets": [{name, origin, set, description,
-    last_modified, masked_preview}, ...], "backend": "..."}``.
+    last_modified, masked_preview, category, referenced_by, ...},
+    ...], "backend": "..."}``.
 
-    Values are NEVER returned — only metadata + masked previews. The
-    list is the union of:
+    Values are NEVER returned — only metadata + masked previews.
 
-    * Names set in the global file backend.
-    * Names set in the process environment that look like credentials
-      (uppercase env-var shape, not on the system denylist).
-    * Names from :data:`urika.core.known_secrets.KNOWN_SECRETS` whether
-      they're set or not (so the dashboard surfaces useful suggestions
-      even before the user adds anything).
+    Candidate set (no shell-env leak): names stored in the vault
+    (project + global tiers) plus any ``*_env`` references discovered
+    from configured surfaces (privacy endpoints + notifications
+    channels). Locked LLM provider rows
+    (:data:`urika.core.known_secrets.LLM_PROVIDERS`) are also injected
+    so the dashboard always shows the multi-provider roadmap. Random
+    shell-exported variables that aren't vault-stored or referenced
+    are NOT surfaced.
     """
     from urika.core.secrets import load_secrets
+    from urika.core.settings import load_settings
 
     # Refresh any keys stored in the file backend into os.environ so
     # the origin attribution sees them.
     load_secrets()
 
+    refs = _discover_referenced_secrets(load_settings())
+    referenced = set(refs.keys())
+    # Always include all provider names so the Providers section renders
+    # them even when they're unset and unreferenced (locked providers
+    # need a row to surface the "coming soon" affordance).
+    candidate_names = referenced | _PROVIDER_NAMES
+
     vault = _dashboard_vault()
-    rows = [_serialize_secret_row(r, vault=vault) for r in vault.list_with_origins()]
+    rows = [
+        _serialize_secret_row(r, vault=vault, refs=refs)
+        for r in vault.list_with_origins(referenced_names=candidate_names)
+    ]
     return JSONResponse({"secrets": rows, "backend": _backend_label()})
 
 
@@ -1848,8 +1941,12 @@ async def api_list_project_secrets(name: str) -> JSONResponse:
     Returns the union: project-level secrets get ``origin="project"``,
     global ones keep their existing origin (``"keyring"`` / ``"file"``
     surfaces here as ``"global"``, plus ``"process"`` and ``"unset"``).
+    Auto-discovers ``*_env`` names from BOTH global settings and the
+    project's ``urika.toml`` so per-project endpoint references show up
+    under "Used by your config".
     """
     from urika.core.secrets import load_secrets
+    from urika.core.settings import load_settings
 
     load_secrets()
 
@@ -1858,8 +1955,32 @@ async def api_list_project_secrets(name: str) -> JSONResponse:
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
 
+    # Merge global settings with the project's urika.toml for discovery
+    # — privacy endpoints + notifications can be redefined per project.
+    refs: dict[str, str] = dict(_discover_referenced_secrets(load_settings()))
+    proj_toml = summary.path / "urika.toml"
+    if proj_toml.exists():
+        try:
+            import tomllib
+
+            with proj_toml.open("rb") as f:
+                proj_settings = tomllib.load(f)
+            for env_name, source in _discover_referenced_secrets(proj_settings).items():
+                # Project-level annotations take precedence so users see
+                # the project context.
+                refs[env_name] = source
+        except Exception:
+            # Malformed urika.toml — ignore, fall back to global refs.
+            pass
+
+    referenced = set(refs.keys())
+    candidate_names = referenced | _PROVIDER_NAMES
+
     vault = _dashboard_vault(project_path=summary.path)
-    rows = [_serialize_secret_row(r, vault=vault) for r in vault.list_with_origins()]
+    rows = [
+        _serialize_secret_row(r, vault=vault, refs=refs)
+        for r in vault.list_with_origins(referenced_names=candidate_names)
+    ]
     return JSONResponse({"secrets": rows, "backend": _backend_label()})
 
 

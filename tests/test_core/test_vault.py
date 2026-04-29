@@ -98,13 +98,15 @@ class TestListWithOrigins:
     def test_origin_badges_per_secret(
         self, monkeypatch, tmp_path, SecretsVault
     ) -> None:
+        # FROM_ENV is a process-env name AND is referenced — so it
+        # appears with origin=process. FROM_GLOBAL is vault-stored —
+        # appears with origin=global.
         monkeypatch.setenv("FROM_ENV", "x")
         monkeypatch.delenv("FROM_GLOBAL", raising=False)
         vault = _new_vault(SecretsVault, tmp_path)
         vault._global_backend.set("FROM_GLOBAL", "y")
-        # Make sure FROM_GLOBAL isn't accidentally in process env.
         monkeypatch.delenv("FROM_GLOBAL", raising=False)
-        items = vault.list_with_origins()
+        items = vault.list_with_origins(referenced_names={"FROM_ENV"})
         origins = {i["name"]: i["origin"] for i in items}
         assert origins["FROM_ENV"] == "process"
         assert origins["FROM_GLOBAL"] == "global"
@@ -156,18 +158,54 @@ class TestPermissions:
 
 
 class TestKnownSecretsRegistry:
-    def test_unset_known_secrets_appear_in_list_with_origin_unset(
+    def test_unset_referenced_names_appear_with_origin_unset(
         self, monkeypatch, tmp_path, SecretsVault
     ) -> None:
-        for k in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "HUGGINGFACE_HUB_TOKEN"]:
+        # Per the new candidate rule, KNOWN_SECRETS no longer pre-renders
+        # rows. The dashboard injects provider names via referenced_names;
+        # at the vault layer, a referenced name shows up as unset when
+        # nothing in the vault has it.
+        for k in ["ANTHROPIC_API_KEY", "HUGGINGFACE_HUB_TOKEN"]:
             monkeypatch.delenv(k, raising=False)
         vault = _new_vault(SecretsVault, tmp_path)
-        items = vault.list_with_origins()
+        items = vault.list_with_origins(
+            referenced_names={"ANTHROPIC_API_KEY", "HUGGINGFACE_HUB_TOKEN"}
+        )
         names = {i["name"]: i for i in items}
         assert names["ANTHROPIC_API_KEY"]["origin"] == "unset"
         assert names["ANTHROPIC_API_KEY"]["set"] is False
-        # Has description from registry
+        # Falls back to the KNOWN_SECRETS blurb when no per-secret meta.
         assert names["ANTHROPIC_API_KEY"]["description"]
+        assert names["HUGGINGFACE_HUB_TOKEN"]["origin"] == "unset"
+
+    def test_no_random_shell_env_leak(
+        self, monkeypatch, tmp_path, SecretsVault
+    ) -> None:
+        """Random shell exports do NOT appear in list_with_origins."""
+        # An arbitrary shell export — neither vault-stored nor referenced.
+        monkeypatch.setenv("RANDOM_SHELL_EXPORT_XYZ", "leaked-value")
+        # Also the kind of env vars the user actually has in their shell.
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/local/lib")
+        monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+        vault = _new_vault(SecretsVault, tmp_path)
+        items = vault.list_with_origins()
+        names = {i["name"] for i in items}
+        assert "RANDOM_SHELL_EXPORT_XYZ" not in names
+        assert "LD_LIBRARY_PATH" not in names
+        assert "XDG_RUNTIME_DIR" not in names
+
+    def test_referenced_name_shows_process_origin_when_exported(
+        self, monkeypatch, tmp_path, SecretsVault
+    ) -> None:
+        """A referenced name that's exported in the shell wins as
+        'process' (process env still beats vault for resolution); but
+        the candidacy is driven by the reference, not by os.environ."""
+        monkeypatch.setenv("REF_AND_EXPORTED", "from-shell")
+        vault = _new_vault(SecretsVault, tmp_path)
+        items = vault.list_with_origins(referenced_names={"REF_AND_EXPORTED"})
+        by_name = {i["name"]: i for i in items}
+        assert by_name["REF_AND_EXPORTED"]["origin"] == "process"
+        assert by_name["REF_AND_EXPORTED"]["set"] is True
 
 
 class TestMetadataSidecar:

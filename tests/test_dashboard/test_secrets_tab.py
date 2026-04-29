@@ -48,10 +48,11 @@ def test_secrets_tab_has_add_button(settings_client):
 # ---- GET /api/secrets ------------------------------------------------------
 
 
-def test_list_secrets_endpoint_returns_known_plus_set(
+def test_list_secrets_endpoint_returns_provider_plus_set(
     settings_client, monkeypatch, tmp_path
 ):
-    """Known + set secrets surface with their origin badges."""
+    """LLM provider rows always appear; vault-stored values surface
+    with their storage-tier origin."""
     monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-value-with-enough-bytes")
@@ -62,16 +63,17 @@ def test_list_secrets_endpoint_returns_known_plus_set(
     items = body["secrets"]
     by_name = {item["name"]: item for item in items}
 
-    # Known + set: ANTHROPIC_API_KEY should appear with origin=process.
+    # Provider rows always render.
     assert "ANTHROPIC_API_KEY" in by_name
     assert by_name["ANTHROPIC_API_KEY"]["origin"] == "process"
     assert by_name["ANTHROPIC_API_KEY"]["set"] is True
+    assert by_name["ANTHROPIC_API_KEY"]["category"] == "provider"
+    assert "OPENAI_API_KEY" in by_name
+    assert by_name["OPENAI_API_KEY"]["category"] == "provider"
 
-    # Known + unset: HUGGINGFACE_HUB_TOKEN should appear with origin=unset
-    # (assuming the test env doesn't already export it).
-    if "HUGGINGFACE_HUB_TOKEN" not in __import__("os").environ:
-        assert "HUGGINGFACE_HUB_TOKEN" in by_name
-        assert by_name["HUGGINGFACE_HUB_TOKEN"]["origin"] == "unset"
+    # Random KNOWN_SECRETS that aren't providers and aren't referenced
+    # do NOT pre-render rows any more.
+    assert "HUGGINGFACE_HUB_TOKEN" not in by_name
 
 
 def test_list_secrets_returns_backend_label(settings_client, tmp_path, monkeypatch):
@@ -194,6 +196,66 @@ def test_delete_secret_refuses_process_env(settings_client, monkeypatch, tmp_pat
 
 
 # ---- Defense in depth: values never returned ------------------------------
+
+
+def test_list_secrets_does_not_leak_random_shell_env(
+    settings_client, monkeypatch, tmp_path
+):
+    """Random shell exports must NOT appear in the Secrets list — only
+    vault-stored, provider, or referenced names are candidates."""
+    monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    # The kind of nonsense the user has in their shell.
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/local/lib")
+    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+    monkeypatch.setenv("GTK_MODULES", "canberra-gtk-module")
+    monkeypatch.setenv("RANDOM_SHELL_VAR_ABC", "garbage")
+
+    r = settings_client.get("/api/secrets")
+    assert r.status_code == 200
+    names = {item["name"] for item in r.json()["secrets"]}
+    for leak in (
+        "LD_LIBRARY_PATH",
+        "XDG_RUNTIME_DIR",
+        "GTK_MODULES",
+        "RANDOM_SHELL_VAR_ABC",
+    ):
+        assert leak not in names, f"{leak} leaked into the Secrets list"
+
+
+def test_referenced_endpoint_secret_appears_under_used_by_config(
+    settings_client, monkeypatch, tmp_path
+):
+    """An ``api_key_env`` reference on a privacy endpoint shows up
+    under the "used_by_config" category with a referenced_by note.
+
+    Uses a synthetic env-var name unlikely to exist anywhere on the
+    test machine + isolates ``urika.core.secrets`` from the developer's
+    real ``~/.urika/secrets.env`` (which load_secrets() reads from a
+    module-level path that doesn't honor URIKA_HOME).
+    """
+    test_env_name = "URIKA_TEST_ONLY_XYZ_KEY_99"
+    monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    # Stub load_secrets so the developer's real secrets.env can't
+    # accidentally export the test name into os.environ.
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+    monkeypatch.delenv(test_env_name, raising=False)
+    (tmp_path / "home" / "settings.toml").write_text(
+        f"[privacy.endpoints.test_vllm]\n"
+        f'base_url = "http://example.com:4200"\n'
+        f'api_key_env = "{test_env_name}"\n',
+        encoding="utf-8",
+    )
+
+    r = settings_client.get("/api/secrets")
+    assert r.status_code == 200
+    by_name = {i["name"]: i for i in r.json()["secrets"]}
+    assert test_env_name in by_name
+    row = by_name[test_env_name]
+    assert row["category"] == "used_by_config"
+    assert "test_vllm" in row["referenced_by"]
+    assert row["origin"] == "unset"
 
 
 def test_secret_value_never_returned_in_list(settings_client, tmp_path, monkeypatch):
