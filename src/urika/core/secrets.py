@@ -18,24 +18,30 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from urika.core.vault import SecretsVault
+from urika.core.vault import SecretsVault, _DEFAULT_GLOBAL_PATH
 
 # Public path for compatibility with v0.3 callers that referenced
 # ``_SECRETS_PATH`` directly (and the tests that monkeypatch it).
-# The vault's FileBackend is constructed against this path on each
-# call, so ``monkeypatch.setattr("urika.core.secrets._SECRETS_PATH", ...)``
-# continues to work as a redirection mechanism.
+# Only honored as a backend override when it has been monkeypatched
+# away from the default — otherwise we'd force FileBackend even on
+# systems where the keyring tier is preferred.
 _SECRETS_PATH = Path.home() / ".urika" / "secrets.env"
 
 
 def _vault() -> SecretsVault:
     """Return a fresh vault on each call.
 
-    Constructed against the current value of ``_SECRETS_PATH`` so test
-    monkeypatches of that module attribute redirect storage as
-    expected. Cheap to construct (no I/O until used).
+    If a test (or other caller) has monkeypatched ``_SECRETS_PATH``
+    away from the default home location, force a FileBackend rooted
+    there so the redirection actually takes effect. Otherwise let
+    :class:`SecretsVault` pick the best available global backend
+    (OS keyring when ``keyring`` is installed and probes successfully,
+    file fallback otherwise) — matching the path that
+    ``urika config secret`` uses to write.
     """
-    return SecretsVault(global_path=_SECRETS_PATH)
+    if _SECRETS_PATH != _DEFAULT_GLOBAL_PATH:
+        return SecretsVault(global_path=_SECRETS_PATH)
+    return SecretsVault()
 
 
 def load_secrets() -> None:
