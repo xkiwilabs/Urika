@@ -971,8 +971,14 @@ def global_settings(request: Request) -> HTMLResponse:
     # unset. Anthropic Consumer Terms §3.7 + April 2026 Agent SDK
     # clarification require an API key; Pro/Max OAuth tokens cannot
     # authenticate the Agent SDK.
+    #
+    # Refresh the secrets vault into os.environ first so a key stored
+    # in the OS keyring (or added via `urika config api-key` since the
+    # dashboard process started) is visible to this check.
     import os as _os
 
+    from urika.core.secrets import load_secrets
+    load_secrets()
     api_key_configured = bool(_os.environ.get("ANTHROPIC_API_KEY"))
 
     return templates.TemplateResponse(

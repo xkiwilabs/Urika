@@ -1579,6 +1579,14 @@ async def api_test_endpoint(request: Request) -> JSONResponse:
     import os as _os
 
     from urika.cli._helpers import _probe_endpoint
+    from urika.core.secrets import load_secrets
+
+    # Refresh secrets vault into os.environ so a key added via
+    # `urika config secret` (file backend OR OS keyring) since the
+    # dashboard process started becomes visible to this check.
+    # load_secrets only sets vars that aren't already in os.environ,
+    # so pre-existing exports take precedence.
+    load_secrets()
 
     form = await request.form()
     base_url = (form.get("base_url") or "").strip()
