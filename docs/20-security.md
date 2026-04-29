@@ -75,8 +75,17 @@ Please report security issues privately to michael.j.richardson@mq.edu.au rather
 
 ## Provider compliance
 
-Urika depends on the Claude Agent SDK to spawn coding agents. Anthropic's
-[Consumer Terms of Service §3.7](https://www.anthropic.com/legal/consumer-terms)
+Urika is provider-agnostic by design — it routes agent calls through whichever model SDK the project's privacy mode and agent config specify. v0.3 ships with one fully-supported adapter (Anthropic's Claude Agent SDK), with adapters for OpenAI, Google ADK, and PI planned. Each provider has its own terms of service and its own compliant authentication pattern. Urika's job is to enforce the right pattern per provider.
+
+### Are we using the Anthropic SDK in a sanctioned way?
+
+Yes. Urika uses [`claude-agent-sdk-python`](https://github.com/anthropics/claude-agent-sdk-python), the official Anthropic Python wrapper, exactly as documented at [code.claude.com/docs/en/agent-sdk/overview](https://code.claude.com/docs/en/agent-sdk/overview). The SDK spawns the `claude` CLI as a subprocess; we set `ANTHROPIC_API_KEY` so the CLI uses metered API authentication; we actively scrub OAuth tokens from the subprocess environment to prevent any subscription leakage.
+
+The April 2026 enforcement targeted tools that *reverse-engineered* the OAuth flow to piggyback on subscription quotas (OpenClaw, NanoClaw, OpenCode). Urika does the opposite — uses the official SDK with metered API and blocks the OAuth path.
+
+### Anthropic's terms
+
+Anthropic's [Consumer Terms of Service §3.7](https://www.anthropic.com/legal/consumer-terms)
 prohibits accessing Claude through automated or non-human means except via
 official API keys. The April 2026 Agent SDK clarification was explicit:
 "Using OAuth tokens obtained through Claude Free, Pro, or Max accounts in
@@ -132,3 +141,14 @@ The pre-spawn check is exempt for:
   runtime routes them to a different SDK).
 
 Source: `src/urika/core/compliance.py`.
+
+### Other providers (planned)
+
+When OpenAI, Google ADK, and PI adapters land, the same compliance pattern applies:
+
+- **OpenAI** (planned) — uses [`openai-agents-python`](https://github.com/openai/openai-agents-python), pure HTTP, no CLI. Requires `OPENAI_API_KEY`. OpenAI's Usage Policies and API Terms of Service govern programmatic use.
+- **Google ADK** (planned) — uses Google's Agent Development Kit, pure Python. Requires `GOOGLE_API_KEY` or service-account credentials. Governed by Google Cloud's Generative AI Acceptable Use Policy.
+- **PI** (planned) — uses PI's runtime; specifics TBD.
+- **Local / private endpoints** — direct HTTP via `ANTHROPIC_BASE_URL` to Ollama / vLLM / LiteLLM. No cloud-provider CLI or API key needed; governed only by your local infrastructure's security posture.
+
+Each adapter will surface its own per-provider compliance check — same shape as `require_api_key()` for Anthropic, scoped to whichever credentials and runtime that provider expects.
