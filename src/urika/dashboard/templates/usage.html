@@ -78,14 +78,11 @@
 
 {% if sessions %}
   <div class="usage-disclaimer">
-    <strong>Estimates only.</strong> Token counts and costs below are estimated
+    <strong>Estimates only.</strong> Token counts and costs below are derived
     from what the model API returns and Urika's pricing table for the
-    configured Claude model. For authoritative usage and billing, check your
-    provider's console (e.g. <a href="https://console.anthropic.com/settings/usage"
-    target="_blank" rel="noopener">Anthropic console</a>). If you're using a
-    Claude Pro / Max subscription via the <code>claude</code> CLI, the
-    subscription covers the actual cost — the figures here reflect what the
-    same usage <em>would</em> cost on a metered API key.
+    configured model. For authoritative usage and billing, check the console
+    of the provider whose API key Urika is using (e.g. Anthropic, OpenAI,
+    Google, or your private endpoint provider).
   </div>
 
   <div class="totals-grid">
