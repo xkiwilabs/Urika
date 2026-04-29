@@ -183,7 +183,7 @@ See [Models and Privacy](docs/13-models-and-privacy.md) for configuration detail
 | [Finalizing Projects](docs/09-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
 | [Knowledge Pipeline](docs/10-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
 | [Agent System](docs/11-agent-system.md) | All 12 agent roles and how they interact |
-| [Built-in Tools](docs/12-built-in-tools.md) | 24 analysis tools agents use |
+| [Built-in Tools](docs/12-built-in-tools.md) | 24-tool seed library — agents build new tools on demand per project |
 | [Models and Privacy](docs/13-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
 | [Configuration](docs/14-configuration.md) | urika.toml, criteria, preferences |
 | [Project Structure](docs/15-project-structure.md) | File layout and what each file does |

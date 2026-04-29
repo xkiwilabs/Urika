@@ -46,7 +46,21 @@ This means every method is tailored to your specific dataset and research questi
 
 ## Tools
 
-Tools are built-in analysis building blocks that agents can use when constructing methods. Urika ships with **24 built-in tools**:
+Tools are reusable analysis building blocks that agents call when constructing methods. **The tool catalogue is open-ended** — Urika does not assume the shipped library covers your project. The system is designed around two complementary mechanisms:
+
+1. **A starting library of 24 built-in tools** — common-case primitives for tabular data analysis (regression, classification, statistical tests, exploration, preprocessing). These exist so common projects can start producing results without a separate tool-building round.
+2. **Agent-created project tools** — whenever an agent needs a capability the built-in library doesn't cover, the **tool builder** agent writes a new Python tool, registers it in the project's `tools/` directory, and from that point on it's available alongside the built-ins for the rest of the project.
+
+This is a core part of how Urika works. **Don't think of the 24 built-ins as the full set of capabilities.** Think of them as the seed library; the tool builder grows it as the project demands. A project working with EEG epochs, image patches, time-warped trajectories, or any domain-specific feature extraction will end up with project-specific tools that the agent created on demand.
+
+There are two ways tool building gets triggered:
+
+- **Automatic.** The planning agent identifies a need that built-in tools don't cover (e.g. "ICC reliability analysis", "compute spectral power per channel"), flags `needs_tool: true`, and the tool builder is invoked before the next experiment.
+- **Explicit, via `urika build-tool`.** When you know up front what tool you'll need, ask for it directly: `urika build-tool create an ICC tool using pingouin` or `urika build-tool install mne and add an EEG epoch extractor`. This is also exposed as `/build-tool` in the TUI and the **Build tool** modal in the dashboard.
+
+Project-specific tools live alongside the built-ins in the registry — agents see one unified tool list when picking what to use.
+
+The 24 built-in tools, grouped by category:
 
 | Tool | Category | Description |
 |------|----------|-------------|
@@ -75,14 +89,14 @@ Tools are built-in analysis building blocks that agents can use when constructin
 | `train_val_test_split` | preprocessing | Train/validation/test data splitting |
 | `visualization` | exploration | Chart and plot generation |
 
-The **tool builder** agent can also create project-specific tools at runtime when the planning agent identifies a capability gap.
+The **tool builder** agent can also create project-specific tools at runtime when the planning agent identifies a capability gap (see above). See [Built-in Tools](12-built-in-tools.md) for a full catalogue and the project-tool building workflow.
 
 List available tools with:
 
 ```bash
 urika tools
 urika tools --category statistics
-urika tools --project my-study    # includes project-specific tools
+urika tools --project my-study    # includes project-specific tools created by the tool builder
 ```
 
 ## Agents

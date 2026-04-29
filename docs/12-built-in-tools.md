@@ -4,6 +4,18 @@ Tools are the atomic building blocks that agents use during experiments. They ar
 
 Agents do not call tools directly. The task agent writes Python code that imports and invokes tools, and the orchestrator captures the `ToolResult` output to record metrics and observations.
 
+## The 24 built-ins are a starting library, not a fixed catalogue
+
+> **Read this first.** The 24 tools listed below are a **seed library** — common-case primitives so that everyday tabular projects can produce results immediately. They are **not** the limit of what Urika can do.
+>
+> When a project needs a capability the built-ins don't provide, the **tool builder** agent writes a new Python tool, registers it in the project's `tools/` directory, and from that point forward it sits alongside the built-ins for the rest of the project. This is core to how Urika operates: the tool catalogue grows with the project.
+>
+> Two ways tool building gets triggered:
+> - **Automatic** — the planning agent flags `needs_tool: true` when it identifies a gap; the tool builder runs before the next experiment.
+> - **Explicit** — `urika build-tool <description>` (CLI), `/build-tool <description>` (TUI), or the **Build tool** modal in the dashboard. Use this when you know up front what tool you'll need (e.g. "create an ICC tool using pingouin", "install mne and add an EEG epoch extractor").
+>
+> A project working with EEG, neuroimaging, audio, time-warped trajectories, or any domain-specific feature extraction will end up with project-specific tools the agent created on demand. Project tools live at `<project>/tools/<tool_name>.py` and are discovered alongside the built-ins by the registry. See [Project-specific tools](#project-specific-tools) below.
+
 
 ## The ITool Interface
 
@@ -61,7 +73,7 @@ Each tool module exports a `get_tool()` factory function that the registry calls
 
 ## Built-in Tools by Category
 
-Urika ships with 24 built-in tools organized into seven categories.
+The seed library — Urika ships with 24 built-in tools organized into seven categories. Remember: the tool builder will extend this set whenever the project demands it.
 
 ### Exploration
 
