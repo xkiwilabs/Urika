@@ -84,6 +84,14 @@ A polish-and-foundations release. User-visible improvements to presentations and
 - Dashboard Settings page shows a banner when no API key is configured.
 - New `urika config api-key` interactive command for saving the key into
   `~/.urika/secrets.env`.
+- **Hard safety net for Anthropic Consumer Terms §3.7:** the SDK
+  adapter refuses to spawn a Claude subprocess when `ANTHROPIC_API_KEY`
+  is unset (raises `APIKeyRequiredError` with remediation), and scrubs
+  `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_AUTH_TOKEN` from the spawned
+  subprocess's environment so Claude Code cannot fall back to OAuth
+  even if the user has those vars set. Private endpoints
+  (`ANTHROPIC_BASE_URL`) and non-Claude models are exempt — those
+  don't hit Anthropic's cloud.
 
 ### Changed
 

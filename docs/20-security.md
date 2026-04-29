@@ -102,3 +102,33 @@ permitted."
   test suite spawns Urika subprocesses which use the Agent SDK.
 
 If you have questions about acceptable use, contact Anthropic.
+
+### How Urika enforces this
+
+Urika's safety net is three layers deep — the Pro/Max subscription
+cannot be used even by accident:
+
+1. **CLI startup warning.** When `ANTHROPIC_API_KEY` is unset, every
+   `urika` invocation prints a yellow warning at startup pointing to
+   `urika config api-key`. Dismiss permanently with
+   `URIKA_ACK_API_KEY_REQUIRED=1`.
+
+2. **Pre-spawn refusal.** Before spawning a Claude Agent SDK
+   subprocess, Urika checks that an API key is configured. If no key
+   is found and the agent is bound for `api.anthropic.com`, the run
+   aborts with `APIKeyRequiredError` and a remediation hint.
+
+3. **OAuth env scrubbing.** Even if the user has
+   `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_AUTH_TOKEN` set in their
+   shell, Urika scrubs both variables (sets them to empty) in the
+   environment passed to the spawned subprocess. The Claude CLI then
+   has no OAuth credential available — it must use the API key or
+   fail loudly.
+
+The pre-spawn check is exempt for:
+- Agents configured with `ANTHROPIC_BASE_URL` (going to a private
+  inference endpoint, not Anthropic's cloud).
+- Models that don't start with `claude` (a future multi-provider
+  runtime routes them to a different SDK).
+
+Source: `src/urika/core/compliance.py`.
