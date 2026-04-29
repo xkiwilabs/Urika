@@ -86,15 +86,28 @@ def config_command(
     Without PROJECT, configures global defaults (~/.urika/settings.toml).
     With PROJECT, configures that project's urika.toml.
 
+    Special form ``urika config api-key`` runs the interactive
+    Anthropic-API-key setup (saves to ``~/.urika/secrets.env``).
+
     Examples:
 
         urika config --show              # show global defaults
         urika config                     # interactive setup (global)
+        urika config api-key             # interactive Anthropic API key setup
         urika config my-project --show   # show project settings
         urika config my-project          # interactive setup (project)
     """
     from urika.cli_display import print_step
     from urika.cli_helpers import UserCancelled
+
+    # ── Special routing: "urika config api-key" ──
+    # ``api-key`` is a reserved pseudo-project name that triggers the
+    # Anthropic API key wizard. Implemented here (rather than as a
+    # standalone command) so the public surface matches the documented
+    # ``urika config api-key`` invocation.
+    if project == "api-key":
+        _config_api_key_interactive()
+        return
 
     # ── Determine target: global or project ──
     is_project = False
@@ -528,6 +541,95 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
 
 
 
+
+
+def _config_api_key_interactive() -> None:
+    """Interactive Anthropic API key setup.
+
+    Prompts for the key (masked input), validates the format (should
+    start with ``sk-ant-`` and be plausibly long), and saves it to
+    ``~/.urika/secrets.env`` as ``ANTHROPIC_API_KEY=...``.
+
+    Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK
+    clarification, Pro/Max OAuth tokens cannot authenticate the Agent
+    SDK — Urika requires an API key for any of its commands.
+    """
+    from urika.cli_display import print_step, print_success, print_warning
+    from urika.core.secrets import save_secret
+
+    click.echo()
+    print_step("Anthropic API key setup")
+    click.echo()
+    click.echo(
+        "  Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK"
+    )
+    click.echo(
+        "  clarification, Urika cannot use a Claude Pro/Max subscription to"
+    )
+    click.echo(
+        "  authenticate the Agent SDK. An API key is required."
+    )
+    click.echo()
+    click.echo(
+        "  Get a key at https://console.anthropic.com (Settings → API Keys)."
+    )
+    click.echo()
+
+    try:
+        value = click.prompt(
+            "  Paste your ANTHROPIC_API_KEY",
+            hide_input=True,
+            default="",
+            show_default=False,
+        ).strip()
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        click.echo("\n  Cancelled.")
+        return
+
+    if not value:
+        print_warning("No key entered — cancelled.")
+        return
+
+    looks_valid = value.startswith("sk-ant-") and len(value) >= 50
+    if not looks_valid:
+        print_warning(
+            "Key does not look like an Anthropic API key "
+            "(expected sk-ant-... and ≥50 chars)."
+        )
+        try:
+            keep = click.confirm("  Save anyway?", default=False)
+        except (click.Abort, EOFError, KeyboardInterrupt):
+            click.echo("\n  Cancelled.")
+            return
+        if not keep:
+            click.echo("  Cancelled.")
+            return
+
+    save_secret("ANTHROPIC_API_KEY", value)
+    print_success(
+        "Saved to ~/.urika/secrets.env (chmod 600). "
+        "Active in this and future sessions."
+    )
+
+    # Optional: nudge towards a spend limit.
+    click.echo()
+    try:
+        want_limit = click.confirm(
+            "  Set a spend limit on console.anthropic.com?",
+            default=True,
+        )
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        return
+    if want_limit:
+        click.echo()
+        click.echo(
+            "  Visit https://console.anthropic.com → Settings → Billing →"
+        )
+        click.echo(
+            "  Spend limits, and pick a monthly cap (e.g. $20). Urika does"
+        )
+        click.echo("  not set the limit programmatically.")
+        click.echo()
 
 
 # ── Re-exports from sibling modules (Phase 8 split) ───────────────

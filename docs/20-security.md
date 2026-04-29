@@ -72,3 +72,33 @@ Agent-written code can obviously call whatever it likes. See the first section.
 ## Reporting security issues
 
 Please report security issues privately to michael.j.richardson@mq.edu.au rather than filing a public GitHub issue.
+
+## Provider compliance
+
+Urika depends on the Claude Agent SDK to spawn coding agents. Anthropic's
+[Consumer Terms of Service §3.7](https://www.anthropic.com/legal/consumer-terms)
+prohibits accessing Claude through automated or non-human means except via
+official API keys. The April 2026 Agent SDK clarification was explicit:
+"Using OAuth tokens obtained through Claude Free, Pro, or Max accounts in
+any other product, tool, or service — including the Agent SDK — is not
+permitted."
+
+**What this means for Urika:**
+
+- **Use an API key** (`ANTHROPIC_API_KEY`) for any `urika` command. This
+  is the only compliant path.
+- **A Pro / Max subscription does not authorise running Urika**, even for
+  development or testing. The subscription remains valid for direct
+  interactive use of Claude.ai or the `claude` CLI by a human.
+- Urika prints a one-time warning at startup when `ANTHROPIC_API_KEY` is
+  unset, and the dashboard's Settings page surfaces the same warning as
+  a banner.
+
+**For developers contributing to Urika:**
+
+- Editing the codebase from Claude Code (interactive coding) on a Pro/Max
+  plan is permitted — that's official tool, human-in-the-loop usage.
+- Running the test suite or any `urika` command requires an API key — the
+  test suite spawns Urika subprocesses which use the Agent SDK.
+
+If you have questions about acceptable use, contact Anthropic.

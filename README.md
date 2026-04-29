@@ -39,13 +39,27 @@ See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-tas
 ### Prerequisites
 
 1. Python >= 3.11
-2. Claude Pro or Max account (recommended) — or an Anthropic API key
-3. Claude Code CLI — install and log in first:
+2. **Anthropic API key** — required (see step 3 below)
+3. Claude Code CLI — install first:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
-claude login                    # opens browser to authenticate
 ```
+
+### Set up API key
+
+Urika requires an Anthropic API key. Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification, a Claude Pro/Max subscription cannot be used to authenticate the Claude Agent SDK that Urika depends on.
+
+1. Get a key at [console.anthropic.com](https://console.anthropic.com) → Settings → API Keys.
+2. Set a monthly spend limit in Settings → Billing.
+3. Save the key:
+
+   ```bash
+   urika config api-key             # interactive — saves to ~/.urika/secrets.env
+   # or: export ANTHROPIC_API_KEY=sk-ant-...
+   ```
+
+See [Getting Started](docs/01-getting-started.md) and [Provider compliance](docs/20-security.md#provider-compliance) for the full rationale.
 
 ### Install Urika
 

@@ -7,8 +7,8 @@ Urika works with data from any scientific discipline — tabular data (CSV, Exce
 ## Requirements
 
 - **Python 3.11 or later** (3.12 also supported)
-- **Claude Pro or Max account** (recommended), or an Anthropic API key
-- **Claude Code CLI** — required for authentication and as the agent runtime
+- **Anthropic API key** (`ANTHROPIC_API_KEY`) — required (see callout below)
+- **Claude Code CLI** — required as the agent runtime
 
 ### Hardware requirements by use case
 
@@ -32,7 +32,7 @@ Your hardware needs depend on what kind of analysis you plan to do:
 
 ## Step 1: Install Claude Code CLI
 
-Urika uses the Claude Agent SDK, which requires the Claude Code CLI for authentication and as the agent runtime. Install it first:
+Urika uses the Claude Agent SDK, which requires the Claude Code CLI as the agent runtime. Install it first:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -40,35 +40,41 @@ npm install -g @anthropic-ai/claude-code
 
 > **Note:** You need Node.js 18+ installed. If you don't have it: `sudo apt install nodejs npm` (Linux) or `brew install node` (macOS).
 
-### Log in to Claude
-
-```bash
-claude login
-```
-
-This opens a browser window to authenticate with your Anthropic account. You need at least a **Claude Pro** account ($20/month). **Claude Max** ($100/month or $200/month) is recommended for heavy use as it provides higher rate limits.
-
-> **Why Pro or Max?** Urika's agents make many API calls during experiments — planning, coding, evaluating, advising. A free account's rate limits are too restrictive for multi-agent workflows. Pro gives you enough headroom for most projects. Max is better if you run multiple experiments or large projects.
-
-### Verify login
+### Verify installation
 
 ```bash
 claude --version
 ```
 
-If you see a version number, you're authenticated and ready.
+If you see a version number, the CLI is installed and ready. (Login via `claude login` is only needed for direct interactive use of the CLI by a human — Urika authenticates via `ANTHROPIC_API_KEY`; see the callout below.)
 
-### Alternative: API key
+## Step 2: Set up your Anthropic API key
 
-If you prefer to use an API key instead of a Pro/Max account:
+> **Important: Urika requires an Anthropic API key.**
+>
+> Anthropic's Consumer Terms (§3.7) and the April 2026 Agent SDK
+> clarification prohibit using a Claude Pro/Max subscription with the
+> Claude Agent SDK, which Urika depends on. To use Urika, you need an
+> API key.
+>
+> 1. Sign in at [console.anthropic.com](https://console.anthropic.com).
+> 2. Settings → API Keys → Create Key (label it e.g. `urika`).
+> 3. Settings → Billing → Spend limits — set a monthly cap (e.g. $20).
+> 4. Save the key into Urika's credential file:
+>
+>    ```bash
+>    urika config api-key   # interactive prompt, saves to ~/.urika/secrets.env
+>    ```
+>
+>    Or set the env var directly: `export ANTHROPIC_API_KEY=sk-ant-...`.
+>
+> If you also have a Claude Pro / Max subscription, you can keep using it
+> for direct interactive work in Claude.ai or `claude` CLI — only the
+> Urika code path requires the API key.
 
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
+See [Provider compliance](20-security.md#provider-compliance) for the full rationale and the citation to the Anthropic policy clarification.
 
-Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it across sessions. Note that API key usage is billed per token, which can be more expensive than a Pro/Max subscription for heavy use.
-
-## Step 2: Install Urika
+## Step 3: Install Urika
 
 **Recommended: install from source.** Urika is under active development with frequent updates — new agents, tools, and improvements land regularly. Installing from source ensures you always have the latest version:
 
@@ -121,7 +127,7 @@ This installs everything you need for statistical analysis, machine learning, vi
 | slack-sdk | Slack notifications and remote commands |
 | python-telegram-bot | Telegram notifications and remote commands |
 
-## Step 3: Verify installation
+## Step 4: Verify installation
 
 ```bash
 urika setup

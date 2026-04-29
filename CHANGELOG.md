@@ -71,6 +71,20 @@ A polish-and-foundations release. User-visible improvements to presentations and
 
 ## [Unreleased]
 
+### Compliance
+
+- **Urika now requires an `ANTHROPIC_API_KEY`** for all usage. Per Anthropic's
+  Consumer Terms (§3.7) and the April 2026 Agent SDK clarification, a Claude
+  Pro/Max subscription cannot be used to authenticate the Claude Agent SDK,
+  which Urika depends on. New documentation in
+  [docs/20-security.md#provider-compliance](docs/20-security.md#provider-compliance)
+  covers the full rationale.
+- A one-time warning prints at CLI startup when `ANTHROPIC_API_KEY` is unset.
+  Dismiss by setting `URIKA_ACK_API_KEY_REQUIRED=1`.
+- Dashboard Settings page shows a banner when no API key is configured.
+- New `urika config api-key` interactive command for saving the key into
+  `~/.urika/secrets.env`.
+
 ### Changed
 
 **Notifications polish**

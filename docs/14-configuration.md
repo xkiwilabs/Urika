@@ -392,7 +392,15 @@ See [Notifications](19-notifications.md) for a deeper walkthrough of the channel
 
 ### `~/.urika/secrets.env`
 
-A user-level credential store. The file is a plain `KEY=VALUE` text file with comments allowed; it is created by `urika config notifications` (or `save_secret` from Python) at permissions `0600` (owner read/write only). Don't commit it.
+A user-level credential store. The file is a plain `KEY=VALUE` text file with comments allowed; it is created by `urika config notifications`, `urika config api-key`, or `save_secret` from Python at permissions `0600` (owner read/write only). Don't commit it.
+
+> **`ANTHROPIC_API_KEY` is required.** Urika uses the Claude Agent SDK,
+> which under Anthropic's Consumer Terms (§3.7) and the April 2026
+> Agent SDK clarification cannot be authenticated via a Claude Pro/Max
+> subscription. Set `ANTHROPIC_API_KEY` in `~/.urika/secrets.env`,
+> export it in your shell, or run `urika config api-key` for an
+> interactive setup. See [Security § Provider compliance](20-security.md#provider-compliance)
+> for the full rationale.
 
 ```env
 # Anthropic / model providers
@@ -433,7 +441,8 @@ For the full directory layout, including `experiments/`, `methods/`, `tools/`, `
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | (none) | Claude API key. Used when calling the Claude API directly (alternative to a Pro/Max subscription routed through the local `claude` CLI). Read at runtime; can live in the shell or in `secrets.env`. |
+| `ANTHROPIC_API_KEY` | (none) | Claude API key. **Required** for any cloud-touching Urika command — Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification prohibit using a Pro/Max subscription to authenticate the Agent SDK. Read at runtime; can live in the shell or in `secrets.env`. Run `urika config api-key` for an interactive setup. |
+| `URIKA_ACK_API_KEY_REQUIRED` | (unset) | When set to any value, silences the one-time startup warning that fires whenever `ANTHROPIC_API_KEY` is unset. Set this only after acknowledging the requirement (e.g. you are running purely in private mode and have no need for the cloud key). |
 | `URIKA_HOME` | `~/.urika` | Location of the global Urika config directory (`settings.toml`, `secrets.env`, `projects.json` registry, session memory). |
 | `URIKA_PROJECTS_DIR` | `~/urika-projects` | Default directory where `urika new` creates project directories. |
 | `URIKA_EMAIL_PASSWORD` | (none) | Conventional name for the email channel's SMTP password. The actual variable name is whatever you set in `[notifications.email].password_env`. |

@@ -48,7 +48,57 @@
     margin-bottom: var(--space-3);
   }
   .channel-block h4 { margin: 0 0 var(--space-2) 0; }
+  .compliance-banner {
+    border: 1px solid #d99a3a;
+    background: #fff5e0;
+    color: #5a3b00;
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  [data-theme="dark"] .compliance-banner {
+    border-color: #d99a3a;
+    background: #3a2a08;
+    color: #f5d07a;
+  }
+  .compliance-banner h3 {
+    margin: 0 0 var(--space-2) 0;
+    font-size: var(--fs-base);
+  }
+  .compliance-banner p { margin: 0 0 var(--space-2) 0; }
+  .compliance-banner p:last-child { margin-bottom: 0; }
 </style>
+
+{# ---- Compliance banner --------------------------------------------- #}
+{# Anthropic Consumer Terms §3.7 + April 2026 Agent SDK clarification:
+   Urika requires ANTHROPIC_API_KEY. Show a banner whenever the dashboard
+   process can't see the env var. The Privacy tab is where the user adds
+   endpoints (and references API key env-var names); for the actual key
+   value they need to either run `urika config api-key` or export the
+   variable. #}
+{% if not api_key_configured %}
+<div class="compliance-banner" role="alert">
+  <h3>⚠ ANTHROPIC_API_KEY not set</h3>
+  <p>
+    Urika requires an Anthropic API key. Per Anthropic's
+    <a href="https://www.anthropic.com/legal/consumer-terms"
+       target="_blank" rel="noopener">Consumer Terms (§3.7)</a>
+    and the April 2026 Agent SDK clarification, a Claude Pro/Max
+    subscription cannot be used to authenticate the Claude Agent SDK
+    that Urika depends on.
+  </p>
+  <p>
+    Get a key at
+    <a href="https://console.anthropic.com" target="_blank"
+       rel="noopener">console.anthropic.com</a>
+    (Settings → API Keys), then save it with
+    <code>urika config api-key</code> or export
+    <code>ANTHROPIC_API_KEY</code> in your shell. The Privacy tab below
+    lets you reference per-endpoint key env-vars; the Anthropic key
+    itself lives in <code>~/.urika/secrets.env</code>.
+  </p>
+</div>
+{% endif %}
 
 <form
   hx-put="/api/settings"

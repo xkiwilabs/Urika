@@ -342,6 +342,8 @@ Two settings pages share the same tabbed form pattern. Tabs are a small Alpine.j
   - **Preferences**: default audience, max turns, theme preference.
   - **Notifications**: default notification configuration.
 
+The Settings page also surfaces a **compliance banner above the form** whenever the dashboard process can't see `ANTHROPIC_API_KEY`. The banner explains that Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification prohibit using a Pro/Max subscription with the Claude Agent SDK and points the user at `urika config api-key` (or `export ANTHROPIC_API_KEY=...`) to fix it. When the env var is set the banner does not render. See [Provider compliance](20-security.md#provider-compliance) for the underlying rationale.
+
 Both pages POST to a `PUT /api/...` endpoint that validates the payload and saves through the same `_write_toml` helper used by the CLI's `urika config`. See [Configuration](14-configuration.md) for the underlying file formats.
 
 ### Send-test notification button

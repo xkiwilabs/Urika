@@ -975,10 +975,20 @@ def global_settings(request: Request) -> HTMLResponse:
         if ep.get("default_model")
     ]
 
+    # Compliance banner: surface a warning when ANTHROPIC_API_KEY is
+    # unset. Anthropic Consumer Terms §3.7 + April 2026 Agent SDK
+    # clarification require an API key; Pro/Max OAuth tokens cannot
+    # authenticate the Agent SDK.
+    import os as _os
+
+    api_key_configured = bool(_os.environ.get("ANTHROPIC_API_KEY"))
+
     return templates.TemplateResponse(
         "global_settings.html",
         {
             "request": request,
+            # Compliance banner state.
+            "api_key_configured": api_key_configured,
             # Privacy tab — multi-endpoint editor.
             "named_endpoints": named_endpoints,
             "defined_endpoint_names": defined_endpoint_names,
