@@ -310,6 +310,21 @@ async def api_delete_experiment(name: str, exp_id: str, request: Request):
     )
 
 
+@router.delete("/projects/{name}/sessions/{session_id}")
+async def api_session_delete(name: str, session_id: str) -> Response:
+    """Trash an orchestrator session by ID. 204 on success, 404 if missing."""
+    from urika.core.orchestrator_sessions import delete_session
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    if not delete_session(summary.path, session_id):
+        raise HTTPException(status_code=404, detail="Unknown session")
+    return Response(status_code=204)
+
+
 @router.put("/projects/{name}/settings")
 async def api_project_settings_put(name: str, request: Request):
     """Atomically update project settings and record per-field revisions.
@@ -330,11 +345,12 @@ async def api_project_settings_put(name: str, request: Request):
       ``[notifications].channels``; unchecked channels are simply
       absent (no sentinel). When no channel is enabled and no
       per-channel override is set, the entire ``[notifications]``
-      block is removed. Per-channel overrides
-      (``[notifications.email].extra_to``,
-      ``[notifications.telegram].override_chat_id``) survive
-      independently of the enabled checkbox so the user doesn't
-      lose typed values when toggling a channel off.
+      block is removed. Per-channel overrides survive independently
+      of the enabled checkbox so the user doesn't lose typed values
+      when toggling a channel off. Form fields keep the legacy names
+      (``extra_to``, ``override_chat_id``) but the persisted TOML uses
+      the canonical channel-readable keys (``to``, ``chat_id``) — the
+      config loader merges/overrides on those keys.
     * **Privacy**: ``project_privacy_mode`` ∈ {inherit, open, private,
       hybrid}; non-inherit values write a project-local ``[privacy]``
       override (mode + optional ``[privacy.endpoints.private]``).
@@ -709,16 +725,25 @@ def _apply_structured_settings(project_path, form) -> None:
 
         # Per-channel overrides — stashed even when the channel itself
         # is off so the user doesn't lose their typing on a disable.
+        # The form field is named ``extra_to`` (a misnomer — these
+        # addresses are merged into the channel's ``to`` list by the
+        # config loader, not stored separately). The canonical TOML key
+        # is ``to``: matches what ``build_active_notification_config``
+        # in src/urika/notifications/__init__.py merges from.
         email_extra = (form.get("project_notif_email_extra_to") or "").strip()
         email_extra_list = [a.strip() for a in email_extra.split(",") if a.strip()]
         if email_extra_list:
-            new_notif["email"] = {"extra_to": email_extra_list}
+            new_notif["email"] = {"to": email_extra_list}
 
+        # Telegram: form field ``override_chat_id`` is a UI label;
+        # canonical TOML key is ``chat_id`` — the loader does
+        # ``cfg.update(project_ch)`` so the project key must match the
+        # channel-readable key.
         telegram_chat = (
             form.get("project_notif_telegram_override_chat_id") or ""
         ).strip()
         if telegram_chat:
-            new_notif["telegram"] = {"override_chat_id": telegram_chat}
+            new_notif["telegram"] = {"chat_id": telegram_chat}
 
         old_notif = data.get("notifications", {}) or {}
 
@@ -1233,17 +1258,31 @@ async def api_global_settings_put(request: Request):
         smtp_port = int(smtp_port_raw) if smtp_port_raw else 587
     except ValueError:
         smtp_port = 587
+    smtp_user_raw = (form.get("notifications_email_smtp_user") or "").strip()
     email_section = {
         "from_addr": (form.get("notifications_email_from") or "").strip(),
         "to": email_to,
-        "smtp_host": (form.get("notifications_email_smtp_host") or "").strip(),
+        # Persist as ``smtp_server`` to match what EmailChannel and the
+        # CLI config flow read at runtime — the form field is named
+        # ``smtp_host`` for clarity but the canonical TOML key is
+        # ``smtp_server`` (chosen by the original CLI implementation).
+        "smtp_server": (form.get("notifications_email_smtp_host") or "").strip(),
         "smtp_port": smtp_port,
-        "smtp_user": (form.get("notifications_email_smtp_user") or "").strip(),
-        "smtp_password_env": (
+        # Canonical key — EmailChannel reads ``password_env``. (Earlier
+        # versions wrote ``smtp_password_env`` here, which the channel
+        # silently ignored, so saved credentials never reached SMTP.)
+        "password_env": (
             form.get("notifications_email_smtp_password_env") or ""
         ).strip(),
         "auto_enable": email_auto_enable,
     }
+    # Only persist username when explicitly set — empty means "fall back
+    # to From address" via EmailChannel's own default. Storing an empty
+    # string here would override the fallback with "".
+    # Canonical key is ``username`` (matches EmailChannel); the form
+    # field is ``smtp_user`` for clarity.
+    if smtp_user_raw:
+        email_section["username"] = smtp_user_raw
     # Only persist the section if something is set; otherwise drop it.
     # ``auto_enable`` and ``smtp_port`` alone aren't enough — those are
     # defaults that would survive even when the user hasn't entered any
@@ -1257,11 +1296,42 @@ async def api_global_settings_put(request: Request):
         del notifications["email"]
 
     # Slack
-    slack_section = {
+    # Canonical key is ``bot_token_env`` (matches SlackChannel). The form
+    # field stays ``notifications_slack_token_env`` for backward-compat
+    # with rendered HTML; only the persisted TOML key changes.
+    slack_section: dict[str, object] = {
         "channel": (form.get("notifications_slack_channel") or "").strip(),
-        "token_env": (form.get("notifications_slack_token_env") or "").strip(),
+        "bot_token_env": (
+            form.get("notifications_slack_token_env") or ""
+        ).strip(),
         "auto_enable": slack_auto_enable,
     }
+    # Inbound Socket Mode (optional). Empty fields are NOT written so the
+    # TOML stays tidy — empty allow-lists in particular would be misleading
+    # (the channel treats None as "no restriction").
+    slack_app_token_env = (
+        form.get("notifications_slack_app_token_env") or ""
+    ).strip()
+    if slack_app_token_env:
+        slack_section["app_token_env"] = slack_app_token_env
+    slack_allowed_channels_raw = (
+        form.get("notifications_slack_allowed_channels") or ""
+    ).strip()
+    if slack_allowed_channels_raw:
+        slack_section["allowed_channels"] = [
+            s.strip()
+            for s in slack_allowed_channels_raw.split(",")
+            if s.strip()
+        ]
+    slack_allowed_users_raw = (
+        form.get("notifications_slack_allowed_users") or ""
+    ).strip()
+    if slack_allowed_users_raw:
+        slack_section["allowed_users"] = [
+            s.strip()
+            for s in slack_allowed_users_raw.split(",")
+            if s.strip()
+        ]
     has_slack_data = any(v for k, v in slack_section.items() if k != "auto_enable")
     if has_slack_data or slack_auto_enable:
         notifications["slack"] = slack_section
@@ -1303,6 +1373,186 @@ async def api_global_settings_put(request: Request):
             }
         )
     return HTMLResponse(content='<span class="text-success">Saved</span>')
+
+
+@router.post("/settings/notifications/test-send")
+async def api_notifications_test_send(request: Request) -> JSONResponse:
+    """Send a test notification through every channel that the form configures.
+
+    Builds channels from un-saved form data so users can validate
+    creds before clicking Save. NEVER writes to ``settings.toml``.
+
+    Body fields (form-encoded). All optional; channels with missing
+    required fields are skipped:
+
+    * Email (needs ``from`` AND ``to``):
+      ``notifications_email_from``, ``notifications_email_to``,
+      ``notifications_email_smtp_host``, ``notifications_email_smtp_port``,
+      ``notifications_email_smtp_user``,
+      ``notifications_email_smtp_password_env``.
+    * Slack (needs ``channel``):
+      ``notifications_slack_channel``, ``notifications_slack_token_env``,
+      ``notifications_slack_app_token_env``,
+      ``notifications_slack_allowed_channels``,
+      ``notifications_slack_allowed_users``.
+    * Telegram (needs ``chat_id`` AND ``bot_token_env``):
+      ``notifications_telegram_chat_id``,
+      ``notifications_telegram_bot_token_env``.
+
+    Response (always JSON, status 200)::
+
+        {"channels": [
+            {"name": "EmailChannel", "status": "ok" | "error", "message": "..."},
+            ...
+        ]}
+
+    Channels that fail to construct (e.g. ``slack-sdk`` not installed)
+    appear in the result with ``status="error"`` and an explanatory
+    message rather than crashing the request.
+    """
+    from urika.notifications.bus import NotificationBus
+    from urika.notifications.test_send import send_test_through_bus
+
+    form = await request.form()
+
+    # Refresh secrets.env into os.environ so credentials added to the
+    # secrets file by `urika notifications` (in another shell) since the
+    # dashboard process started become visible to channel constructors.
+    # load_secrets only sets vars that aren't already in os.environ, so
+    # pre-existing exports take precedence.
+    from urika.core.secrets import load_secrets
+    load_secrets()
+
+    bus = NotificationBus(project_name="test")
+    construction_errors: list[dict[str, str]] = []
+
+    # ---- Email --------------------------------------------------------
+    email_from = (form.get("notifications_email_from") or "").strip()
+    email_to_raw = (form.get("notifications_email_to") or "").strip()
+    if email_from and email_to_raw:
+        try:
+            from urika.notifications.email_channel import EmailChannel
+
+            smtp_port_raw = (
+                form.get("notifications_email_smtp_port") or ""
+            ).strip()
+            try:
+                smtp_port = int(smtp_port_raw) if smtp_port_raw else 587
+            except ValueError:
+                smtp_port = 587
+            cfg = {
+                "from_addr": email_from,
+                "to": [t.strip() for t in email_to_raw.split(",") if t.strip()],
+                "smtp_server": (
+                    form.get("notifications_email_smtp_host") or "smtp.gmail.com"
+                ).strip(),
+                "smtp_port": smtp_port,
+                "username": (
+                    form.get("notifications_email_smtp_user") or email_from
+                ).strip(),
+                "password_env": (
+                    form.get("notifications_email_smtp_password_env") or ""
+                ).strip(),
+            }
+            bus.add_channel(EmailChannel(cfg))
+        except Exception as exc:  # noqa: BLE001 — surface construction failures
+            construction_errors.append(
+                {"name": "EmailChannel", "status": "error", "message": str(exc)}
+            )
+
+    # ---- Slack --------------------------------------------------------
+    slack_channel = (form.get("notifications_slack_channel") or "").strip()
+    if slack_channel:
+        try:
+            from urika.notifications.slack_channel import SlackChannel
+
+            allowed_channels_raw = (
+                form.get("notifications_slack_allowed_channels") or ""
+            ).strip()
+            allowed_users_raw = (
+                form.get("notifications_slack_allowed_users") or ""
+            ).strip()
+            allowed_channels: list[str] | None = (
+                [s.strip() for s in allowed_channels_raw.split(",") if s.strip()]
+                or None
+            )
+            allowed_users: list[str] | None = (
+                [s.strip() for s in allowed_users_raw.split(",") if s.strip()]
+                or None
+            )
+            cfg = {
+                "channel": slack_channel,
+                "bot_token_env": (
+                    form.get("notifications_slack_token_env") or ""
+                ).strip(),
+                "app_token_env": (
+                    form.get("notifications_slack_app_token_env") or ""
+                ).strip(),
+                "allowed_channels": allowed_channels,
+                "allowed_users": allowed_users,
+            }
+            bus.add_channel(SlackChannel(cfg))
+        except Exception as exc:  # noqa: BLE001 — surface import / config errors
+            construction_errors.append(
+                {"name": "SlackChannel", "status": "error", "message": str(exc)}
+            )
+
+    # ---- Telegram -----------------------------------------------------
+    tg_chat_id = (form.get("notifications_telegram_chat_id") or "").strip()
+    tg_bot_token_env = (
+        form.get("notifications_telegram_bot_token_env") or ""
+    ).strip()
+    if tg_chat_id and tg_bot_token_env:
+        try:
+            from urika.notifications.telegram_channel import TelegramChannel
+
+            cfg = {
+                "chat_id": tg_chat_id,
+                "bot_token_env": tg_bot_token_env,
+            }
+            bus.add_channel(TelegramChannel(cfg))
+        except Exception as exc:  # noqa: BLE001 — surface construction failures
+            construction_errors.append(
+                {
+                    "name": "TelegramChannel",
+                    "status": "error",
+                    "message": str(exc),
+                }
+            )
+
+    results = send_test_through_bus(bus)
+    channels_list = [
+        {"name": k, **v} for k, v in results.items()
+    ] + construction_errors
+    return JSONResponse({"channels": channels_list})
+
+
+@router.post("/settings/test-anthropic-key")
+async def api_test_anthropic_key() -> JSONResponse:
+    """Verify the configured ANTHROPIC_API_KEY against api.anthropic.com.
+
+    Mirrors the CLI's ``urika config api-key --test`` path. Calls
+    :func:`urika.core.anthropic_check.verify_anthropic_api_key`, which
+    sends a minimal ``/v1/messages`` request and returns
+    ``(ok, message)``. Always responds 200 so the dashboard can render
+    the result inline; the ``ok`` field carries pass/fail.
+
+    Refreshes ``~/.urika/secrets.env`` first so the test reflects a
+    key added since the dashboard process launched.
+    """
+    import os as _os
+
+    from urika.core.anthropic_check import verify_anthropic_api_key
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+    key = _os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        return JSONResponse(
+            {"ok": False, "message": "ANTHROPIC_API_KEY is not set."}
+        )
+    ok, message = verify_anthropic_api_key(key)
+    return JSONResponse({"ok": ok, "message": message})
 
 
 @router.post("/settings/test-endpoint")

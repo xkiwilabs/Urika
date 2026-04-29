@@ -20,23 +20,10 @@ if TYPE_CHECKING:
     from urika.orchestrator.pause import PauseController
 
 from urika.notifications.base import NotificationChannel
+from urika.notifications.events import EVENT_METADATA
+from urika.notifications.formatting import format_event_emoji, format_event_label
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Event-type helpers
-# ---------------------------------------------------------------------------
-
-_HIGH_PRIORITY_TYPES = {"criteria_met", "experiment_failed", "experiment_completed"}
-_MEDIUM_PRIORITY_TYPES = {"paused"}
-_LOW_PRIORITY_TYPES = {"turn_started", "run_recorded"}
-
-_EMOJI_MAP: dict[str, str] = {
-    "criteria_met": "\u2705",  # checkmark
-    "experiment_failed": "\u274c",  # cross
-    "experiment_completed": "\U0001f3c1",  # flag
-    "paused": "\u23f8\ufe0f",  # pause
-}
 
 
 class SlackChannel(NotificationChannel):
@@ -89,6 +76,36 @@ class SlackChannel(NotificationChannel):
             )
         except Exception as exc:
             logger.warning("Slack send failed: %s", exc)
+
+    def health_check(self) -> tuple[bool, str]:
+        """Probe the bot token via Slack's ``auth.test`` endpoint.
+
+        Returns ``(True, "")`` on success, ``(False, error_message)`` on failure.
+        Surfaces the Slack error code (e.g. ``invalid_auth``, ``token_revoked``)
+        when the failure is a SlackApiError.
+        """
+        try:
+            # auth_test is the canonical Slack endpoint for "is my bot token valid?"
+            # Returns user/team info on success; raises SlackApiError on bad token.
+            self._client.auth_test()
+            return (True, "")
+        except Exception as exc:
+            # SlackApiError carries .response.get("error") with details like
+            # "invalid_auth", "token_revoked", etc. Surface that if present.
+            try:
+                from slack_sdk.errors import SlackApiError
+
+                if isinstance(exc, SlackApiError):
+                    response = getattr(exc, "response", None)
+                    if response is not None:
+                        try:
+                            err_code = response.get("error", str(exc))
+                        except Exception:
+                            err_code = str(exc)
+                        return (False, err_code)
+            except ImportError:
+                pass
+            return (False, str(exc))
 
     # ------------------------------------------------------------------
     # Inbound (Socket Mode)
@@ -348,28 +365,36 @@ class SlackChannel(NotificationChannel):
     # ------------------------------------------------------------------
 
     def _build_blocks(self, event: NotificationEvent) -> list[dict[str, Any]]:
-        """Build Slack Block Kit blocks based on event type and priority."""
-        event_type = event.event_type
-        blocks: list[dict[str, Any]] = []
+        """Build Slack Block Kit blocks based on event type and priority.
 
-        if event_type in _HIGH_PRIORITY_TYPES:
-            blocks = self._build_high_priority(event)
-        elif event_type in _MEDIUM_PRIORITY_TYPES:
-            blocks = self._build_medium_priority(event)
+        Priority routing is driven by ``EVENT_METADATA`` for canonical
+        event_types and falls back to ``event.priority`` for anything not
+        registered there. An explicit high ``event.priority`` from the caller
+        promotes the routing — callers can bump a notification up but the
+        canonical floor still applies.
+        """
+        meta = EVENT_METADATA.get(event.event_type)
+        canonical_priority = meta.priority if meta else event.priority
+        # Caller-supplied "high" wins over a lower canonical priority.
+        priority = "high" if event.priority == "high" else canonical_priority
+
+        if priority == "high":
+            return self._build_high_priority(event)
+        elif priority == "medium":
+            return self._build_medium_priority(event)
         else:
-            blocks = self._build_low_priority(event)
-
-        return blocks
+            return self._build_low_priority(event)
 
     def _build_high_priority(self, event: NotificationEvent) -> list[dict[str, Any]]:
         """Header + section + optional metric fields for high-priority events."""
-        emoji = _EMOJI_MAP.get(event.event_type, "\u2139\ufe0f")
+        emoji = format_event_emoji(event)
+        label = format_event_label(event)
         blocks: list[dict[str, Any]] = [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"{emoji} {event.event_type.replace('_', ' ').title()}",
+                    "text": f"{emoji} {label}",
                     "emoji": True,
                 },
             },
@@ -407,7 +432,7 @@ class SlackChannel(NotificationChannel):
 
     def _build_medium_priority(self, event: NotificationEvent) -> list[dict[str, Any]]:
         """Simple section with emoji for medium-priority events."""
-        emoji = _EMOJI_MAP.get(event.event_type, "\u2139\ufe0f")
+        emoji = format_event_emoji(event)
         return [
             {
                 "type": "section",

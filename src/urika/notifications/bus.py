@@ -214,13 +214,37 @@ class NotificationBus:
         controller: PauseController | None = None,
         session: object = None,
     ) -> None:
-        """Start the dispatch thread and channel listeners."""
+        """Start the dispatch thread and channel listeners.
+
+        Runs ``health_check()`` on each channel before starting its listener.
+        Channels that fail the health check are removed from ``self.channels``
+        with a WARNING log — subsequent ``notify()`` calls will skip them.
+        """
         self._controller = controller
         self._session = session
         self._thread = threading.Thread(
             target=self._dispatch_loop, name="urika-notifications", daemon=True
         )
         self._thread.start()
+
+        # Filter out unhealthy channels so dispatch and listeners only run on
+        # configurations we've actually verified can talk to the remote service.
+        healthy_channels: list[NotificationChannel] = []
+        for ch in self.channels:
+            try:
+                ok, msg = ch.health_check()
+            except Exception as exc:
+                ok, msg = False, f"health check raised: {exc}"
+            if not ok:
+                logger.warning(
+                    "Channel %s failed health check: %s — will not dispatch",
+                    type(ch).__name__,
+                    msg,
+                )
+                continue
+            healthy_channels.append(ch)
+        self.channels = healthy_channels
+
         for ch in self.channels:
             try:
                 ch.start_listener(controller, project_path=self._project_path, bus=self)
@@ -286,7 +310,47 @@ class NotificationBus:
                 priority="high",
             )
 
-        # Paused
+        # Run status events from end-of-experiment phase messages.
+        # These are also emitted directly by cli/run.py — TUI/dashboard
+        # orchestrator flows that don't go through the CLI need them here.
+        # Priorities mirror EVENT_METADATA in events.py.
+        # NOTE: the specific "Experiment paused" check must run BEFORE the
+        # generic "Paused" fallback below so it takes precedence.
+        if event == "phase":
+            if "Experiment completed" in detail:
+                return NotificationEvent(
+                    event_type="experiment_completed",
+                    project_name=self.project_name,
+                    experiment_id=self._experiment_id,
+                    summary=detail,
+                    priority="high",
+                )
+            if "Experiment failed" in detail:
+                return NotificationEvent(
+                    event_type="experiment_failed",
+                    project_name=self.project_name,
+                    experiment_id=self._experiment_id,
+                    summary=detail,
+                    priority="high",
+                )
+            if "Experiment paused" in detail:
+                return NotificationEvent(
+                    event_type="experiment_paused",
+                    project_name=self.project_name,
+                    experiment_id=self._experiment_id,
+                    summary=detail,
+                    priority="medium",
+                )
+            if "Experiment stopped" in detail:
+                return NotificationEvent(
+                    event_type="experiment_stopped",
+                    project_name=self.project_name,
+                    experiment_id=self._experiment_id,
+                    summary=detail,
+                    priority="medium",
+                )
+
+        # Paused (generic fallback — covers any other "Paused" phase text)
         if event == "phase" and "Paused" in detail:
             return NotificationEvent(
                 event_type="paused",

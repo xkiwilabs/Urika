@@ -29,3 +29,13 @@ class NotificationChannel(ABC):
 
     def stop_listener(self) -> None:
         """Stop the inbound command listener."""
+
+    def health_check(self) -> tuple[bool, str]:
+        """Probe the channel's external dependency (auth, network).
+
+        Returns ``(True, "")`` if healthy, ``(False, error_message)`` if not.
+        Default is ``(True, "")`` — channels without remote dependencies opt out.
+        Subclasses with remote services (Slack, Telegram, SMTP) should override
+        with a non-listening sanity probe (auth_test, getMe, SMTP NOOP, etc.).
+        """
+        return (True, "")

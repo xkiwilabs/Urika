@@ -204,7 +204,7 @@ urika:my-project> The results look strange for the interaction effect.
 /run
 ```
 
-See [Knowledge Pipeline](11-knowledge-pipeline.md) for full details on ingestion, search, and storage.
+See [Knowledge Pipeline](10-knowledge-pipeline.md) for full details on ingestion, search, and storage.
 
 
 ## How Context Flows Through the System
@@ -268,4 +268,4 @@ Copy this template and fill it in when creating a new project. Even a few senten
 
 ---
 
-**Next:** [Running Experiments](05-running-experiments.md)
+**Next:** [Running Experiments](06-running-experiments.md)

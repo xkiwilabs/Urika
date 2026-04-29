@@ -21,6 +21,7 @@ from claude_agent_sdk import (
 
 from urika.agents.config import AgentConfig
 from urika.agents.runner import AgentResult, AgentRunner
+from urika.core.compliance import require_api_key, scrub_oauth_env
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,13 @@ class ClaudeSDKRunner(AgentRunner):
         self, config: AgentConfig, prompt: str, *, on_message: Callable[..., Any] | None = None
     ) -> AgentResult:
         """Execute an agent and return structured results."""
+        # Layer 2 of the API-key safety net: refuse to spawn a Claude
+        # Code subprocess for a cloud-bound agent when no API key is
+        # set. This prevents the SDK from silently falling back to the
+        # user's Pro/Max subscription OAuth — which violates Anthropic's
+        # Consumer Terms §3.7 and the April 2026 Agent SDK clarification.
+        # See ``urika.core.compliance`` for the full rationale.
+        require_api_key(config.model, config.env)
         options = self._build_options(config)
         messages: list[dict[str, Any]] = []
         text_parts: list[str] = []
@@ -197,6 +205,13 @@ class ClaudeSDKRunner(AgentRunner):
 
     def _build_options(self, config: AgentConfig) -> ClaudeAgentOptions:
         """Translate AgentConfig to ClaudeAgentOptions."""
+        # Layer 3 of the API-key safety net: scrub OAuth-related env
+        # vars from what we pass to the subprocess. Even if the user
+        # has CLAUDE_CODE_OAUTH_TOKEN in their shell, Urika must not
+        # authenticate via OAuth — only via ANTHROPIC_API_KEY (or a
+        # custom endpoint). We pass empty string values (not absence)
+        # so the subprocess overrides any parent-inherited values.
+        agent_env = scrub_oauth_env(config.env)
         kwargs: dict[str, object] = {
             "system_prompt": config.system_prompt,
             "allowed_tools": config.allowed_tools,
@@ -205,7 +220,7 @@ class ClaudeSDKRunner(AgentRunner):
             "model": config.model,
             "cwd": str(config.cwd) if config.cwd else None,
             "permission_mode": "bypassPermissions",
-            "env": config.env or {},
+            "env": agent_env,
         }
         # When using a custom endpoint, prefer the system-installed
         # CLI over the bundled one — the bundled CLI may ignore

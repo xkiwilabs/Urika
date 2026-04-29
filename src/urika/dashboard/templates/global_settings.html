@@ -48,7 +48,102 @@
     margin-bottom: var(--space-3);
   }
   .channel-block h4 { margin: 0 0 var(--space-2) 0; }
+  .compliance-banner {
+    border: 1px solid #d99a3a;
+    background: #fff5e0;
+    color: #5a3b00;
+    border-radius: 6px;
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  [data-theme="dark"] .compliance-banner {
+    border-color: #d99a3a;
+    background: #3a2a08;
+    color: #f5d07a;
+  }
+  .compliance-banner h3 {
+    margin: 0 0 var(--space-2) 0;
+    font-size: var(--fs-base);
+  }
+  .compliance-banner p { margin: 0 0 var(--space-2) 0; }
+  .compliance-banner p:last-child { margin-bottom: 0; }
+  /* Positive companion to .compliance-banner: shows when the key IS
+     set and lets the user verify it round-trips against Anthropic.
+     Visual rhythm intentionally calmer than the warning banner — a
+     thin green left rule + muted text rather than a full coloured fill. */
+  .api-key-status {
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    border-left: 3px solid var(--color-success, #2e8b57);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .api-key-status--ok { color: var(--text-muted, #666); }
+  .api-key-status .api-key-status-result { flex-basis: 100%; }
+  .text-success { color: var(--color-success, #2e8b57); }
+  .text-danger { color: var(--color-danger, #c0392b); }
 </style>
+
+{# ---- Compliance banner --------------------------------------------- #}
+{# Anthropic Consumer Terms §3.7 + April 2026 Agent SDK clarification:
+   Urika requires ANTHROPIC_API_KEY. Show a banner whenever the dashboard
+   process can't see the env var. The Privacy tab is where the user adds
+   endpoints (and references API key env-var names); for the actual key
+   value they need to either run `urika config api-key` or export the
+   variable. #}
+{% if api_key_configured %}
+{# Positive companion to the unset-key banner. Confirms Urika sees a
+   key AND lets the user verify it actually works against
+   api.anthropic.com via POST /api/settings/test-anthropic-key. The
+   verify path is the same one the CLI's `urika config api-key --test`
+   uses (urika.core.anthropic_check.verify_anthropic_api_key). #}
+<div class="api-key-status api-key-status--ok"
+     x-data="{ testing: false, result: null }">
+  <span><strong class="text-success">✓</strong> ANTHROPIC_API_KEY configured.</span>
+  <button type="button" class="btn btn--small"
+          @click="testing = true; result = null;
+                  fetch('/api/settings/test-anthropic-key', { method: 'POST' })
+                    .then(r => r.json())
+                    .then(d => { result = d; testing = false; })
+                    .catch(e => { result = { ok: false, message: e.message }; testing = false; })"
+          :disabled="testing">
+    <span x-text="testing ? 'Testing…' : 'Test API key'">Test API key</span>
+  </button>
+  <div x-show="result" x-cloak class="api-key-status-result">
+    <span :class="result?.ok ? 'text-success' : 'text-danger'"
+          x-text="(result?.ok ? '✓ ' : '✗ ') + (result?.message || (result?.ok ? 'Key works' : 'Failed'))"></span>
+  </div>
+</div>
+{% endif %}
+
+{% if not api_key_configured %}
+<div class="compliance-banner" role="alert">
+  <h3>⚠ ANTHROPIC_API_KEY not set</h3>
+  <p>
+    Urika requires an Anthropic API key. Per Anthropic's
+    <a href="https://www.anthropic.com/legal/consumer-terms"
+       target="_blank" rel="noopener">Consumer Terms (§3.7)</a>
+    and the April 2026 Agent SDK clarification, a Claude Pro/Max
+    subscription cannot be used to authenticate the Claude Agent SDK
+    that Urika depends on.
+  </p>
+  <p>
+    Get a key at
+    <a href="https://console.anthropic.com" target="_blank"
+       rel="noopener">console.anthropic.com</a>
+    (Settings → API Keys), then save it with
+    <code>urika config api-key</code> or export
+    <code>ANTHROPIC_API_KEY</code> in your shell. The Privacy tab below
+    lets you reference per-endpoint key env-vars; the Anthropic key
+    itself lives in <code>~/.urika/secrets.env</code>.
+  </p>
+</div>
+{% endif %}
 
 <form
   hx-put="/api/settings"
@@ -540,7 +635,7 @@
           <label for="notifications_email_smtp_host">SMTP host</label>
           <input type="text" id="notifications_email_smtp_host"
                  name="notifications_email_smtp_host"
-                 value="{{ notif_email.get('smtp_host', '') }}"
+                 value="{{ notif_email.get('smtp_server', notif_email.get('smtp_host', '')) }}"
                  placeholder="smtp.example.com">
         </div>
         <div class="form-row">
@@ -553,14 +648,28 @@
           <label for="notifications_email_smtp_user">SMTP user</label>
           <input type="text" id="notifications_email_smtp_user"
                  name="notifications_email_smtp_user"
-                 value="{{ notif_email.get('smtp_user', '') }}">
+                 value="{{ notif_email.get('username', notif_email.get('smtp_user', '')) }}"
+                 placeholder="defaults to From address">
+          <small class="form-help">
+            The SMTP login username. For Gmail / Outlook this is your full
+            email address — leave blank to use the From address above.
+          </small>
         </div>
         <div class="form-row">
           <label for="notifications_email_smtp_password_env">SMTP password env var</label>
           <input type="text" id="notifications_email_smtp_password_env"
                  name="notifications_email_smtp_password_env"
-                 value="{{ notif_email.get('smtp_password_env', '') }}"
+                 value="{{ notif_email.get('password_env', notif_email.get('smtp_password_env', '')) }}"
                  placeholder="SMTP_PASSWORD">
+          <small class="form-help">
+            The <em>name</em> of an environment variable that carries the SMTP
+            password — the value never lives in <code>settings.toml</code>.
+            For Gmail you must use a 16-character
+            <a href="https://myaccount.google.com/apppasswords" target="_blank"
+               rel="noopener">App Password</a>
+            (regular account passwords are rejected). Export the env var in
+            the shell that launches Urika.
+          </small>
         </div>
       </div>
 
@@ -585,8 +694,30 @@
           <label for="notifications_slack_token_env">Bot token env var</label>
           <input type="text" id="notifications_slack_token_env"
                  name="notifications_slack_token_env"
-                 value="{{ notif_slack.get('token_env', '') }}"
+                 value="{{ notif_slack.get('bot_token_env', notif_slack.get('token_env', '')) }}"
                  placeholder="SLACK_BOT_TOKEN">
+        </div>
+        {# Inbound Socket Mode (optional) — enables /commands from Slack. #}
+        <div class="form-row">
+          <label for="notifications_slack_app_token_env">App token env var (Socket Mode)</label>
+          <input type="text" id="notifications_slack_app_token_env"
+                 name="notifications_slack_app_token_env"
+                 value="{{ notif_slack.get('app_token_env', '') }}"
+                 placeholder="SLACK_APP_TOKEN">
+        </div>
+        <div class="form-row">
+          <label for="notifications_slack_allowed_channels">Allowed channels (comma-separated)</label>
+          <input type="text" id="notifications_slack_allowed_channels"
+                 name="notifications_slack_allowed_channels"
+                 value="{{ notif_slack.get('allowed_channels', []) | join(', ') if notif_slack.get('allowed_channels') is iterable and notif_slack.get('allowed_channels') is not string else (notif_slack.get('allowed_channels', '') or '') }}"
+                 placeholder="#urika-bot, #lab-runs">
+        </div>
+        <div class="form-row">
+          <label for="notifications_slack_allowed_users">Allowed users (comma-separated)</label>
+          <input type="text" id="notifications_slack_allowed_users"
+                 name="notifications_slack_allowed_users"
+                 value="{{ notif_slack.get('allowed_users', []) | join(', ') if notif_slack.get('allowed_users') is iterable and notif_slack.get('allowed_users') is not string else (notif_slack.get('allowed_users', '') or '') }}"
+                 placeholder="U01ABC, U02DEF">
         </div>
       </div>
 
@@ -612,6 +743,70 @@
                  name="notifications_telegram_bot_token_env"
                  value="{{ notif_telegram.get('bot_token_env', '') }}"
                  placeholder="TELEGRAM_BOT_TOKEN">
+        </div>
+      </div>
+
+      {# Test-send affordance.  Sends a synthetic notification through
+         every channel the form configures (un-saved values), reports
+         per-channel success / failure.  Tests what's IN THE FORM, not
+         what's saved.  ``$el.closest('form')`` walks DOM ancestors to
+         find the surrounding <form> — more reliable than ``$root``
+         when nested inside the tabs macro's Alpine scope. #}
+      <div class="endpoint-test" x-data="{
+             testing: false,
+             results: null,
+             error: null,
+             sendTest() {
+               this.testing = true;
+               this.results = null;
+               this.error = null;
+               const form = this.$el.closest('form');
+               const fd = new FormData(form);
+               fetch('/api/settings/notifications/test-send', {
+                 method: 'POST',
+                 body: fd,
+               })
+                 .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+                 .then(d => { this.results = d.channels || []; this.testing = false; })
+                 .catch(err => {
+                   this.error = err.message || 'Request failed';
+                   this.testing = false;
+                 });
+             }
+           }" style="margin-top: var(--space-3);">
+        <button type="button"
+                class="btn btn--primary btn--small"
+                @click="sendTest()"
+                :disabled="testing">
+          <span class="running-dot" x-show="testing"></span>
+          <span x-text="testing ? 'Sending…' : 'Send test notification'">Send test notification</span>
+        </button>
+
+        <div x-show="results !== null && results.length === 0" x-cloak
+             class="endpoint-test-result"
+             style="margin-top: var(--space-2);">
+          <div class="endpoint-test-result--fail">
+            No channels configured. Fill in at least one channel above before sending a test.
+          </div>
+        </div>
+
+        <template x-for="ch in (results || [])" :key="ch.name">
+          <div class="endpoint-test-result" style="margin-top: var(--space-2);">
+            <div :class="ch.status === 'ok' ? 'endpoint-test-result--ok' : 'endpoint-test-result--fail'">
+              <span x-text="ch.status === 'ok' ? '✓ ' : '✗ '"></span>
+              <strong x-text="ch.name"></strong>
+              <span x-text="ch.status === 'ok' ? ' — sent' : ' — failed'"></span>
+              <template x-if="ch.message">
+                <div style="margin-top: 4px; font-size: var(--fs-xs); opacity: 0.85;"
+                     x-text="ch.message"></div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <div x-show="error" x-cloak class="endpoint-test-result"
+             style="margin-top: var(--space-2);">
+          <div class="endpoint-test-result--fail" x-text="error"></div>
         </div>
       </div>
     </div>

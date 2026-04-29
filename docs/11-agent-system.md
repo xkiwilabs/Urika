@@ -1,6 +1,6 @@
 # Agent System
 
-Urika uses a multi-agent architecture where specialized agents collaborate through a structured experiment loop. Each agent has a defined role, specific tool access, and security boundaries that control what it can read and write.
+Urika uses a multi-agent architecture where twelve specialized agents collaborate through a structured experiment loop. Each agent has a defined role, specific tool access, and security boundaries that control what it can read and write.
 
 
 ## Architecture Overview
@@ -10,7 +10,7 @@ The system follows a **research team model**: agents take on roles analogous to 
 Two execution modes:
 
 - **Guided** (`urika run`) — each experiment runs autonomously (agents plan, execute, evaluate, iterate). You review results and steer what to try next *between* experiments.
-- **Fully autonomous** (`urika run --max-experiments N`) — the system runs multiple experiments back-to-back. The advisor agent also decides what to try next between experiments. The quality of your initial project setup (description, criteria, knowledge) determines how well agents navigate on their own. See [Prompts and Context](04-prompts-and-context.md).
+- **Fully autonomous** (`urika run --max-experiments N`) — the system runs multiple experiments back-to-back. The advisor agent also decides what to try next between experiments. The quality of your initial project setup (description, criteria, knowledge) determines how well agents navigate on their own. See [Prompts and Context](05-prompts-and-context.md).
 
 Key design principles:
 
@@ -126,9 +126,9 @@ Or provide a list of tools you know you'll need in the project description durin
 
 Searches the project's knowledge base for domain-relevant information. When the planning agent flags that a method requires literature context (e.g., a specific algorithm or domain knowledge), the literature agent searches ingested documents and returns relevant excerpts.
 
-The literature agent can also search the web for relevant papers and methods when web search is enabled (see [Configuration](13-configuration.md)). This allows it to find whether a proposed method has been used in similar research before, or discover methods that might be useful for your specific problem.
+The literature agent can also search the web for relevant papers and methods when web search is enabled (see [Configuration](14-configuration.md)). This allows it to find whether a proposed method has been used in similar research before, or discover methods that might be useful for your specific problem.
 
-Adding even 1-2 relevant papers to your project's `knowledge/papers/` directory significantly improves the quality of the agents' work. See [Knowledge Pipeline](11-knowledge-pipeline.md) for details.
+Adding even 1-2 relevant papers to your project's `knowledge/papers/` directory significantly improves the quality of the agents' work. See [Knowledge Pipeline](10-knowledge-pipeline.md) for details.
 
 | Property | Value |
 |----------|-------|
@@ -201,6 +201,23 @@ Consolidates all research into polished, standalone deliverables. The Finalizer 
 | Allowed bash | `python`, `pip` |
 | Blocked bash | `rm -rf`, `git push`, `git reset` |
 | Max turns | 20 |
+
+---
+
+### 12. Project Summarizer
+
+**Name:** `project_summarizer`
+
+Produces a comprehensive project status summary. Reads project configuration, the projectbook, experiment records, methods, and criteria, and writes a unified narrative summary covering progress, key findings, and outstanding questions. Exposed via the `urika summarize` command. Read-only -- it returns narrative text which the CLI writes to `projectbook/summary.md` using versioned file writing.
+
+| Property | Value |
+|----------|-------|
+| Tools | Read, Glob, Grep |
+| Writable dirs | None (read-only) |
+| Max turns | 15 |
+| Privacy | Respects the project's privacy mode; defaults to the open endpoint since the task is summarisation rather than raw-data access |
+| Inputs | Project files, projectbook, experiments, methods, criteria |
+| Outputs | `projectbook/summary.md` (written by the CLI from the agent's narrative) |
 
 
 ## The Orchestrator
@@ -281,6 +298,7 @@ These agents can read the entire project directory but cannot write to any files
 - Advisor Agent
 - Report Agent
 - Presentation Agent
+- Project Summarizer
 
 Note: The Finalizer agent has write access (see Writable Agents below).
 
@@ -320,4 +338,4 @@ The Claude Agent SDK adapter (`ClaudeSDKRunner`) translates these configurations
 
 ---
 
-**Next:** [Built-in Tools](10-built-in-tools.md)
+**Next:** [Built-in Tools](12-built-in-tools.md)

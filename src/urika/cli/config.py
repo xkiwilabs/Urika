@@ -76,25 +76,53 @@ def dashboard(
 @click.argument("project", required=False, default=None)
 @click.option("--show", is_flag=True, help="Show current settings.")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--test",
+    "test_flag",
+    is_flag=True,
+    help=(
+        "With ``api-key``: send a minimal request to api.anthropic.com "
+        "to verify the configured ANTHROPIC_API_KEY actually works."
+    ),
+)
 def config_command(
     project: str | None,
     show: bool,
     json_output: bool,
+    test_flag: bool,
 ) -> None:
     """View or configure privacy mode and models.
 
     Without PROJECT, configures global defaults (~/.urika/settings.toml).
     With PROJECT, configures that project's urika.toml.
 
+    Special form ``urika config api-key`` runs the interactive
+    Anthropic-API-key setup (saves to ``~/.urika/secrets.env``).
+    Add ``--test`` to verify the saved key against api.anthropic.com.
+
     Examples:
 
         urika config --show              # show global defaults
         urika config                     # interactive setup (global)
+        urika config api-key             # interactive Anthropic API key setup
+        urika config api-key --test      # verify the saved key works
         urika config my-project --show   # show project settings
         urika config my-project          # interactive setup (project)
     """
     from urika.cli_display import print_step
     from urika.cli_helpers import UserCancelled
+
+    # ── Special routing: "urika config api-key" ──
+    # ``api-key`` is a reserved pseudo-project name that triggers the
+    # Anthropic API key wizard. Implemented here (rather than as a
+    # standalone command) so the public surface matches the documented
+    # ``urika config api-key`` invocation.
+    if project == "api-key":
+        if test_flag:
+            _config_api_key_test()
+            return
+        _config_api_key_interactive()
+        return
 
     # ── Determine target: global or project ──
     is_project = False
@@ -528,6 +556,200 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
 
 
 
+
+
+def _config_api_key_interactive() -> None:
+    """Interactive Anthropic API key setup.
+
+    Prompts for the key (masked input), validates the format (should
+    start with ``sk-ant-`` and be plausibly long), and saves it to
+    ``~/.urika/secrets.env`` as ``ANTHROPIC_API_KEY=...``.
+
+    Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK
+    clarification, Pro/Max OAuth tokens cannot authenticate the Agent
+    SDK — Urika requires an API key for any of its commands.
+    """
+    from urika.cli_display import print_step, print_success, print_warning
+    from urika.core.secrets import save_secret
+
+    click.echo()
+    print_step("Anthropic API key setup")
+    click.echo()
+    click.echo(
+        "  Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK"
+    )
+    click.echo(
+        "  clarification, Urika cannot use a Claude Pro/Max subscription to"
+    )
+    click.echo(
+        "  authenticate the Agent SDK. An API key is required."
+    )
+    click.echo()
+    click.echo(
+        "  Get a key at https://console.anthropic.com (Settings → API Keys)."
+    )
+    click.echo()
+
+    try:
+        value = click.prompt(
+            "  Paste your ANTHROPIC_API_KEY",
+            hide_input=True,
+            default="",
+            show_default=False,
+        ).strip()
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        click.echo("\n  Cancelled.")
+        return
+
+    if not value:
+        print_warning("No key entered — cancelled.")
+        return
+
+    looks_valid = value.startswith("sk-ant-") and len(value) >= 50
+    if not looks_valid:
+        print_warning(
+            "Key does not look like an Anthropic API key "
+            "(expected sk-ant-... and ≥50 chars)."
+        )
+        try:
+            keep = click.confirm("  Save anyway?", default=False)
+        except (click.Abort, EOFError, KeyboardInterrupt):
+            click.echo("\n  Cancelled.")
+            return
+        if not keep:
+            click.echo("  Cancelled.")
+            return
+
+    save_secret("ANTHROPIC_API_KEY", value)
+    print_success(
+        "Saved to ~/.urika/secrets.env (chmod 600). "
+        "Active in this and future sessions."
+    )
+
+    # Offer to verify the key end-to-end against api.anthropic.com.
+    # If the test fails the spend-limit nudge below is meaningless
+    # (the user has bigger problems to fix), so we skip it.
+    click.echo()
+    try:
+        want_test = click.confirm(
+            "  Send a test request to verify the key works?",
+            default=True,
+        )
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        return
+
+    test_passed = True
+    if want_test:
+        click.echo()
+        test_passed = _print_api_key_test_result(value)
+
+    if not test_passed:
+        # Don't prompt about spend limits when the key itself doesn't work.
+        return
+
+    # Optional: nudge towards a spend limit.
+    click.echo()
+    try:
+        want_limit = click.confirm(
+            "  Set a spend limit on console.anthropic.com?",
+            default=True,
+        )
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        return
+    if want_limit:
+        click.echo()
+        click.echo(
+            "  Visit https://console.anthropic.com → Settings → Billing →"
+        )
+        click.echo(
+            "  Spend limits, and pick a monthly cap (e.g. $20). Urika does"
+        )
+        click.echo("  not set the limit programmatically.")
+        click.echo()
+
+
+def _mask_api_key(key: str) -> str:
+    """Return a redacted display form of an API key (last 4 chars only)."""
+    if not key:
+        return "(unset)"
+    if len(key) <= 4:
+        return "***"
+    return f"sk-ant-***...***{key[-4:]}"
+
+
+def _print_api_key_test_result(key: str) -> bool:
+    """Run the API key test and pretty-print the outcome.
+
+    Returns True on success, False otherwise. Output mirrors the
+    ``urika config api-key --test`` standalone path, so the same
+    message arrives regardless of whether the user invoked the test
+    interactively after save or directly via the flag.
+    """
+    from urika.cli_display import print_success, print_error
+    from urika.core.anthropic_check import verify_anthropic_api_key
+
+    click.echo("  Sending a minimal test request to api.anthropic.com...")
+    click.echo()
+    ok, message = verify_anthropic_api_key(key)
+    if ok:
+        print_success(f"API key works.  {message}")
+        click.echo(
+            "  Cost: this test consumed ~8 input + up to 5 output tokens (~$0.0001)."
+        )
+        click.echo()
+        click.echo(
+            "  Urika will use this key for all commands. Your Pro/Max"
+        )
+        click.echo(
+            "  subscription is not used by Urika (per Anthropic's"
+        )
+        click.echo("  Consumer Terms §3.7).")
+        return True
+
+    print_error(f"API key test failed: {message}")
+    click.echo()
+    click.echo(
+        "  Fix: regenerate at https://console.anthropic.com -> Settings ->"
+    )
+    click.echo("  API Keys, then re-run: urika config api-key")
+    return False
+
+
+def _config_api_key_test() -> None:
+    """Standalone path for ``urika config api-key --test``.
+
+    Reads the current ``ANTHROPIC_API_KEY`` from the environment
+    (which ``load_secrets()`` populates from ``~/.urika/secrets.env``
+    at CLI start) and runs the same verification used by the
+    interactive setup. Exits 1 if the key is unset or the test fails,
+    so this is safe to drop into a shell pipeline / CI gate.
+    """
+    import os
+
+    from urika.cli_display import print_error, print_step
+
+    click.echo()
+    print_step("Anthropic API key check")
+    click.echo()
+
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        print_error("ANTHROPIC_API_KEY is not set.")
+        click.echo()
+        click.echo(
+            "  Set one with:  urika config api-key"
+        )
+        click.echo(
+            "  Or export it:  export ANTHROPIC_API_KEY=sk-ant-..."
+        )
+        raise click.exceptions.Exit(1)
+
+    click.echo(f"  Configured key: {_mask_api_key(key)}")
+    click.echo("  Source:         ~/.urika/secrets.env (loaded at CLI start)")
+    click.echo()
+    ok = _print_api_key_test_result(key)
+    if not ok:
+        raise click.exceptions.Exit(1)
 
 
 # ── Re-exports from sibling modules (Phase 8 split) ───────────────

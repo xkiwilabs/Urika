@@ -94,6 +94,14 @@ Slack sends rich messages with formatted metrics, status indicators, and interac
 3. Add these scopes:
    - `chat:write` -- send messages
    - `chat:write.public` -- post to any public channel
+   - `app_mentions:read` -- read messages where the bot is `@`-mentioned
+   - `channels:history` -- read messages in public channels the bot has been added to (needed for inbound `/commands`)
+   - `groups:history` -- same, for private channels
+   - `im:history` -- same, for direct messages to the bot
+
+The last three (`*:history`) are required for inbound commands like
+`/status`, `/pause`, `/results`. Without them, the bot can post
+notifications but cannot read commands you type back.
 
 #### Step 3: Install to workspace
 
@@ -122,6 +130,77 @@ For Pause/Stop/Status/Results buttons in Slack messages:
 5. In Urika setup, enter the app token when prompted
 
 Without this step, you still get all notification messages -- you just won't have clickable buttons.
+
+#### Step 5b: Subscribe to message events (so the bot can read commands)
+
+For inbound commands (`/status`, `/pause`, free-text questions), the
+Slack app must subscribe to message events:
+
+1. In your Slack app settings, click **Event Subscriptions** in the sidebar -> **Enable Events**
+2. Under **Subscribe to bot events**, add:
+   - `message.channels` -- public channel messages
+   - `message.groups` -- private channel messages
+   - `message.im` -- direct messages to the bot
+   - `app_mention` -- so `@your-bot status` also works
+3. Save changes. Slack may prompt you to reinstall the app -- do so to pick up the new scopes.
+
+Socket Mode (Step 5) must be enabled for these events to reach Urika
+without a public webhook URL.
+
+#### How Slack commands work in Urika (NOT via Slack's Slash Commands API)
+
+Urika's Slack bot reads regular **channel messages**. When you type a
+message that starts with `/` (e.g. `/status`, `/pause`) in a channel
+where the bot is a member, the bot receives it as a normal message
+event, recognises the leading `/`, and routes it to Urika's command
+handler.
+
+**Do NOT register these commands in the Slack app's "Slash Commands"
+page.** Slack's native slash command machinery routes commands through
+a different Socket Mode envelope (`slash_commands`) that Urika does
+not currently listen to. If you register `/status` as a real Slack
+slash command, Slack will intercept it before the bot's message
+listener sees it, and the command will appear to do nothing.
+
+The required Slack app configuration is:
+
+1. **Bot Token Scopes** (Step 2 above): `chat:write`, `chat:write.public`, `app_mentions:read`, `channels:history`, `groups:history`, `im:history`.
+2. **Event Subscriptions** (Step 5b above): `message.channels`, `message.groups`, `message.im`, `app_mention`.
+3. **Socket Mode** (Step 5 above): enabled, with an app-level token (`xapp-...`).
+4. **Interactivity & Shortcuts** (Step 5 above): on — for the Pause/Stop/Status/Results buttons on `experiment_started` notifications.
+5. **NO entries on the "Slash Commands" page.** Leave that page empty.
+6. **Bot invited** to the channel (`/invite @your-bot-name` from inside the Slack channel).
+
+Available bot commands (just type them as regular messages in the
+channel where the bot is a member -- no Slack-side registration
+needed):
+
+| Command | What it does |
+|---|---|
+| `/status` | Project status |
+| `/results` | Top methods leaderboard |
+| `/methods` | Recently registered methods |
+| `/criteria` | Current success criteria |
+| `/experiments` | Recent experiments |
+| `/logs` | Recent run logs |
+| `/usage` | Token + cost summary |
+| `/pause` | Pause active run |
+| `/stop` | Stop active run |
+| `/resume` | Resume run |
+| `/help` | List of all available bot commands |
+
+Free text (no leading `/`) is routed to the orchestrator as an `ask`
+command, so you can have a conversation with the bot without using a
+slash prefix.
+
+Inline buttons (Pause / Stop / Status / Results) on `experiment_started`
+notifications use Slack's **interactivity** (Block Kit button) API,
+which Urika DOES handle. Those work whether or not slash commands are
+registered, as long as Step 5 (Socket Mode + Interactivity) is on.
+
+A future release may add native Slack slash command support (via the
+`slash_commands` Socket Mode envelope). For now, use the
+regular-message convention above.
 
 #### Restricting who can control the bot
 
@@ -401,6 +480,62 @@ SLACK_APP_TOKEN=xapp-...
 TELEGRAM_BOT_TOKEN=123456789:ABC...
 ```
 
+## Troubleshooting
+
+When a channel isn't delivering, the dashboard's **Send test notification** button
+on Settings → Notifications is the fastest diagnostic — it sends one event
+through every configured channel and reports per-channel success or the
+specific error message returned by the channel's SDK.
+
+For each channel, the most common failures are:
+
+### Email
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Authentication failed (535)` | App password wrong or 2FA app password not generated | Regenerate the Google / Outlook app password and update `SMTP_PASSWORD` |
+| `[Errno 111] Connection refused` | SMTP host or port wrong | Verify host (`smtp.gmail.com` for Gmail; `smtp.office365.com` for Outlook) and port (587 for STARTTLS) |
+| `getaddrinfo failed` | Hostname typo, DNS issue | Verify the SMTP host string |
+| `STARTTLS extension not supported` | Server requires SSL not TLS | Switch to port 465 with SSL — currently Urika uses STARTTLS only; file an issue if you need SSL |
+| Tests pass but no email arrives | Mail filter, wrong `to` address | Check spam folder; verify `to` field |
+
+### Slack
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `invalid_auth` | Bot token revoked or wrong env var | Re-issue the bot token in your Slack app settings; update the env var |
+| `not_in_channel` | Bot was never invited to the channel | In Slack, run `/invite @YourBotName` in the channel |
+| `channel_not_found` | Wrong channel name or private channel without access | Verify channel name; bot must be a member of private channels |
+| Inbound commands don't work | App token (Socket Mode) not configured | Set `SLACK_APP_TOKEN` env var and the **App token env var** field on the dashboard; ensure Socket Mode is enabled in app settings |
+| `missing_scope` | Bot missing OAuth scope | Add `chat:write`, `chat:write.public`, and `app_mentions:read` scopes; reinstall app |
+
+### Telegram
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Unauthorized` / `InvalidToken` | Bot token wrong or revoked | Get a fresh token from @BotFather |
+| `chat not found` | Wrong chat ID or bot never messaged the chat | Open the chat with the bot and send `/start`; re-fetch the chat ID via `getUpdates` |
+| `Forbidden: bot was blocked by the user` | User blocked the bot | Unblock in Telegram client |
+| Inline buttons don't respond | Polling stopped after error | Check Urika logs; restart Urika to re-establish polling |
+
+### General diagnostics
+
+- **No notifications at all:** confirm the project's `notifications` config has at least one channel set to `enabled = true` (`urika notifications --show` or the project's Notifications tab).
+- **Some events deliver, others don't:** Slack and Telegram apply per-event-type formatting based on the canonical event vocabulary. Unknown event types fall through to a default ℹ icon — if you're seeing the default icon for events that should have specific formatting, check `urika.toml` for stale event-type strings.
+- **Channel logs as "failed health check" at startup:** the channel's auth probe failed before any event was sent. The bus excludes failing channels from dispatch — fix the credential issue and restart Urika.
+
+## Caveats
+
+A few behaviours worth knowing about up front:
+
+- **Pause / Stop / Resume buttons (Telegram inline keyboard) only appear on `experiment_started` events.** Mid-experiment notifications don't carry the keyboard — for fine-grained control during an active run, use the bot's `/pause`, `/stop`, `/resume` slash commands directly.
+- **Email batches low-priority events.** Events with `priority="low"` are queued and flushed only when a `medium` or `high` event arrives, or at shutdown. This avoids inbox flooding for routine progress events. Slack and Telegram do not batch — every event sends immediately.
+- **Per-channel priority filtering is not yet user-configurable.** Today, every enabled channel receives every event the bus emits. A future release will add per-event-type opt-in (issue #TBD).
+- **Health check on bad credentials excludes a channel from dispatch for the entire process lifetime.** Updating credentials in env vars does NOT re-probe the running bus — restart Urika so the next `bus.start()` re-runs the health check. The dashboard's Send-test button builds a fresh bus from un-saved form data and probes each channel directly, so use it to confirm fixes before restarting.
+- **Test sends count toward your channel's rate limits.** Slack rate-limits ~1 message/sec/channel; Telegram rate-limits ~30 messages/sec; Gmail rate-limits ~100/day on free SMTP. Don't spam the test button.
+- **Inbound Slack commands require Socket Mode + an app token in addition to the bot token.** Outbound notifications work with just the bot token; inbound (slash commands, button taps) needs the app-token env var set.
+- **`experiment_paused` and `paused` are different events.** `experiment_paused` is end-of-experiment ("the entire experiment was paused after turn N"). `paused` is a generic mid-loop pause (e.g., autonomous-mode pause between experiments). Both are notified separately so you can wire them differently if needed.
+
 ---
 
-**Next:** Return to [Documentation Index](README.md)
+**Next:** [Security Model](20-security.md)

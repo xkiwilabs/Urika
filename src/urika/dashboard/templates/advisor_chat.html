@@ -14,6 +14,41 @@
 {% endblock %}
 
 {% block content %}
+{% if session_id %}
+  {% if prior_session %}
+    <div class="prior-session-panel">
+      <h3>Prior session ({{ prior_session.session_id }})</h3>
+      <p class="text-muted small">
+        Loaded from sessions list. Started {{ prior_session.started }};
+        last updated {{ prior_session.updated }}. New messages below append
+        to advisor history, not the original session — to continue THIS
+        session's chat, run <code>urika --resume {{ prior_session.session_id }}</code>
+        in the terminal.
+      </p>
+      <div class="prior-session-messages">
+        {% for msg in prior_session_messages %}
+          <div class="message message--{{ msg.role }}">
+            <div class="message-role">{{ msg.role }}</div>
+            <div class="message-content">{{ msg.content }}</div>
+          </div>
+        {% endfor %}
+        {% if not prior_session_messages %}
+          <p class="text-muted">(Session has no messages.)</p>
+        {% endif %}
+      </div>
+    </div>
+    <hr/>
+  {% else %}
+    <div class="prior-session-panel prior-session-panel--missing">
+      <p class="text-muted">
+        Session <code>{{ session_id }}</code> not found —
+        it may have been deleted or auto-pruned.
+        <a href="/projects/{{ project.name }}/sessions">Browse sessions</a>.
+      </p>
+    </div>
+    <hr/>
+  {% endif %}
+{% endif %}
 <div id="advisor-transcript" class="advisor-transcript">
   {% if history %}
     {% for entry in history %}

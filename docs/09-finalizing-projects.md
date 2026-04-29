@@ -199,7 +199,14 @@ urika:my-project> /finalize --draft focus on preliminary findings
 | `projectbook/draft/report.md` | Progress report (markdown) |
 | `projectbook/draft/presentation/` | Progress presentation (reveal.js) |
 
+## From the dashboard
+
+The project home page has a **Finalize project** button that runs the same sequence as `urika finalize`. It opens a small modal with the same flags exposed by the CLI — additional instructions, the `--draft` toggle, and per-stage skips — then posts to the finalize endpoint and HTMX-redirects you to `/projects/<n>/finalize/log`.
+
+The log page streams the running finalize subprocess via Server-Sent Events, with each agent's output appearing as it's produced (Finalizer → Report → Presentation → README updater). When the subprocess completes, the page emits a `status: completed` SSE event and links you straight to the rendered final report and presentation viewers.
+
+See [Dashboard](18-dashboard.md) for the modal options and SSE log walkthrough.
 
 ---
 
-**Next:** [Agent System](09-agent-system.md)
+**Next:** [Knowledge Pipeline](10-knowledge-pipeline.md)

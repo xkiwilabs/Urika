@@ -46,10 +46,25 @@ This means every method is tailored to your specific dataset and research questi
 
 ## Tools
 
-Tools are built-in analysis building blocks that agents can use when constructing methods. Urika ships with **18 built-in tools**:
+Tools are reusable analysis building blocks that agents call when constructing methods. **The tool catalogue is open-ended** — Urika does not assume the shipped library covers your project. The system is designed around two complementary mechanisms:
+
+1. **A starting library of 24 built-in tools** — common-case primitives for tabular data analysis (regression, classification, statistical tests, exploration, preprocessing). These exist so common projects can start producing results without a separate tool-building round.
+2. **Agent-created project tools** — whenever an agent needs a capability the built-in library doesn't cover, the **tool builder** agent writes a new Python tool, registers it in the project's `tools/` directory, and from that point on it's available alongside the built-ins for the rest of the project.
+
+This is a core part of how Urika works. **Don't think of the 24 built-ins as the full set of capabilities.** Think of them as the seed library; the tool builder grows it as the project demands. A project working with EEG epochs, image patches, time-warped trajectories, or any domain-specific feature extraction will end up with project-specific tools that the agent created on demand.
+
+There are two ways tool building gets triggered:
+
+- **Automatic.** The planning agent identifies a need that built-in tools don't cover (e.g. "ICC reliability analysis", "compute spectral power per channel"), flags `needs_tool: true`, and the tool builder is invoked before the next experiment.
+- **Explicit, via `urika build-tool`.** When you know up front what tool you'll need, ask for it directly: `urika build-tool create an ICC tool using pingouin` or `urika build-tool install mne and add an EEG epoch extractor`. This is also exposed as `/build-tool` in the TUI and the **Build tool** modal in the dashboard.
+
+Project-specific tools live alongside the built-ins in the registry — agents see one unified tool list when picking what to use.
+
+The 24 built-in tools, grouped by category:
 
 | Tool | Category | Description |
 |------|----------|-------------|
+| `cluster_analysis` | exploration | KMeans / DBSCAN / HDBSCAN clustering |
 | `correlation_analysis` | exploration | Correlation matrices and pairwise analysis |
 | `cross_validation` | preprocessing | K-fold cross-validation |
 | `data_profiler` | exploration | Dataset profiling and summary statistics |
@@ -58,30 +73,35 @@ Tools are built-in analysis building blocks that agents can use when constructin
 | `gradient_boosting` | regression | Gradient boosting regression |
 | `group_split` | preprocessing | Split data by group membership |
 | `hypothesis_tests` | statistical_test | Statistical hypothesis testing |
+| `linear_mixed_model` | regression | Mixed-effects regression via statsmodels |
 | `linear_regression` | regression | Linear regression fitting and diagnostics |
 | `logistic_regression` | classification | Logistic regression for classification |
 | `mann_whitney_u` | statistical_test | Mann-Whitney U non-parametric test |
 | `one_way_anova` | statistical_test | One-way ANOVA |
 | `outlier_detection` | exploration | Detect and flag outliers |
 | `paired_t_test` | statistical_test | Paired t-test |
+| `pca` | dimensionality_reduction | Principal Component Analysis |
+| `polynomial_regression` | regression | Polynomial features + linear regression |
 | `random_forest` | regression | Random forest regression |
 | `random_forest_classifier` | classification | Random forest classification |
+| `regularized_regression` | regression | Ridge / Lasso / ElasticNet regression |
+| `time_series_decomposition` | time_series | STL / additive / multiplicative decomposition |
 | `train_val_test_split` | preprocessing | Train/validation/test data splitting |
 | `visualization` | exploration | Chart and plot generation |
 
-The **tool builder** agent can also create project-specific tools at runtime when the planning agent identifies a capability gap.
+The **tool builder** agent can also create project-specific tools at runtime when the planning agent identifies a capability gap (see above). See [Built-in Tools](12-built-in-tools.md) for a full catalogue and the project-tool building workflow.
 
 List available tools with:
 
 ```bash
 urika tools
 urika tools --category statistics
-urika tools --project my-study    # includes project-specific tools
+urika tools --project my-study    # includes project-specific tools created by the tool builder
 ```
 
 ## Agents
 
-Urika uses eleven specialized agent roles, each with a distinct responsibility. All agents run on the Claude Agent SDK.
+Urika uses twelve specialized agent roles, each with a distinct responsibility. All agents run on the Claude Agent SDK.
 
 ### Project Builder
 
@@ -118,6 +138,18 @@ Writes narrative reports and summaries. Generates experiment-level narratives an
 ### Presentation Agent
 
 Creates reveal.js slide decks from experiment results. Generates HTML presentations that can be opened in a browser.
+
+### Data Agent
+
+The only agent that reads raw data in hybrid privacy mode. Runs on a private endpoint and outputs sanitized summaries -- aggregated statistics, feature names, distributions, and processed DataFrames -- so other agents never see raw data.
+
+### Finalizer
+
+Consolidates all research into polished, standalone deliverables. Selects the best methods, writes each as a standalone Python script, and produces a structured findings summary, methods README, `requirements.txt`, and cross-platform reproduce scripts.
+
+### Project Summarizer
+
+Read-only agent that produces a comprehensive project status summary by reading project files, the projectbook, and experiment records. Exposed via the `urika summarize` command.
 
 ## The orchestrator loop
 
@@ -217,4 +249,4 @@ Supported formats: PDF, plain text, Markdown, HTML.
 
 ---
 
-**Next:** [Creating Projects](03-creating-projects.md)
+**Next:** [Creating Projects](04-creating-projects.md)

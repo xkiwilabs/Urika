@@ -23,7 +23,7 @@ class _UrikaSuggester(Suggester):
       sorted by most recently used, experiment IDs).
     """
 
-    _PROJECT_ARG_COMMANDS = frozenset({"project", "resume", "resume-session"})
+    _PROJECT_ARG_COMMANDS = frozenset({"project", "resume"})
     _EXPERIMENT_ARG_COMMANDS = frozenset(
         {"present", "logs", "evaluate", "report", "plan", "results"}
     )

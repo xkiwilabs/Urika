@@ -1,0 +1,91 @@
+{% extends "_base.html" %}
+
+{% block title %}Sessions · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Sessions{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Sessions</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .session-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+  }
+  .session-row .session-main { flex: 1 1 auto; min-width: 0; }
+  .session-row .session-meta {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding-right: 0.5rem;
+  }
+  .session-preview {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-preview--empty { font-weight: normal; font-style: italic; }
+  .session-detail { font-size: 0.9em; }
+</style>
+
+  {% if sessions %}
+    <ul class="list" id="sessions-list">
+      {% for session in sessions %}
+        <li class="list-item session-row" data-session-id="{{ session.session_id }}">
+          <a
+            href="/projects/{{ project.name }}/advisor?session_id={{ session.session_id }}"
+            class="list-item-link session-main"
+          >
+            <div class="list-item-main">
+              {% if session.preview %}
+                <div class="list-item-title session-preview">{{ session.preview[:80] }}</div>
+              {% else %}
+                <div class="list-item-title session-preview session-preview--empty">(no preview)</div>
+              {% endif %}
+              <div class="list-item-detail text-muted session-detail">
+                {{ session.turn_count }} turn{{ '' if session.turn_count == 1 else 's' }}
+                · {{ session.updated }}
+              </div>
+            </div>
+          </a>
+          <div class="session-meta">
+            <a class="btn btn--small btn--primary"
+               href="/projects/{{ project.name }}/advisor?session_id={{ session.session_id }}">
+              Resume
+            </a>
+            <button
+              type="button"
+              class="btn btn--small btn--danger"
+              hx-delete="/api/projects/{{ project.name }}/sessions/{{ session.session_id }}"
+              hx-confirm="Delete this session?"
+              hx-target="closest .session-row"
+              hx-swap="outerHTML swap:300ms"
+            >Delete</button>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <p>
+        No sessions yet. Sessions are saved automatically when you chat with the
+        orchestrator from the terminal — launch <code>urika</code> and start typing,
+        or use slash commands like <code>/run</code>, <code>/advisor</code>, or
+        <code>/inspect</code>. Each conversation persists here so you can resume
+        it later via the <strong>Resume</strong> button below or
+        <code>/resume-session</code> in the terminal.
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}

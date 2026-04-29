@@ -50,6 +50,15 @@ def save_session(project_dir: Path, session: OrchestratorSession) -> None:
     session.updated = _now_iso()
     path = _sessions_dir(project_dir) / f"{session.session_id}.json"
     path.write_text(json.dumps(session.to_dict(), indent=2), encoding="utf-8")
+    # Cap session retention at 20 per project. The helper sorts by filename
+    # (which is timestamp-prefixed via _timestamp_id), so the file we just
+    # wrote is the freshest and won't be pruned. Failure here must not
+    # block the save — a partial filesystem error shouldn't lose the
+    # session we just persisted.
+    try:
+        prune_old_sessions(project_dir, keep=20)
+    except Exception:
+        pass
 
 
 def load_session(project_dir: Path, session_id: str) -> OrchestratorSession | None:

@@ -15,6 +15,25 @@ Urika currently uses the **Claude Agent SDK** as its runtime backend. This suppo
 
 Future releases will add adapters for OpenAI Agents SDK, Google ADK, and PI.
 
+> **Important: Urika requires an Anthropic API key for cloud (open) use.**
+>
+> Anthropic's [Consumer Terms (§3.7)](https://www.anthropic.com/legal/consumer-terms)
+> and the April 2026 Agent SDK clarification prohibit using a Claude
+> Pro/Max subscription to authenticate the Claude Agent SDK that Urika
+> depends on. Set `ANTHROPIC_API_KEY` (e.g. via `urika config api-key`)
+> for any mode that talks to Anthropic's API. Only **private mode**
+> (local models or an institutional endpoint) can run without an API
+> key. See [Provider compliance](20-security.md#provider-compliance) for
+> the full rationale.
+
+**Per-mode requirements at a glance:**
+
+| Mode | Needs `ANTHROPIC_API_KEY`? |
+|---|---|
+| Open (default — all agents on Claude API) | Yes |
+| Hybrid (cloud agents + private data agent) | Yes (cloud-side agents call the Claude API) |
+| Private (all agents local / institutional) | No (provided no agent uses the `open` endpoint) |
+
 ### Per-project model configuration
 
 Each project's `urika.toml` can include a `[runtime]` section to set the default model and per-agent overrides:
@@ -457,4 +476,4 @@ Urika is provided "as is" without warranty. The authors do not guarantee that hy
 
 ---
 
-**Next:** [Configuration](13-configuration.md)
+**Next:** [Configuration](14-configuration.md)

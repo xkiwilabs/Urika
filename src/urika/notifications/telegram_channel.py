@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from urika.orchestrator.pause import PauseController
 
 from urika.notifications.base import NotificationChannel
+from urika.notifications.events import EVENT_METADATA
+from urika.notifications.formatting import format_event_emoji, format_event_label
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +29,6 @@ _ACTIVE_RUN_EVENTS = frozenset(
         "experiment_started",
     }
 )
-
-# Emoji map for high-priority event types.
-_EMOJI: dict[str, str] = {
-    "criteria_met": "\u2705",  # ✅
-    "experiment_failed": "\u274c",  # ❌
-    "experiment_completed": "\U0001f3c1",  # 🏁
-    "meta_completed": "\U0001f3c1",  # 🏁
-}
 
 
 class TelegramChannel(NotificationChannel):
@@ -58,26 +52,49 @@ class TelegramChannel(NotificationChannel):
     # ------------------------------------------------------------------
 
     def send(self, event: NotificationEvent) -> None:  # noqa: D401
-        """Send *event* as a Telegram message. Never raises."""
+        """Send *event* as a Telegram message.
+
+        Runs the async ``send_message`` call in a fresh OS thread so callers
+        already inside an asyncio event loop (e.g. FastAPI handlers) don't
+        conflict with the new loop we create. Errors are logged and swallowed
+        for the bus dispatch path; the bus itself wraps ``send`` in a try/except
+        so callers like the dashboard test-send still see real failures.
+        """
         try:
             import telegram
 
-            bot = telegram.Bot(token=self._token)
             text = self._format_message(event)
             reply_markup = self._build_keyboard(event)
+            token = self._token
+            chat_id = self._chat_id
 
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    bot.send_message(
-                        chat_id=self._chat_id,
-                        text=text,
-                        parse_mode="HTML",
-                        reply_markup=reply_markup,
-                    )
-                )
-            finally:
-                loop.close()
+            error: list[BaseException | None] = [None]
+
+            def _do_send() -> None:
+                try:
+                    loop = asyncio.new_event_loop()
+                    try:
+                        bot = telegram.Bot(token=token)
+                        loop.run_until_complete(
+                            bot.send_message(
+                                chat_id=chat_id,
+                                text=text,
+                                parse_mode="HTML",
+                                reply_markup=reply_markup,
+                            )
+                        )
+                    finally:
+                        loop.close()
+                except BaseException as exc:  # noqa: BLE001
+                    error[0] = exc
+
+            t = threading.Thread(target=_do_send, daemon=True)
+            t.start()
+            t.join(timeout=15)
+            if t.is_alive():
+                raise TimeoutError("Telegram send timed out after 15s")
+            if error[0] is not None:
+                raise error[0]
         except Exception as exc:
             logger.warning("Telegram send failed: %s", exc)
 
@@ -109,14 +126,59 @@ class TelegramChannel(NotificationChannel):
             self._listener_thread.join(timeout=5.0)
             self._listener_thread = None
 
+    def health_check(self) -> tuple[bool, str]:
+        """Probe the bot token via Telegram's ``getMe`` endpoint.
+
+        Runs the async probe in a fresh OS thread so a caller already inside
+        an asyncio event loop (e.g. a FastAPI handler) doesn't conflict with
+        the new loop we create. Returns ``(True, "")`` on success,
+        ``(False, error_message)`` on InvalidToken / TimedOut / NetworkError
+        / any other exception.
+        """
+        if not self._token:
+            return (False, "no bot token configured")
+
+        result: list[tuple[bool, str]] = [(False, "health check did not run")]
+
+        def _probe() -> None:
+            try:
+                from telegram import Bot
+
+                loop = asyncio.new_event_loop()
+                try:
+                    bot = Bot(token=self._token)
+                    loop.run_until_complete(bot.get_me())
+                    result[0] = (True, "")
+                finally:
+                    loop.close()
+            except Exception as exc:  # noqa: BLE001
+                result[0] = (False, str(exc))
+
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=10)
+        if t.is_alive():
+            return (False, "health check timed out after 10s")
+        return result[0]
+
     # ------------------------------------------------------------------
     # Message formatting
     # ------------------------------------------------------------------
 
     @staticmethod
     def _format_message(event: NotificationEvent) -> str:
-        """Build an HTML-formatted Telegram message from *event*."""
-        if event.priority == "high":
+        """Build an HTML-formatted Telegram message from *event*.
+
+        Priority routing is driven by ``EVENT_METADATA`` for canonical
+        event_types and falls back to ``event.priority`` for anything not
+        registered there. An explicit high ``event.priority`` from the caller
+        promotes the routing — callers can bump a notification up but the
+        canonical floor still applies.
+        """
+        meta = EVENT_METADATA.get(event.event_type)
+        canonical_priority = meta.priority if meta else event.priority
+        priority = "high" if event.priority == "high" else canonical_priority
+        if priority == "high":
             return _format_high(event)
         return _format_default(event)
 
@@ -362,9 +424,10 @@ def _esc(text: str) -> str:
 
 def _format_high(event: NotificationEvent) -> str:
     """Rich format for high-priority events."""
-    emoji = _EMOJI.get(event.event_type, "\U0001f514")  # 🔔 default
+    emoji = format_event_emoji(event)
+    label = format_event_label(event)
     lines = [
-        f"<b>{emoji} {_esc(event.event_type.replace('_', ' ').title())}</b>",
+        f"<b>{emoji} {_esc(label)}</b>",
         f"<b>Project:</b> {_esc(event.project_name)}",
     ]
     if event.experiment_id:

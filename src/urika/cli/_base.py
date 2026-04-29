@@ -52,6 +52,37 @@ def cli(ctx, classic: bool) -> None:
 
     load_secrets()
 
+    # One-time compliance reminder: Anthropic Consumer Terms §3.7 + the
+    # April 2026 Agent SDK clarification prohibit using a Pro/Max
+    # subscription to authenticate the Claude Agent SDK that Urika
+    # depends on. We don't block — users may be running in private mode
+    # only or have already acknowledged the requirement — but we surface
+    # the missing key on every invocation until ack'd.
+    import os as _os
+
+    if not _os.environ.get("ANTHROPIC_API_KEY") and not _os.environ.get(
+        "URIKA_ACK_API_KEY_REQUIRED"
+    ):
+        import sys as _sys
+
+        _sys.stderr.write(
+            "\n"
+            "  \033[33m⚠ ANTHROPIC_API_KEY not set\033[0m\n"
+            "\n"
+            "  Urika requires an Anthropic API key. Per Anthropic's Consumer\n"
+            "  Terms (§3.7) and the April 2026 Agent SDK clarification, a\n"
+            "  Claude Pro/Max subscription cannot be used to authenticate the\n"
+            "  Claude Agent SDK that Urika depends on.\n"
+            "\n"
+            "  Get a key:  https://console.anthropic.com (Settings → API Keys)\n"
+            "  Save it:    urika config api-key   (interactive)\n"
+            "              # or: export ANTHROPIC_API_KEY=sk-ant-...\n"
+            "\n"
+            "  To silence this warning permanently after acknowledging:\n"
+            "    export URIKA_ACK_API_KEY_REQUIRED=1\n"
+            "\n"
+        )
+
     # Check for updates on every CLI invocation (cached, non-blocking)
     try:
         from urika.core.updates import (

@@ -108,7 +108,7 @@ The TUI maintains a rolling conversation history between you and the orchestrato
 
 Conversation history is cleared when you load a different project.
 
-For a detailed guide on advisor conversations, the suggestion-to-run flow, and how to use instructions to steer agents, see [Advisor Chat and Instructions](06-advisor-and-instructions.md).
+For a detailed guide on advisor conversations, the suggestion-to-run flow, and how to use instructions to steer agents, see [Advisor Chat and Instructions](07-advisor-and-instructions.md).
 
 ## Keyboard Shortcuts
 
@@ -137,6 +137,8 @@ Available at all times, regardless of whether a project is loaded.
 | `/quit` | Save session usage data and exit. |
 | `/tools` | List all available analysis tools. If a project is loaded, also includes project-specific tools. |
 | `/usage` | Show usage stats. With a loaded project: current session and historical totals. Without: usage across all projects. |
+| `/copy [N]` | Copy the last `N` output-panel lines to the clipboard via `pyperclip` (default `N = 40`). On headless Linux without `xclip`/`xsel`, prints the text inline so you can copy it manually. |
+| `/notifications [show\|test\|disable]` | Open the notification setup wizard from inside the TUI (same flow as `urika notifications`). Sub-args mirror the CLI: `show`, `test`, or `disable`. With a project loaded, runs project-scoped; otherwise global. |
 
 ### Project Commands
 
@@ -167,7 +169,10 @@ These require a project to be loaded first. Running them without a project shows
 | `/config show` | Show current configuration (project or global). |
 | `/config global` | Configure global defaults (used for new projects). |
 | `/config global show` | Show global defaults. |
-| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](19-dashboard.md) for pages, run launcher, and auth. |
+| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](18-dashboard.md) for pages, run launcher, and auth. |
+| `/pause` | Request a pause of the running experiment. The orchestrator pauses cleanly after the current subagent finishes its turn. Writes `<project>/.urika/pause_requested` (contents: `pause`). Resume with `/run` or `/resume`. |
+| `/stop` | Request an immediate stop of the running agent or experiment. Writes `<project>/.urika/pause_requested` (contents: `stop`); the orchestrator's pause controller picks it up at the next loop boundary. Use this when you want the run to end now rather than continue to the next experiment. |
+| `/delete-experiment <exp_id>` | Move an experiment to `<project>/trash/`. Mirrors `urika experiment delete`. Prompts for confirmation. Refuses if the experiment has a `.lock` file (active run). |
 
 
 ## Run Settings
@@ -195,6 +200,76 @@ Choosing **Custom settings** lets you configure:
   - **Unlimited** -- run until criteria are met or the advisor says done
 - **Instructions** -- custom guidance for the experiment
 - **Re-evaluate criteria if met** -- advisor reviews criteria when met, may raise the bar
+
+
+## Session Memory
+
+Urika persists each orchestrator chat session to
+``<project>/.urika/sessions/<id>.json`` so you can pick up a conversation
+later. The TUI/REPL is the canonical write surface; the dashboard
+provides read access via the **Sessions** sidebar tab.
+
+### How sessions are created
+
+Every chat with the orchestrator (whether free-text or a slash command
+that invokes the orchestrator) is part of a session. New sessions start
+when:
+
+- You launch a fresh `urika`.
+- You explicitly type `/new-session` to start a fresh session without
+  exiting the TUI. This is useful when the previous conversation has
+  strayed off-topic and you want a clean slate without losing the
+  previous session's transcript (it remains on disk and can be resumed).
+
+### Resume on launch
+
+When you launch `urika` and switch into a project that has a recent
+session, the REPL prints a one-line hint:
+
+```
+Project myproject loaded.
+  Previous session from 2 hours ago: "Why are tree counts so skewed…"
+  Type /resume-session to continue.
+```
+
+Inside the running TUI, type:
+
+- `/resume-session` — pick from a list of recent sessions for the
+  current project (1-indexed, newest first).
+- `/resume-session <number>` — load the session at that position from
+  the list.
+
+Or browse and resume from the dashboard's **Sessions** tab.
+
+### Listing sessions
+
+- TUI/REPL: `/resume` lists recent sessions for the current project,
+  newest first.
+- Dashboard: navigate to **Sessions** in the project sidebar.
+
+### Resume on the dashboard
+
+The dashboard cannot run an interactive REPL. Instead, the **Resume**
+button on a session row links to
+``/projects/<n>/advisor?session_id=<id>``. The advisor page renders the
+prior session's messages as a read-only "Prior session" panel above the
+advisor transcript, so you can see what was discussed before and ask a
+follow-up via the advisor composer. **New advisor exchanges append to
+advisor history, not back to the original orchestrator session** — to
+continue writing into the original session, launch `urika` in the
+terminal and run ``/resume-session`` (or ``/resume-session <number>``
+for a specific one; 1-indexed by recency).
+
+### Session retention
+
+Sessions auto-prune to the most recent **20 per project** when
+``save_session`` is called. Older sessions are deleted from disk.
+
+### Deleting a session
+
+- Dashboard: **Delete** button on each session row.
+- CLI: not yet exposed (planned). For now, manually delete
+  ``<project>/.urika/sessions/<id>.json``.
 
 
 ## Session Usage Tracking

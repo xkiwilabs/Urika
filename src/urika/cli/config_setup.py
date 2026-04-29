@@ -404,7 +404,10 @@ def setup_command(json_output: bool) -> None:
         print_success("  ANTHROPIC_API_KEY is set")
     else:
         print_warning(
-            "  ANTHROPIC_API_KEY not set — needed unless using Claude Max/Pro"
+            "  ANTHROPIC_API_KEY not set — required (Consumer Terms §3.7)."
+        )
+        print_warning(
+            "  Run `urika config api-key` to set it interactively."
         )
 
     click.echo()

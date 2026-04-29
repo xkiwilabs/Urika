@@ -7,8 +7,8 @@ Urika works with data from any scientific discipline — tabular data (CSV, Exce
 ## Requirements
 
 - **Python 3.11 or later** (3.12 also supported)
-- **Claude Pro or Max account** (recommended), or an Anthropic API key
-- **Claude Code CLI** — required for authentication and as the agent runtime
+- **Anthropic API key** (`ANTHROPIC_API_KEY`) — required (see callout below)
+- **Claude Code CLI** — required as the agent runtime
 
 ### Hardware requirements by use case
 
@@ -26,13 +26,13 @@ Your hardware needs depend on what kind of analysis you plan to do:
 
 **Cloud-only mode (default):** All the heavy computation happens on your machine (Python code the agents write), but the AI reasoning happens via the Claude API. Your CPU and RAM matter for data processing; GPU only matters if agents build neural network models.
 
-**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](12-models-and-privacy.md) for configuration details.
+**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](13-models-and-privacy.md) for configuration details.
 
 **Shared memory systems (Apple Silicon, etc.):** Macs with M-series chips share memory between CPU and GPU. A MacBook Pro with 64 GB unified memory can run models that would require a dedicated GPU on other systems. Ollama handles this automatically.
 
 ## Step 1: Install Claude Code CLI
 
-Urika uses the Claude Agent SDK, which requires the Claude Code CLI for authentication and as the agent runtime. Install it first:
+Urika uses the Claude Agent SDK, which requires the Claude Code CLI as the agent runtime. Install it first:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -40,35 +40,73 @@ npm install -g @anthropic-ai/claude-code
 
 > **Note:** You need Node.js 18+ installed. If you don't have it: `sudo apt install nodejs npm` (Linux) or `brew install node` (macOS).
 
-### Log in to Claude
+### Why is the CLI required if Urika uses an API key?
 
-```bash
-claude login
-```
+The Claude Agent SDK is a thin wrapper that spawns the `claude` CLI as a subprocess and communicates with it over stdin/stdout. The CLI is what actually:
 
-This opens a browser window to authenticate with your Anthropic account. You need at least a **Claude Pro** account ($20/month). **Claude Max** ($100/month or $200/month) is recommended for heavy use as it provides higher rate limits.
+- runs the agent loop (multi-turn reasoning, tool calls, conversation state),
+- executes tools (Read, Write, Edit, Bash, Glob, Grep, …),
+- enforces the permission system (`bypassPermissions`, allowlists),
+- streams structured messages back.
 
-> **Why Pro or Max?** Urika's agents make many API calls during experiments — planning, coding, evaluating, advising. A free account's rate limits are too restrictive for multi-agent workflows. Pro gives you enough headroom for most projects. Max is better if you run multiple experiments or large projects.
+Authentication is just one piece. When you set `ANTHROPIC_API_KEY`, the CLI uses Anthropic's metered API for inference — that's the compliant path Urika requires. When the key is unset, the CLI would fall back to your local subscription OAuth login, which Urika's safety net actively blocks (see [Provider compliance](20-security.md#provider-compliance)).
 
-### Verify login
+In short: **you install the CLI for the agent runtime; you set the API key for the auth.** Skipping the CLI install isn't an option — there's no other way to drive the agent.
+
+### Verify installation
 
 ```bash
 claude --version
 ```
 
-If you see a version number, you're authenticated and ready.
+If you see a version number, the CLI is installed and ready. **Don't** run `claude login` for Urika — Urika reads `ANTHROPIC_API_KEY` directly. `claude login` is only relevant if you also use `claude` interactively as a human (typing into it yourself), which is a separate use case from running Urika.
 
-### Alternative: API key
+## Step 2: Set up your Anthropic API key
 
-If you prefer to use an API key instead of a Pro/Max account:
+> **Important: Urika requires an Anthropic API key.**
+>
+> Anthropic's Consumer Terms (§3.7) and the April 2026 Agent SDK
+> clarification prohibit using a Claude Pro/Max subscription with the
+> Claude Agent SDK, which Urika depends on. To use Urika, you need an
+> API key.
+>
+> 1. Sign in at [console.anthropic.com](https://console.anthropic.com).
+> 2. Settings → API Keys → Create Key (label it e.g. `urika`).
+> 3. Settings → Billing → Spend limits — set a monthly cap (e.g. $20).
+> 4. Save the key into Urika's credential file:
+>
+>    ```bash
+>    urika config api-key   # interactive prompt, saves to ~/.urika/secrets.env
+>    ```
+>
+>    Or set the env var directly: `export ANTHROPIC_API_KEY=sk-ant-...`.
+>
+> If you also have a Claude Pro / Max subscription, you can keep using it
+> for direct interactive work in Claude.ai or `claude` CLI — only the
+> Urika code path requires the API key.
+
+### Verify your API key
+
+Once saved, run a quick check that Urika can authenticate:
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+urika config api-key --test
 ```
 
-Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it across sessions. Note that API key usage is billed per token, which can be more expensive than a Pro/Max subscription for heavy use.
+This sends a minimal request to `api.anthropic.com` using the configured
+key. On success you'll see something like:
 
-## Step 2: Install Urika
+    ✓ API key works.  key authenticated; model=claude-haiku-4-5; reply='ok'
+
+If the key is invalid or revoked you'll get a 401 with a hint to
+regenerate. The test consumes ~13 tokens (~$0.0001).
+
+You can also click **Test API key** on the dashboard's Settings page
+once the dashboard is running.
+
+See [Provider compliance](20-security.md#provider-compliance) for the full rationale and the citation to the Anthropic policy clarification.
+
+## Step 3: Install Urika
 
 **Recommended: install from source.** Urika is under active development with frequent updates — new agents, tools, and improvements land regularly. Installing from source ensures you always have the latest version:
 
@@ -106,7 +144,7 @@ This installs everything you need for statistical analysis, machine learning, vi
 
 | Package | What it provides |
 |---------|-----------------|
-| claude-agent-sdk | Agent runtime (all 11 agent roles) |
+| claude-agent-sdk | Agent runtime (all 12 agent roles) |
 | numpy, pandas | Data manipulation |
 | scipy | Scientific computing, statistical tests |
 | scikit-learn | ML basics: SVM, classification, clustering, regression, cross-validation, PCA, preprocessing, pipelines |
@@ -121,7 +159,7 @@ This installs everything you need for statistical analysis, machine learning, vi
 | slack-sdk | Slack notifications and remote commands |
 | python-telegram-bot | Telegram notifications and remote commands |
 
-## Step 3: Verify installation
+## Step 4: Verify installation
 
 ```bash
 urika setup
@@ -168,18 +206,19 @@ urika build-tool my-project "install lifelines and build a survival analysis too
 
 The tool builder installs the package, creates a reusable tool that wraps it, and registers it so all agents can use it in subsequent experiments. If you have a project venv enabled, packages install into the project's isolated environment rather than the global one.
 
-## Two ways to use Urika
+## Three ways to use Urika
 
-Urika has two interfaces that share the same commands and produce identical results:
+Urika has three first-class interfaces that share the same commands and the same on-disk project state:
 
+- **CLI** — Run `urika <command>` directly from your shell. Every command is fully scriptable with `--json` output for custom tooling. Best for scripting, automation, batch processing, and building custom workflows on top of Urika.
 - **Interactive TUI** — Run `urika` with no arguments. A full-screen Textual terminal interface with an output panel, input bar with tab completion, animated activity bar, and status bar. Type slash commands (`/help`, `/run`, `/project`) or ask questions in plain text — the orchestrator coordinates agents for you. Best for learning the system and exploratory work.
-- **CLI commands** — Run `urika <command>` directly from your shell. Every command is fully scriptable with `--json` output for custom tooling. Best for scripting, automation, batch processing, and building custom workflows on top of Urika.
+- **Dashboard** — Run `urika dashboard [project]` to open a browser-based view of the project. Multi-page FastAPI app with experiment timelines, leaderboards, log streaming, advisor chat, sessions, and settings forms. Best for monitoring long runs, sharing results with collaborators, and editing settings through a UI.
 
 If you're new to Urika, **start with the TUI** — you can discover all commands with tab completion and `/help`, and ask the orchestrator questions in plain text without needing to know any commands at all.
 
 A classic prompt-toolkit REPL is also available via `urika --classic` if you prefer a simpler interface.
 
-See [CLI Reference](15-cli-reference.md) and [Interactive TUI](16-interactive-tui.md) for full details on each interface.
+See [Interfaces Overview](02-interfaces-overview.md) for a task-by-task cheat sheet across all three. Detailed guides: [CLI Reference](16-cli-reference.md), [Interactive TUI](17-interactive-tui.md), [Dashboard](18-dashboard.md).
 
 ## Quickstart
 
@@ -225,7 +264,7 @@ urika dashboard my-study        # browse everything in your browser
 
 Every slash command has a matching CLI command and vice versa.
 
-> **Heads up:** Urika's task agent writes Python code into your project and executes it. `--dry-run` lets you preview the planned pipeline (which agents will run, which directories they can write to) before any code executes. See [Security Model](18-security.md) for the full agent-execution model.
+> **Heads up:** Urika's task agent writes Python code into your project and executes it. `--dry-run` lets you preview the planned pipeline (which agents will run, which directories they can write to) before any code executes. See [Security Model](20-security.md) for the full agent-execution model.
 
 ## Project location
 
@@ -237,10 +276,11 @@ export URIKA_PROJECTS_DIR="/path/to/my/projects"
 
 ---
 
-**Next:** [Core Concepts](02-core-concepts.md)
+**Next:** [Interfaces Overview](02-interfaces-overview.md)
 
 ## Further reading
 
-- [Core Concepts](02-core-concepts.md) -- hierarchy, agents, tools, orchestrator loop
-- [Creating Projects](03-creating-projects.md) -- detailed guide to `urika new`
-- [Running Experiments](05-running-experiments.md) -- orchestrator, turns, auto mode
+- [Interfaces Overview](02-interfaces-overview.md) -- CLI, TUI, dashboard cheat sheet
+- [Core Concepts](03-core-concepts.md) -- hierarchy, agents, tools, orchestrator loop
+- [Creating Projects](04-creating-projects.md) -- detailed guide to `urika new`
+- [Running Experiments](06-running-experiments.md) -- orchestrator, turns, auto mode
