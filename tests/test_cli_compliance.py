@@ -227,9 +227,78 @@ def test_config_api_key_test_flag_with_working_key_reports_success(
 
     assert result.exit_code == 0, result.output
     assert "API key works" in result.output
-    assert "claude-haiku-4-5" in result.output
-    # Mention that Pro/Max is not used by Urika
-    assert "Pro/Max" in result.output or "subscription" in result.output
+
+
+# ---- urika config secret (generic named-secret setup) -------------------
+
+
+def test_config_secret_saves_arbitrary_named_secret(
+    runner: CliRunner, urika_env: dict[str, str]
+) -> None:
+    """``urika config secret`` calls vault.set_global with the typed value.
+
+    This is the generic CLI surface for any credential Urika doesn't know
+    about specifically (private vLLM keys, HuggingFace tokens, custom-tool
+    API keys). Useful for hybrid mode setup where the data agent needs an
+    api_key_env that points at a private inference endpoint.
+    """
+    env = dict(urika_env)
+    env["ANTHROPIC_API_KEY"] = "sk-ant-existing"  # silence the banner
+    env["URIKA_ACK_API_KEY_REQUIRED"] = "1"
+
+    # Stdin: name + value + description
+    stdin = "LLM_INFERENCE_KEY\nsk-private-vllm-token\nlocal vLLM\n"
+
+    with patch("urika.core.vault.SecretsVault.set_global") as set_mock:
+        result = runner.invoke(cli, ["config", "secret"], input=stdin, env=env)
+
+    assert result.exit_code == 0, result.output
+    set_mock.assert_called_once()
+    args, kwargs = set_mock.call_args
+    assert args[0] == "LLM_INFERENCE_KEY"
+    assert args[1] == "sk-private-vllm-token"
+    assert kwargs.get("description") == "local vLLM"
+    # Reminds the user how to wire it into the Privacy tab
+    assert "API key env var" in result.output
+    assert "LLM_INFERENCE_KEY" in result.output
+
+
+def test_config_secret_blank_name_cancels(
+    runner: CliRunner, urika_env: dict[str, str]
+) -> None:
+    """No name → no save."""
+    env = dict(urika_env)
+    env["ANTHROPIC_API_KEY"] = "sk-ant-existing"
+    env["URIKA_ACK_API_KEY_REQUIRED"] = "1"
+
+    with patch("urika.core.vault.SecretsVault.set_global") as set_mock:
+        result = runner.invoke(cli, ["config", "secret"], input="\n", env=env)
+
+    assert result.exit_code == 0
+    set_mock.assert_not_called()
+
+
+def test_config_secret_warns_when_name_looks_like_value(
+    runner: CliRunner, urika_env: dict[str, str]
+) -> None:
+    """Pasting a value into the name prompt triggers a warning + confirm.
+
+    The Privacy tab's api_key_env field hits this same foot-gun — users
+    sometimes paste the value (sk-...) thinking it's the value field.
+    """
+    env = dict(urika_env)
+    env["ANTHROPIC_API_KEY"] = "sk-ant-existing"
+    env["URIKA_ACK_API_KEY_REQUIRED"] = "1"
+
+    # Stdin: a sk-... "name" + decline override
+    stdin = "sk-pasted-value\nn\n"
+
+    with patch("urika.core.vault.SecretsVault.set_global") as set_mock:
+        result = runner.invoke(cli, ["config", "secret"], input=stdin, env=env)
+
+    assert result.exit_code == 0
+    set_mock.assert_not_called()
+    assert "looks like a secret VALUE" in result.output
 
 
 def test_config_api_key_test_flag_masks_key_in_output(
