@@ -528,4 +528,4 @@ This means Urika works across scientific disciplines without shipping heavy doma
 
 ---
 
-**Next:** [Knowledge Pipeline](11-knowledge-pipeline.md)
+**Next:** [Models and Privacy](13-models-and-privacy.md)

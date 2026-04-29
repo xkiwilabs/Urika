@@ -2,7 +2,7 @@
 
 Complete reference for all Urika CLI commands. Run `urika --help` for a summary, or `urika <command> --help` for any individual command.
 
-Running `urika` with no subcommand launches the interactive TUI (see [Interactive TUI](16-interactive-tui.md)). Use `urika --classic` for the classic prompt-toolkit REPL.
+Running `urika` with no subcommand launches the interactive TUI (see [Interactive TUI](17-interactive-tui.md)). Use `urika --classic` for the classic prompt-toolkit REPL.
 
 
 ## Scriptable by Design
@@ -400,7 +400,7 @@ Open a browser-based read-only dashboard for a project. Displays experiments, re
 | Option | Description |
 |--------|-------------|
 | `--port PORT` | Server port (default: a random free port) |
-| `--auth-token TOKEN` | Require this bearer token on all requests (`Authorization: Bearer <token>`). `/healthz` and `/static` are exempt. See [Dashboard](19-dashboard.md) for the full auth flow. |
+| `--auth-token TOKEN` | Require this bearer token on all requests (`Authorization: Bearer <token>`). `/healthz` and `/static` are exempt. See [Dashboard](18-dashboard.md) for the full auth flow. |
 
 The dashboard shows:
 - **Sidebar** — Curated project tree: experiments (with labbook, artifacts, presentations), projectbook, methods, criteria
@@ -474,7 +474,7 @@ urika report [PROJECT] [--experiment ID]
 
 When no experiment is specified, you are prompted to choose: a specific experiment, all experiments, or project-level reports.
 
-See [Viewing Results](07-viewing-results.md) for details on report types.
+See [Viewing Results](08-viewing-results.md) for details on report types.
 
 ---
 
@@ -540,7 +540,7 @@ urika advisor [PROJECT] [TEXT]
 urika advisor my-project "What methods should I try next?"
 ```
 
-After the advisor responds with experiment suggestions, you are offered the option to run them immediately. See [Advisor Chat and Instructions](06-advisor-and-instructions.md) for the full guide on advisor conversations, the suggestion-to-run flow, and how to steer agents with instructions.
+After the advisor responds with experiment suggestions, you are offered the option to run them immediately. See [Advisor Chat and Instructions](07-advisor-and-instructions.md) for the full guide on advisor conversations, the suggestion-to-run flow, and how to steer agents with instructions.
 
 ---
 
@@ -608,7 +608,7 @@ urika finalize my-project --draft
 urika finalize my-project --draft --audience novice
 ```
 
-See [Finalizing Projects](08-finalizing-projects.md) for details on what is produced, including draft mode.
+See [Finalizing Projects](09-finalizing-projects.md) for details on what is produced, including draft mode.
 
 ---
 
@@ -807,7 +807,7 @@ urika config my-project          # reconfigure a project
 urika config my-project --show   # show project settings
 ```
 
-For per-agent model overrides beyond what the interactive setup provides, edit `urika.toml` directly — see [Configuration](13-configuration.md).
+For per-agent model overrides beyond what the interactive setup provides, edit `urika.toml` directly — see [Configuration](14-configuration.md).
 
 
 ### `urika notifications`
@@ -842,7 +842,7 @@ urika notifications --project my-study       # per-project channel allow-list
 urika notifications --project my-study --disable
 ```
 
-See [Notifications](17-notifications.md) for the full feature guide, including event types, priority levels, and Slack interactive buttons.
+See [Notifications](19-notifications.md) for the full feature guide, including event types, priority levels, and Slack interactive buttons.
 
 
 ## System
@@ -932,7 +932,7 @@ urika tui                 # launch the TUI (no project loaded)
 urika tui my-study        # launch and auto-load my-study
 ```
 
-The TUI binary is searched in the following order: the `URIKA_TUI_BIN` environment variable, the system `PATH` (`urika-tui`), the local dev build (`packages/urika-tui/dist/urika-tui`), or run via `bun` from `packages/urika-tui/src/index.ts` if available. See [Interactive TUI](16-interactive-tui.md) for usage.
+The TUI binary is searched in the following order: the `URIKA_TUI_BIN` environment variable, the system `PATH` (`urika-tui`), the local dev build (`packages/urika-tui/dist/urika-tui`), or run via `bun` from `packages/urika-tui/src/index.ts` if available. See [Interactive TUI](17-interactive-tui.md) for usage.
 
 ---
 
@@ -961,4 +961,4 @@ urika --version
 
 ---
 
-**Next:** [Interactive TUI](16-interactive-tui.md)
+**Next:** [Interactive TUI](17-interactive-tui.md)

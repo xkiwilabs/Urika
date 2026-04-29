@@ -66,7 +66,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/data/` — Data loading and profiling: multi-format loader, data models, profiler, pluggable readers (CSV, with registry for extensions)
 - `src/urika/knowledge/` — Knowledge pipeline: extractors (PDF, text, URL), KnowledgeStore, keyword search
 - `src/urika/templates/presentation/` — Bundled reveal.js + CSS for slide decks
-- `src/urika/dashboard/` — Browser-based read-only project dashboard with curated tree, markdown/image rendering, light/dark mode
+- `src/urika/dashboard/` — Browser-based dashboard (FastAPI + Jinja + HTMX + Alpine), peer to CLI and TUI: multi-page project views (home, experiments, methods, knowledge, advisor, sessions, data, usage, settings), New Project / New Experiment modals, live SSE log streaming, settings forms with auth, light/dark theme
 
 ## Project Status
 

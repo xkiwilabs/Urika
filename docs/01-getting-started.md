@@ -26,7 +26,7 @@ Your hardware needs depend on what kind of analysis you plan to do:
 
 **Cloud-only mode (default):** All the heavy computation happens on your machine (Python code the agents write), but the AI reasoning happens via the Claude API. Your CPU and RAM matter for data processing; GPU only matters if agents build neural network models.
 
-**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](12-models-and-privacy.md) for configuration details.
+**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](13-models-and-privacy.md) for configuration details.
 
 **Shared memory systems (Apple Silicon, etc.):** Macs with M-series chips share memory between CPU and GPU. A MacBook Pro with 64 GB unified memory can run models that would require a dedicated GPU on other systems. Ollama handles this automatically.
 
@@ -168,18 +168,19 @@ urika build-tool my-project "install lifelines and build a survival analysis too
 
 The tool builder installs the package, creates a reusable tool that wraps it, and registers it so all agents can use it in subsequent experiments. If you have a project venv enabled, packages install into the project's isolated environment rather than the global one.
 
-## Two ways to use Urika
+## Three ways to use Urika
 
-Urika has two interfaces that share the same commands and produce identical results:
+Urika has three first-class interfaces that share the same commands and the same on-disk project state:
 
+- **CLI** — Run `urika <command>` directly from your shell. Every command is fully scriptable with `--json` output for custom tooling. Best for scripting, automation, batch processing, and building custom workflows on top of Urika.
 - **Interactive TUI** — Run `urika` with no arguments. A full-screen Textual terminal interface with an output panel, input bar with tab completion, animated activity bar, and status bar. Type slash commands (`/help`, `/run`, `/project`) or ask questions in plain text — the orchestrator coordinates agents for you. Best for learning the system and exploratory work.
-- **CLI commands** — Run `urika <command>` directly from your shell. Every command is fully scriptable with `--json` output for custom tooling. Best for scripting, automation, batch processing, and building custom workflows on top of Urika.
+- **Dashboard** — Run `urika dashboard [project]` to open a browser-based view of the project. Multi-page FastAPI app with experiment timelines, leaderboards, log streaming, advisor chat, sessions, and settings forms. Best for monitoring long runs, sharing results with collaborators, and editing settings through a UI.
 
 If you're new to Urika, **start with the TUI** — you can discover all commands with tab completion and `/help`, and ask the orchestrator questions in plain text without needing to know any commands at all.
 
 A classic prompt-toolkit REPL is also available via `urika --classic` if you prefer a simpler interface.
 
-See [CLI Reference](15-cli-reference.md) and [Interactive TUI](16-interactive-tui.md) for full details on each interface.
+See [Interfaces Overview](02-interfaces-overview.md) for a task-by-task cheat sheet across all three. Detailed guides: [CLI Reference](16-cli-reference.md), [Interactive TUI](17-interactive-tui.md), [Dashboard](18-dashboard.md).
 
 ## Quickstart
 
@@ -225,7 +226,7 @@ urika dashboard my-study        # browse everything in your browser
 
 Every slash command has a matching CLI command and vice versa.
 
-> **Heads up:** Urika's task agent writes Python code into your project and executes it. `--dry-run` lets you preview the planned pipeline (which agents will run, which directories they can write to) before any code executes. See [Security Model](18-security.md) for the full agent-execution model.
+> **Heads up:** Urika's task agent writes Python code into your project and executes it. `--dry-run` lets you preview the planned pipeline (which agents will run, which directories they can write to) before any code executes. See [Security Model](20-security.md) for the full agent-execution model.
 
 ## Project location
 
@@ -237,10 +238,11 @@ export URIKA_PROJECTS_DIR="/path/to/my/projects"
 
 ---
 
-**Next:** [Core Concepts](02-core-concepts.md)
+**Next:** [Interfaces Overview](02-interfaces-overview.md)
 
 ## Further reading
 
-- [Core Concepts](02-core-concepts.md) -- hierarchy, agents, tools, orchestrator loop
-- [Creating Projects](03-creating-projects.md) -- detailed guide to `urika new`
-- [Running Experiments](05-running-experiments.md) -- orchestrator, turns, auto mode
+- [Interfaces Overview](02-interfaces-overview.md) -- CLI, TUI, dashboard cheat sheet
+- [Core Concepts](03-core-concepts.md) -- hierarchy, agents, tools, orchestrator loop
+- [Creating Projects](04-creating-projects.md) -- detailed guide to `urika new`
+- [Running Experiments](06-running-experiments.md) -- orchestrator, turns, auto mode

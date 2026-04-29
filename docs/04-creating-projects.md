@@ -272,6 +272,14 @@ How would you like to proceed?
 - **Option 4** lets you describe a custom experiment instead of using the plan.
 - **Option 5** exits — you can run later with `urika run`.
 
+## From the dashboard
+
+The same builder flow is available as a form. Open `urika dashboard` (no project argument), which lands on `/projects` — the registered-projects list. The **+ New project** button in the top-right opens a modal with the same questions the CLI asks: project name, dataset path (file picker plus free-text fallback), research question, investigation mode, audience, and a "ingest knowledge from this directory" checkbox.
+
+Submitting the modal posts to `POST /api/projects`, which runs `urika new --json --non-interactive` as a subprocess and, on success, redirects the browser to the new project's home page. Validation errors (missing data file, name collision) come back as inline messages without leaving the modal.
+
+Use the dashboard route when you'd rather fill out a form than answer interactive prompts, or when onboarding a collaborator who doesn't want to touch the CLI. See [Dashboard](18-dashboard.md) for the full modal walkthrough.
+
 ---
 
-**Next:** [Prompts and Context](04-prompts-and-context.md)
+**Next:** [Prompts and Context](05-prompts-and-context.md)

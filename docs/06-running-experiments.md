@@ -41,7 +41,7 @@ Both paths depend on what you provide during `urika new`:
 
 For the guided path, you can correct course between experiments. For the autonomous path, the agents must make good decisions on their own — **the quality of your initial setup directly determines success**. A detailed description with clear aims, proper criteria, and relevant papers ingested into the knowledge base will produce far better results than a vague one-liner.
 
-See [Prompts and Context](04-prompts-and-context.md) for detailed guidance on writing effective descriptions and instructions. See [Advisor Chat and Instructions](06-advisor-and-instructions.md) for how to use the advisor as a conversational research partner between runs.
+See [Prompts and Context](05-prompts-and-context.md) for detailed guidance on writing effective descriptions and instructions. See [Advisor Chat and Instructions](07-advisor-and-instructions.md) for how to use the advisor as a conversational research partner between runs.
 
 
 ## The `urika run` command
@@ -370,7 +370,17 @@ urika run my-study --instructions "investigate interaction effects between age a
 
 Instructions are also used when the advisor proposes a new experiment -- they are incorporated into the experiment description and influence the planning agent's method design.
 
-For a full guide on instructions, conversation-as-context, and steering agents at every stage, see [Advisor Chat and Instructions](06-advisor-and-instructions.md).
+For a full guide on instructions, conversation-as-context, and steering agents at every stage, see [Advisor Chat and Instructions](07-advisor-and-instructions.md).
+
+## From the dashboard
+
+Open the project in the dashboard (`urika dashboard my-study`), navigate to `/projects/<name>/experiments`, and click **+ New experiment** in the top-right. The modal carries the same fields you'd pass on the CLI: experiment name, hypothesis, audience, max turns, additional instructions, and toggles for advisor-first review and autonomous mode (with a max-experiments cap).
+
+Submitting posts to `POST /api/projects/<name>/run` and HTMX-redirects you to the live log page at `/projects/<name>/experiments/<id>/log`. The log is streamed via Server-Sent Events from the running orchestrator subprocess, with Pause and Stop buttons that send the same signals as the TUI's `/pause` and `/stop` slash commands.
+
+If an experiment is already running (a `.lock` file exists), the **+ New experiment** button is replaced by a "View live log" link so two sessions can't accidentally launch concurrent runs. Mid-run interactive prompts are surfaced inline in the log page — the orchestrator can ask clarifying questions and you answer through the same SSE channel.
+
+See [Dashboard](18-dashboard.md) for the full modal, log page, and prompt-handling walkthrough.
 
 ## Finalizing a project
 
@@ -382,7 +392,7 @@ urika finalize my-study
 
 Finalization runs the Finalizer Agent (which selects the best methods and writes standalone scripts, findings, and reproducibility artifacts), followed by the Report Agent (final report) and Presentation Agent (final presentation). The outputs are standalone -- they work without Urika installed.
 
-See [Finalizing Projects](08-finalizing-projects.md) for full details.
+See [Finalizing Projects](09-finalizing-projects.md) for full details.
 
 
 ## Related commands
@@ -401,4 +411,4 @@ See [Finalizing Projects](08-finalizing-projects.md) for full details.
 
 ---
 
-**Next:** [Advisor Chat and Instructions](06-advisor-and-instructions.md)
+**Next:** [Advisor Chat and Instructions](07-advisor-and-instructions.md)

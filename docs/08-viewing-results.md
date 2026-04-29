@@ -137,7 +137,7 @@ Reports are written as versioned markdown files (previous versions are backed up
 
 Draft mode can be run at any time, even mid-project, to generate figures and summaries without overwriting final outputs.
 
-See [Finalizing Projects](08-finalizing-projects.md) for the complete list of finalization outputs.
+See [Finalizing Projects](09-finalizing-projects.md) for the complete list of finalization outputs.
 
 
 ## Presentations
@@ -222,6 +222,19 @@ With a project argument, shows detailed session-level usage:
 
 Usage tracking records tokens (input and output), estimated cost (at API rates), agent calls, session duration, and experiments run. For subscription users, costs are estimates that do not apply to your plan.
 
+## From the dashboard
+
+The dashboard is the visual lens on the same data. Open `urika dashboard my-study` and the project home page (`/projects/<n>`) shows a summary card, recent experiments, and the leaderboard rendered as a sortable table. Other read-friendly views:
+
+- **Methods page** (`/projects/<n>/methods`) — full project method registry, sortable by metric, with status badges (active / superseded).
+- **Findings page** (`/projects/<n>/findings`) — title, summary, and metrics table from `findings.json`, formatted instead of raw JSON.
+- **Report viewer** (`/projects/<n>/report`) — `projectbook/report.md` rendered to HTML with figure inlining; experiment-level reports are at `/projects/<n>/experiments/<id>/report`.
+- **Presentation viewer** (`/projects/<n>/presentation` or per-experiment) — embedded reveal.js slide deck.
+- **Usage charts** (`/projects/<n>/usage`) — token and cost time-series plus a recent-sessions table.
+- **Per-experiment artifact viewer** (`/projects/<n>/experiments/<id>/files/<path>`) — click any artifact in an experiment for an inline preview (text, image) or download.
+
+All views are read-only and reflect the same on-disk files the CLI reads. See [Dashboard](18-dashboard.md) for the full route map.
+
 ---
 
-**Next:** [Finalizing Projects](08-finalizing-projects.md)
+**Next:** [Finalizing Projects](09-finalizing-projects.md)

@@ -92,7 +92,7 @@ endpoint = "private"
 | **private** | Private only | Private only | Different private endpoints/models per agent |
 | **hybrid** | **Must be private** (reads raw data) | Cloud or private | Full mix per agent |
 
-See [Models and Privacy](12-models-and-privacy.md) for endpoint configuration details.
+See [Models and Privacy](13-models-and-privacy.md) for endpoint configuration details.
 
 ### [environment] section
 
@@ -103,7 +103,7 @@ Controls whether the project uses an isolated Python virtual environment:
 venv = true    # false = use global environment (default), true = per-project venv
 ```
 
-When enabled, a `.venv/` directory is created inside the project with `--system-site-packages`, inheriting the global base packages. Agents install project-specific packages into this venv. See [Creating Projects](03-creating-projects.md#isolated-environments) for details.
+When enabled, a `.venv/` directory is created inside the project with `--system-site-packages`, inheriting the global base packages. Agents install project-specific packages into this venv. See [Creating Projects](04-creating-projects.md#isolated-environments) for details.
 
 
 ## Audience Mode
@@ -388,7 +388,7 @@ What each top-level table does:
 
 **Important: the env-var-name indirection.** Notification channels never hold raw passwords or tokens in `settings.toml`. Instead they store the *name* of an environment variable — fields like `password_env`, `bot_token_env`, `app_token_env`, `api_key_env`. At runtime, the channel reads `os.environ[<name>]` to get the actual secret. The actual values live in [`~/.urika/secrets.env`](#urikasecrets-env) (or the user's shell environment). This way `settings.toml` is safe to copy between machines, paste into a bug report, or share with a collaborator; only `secrets.env` is sensitive.
 
-See [Notifications](17-notifications.md) for a deeper walkthrough of the channel configuration and the per-project `urika.toml` overrides that select which channels each project uses.
+See [Notifications](19-notifications.md) for a deeper walkthrough of the channel configuration and the per-project `urika.toml` overrides that select which channels each project uses.
 
 ### `~/.urika/secrets.env`
 
@@ -409,7 +409,7 @@ TELEGRAM_BOT_TOKEN=123456789:ABC...
 
 **The indirection pattern, end to end.** `settings.toml` records `password_env = "URIKA_EMAIL_PASSWORD"` and `secrets.env` records `URIKA_EMAIL_PASSWORD=actual-app-password`. When the email channel runs, it reads the env-var *name* from settings, then reads the *value* from `os.environ` (populated from `secrets.env` at startup). The two files are kept apart on purpose: configuration is shareable; credentials are not.
 
-For the trust model behind this split — including how it interacts with agent-generated code and dashboard auth — see [Security Model](18-security.md#secrets).
+For the trust model behind this split — including how it interacts with agent-generated code and dashboard auth — see [Security Model](20-security.md#secrets).
 
 ### Per-project state files
 
@@ -426,7 +426,7 @@ Each project also maintains its own state files at the project root. Most are do
 | `experiments/<id>/session.json` | Per experiment | Orchestrator | Turn-by-turn experiment state. |
 | `.urika/sessions/<id>.json` | Per project | Orchestrator chat | Conversational session memory for the TUI / `urika chat`. |
 
-For the full directory layout, including `experiments/`, `methods/`, `tools/`, `knowledge/`, and `projectbook/`, see [Project Structure](14-project-structure.md).
+For the full directory layout, including `experiments/`, `methods/`, `tools/`, `knowledge/`, and `projectbook/`, see [Project Structure](15-project-structure.md).
 
 
 ## Environment Variables
@@ -450,4 +450,4 @@ The notification and endpoint variables above are *conventional* — Urika never
 
 ---
 
-**Next:** [Project Structure](14-project-structure.md)
+**Next:** [Project Structure](15-project-structure.md)

@@ -108,7 +108,7 @@ The TUI maintains a rolling conversation history between you and the orchestrato
 
 Conversation history is cleared when you load a different project.
 
-For a detailed guide on advisor conversations, the suggestion-to-run flow, and how to use instructions to steer agents, see [Advisor Chat and Instructions](06-advisor-and-instructions.md).
+For a detailed guide on advisor conversations, the suggestion-to-run flow, and how to use instructions to steer agents, see [Advisor Chat and Instructions](07-advisor-and-instructions.md).
 
 ## Keyboard Shortcuts
 
@@ -169,7 +169,7 @@ These require a project to be loaded first. Running them without a project shows
 | `/config show` | Show current configuration (project or global). |
 | `/config global` | Configure global defaults (used for new projects). |
 | `/config global show` | Show global defaults. |
-| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](19-dashboard.md) for pages, run launcher, and auth. |
+| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](18-dashboard.md) for pages, run launcher, and auth. |
 | `/pause` | Request a pause of the running experiment. The orchestrator pauses cleanly after the current subagent finishes its turn. Writes `<project>/.urika/pause_requested` (contents: `pause`). Resume with `/run` or `/resume`. |
 | `/stop` | Request an immediate stop of the running agent or experiment. Writes `<project>/.urika/pause_requested` (contents: `stop`); the orchestrator's pause controller picks it up at the next loop boundary. Use this when you want the run to end now rather than continue to the next experiment. |
 | `/delete-experiment <exp_id>` | Move an experiment to `<project>/trash/`. Mirrors `urika experiment delete`. Prompts for confirmation. Refuses if the experiment has a `.lock` file (active run). |

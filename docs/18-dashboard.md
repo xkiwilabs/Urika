@@ -20,7 +20,7 @@ From inside the TUI:
 urika:my-project> /dashboard
 ```
 
-The slash command starts a daemon-thread server on a free port and opens the browser at the project home page. `/dashboard stop` shuts running dashboards down. See [Interactive TUI](16-interactive-tui.md#slash-commands) for the full list of TUI commands.
+The slash command starts a daemon-thread server on a free port and opens the browser at the project home page. `/dashboard stop` shuts running dashboards down. See [Interactive TUI](17-interactive-tui.md#slash-commands) for the full list of TUI commands.
 
 By default the server binds `127.0.0.1` and picks a random free port. Override with `--port`:
 
@@ -104,7 +104,7 @@ The live-log page renders this as an inline answer form below the streamed log. 
 
 ## Advisor chat
 
-`/projects/<name>/advisor` is the in-browser chat surface for the advisor agent. The page renders the persistent advisor transcript stored under `projectbook/advisor-history.json`, with a "Send" composer at the bottom. Submitting posts to `POST /api/projects/<name>/advisor`, which appends the user message, runs the advisor agent, appends the response, and returns an HTMX fragment with the new exchange. History persists across reloads — the same store is shared with the CLI's `urika advisor` and the TUI's `/advisor` slash command. See [Advisor](06-advisor-and-instructions.md) for the underlying memory model.
+`/projects/<name>/advisor` is the in-browser chat surface for the advisor agent. The page renders the persistent advisor transcript stored under `projectbook/advisor-history.json`, with a "Send" composer at the bottom. Submitting posts to `POST /api/projects/<name>/advisor`, which appends the user message, runs the advisor agent, appends the response, and returns an HTMX fragment with the new exchange. History persists across reloads — the same store is shared with the CLI's `urika advisor` and the TUI's `/advisor` slash command. See [Advisor](07-advisor-and-instructions.md) for the underlying memory model.
 
 ### Advisor subprocess + log streaming
 
@@ -342,7 +342,7 @@ Two settings pages share the same tabbed form pattern. Tabs are a small Alpine.j
   - **Preferences**: default audience, max turns, theme preference.
   - **Notifications**: default notification configuration.
 
-Both pages POST to a `PUT /api/...` endpoint that validates the payload and saves through the same `_write_toml` helper used by the CLI's `urika config`. See [Configuration](13-configuration.md) for the underlying file formats.
+Both pages POST to a `PUT /api/...` endpoint that validates the payload and saves through the same `_write_toml` helper used by the CLI's `urika config`. See [Configuration](14-configuration.md) for the underlying file formats.
 
 ### Send-test notification button
 
@@ -489,4 +489,4 @@ No build step. No JavaScript bundle. Everything is server-rendered HTML plus two
 
 ---
 
-**Next:** [Interactive TUI](16-interactive-tui.md)
+**Next:** [Notifications](19-notifications.md)

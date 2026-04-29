@@ -4,12 +4,12 @@
 
 <p align="center">
   <a href="docs/01-getting-started.md">Getting Started</a> &middot;
-  <a href="docs/09-agent-system.md">Agent System</a> &middot;
-  <a href="docs/12-models-and-privacy.md">Models &amp; Privacy</a> &middot;
-  <a href="docs/17-notifications.md">Notifications</a> &middot;
-  <a href="docs/15-cli-reference.md">CLI Reference</a> &middot;
-  <a href="docs/16-interactive-tui.md">Interactive TUI</a> &middot;
-  <a href="docs/07-viewing-results.md#project-dashboard">Dashboard</a>
+  <a href="docs/11-agent-system.md">Agent System</a> &middot;
+  <a href="docs/13-models-and-privacy.md">Models &amp; Privacy</a> &middot;
+  <a href="docs/19-notifications.md">Notifications</a> &middot;
+  <a href="docs/16-cli-reference.md">CLI Reference</a> &middot;
+  <a href="docs/17-interactive-tui.md">Interactive TUI</a> &middot;
+  <a href="docs/18-dashboard.md">Dashboard</a>
 </p>
 
 ---
@@ -20,7 +20,19 @@ Urika uses multiple AI agents to autonomously explore analytical approaches for 
 
 Currently supports the **Claude Agent SDK** (Anthropic), including local models via Ollama. Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **PI** are planned for upcoming releases.
 
-**Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/12-models-and-privacy.md).
+**Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/13-models-and-privacy.md).
+
+## Three interfaces
+
+Urika has three first-class interfaces — CLI, TUI, and dashboard. They share the same project state on disk, so anything you do in one shows up in the others.
+
+| Interface | Command | When to use |
+|-----------|---------|-------------|
+| **CLI** | `urika <command>` | Scripting, batch jobs, CI, remote sessions, `--json` output for tooling |
+| **TUI** | `urika` | Exploratory orchestrator chat, watching a run with rich activity feedback, slash commands with tab completion |
+| **Dashboard** | `urika dashboard [project]` | Monitoring long runs, sharing results in a browser, settings forms, sessions tab |
+
+See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-task cheat sheet across all three.
 
 ## Installation
 
@@ -69,7 +81,7 @@ urika                                       # launch the interactive TUI
 urika --classic                             # or use the classic REPL
 ```
 
-See the [Getting Started](docs/01-getting-started.md) guide for a full walkthrough. **Agent-generated code runs as you** — see [Security Model](docs/18-security.md) before running unfamiliar projects.
+See the [Getting Started](docs/01-getting-started.md) guide for a full walkthrough. **Agent-generated code runs as you** — see [Security Model](docs/20-security.md) before running unfamiliar projects.
 
 ## How It Works
 
@@ -114,11 +126,11 @@ flowchart TD
 Twelve agents work together. Each experiment runs autonomously — agents plan, execute, evaluate, and iterate without intervention. You choose how to manage the *between-experiment* flow:
 
 - **Guided** (`urika run`) — agents run one experiment autonomously, then you review results and decide what to try next. Best for exploratory work and complex domains where human judgment matters between experiments.
-- **Fully autonomous** (`urika run --max-experiments N`) — the system runs multiple experiments back-to-back, with the advisor agent deciding what to try next. Best when you've provided detailed context (see [Prompts and Context](docs/04-prompts-and-context.md)).
+- **Fully autonomous** (`urika run --max-experiments N`) — the system runs multiple experiments back-to-back, with the advisor agent deciding what to try next. Best when you've provided detailed context (see [Prompts and Context](docs/05-prompts-and-context.md)).
 
 Within each experiment, the orchestrator cycles through `planning -> task -> evaluator -> advisor` each turn. When all experiments are complete, the **Finalizer** produces standalone deliverables.
 
-See [Agent System](docs/09-agent-system.md) for details on each agent role.
+See [Agent System](docs/11-agent-system.md) for details on each agent role.
 
 ## Scriptable CLI
 
@@ -140,7 +152,7 @@ urika methods my-study --json
 # See Notifications docs for setup
 ```
 
-This makes it straightforward to build custom workflows, batch processing scripts, CI pipelines, or wrap Urika in your own research tools. See [CLI Reference](docs/15-cli-reference.md) for the full command list.
+This makes it straightforward to build custom workflows, batch processing scripts, CI pipelines, or wrap Urika in your own research tools. See [CLI Reference](docs/16-cli-reference.md) for the full command list.
 
 ## Privacy and Model Configuration
 
@@ -154,30 +166,32 @@ Per-agent model routing lets you optimize for cost (Haiku for simple tasks, Opus
 
 See above for supported and upcoming SDK adapters.
 
-See [Models and Privacy](docs/12-models-and-privacy.md) for configuration details.
+See [Models and Privacy](docs/13-models-and-privacy.md) for configuration details.
 
 ## Documentation
 
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](docs/01-getting-started.md) | Installation, requirements, first project |
-| [Core Concepts](docs/02-core-concepts.md) | Projects, experiments, runs, methods, tools, agents |
-| [Creating Projects](docs/03-creating-projects.md) | `urika new`, data scanning, knowledge ingestion |
-| [Prompts and Context](docs/04-prompts-and-context.md) | Writing effective descriptions, instructions, knowledge ingestion |
-| [Running Experiments](docs/05-running-experiments.md) | Orchestrator loop, turns, auto mode, resume |
-| [Advisor Chat and Instructions](docs/06-advisor-and-instructions.md) | Standalone advisor conversations, steering agents, suggestion-to-run flow |
-| [Viewing Results](docs/07-viewing-results.md) | Reports, presentations, methods, leaderboard |
-| [Finalizing Projects](docs/08-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
-| [Agent System](docs/09-agent-system.md) | All 12 agent roles and how they interact |
-| [Built-in Tools](docs/10-built-in-tools.md) | 24 analysis tools agents use |
-| [Knowledge Pipeline](docs/11-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
-| [Models and Privacy](docs/12-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
-| [Configuration](docs/13-configuration.md) | urika.toml, criteria, preferences |
-| [Project Structure](docs/14-project-structure.md) | File layout and what each file does |
-| [CLI Reference](docs/15-cli-reference.md) | Every command with full options |
-| [Interactive TUI](docs/16-interactive-tui.md) | TUI interface, slash commands, tab completion, orchestrator chat |
-| [Notifications](docs/17-notifications.md) | Email, Slack, Telegram alerts and remote commands |
-| [Security Model](docs/18-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
+| [Interfaces Overview](docs/02-interfaces-overview.md) | CLI, TUI, and dashboard as three peer interfaces — when to use which |
+| [Core Concepts](docs/03-core-concepts.md) | Projects, experiments, runs, methods, tools, agents |
+| [Creating Projects](docs/04-creating-projects.md) | `urika new`, data scanning, knowledge ingestion |
+| [Prompts and Context](docs/05-prompts-and-context.md) | Writing effective descriptions, instructions, knowledge ingestion |
+| [Running Experiments](docs/06-running-experiments.md) | Orchestrator loop, turns, auto mode, resume |
+| [Advisor Chat and Instructions](docs/07-advisor-and-instructions.md) | Standalone advisor conversations, steering agents, suggestion-to-run flow |
+| [Viewing Results](docs/08-viewing-results.md) | Reports, presentations, methods, leaderboard |
+| [Finalizing Projects](docs/09-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
+| [Knowledge Pipeline](docs/10-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
+| [Agent System](docs/11-agent-system.md) | All 12 agent roles and how they interact |
+| [Built-in Tools](docs/12-built-in-tools.md) | 24 analysis tools agents use |
+| [Models and Privacy](docs/13-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
+| [Configuration](docs/14-configuration.md) | urika.toml, criteria, preferences |
+| [Project Structure](docs/15-project-structure.md) | File layout and what each file does |
+| [CLI Reference](docs/16-cli-reference.md) | Every command with full options |
+| [Interactive TUI](docs/17-interactive-tui.md) | TUI interface, slash commands, tab completion, orchestrator chat |
+| [Dashboard](docs/18-dashboard.md) | FastAPI multi-page dashboard, run launcher, settings UI, theme toggle, auth |
+| [Notifications](docs/19-notifications.md) | Email, Slack, Telegram alerts and remote commands |
+| [Security Model](docs/20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
 
 ## Citation
 
