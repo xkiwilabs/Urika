@@ -72,6 +72,25 @@ If you see a version number, the CLI is installed and ready. (Login via `claude 
 > for direct interactive work in Claude.ai or `claude` CLI — only the
 > Urika code path requires the API key.
 
+### Verify your API key
+
+Once saved, run a quick check that Urika can authenticate:
+
+```bash
+urika config api-key --test
+```
+
+This sends a minimal request to `api.anthropic.com` using the configured
+key. On success you'll see something like:
+
+    ✓ API key works.  key authenticated; model=claude-haiku-4-5; reply='ok'
+
+If the key is invalid or revoked you'll get a 401 with a hint to
+regenerate. The test consumes ~13 tokens (~$0.0001).
+
+You can also click **Test API key** on the dashboard's Settings page
+once the dashboard is running.
+
 See [Provider compliance](20-security.md#provider-compliance) for the full rationale and the citation to the Anthropic policy clarification.
 
 ## Step 3: Install Urika

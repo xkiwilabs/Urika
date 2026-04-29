@@ -1527,6 +1527,34 @@ async def api_notifications_test_send(request: Request) -> JSONResponse:
     return JSONResponse({"channels": channels_list})
 
 
+@router.post("/settings/test-anthropic-key")
+async def api_test_anthropic_key() -> JSONResponse:
+    """Verify the configured ANTHROPIC_API_KEY against api.anthropic.com.
+
+    Mirrors the CLI's ``urika config api-key --test`` path. Calls
+    :func:`urika.core.anthropic_check.verify_anthropic_api_key`, which
+    sends a minimal ``/v1/messages`` request and returns
+    ``(ok, message)``. Always responds 200 so the dashboard can render
+    the result inline; the ``ok`` field carries pass/fail.
+
+    Refreshes ``~/.urika/secrets.env`` first so the test reflects a
+    key added since the dashboard process launched.
+    """
+    import os as _os
+
+    from urika.core.anthropic_check import verify_anthropic_api_key
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+    key = _os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        return JSONResponse(
+            {"ok": False, "message": "ANTHROPIC_API_KEY is not set."}
+        )
+    ok, message = verify_anthropic_api_key(key)
+    return JSONResponse({"ok": ok, "message": message})
+
+
 @router.post("/settings/test-endpoint")
 async def api_test_endpoint(request: Request) -> JSONResponse:
     """Probe a private model endpoint for reachability.

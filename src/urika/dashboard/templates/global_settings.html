@@ -67,6 +67,26 @@
   }
   .compliance-banner p { margin: 0 0 var(--space-2) 0; }
   .compliance-banner p:last-child { margin-bottom: 0; }
+  /* Positive companion to .compliance-banner: shows when the key IS
+     set and lets the user verify it round-trips against Anthropic.
+     Visual rhythm intentionally calmer than the warning banner — a
+     thin green left rule + muted text rather than a full coloured fill. */
+  .api-key-status {
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    border-left: 3px solid var(--color-success, #2e8b57);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .api-key-status--ok { color: var(--text-muted, #666); }
+  .api-key-status .api-key-status-result { flex-basis: 100%; }
+  .text-success { color: var(--color-success, #2e8b57); }
+  .text-danger { color: var(--color-danger, #c0392b); }
 </style>
 
 {# ---- Compliance banner --------------------------------------------- #}
@@ -76,6 +96,31 @@
    endpoints (and references API key env-var names); for the actual key
    value they need to either run `urika config api-key` or export the
    variable. #}
+{% if api_key_configured %}
+{# Positive companion to the unset-key banner. Confirms Urika sees a
+   key AND lets the user verify it actually works against
+   api.anthropic.com via POST /api/settings/test-anthropic-key. The
+   verify path is the same one the CLI's `urika config api-key --test`
+   uses (urika.core.anthropic_check.verify_anthropic_api_key). #}
+<div class="api-key-status api-key-status--ok"
+     x-data="{ testing: false, result: null }">
+  <span><strong class="text-success">✓</strong> ANTHROPIC_API_KEY configured.</span>
+  <button type="button" class="btn btn--small"
+          @click="testing = true; result = null;
+                  fetch('/api/settings/test-anthropic-key', { method: 'POST' })
+                    .then(r => r.json())
+                    .then(d => { result = d; testing = false; })
+                    .catch(e => { result = { ok: false, message: e.message }; testing = false; })"
+          :disabled="testing">
+    <span x-text="testing ? 'Testing…' : 'Test API key'">Test API key</span>
+  </button>
+  <div x-show="result" x-cloak class="api-key-status-result">
+    <span :class="result?.ok ? 'text-success' : 'text-danger'"
+          x-text="(result?.ok ? '✓ ' : '✗ ') + (result?.message || (result?.ok ? 'Key works' : 'Failed'))"></span>
+  </div>
+</div>
+{% endif %}
+
 {% if not api_key_configured %}
 <div class="compliance-banner" role="alert">
   <h3>⚠ ANTHROPIC_API_KEY not set</h3>

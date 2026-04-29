@@ -399,7 +399,11 @@ A user-level credential store. The file is a plain `KEY=VALUE` text file with co
 > Agent SDK clarification cannot be authenticated via a Claude Pro/Max
 > subscription. Set `ANTHROPIC_API_KEY` in `~/.urika/secrets.env`,
 > export it in your shell, or run `urika config api-key` for an
-> interactive setup. See [Security § Provider compliance](20-security.md#provider-compliance)
+> interactive setup. After saving, verify the key with
+> `urika config api-key --test` — it sends a minimal request to
+> `api.anthropic.com` and reports success or the exact failure
+> (401 unauthorized, 429 rate-limited, etc.). See
+> [Security § Provider compliance](20-security.md#provider-compliance)
 > for the full rationale.
 
 ```env
@@ -441,7 +445,7 @@ For the full directory layout, including `experiments/`, `methods/`, `tools/`, `
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | (none) | Claude API key. **Required** for any cloud-touching Urika command — Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification prohibit using a Pro/Max subscription to authenticate the Agent SDK. Read at runtime; can live in the shell or in `secrets.env`. Run `urika config api-key` for an interactive setup. |
+| `ANTHROPIC_API_KEY` | (none) | Claude API key. **Required** for any cloud-touching Urika command — Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification prohibit using a Pro/Max subscription to authenticate the Agent SDK. Read at runtime; can live in the shell or in `secrets.env`. Run `urika config api-key` for an interactive setup, then `urika config api-key --test` to verify the key works against `api.anthropic.com`. |
 | `URIKA_ACK_API_KEY_REQUIRED` | (unset) | When set to any value, silences the one-time startup warning that fires whenever `ANTHROPIC_API_KEY` is unset. Set this only after acknowledging the requirement (e.g. you are running purely in private mode and have no need for the cloud key). |
 | `URIKA_HOME` | `~/.urika` | Location of the global Urika config directory (`settings.toml`, `secrets.env`, `projects.json` registry, session memory). |
 | `URIKA_PROJECTS_DIR` | `~/urika-projects` | Default directory where `urika new` creates project directories. |

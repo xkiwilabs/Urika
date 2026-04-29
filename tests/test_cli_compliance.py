@@ -160,11 +160,116 @@ def test_config_api_key_save_anyway_overrides_format_warning(
     env["URIKA_ACK_API_KEY_REQUIRED"] = "1"
 
     bad_key = "definitely-not-anthropic"
-    # bad key + "y" to save-anyway + "n" to spend-limit prompt
-    stdin = f"{bad_key}\ny\nn\n"
+    # bad key + "y" to save-anyway + "n" to test-key prompt + "n" to spend-limit
+    stdin = f"{bad_key}\ny\nn\nn\n"
 
     with patch("urika.core.secrets.save_secret") as save_mock:
         result = runner.invoke(cli, ["config", "api-key"], input=stdin, env=env)
 
     assert result.exit_code == 0, result.output
     save_mock.assert_called_once_with("ANTHROPIC_API_KEY", bad_key)
+
+
+# ---- urika config api-key --test ------------------------------------------
+
+
+def test_config_api_key_test_flag_with_no_key_set_errors(
+    runner: CliRunner, urika_env: dict[str, str], monkeypatch
+) -> None:
+    """``--test`` with no key set exits 1 and shows a setup hint."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+
+    env = dict(urika_env)
+    env["URIKA_ACK_API_KEY_REQUIRED"] = "1"  # silence the startup banner
+
+    result = runner.invoke(cli, ["config", "api-key", "--test"], env=env)
+    assert result.exit_code == 1, result.output
+    assert "ANTHROPIC_API_KEY is not set" in result.output
+    assert "urika config api-key" in result.output
+
+
+def test_config_api_key_test_flag_with_invalid_key_reports_401(
+    runner: CliRunner, urika_env: dict[str, str], monkeypatch
+) -> None:
+    """``--test`` with a bad key surfaces the 401 + remediation hint."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-bogus")
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+
+    with patch(
+        "urika.core.anthropic_check.verify_anthropic_api_key",
+        return_value=(False, "401 unauthorized — key is invalid or revoked."),
+    ):
+        result = runner.invoke(cli, ["config", "api-key", "--test"], env=urika_env)
+
+    assert result.exit_code == 1, result.output
+    assert "401" in result.output
+    assert "API key test failed" in result.output
+    # Remediation hint
+    assert "console.anthropic.com" in result.output
+
+
+def test_config_api_key_test_flag_with_working_key_reports_success(
+    runner: CliRunner, urika_env: dict[str, str], monkeypatch
+) -> None:
+    """``--test`` with a working key prints success + model + reply."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-good-key-12345")
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+
+    with patch(
+        "urika.core.anthropic_check.verify_anthropic_api_key",
+        return_value=(
+            True,
+            "key authenticated; model=claude-haiku-4-5; reply='ok'",
+        ),
+    ):
+        result = runner.invoke(cli, ["config", "api-key", "--test"], env=urika_env)
+
+    assert result.exit_code == 0, result.output
+    assert "API key works" in result.output
+    assert "claude-haiku-4-5" in result.output
+    # Mention that Pro/Max is not used by Urika
+    assert "Pro/Max" in result.output or "subscription" in result.output
+
+
+def test_config_api_key_test_flag_masks_key_in_output(
+    runner: CliRunner, urika_env: dict[str, str], monkeypatch
+) -> None:
+    """The configured key must NEVER appear in full in the output."""
+    secret = "sk-ant-this-is-a-real-secret-WXYZ"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+
+    with patch(
+        "urika.core.anthropic_check.verify_anthropic_api_key",
+        return_value=(True, "key authenticated; model=claude-haiku-4-5; reply='ok'"),
+    ):
+        result = runner.invoke(cli, ["config", "api-key", "--test"], env=urika_env)
+
+    assert result.exit_code == 0, result.output
+    assert secret not in result.output
+    # Last 4 chars are part of the masked display.
+    assert "WXYZ" in result.output
+
+
+def test_config_api_key_save_then_test_yes_runs_verification(
+    runner: CliRunner, urika_env: dict[str, str], monkeypatch
+) -> None:
+    """Interactive flow: save then answer 'y' to the test prompt."""
+    env = dict(urika_env)
+    env["ANTHROPIC_API_KEY"] = "sk-ant-existing"
+    env["URIKA_ACK_API_KEY_REQUIRED"] = "1"
+
+    fake_key = "sk-ant-" + "a" * 90
+    # key + "y" to test prompt + "n" to spend-limit prompt
+    stdin = f"{fake_key}\ny\nn\n"
+
+    with patch("urika.core.secrets.save_secret"), patch(
+        "urika.core.anthropic_check.verify_anthropic_api_key",
+        return_value=(True, "key authenticated; model=claude-haiku-4-5; reply='ok'"),
+    ) as test_mock:
+        result = runner.invoke(cli, ["config", "api-key"], input=stdin, env=env)
+
+    assert result.exit_code == 0, result.output
+    test_mock.assert_called_once_with(fake_key)
+    assert "API key works" in result.output
