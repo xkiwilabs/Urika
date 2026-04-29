@@ -11,6 +11,9 @@ from __future__ import annotations
 def test_banner_renders_when_api_key_unset(settings_client, monkeypatch):
     """No ANTHROPIC_API_KEY → compliance banner appears on /settings."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # Stub load_secrets so the page render doesn't pull from the dev's
+    # real ~/.urika/secrets.env on disk and re-populate the env var.
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
 
     body = settings_client.get("/settings").text
     assert "ANTHROPIC_API_KEY not set" in body
@@ -23,6 +26,7 @@ def test_banner_renders_when_api_key_unset(settings_client, monkeypatch):
 def test_banner_hidden_when_api_key_set(settings_client, monkeypatch):
     """ANTHROPIC_API_KEY set → banner does not render."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake-key")
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
 
     body = settings_client.get("/settings").text
     assert "ANTHROPIC_API_KEY not set" not in body
@@ -33,6 +37,7 @@ def test_banner_hidden_when_api_key_set(settings_client, monkeypatch):
 def test_positive_indicator_shows_when_key_configured(settings_client, monkeypatch):
     """Key set → positive ✓ indicator + Test API key button appear."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake-key")
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
 
     body = settings_client.get("/settings").text
     assert "ANTHROPIC_API_KEY configured" in body
@@ -44,6 +49,7 @@ def test_positive_indicator_shows_when_key_configured(settings_client, monkeypat
 def test_positive_indicator_hidden_when_key_unset(settings_client, monkeypatch):
     """Key unset → positive indicator does not render (warning banner does)."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
 
     body = settings_client.get("/settings").text
     assert "ANTHROPIC_API_KEY configured" not in body
