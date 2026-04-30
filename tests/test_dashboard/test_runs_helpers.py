@@ -331,3 +331,124 @@ def test_reaper_removes_lock_when_child_exits(monkeypatch, tmp_path):
         "reaper must unlink the lock once the child exits, so SSE tailers "
         "and the active-ops banner can detect completion"
     )
+
+
+# ── Reaper writes terminal status for stopped/failed runs ─────────────
+
+
+def test_reaper_writes_stopped_status_for_run_lock_with_sigterm_exit(
+    tmp_path, monkeypatch
+):
+    """When an experiment ``.lock``'s child exits via SIGTERM (return
+    code -15) and progress.json doesn't already have a terminal status,
+    the reaper must write ``status="stopped"`` so the dashboard
+    experiment card flips off the static ``"pending"`` initial state.
+
+    Pre-v0.3.2 the reaper only unlinked the lock; the dashboard then
+    fell back to ``experiment.json`` whose status was still
+    ``"pending"`` (the seed value), so the card lied about the run
+    state. Combined with the CLI's missing SIGTERM handler, this was
+    exactly the symptom the user reported on the Stop button.
+    """
+    import json
+    import subprocess
+
+    from urika.dashboard.runs import _DAEMON_THREADS, spawn_experiment_run
+
+    project_root = tmp_path
+    exp_dir = project_root / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "progress.json").write_text(
+        json.dumps({"status": "running"}), encoding="utf-8"
+    )
+
+    class FakeProc:
+        pid = 8888
+
+        def wait(self):
+            return -15  # SIGTERM (-signal.SIGTERM)
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: FakeProc())
+
+    before = list(_DAEMON_THREADS)
+    spawn_experiment_run("alpha", project_root, "exp-001")
+    new = [t for t in _DAEMON_THREADS if t not in before]
+    assert new
+    new[-1].join(timeout=5.0)
+
+    progress = json.loads((exp_dir / "progress.json").read_text(encoding="utf-8"))
+    assert progress["status"] == "stopped", (
+        "reaper must write 'stopped' for a SIGTERM exit so the dashboard "
+        "card doesn't fall back to the static 'pending' initial state"
+    )
+
+
+def test_reaper_does_not_overwrite_existing_terminal_status(tmp_path, monkeypatch):
+    """When the CLI's SIGTERM handler already wrote a terminal status
+    (``stopped`` / ``failed`` / ``completed``), the reaper must respect
+    it — race-free fallback only fills in when the status is missing.
+    """
+    import json
+    import subprocess
+
+    from urika.dashboard.runs import _DAEMON_THREADS, spawn_experiment_run
+
+    project_root = tmp_path
+    exp_dir = project_root / "experiments" / "exp-002"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "progress.json").write_text(
+        json.dumps({"status": "completed"}), encoding="utf-8"
+    )
+
+    class FakeProc:
+        pid = 9999
+
+        def wait(self):
+            return -15
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: FakeProc())
+
+    before = list(_DAEMON_THREADS)
+    spawn_experiment_run("alpha", project_root, "exp-002")
+    new = [t for t in _DAEMON_THREADS if t not in before]
+    assert new
+    new[-1].join(timeout=5.0)
+
+    progress = json.loads((exp_dir / "progress.json").read_text(encoding="utf-8"))
+    assert progress["status"] == "completed"
+
+
+def test_reaper_skips_status_write_for_zero_exit(tmp_path, monkeypatch):
+    """A successful exit (returncode 0) means the CLI wrote its own
+    completion status — reaper does nothing, just unlinks the lock.
+    """
+    import json
+    import subprocess
+
+    from urika.dashboard.runs import _DAEMON_THREADS, spawn_experiment_run
+
+    project_root = tmp_path
+    exp_dir = project_root / "experiments" / "exp-003"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "progress.json").write_text(
+        json.dumps({"status": "running"}), encoding="utf-8"
+    )
+
+    class FakeProc:
+        pid = 7777
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: FakeProc())
+
+    before = list(_DAEMON_THREADS)
+    spawn_experiment_run("alpha", project_root, "exp-003")
+    new = [t for t in _DAEMON_THREADS if t not in before]
+    assert new
+    new[-1].join(timeout=5.0)
+
+    progress = json.loads((exp_dir / "progress.json").read_text(encoding="utf-8"))
+    # Stays "running" — the reaper trusts the CLI to have written
+    # the completion state by the time it exited cleanly.
+    assert progress["status"] == "running"

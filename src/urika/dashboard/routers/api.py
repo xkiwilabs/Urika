@@ -2581,9 +2581,29 @@ async def api_run_stream(name: str, exp_id: str, type: str = "run"):
                 for line in new_data.splitlines():
                     yield _format_log_line(line)
             if not lock_path.exists():
-                # Lock gone — run has finished. Emit completion and close.
+                # Lock gone — run has finished. Read the actual
+                # terminal status from progress.json (run path) so
+                # the browser sees "stopped" / "failed" / "completed"
+                # correctly. Pre-v0.3.2 always emitted "completed",
+                # which lied to the user when they'd just clicked
+                # Stop. Other log types (evaluate/report/present)
+                # don't have a separate terminal-state file; for
+                # those we emit the legacy "completed" sentinel.
+                terminal_status = "completed"
+                if type == "run":
+                    progress_path = (
+                        summary.path / "experiments" / exp_id / "progress.json"
+                    )
+                    if progress_path.exists():
+                        try:
+                            progress = json.loads(progress_path.read_text("utf-8"))
+                            written = (progress or {}).get("status") or ""
+                            if written in ("completed", "stopped", "failed"):
+                                terminal_status = written
+                        except (OSError, ValueError):
+                            pass
                 yield (
-                    f"event: status\ndata: {json.dumps({'status': 'completed'})}\n\n"
+                    f"event: status\ndata: {json.dumps({'status': terminal_status})}\n\n"
                 )
                 return
             await asyncio.sleep(0.5)
@@ -3255,19 +3275,33 @@ async def api_run_respond(name: str, exp_id: str, request: Request):
 
 @router.post("/projects/{name}/runs/{exp_id}/stop")
 def api_run_stop(name: str, exp_id: str) -> dict:
-    """Send SIGTERM to the running experiment subprocess.
+    """Stop a running experiment, writing a real ``stopped`` status.
 
-    Reads the PID from ``<exp>/.lock`` and signals it. The orchestrator
-    subprocess's in-flight HTTP request to the LLM gets a
-    ``ConnectionResetError`` (which the runner catches) and the run
-    tears down. The drainer thread cleans up the lock file. Status
-    will be ``stopped`` in the orchestrator's final teardown — or
-    ``failed`` if it dies before reaching its cleanup path. Both are
-    resumable from the dashboard's Resume button.
+    The flow is graceful-then-forceful:
 
-    Returns ``{"status": "stop_signaled", "pid": pid}`` on success or
-    ``{"status": "not_running"}`` when no live process is found
-    (lock missing, unreadable, or PID dead).
+    1. Write ``"stop"`` to ``<project>/.urika/pause_requested``. The
+       orchestrator loop polls this file each turn and, when the
+       payload is ``"stop"``, calls :func:`stop_session` cleanly at
+       the next turn boundary — writing both ``session.json`` and
+       ``progress.json`` with ``status="stopped"`` so the dashboard's
+       experiment card flips to "stopped" with a Resume button.
+    2. Send ``SIGTERM`` to the **process group** (not just the leader
+       PID). The orchestrator was spawned with ``start_new_session=True``
+       so the group includes the SDK-spawned ``claude`` CLI and any
+       nested ``urika`` agents; targeting only the leader leaves
+       grandchildren burning credits.
+    3. The CLI's ``_cleanup_on_interrupt`` (registered for both
+       SIGINT and SIGTERM as of v0.3.2) writes the ``stopped``
+       session/progress state on its way out. If the kill is too
+       fast for that path, ``runs._start_reaper`` writes the same
+       state from the dashboard side when it observes a non-zero
+       exit code.
+
+    Pre-v0.3.2 this function only sent a bare ``SIGTERM`` to the
+    leader PID; the CLI had no SIGTERM handler so the process died
+    before any status was written, the reaper unlinked the lock,
+    and the dashboard's experiment card was stuck on ``pending``
+    (the static initial state).
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -3291,13 +3325,34 @@ def api_run_stop(name: str, exp_id: str) -> dict:
         return {"status": "not_running"}
     except PermissionError:
         # Process exists but we can't signal it — treat as "running"
-        # and fall through to the SIGTERM attempt below.
+        # and fall through to the signal attempt below.
         pass
     except OSError:
         return {"status": "not_running"}
 
+    # Step 1: graceful stop request via flag file. The orchestrator
+    # loop reads this at the next turn boundary and stops cleanly.
     try:
-        os.kill(pid, signal.SIGTERM)
+        flag_dir = summary.path / ".urika"
+        flag_dir.mkdir(parents=True, exist_ok=True)
+        (flag_dir / "pause_requested").write_text("stop", encoding="utf-8")
+    except OSError:
+        # Best-effort — fall through to signal even if flag write fails.
+        pass
+
+    # Step 2: SIGTERM the entire process group, not just the leader.
+    # ``runs.py`` spawns with ``start_new_session=True`` (POSIX) /
+    # ``CREATE_NEW_PROCESS_GROUP`` (Windows) so the orchestrator's
+    # children (claude CLI, nested urika subagents) live in the
+    # leader's group. ``os.kill(pid, ...)`` only signals the leader;
+    # ``os.killpg(getpgid(pid), ...)`` reaches the whole tree.
+    try:
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        else:
+            # Windows fallback — no killpg, signal the leader and let
+            # CREATE_NEW_PROCESS_GROUP propagate as best it can.
+            os.kill(pid, signal.SIGTERM)
     except (ProcessLookupError, OSError):
         return {"status": "not_running"}
 

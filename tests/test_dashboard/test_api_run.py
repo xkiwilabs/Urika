@@ -308,10 +308,22 @@ def test_new_experiment_form_no_longer_requires_name_or_hypothesis(run_client):
     assert len(spawn_calls) == 1
 
 
-def test_run_stop_sends_sigterm_to_lock_pid(run_client, monkeypatch):
-    """Stop reads <exp>/.lock for the PID and sends SIGTERM. We use the
-    test process's own PID (always alive) and monkeypatch ``os.kill`` so
-    we can capture the signal call without actually killing pytest."""
+def test_run_stop_writes_flag_and_signals_process_group(run_client, monkeypatch):
+    """Stop is graceful-then-forceful.
+
+    1. ``"stop"`` is written to ``<project>/.urika/pause_requested`` so
+       the orchestrator loop can call ``stop_session`` cleanly at the
+       next turn boundary (writing the real ``stopped`` status).
+    2. ``SIGTERM`` is sent to the **process group** (not just the
+       leader PID) via ``os.killpg`` so children spawned with
+       ``start_new_session=True`` (the SDK's ``claude`` CLI, any
+       nested ``urika`` agents) also exit.
+
+    Pre-v0.3.2 this endpoint sent a bare ``os.kill(pid, SIGTERM)`` to
+    the leader only, and never wrote the flag — children outlived
+    the parent and the dashboard card stayed on ``pending`` because
+    the CLI had no SIGTERM handler to write ``stopped``.
+    """
     import os
     import signal
 
@@ -323,13 +335,17 @@ def test_run_stop_sends_sigterm_to_lock_pid(run_client, monkeypatch):
     (exp_dir / ".lock").write_text(str(os.getpid()), encoding="utf-8")
 
     kill_calls: list[tuple[int, int]] = []
+    killpg_calls: list[tuple[int, int]] = []
 
     def fake_kill(pid: int, sig: int) -> None:
         kill_calls.append((pid, sig))
-        # The probe call (signal 0) must succeed silently — the real
-        # PID is alive — and the SIGTERM call should also do nothing.
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        killpg_calls.append((pgid, sig))
 
     monkeypatch.setattr(api_module.os, "kill", fake_kill)
+    monkeypatch.setattr(api_module.os, "killpg", fake_killpg)
+    monkeypatch.setattr(api_module.os, "getpgid", lambda pid: pid)
 
     r = client.post("/api/projects/alpha/runs/exp-001/stop")
     assert r.status_code == 200
@@ -337,9 +353,16 @@ def test_run_stop_sends_sigterm_to_lock_pid(run_client, monkeypatch):
     assert body["status"] == "stop_signaled"
     assert body["pid"] == os.getpid()
 
-    # First call probes with signal 0; second sends SIGTERM.
+    # Probe (signal 0) goes via os.kill on the leader.
     assert (os.getpid(), 0) in kill_calls
-    assert (os.getpid(), signal.SIGTERM) in kill_calls
+    # SIGTERM goes to the process group, not the bare leader.
+    assert (os.getpid(), signal.SIGTERM) in killpg_calls
+    assert (os.getpid(), signal.SIGTERM) not in kill_calls
+
+    # Graceful-stop flag was written to the project's .urika dir.
+    flag = proj / ".urika" / "pause_requested"
+    assert flag.exists(), "pause_requested flag not written"
+    assert flag.read_text(encoding="utf-8") == "stop"
 
 
 def test_run_stop_returns_not_running_when_no_lock(run_client):

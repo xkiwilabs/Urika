@@ -359,7 +359,13 @@ def run(
             )
             key_listener.start()
 
+        # Same SIGINT+SIGTERM coverage as the experiment path — the
+        # dashboard's Stop button sends SIGTERM and we need the
+        # cleanup hook to fire on either signal.
         original_handler = signal.getsignal(signal.SIGINT) if _is_main_thread else None
+        original_term_handler = (
+            signal.getsignal(signal.SIGTERM) if _is_main_thread else None
+        )
 
         def _cleanup_meta(signum: int, frame: object) -> None:
             if key_listener is not None:
@@ -375,6 +381,7 @@ def run(
 
         if _is_main_thread:
             signal.signal(signal.SIGINT, _cleanup_meta)
+            signal.signal(signal.SIGTERM, _cleanup_meta)
 
         start_ms, start_iso = _agent_run_start()
         sdk_runner = get_runner()
@@ -472,6 +479,8 @@ def run(
                 panel.cleanup()
             if _is_main_thread and original_handler is not None:
                 signal.signal(signal.SIGINT, original_handler)
+            if _is_main_thread and original_term_handler is not None:
+                signal.signal(signal.SIGTERM, original_term_handler)
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
         n_exp = result.get("experiments_run", 0)
@@ -716,9 +725,20 @@ def run(
         print_step("    urika run --instructions '...'   Run with new instructions")
         raise SystemExit(1)
 
+    # Register the cleanup handler for both SIGINT (Ctrl+C in the
+    # terminal) and SIGTERM (the dashboard's Stop button, which
+    # ``api_run_stop`` in ``dashboard/routers/api.py`` sends to the
+    # spawned ``urika run`` PID). Without the SIGTERM hook the
+    # process died before ``stop_session`` could write the
+    # ``stopped`` status, leaving the dashboard's experiment card
+    # stuck on ``pending`` after Stop was clicked.
     original_handler = signal.getsignal(signal.SIGINT) if _is_main_thread else None
+    original_term_handler = (
+        signal.getsignal(signal.SIGTERM) if _is_main_thread else None
+    )
     if _is_main_thread:
         signal.signal(signal.SIGINT, _cleanup_on_interrupt)
+        signal.signal(signal.SIGTERM, _cleanup_on_interrupt)
 
     start_ms, start_iso = _agent_run_start()
 
@@ -846,9 +866,11 @@ def run(
             key_listener.stop()
         if panel is not None:
             panel.cleanup()
-        # Restore original handler
+        # Restore original handlers
         if _is_main_thread and original_handler is not None:
             signal.signal(signal.SIGINT, original_handler)
+        if _is_main_thread and original_term_handler is not None:
+            signal.signal(signal.SIGTERM, original_term_handler)
 
     elapsed_ms = int(time.monotonic() * 1000) - start_ms
     run_status = result.get("status", "unknown")

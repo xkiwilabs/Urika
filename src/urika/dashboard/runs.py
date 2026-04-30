@@ -121,12 +121,42 @@ def _start_reaper(proc: subprocess.Popen, lock_path: Path) -> threading.Thread:
     PID and reports it. When the child eventually exits, this
     dashboard's reaper (or, if the dashboard has already restarted,
     the user's manual "Clear stale" action) cleans up the lock.
+
+    When the child exits with a non-zero return code AND the lock
+    path matches an experiment ``.lock`` (i.e. ``<exp>/.lock``), the
+    reaper writes ``progress.json["status"] = "stopped"`` (or
+    ``"failed"``) before unlinking the lock. This is a fallback for
+    when the CLI's signal handler couldn't write the session state
+    (e.g. SIGKILL, or pre-v0.3.2 binaries that only handled SIGINT)
+    — without it the dashboard experiment card falls back to the
+    static ``"pending"`` from ``experiment.json`` and the user can't
+    tell the run was stopped vs. never started.
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
 
     def _wait() -> None:
+        returncode = None
         try:
-            proc.wait()
+            returncode = proc.wait()
+        except Exception as exc:
+            # Daemon-thread exception would otherwise die silently and
+            # leave the lock forever — a "ghost run" the user has to
+            # clear by hand from the UI.
+            logger.warning(
+                "Reaper thread for %s crashed: %s", lock_path, exc, exc_info=True
+            )
         finally:
+            try:
+                _write_terminal_status_if_needed(lock_path, returncode)
+            except Exception as exc:
+                logger.warning(
+                    "Reaper terminal-status write failed for %s: %s",
+                    lock_path,
+                    exc,
+                    exc_info=True,
+                )
             try:
                 lock_path.unlink()
             except FileNotFoundError:
@@ -136,6 +166,64 @@ def _start_reaper(proc: subprocess.Popen, lock_path: Path) -> threading.Thread:
     t.start()
     _DAEMON_THREADS.append(t)
     return t
+
+
+def _write_terminal_status_if_needed(
+    lock_path: Path, returncode: int | None
+) -> None:
+    """Write a ``stopped`` / ``failed`` status fallback for a stopped run.
+
+    Called from :func:`_start_reaper` when an experiment lock's child
+    process exits. If the child exited cleanly (returncode 0) the CLI's
+    own teardown already wrote a ``completed`` status — do nothing.
+    If the child exited with a non-zero code (signal, crash) the CLI
+    may have written ``stopped`` itself via its SIGTERM handler — but
+    if it didn't (SIGKILL, hard crash before the handler ran), we
+    write ``stopped`` here so the dashboard card flips off ``pending``.
+
+    Only acts on experiment-level locks (``<exp_dir>/.lock``); other
+    locks (``.advisor.lock`` etc.) don't have ``progress.json`` and
+    are skipped.
+    """
+    if returncode is None or returncode == 0:
+        return
+    if lock_path.name != ".lock":
+        return
+    exp_dir = lock_path.parent
+    if not exp_dir.is_dir() or exp_dir.parent.name != "experiments":
+        return
+
+    progress_path = exp_dir / "progress.json"
+    if not progress_path.exists():
+        return
+
+    try:
+        from urika.core.progress import load_progress, update_experiment_status
+    except ImportError:
+        return
+
+    try:
+        progress = load_progress(exp_dir.parent.parent, exp_dir.name)
+    except Exception:
+        return
+
+    current = (progress or {}).get("status") or ""
+    # If the CLI's signal handler already wrote a terminal status,
+    # respect it. Only fill in when the status is missing or still in
+    # a non-terminal state (running / pending / starting).
+    if current in ("stopped", "failed", "completed"):
+        return
+
+    new_status = "stopped" if returncode in (-15, -2, 130, 143) else "failed"
+    try:
+        update_experiment_status(
+            exp_dir.parent.parent,
+            exp_dir.name,
+            new_status,
+        )
+    except Exception:
+        # Best-effort — never let a status write block lock cleanup.
+        pass
 
 
 def _start_drainer(
