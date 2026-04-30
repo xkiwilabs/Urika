@@ -1,10 +1,25 @@
-# GitHub Integration — v0.4
+# GitHub Integration — v0.5
 
-**Status:** active (design, awaiting thin-vs-thick decision)
+**Status:** **deferred to v0.5** (design preserved)
 **Date:** 2026-04-30
-**Track:** 5 (user-named feature)
-**Effort:** thin = ~6-8d, thick = ~24d
-**Recommendation:** **thin in v0.4, thick in v0.5**.
+**Effort:** ~24 dev-days (thick design — the only path now that
+v0.5 has the budget for it)
+
+## Why deferred from v0.4
+
+GitHub is the only **brand-new feature surface** in the v0.4 plan.
+Everything else is finishing existing in-flight work or closing
+carry-over bugs. The v0.4 bar — "complete all major features so we
+can move to user testing and only fix bugs going forward" — is
+better served by shipping v0.4 without GitHub and revisiting it as
+the v0.5 headline. Strip GitHub out and Urika is still a complete
+research-analysis platform; GitHub is a backup / repo / collaboration
+overlay.
+
+The earlier thin-vs-thick decision (~6-8d thin using `gh` CLI
+shellout vs ~24d thick with pygit2 + device-flow OAuth) becomes
+moot: v0.5 ships **thick directly**. No throwaway thin-then-rework
+path.
 
 ## Goal
 
@@ -29,17 +44,12 @@ connected continue working unchanged.
 - **`urika config secret`** pattern (`cli/config.py:189`) — `urika
   config github` slots in identically.
 
-## Scope decision: thin vs thick
+## Scope: thick (the full spec below)
 
-| Scope | Effort | What you get | What you don't |
-|---|---|---|---|
-| **Thin** (use `gh` CLI as subprocess) | ~6-8d | Local `git init` + remote create via `gh repo create`; auto-commit on event; slash commands; per-project + per-user TOML; secret regex pre-commit; `.gitignore` writer. | No dashboard "Connect GitHub" button (relies on user having `gh` already authenticated); no device-flow OAuth in-Urika; no audit log UI. |
-| **Thick** (pygit2 + device-flow OAuth) | ~24d | All of thin, plus dashboard auth UI, device-flow OAuth (no token-pasting), full Integrations tab, Git tab per project, audit-log viewer, queue-and-retry on offline, dry-run mode. | 4× the effort. |
-
-The remainder of this doc describes the **thick** design (the full
-spec). Thin is implemented as a subset: skip `auth.py` device flow,
-skip dashboard "Connect" UI, shell out to `gh` for repo creation, keep
-everything else.
+v0.5 has the budget to ship the proper implementation directly —
+pygit2 + device-flow OAuth + dashboard "Connect GitHub" button +
+Integrations tab + Git tab per project + audit-log viewer +
+queue-and-retry on offline + dry-run mode. No thin-then-rework path.
 
 ## Architecture (full / thick)
 

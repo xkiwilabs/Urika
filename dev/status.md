@@ -206,37 +206,55 @@ endpoints/...), `notifications`, `venv` (create/status), `tui`.
 `--classic` flag on `urika` switches to the classic REPL. Every
 command supports `--json` for non-TTY scripting.
 
-## Deferred to v0.4
+## v0.4 — first feature-complete release
+
+**Positioning:** v0.4.0 is the first complete Urika system, stable
+enough for extensive user testing. Strip GitHub out and Urika is
+still a complete research-analysis platform — the core value loop is
+unchanged. GitHub is a backup / repo / collaboration overlay on top
+of an already-functioning system, so it's deferred to v0.5 to keep
+the v0.4 testing surface contained.
 
 See `dev/plans/2026-04-30-v0.4-roadmap.md` for the full track
-breakdown. Highlights:
+breakdown (~21 dev-days, ~4 calendar weeks at single-dev cadence).
+Five tracks:
 
-- **SecurityPolicy enforcement** via SDK `can_use_tool` hook
-  (advisory-only today; v0.3.2 CHANGELOG promised this).
-- **Bash allow-list hardening** — `urika ; rm -rf /` currently
-  matches the prefix; closes alongside SecurityPolicy.
-- **Multi-provider thin abstraction** — abstraction is ~60% real;
-  v0.4 closes the seam so contributors can add OpenAI / ADK / Pi
-  adapters. Second working adapter end-to-end deferred to v0.5.
-- **Project memory Phase 1** — design locked at
-  `2026-04-28-project-memory-design.md`; not built.
-- **GitHub integration** — user-named feature; thin scope (`gh` CLI
-  shellout) for v0.4, thick (pygit2 + device-flow OAuth + dashboard
-  Connect button) for v0.5.
-- **Experiment comparison view** — table-stakes feature for
-  experiment-tracking; data is on disk, just needs a UI.
-- **Shell completion**, **dataset hash + drift detection**,
-  **cost-aware budget** — small user-facing wins.
-- **TUI v2 polish** — replace private-Textual-attribute access in
-  `_TuiWriter._post_line`, regression test for orchestrator-chat →
-  Bash → urika → SDK env-scrub chain through the TUI worker, Esc-key
-  binding parity with CLI pause module.
+- **Track 1 — v0.3.2 carry-overs (~6d).** SecurityPolicy enforcement
+  via SDK `can_use_tool` hook (advisory-only today; v0.3.2 CHANGELOG
+  promised this). Closes orchestrator Bash allow-list bypass too.
+  Plus consistency-sweep PR for ~12 small P1s (audience defaults,
+  max_turns defaults, email masking, swallowed exceptions, form
+  validation). Plus Stop endpoints for non-run operations.
+- **Track 2 — Memory + persistence (~5d).** Project memory Phase 1
+  (design locked at `2026-04-28-project-memory-design.md`; unbuilt),
+  inject context summary into planner+finalizer, persist
+  `--instructions` to `projectbook/instructions.md`, `urika sessions
+  export`, `success_criteria` ↔ `criteria.json` unification.
+- **Track 3 — Multi-provider thin abstraction (~3d).** Abstraction
+  is ~60% real; v0.4 closes the seam so contributors can add
+  OpenAI / ADK / Pi adapters. Second working adapter end-to-end
+  deferred to v0.5.
+- **Track 4 — User-facing features (~6d).** Experiment comparison
+  view, shell completion, dataset hash + drift detection,
+  cost-aware budget.
+- **Track 5 — TUI v2 polish (~1-2d).** Replace private-Textual-
+  attribute access in `_TuiWriter._post_line`, regression test for
+  orchestrator-chat → Bash → urika → SDK env-scrub through TUI
+  worker, Esc-key binding parity with CLI pause.
 
-Plus the consistency-sweep PR for ~12 small P1s carried over from the
-v0.3.2 audits (audience default unification, max_turns default
-unification, email password masked in CLI, surface swallowed
-exceptions across the loop / parsing / CLI, dashboard form
-validation, etc.).
+## Deferred to v0.5 (post-test-feedback release)
+
+- **GitHub integration (thick)** — full design preserved at
+  `dev/plans/2026-04-30-github-integration.md`. pygit2 +
+  device-flow OAuth + dashboard "Connect" button + Integrations tab
+  + Git tab per project + audit-log viewer. ~24 dev-days.
+- **OpenAI Agents SDK adapter end-to-end** — second working agent
+  backend (~6-7 days on top of v0.4's thin abstraction).
+- **Project memory Phases 2-4** — curator agent, archive viewer,
+  diff view.
+- **Project templates** — `urika new --template
+  behavioral|timeseries|imaging`.
+- **Plugin / extension system via entry_points.**
 
 ## Active plan docs
 
