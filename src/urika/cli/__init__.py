@@ -71,6 +71,9 @@ from urika.cli.tui import tui  # noqa: F401
 # Shell completion (bash / zsh / fish)
 import urika.cli.completion  # noqa: F401
 
+# Sessions list / export
+import urika.cli.sessions  # noqa: F401
+
 # Helpers — re-export for backward compatibility
 from urika.cli._helpers import (  # noqa: F401
     _make_on_message,
