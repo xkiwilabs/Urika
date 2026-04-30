@@ -5,6 +5,60 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0rc2] - 2026-04-30
+
+Second v0.4 release candidate. Closes the remaining v0.4 tracks
+(2, 5, and the rest of 4) on top of rc1.
+
+### Added
+
+- **Project memory Phase 1** (Track 2). New
+  `<project>/memory/MEMORY.md`-indexed directory of structured
+  markdown entries (user / feedback / instruction / decision /
+  reference). `urika.core.project_memory` provides
+  `load_project_memory(project_dir)` for system-prompt injection,
+  `save_entry(...)` / `delete_entry(...)` for writes, and
+  `parse_and_persist_memory_markers(project_dir, agent_text)` —
+  strips `<memory type="...">...</memory>` markers from agent
+  output and persists each as an entry. Per-project disable via
+  `[memory] auto_capture = false` in `urika.toml`. Soft cap 5 KB
+  (warns), hard cap 20 KB (truncates with marker). Phase 2-4
+  (advisor/planner-emit prompts, curator agent, dashboard page,
+  TUI slash command) defer to v0.5.
+- **`urika memory list / show / add / delete`** CLI group as the
+  manual surface over Phase 1.
+- **Planner reads context summary + project memory** at
+  `build_config` time. Pre-v0.4 only the advisor saw the rolling
+  context summary; the planner had to rediscover prior decisions
+  from `advisor-history.json` on its own.
+- **`urika sessions list / export`** (Track 2 cheap win). Export
+  an `OrchestratorSession` to Markdown (default — sharing) or JSON
+  (full fidelity). Both stdout and `-o file`.
+- **Experiment comparison view** (Track 4). New
+  `GET /projects/<n>/compare?experiments=exp-001,exp-002` route
+  renders a side-by-side metric table. Pre-v0.4 users had to open
+  separate experiment-detail tabs and compare in their head —
+  table-stakes for the experiment-tracking competitive set.
+- **Cost-aware budget** (Track 4). `urika run --budget USD` flag
+  pauses the experiment at the next turn boundary when accumulated
+  cost crosses the budget; resumable. `urika run --dry-run` adds
+  a cost estimate row using the project's prior session costs
+  (last 7 non-zero, range + median × planned experiments).
+
+### Fixed
+
+- **TUI `_TuiWriter._post_line` prefers public `asyncio` API**
+  over Textual's private `app._loop` / `app._thread_id` for the
+  same-thread check. Fallback to private-attribute path is
+  preserved for older Textual versions. Pre-v0.4 a Textual upgrade
+  that renamed the private attrs would silently break thread-safe
+  routing.
+- **TUI `SystemExit` handler in `agent_worker.py` only exits the
+  app for the explicit `/quit` command.** Pre-v0.4 every
+  `SystemExit` (e.g. `urika config secret` wizards calling
+  `raise SystemExit(0)` on user-cancel) silently quit the TUI
+  behind the user's back.
+
 ## [0.4.0rc1] - 2026-04-30
 
 First v0.4 release candidate. v0.4.0 is positioned as the **first
