@@ -23,7 +23,7 @@ from urika.dashboard.projects import (
 )
 from urika.knowledge.store import KnowledgeStore
 
-VALID_PRIVACY_MODES = ["private", "open", "university"]
+VALID_PRIVACY_MODES = ["open", "private", "hybrid"]
 
 # Known cloud (Claude) model names surfaced as dropdown choices on
 # both global and project Models tabs.  Mirrors the interactive CLI's

@@ -211,6 +211,143 @@ def test_get_named_endpoints_returns_multiple_sorted_by_name(urika_home):
     assert private["default_model"] == "qwen3:14b"
 
 
+class TestGetDefaultRuntimePerMode:
+    """``get_default_runtime(mode)`` prefers ``[runtime.modes.<mode>].model``
+    over the legacy flat ``[runtime].model`` key, matching the canonical
+    write path used by the dashboard's Models tab. Without this,
+    ``urika new`` silently ignored every global default the user had
+    set in 0.3.0/0.3.1.
+    """
+
+    def test_per_mode_model_preferred_over_flat_model(self, urika_home):
+        from urika.core.settings import get_default_runtime, save_settings
+
+        save_settings(
+            {
+                "runtime": {
+                    "model": "claude-sonnet-4-5",  # legacy flat
+                    "modes": {
+                        "open": {"model": "claude-opus-4-6"},
+                    },
+                }
+            }
+        )
+        rt = get_default_runtime("open")
+        assert rt["model"] == "claude-opus-4-6"
+
+    def test_falls_back_to_flat_model_when_mode_missing(self, urika_home):
+        from urika.core.settings import get_default_runtime, save_settings
+
+        save_settings(
+            {
+                "runtime": {
+                    "model": "claude-sonnet-4-5",
+                    "modes": {"open": {}},  # no model under open
+                }
+            }
+        )
+        rt = get_default_runtime("open")
+        assert rt["model"] == "claude-sonnet-4-5"
+
+    def test_no_mode_argument_uses_legacy_flat_model(self, urika_home):
+        from urika.core.settings import get_default_runtime, save_settings
+
+        save_settings(
+            {
+                "runtime": {
+                    "model": "claude-haiku-4-5",
+                    "modes": {"open": {"model": "claude-opus-4-6"}},
+                }
+            }
+        )
+        rt = get_default_runtime()  # no mode → legacy behavior
+        assert rt["model"] == "claude-haiku-4-5"
+
+
+class TestMigrate437Pins:
+    """One-shot migration rewrites stale ``claude-opus-4-7`` model pins
+    (a 0.3.0/0.3.1 dashboard default) to ``claude-opus-4-6``. Idempotent
+    via marker file. Backs up the original to ``settings.toml.pre-0.3.2.bak``.
+    """
+
+    def test_rewrites_per_mode_default_and_per_agent(self, urika_home, capsys):
+        from urika.core.settings import (
+            load_settings,
+            migrate_settings,
+            save_settings,
+        )
+
+        save_settings(
+            {
+                "runtime": {
+                    "modes": {
+                        "open": {
+                            "model": "claude-opus-4-7",
+                            "models": {
+                                "advisor_agent": {
+                                    "model": "claude-opus-4-7",
+                                    "endpoint": "open",
+                                },
+                                "task_agent": {
+                                    "model": "claude-sonnet-4-5",
+                                    "endpoint": "open",
+                                },
+                            },
+                        }
+                    }
+                }
+            }
+        )
+        migrate_settings()
+
+        s = load_settings()
+        modes = s["runtime"]["modes"]["open"]
+        assert modes["model"] == "claude-opus-4-6"
+        assert modes["models"]["advisor_agent"]["model"] == "claude-opus-4-6"
+        # Untouched pins stay put.
+        assert modes["models"]["task_agent"]["model"] == "claude-sonnet-4-5"
+
+        # Backup file exists.
+        backup = urika_home / "settings.toml.pre-0.3.2.bak"
+        assert backup.exists(), "expected pre-0.3.2 backup file"
+
+        # Marker file recorded.
+        marker = urika_home / ".migrated_0.3.2"
+        assert marker.exists()
+
+        # User-visible warning printed to stderr.
+        captured = capsys.readouterr()
+        assert "claude-opus-4-7" in captured.err
+        assert "Migrated" in captured.err
+
+    def test_idempotent_does_not_run_twice(self, urika_home):
+        from urika.core.settings import migrate_settings, save_settings, load_settings
+
+        save_settings({"runtime": {"modes": {"open": {"model": "claude-opus-4-7"}}}})
+        migrate_settings()
+        # Second call should be a no-op even if we re-pin 4-7.
+        save_settings({"runtime": {"modes": {"open": {"model": "claude-opus-4-7"}}}})
+        migrate_settings()
+        s = load_settings()
+        assert s["runtime"]["modes"]["open"]["model"] == "claude-opus-4-7", (
+            "second migrate call must not rewrite — marker file gates it"
+        )
+
+    def test_no_settings_file_marks_complete(self, urika_home):
+        from urika.core.settings import migrate_settings
+
+        migrate_settings()
+        assert (urika_home / ".migrated_0.3.2").exists()
+
+    def test_no_4_7_pins_marks_complete_without_backup(self, urika_home):
+        from urika.core.settings import migrate_settings, save_settings
+
+        save_settings({"runtime": {"modes": {"open": {"model": "claude-opus-4-6"}}}})
+        migrate_settings()
+        assert (urika_home / ".migrated_0.3.2").exists()
+        assert not (urika_home / "settings.toml.pre-0.3.2.bak").exists()
+
+
 def test_get_named_endpoints_skips_non_dict_entries(urika_home, monkeypatch):
     """A malformed (non-dict) endpoint value is silently skipped."""
     from urika.core import settings as settings_mod

@@ -52,6 +52,14 @@ def cli(ctx, classic: bool) -> None:
 
     load_secrets()
 
+    # One-shot migration: rewrite stale ``claude-opus-4-7`` pins (a
+    # 0.3.0/0.3.1 dashboard default) to ``claude-opus-4-6`` so users
+    # with the bundled CLI don't keep hitting "Fatal error in message
+    # reader" after upgrading. Idempotent — see ``migrate_settings``.
+    from urika.core.settings import migrate_settings
+
+    migrate_settings()
+
     # One-time compliance reminder: Anthropic Consumer Terms §3.7 + the
     # April 2026 Agent SDK clarification prohibit using a Pro/Max
     # subscription to authenticate the Claude Agent SDK that Urika
