@@ -222,16 +222,25 @@ class ClaudeSDKRunner(AgentRunner):
             "permission_mode": "bypassPermissions",
             "env": agent_env,
         }
-        # When using a custom endpoint, prefer the system-installed
-        # CLI over the bundled one — the bundled CLI may ignore
-        # ANTHROPIC_BASE_URL (claude-agent-sdk-python issue #677).
-        env = config.env or {}
-        if env.get("ANTHROPIC_BASE_URL"):
-            import shutil
+        # Prefer the system-installed `claude` CLI over the SDK's
+        # bundled one whenever it exists. The bundled CLI lags the
+        # public release (claude-agent-sdk 0.1.45 ships v2.1.63 while
+        # the public CLI is v2.1.123+). The Anthropic API has since
+        # tightened the request schema for newer models — e.g.,
+        # `claude-opus-4-7` rejects the old ``thinking.type.enabled``
+        # shape that v2.1.63 sends and returns 400, surfacing as a
+        # cryptic "Fatal error in message reader: Command failed with
+        # exit code 1". A newer system CLI knows the current schema
+        # (``thinking.type.adaptive`` + ``output_config.effort``).
+        # Falling back to the bundled CLI when none is on PATH still
+        # works for older models.
+        # Also covers claude-agent-sdk-python issue #677 (bundled CLI
+        # ignores ``ANTHROPIC_BASE_URL``) — that's now a side-benefit.
+        import shutil
 
-            system_cli = shutil.which("claude")
-            if system_cli:
-                kwargs["cli_path"] = system_cli
+        system_cli = shutil.which("claude")
+        if system_cli:
+            kwargs["cli_path"] = system_cli
         return ClaudeAgentOptions(**kwargs)  # type: ignore[arg-type]
 
 
