@@ -37,7 +37,7 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 
 ## Core Modules
 
-- `src/urika/cli/` — Click CLI: `new`, `list`, `status`, `experiment`, `results`, `methods`, `tools`, `run`, `report`, `inspect`, `logs`, `knowledge`, `advisor`, `evaluate`, `present`, `plan`, `finalize`, `build-tool`, `criteria`, `usage`, `dashboard`
+- `src/urika/cli/` — Click CLI: `new`, `list`, `status`, `inspect`, `delete`, `update`, `experiment` (create/list/delete), `run`, `results`, `methods`, `tools`, `report`, `logs`, `knowledge`, `advisor`, `evaluate`, `present`, `plan`, `finalize`, `build-tool`, `criteria`, `usage`, `summarize`, `dashboard`, `setup`, `config` (api-key/secret/notifications/endpoints), `notifications`, `venv` (create/status), `tui`
 - `src/urika/cli_display.py` — Terminal display: colors, spinners, ThinkingPanel, agent labels, ASCII header
 - `src/urika/tui/` — **Textual TUI (default)**: three-zone layout (OutputPanel + InputBar + StatusBar), background Workers for agent commands, OutputCapture routing print/click.echo to the panel, stdin bridge for interactive prompts (click.prompt/input), animated ActivityBar spinner, tab completion with contextual suggester, CSS theme
 - `src/urika/repl/` — Classic prompt_toolkit REPL (fallback via `urika --classic`), tab completion, slash commands, async main loop with background threads
@@ -58,6 +58,15 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/core/report_writer.py` — Versioned file writer (timestamped backups)
 - `src/urika/core/presentation.py` — Render slide JSON into reveal.js HTML presentations
 - `src/urika/core/advisor_memory.py` — Persistent advisor conversation history and rolling context summaries
+- `src/urika/core/orchestrator_sessions.py` — Cross-session orchestrator chat persistence at `<project>/.urika/sessions/`, auto-prune at 20, dashboard Sessions tab feed
+- `src/urika/core/vault.py` — Tiered secrets vault (process env → project `.env` → global keyring/file), sidecar metadata, dashboard CRUD
+- `src/urika/core/secrets.py` — v0.3 backward-compat shim over `SecretsVault`
+- `src/urika/core/known_secrets.py` — Registry of well-known secret names + `LLM_PROVIDERS` (locked-row metadata for not-yet-supported providers)
+- `src/urika/core/compliance.py` — Anthropic Consumer Terms §3.7 enforcement: refuses cloud-bound subprocess without `ANTHROPIC_API_KEY`, scrubs OAuth tokens + Claude Code session markers from spawned env
+- `src/urika/core/privacy.py` — Privacy preflight (bearer-token-aware GET to `/v1/models` for auth-protected private endpoints)
+- `src/urika/core/updates.py` — GitHub Releases update banner (suppressed in non-TTY)
+- `src/urika/core/usage.py` — Per-project cost / token tracking, aggregated totals + per-session list
+- `src/urika/core/session.py` — Experiment session lifecycle (running / paused / stopped / completed / failed), PID-aware lockfile probes
 - `src/urika/agents/` — Agent roles (planning_agent, task_agent, evaluator, advisor_agent, tool_builder, literature_agent, presentation_agent, report_agent, project_builder, data_agent, finalizer, project_summarizer), registry, config, Claude SDK adapter, audience.py
 - `src/urika/orchestrator/` — Experiment loop (planning→task→evaluator→advisor), autonomous mode (experiment-to-experiment), finalize sequence (finalizer→report→presentation→README), output parsing, knowledge integration, conversational OrchestratorChat (maintains conversation state, calls subagents via Bash, recommends slash commands for long-running operations)
 - `src/urika/evaluation/` — Leaderboard ranking, metric computation
@@ -66,11 +75,15 @@ Statistical modelling, machine learning, time series, neuroscience, cognitive ne
 - `src/urika/data/` — Data loading and profiling: multi-format loader, data models, profiler, pluggable readers (CSV, with registry for extensions)
 - `src/urika/knowledge/` — Knowledge pipeline: extractors (PDF, text, URL), KnowledgeStore, keyword search
 - `src/urika/templates/presentation/` — Bundled reveal.js + CSS for slide decks
-- `src/urika/dashboard/` — Browser-based dashboard (FastAPI + Jinja + HTMX + Alpine), peer to CLI and TUI: multi-page project views (home, experiments, methods, knowledge, advisor, sessions, data, usage, settings), New Project / New Experiment modals, live SSE log streaming, settings forms with auth, light/dark theme
+- `src/urika/dashboard/` — Browser-based dashboard (FastAPI + Jinja + HTMX + Alpine), peer to CLI and TUI: multi-page project views (home, experiments, methods, knowledge, advisor, sessions, data, usage, settings), New Project / New Experiment modals, live SSE log streaming, settings forms with auth, light/dark theme. Includes Secrets tab (global + per-project) with vault CRUD and override-from-global flow.
+- `src/urika/notifications/` — Notifications bus (email / Slack / Telegram), remote command surface, dashboard test-send, canonical event vocabulary
+- `src/urika/rpc/` — JSON-RPC server for external tooling
 
 ## Project Status
 
-1380+ tests (including 56 TUI tests). Foundation, agents (12 roles + orchestrator), orchestrator (experiment + meta + finalize + conversational chat with subagent invocation), evaluation, methods (agent-created), tools (24-tool seed library + agent-built project-specific tools via tool_builder), knowledge pipeline, CLI (20+ commands), Textual TUI (default, three-zone layout with interactive stdin bridge), classic REPL (fallback via --classic), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, dashboard, audience modes, persistent advisor memory, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (35 experiments, 288 methods).
+**v0.3.2 released 2026-04-30.** 2498 tests passing (15 in `tests/test_tui/`, 5 in `tests/test_cli_tui.py`). Foundation, agents (12 roles + orchestrator), orchestrator (experiment + meta + finalize + conversational chat with subagent invocation), evaluation, methods (agent-created), tools (24-tool seed library + agent-built project-specific tools via tool_builder), knowledge pipeline, CLI (25+ commands), Textual TUI (default, three-zone layout with interactive stdin bridge), classic REPL (fallback via `--classic`), project builder, session management, report generation (template + agent narratives), presentation agent (reveal.js slides), finalizer agent (standalone methods, findings.json, reproducibility artifacts), criteria system (versioned, evolving), method registry, usage tracking, three-interface dashboard (run launching, SSE log streaming, advisor chat, vault CRUD, settings forms, notifications test-send), audience modes, persistent advisor memory, cross-session orchestrator session persistence, three-tier secrets vault (file + OS keyring backends), Anthropic Consumer Terms §3.7 compliance enforcement, stop-button SIGTERM hardening, and end-to-end integration tests all implemented. Successfully tested on real DHT target selection data (35 experiments, 288 methods).
+
+**v0.4 in flight.** Canonical roadmap at `dev/plans/2026-04-30-v0.4-roadmap.md`. Major tracks: SecurityPolicy enforcement (advisory-only today), multi-provider thin abstraction (~60% real today), project memory Phase 1 (locked design, unbuilt), GitHub integration (user-named feature), experiment comparison view, dataset hash + drift detection, cost-aware budget, shell completion, TUI v2 polish.
 
 ## Development
 

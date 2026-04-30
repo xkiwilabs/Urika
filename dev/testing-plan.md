@@ -98,12 +98,12 @@
   - [ ] Venv prompt appears (say No)
   - [ ] Knowledge guidance appears (no papers in data path)
   - [ ] Project created successfully
-- [ ] `urika` (launch REPL)
-  - [ ] Header displays correctly (centered, blue)
+- [ ] `urika` (launches Textual TUI by default; `urika --classic` for prompt_toolkit REPL fallback)
+  - [ ] TUI three-zone layout displays (output panel + input bar + activity bar + status bar)
   - [ ] `/help` shows all commands
   - [ ] `/project stroop-study` loads project
   - [ ] `/status` shows project info
-  - [ ] `/tools` lists 18 built-in tools
+  - [ ] `/tools` lists 24 built-in tools
   - [ ] Tab completion works for commands and project names
 - [ ] `/run`
   - [ ] Settings review shows max_turns from urika.toml
@@ -270,3 +270,67 @@ After testing all 10 datasets, you should have:
 - Verified large dataset handling works (~30 MB)
 - Verified deep learning / PyTorch integration works
 - A collection of real outputs suitable for tutorials and documentation
+
+---
+
+## Phase 13 — Dashboard end-to-end (added 2026-04-30 for v0.3.2+)
+
+Mirrors the deferred per-release tester checklist; dashboard is now a
+peer interface to CLI + TUI rather than a read-only viewer.
+
+- [ ] `urika dashboard <project>` launches FastAPI; browser opens at
+      printed URL
+- [ ] Bearer-token auth gate works when configured
+- [ ] New Project modal: creates a project end-to-end (data path,
+      privacy mode, runtime selection)
+- [ ] New Experiment modal: launches a run; live SSE log streams
+      tokens / tool calls / agent transitions
+- [ ] **Stop button on a running experiment** flips the card to
+      `stopped` (not lingering on `pending` or `running`) within ~10s
+- [ ] **Resume button** appears for `stopped` / `paused` / `failed`
+      experiments and restarts from where the orchestrator left off
+- [ ] Advisor chat: typing a message produces a reply WITHOUT
+      auto-firing experiments (post-v0.3.2 fix)
+- [ ] Sessions tab: dashboard advisor chats appear (post-v0.3.2 fix)
+- [ ] Secrets tab (global + per-project): vault CRUD, override-from-
+      global flow, foot-gun guard rejects pasted-value-as-name
+- [ ] Settings → Privacy: open / private / hybrid radio (no
+      "university" mode); test-endpoint button works against a
+      configured private endpoint
+- [ ] Settings → Models: changing the default model writes
+      `[runtime.modes.<mode>].model` and a fresh `urika new` picks it
+      up
+- [ ] Notifications: test-send fires for every configured channel
+- [ ] Danger zones (project delete, experiment delete) prompt for
+      confirmation before destructive ops
+- [ ] Light/dark theme toggle persists across reloads
+
+## Phase 14 — Compliance + secrets (added 2026-04-30 for v0.3.2+)
+
+- [ ] `urika config api-key` (interactive) saves to vault
+- [ ] `urika config api-key --test` round-trips to api.anthropic.com
+- [ ] `urika config secret` stores arbitrary named credentials with
+      foot-gun guard
+- [ ] First-launch on a config containing `claude-opus-4-7` pins:
+      verify backup `~/.urika/settings.toml.pre-0.3.2.bak` appears
+      and the active file has been rewritten to `claude-opus-4-6`
+- [ ] Vault-write failures during dashboard form save surface as
+      "Saved (with N secret-store warnings)" in the response banner
+- [ ] Running CLI under non-TTY stdin (e.g. `urika run my-test </dev/null`):
+      does NOT auto-launch experiments via fall-through prompt
+
+## Phase 15 — Error / pause classifier (added 2026-04-30 for v0.3.2+)
+
+- [ ] Network blip mid-run: orchestrator pauses (resumable) instead
+      of failing the experiment
+- [ ] Missing-private-endpoint config error: pauses with friendly
+      message instead of failing with raw exception
+- [ ] Auth error (invalid `ANTHROPIC_API_KEY`): fails fast with
+      actionable message pointing at `urika config api-key`
+- [ ] Rate limit (429): pauses with resumable state
+
+## Test-suite sanity check
+
+A healthy `pytest --collect-only -q` should report **2400+ tests**
+collected (post-v0.3.2 baseline). A regression that drops the count
+is something to investigate before ship.
