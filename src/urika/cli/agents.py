@@ -168,6 +168,47 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         except Exception:
             pass
 
+        # Write a session record so dashboard advisor chats appear
+        # under the project's Sessions tab. Pre-v0.3.2 only the TUI
+        # / REPL paths wrote orchestrator-sessions; the dashboard's
+        # advisor chat (which spawns ``urika advisor`` from
+        # ``runs.spawn_advisor``) silently never produced one,
+        # leaving Sessions empty even after long advisor runs.
+        try:
+            from urika.core.orchestrator_sessions import (
+                OrchestratorSession,
+                _now_iso,
+                _timestamp_id,
+                save_session,
+            )
+
+            _now = _now_iso()
+            _session = OrchestratorSession(
+                session_id=_timestamp_id(),
+                started=_now,
+                updated=_now,
+                older_summary="",
+                recent_messages=[
+                    {"role": "user", "content": text, "ts": _now},
+                    {
+                        "role": "assistant",
+                        "content": advisor_text[:2000],
+                        "ts": _now,
+                    },
+                ],
+                preview=text[:120],
+            )
+            save_session(project_path, _session)
+        except Exception as _sess_exc:
+            # Best-effort — never let session persistence break the
+            # advisor reply path. Log so a broken sessions dir
+            # doesn't silently regress dashboard discoverability.
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "Advisor session persistence failed: %s", _sess_exc
+            )
+
         _offer_to_run_advisor_suggestions(result.text_output, project, project_path)
     else:
         click.echo(f"Error: {result.error}")

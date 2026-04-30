@@ -49,13 +49,45 @@ _BILLING_PATTERNS = [
     re.compile(r"subscription", re.IGNORECASE),
     re.compile(r"quota", re.IGNORECASE),
 ]
+# Transient network/server errors that should pause-and-resume rather
+# than fail the experiment outright. Pre-v0.3.2 a 5xx or a connection
+# blip mid-loop killed a multi-hour autonomous run.
+_TRANSIENT_PATTERNS = [
+    re.compile(r"\b5\d\d\b"),
+    re.compile(r"connection.{0,3}reset", re.IGNORECASE),
+    re.compile(r"connection.{0,3}refused", re.IGNORECASE),
+    re.compile(r"connection.{0,3}aborted", re.IGNORECASE),
+    re.compile(r"timeout", re.IGNORECASE),
+    re.compile(r"timed.?out", re.IGNORECASE),
+    re.compile(r"temporarily.{0,3}unavailable", re.IGNORECASE),
+    re.compile(r"service.{0,3}unavailable", re.IGNORECASE),
+    re.compile(r"bad.?gateway", re.IGNORECASE),
+    re.compile(r"gateway.{0,3}timeout", re.IGNORECASE),
+]
+# Configuration errors that need user action to fix but shouldn't
+# look like generic failures in the dashboard. Treated as a separate
+# category so the UI can render an actionable hint.
+_CONFIG_PATTERNS = [
+    re.compile(r"MissingPrivateEndpointError", re.IGNORECASE),
+    re.compile(r"APIKeyRequiredError", re.IGNORECASE),
+    re.compile(r"private.{0,3}endpoint.{0,30}configured", re.IGNORECASE),
+]
 
 
 def _classify_error(error_text: str) -> str:
     """Classify an SDK error into a user-friendly category.
 
-    Returns one of: "rate_limit", "auth", "billing", "unknown".
+    Returns one of: ``"rate_limit"``, ``"auth"``, ``"billing"``,
+    ``"transient"``, ``"config"``, ``"unknown"``.
+
+    The ``"transient"`` and ``"config"`` categories were added in
+    v0.3.2 — pre-v0.3.2 a 5xx mid-loop or a missing-endpoint config
+    error fell into ``"unknown"`` and silently failed the experiment.
+    The orchestrator loop's pause path treats both as pausable.
     """
+    for pat in _CONFIG_PATTERNS:
+        if pat.search(error_text):
+            return "config"
     for pat in _RATE_LIMIT_PATTERNS:
         if pat.search(error_text):
             return "rate_limit"
@@ -65,6 +97,9 @@ def _classify_error(error_text: str) -> str:
     for pat in _BILLING_PATTERNS:
         if pat.search(error_text):
             return "billing"
+    for pat in _TRANSIENT_PATTERNS:
+        if pat.search(error_text):
+            return "transient"
     return "unknown"
 
 
@@ -88,6 +123,22 @@ def _friendly_error(category: str, raw: str) -> str:
         return (
             "Billing/quota error — check your Anthropic plan status.\n"
             "  Visit console.anthropic.com to review your account.\n"
+            f"  Detail: {raw}"
+        )
+    if category == "transient":
+        return (
+            "Transient network/server error — the API request failed but "
+            "is likely to succeed on retry.\n"
+            "  The experiment has been paused and can be resumed.\n"
+            "  Run: /resume  (or 'urika run --resume' from CLI)\n"
+            f"  Detail: {raw}"
+        )
+    if category == "config":
+        return (
+            "Configuration error — the agent's runtime config is missing "
+            "or invalid.\n"
+            "  Check ``urika config`` (CLI) or the dashboard's Privacy / "
+            "Models tab.\n"
             f"  Detail: {raw}"
         )
     return raw

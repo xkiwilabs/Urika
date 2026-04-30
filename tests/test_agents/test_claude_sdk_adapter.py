@@ -163,3 +163,80 @@ class TestComplianceSafetyNet:
         runner = ClaudeSDKRunner()
         options = runner._build_options(read_only_config)
         assert options.env.get("ANTHROPIC_BASE_URL") == "http://localhost:11434"
+
+
+# ── _classify_error coverage ─────────────────────────────────────────
+
+
+class TestClassifyError:
+    """Error classification drives whether the orchestrator loop
+    pauses (recoverable) or fails the experiment outright. The set of
+    pausable categories was widened in v0.3.2 to include 'transient'
+    (5xx / connection / timeout) and 'config' (missing endpoint /
+    missing API key) — pre-v0.3.2 a single network blip mid-loop or
+    a misconfigured project killed multi-hour autonomous runs.
+    """
+
+    def test_rate_limit_429(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert _classify_error("HTTP 429 Too Many Requests") == "rate_limit"
+
+    def test_auth_401(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert _classify_error("401 Unauthorized") == "auth"
+
+    def test_billing_quota_exceeded(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert _classify_error("billing: quota exceeded") == "billing"
+
+    def test_transient_5xx(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert _classify_error("HTTP 503 service_unavailable") == "transient"
+
+    def test_transient_connection_reset(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert (
+            _classify_error("connection reset by peer mid-stream")
+            == "transient"
+        )
+
+    def test_transient_timeout(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert _classify_error("request timed out after 60s") == "transient"
+
+    def test_config_missing_private_endpoint(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert (
+            _classify_error("MissingPrivateEndpointError: not configured")
+            == "config"
+        )
+
+    def test_config_api_key_required(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert _classify_error("APIKeyRequiredError: no key") == "config"
+
+    def test_unknown_falls_through(self) -> None:
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert _classify_error("something completely random") == "unknown"
+
+    def test_pausable_set_includes_new_categories(self) -> None:
+        """Regression: the pausable set must include transient and
+        config, otherwise the new classifier improvements don't
+        actually change loop behavior — the result still gets
+        rendered as a hard failure.
+        """
+        from urika.orchestrator.loop_criteria import _PAUSABLE_ERRORS
+
+        assert "rate_limit" in _PAUSABLE_ERRORS
+        assert "billing" in _PAUSABLE_ERRORS
+        assert "transient" in _PAUSABLE_ERRORS
+        assert "config" in _PAUSABLE_ERRORS
