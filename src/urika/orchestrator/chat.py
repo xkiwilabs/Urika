@@ -159,13 +159,35 @@ class OrchestratorChat:
             except Exception:
                 pass
 
+        # When the agent failed, surface the most specific message we
+        # have rather than the bare "Agent failed" placeholder. The
+        # SDK adapter populates ``error`` and ``error_category``;
+        # include the category in the response so the dashboard can
+        # render auth/rate-limit/billing errors with their own UI
+        # rather than dropping back to a generic exception toast.
+        if result.success:
+            response = result.text_output
+        else:
+            response = result.error or "Agent failed"
+            if result.error_category:
+                response = f"[{result.error_category}] {response}"
+            # If the agent produced any partial assistant text before
+            # failing, show that too — gives the user a window into
+            # what the agent was trying to do.
+            if result.text_output:
+                response = (
+                    f"{response}\n\n--- partial output ---\n"
+                    f"{result.text_output}"
+                )
+
         return {
-            "response": result.text_output if result.success else (result.error or "Agent failed"),
+            "response": response,
             "success": result.success,
             "tokens_in": result.tokens_in,
             "tokens_out": result.tokens_out,
             "cost_usd": result.cost_usd or 0,
             "model": result.model,
+            "error_category": result.error_category,
         }
 
     def _build_config(self) -> AgentConfig:

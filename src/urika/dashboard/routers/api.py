@@ -1083,6 +1083,12 @@ async def api_global_settings_put(request: Request):
     s = load_settings()
 
     privacy = s.setdefault("privacy", {})
+
+    # Vault-save failure list — populated by the privacy-endpoint
+    # block and the notifications block when ``vault.set_global``
+    # raises. Surfaced in the response so users learn that secrets
+    # didn't land instead of seeing a misleading green "Saved".
+    _vault_save_failures: list[str] = []
     endpoints = privacy.setdefault("endpoints", {})
 
     runtime = s.setdefault("runtime", {})
@@ -1125,14 +1131,26 @@ async def api_global_settings_put(request: Request):
                         key_value,
                         description=f"used by privacy endpoint '{ep['name']}'",
                     )
-                except Exception:
+                except Exception as vault_exc:
                     # Vault write failures shouldn't tank the whole
-                    # settings save — surface them, but let the
-                    # settings.toml mutation proceed. The dashboard
-                    # already shows the env-var-set status on the
-                    # endpoint test affordance, so the user will
-                    # notice if the secret didn't land.
-                    pass
+                    # settings save, but they MUST be surfaced — the
+                    # form previously returned "saved" while the
+                    # secret silently didn't land, so the next agent
+                    # run mysteriously failed auth. Log + collect the
+                    # failure so the response can include it.
+                    import logging as _logging
+
+                    _logging.getLogger(__name__).error(
+                        "Vault write failed for endpoint %s key %s: %s",
+                        ep.get("name"),
+                        key_env,
+                        vault_exc,
+                        exc_info=True,
+                    )
+                    _vault_save_failures.append(
+                        f"{key_env} (endpoint '{ep.get('name')}'): "
+                        f"{type(vault_exc).__name__}: {vault_exc}"
+                    )
         endpoints.clear()
         endpoints.update(new_endpoints)
 
@@ -1307,10 +1325,24 @@ async def api_global_settings_put(request: Request):
                 value,
                 description=f"used by notifications: {source}",
             )
-        except Exception:
-            # Vault write shouldn't tank the settings save — see
-            # privacy-endpoint comment above for rationale.
-            pass
+        except Exception as vault_exc:
+            # Vault write shouldn't tank the settings save, but it
+            # MUST surface — pre-v0.3.2 the form returned "saved"
+            # while the secret silently didn't write, so the next
+            # notification dispatch failed mysteriously.
+            import logging as _logging
+
+            _logging.getLogger(__name__).error(
+                "Vault write failed for notifications %s key %s: %s",
+                source,
+                env_name,
+                vault_exc,
+                exc_info=True,
+            )
+            _vault_save_failures.append(
+                f"{env_name} (notifications: {source}): "
+                f"{type(vault_exc).__name__}: {vault_exc}"
+            )
 
     # Email
     email_to_raw = (form.get("notifications_email_to") or "").strip()
@@ -1455,12 +1487,29 @@ async def api_global_settings_put(request: Request):
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
-        return JSONResponse(
-            {
-                "default_audience": default_audience,
-                "default_max_turns": max_turns,
-            }
+        body: dict[str, object] = {
+            "default_audience": default_audience,
+            "default_max_turns": max_turns,
+        }
+        if _vault_save_failures:
+            body["vault_save_failures"] = _vault_save_failures
+        return JSONResponse(body)
+
+    if _vault_save_failures:
+        # HTML response surfaces the failures inline so users see
+        # "Saved (with N secret-store warnings)" rather than the
+        # bare green "Saved" that pre-v0.3.2 returned even when the
+        # vault writes silently dropped credentials on the floor.
+        bullets = "".join(f"<li>{f}</li>" for f in _vault_save_failures)
+        return HTMLResponse(
+            content=(
+                '<span class="text-warning">Saved (with '
+                f"{len(_vault_save_failures)} secret-store "
+                f"warning{'s' if len(_vault_save_failures) != 1 else ''})</span>"
+                f'<ul class="vault-warnings">{bullets}</ul>'
+            )
         )
+
     return HTMLResponse(content='<span class="text-success">Saved</span>')
 
 

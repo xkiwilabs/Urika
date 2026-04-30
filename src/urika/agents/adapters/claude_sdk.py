@@ -124,8 +124,17 @@ class ClaudeSDKRunner(AgentRunner):
             if on_message is not None:
                 try:
                     on_message(msg)
-                except Exception:
-                    pass  # Don't let callback errors break the agent
+                except Exception as cb_exc:
+                    # Don't let callback errors break the agent, but
+                    # do log them — pre-v0.3.2 a UI-render bug in the
+                    # callback would silently kill progress feedback
+                    # and the user just saw "agent stalled".
+                    logger.warning(
+                        "on_message callback raised %s: %s",
+                        type(cb_exc).__name__,
+                        cb_exc,
+                        exc_info=True,
+                    )
 
             messages.append(_message_to_dict(msg))
             if isinstance(msg, AssistantMessage):
@@ -139,23 +148,52 @@ class ClaudeSDKRunner(AgentRunner):
                 session_id = msg.session_id
                 num_turns = msg.num_turns
                 duration_ms = msg.duration_ms
-                cost_usd = msg.total_cost_usd
+                # Accumulate cost/tokens across multi-ResultMessage
+                # streams (subagent + final). Pre-v0.3.2 these were
+                # set (not summed), so a subagent's usage was clobbered
+                # by the final ResultMessage's usage.
+                if msg.total_cost_usd is not None:
+                    cost_usd = (cost_usd or 0.0) + msg.total_cost_usd
                 is_error = msg.is_error
                 # Capture the actual error/result text
                 result_text = getattr(msg, "result", "") or ""
-                # Populate token counts from usage dict
+                # Populate token counts from usage dict, including the
+                # cache fields newer SDKs emit separately.
                 usage = getattr(msg, "usage", None) or {}
-                tokens_in = usage.get("input_tokens", 0) or 0
-                tokens_out = usage.get("output_tokens", 0) or 0
+                tokens_in += (
+                    (usage.get("input_tokens") or 0)
+                    + (usage.get("cache_creation_input_tokens") or 0)
+                    + (usage.get("cache_read_input_tokens") or 0)
+                )
+                tokens_out += usage.get("output_tokens") or 0
 
         except ProcessError as exc:
-            # Extract stderr for better diagnostics — the generic str(exc)
-            # just says "Command failed with exit code 1".
+            # Extract stderr for better diagnostics — the SDK's generic
+            # ``str(exc)`` is "Command failed with exit code 1" and
+            # the SDK transport hardcodes ``stderr="Check stderr
+            # output for details"`` even when no stderr was captured,
+            # which used to mask real failures (e.g. the API rejecting
+            # ``thinking.type.enabled`` for opus-4-7).
             stderr = getattr(exc, "stderr", "") or ""
-            raw_detail = stderr.strip() if stderr.strip() else str(exc)
+            stderr_clean = stderr.strip()
+            # The "Check stderr output for details" sentinel from the
+            # SDK is not actual diagnostic info — fall back to other
+            # exception attributes when we see it.
+            if stderr_clean and stderr_clean.startswith("Check stderr"):
+                stderr_clean = ""
+            exit_code = getattr(exc, "exit_code", None)
+            if stderr_clean:
+                raw_detail = stderr_clean
+            elif exit_code is not None:
+                raw_detail = (
+                    f"{type(exc).__name__}: exit code {exit_code} "
+                    f"(no stderr captured by SDK transport)"
+                )
+            else:
+                raw_detail = f"{type(exc).__name__}: {exc}"
             category = _classify_error(raw_detail)
             error_detail = _friendly_error(category, raw_detail)
-            logger.warning("Agent SDK error [%s]: %s", category, raw_detail)
+            logger.exception("Agent SDK ProcessError [%s]", category)
             return AgentResult(
                 success=False,
                 messages=messages,
@@ -169,9 +207,14 @@ class ClaudeSDKRunner(AgentRunner):
             )
 
         except Exception as exc:
-            raw_detail = str(exc)
+            # Preserve type, traceback, and chained __cause__ — the
+            # generic str(exc) drops everything except the message,
+            # which is what made the bundled-CLI schema-mismatch bug
+            # invisible in v0.3.0/0.3.1.
+            raw_detail = f"{type(exc).__name__}: {exc}"
             category = _classify_error(raw_detail)
             error_detail = _friendly_error(category, raw_detail)
+            logger.exception("Agent SDK error [%s]", category)
             return AgentResult(
                 success=False,
                 messages=messages,
@@ -187,7 +230,22 @@ class ClaudeSDKRunner(AgentRunner):
         # Build error message with actual details
         error_msg = None
         if is_error:
-            error_msg = result_text or "Agent reported error (no details)"
+            # Enrich the error string with what we know about the run
+            # so the user has something to act on — pre-v0.3.2 this
+            # was just ``result_text or "Agent reported error (no
+            # details)"`` and an empty result_text yielded a useless
+            # placeholder.
+            if result_text:
+                error_msg = result_text
+            else:
+                _last_assistant = (
+                    text_parts[-1][:200] if text_parts else ""
+                )
+                error_msg = (
+                    f"Agent reported error after {num_turns} turn(s) "
+                    f"in {duration_ms}ms"
+                    + (f": {_last_assistant!r}" if _last_assistant else "")
+                )
 
         return AgentResult(
             success=not is_error,

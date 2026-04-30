@@ -744,8 +744,18 @@ async def run_experiment(
             update_turn(project_dir, experiment_id)
 
         except Exception as exc:
+            # Log the full traceback so per-turn crashes land in the
+            # run.log the SSE tailer reads. Pre-v0.3.2 this branch
+            # only forwarded ``str(exc)`` so a KeyError parsing an
+            # evaluator block became "Experiment failed: 'criteria_met'"
+            # with no traceback anywhere.
+            logger.exception("Turn %d crashed", turn)
             try:
-                fail_session(project_dir, experiment_id, error=str(exc))
+                fail_session(
+                    project_dir,
+                    experiment_id,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
             except Exception as fail_exc:
                 logger.warning("fail_session raised: %s", fail_exc)
             finally:
@@ -753,8 +763,10 @@ async def run_experiment(
                     release_lock(project_dir, experiment_id)
                 except Exception:
                     pass
-            progress("phase", f"Experiment failed: {exc}")
-            return _usage_dict("failed", turn, error=str(exc))
+            progress("phase", f"Experiment failed: {type(exc).__name__}: {exc}")
+            return _usage_dict(
+                "failed", turn, error=f"{type(exc).__name__}: {exc}"
+            )
 
     # Reached max_turns without criteria being met
     complete_session(project_dir, experiment_id)

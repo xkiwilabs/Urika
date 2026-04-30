@@ -98,6 +98,7 @@ def _spawn_detached(
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_fd = open(log_path, "ab", buffering=0)  # append, unbuffered
+    proc = None
     try:
         popen_kwargs: dict = {
             "stdout": log_fd,
@@ -112,7 +113,27 @@ def _spawn_detached(
             popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             popen_kwargs["start_new_session"] = True
-        proc = subprocess.Popen(cmd, **popen_kwargs)
+        try:
+            proc = subprocess.Popen(cmd, **popen_kwargs)
+        except (OSError, ValueError) as spawn_exc:
+            # Popen itself failed — ENOEXEC, missing python, env too
+            # big, etc. The SSE tailer is watching ``log_path``; if
+            # we don't write anything the browser sees an empty stream
+            # and times out with no clue. Pre-v0.3.2 the FD was just
+            # closed empty in ``finally`` and the route returned a
+            # phantom PID. Now: write a marker line into the log so
+            # the SSE tailer surfaces it, and re-raise so the route
+            # returns 500 rather than 200 + bogus PID.
+            try:
+                log_fd.write(
+                    (
+                        f"URIKA-LAUNCH-FAILED: {type(spawn_exc).__name__}: "
+                        f"{spawn_exc}\n  cmd: {' '.join(str(c) for c in cmd)}\n"
+                    ).encode("utf-8")
+                )
+            except OSError:
+                pass
+            raise
     finally:
         # Parent doesn't need the FD any more — the child has its own copy.
         log_fd.close()
