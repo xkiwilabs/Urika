@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# End-to-end smoke for v0.4 in OPEN privacy mode.
+#
+# Drives the full Urika pipeline against the small Stroop dataset
+# using real Anthropic API calls (claude-opus-4-6). Project lives
+# under the user's real ~/urika-projects/ so it shows up in the
+# dashboard for visual inspection.
+#
+# Usage:
+#   bash dev/scripts/smoke-v04-e2e-open.sh            # leave project for inspection
+#   bash dev/scripts/smoke-v04-e2e-open.sh --cleanup  # delete project on success
+#
+# Prereqs:
+#   - urika installed and on PATH
+#   - ANTHROPIC_API_KEY exported OR ~/.urika/secrets.env contains one
+#
+# This script will take 30-60 minutes (real LLM round-trips at every
+# stage). Per-step output goes to dev/scripts/.smoke-logs/<ts>-<pid>/.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/smoke-v04-e2e-common.sh"
+
+DATASET="$SCRIPT_DIR/../test-datasets/stroop/data/stroop.csv"
+TS="$(date +%Y%m%d-%H%M%S)"
+PROJ="e2e-open-stroop-${TS}"
+PROJ_DIR="$HOME/urika-projects/$PROJ"
+QUESTION="Is there a statistically significant Stroop interference effect, and what is the effect size?"
+DESCRIPTION="E2E smoke (open mode) — Stroop reaction-time data, paired-difference confirmatory test."
+
+CLEANUP="${1:-}"
+
+echo "======================================================================"
+echo "v0.4 E2E SMOKE — OPEN MODE"
+echo "  project:    $PROJ"
+echo "  data:       $DATASET"
+echo "  proj dir:   $PROJ_DIR"
+echo "  log dir:    $URIKA_E2E_LOG_DIR"
+echo "  cleanup:    ${CLEANUP:-no}"
+echo "======================================================================"
+
+# === Pre-flight: API key present =====================================
+if [[ -z "${ANTHROPIC_API_KEY:-}" ]] && \
+   ! { [[ -f "$HOME/.urika/secrets.env" ]] && grep -q "^ANTHROPIC_API_KEY=" "$HOME/.urika/secrets.env"; }; then
+  echo
+  echo "FATAL: open mode requires ANTHROPIC_API_KEY in env or ~/.urika/secrets.env."
+  exit 2
+fi
+
+# === 1. urika new ====================================================
+step "1. urika new (open mode)"
+if run_step_with_timeout "urika new" 180 \
+     urika new "$PROJ" --json --data "$DATASET" \
+       --question "$QUESTION" \
+       --description "$DESCRIPTION" \
+       --mode confirmatory \
+       --privacy-mode open; then
+  verify_artifact "project urika.toml" "$PROJ_DIR/urika.toml"
+  verify_artifact_contains "data_hashes recorded" "$PROJ_DIR/urika.toml" "data_hashes"
+  verify_artifact "criteria.json" "$PROJ_DIR/criteria.json"
+  verify_artifact "data dir" "$PROJ_DIR/data"
+  verify_artifact "projectbook dir" "$PROJ_DIR/projectbook"
+fi
+
+# === 2. urika status & inspect (read-only sanity) ====================
+step "2. status / inspect"
+run_step_with_timeout "status --json" 30 urika status "$PROJ" --json
+run_step_with_timeout "inspect --json" 30 urika inspect "$PROJ" --json
+
+# === 3. urika advisor (live LLM) =====================================
+step "3. urika advisor (real LLM)"
+run_step_with_timeout "advisor first turn" 180 \
+  urika advisor "$PROJ" "What single analytical approach would you recommend first, and why?"
+
+# === 4. urika build-tool =============================================
+step "4. urika build-tool — paired-difference helper"
+if run_step_with_timeout "build-tool" 360 \
+     urika build-tool "$PROJ" \
+       "create a tool called paired_diff_summary that takes two columns and returns the mean, SD, and 95% CI of the differences"
+then
+  verify_artifact "tools/ dir present" "$PROJ_DIR/tools"
+fi
+
+# === 5. urika plan ===================================================
+step "5. urika plan — design next method"
+run_step_with_timeout "plan" 300 \
+  urika plan "$PROJ"
+
+# === 6. urika run — single experiment, capped turns ==================
+step "6. urika run --max-turns 5 (single experiment)"
+if run_step_with_timeout "run experiment 1" 1500 \
+     urika run "$PROJ" --max-turns 5 --auto -q
+then
+  verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
+  verify_artifact "leaderboard.json" "$PROJ_DIR/leaderboard.json"
+fi
+
+# Capture first experiment ID for later evaluate / present steps.
+FIRST_EXP="$(urika experiment list "$PROJ" 2>/dev/null \
+              | awk 'NF>0 && $1 ~ /^exp-/ {print $1; exit}')"
+log "First experiment: ${FIRST_EXP:-<none>}"
+
+# === 7. urika run --max-experiments 2 (autonomous) ===================
+step "7. urika run --max-experiments 2 --budget 2.00"
+run_step_with_timeout "autonomous 2 experiments" 2400 \
+  urika run "$PROJ" --max-experiments 2 --max-turns 5 --budget 2.00 --auto -q
+
+# === 8. urika evaluate ===============================================
+step "8. urika evaluate (latest experiment)"
+LATEST_EXP="$(urika experiment list "$PROJ" 2>/dev/null \
+               | awk 'NF>0 && $1 ~ /^exp-/ {last=$1} END {print last}')"
+log "Latest experiment: ${LATEST_EXP:-<none>}"
+if [[ -n "$LATEST_EXP" ]]; then
+  run_step_with_timeout "evaluate" 600 \
+    urika evaluate "$PROJ" "$LATEST_EXP"
+else
+  fail "evaluate skipped — could not resolve experiment ID"
+fi
+
+# === 9. urika report =================================================
+step "9. urika report (project-level)"
+if run_step_with_timeout "report" 600 urika report "$PROJ"; then
+  verify_artifact "projectbook/narrative.md" "$PROJ_DIR/projectbook/narrative.md"
+fi
+
+# === 10. urika present (project-level) ===============================
+step "10. urika present --experiment project"
+if run_step_with_timeout "present project" 900 \
+     urika present "$PROJ" --experiment project
+then
+  verify_artifact "final-presentation dir" "$PROJ_DIR/projectbook/final-presentation"
+fi
+
+# === 11. urika finalize ==============================================
+step "11. urika finalize"
+if run_step_with_timeout "finalize" 1500 urika finalize "$PROJ"; then
+  verify_artifact "findings.json"     "$PROJ_DIR/findings.json"
+  verify_artifact "requirements.txt"  "$PROJ_DIR/requirements.txt"
+  verify_artifact "reproduce.sh"      "$PROJ_DIR/reproduce.sh"
+  verify_artifact "README.md"         "$PROJ_DIR/README.md"
+  verify_artifact "final-report.md"   "$PROJ_DIR/projectbook/final-report.md"
+fi
+
+# === 12. Cleanup (optional) ==========================================
+if [[ "$CLEANUP" == "--cleanup" ]] && (( FAIL == 0 )); then
+  step "cleanup"
+  if urika delete "$PROJ" --force > /dev/null 2>&1; then
+    ok "project deleted"
+  else
+    fail "delete failed"
+  fi
+fi
+
+print_summary
+exit $FAIL
