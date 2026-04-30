@@ -7,6 +7,7 @@ suggestions, prompts the user to run the first one immediately.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import click
@@ -35,6 +36,23 @@ def _offer_to_run_advisor_suggestions(
         name = s.get("name", f"experiment-{i}")
         click.echo(f"    {i}. {name}")
     click.echo()
+
+    # Refuse to auto-run experiments when there's no human at the
+    # terminal to confirm. The dashboard spawns ``urika advisor`` as a
+    # detached subprocess with ``stdin=DEVNULL``; without this guard,
+    # the prompt below silently falls back to the default ("Yes —
+    # start running now") on EOFError, which auto-fires a
+    # multi-hour experiment from a chat message. Users in the
+    # dashboard launch experiments explicitly via "New experiment"
+    # in the experiment list.
+    _tui_active = getattr(sys.stdin, "_tui_bridge", False)
+    if not sys.stdin.isatty() and not _tui_active:
+        click.echo(
+            "  To run any of these, click \"New experiment\" in the dashboard's "
+            "experiment list, or run `urika run "
+            f"{project_name} --experiment <name>` from a terminal."
+        )
+        return
 
     try:
         choice = _prompt_numbered(

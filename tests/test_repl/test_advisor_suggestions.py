@@ -30,9 +30,12 @@ class TestCliOfferToRunAdvisorSuggestions:
         advisor_output = (
             '```json\n{"suggestions": [{"name": "exp-1", "method": "test"}]}\n```'
         )
-        with patch(
-            "urika.cli.run_advisor._prompt_numbered",
-            return_value="No \u2014 I'll run later with urika run",
+        with (
+            patch("urika.cli.run_advisor.sys.stdin.isatty", return_value=True),
+            patch(
+                "urika.cli.run_advisor._prompt_numbered",
+                return_value="No \u2014 I'll run later with urika run",
+            ),
         ):
             # Should not call run or create_experiment
             _offer_to_run_advisor_suggestions(
@@ -50,6 +53,7 @@ class TestCliOfferToRunAdvisorSuggestions:
         mock_exp.experiment_id = "exp-007"
 
         with (
+            patch("urika.cli.run_advisor.sys.stdin.isatty", return_value=True),
             patch(
                 "urika.cli.run_advisor._prompt_numbered",
                 return_value="Yes \u2014 start running now",
@@ -83,11 +87,44 @@ class TestCliOfferToRunAdvisorSuggestions:
         advisor_output = (
             '```json\n{"suggestions": [{"name": "exp-1"}]}\n```'
         )
-        with patch("urika.cli.run_advisor._prompt_numbered", side_effect=click.Abort):
+        with (
+            patch("urika.cli.run_advisor.sys.stdin.isatty", return_value=True),
+            patch("urika.cli.run_advisor._prompt_numbered", side_effect=click.Abort),
+        ):
             # Should not raise
             _offer_to_run_advisor_suggestions(
                 advisor_output, "proj", tmp_path
             )
+
+    def test_non_tty_does_not_prompt_or_run(self, tmp_path: Path) -> None:
+        """Regression: dashboard spawns ``urika advisor`` with stdin=DEVNULL.
+
+        Previously the auto-run prompt fell through to its default "Yes"
+        on EOFError, silently kicking off a multi-hour experiment from
+        a chat message. The non-interactive guard must skip the prompt
+        AND must not call ``create_experiment`` / invoke ``run``.
+        """
+        from urika.cli import _offer_to_run_advisor_suggestions
+
+        advisor_output = (
+            '```json\n{"suggestions": [{"name": "exp-007", "method": "do stuff"}]}\n```'
+        )
+
+        with (
+            patch("urika.cli.run_advisor.sys.stdin.isatty", return_value=False),
+            patch(
+                "urika.cli.run_advisor._prompt_numbered",
+            ) as mock_prompt,
+            patch(
+                "urika.core.experiment.create_experiment",
+            ) as mock_create,
+        ):
+            _offer_to_run_advisor_suggestions(
+                advisor_output, "my-project", tmp_path
+            )
+
+        mock_prompt.assert_not_called()
+        mock_create.assert_not_called()
 
 
 # ── REPL session ──────────────────────────────────────────────────────
