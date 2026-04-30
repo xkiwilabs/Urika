@@ -141,6 +141,16 @@ class ProjectBuilder:
                 "format": self._detect_format(),
                 "pattern": self._detect_glob_pattern(),
             }
+            # Record a SHA-256 of every data path so ``urika run``
+            # can detect drift if the user edits the data between
+            # experiments. Pre-v0.4 there was no record at all,
+            # making "I re-ran the experiment with edited data and
+            # got different numbers" an invisible failure mode.
+            from urika.data.data_hash import hash_data_files
+
+            data_hashes = hash_data_files(data_paths)
+            if data_hashes:
+                existing.setdefault("project", {})["data_hashes"] = data_hashes
 
         existing.setdefault("preferences", {})["web_search"] = self.web_search
 
