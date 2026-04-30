@@ -38,8 +38,20 @@ def _build_env(*, no_tee: bool = False) -> dict[str, str]:
     SSE log tailer). When ``no_tee=True`` also sets ``URIKA_NO_TEE`` so
     ``urika run`` skips its own log tee — the dashboard-spawned child
     becomes the sole writer.
+
+    Defense-in-depth: zero ``CLAUDE_CODE_*`` session markers and OAuth
+    tokens via ``compliance.scrub_oauth_env``. If the dashboard process
+    was itself launched from a Claude-Code-owned terminal (a real
+    scenario for maintainers) every spawned ``urika run`` would
+    otherwise inherit the markers and the eventual ``claude``
+    subprocess could refuse to launch nested. The SDK adapter scrubs
+    the same vars at the leaf agent layer; doing it here too prevents
+    the Bash-shell-out branch (orchestrator chat) from regressing.
     """
+    from urika.core.compliance import scrub_oauth_env
+
     env = os.environ.copy()
+    env.update(scrub_oauth_env(None))
     env["PYTHONUNBUFFERED"] = "1"
     if no_tee:
         env["URIKA_NO_TEE"] = "1"

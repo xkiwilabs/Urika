@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 
 import click
 
@@ -224,10 +225,17 @@ def run(
         else:
             max_turns = 5
 
-    # If no flags provided and not from REPL, show settings dialog
+    # If no flags provided and not from REPL, show settings dialog.
+    # Skip the dialog entirely when stdin is non-TTY (dashboard spawn,
+    # CI, scripts): the default option below is "Run with defaults",
+    # which would silently auto-fire a multi-hour run on EOF
+    # fallthrough. Non-TTY callers must supply explicit flags.
+    _tui_active = getattr(sys.stdin, "_tui_bridge", False)
+    _interactive = sys.stdin.isatty() or _tui_active
     if (
         not json_output
         and not os.environ.get("URIKA_REPL")
+        and _interactive
         and experiment_id is None
         and max_experiments is None
         and not auto
@@ -578,7 +586,9 @@ def run(
             not in ("completed", "failed", "stopped")
         ]
         if pending:
-            if resume and len(pending) > 1 and not json_output:
+            _tui_active2 = getattr(sys.stdin, "_tui_bridge", False)
+            _interactive2 = sys.stdin.isatty() or _tui_active2
+            if resume and len(pending) > 1 and not json_output and _interactive2:
                 # Multiple resumable — let the user pick
                 from urika.cli_helpers import interactive_numbered
 
@@ -592,6 +602,12 @@ def run(
                 )
                 experiment_id = choice.split(" [")[0]
             else:
+                # Non-TTY (or single-pending, or json) → resume the
+                # most-recent pending experiment. Pre-v0.3.2 the EOF
+                # branch of ``interactive_numbered`` returned
+                # ``options[default-1]`` (the first pending), which
+                # was confusingly different from the implicit
+                # most-recent fallback used elsewhere.
                 experiment_id = pending[-1].experiment_id
             if not json_output:
                 print_step(

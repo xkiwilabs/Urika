@@ -272,6 +272,18 @@ def _determine_next_experiment(
     if criteria_summary:
         click.echo(f"    {criteria_summary}")
 
+    # Refuse to auto-create-and-run an experiment when there's no
+    # human at the terminal to confirm. Same guard as
+    # ``cli.run_advisor._offer_to_run_advisor_suggestions`` (v0.3.2):
+    # the dashboard spawns ``urika run`` non-interactively, and the
+    # default option here ("Yes — create and run it") would silently
+    # fire a multi-hour run if EOF fell through to options[default-1].
+    import sys as _sys
+
+    _tui_active = getattr(_sys.stdin, "_tui_bridge", False)
+    if not auto and not _sys.stdin.isatty() and not _tui_active:
+        return None
+
     if not auto:
         choice = _prompt_numbered(
             "\n  Proceed?",

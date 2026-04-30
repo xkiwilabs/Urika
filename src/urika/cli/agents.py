@@ -43,6 +43,19 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     project_path, _config = _resolve_project(project)
 
     if text is None:
+        # Refuse the prompt-for-question path on non-TTY callers — EOF
+        # would loop forever (required=True re-prompts on empty) or
+        # silently send an empty question. Dashboard's ``spawn_advisor``
+        # already validates non-empty server-side, but defense in
+        # depth here protects scripts and CI invocations.
+        import sys as _sys
+
+        _tui_active = getattr(_sys.stdin, "_tui_bridge", False)
+        if not _sys.stdin.isatty() and not _tui_active:
+            raise click.ClickException(
+                "Pass the question as the second positional argument: "
+                "`urika advisor <project> \"<question>\"`"
+            )
         text = interactive_prompt("Question or instructions", required=True)
 
     try:
@@ -361,6 +374,18 @@ def build_tool(
     project_path, _config = _resolve_project(project)
 
     if instructions is None:
+        # Non-TTY callers must supply instructions explicitly — the
+        # ``required=True`` interactive_prompt would loop forever on EOF
+        # (or send empty instructions to the tool builder, which then
+        # pip-installs nothing useful and writes a degenerate tool).
+        import sys as _sys
+
+        _tui_active = getattr(_sys.stdin, "_tui_bridge", False)
+        if not _sys.stdin.isatty() and not _tui_active:
+            raise click.ClickException(
+                "Pass the tool description as the second positional "
+                "argument: `urika build-tool <project> \"<instructions>\"`"
+            )
         instructions = interactive_prompt(
             "Describe the tool to build (e.g., 'create a correlation heatmap tool using seaborn')",
             required=True,

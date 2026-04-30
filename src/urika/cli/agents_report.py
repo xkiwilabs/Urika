@@ -117,27 +117,39 @@ def report(
             # JSON mode: default to most recent experiment
             experiment_id = experiments[-1].experiment_id
         else:
-            # Build numbered options — most recent first
-            reversed_exps = list(reversed(experiments))
-            options = []
-            for exp in reversed_exps:
-                progress = load_progress(project_path, exp.experiment_id)
-                status = progress.get("status", "pending")
-                runs = len(progress.get("runs", []))
-                options.append(f"{exp.experiment_id} [{status}, {runs} runs]")
-            options.append("All experiments (generate for each)")
-            options.append("Project level (one overarching report)")
+            import sys as _sys
 
-            choice = _prompt_numbered(
-                "\nSelect experiment for report:", options, default=1
-            )
-
-            if choice.startswith("All"):
-                experiment_id = "all"
-            elif choice.startswith("Project"):
-                experiment_id = "project"
+            _tui_active = getattr(_sys.stdin, "_tui_bridge", False)
+            if not _sys.stdin.isatty() and not _tui_active:
+                # Non-TTY caller — same most-recent fallback as
+                # ``--json``. Avoids the EOF→default fallthrough bug
+                # class that auto-fired the advisor's experiments
+                # from the dashboard chat in pre-v0.3.2.
+                experiment_id = experiments[-1].experiment_id
             else:
-                experiment_id = choice.split(" [")[0]
+                # Build numbered options — most recent first
+                reversed_exps = list(reversed(experiments))
+                options = []
+                for exp in reversed_exps:
+                    progress = load_progress(project_path, exp.experiment_id)
+                    status = progress.get("status", "pending")
+                    runs = len(progress.get("runs", []))
+                    options.append(
+                        f"{exp.experiment_id} [{status}, {runs} runs]"
+                    )
+                options.append("All experiments (generate for each)")
+                options.append("Project level (one overarching report)")
+
+                choice = _prompt_numbered(
+                    "\nSelect experiment for report:", options, default=1
+                )
+
+                if choice.startswith("All"):
+                    experiment_id = "all"
+                elif choice.startswith("Project"):
+                    experiment_id = "project"
+                else:
+                    experiment_id = choice.split(" [")[0]
 
     try:
         if experiment_id == "all":

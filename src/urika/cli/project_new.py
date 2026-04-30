@@ -139,6 +139,21 @@ def new(
         web_search = False
         use_venv = False
     else:
+        # Refuse non-JSON non-TTY entry to the interactive flow.
+        # Privacy mode is a security boundary — silently defaulting
+        # it to "open" on EOF could leak data to the cloud when a
+        # script-author expected the call to error out.
+        import sys as _sys_pn
+
+        _tui_active = getattr(_sys_pn.stdin, "_tui_bridge", False)
+        if not _sys_pn.stdin.isatty() and not _tui_active:
+            raise click.ClickException(
+                "`urika new` is interactive by default. For non-interactive "
+                "use, pass `--json` along with explicit flags "
+                "(`--privacy-mode`, `--data`, `--question`, etc.). See "
+                "`urika new --help` for the full flag list."
+            )
+
         # Privacy mode — ask FIRST, before data path. No pre-fill: each
         # project picks its own mode regardless of any global config.
         privacy_choice = _prompt_numbered(
