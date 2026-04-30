@@ -178,10 +178,14 @@ class ProjectBuilder:
         if self.use_venv:
             existing.setdefault("environment", {})["venv"] = True
 
-        # Apply global runtime defaults (model, backend)
+        # Apply global runtime defaults (model, backend) for the
+        # project's privacy mode. ``get_default_runtime(mode)`` prefers
+        # ``[runtime.modes.<mode>].model`` (the canonical write path
+        # used by the dashboard Models tab and new CLI wizard) over the
+        # legacy flat ``[runtime].model`` key.
         from urika.core.settings import get_default_runtime
 
-        runtime_defaults = get_default_runtime()
+        runtime_defaults = get_default_runtime(self.privacy_mode)
         if runtime_defaults.get("model"):
             existing.setdefault("runtime", {}).setdefault(
                 "model", runtime_defaults["model"]

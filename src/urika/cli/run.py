@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 
 import click
 
@@ -224,10 +225,17 @@ def run(
         else:
             max_turns = 5
 
-    # If no flags provided and not from REPL, show settings dialog
+    # If no flags provided and not from REPL, show settings dialog.
+    # Skip the dialog entirely when stdin is non-TTY (dashboard spawn,
+    # CI, scripts): the default option below is "Run with defaults",
+    # which would silently auto-fire a multi-hour run on EOF
+    # fallthrough. Non-TTY callers must supply explicit flags.
+    _tui_active = getattr(sys.stdin, "_tui_bridge", False)
+    _interactive = sys.stdin.isatty() or _tui_active
     if (
         not json_output
         and not os.environ.get("URIKA_REPL")
+        and _interactive
         and experiment_id is None
         and max_experiments is None
         and not auto
@@ -359,7 +367,13 @@ def run(
             )
             key_listener.start()
 
+        # Same SIGINT+SIGTERM coverage as the experiment path — the
+        # dashboard's Stop button sends SIGTERM and we need the
+        # cleanup hook to fire on either signal.
         original_handler = signal.getsignal(signal.SIGINT) if _is_main_thread else None
+        original_term_handler = (
+            signal.getsignal(signal.SIGTERM) if _is_main_thread else None
+        )
 
         def _cleanup_meta(signum: int, frame: object) -> None:
             if key_listener is not None:
@@ -375,6 +389,7 @@ def run(
 
         if _is_main_thread:
             signal.signal(signal.SIGINT, _cleanup_meta)
+            signal.signal(signal.SIGTERM, _cleanup_meta)
 
         start_ms, start_iso = _agent_run_start()
         sdk_runner = get_runner()
@@ -472,6 +487,8 @@ def run(
                 panel.cleanup()
             if _is_main_thread and original_handler is not None:
                 signal.signal(signal.SIGINT, original_handler)
+            if _is_main_thread and original_term_handler is not None:
+                signal.signal(signal.SIGTERM, original_term_handler)
 
         elapsed_ms = int(time.monotonic() * 1000) - start_ms
         n_exp = result.get("experiments_run", 0)
@@ -569,7 +586,9 @@ def run(
             not in ("completed", "failed", "stopped")
         ]
         if pending:
-            if resume and len(pending) > 1 and not json_output:
+            _tui_active2 = getattr(sys.stdin, "_tui_bridge", False)
+            _interactive2 = sys.stdin.isatty() or _tui_active2
+            if resume and len(pending) > 1 and not json_output and _interactive2:
                 # Multiple resumable — let the user pick
                 from urika.cli_helpers import interactive_numbered
 
@@ -583,6 +602,12 @@ def run(
                 )
                 experiment_id = choice.split(" [")[0]
             else:
+                # Non-TTY (or single-pending, or json) → resume the
+                # most-recent pending experiment. Pre-v0.3.2 the EOF
+                # branch of ``interactive_numbered`` returned
+                # ``options[default-1]`` (the first pending), which
+                # was confusingly different from the implicit
+                # most-recent fallback used elsewhere.
                 experiment_id = pending[-1].experiment_id
             if not json_output:
                 print_step(
@@ -716,9 +741,20 @@ def run(
         print_step("    urika run --instructions '...'   Run with new instructions")
         raise SystemExit(1)
 
+    # Register the cleanup handler for both SIGINT (Ctrl+C in the
+    # terminal) and SIGTERM (the dashboard's Stop button, which
+    # ``api_run_stop`` in ``dashboard/routers/api.py`` sends to the
+    # spawned ``urika run`` PID). Without the SIGTERM hook the
+    # process died before ``stop_session`` could write the
+    # ``stopped`` status, leaving the dashboard's experiment card
+    # stuck on ``pending`` after Stop was clicked.
     original_handler = signal.getsignal(signal.SIGINT) if _is_main_thread else None
+    original_term_handler = (
+        signal.getsignal(signal.SIGTERM) if _is_main_thread else None
+    )
     if _is_main_thread:
         signal.signal(signal.SIGINT, _cleanup_on_interrupt)
+        signal.signal(signal.SIGTERM, _cleanup_on_interrupt)
 
     start_ms, start_iso = _agent_run_start()
 
@@ -846,9 +882,11 @@ def run(
             key_listener.stop()
         if panel is not None:
             panel.cleanup()
-        # Restore original handler
+        # Restore original handlers
         if _is_main_thread and original_handler is not None:
             signal.signal(signal.SIGINT, original_handler)
+        if _is_main_thread and original_term_handler is not None:
+            signal.signal(signal.SIGTERM, original_term_handler)
 
     elapsed_ms = int(time.monotonic() * 1000) - start_ms
     run_status = result.get("status", "unknown")

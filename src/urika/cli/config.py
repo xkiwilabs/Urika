@@ -12,6 +12,69 @@ from urika.cli._helpers import (
 )
 
 
+# Cloud (Claude) models the CLI wizard offers under ``urika config``.
+# Hoisted to module scope in v0.3.2 so the cross-interface invariant
+# test in ``tests/test_cross_interface_defaults.py`` can import it
+# and assert it agrees with the dashboard's ``KNOWN_CLOUD_MODELS``
+# list. Pre-v0.3.2 this lived inside ``_config_interactive`` and the
+# two interfaces drifted (CLI offered 4-6 / sonnet-4-5 / haiku-4-5;
+# dashboard offered 4-7 / 4-6 / sonnet / haiku) until users hit the
+# cryptic "Fatal error in message reader" symptom.
+#
+# Order matters in CLI display: ``sonnet-4-5`` first because it's
+# the recommended-default for the wizard. ``opus-4-6`` is the
+# fallback the dashboard uses for new selections (since the bundled
+# SDK CLI doesn't speak 4-7's request schema yet).
+_CLOUD_MODELS: list[tuple[str, str]] = [
+    ("claude-sonnet-4-5", "Best balance of speed and quality (recommended)"),
+    ("claude-opus-4-6", "Most capable, slower, higher cost"),
+    ("claude-opus-4-7", "Newest Opus — requires public claude CLI on PATH"),
+    ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
+]
+
+
+def _prompt_for_endpoint_key_value(key_env: str) -> None:
+    """Paired masked-value prompt for a privacy endpoint API key.
+
+    Mirrors the dashboard's name+value flow: after the user supplies
+    the env-var name, ask for the value at the same time. If they
+    paste a value, save it to the global secrets vault under that
+    name; if they leave it blank, assume the value is already set in
+    their shell or vault and move on.
+
+    Aborts (Ctrl-C / EOF) skip silently — the env-var name is still
+    written to settings.toml, so the endpoint stays referenced even
+    if the user bails out of the value step.
+    """
+    try:
+        key_value = click.prompt(
+            "  API key VALUE (leave blank if already set in env)",
+            hide_input=True,
+            default="",
+            show_default=False,
+        ).strip()
+    except (click.Abort, EOFError, KeyboardInterrupt):
+        click.echo("\n  (Skipped value entry.)")
+        return
+
+    if not key_value:
+        return
+
+    from urika.cli_display import print_success
+    from urika.core.registry import _urika_home
+    from urika.core.vault import SecretsVault
+
+    # Pin to URIKA_HOME so the value lands next to settings.toml on
+    # whichever home the CLI is currently writing to (test boxes set
+    # URIKA_HOME to a tmp dir; production resolves to ~/.urika).
+    SecretsVault(global_path=_urika_home() / "secrets.env").set_global(
+        key_env,
+        key_value,
+        description="used by privacy endpoint",
+    )
+    print_success(f"  Saved value under {key_env}.")
+
+
 @cli.command("dashboard")
 @click.argument("project", required=False, default=None)
 @click.option(
@@ -249,12 +312,6 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         interactive_prompt,
     )
 
-    _CLOUD_MODELS = [
-        ("claude-sonnet-4-5", "Best balance of speed and quality (recommended)"),
-        ("claude-opus-4-6", "Most capable, slower, higher cost"),
-        ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
-    ]
-
     settings = session
 
     mode = interactive_numbered(
@@ -406,6 +463,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
                 )
                 if key_env:
                     ep["api_key_env"] = key_env
+                    _prompt_for_endpoint_key_value(key_env)
 
         from urika.cli_helpers import interactive_prompt
         from urika.core.settings import load_settings
@@ -511,6 +569,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
                 )
                 if key_env:
                     ep["api_key_env"] = key_env
+                    _prompt_for_endpoint_key_value(key_env)
 
         from urika.cli_helpers import interactive_prompt
         from urika.core.settings import load_settings

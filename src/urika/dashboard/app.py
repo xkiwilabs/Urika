@@ -55,6 +55,15 @@ def create_app(
     carry ``Authorization: Bearer <token>``. ``/healthz`` and
     ``/static/...`` are exempt so health probes and CSS still work.
     """
+    # One-shot migration of stale ``claude-opus-4-7`` model pins (a
+    # 0.3.0/0.3.1 dashboard default that breaks with the bundled CLI).
+    # Idempotent via marker file. Runs once when the dashboard process
+    # starts so users who launch the dashboard before any CLI command
+    # also get migrated.
+    from urika.core.settings import migrate_settings
+
+    migrate_settings()
+
     app = FastAPI(title="Urika Dashboard", docs_url=None, redoc_url=None)
     app.state.project_root = project_root
     app.state.auth_token = auth_token

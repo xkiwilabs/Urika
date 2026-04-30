@@ -33,6 +33,19 @@ from typing import Mapping
 
 _OAUTH_TOKEN_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN")
 
+# Set by Claude Code itself (CLI / VS Code extension / IDE integration)
+# in any terminal it owns. The bundled `claude` CLI that the Agent SDK
+# spawns refuses to launch when it detects these — "Claude Code cannot
+# be launched inside another Claude Code session" → exit 1. Urika is
+# spawning its own agent worker, not a nested user-interactive session,
+# so we zero these in the env passed to ClaudeAgentOptions.
+_NESTED_SESSION_VARS = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_SSE_PORT",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+)
+
 
 class APIKeyRequiredError(RuntimeError):
     """Raised when Urika needs an ``ANTHROPIC_API_KEY`` but none is set."""
@@ -98,18 +111,31 @@ def require_api_key(
 
 
 def scrub_oauth_env(agent_env: Mapping[str, str] | None) -> dict[str, str]:
-    """Return a copy of *agent_env* with OAuth-related vars zeroed.
+    """Return a copy of *agent_env* with parent-session leakage zeroed.
 
-    Layer 3 of the safety net. Even if a user has
-    ``CLAUDE_CODE_OAUTH_TOKEN`` or ``ANTHROPIC_AUTH_TOKEN`` set in the
-    parent shell, Urika must not let the spawned ``claude`` subprocess
-    authenticate via OAuth. We pass an explicit empty value (not just
-    absence) so the subprocess overrides any inherited parent value.
+    Two classes of vars get blanked:
+
+    1. OAuth tokens (``CLAUDE_CODE_OAUTH_TOKEN``, ``ANTHROPIC_AUTH_TOKEN``)
+       — Urika must not let the spawned ``claude`` subprocess authenticate
+       via OAuth (Anthropic Consumer Terms §3.7).
+    2. Claude Code session markers (``CLAUDECODE``, ``CLAUDE_CODE_SSE_PORT``,
+       ``CLAUDE_CODE_ENTRYPOINT``, ``CLAUDE_CODE_EXECPATH``) — set when
+       Urika itself is launched from a terminal owned by the Claude Code
+       CLI / IDE extension. The bundled CLI the Agent SDK spawns refuses
+       to launch nested when it sees these and exits 1. Urika's agents
+       are workers, not user-interactive sessions, so the markers don't
+       apply to them.
+
+    Empty strings (not absence) are written so the spawned subprocess
+    overrides any value it would otherwise inherit from ``os.environ``
+    via the SDK's ``{**os.environ, **options.env}`` merge.
 
     The input mapping is **not** mutated — a fresh ``dict`` is
     returned.
     """
     out = dict(agent_env or {})
     for var in _OAUTH_TOKEN_VARS:
+        out[var] = ""
+    for var in _NESTED_SESSION_VARS:
         out[var] = ""
     return out

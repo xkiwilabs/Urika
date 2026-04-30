@@ -49,13 +49,45 @@ _BILLING_PATTERNS = [
     re.compile(r"subscription", re.IGNORECASE),
     re.compile(r"quota", re.IGNORECASE),
 ]
+# Transient network/server errors that should pause-and-resume rather
+# than fail the experiment outright. Pre-v0.3.2 a 5xx or a connection
+# blip mid-loop killed a multi-hour autonomous run.
+_TRANSIENT_PATTERNS = [
+    re.compile(r"\b5\d\d\b"),
+    re.compile(r"connection.{0,3}reset", re.IGNORECASE),
+    re.compile(r"connection.{0,3}refused", re.IGNORECASE),
+    re.compile(r"connection.{0,3}aborted", re.IGNORECASE),
+    re.compile(r"timeout", re.IGNORECASE),
+    re.compile(r"timed.?out", re.IGNORECASE),
+    re.compile(r"temporarily.{0,3}unavailable", re.IGNORECASE),
+    re.compile(r"service.{0,3}unavailable", re.IGNORECASE),
+    re.compile(r"bad.?gateway", re.IGNORECASE),
+    re.compile(r"gateway.{0,3}timeout", re.IGNORECASE),
+]
+# Configuration errors that need user action to fix but shouldn't
+# look like generic failures in the dashboard. Treated as a separate
+# category so the UI can render an actionable hint.
+_CONFIG_PATTERNS = [
+    re.compile(r"MissingPrivateEndpointError", re.IGNORECASE),
+    re.compile(r"APIKeyRequiredError", re.IGNORECASE),
+    re.compile(r"private.{0,3}endpoint.{0,30}configured", re.IGNORECASE),
+]
 
 
 def _classify_error(error_text: str) -> str:
     """Classify an SDK error into a user-friendly category.
 
-    Returns one of: "rate_limit", "auth", "billing", "unknown".
+    Returns one of: ``"rate_limit"``, ``"auth"``, ``"billing"``,
+    ``"transient"``, ``"config"``, ``"unknown"``.
+
+    The ``"transient"`` and ``"config"`` categories were added in
+    v0.3.2 — pre-v0.3.2 a 5xx mid-loop or a missing-endpoint config
+    error fell into ``"unknown"`` and silently failed the experiment.
+    The orchestrator loop's pause path treats both as pausable.
     """
+    for pat in _CONFIG_PATTERNS:
+        if pat.search(error_text):
+            return "config"
     for pat in _RATE_LIMIT_PATTERNS:
         if pat.search(error_text):
             return "rate_limit"
@@ -65,6 +97,9 @@ def _classify_error(error_text: str) -> str:
     for pat in _BILLING_PATTERNS:
         if pat.search(error_text):
             return "billing"
+    for pat in _TRANSIENT_PATTERNS:
+        if pat.search(error_text):
+            return "transient"
     return "unknown"
 
 
@@ -88,6 +123,22 @@ def _friendly_error(category: str, raw: str) -> str:
         return (
             "Billing/quota error — check your Anthropic plan status.\n"
             "  Visit console.anthropic.com to review your account.\n"
+            f"  Detail: {raw}"
+        )
+    if category == "transient":
+        return (
+            "Transient network/server error — the API request failed but "
+            "is likely to succeed on retry.\n"
+            "  The experiment has been paused and can be resumed.\n"
+            "  Run: /resume  (or 'urika run --resume' from CLI)\n"
+            f"  Detail: {raw}"
+        )
+    if category == "config":
+        return (
+            "Configuration error — the agent's runtime config is missing "
+            "or invalid.\n"
+            "  Check ``urika config`` (CLI) or the dashboard's Privacy / "
+            "Models tab.\n"
             f"  Detail: {raw}"
         )
     return raw
@@ -124,8 +175,17 @@ class ClaudeSDKRunner(AgentRunner):
             if on_message is not None:
                 try:
                     on_message(msg)
-                except Exception:
-                    pass  # Don't let callback errors break the agent
+                except Exception as cb_exc:
+                    # Don't let callback errors break the agent, but
+                    # do log them — pre-v0.3.2 a UI-render bug in the
+                    # callback would silently kill progress feedback
+                    # and the user just saw "agent stalled".
+                    logger.warning(
+                        "on_message callback raised %s: %s",
+                        type(cb_exc).__name__,
+                        cb_exc,
+                        exc_info=True,
+                    )
 
             messages.append(_message_to_dict(msg))
             if isinstance(msg, AssistantMessage):
@@ -139,23 +199,52 @@ class ClaudeSDKRunner(AgentRunner):
                 session_id = msg.session_id
                 num_turns = msg.num_turns
                 duration_ms = msg.duration_ms
-                cost_usd = msg.total_cost_usd
+                # Accumulate cost/tokens across multi-ResultMessage
+                # streams (subagent + final). Pre-v0.3.2 these were
+                # set (not summed), so a subagent's usage was clobbered
+                # by the final ResultMessage's usage.
+                if msg.total_cost_usd is not None:
+                    cost_usd = (cost_usd or 0.0) + msg.total_cost_usd
                 is_error = msg.is_error
                 # Capture the actual error/result text
                 result_text = getattr(msg, "result", "") or ""
-                # Populate token counts from usage dict
+                # Populate token counts from usage dict, including the
+                # cache fields newer SDKs emit separately.
                 usage = getattr(msg, "usage", None) or {}
-                tokens_in = usage.get("input_tokens", 0) or 0
-                tokens_out = usage.get("output_tokens", 0) or 0
+                tokens_in += (
+                    (usage.get("input_tokens") or 0)
+                    + (usage.get("cache_creation_input_tokens") or 0)
+                    + (usage.get("cache_read_input_tokens") or 0)
+                )
+                tokens_out += usage.get("output_tokens") or 0
 
         except ProcessError as exc:
-            # Extract stderr for better diagnostics — the generic str(exc)
-            # just says "Command failed with exit code 1".
+            # Extract stderr for better diagnostics — the SDK's generic
+            # ``str(exc)`` is "Command failed with exit code 1" and
+            # the SDK transport hardcodes ``stderr="Check stderr
+            # output for details"`` even when no stderr was captured,
+            # which used to mask real failures (e.g. the API rejecting
+            # ``thinking.type.enabled`` for opus-4-7).
             stderr = getattr(exc, "stderr", "") or ""
-            raw_detail = stderr.strip() if stderr.strip() else str(exc)
+            stderr_clean = stderr.strip()
+            # The "Check stderr output for details" sentinel from the
+            # SDK is not actual diagnostic info — fall back to other
+            # exception attributes when we see it.
+            if stderr_clean and stderr_clean.startswith("Check stderr"):
+                stderr_clean = ""
+            exit_code = getattr(exc, "exit_code", None)
+            if stderr_clean:
+                raw_detail = stderr_clean
+            elif exit_code is not None:
+                raw_detail = (
+                    f"{type(exc).__name__}: exit code {exit_code} "
+                    f"(no stderr captured by SDK transport)"
+                )
+            else:
+                raw_detail = f"{type(exc).__name__}: {exc}"
             category = _classify_error(raw_detail)
             error_detail = _friendly_error(category, raw_detail)
-            logger.warning("Agent SDK error [%s]: %s", category, raw_detail)
+            logger.exception("Agent SDK ProcessError [%s]", category)
             return AgentResult(
                 success=False,
                 messages=messages,
@@ -169,9 +258,14 @@ class ClaudeSDKRunner(AgentRunner):
             )
 
         except Exception as exc:
-            raw_detail = str(exc)
+            # Preserve type, traceback, and chained __cause__ — the
+            # generic str(exc) drops everything except the message,
+            # which is what made the bundled-CLI schema-mismatch bug
+            # invisible in v0.3.0/0.3.1.
+            raw_detail = f"{type(exc).__name__}: {exc}"
             category = _classify_error(raw_detail)
             error_detail = _friendly_error(category, raw_detail)
+            logger.exception("Agent SDK error [%s]", category)
             return AgentResult(
                 success=False,
                 messages=messages,
@@ -187,7 +281,22 @@ class ClaudeSDKRunner(AgentRunner):
         # Build error message with actual details
         error_msg = None
         if is_error:
-            error_msg = result_text or "Agent reported error (no details)"
+            # Enrich the error string with what we know about the run
+            # so the user has something to act on — pre-v0.3.2 this
+            # was just ``result_text or "Agent reported error (no
+            # details)"`` and an empty result_text yielded a useless
+            # placeholder.
+            if result_text:
+                error_msg = result_text
+            else:
+                _last_assistant = (
+                    text_parts[-1][:200] if text_parts else ""
+                )
+                error_msg = (
+                    f"Agent reported error after {num_turns} turn(s) "
+                    f"in {duration_ms}ms"
+                    + (f": {_last_assistant!r}" if _last_assistant else "")
+                )
 
         return AgentResult(
             success=not is_error,
@@ -222,16 +331,25 @@ class ClaudeSDKRunner(AgentRunner):
             "permission_mode": "bypassPermissions",
             "env": agent_env,
         }
-        # When using a custom endpoint, prefer the system-installed
-        # CLI over the bundled one — the bundled CLI may ignore
-        # ANTHROPIC_BASE_URL (claude-agent-sdk-python issue #677).
-        env = config.env or {}
-        if env.get("ANTHROPIC_BASE_URL"):
-            import shutil
+        # Prefer the system-installed `claude` CLI over the SDK's
+        # bundled one whenever it exists. The bundled CLI lags the
+        # public release (claude-agent-sdk 0.1.45 ships v2.1.63 while
+        # the public CLI is v2.1.123+). The Anthropic API has since
+        # tightened the request schema for newer models — e.g.,
+        # `claude-opus-4-7` rejects the old ``thinking.type.enabled``
+        # shape that v2.1.63 sends and returns 400, surfacing as a
+        # cryptic "Fatal error in message reader: Command failed with
+        # exit code 1". A newer system CLI knows the current schema
+        # (``thinking.type.adaptive`` + ``output_config.effort``).
+        # Falling back to the bundled CLI when none is on PATH still
+        # works for older models.
+        # Also covers claude-agent-sdk-python issue #677 (bundled CLI
+        # ignores ``ANTHROPIC_BASE_URL``) — that's now a side-benefit.
+        import shutil
 
-            system_cli = shutil.which("claude")
-            if system_cli:
-                kwargs["cli_path"] = system_cli
+        system_cli = shutil.which("claude")
+        if system_cli:
+            kwargs["cli_path"] = system_cli
         return ClaudeAgentOptions(**kwargs)  # type: ignore[arg-type]
 
 

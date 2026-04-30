@@ -952,6 +952,10 @@ def _parse_endpoints_form(
                     "name": name,
                     "base_url": (item.get("base_url") or "").strip(),
                     "api_key_env": (item.get("api_key_env") or "").strip(),
+                    # NOT stripped — a user-pasted API key may legitimately
+                    # have edge whitespace they meant to include. The save
+                    # side decides whether to write it to the vault.
+                    "api_key_value": item.get("api_key_value") or "",
                     "default_model": (item.get("default_model") or "").strip(),
                 }
             )
@@ -960,7 +964,7 @@ def _parse_endpoints_form(
     # Find every index that appears in the form. We accept any of the
     # four bracketed keys as evidence that the row exists.
     indexed_re = re.compile(
-        r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|default_model)\]$"
+        r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|api_key_value|default_model)\]$"
     )
     indices: set[int] = set()
     has_field = False
@@ -1003,6 +1007,9 @@ def _parse_endpoints_form(
                 "api_key_env": (
                     form.get(f"endpoints[{idx}][api_key_env]") or ""
                 ).strip(),
+                "api_key_value": (
+                    form.get(f"endpoints[{idx}][api_key_value]") or ""
+                ),
                 "default_model": (
                     form.get(f"endpoints[{idx}][default_model]") or ""
                 ).strip(),
@@ -1076,6 +1083,12 @@ async def api_global_settings_put(request: Request):
     s = load_settings()
 
     privacy = s.setdefault("privacy", {})
+
+    # Vault-save failure list — populated by the privacy-endpoint
+    # block and the notifications block when ``vault.set_global``
+    # raises. Surfaced in the response so users learn that secrets
+    # didn't land instead of seeing a misleading green "Saved".
+    _vault_save_failures: list[str] = []
     endpoints = privacy.setdefault("endpoints", {})
 
     runtime = s.setdefault("runtime", {})
@@ -1085,6 +1098,15 @@ async def api_global_settings_put(request: Request):
         # Diff-apply: replace the endpoints map with what the user
         # submitted. Missing rows = deleted. Extra fields (e.g.
         # ``default_model``) survive.
+        #
+        # Paired-input vault writes: when the row carries both an
+        # ``api_key_env`` (env-var name) and a non-sentinel
+        # ``api_key_value``, save the value into the global secrets
+        # vault under that name. This is what makes the dashboard
+        # name+value flow atomic: the user enters a value once and
+        # the env-var reference + the secret itself land in their
+        # respective stores. NEVER write the value to settings.toml.
+        _vault_for_save = None
         new_endpoints: dict[str, dict[str, str]] = {}
         for ep in submitted_endpoints:
             row: dict[str, str] = {
@@ -1095,6 +1117,40 @@ async def api_global_settings_put(request: Request):
             if ep["default_model"]:
                 row["default_model"] = ep["default_model"]
             new_endpoints[ep["name"]] = row
+
+            key_env = (ep.get("api_key_env") or "").strip()
+            key_value = ep.get("api_key_value") or ""
+            # Skip the ******** sentinel — that's the form's "no
+            # change" signal. Empty string also means "leave alone".
+            if key_env and key_value and key_value != "********":
+                if _vault_for_save is None:
+                    _vault_for_save = _dashboard_vault()
+                try:
+                    _vault_for_save.set_global(
+                        key_env,
+                        key_value,
+                        description=f"used by privacy endpoint '{ep['name']}'",
+                    )
+                except Exception as vault_exc:
+                    # Vault write failures shouldn't tank the whole
+                    # settings save, but they MUST be surfaced — the
+                    # form previously returned "saved" while the
+                    # secret silently didn't land, so the next agent
+                    # run mysteriously failed auth. Log + collect the
+                    # failure so the response can include it.
+                    import logging as _logging
+
+                    _logging.getLogger(__name__).error(
+                        "Vault write failed for endpoint %s key %s: %s",
+                        ep.get("name"),
+                        key_env,
+                        vault_exc,
+                        exc_info=True,
+                    )
+                    _vault_save_failures.append(
+                        f"{key_env} (endpoint '{ep.get('name')}'): "
+                        f"{type(vault_exc).__name__}: {vault_exc}"
+                    )
         endpoints.clear()
         endpoints.update(new_endpoints)
 
@@ -1250,6 +1306,44 @@ async def api_global_settings_put(request: Request):
     slack_auto_enable = form.get("notifications_slack_auto_enable") == "on"
     telegram_auto_enable = form.get("notifications_telegram_auto_enable") == "on"
 
+    # Helper: write a paired (env_var_name, value) to the vault if the
+    # value is non-empty and not the ``********`` sentinel. Returns the
+    # vault used so callers can chain multiple writes against the same
+    # instance (avoids re-importing per channel).
+    _vault_for_notif: list = []  # poor-man's nullable singleton
+
+    def _save_notif_secret(env_name: str, value: str, source: str) -> None:
+        env_name = (env_name or "").strip()
+        value = value or ""
+        if not env_name or not value or value == "********":
+            return
+        if not _vault_for_notif:
+            _vault_for_notif.append(_dashboard_vault())
+        try:
+            _vault_for_notif[0].set_global(
+                env_name,
+                value,
+                description=f"used by notifications: {source}",
+            )
+        except Exception as vault_exc:
+            # Vault write shouldn't tank the settings save, but it
+            # MUST surface — pre-v0.3.2 the form returned "saved"
+            # while the secret silently didn't write, so the next
+            # notification dispatch failed mysteriously.
+            import logging as _logging
+
+            _logging.getLogger(__name__).error(
+                "Vault write failed for notifications %s key %s: %s",
+                source,
+                env_name,
+                vault_exc,
+                exc_info=True,
+            )
+            _vault_save_failures.append(
+                f"{env_name} (notifications: {source}): "
+                f"{type(vault_exc).__name__}: {vault_exc}"
+            )
+
     # Email
     email_to_raw = (form.get("notifications_email_to") or "").strip()
     email_to = [a.strip() for a in email_to_raw.split(",") if a.strip()]
@@ -1295,6 +1389,14 @@ async def api_global_settings_put(request: Request):
     elif "email" in notifications:
         del notifications["email"]
 
+    # Paired-input vault write for the email password (when the user
+    # supplied a non-sentinel value alongside the env-var name).
+    _save_notif_secret(
+        email_section.get("password_env", ""),
+        form.get("notifications_email_smtp_password_value") or "",
+        "email password",
+    )
+
     # Slack
     # Canonical key is ``bot_token_env`` (matches SlackChannel). The form
     # field stays ``notifications_slack_token_env`` for backward-compat
@@ -1338,6 +1440,18 @@ async def api_global_settings_put(request: Request):
     elif "slack" in notifications:
         del notifications["slack"]
 
+    # Paired-input vault writes for slack tokens.
+    _save_notif_secret(
+        slack_section.get("bot_token_env", ""),
+        form.get("notifications_slack_token_value") or "",
+        "slack bot token",
+    )
+    _save_notif_secret(
+        slack_section.get("app_token_env", ""),
+        form.get("notifications_slack_app_token_value") or "",
+        "slack app token (Socket Mode)",
+    )
+
     # Telegram
     telegram_section = {
         "chat_id": (form.get("notifications_telegram_chat_id") or "").strip(),
@@ -1354,6 +1468,13 @@ async def api_global_settings_put(request: Request):
     elif "telegram" in notifications:
         del notifications["telegram"]
 
+    # Paired-input vault write for telegram bot token.
+    _save_notif_secret(
+        telegram_section.get("bot_token_env", ""),
+        form.get("notifications_telegram_bot_token_value") or "",
+        "telegram bot token",
+    )
+
     # Drop the notifications block entirely if no connection details
     # remain. Any pre-existing 'channels' list is left untouched —
     # global form does not write it.
@@ -1366,12 +1487,29 @@ async def api_global_settings_put(request: Request):
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
-        return JSONResponse(
-            {
-                "default_audience": default_audience,
-                "default_max_turns": max_turns,
-            }
+        body: dict[str, object] = {
+            "default_audience": default_audience,
+            "default_max_turns": max_turns,
+        }
+        if _vault_save_failures:
+            body["vault_save_failures"] = _vault_save_failures
+        return JSONResponse(body)
+
+    if _vault_save_failures:
+        # HTML response surfaces the failures inline so users see
+        # "Saved (with N secret-store warnings)" rather than the
+        # bare green "Saved" that pre-v0.3.2 returned even when the
+        # vault writes silently dropped credentials on the floor.
+        bullets = "".join(f"<li>{f}</li>" for f in _vault_save_failures)
+        return HTMLResponse(
+            content=(
+                '<span class="text-warning">Saved (with '
+                f"{len(_vault_save_failures)} secret-store "
+                f"warning{'s' if len(_vault_save_failures) != 1 else ''})</span>"
+                f'<ul class="vault-warnings">{bullets}</ul>'
+            )
         )
+
     return HTMLResponse(content='<span class="text-success">Saved</span>')
 
 
@@ -1616,6 +1754,526 @@ async def api_test_endpoint(request: Request) -> JSONResponse:
             "details": details,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Secrets vault — Settings → Secrets tab (global + per-project)
+# ---------------------------------------------------------------------------
+
+# Restrict secret names to valid env-var identifiers. Same shape as the
+# vault's _SECRET_NAME_RE but the dashboard accepts down to 1 character
+# in case a user wants a short name. The pattern is enforced both in the
+# HTML form and on the server.
+_DASHBOARD_SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def _dashboard_vault(project_path: Path | None = None):
+    """Build a SecretsVault rooted at ``URIKA_HOME`` (or ``~/.urika``).
+
+    The vault module's defaults point at ``Path.home() / ".urika"`` so
+    raw ``SecretsVault()`` would bypass URIKA_HOME — fine in production
+    where the env var is unset, but tests rely on URIKA_HOME redirecting
+    to a tmp dir. Always construct the vault with explicit paths so the
+    same object honors URIKA_HOME both at runtime and under pytest.
+
+    When ``keyring`` is installed AND probes successfully on the host,
+    the vault picks the keyring backend by default. We force a
+    FileBackend rooted at ``<URIKA_HOME>/secrets.env`` so the dashboard
+    UI is deterministic across machines (the user's existing
+    ``~/.urika/secrets.env`` is the same file the v0.3 notifications
+    flow already wrote to). Users who prefer the OS keyring can use the
+    CLI (``urika config secret``) which honors the keyring tier.
+    """
+    from urika.core.registry import _urika_home
+    from urika.core.vault import FileBackend, SecretsVault
+
+    home = _urika_home()
+    vault = SecretsVault(
+        project_path=project_path,
+        global_path=home / "secrets.env",
+    )
+    # Force FileBackend so URIKA_HOME redirection is honored uniformly.
+    # SecretsVault.__init__ already does this when global_path is passed,
+    # but be explicit for clarity.
+    vault._global_backend = FileBackend(path=home / "secrets.env")
+    vault._meta_path = home / "secrets-meta.toml"
+    return vault
+
+
+def _backend_label() -> str:
+    """Human label for the active global backend (file vs keyring).
+
+    Used by the global Secrets tab to show users what's storing their
+    credentials. The dashboard endpoints always use FileBackend (see
+    :func:`_dashboard_vault`), but the label reflects what the
+    ``urika config secret`` CLI would pick on this host so the user
+    knows whether OS-level encryption is available.
+    """
+    from urika.core.vault import _keyring_available
+
+    if _keyring_available():
+        return "OS keyring (managed via `urika config secret`)"
+    return "file fallback (chmod 0600)"
+
+
+# Provider names that always render in the "LLM Providers" section,
+# even when unset. The Secrets tab guarantees these rows appear so users
+# see the multi-provider roadmap.
+_PROVIDER_NAMES: frozenset[str] = frozenset(
+    {"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"}
+)
+
+
+def _discover_referenced_secrets(settings: dict) -> dict[str, str]:
+    """Return ``{env_var_name: 'used by ...'}`` discovered from settings.
+
+    Walks the privacy endpoints + notifications channels in a settings
+    dict and returns a map of every ``*_env`` reference, with a
+    short human-readable annotation explaining where the reference came
+    from. The Secrets tab uses this to populate the "Used by your
+    config" section.
+
+    Tolerant to malformed sections — sub-dicts that aren't actually
+    dicts are skipped silently rather than raised.
+    """
+    refs: dict[str, str] = {}
+
+    privacy = settings.get("privacy", {})
+    if isinstance(privacy, dict):
+        endpoints = privacy.get("endpoints", {}) or {}
+        if isinstance(endpoints, dict):
+            for name, ep in endpoints.items():
+                if not isinstance(ep, dict):
+                    continue
+                key_env = (ep.get("api_key_env") or "").strip()
+                if key_env:
+                    refs[key_env] = f"privacy endpoint '{name}'"
+
+    notif = settings.get("notifications", {})
+    if isinstance(notif, dict):
+        email = notif.get("email")
+        if isinstance(email, dict):
+            env = (email.get("password_env") or "").strip()
+            if env:
+                refs[env] = "notifications: email password"
+        slack = notif.get("slack")
+        if isinstance(slack, dict):
+            env = (slack.get("bot_token_env") or "").strip()
+            if env:
+                refs[env] = "notifications: slack bot token"
+            env = (slack.get("app_token_env") or "").strip()
+            if env:
+                refs[env] = "notifications: slack app token (Socket Mode)"
+        tg = notif.get("telegram")
+        if isinstance(tg, dict):
+            env = (tg.get("bot_token_env") or "").strip()
+            if env:
+                refs[env] = "notifications: telegram bot token"
+
+    return refs
+
+
+def _categorize_secret(name: str, referenced_names: set[str]) -> str:
+    """Return one of ``"provider"``, ``"used_by_config"``, ``"other"``."""
+    if name in _PROVIDER_NAMES:
+        return "provider"
+    if name in referenced_names:
+        return "used_by_config"
+    return "other"
+
+
+def _serialize_secret_row(
+    row: dict,
+    vault=None,
+    refs: dict[str, str] | None = None,
+) -> dict:
+    """Project a vault row to JSON for the dashboard.
+
+    Strips any value-bearing fields; only metadata + masked previews
+    leave the server. When a ``vault`` is supplied, re-attribute the
+    origin: a name that lives in the vault's project file gets
+    ``project``, in the global file gets ``global``, even when
+    ``os.environ`` carries the value too. This is the dashboard's
+    storage-tier perspective — the runtime tier (process env wins for
+    actual ``vault.get()``) is a separate concern that ``list_keys``
+    on the agent side handles correctly.
+
+    Without this re-attribution, a value that the dashboard wrote to
+    the vault and which is now also in ``os.environ`` (because
+    ``set_global`` pokes os.environ) would render as ``process`` on
+    every refresh — confusing for users who just saved it via the UI.
+
+    When ``refs`` is supplied, the row also gets ``referenced_by`` (the
+    annotation from :func:`_discover_referenced_secrets`) and
+    ``category`` ("provider" / "used_by_config" / "other") so the
+    template can group rows into three sections.
+    """
+    name = row.get("name", "")
+    origin = row.get("origin", "unset")
+    if vault is not None and name:
+        # Project tier?
+        if vault.project_path is not None:
+            proj_path = vault.project_path / ".urika" / "secrets.env"
+            if proj_path.exists():
+                from urika.core.vault import _read_env_file
+
+                if name in _read_env_file(proj_path):
+                    origin = "project"
+        # Global tier?
+        if origin not in ("project",) and vault._global_backend.get(name) is not None:
+            origin = "global"
+
+    referenced_names = set(refs.keys()) if refs else set()
+    out: dict = {
+        "name": name,
+        "origin": origin,
+        "set": origin != "unset",
+        "description": row.get("description", "") or "",
+        "last_modified": row.get("last_modified", "") or "",
+        "masked_preview": row.get("masked_preview", "") or "",
+        "category": _categorize_secret(name, referenced_names),
+        "referenced_by": (refs or {}).get(name, ""),
+        # Default for non-provider rows: assume settable. The provider
+        # block below overrides this for LLM provider names whose
+        # adapter hasn't shipped yet (locked rows).
+        "available": True,
+        "provider_display": "",
+    }
+    from urika.core.known_secrets import LLM_PROVIDERS
+
+    for prov in LLM_PROVIDERS:
+        if prov.name == name:
+            out["available"] = bool(prov.available)
+            out["provider_display"] = prov.display
+            # Prefer the provider's own description when no per-secret
+            # metadata override exists — gives the dashboard a richer
+            # blurb for locked rows than the bare KNOWN_SECRETS line.
+            if not out["description"]:
+                out["description"] = prov.description
+            break
+    return out
+
+
+@router.get("/secrets")
+async def api_list_secrets() -> JSONResponse:
+    """List global secrets with origin badges + categorization.
+
+    Returns ``{"secrets": [{name, origin, set, description,
+    last_modified, masked_preview, category, referenced_by, ...},
+    ...], "backend": "..."}``.
+
+    Values are NEVER returned — only metadata + masked previews.
+
+    Candidate set (no shell-env leak): names stored in the vault
+    (project + global tiers) plus any ``*_env`` references discovered
+    from configured surfaces (privacy endpoints + notifications
+    channels). Locked LLM provider rows
+    (:data:`urika.core.known_secrets.LLM_PROVIDERS`) are also injected
+    so the dashboard always shows the multi-provider roadmap. Random
+    shell-exported variables that aren't vault-stored or referenced
+    are NOT surfaced.
+    """
+    from urika.core.secrets import load_secrets
+    from urika.core.settings import load_settings
+
+    # Refresh any keys stored in the file backend into os.environ so
+    # the origin attribution sees them.
+    load_secrets()
+
+    refs = _discover_referenced_secrets(load_settings())
+    referenced = set(refs.keys())
+    # Always include all provider names so the Providers section renders
+    # them even when they're unset and unreferenced (locked providers
+    # need a row to surface the "coming soon" affordance).
+    candidate_names = referenced | _PROVIDER_NAMES
+
+    vault = _dashboard_vault()
+    rows = [
+        _serialize_secret_row(r, vault=vault, refs=refs)
+        for r in vault.list_with_origins(referenced_names=candidate_names)
+    ]
+    return JSONResponse({"secrets": rows, "backend": _backend_label()})
+
+
+@router.post("/secrets")
+async def api_set_secret(request: Request) -> JSONResponse:
+    """Create or update a global secret.
+
+    Body (form-encoded): ``{name, value, description?}``.
+
+    Refuses to overwrite a secret that is set in the process
+    environment but not the vault — that value originates from the
+    user's shell and would be misleading to "save" via the UI (the
+    process-env value would still win on subsequent ``get()`` calls).
+    """
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    value = (form.get("value") or "")
+    description = (form.get("description") or "").strip()
+
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not _DASHBOARD_SECRET_NAME_RE.match(name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid secret name. Use uppercase letters, digits, and "
+                "underscores only (e.g. HUGGINGFACE_HUB_TOKEN)."
+            ),
+        )
+    if not value:
+        raise HTTPException(status_code=400, detail="value is required")
+
+    # Refuse to set values for LLM provider names whose adapter hasn't
+    # shipped yet — those rows are roadmap placeholders.
+    from urika.core.known_secrets import LLM_PROVIDERS
+
+    for prov in LLM_PROVIDERS:
+        if prov.name == name and not prov.available:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{name} is reserved for the planned "
+                    f"{prov.display} adapter (v0.5). Configuration "
+                    f"available when that adapter ships."
+                ),
+            )
+
+    vault = _dashboard_vault()
+
+    # If the key is set in the process env but not the vault, refuse
+    # the overwrite. Process env wins anyway so saving via the vault
+    # would silently have no effect on subsequent get() calls.
+    # ``vault_has`` covers the across-request case where a prior
+    # set_global wrote to the file backend AND poked os.environ — that
+    # value is ours, not a genuine shell export.
+    in_proc = bool(os.environ.get(name, "").strip())
+    vault_has = vault._global_backend.get(name) is not None
+    we_wrote = name in vault._our_writes
+    if in_proc and not vault_has and not we_wrote:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{name} is set in your shell environment. Clear it via "
+                f"`unset {name}` in the shell that launched the dashboard, "
+                f"then refresh and try again. The process-env value wins "
+                f"over anything saved here."
+            ),
+        )
+
+    vault.set_global(name, value, description=description)
+
+    from urika.core.vault import mask_value
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "name": name,
+            "origin": "global",
+            "masked_preview": mask_value(value),
+        }
+    )
+
+
+@router.delete("/secrets/{name}")
+async def api_delete_secret(name: str) -> Response:
+    """Delete a global secret. 204 on success, 404 if not present.
+
+    Refuses (400) when the secret originates from the process env
+    (no vault entry) — shell exports must be cleared via ``unset``.
+    """
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    vault = _dashboard_vault()
+    try:
+        existed = vault.delete_global(name)
+    except RuntimeError as exc:
+        # Pure process-env-only secrets: vault refuses to delete.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not existed:
+        raise HTTPException(status_code=404, detail=f"{name} is not set in the vault")
+    return Response(status_code=204)
+
+
+# ---- Per-project secrets ---------------------------------------------------
+
+
+@router.get("/projects/{name}/secrets")
+async def api_list_project_secrets(name: str) -> JSONResponse:
+    """List secrets visible to a project (project tier + global tier).
+
+    Returns the union: project-level secrets get ``origin="project"``,
+    global ones keep their existing origin (``"keyring"`` / ``"file"``
+    surfaces here as ``"global"``, plus ``"process"`` and ``"unset"``).
+    Auto-discovers ``*_env`` names from BOTH global settings and the
+    project's ``urika.toml`` so per-project endpoint references show up
+    under "Used by your config".
+    """
+    from urika.core.secrets import load_secrets
+    from urika.core.settings import load_settings
+
+    load_secrets()
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    # Merge global settings with the project's urika.toml for discovery
+    # — privacy endpoints + notifications can be redefined per project.
+    refs: dict[str, str] = dict(_discover_referenced_secrets(load_settings()))
+    proj_toml = summary.path / "urika.toml"
+    if proj_toml.exists():
+        try:
+            import tomllib
+
+            with proj_toml.open("rb") as f:
+                proj_settings = tomllib.load(f)
+            for env_name, source in _discover_referenced_secrets(proj_settings).items():
+                # Project-level annotations take precedence so users see
+                # the project context.
+                refs[env_name] = source
+        except Exception:
+            # Malformed urika.toml — ignore, fall back to global refs.
+            pass
+
+    referenced = set(refs.keys())
+    candidate_names = referenced | _PROVIDER_NAMES
+
+    vault = _dashboard_vault(project_path=summary.path)
+    rows = [
+        _serialize_secret_row(r, vault=vault, refs=refs)
+        for r in vault.list_with_origins(referenced_names=candidate_names)
+    ]
+    return JSONResponse({"secrets": rows, "backend": _backend_label()})
+
+
+@router.post("/projects/{name}/secrets")
+async def api_set_project_secret(name: str, request: Request) -> JSONResponse:
+    """Save a project-tier secret to ``<project>/.urika/secrets.env``."""
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    secret_name = (form.get("name") or "").strip()
+    value = (form.get("value") or "")
+    description = (form.get("description") or "").strip()
+
+    if not secret_name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not _DASHBOARD_SECRET_NAME_RE.match(secret_name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid secret name. Use uppercase letters, digits, and "
+                "underscores only."
+            ),
+        )
+    if not value:
+        raise HTTPException(status_code=400, detail="value is required")
+
+    vault = _dashboard_vault(project_path=summary.path)
+
+    # Refuse process-env overwrites — same rationale as the global
+    # endpoint: the shell value wins, so saving here would mislead.
+    # Treat presence in EITHER the project file OR the global file as
+    # "we own it" — both are vault-managed surfaces, so a value in
+    # os.environ that mirrors what's there is from a prior set, not a
+    # genuine shell export.
+    in_proc = bool(os.environ.get(secret_name, "").strip())
+    we_wrote = secret_name in vault._our_writes
+    proj_secrets_path = summary.path / ".urika" / "secrets.env"
+    proj_has = False
+    if proj_secrets_path.exists():
+        from urika.core.vault import _read_env_file
+
+        proj_has = secret_name in _read_env_file(proj_secrets_path)
+    global_has = vault._global_backend.get(secret_name) is not None
+    if in_proc and not proj_has and not global_has and not we_wrote:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{secret_name} is set in your shell environment. Clear it "
+                f"via `unset {secret_name}` in the shell that launched the "
+                f"dashboard, then refresh."
+            ),
+        )
+
+    vault.set_project(secret_name, value, project_path=summary.path, description=description)
+
+    from urika.core.vault import mask_value
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "name": secret_name,
+            "origin": "project",
+            "masked_preview": mask_value(value),
+        }
+    )
+
+
+@router.delete("/projects/{name}/secrets/{secret_name}")
+async def api_delete_project_secret(name: str, secret_name: str) -> Response:
+    """Remove a secret from the project tier.
+
+    The global tier (if set) remains effective. 204 on success, 404 if
+    no project-level entry exists.
+    """
+    from urika.core.secrets import load_secrets
+
+    load_secrets()
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    # Refuse if the secret is set in the process env AND no project
+    # entry exists AND it's not in the global vault — that's a real
+    # shell export the user must clear via ``unset``. If it's in the
+    # global vault, the os.environ value came from our own
+    # ``load_secrets()``/``set_global()`` and the request is fine —
+    # we'll just no-op (404) on the project tier and the global tier
+    # remains effective.
+    vault = _dashboard_vault(project_path=summary.path)
+    proj_secrets_path = summary.path / ".urika" / "secrets.env"
+    proj_has = False
+    if proj_secrets_path.exists():
+        from urika.core.vault import _read_env_file
+
+        proj_has = secret_name in _read_env_file(proj_secrets_path)
+    global_has = vault._global_backend.get(secret_name) is not None
+    in_proc = bool(os.environ.get(secret_name, "").strip())
+    if not proj_has and not global_has and in_proc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{secret_name} is set in your shell environment, not the "
+                f"project tier. Clear it via `unset {secret_name}` in the "
+                f"shell that launched the dashboard."
+            ),
+        )
+
+    existed = vault.delete_project(secret_name, project_path=summary.path)
+    if not existed:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{secret_name} is not set in the project tier",
+        )
+    return Response(status_code=204)
 
 
 @router.post("/projects/{name}/run")
@@ -1972,9 +2630,29 @@ async def api_run_stream(name: str, exp_id: str, type: str = "run"):
                 for line in new_data.splitlines():
                     yield _format_log_line(line)
             if not lock_path.exists():
-                # Lock gone — run has finished. Emit completion and close.
+                # Lock gone — run has finished. Read the actual
+                # terminal status from progress.json (run path) so
+                # the browser sees "stopped" / "failed" / "completed"
+                # correctly. Pre-v0.3.2 always emitted "completed",
+                # which lied to the user when they'd just clicked
+                # Stop. Other log types (evaluate/report/present)
+                # don't have a separate terminal-state file; for
+                # those we emit the legacy "completed" sentinel.
+                terminal_status = "completed"
+                if type == "run":
+                    progress_path = (
+                        summary.path / "experiments" / exp_id / "progress.json"
+                    )
+                    if progress_path.exists():
+                        try:
+                            progress = json.loads(progress_path.read_text("utf-8"))
+                            written = (progress or {}).get("status") or ""
+                            if written in ("completed", "stopped", "failed"):
+                                terminal_status = written
+                        except (OSError, ValueError):
+                            pass
                 yield (
-                    f"event: status\ndata: {json.dumps({'status': 'completed'})}\n\n"
+                    f"event: status\ndata: {json.dumps({'status': terminal_status})}\n\n"
                 )
                 return
             await asyncio.sleep(0.5)
@@ -2646,19 +3324,33 @@ async def api_run_respond(name: str, exp_id: str, request: Request):
 
 @router.post("/projects/{name}/runs/{exp_id}/stop")
 def api_run_stop(name: str, exp_id: str) -> dict:
-    """Send SIGTERM to the running experiment subprocess.
+    """Stop a running experiment, writing a real ``stopped`` status.
 
-    Reads the PID from ``<exp>/.lock`` and signals it. The orchestrator
-    subprocess's in-flight HTTP request to the LLM gets a
-    ``ConnectionResetError`` (which the runner catches) and the run
-    tears down. The drainer thread cleans up the lock file. Status
-    will be ``stopped`` in the orchestrator's final teardown — or
-    ``failed`` if it dies before reaching its cleanup path. Both are
-    resumable from the dashboard's Resume button.
+    The flow is graceful-then-forceful:
 
-    Returns ``{"status": "stop_signaled", "pid": pid}`` on success or
-    ``{"status": "not_running"}`` when no live process is found
-    (lock missing, unreadable, or PID dead).
+    1. Write ``"stop"`` to ``<project>/.urika/pause_requested``. The
+       orchestrator loop polls this file each turn and, when the
+       payload is ``"stop"``, calls :func:`stop_session` cleanly at
+       the next turn boundary — writing both ``session.json`` and
+       ``progress.json`` with ``status="stopped"`` so the dashboard's
+       experiment card flips to "stopped" with a Resume button.
+    2. Send ``SIGTERM`` to the **process group** (not just the leader
+       PID). The orchestrator was spawned with ``start_new_session=True``
+       so the group includes the SDK-spawned ``claude`` CLI and any
+       nested ``urika`` agents; targeting only the leader leaves
+       grandchildren burning credits.
+    3. The CLI's ``_cleanup_on_interrupt`` (registered for both
+       SIGINT and SIGTERM as of v0.3.2) writes the ``stopped``
+       session/progress state on its way out. If the kill is too
+       fast for that path, ``runs._start_reaper`` writes the same
+       state from the dashboard side when it observes a non-zero
+       exit code.
+
+    Pre-v0.3.2 this function only sent a bare ``SIGTERM`` to the
+    leader PID; the CLI had no SIGTERM handler so the process died
+    before any status was written, the reaper unlinked the lock,
+    and the dashboard's experiment card was stuck on ``pending``
+    (the static initial state).
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -2682,13 +3374,34 @@ def api_run_stop(name: str, exp_id: str) -> dict:
         return {"status": "not_running"}
     except PermissionError:
         # Process exists but we can't signal it — treat as "running"
-        # and fall through to the SIGTERM attempt below.
+        # and fall through to the signal attempt below.
         pass
     except OSError:
         return {"status": "not_running"}
 
+    # Step 1: graceful stop request via flag file. The orchestrator
+    # loop reads this at the next turn boundary and stops cleanly.
     try:
-        os.kill(pid, signal.SIGTERM)
+        flag_dir = summary.path / ".urika"
+        flag_dir.mkdir(parents=True, exist_ok=True)
+        (flag_dir / "pause_requested").write_text("stop", encoding="utf-8")
+    except OSError:
+        # Best-effort — fall through to signal even if flag write fails.
+        pass
+
+    # Step 2: SIGTERM the entire process group, not just the leader.
+    # ``runs.py`` spawns with ``start_new_session=True`` (POSIX) /
+    # ``CREATE_NEW_PROCESS_GROUP`` (Windows) so the orchestrator's
+    # children (claude CLI, nested urika subagents) live in the
+    # leader's group. ``os.kill(pid, ...)`` only signals the leader;
+    # ``os.killpg(getpgid(pid), ...)`` reaches the whole tree.
+    try:
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        else:
+            # Windows fallback — no killpg, signal the leader and let
+            # CREATE_NEW_PROCESS_GROUP propagate as best it can.
+            os.kill(pid, signal.SIGTERM)
     except (ProcessLookupError, OSError):
         return {"status": "not_running"}
 

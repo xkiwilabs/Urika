@@ -33,7 +33,21 @@ logger = logging.getLogger(__name__)
 
 # Categories that should pause instead of fail — the experiment can
 # be resumed once the transient issue resolves.
-_PAUSABLE_ERRORS = frozenset({"rate_limit", "billing"})
+_PAUSABLE_ERRORS = frozenset(
+    {
+        "rate_limit",
+        "billing",
+        # Transient network/server errors (5xx, connection_reset,
+        # timeout). Pre-v0.3.2 these fell into "unknown" and silently
+        # failed the experiment on a single network blip mid-loop.
+        "transient",
+        # Configuration errors (MissingPrivateEndpointError,
+        # APIKeyRequiredError) — runtime is misconfigured but the
+        # experiment state is recoverable; pause so the user can
+        # fix config from the dashboard and resume.
+        "config",
+    }
+)
 
 # Metrics where lower values are better (errors, losses, p-values).
 # Shared with loop_display._print_run_summary so the "best" calculation

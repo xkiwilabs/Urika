@@ -43,6 +43,19 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
     project_path, _config = _resolve_project(project)
 
     if text is None:
+        # Refuse the prompt-for-question path on non-TTY callers — EOF
+        # would loop forever (required=True re-prompts on empty) or
+        # silently send an empty question. Dashboard's ``spawn_advisor``
+        # already validates non-empty server-side, but defense in
+        # depth here protects scripts and CI invocations.
+        import sys as _sys
+
+        _tui_active = getattr(_sys.stdin, "_tui_bridge", False)
+        if not _sys.stdin.isatty() and not _tui_active:
+            raise click.ClickException(
+                "Pass the question as the second positional argument: "
+                "`urika advisor <project> \"<question>\"`"
+            )
         text = interactive_prompt("Question or instructions", required=True)
 
     try:
@@ -154,6 +167,47 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
                 _pool.submit(_do_summary).result(timeout=120)
         except Exception:
             pass
+
+        # Write a session record so dashboard advisor chats appear
+        # under the project's Sessions tab. Pre-v0.3.2 only the TUI
+        # / REPL paths wrote orchestrator-sessions; the dashboard's
+        # advisor chat (which spawns ``urika advisor`` from
+        # ``runs.spawn_advisor``) silently never produced one,
+        # leaving Sessions empty even after long advisor runs.
+        try:
+            from urika.core.orchestrator_sessions import (
+                OrchestratorSession,
+                _now_iso,
+                _timestamp_id,
+                save_session,
+            )
+
+            _now = _now_iso()
+            _session = OrchestratorSession(
+                session_id=_timestamp_id(),
+                started=_now,
+                updated=_now,
+                older_summary="",
+                recent_messages=[
+                    {"role": "user", "content": text, "ts": _now},
+                    {
+                        "role": "assistant",
+                        "content": advisor_text[:2000],
+                        "ts": _now,
+                    },
+                ],
+                preview=text[:120],
+            )
+            save_session(project_path, _session)
+        except Exception as _sess_exc:
+            # Best-effort — never let session persistence break the
+            # advisor reply path. Log so a broken sessions dir
+            # doesn't silently regress dashboard discoverability.
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "Advisor session persistence failed: %s", _sess_exc
+            )
 
         _offer_to_run_advisor_suggestions(result.text_output, project, project_path)
     else:
@@ -361,6 +415,18 @@ def build_tool(
     project_path, _config = _resolve_project(project)
 
     if instructions is None:
+        # Non-TTY callers must supply instructions explicitly — the
+        # ``required=True`` interactive_prompt would loop forever on EOF
+        # (or send empty instructions to the tool builder, which then
+        # pip-installs nothing useful and writes a degenerate tool).
+        import sys as _sys
+
+        _tui_active = getattr(_sys.stdin, "_tui_bridge", False)
+        if not _sys.stdin.isatty() and not _tui_active:
+            raise click.ClickException(
+                "Pass the tool description as the second positional "
+                "argument: `urika build-tool <project> \"<instructions>\"`"
+            )
         instructions = interactive_prompt(
             "Describe the tool to build (e.g., 'create a correlation heatmap tool using seaborn')",
             required=True,

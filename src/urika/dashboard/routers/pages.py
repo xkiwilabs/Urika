@@ -23,7 +23,7 @@ from urika.dashboard.projects import (
 )
 from urika.knowledge.store import KnowledgeStore
 
-VALID_PRIVACY_MODES = ["private", "open", "university"]
+VALID_PRIVACY_MODES = ["open", "private", "hybrid"]
 
 # Known cloud (Claude) model names surfaced as dropdown choices on
 # both global and project Models tabs.  Mirrors the interactive CLI's
@@ -32,6 +32,14 @@ VALID_PRIVACY_MODES = ["private", "open", "university"]
 # Local-server model names stay free-text everywhere because they
 # vary per deployment.
 KNOWN_CLOUD_MODELS = [
+    # Order matters: the first entry is the visual default in dropdowns
+    # whose fallback expression also resolves to it. 4-6 leads because
+    # the SDK's bundled CLI (claude-agent-sdk 0.1.45 ships v2.1.63)
+    # speaks the older request schema that 4-6 still accepts; 4-7
+    # rejects ``thinking.type.enabled`` with HTTP 400. Users with a
+    # newer system ``claude`` on PATH (the SDK adapter prefers it over
+    # the bundled binary) can safely pick 4-7 from the dropdown.
+    "claude-opus-4-6",
     "claude-opus-4-7",
     "claude-sonnet-4-5",
     "claude-haiku-4-5",
@@ -899,8 +907,32 @@ def global_settings(request: Request) -> HTMLResponse:
     s = load_settings()
     runtime = s.get("runtime", {}) or {}
     # Multi-endpoint editor on the Privacy tab. Each entry shape:
-    #   {"name", "base_url", "api_key_env", "default_model"}
+    #   {"name", "base_url", "api_key_env", "api_key_value",
+    #    "show_value", "default_model"}
+    #
+    # ``api_key_value`` is a sentinel ("********") when the referenced
+    # env-var has a vault-stored value — the form treats unchanged
+    # sentinel-valued fields as "leave the existing secret alone" on
+    # save. Empty when the env-var is unset (so the user can paste a
+    # value to populate the vault for the first time).
     named_endpoints = get_named_endpoints()
+    _enriched_endpoints = []
+    if named_endpoints:
+        from urika.core.registry import _urika_home
+        from urika.core.vault import FileBackend
+
+        _ep_backend = FileBackend(path=_urika_home() / "secrets.env")
+        for _ep in named_endpoints:
+            _key_env = (_ep.get("api_key_env") or "").strip()
+            _stored = bool(_key_env and _ep_backend.get(_key_env))
+            _enriched_endpoints.append(
+                {
+                    **_ep,
+                    "api_key_value": "********" if _stored else "",
+                    "show_value": False,
+                }
+            )
+        named_endpoints = _enriched_endpoints
     runtime_modes = runtime.get("modes", {}) or {}
     runtime_models = runtime.get("models", {}) or {}
     prefs = s.get("preferences", {}) or {}
@@ -908,8 +940,8 @@ def global_settings(request: Request) -> HTMLResponse:
 
     # Suggested cloud-model dropdown values; mirrors the interactive CLI.
     cloud_models = [
-        "claude-opus-4-7",
         "claude-opus-4-6",
+        "claude-opus-4-7",
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
     ]
@@ -932,7 +964,7 @@ def global_settings(request: Request) -> HTMLResponse:
                 }
             )
         # Per-mode default model.  Cloud modes fall back to the
-        # claude-opus-4-7 placeholder; private starts blank.
+        # claude-opus-4-6 placeholder; private starts blank.
         default_model = mode_cfg.get("model", "")
         mode_grids[mode_name] = {
             "default_model": default_model,
@@ -981,6 +1013,44 @@ def global_settings(request: Request) -> HTMLResponse:
     load_secrets()
     api_key_configured = bool(_os.environ.get("ANTHROPIC_API_KEY"))
 
+    # Secrets tab — surface which global backend is active (file vs OS
+    # keyring). The dashboard write path always goes through FileBackend
+    # so the label is informational, not load-bearing.
+    from urika.core.vault import _keyring_available
+    if _keyring_available():
+        secrets_backend_label = "OS keyring (managed via `urika config secret`)"
+    else:
+        secrets_backend_label = "file fallback (chmod 0600)"
+
+    # Per-channel "is the password/token already saved in the vault?"
+    # flags, used by the Notifications tab to decide whether the value
+    # input gets the ``********`` sentinel pre-fill (saved value exists,
+    # don't surface it but don't clear it on submit) or starts blank
+    # (nothing stored, user enters a value to populate the vault).
+    from urika.core.registry import _urika_home
+    from urika.core.vault import FileBackend
+
+    _notif_backend = FileBackend(path=_urika_home() / "secrets.env")
+    _notif_email = notifications.get("email", {}) or {}
+    _notif_slack = notifications.get("slack", {}) or {}
+    _notif_telegram = notifications.get("telegram", {}) or {}
+    _email_pwd_env = (_notif_email.get("password_env") or "").strip()
+    _slack_bot_env = (_notif_slack.get("bot_token_env") or "").strip()
+    _slack_app_env = (_notif_slack.get("app_token_env") or "").strip()
+    _tg_bot_env = (_notif_telegram.get("bot_token_env") or "").strip()
+    notif_email_password_set = bool(
+        _email_pwd_env and _notif_backend.get(_email_pwd_env)
+    )
+    notif_slack_bot_token_set = bool(
+        _slack_bot_env and _notif_backend.get(_slack_bot_env)
+    )
+    notif_slack_app_token_set = bool(
+        _slack_app_env and _notif_backend.get(_slack_app_env)
+    )
+    notif_telegram_bot_token_set = bool(
+        _tg_bot_env and _notif_backend.get(_tg_bot_env)
+    )
+
     return templates.TemplateResponse(
         request,
         "global_settings.html",
@@ -1017,6 +1087,12 @@ def global_settings(request: Request) -> HTMLResponse:
             "notif_telegram_auto_enable": bool(
                 (notifications.get("telegram", {}) or {}).get("auto_enable", False)
             ),
+            # Vault-stored flags drive the ``********`` sentinel pre-fill
+            # in the paired-input value fields.
+            "notif_email_password_set": notif_email_password_set,
+            "notif_slack_bot_token_set": notif_slack_bot_token_set,
+            "notif_slack_app_token_set": notif_slack_app_token_set,
+            "notif_telegram_bot_token_set": notif_telegram_bot_token_set,
             # Choices
             "valid_modes": VALID_PRIVACY_MODES,
             "valid_privacy_modes": ["open", "private", "hybrid"],
@@ -1025,6 +1101,8 @@ def global_settings(request: Request) -> HTMLResponse:
             "known_cloud_models": KNOWN_CLOUD_MODELS,
             "known_agents": KNOWN_AGENTS,
             "endpoint_choices": ENDPOINT_CHOICES,
+            # Secrets tab — backend label (file vs keyring).
+            "secrets_backend_label": secrets_backend_label,
         },
     )
 
@@ -1159,8 +1237,8 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
 
     # Suggested cloud-model dropdown values; mirrors the global settings page.
     cloud_models = [
-        "claude-opus-4-7",
         "claude-opus-4-6",
+        "claude-opus-4-7",
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
     ]
@@ -1208,7 +1286,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "endpoint_choices": ENDPOINT_CHOICES,
             "model_rows": model_rows,
             "runtime_model": runtime_section.get("model", ""),
-            "runtime_model_placeholder": (global_default_model or "claude-opus-4-7"),
+            "runtime_model_placeholder": (global_default_model or "claude-opus-4-6"),
             "data_paths_text": data_paths_text,
             "success_criteria_text": success_criteria_text,
             "project_privacy": project_privacy,

@@ -154,58 +154,6 @@ def _remove_env_key(path: Path, key: str) -> bool:
 
 _TOML_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
 
-# System env vars we never want to surface as "secrets" even if the
-# user happens to have them in their shell. This is a discoverability
-# heuristic only — it doesn't affect get/set/delete behavior.
-_SYSTEM_ENV_DENYLIST: frozenset[str] = frozenset(
-    {
-        "PATH",
-        "HOME",
-        "USER",
-        "USERNAME",
-        "LOGNAME",
-        "SHELL",
-        "TERM",
-        "LANG",
-        "LC_ALL",
-        "LC_CTYPE",
-        "PWD",
-        "OLDPWD",
-        "TMPDIR",
-        "TMP",
-        "TEMP",
-        "DISPLAY",
-        "EDITOR",
-        "VISUAL",
-        "PAGER",
-        "MANPATH",
-        "INFOPATH",
-        "PYTHONPATH",
-        "PYTHONHOME",
-        "PYTHONDONTWRITEBYTECODE",
-        "PYTHONUNBUFFERED",
-        "PYTEST_CURRENT_TEST",
-        "VIRTUAL_ENV",
-        "CONDA_PREFIX",
-        "CONDA_DEFAULT_ENV",
-        "SSH_AUTH_SOCK",
-        "SSH_AGENT_PID",
-        "DBUS_SESSION_BUS_ADDRESS",
-        "XDG_RUNTIME_DIR",
-        "XDG_CONFIG_HOME",
-        "XDG_DATA_HOME",
-        "XDG_CACHE_HOME",
-        "XDG_SESSION_ID",
-        "XDG_SESSION_TYPE",
-        "XDG_CURRENT_DESKTOP",
-        "WAYLAND_DISPLAY",
-        "GDMSESSION",
-        "DESKTOP_SESSION",
-    }
-)
-
-_SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
-
 
 def _toml_quote_string(value: str) -> str:
     """Encode a string as a TOML basic string."""
@@ -502,7 +450,10 @@ class SecretsVault:
         names.update(self._global_backend.list_keys())
         return sorted(names)
 
-    def list_with_origins(self) -> list[dict]:
+    def list_with_origins(
+        self,
+        referenced_names: Optional[set[str]] = None,
+    ) -> list[dict]:
         """Return per-secret rows with origin badges for the dashboard.
 
         Each row is::
@@ -516,13 +467,23 @@ class SecretsVault:
                 "masked_preview": "sk-ant-***...***WXYZ",  # only when set
             }
 
-        The union covers: any name set anywhere (process env / project /
-        global) PLUS any well-known names from
-        :data:`urika.core.known_secrets.KNOWN_SECRETS` that are NOT set
-        (origin ``"unset"``) so the dashboard surfaces useful suggestions.
-        """
-        from urika.core.known_secrets import KNOWN_SECRETS
+        Candidate set rule (no shell-env leak):
 
+        * A name is included IFF it is stored in the vault (file or
+          keyring backend), stored in the project tier (project
+          ``secrets.env``), OR explicitly listed in ``referenced_names``.
+        * ``os.environ`` is no longer a candidate source. Random shell
+          exports never appear unless they are also vault-stored or
+          explicitly referenced. (Process env still wins resolution —
+          its origin is reported as ``"process"`` for candidate names
+          that happen to be exported — but it cannot introduce new
+          candidates.)
+        * ``referenced_names`` is the set of env-var names the caller
+          discovered from configured surfaces (privacy endpoints,
+          notifications channels). These appear with ``origin="unset"``
+          when not stored anywhere, so the dashboard's "Used by your
+          config" section surfaces names users still need to fill in.
+        """
         global_keys = set(self._global_backend.list_keys())
         proj_values: dict[str, str] = {}
         if self.project_path is not None:
@@ -530,29 +491,14 @@ class SecretsVault:
             if proj_path.exists():
                 proj_values = _read_env_file(proj_path)
 
-        # Names known to the vault (project + global) plus the
-        # discoverability registry. For process env, include any name
-        # that's set there but NOT one we wrote (those are "real"
-        # external exports).
-        names: set[str] = set(KNOWN_SECRETS.keys())
+        ref = set(referenced_names) if referenced_names else set()
+
+        # Candidates: vault-stored (project + global) ∪ explicitly
+        # referenced. Pointedly NOT including os.environ or KNOWN_SECRETS.
+        names: set[str] = set()
         names.update(global_keys)
         names.update(proj_values.keys())
-        for env_name in os.environ:
-            if env_name in self._our_writes:
-                # We poked this; it'll be attributed to its real store.
-                continue
-            if (
-                env_name in KNOWN_SECRETS
-                or env_name in global_keys
-                or env_name in proj_values
-            ):
-                names.add(env_name)
-                continue
-            # Heuristic: surface uppercase-env-var-shaped names that
-            # aren't on the system denylist, since the user may have
-            # exported them as credentials.
-            if env_name not in _SYSTEM_ENV_DENYLIST and _SECRET_NAME_RE.match(env_name):
-                names.add(env_name)
+        names.update(ref)
 
         global_meta = _read_meta(self._meta_path)
 
@@ -587,8 +533,13 @@ class SecretsVault:
             if name in global_meta:
                 description = global_meta[name].get("description", "") or ""
                 last_modified = global_meta[name].get("last_modified", "") or ""
-            if not description and name in KNOWN_SECRETS:
-                description = KNOWN_SECRETS[name]
+            if not description:
+                # Fall back to the known-secrets registry blurb when we
+                # have no per-secret metadata.
+                from urika.core.known_secrets import KNOWN_SECRETS
+
+                if name in KNOWN_SECRETS:
+                    description = KNOWN_SECRETS[name]
 
             rows.append(
                 {

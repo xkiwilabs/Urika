@@ -98,18 +98,30 @@ def present(
         # JSON mode: default to most recent experiment, no interactive prompt
         choice = f"{experiments[-1].experiment_id} [auto]"
     else:
-        # Build options — most recent first, plus all/project choices
-        reversed_exps = list(reversed(experiments))
-        options = []
-        for exp in reversed_exps:
-            progress = load_progress(project_path, exp.experiment_id)
-            exp_status = progress.get("status", "pending")
-            runs = len(progress.get("runs", []))
-            options.append(f"{exp.experiment_id} [{exp_status}, {runs} runs]")
-        options.append("All experiments (generate for each)")
-        options.append("Project level (one overarching presentation)")
+        import sys as _sys
 
-        choice = _prompt_numbered("\n  Select:", options, default=1)
+        _tui_active = getattr(_sys.stdin, "_tui_bridge", False)
+        if not _sys.stdin.isatty() and not _tui_active:
+            # Non-TTY caller (dashboard subprocess, CI, scripts):
+            # default to most-recent like the JSON path. Pre-v0.3.2
+            # the EOF branch of ``_prompt_numbered`` silently returned
+            # the first option, which was the same value but came
+            # with a hidden token-spending side effect — the user
+            # never saw the prompt.
+            choice = f"{experiments[-1].experiment_id} [auto]"
+        else:
+            # Build options — most recent first, plus all/project choices
+            reversed_exps = list(reversed(experiments))
+            options = []
+            for exp in reversed_exps:
+                progress = load_progress(project_path, exp.experiment_id)
+                exp_status = progress.get("status", "pending")
+                runs = len(progress.get("runs", []))
+                options.append(f"{exp.experiment_id} [{exp_status}, {runs} runs]")
+            options.append("All experiments (generate for each)")
+            options.append("Project level (one overarching presentation)")
+
+            choice = _prompt_numbered("\n  Select:", options, default=1)
 
     _start_ms, _start_iso = _agent_run_start()
     _pres_tokens_in = 0

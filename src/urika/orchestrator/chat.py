@@ -159,13 +159,35 @@ class OrchestratorChat:
             except Exception:
                 pass
 
+        # When the agent failed, surface the most specific message we
+        # have rather than the bare "Agent failed" placeholder. The
+        # SDK adapter populates ``error`` and ``error_category``;
+        # include the category in the response so the dashboard can
+        # render auth/rate-limit/billing errors with their own UI
+        # rather than dropping back to a generic exception toast.
+        if result.success:
+            response = result.text_output
+        else:
+            response = result.error or "Agent failed"
+            if result.error_category:
+                response = f"[{result.error_category}] {response}"
+            # If the agent produced any partial assistant text before
+            # failing, show that too — gives the user a window into
+            # what the agent was trying to do.
+            if result.text_output:
+                response = (
+                    f"{response}\n\n--- partial output ---\n"
+                    f"{result.text_output}"
+                )
+
         return {
-            "response": result.text_output if result.success else (result.error or "Agent failed"),
+            "response": response,
             "success": result.success,
             "tokens_in": result.tokens_in,
             "tokens_out": result.tokens_out,
             "cost_usd": result.cost_usd or 0,
             "model": result.model,
+            "error_category": result.error_category,
         }
 
     def _build_config(self) -> AgentConfig:
@@ -245,17 +267,16 @@ class OrchestratorChat:
             env = build_agent_env_for_endpoint(
                 self.project_dir, "orchestrator", runtime_config
             )
-            # Strip Claude Code session markers so Bash-invoked urika
-            # commands can spawn their own Claude Code agents. Without
-            # this, the child inherits CLAUDECODE=1 from os.environ
-            # and the Claude CLI refuses to nest. Setting to "" makes
-            # it falsy for `os.getenv("CLAUDECODE")` checks while
-            # keeping the var present (some code checks existence).
-            if env is None:
-                env = {}
-            env["CLAUDECODE"] = ""
-            env["CLAUDE_CODE_SSE_PORT"] = ""
-            env["CLAUDE_CODE_ENTRYPOINT"] = ""
+            # Strip Claude Code session markers AND OAuth tokens via
+            # the single source of truth in ``compliance.scrub_oauth_env``.
+            # Pre-v0.3.2 this site reimplemented the scrub inline and
+            # missed ``CLAUDE_CODE_EXECPATH`` (the fourth nested-session
+            # marker) plus ``CLAUDE_CODE_OAUTH_TOKEN`` /
+            # ``ANTHROPIC_AUTH_TOKEN`` — drift between two
+            # implementations of the same scrub.
+            from urika.core.compliance import scrub_oauth_env
+
+            env = scrub_oauth_env(env)
 
             readable_dirs = [self.project_dir]
             # Allow only urika CLI commands via Bash — for quick
