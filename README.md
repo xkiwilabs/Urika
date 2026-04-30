@@ -38,41 +38,27 @@ See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-tas
 
 ### Prerequisites
 
-1. Python >= 3.11
-2. **An API key for at least one supported model provider.** v0.3 ships with the Anthropic adapter, so you'll need an Anthropic API key (see "Set up API key" below). Adapters for OpenAI, Google ADK, and PI are planned for upcoming releases — when they land, you'll only need keys for the providers you actually use.
-3. **Claude Code CLI** — required by the Anthropic adapter (the only fully-supported adapter in v0.3). See [Getting Started](docs/01-getting-started.md#step-1-install-claude-code-cli) for why it's needed even when using an API key.
-
-```bash
-npm install -g @anthropic-ai/claude-code
-```
-
-### Set up API key
-
-Urika requires an Anthropic API key. Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification, a Claude Pro/Max subscription cannot be used to authenticate the Claude Agent SDK that Urika depends on.
-
-1. Get a key at [console.anthropic.com](https://console.anthropic.com) → Settings → API Keys.
-2. Set a monthly spend limit in Settings → Billing.
-3. Save the key:
-
-   ```bash
-   urika config api-key             # interactive — saves to ~/.urika/secrets.env
-   # or: export ANTHROPIC_API_KEY=sk-ant-...
-   ```
-
-See [Getting Started](docs/01-getting-started.md) and [Provider compliance](docs/20-security.md#provider-compliance) for the full rationale.
+1. **Python 3.11+** (required) — see [Getting Started → Step 1](docs/01-getting-started.md#python-311-required) for per-OS install commands.
+2. **Anthropic API key** (required) — set up in step 3 below. Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification, a Claude Pro/Max subscription cannot be used to authenticate the Claude Agent SDK that Urika depends on. v0.3 ships with the Anthropic adapter only; adapters for OpenAI, Google ADK, and PI are planned for upcoming releases.
+3. **Claude Code CLI on PATH** *(recommended, not required)* — `npm install -g @anthropic-ai/claude-code`. The Claude Agent SDK ships its own bundled `claude` binary, so you can skip this and Urika will fall back to the bundled one. Install your own to use `claude-opus-4-7` or any future Anthropic model — the bundled binary lags. See [Getting Started → Claude Code CLI](docs/01-getting-started.md#claude-code-cli-recommended) for the why.
 
 ### Install Urika
 
-**Recommended: install from source.** Urika is under active development with frequent updates. Installing from source gives you the latest features and fixes:
+**Recommended: install from source** in a Python virtual environment. Urika is under active development with frequent updates.
+
+On Ubuntu 22.04+, Debian 12+, Fedora 38+, and recent macOS, system Python refuses `pip install` with `error: externally-managed-environment` (PEP 668), so a venv is the simplest path:
 
 ```bash
+python3 -m venv ~/.venvs/urika
+source ~/.venvs/urika/bin/activate    # Windows PowerShell: ~\.venvs\urika\Scripts\Activate.ps1
+
 git clone https://github.com/xkiwilabs/Urika.git
 cd Urika
 pip install -e ".[dev]"
 urika setup                     # check installation, detect hardware, optionally install DL
 ```
 
-To update, just `git pull` from the repo.
+To update: `cd Urika && git pull`.
 
 **Alternative: install from PyPI** (pre-release — may lag behind source):
 
@@ -80,9 +66,21 @@ To update, just `git pull` from the repo.
 pip install urika
 ```
 
-The default install includes the Textual TUI, visualization, ML, statistics, knowledge pipeline, and notification support. Deep learning (torch, transformers) is optional: `pip install "urika[dl]"`.
+`pipx`, `conda`, and `uv` work too. Deep learning (`torch`, `transformers`) is optional: `pip install "urika[dl]"`.
 
-See [Getting Started](docs/01-getting-started.md) for full details.
+### Set up API key
+
+1. Get a key at [console.anthropic.com](https://console.anthropic.com) → Settings → API Keys.
+2. Set a monthly spend limit in Settings → Billing.
+3. Save the key (Urika is now installed, so the CLI is available):
+
+   ```bash
+   urika config api-key             # interactive — saves to ~/.urika/secrets.env
+   urika config api-key --test      # verify the key works against api.anthropic.com
+   # or: export ANTHROPIC_API_KEY=sk-ant-...
+   ```
+
+See [Getting Started](docs/01-getting-started.md) for the full walkthrough including verification, troubleshooting, and per-OS notes. See [Provider compliance](docs/20-security.md#provider-compliance) for the full Anthropic policy rationale.
 
 ## Quickstart
 

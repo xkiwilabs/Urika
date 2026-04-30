@@ -6,9 +6,9 @@ Urika works with data from any scientific discipline — tabular data (CSV, Exce
 
 ## Requirements
 
-- **Python 3.11 or later** (3.12 also supported)
-- **Anthropic API key** (`ANTHROPIC_API_KEY`) — required (see callout below)
-- **Claude Code CLI** — required as the agent runtime
+- **Python 3.11 or later** (required — 3.12 also supported)
+- **Anthropic API key** (`ANTHROPIC_API_KEY`) — required (see Step 3)
+- **Claude Code CLI on PATH** (recommended, not required — see Step 1)
 
 ### Hardware requirements by use case
 
@@ -30,85 +30,75 @@ Your hardware needs depend on what kind of analysis you plan to do:
 
 **Shared memory systems (Apple Silicon, etc.):** Macs with M-series chips share memory between CPU and GPU. A MacBook Pro with 64 GB unified memory can run models that would require a dedicated GPU on other systems. Ollama handles this automatically.
 
-## Step 1: Install Claude Code CLI
+## Step 1: Prerequisites
 
-Urika uses the Claude Agent SDK, which requires the Claude Code CLI as the agent runtime. Install it first:
+Urika has one hard requirement (Python) and one strong recommendation (the `claude` CLI on your PATH). Set both up before installing Urika in Step 2.
+
+### Python 3.11+ (required)
+
+Urika is a Python package and runs on Python 3.11 or later (3.12 also supported).
+
+| OS | Install command |
+|---|---|
+| macOS | `brew install python@3.12` (or [python.org installer](https://python.org)) |
+| Ubuntu 24.04 | already installed; just add the venv module: `sudo apt install python3-venv` |
+| Ubuntu 22.04 | `sudo apt install python3.11 python3.11-venv` (or use `pyenv`/`conda`) |
+| Fedora 38+ | already installed |
+| Windows | [python.org installer](https://www.python.org/downloads/) — tick **"Add to PATH"** |
+
+Verify:
 
 ```bash
+python3 --version    # expect 3.11 or higher
+```
+
+### Claude Code CLI (recommended)
+
+The Claude Agent SDK that Urika depends on launches a `claude` CLI binary as a subprocess for every agent run. The SDK ships its own copy of the binary inside the wheel, so this step is technically optional — Urika falls back to the bundled binary if no `claude` is on your PATH, and the bundled binary works fine for `claude-opus-4-6`, `claude-sonnet-4-5`, and `claude-haiku-4-5` (the v0.3 default model is 4-6).
+
+**Why install your own anyway:** the bundled binary lags the public `claude` release by several versions. The current bundled binary speaks an older request schema that newer models (e.g. `claude-opus-4-7`) reject with HTTP 400, surfacing as a cryptic *"Fatal error in message reader: Command failed with exit code 1"*. Installing the public CLI keeps you on the current schema and gives you per-model upgrade independence from the SDK's release cadence. Urika's runtime prefers the system `claude` over the bundled one whenever both are present.
+
+The CLI is published as an npm package, so you'll need Node.js 18+ first:
+
+```bash
+# Install Node.js 18+
+# macOS:         brew install node
+# Ubuntu/Debian: sudo apt install nodejs npm
+# Fedora:        sudo dnf install nodejs npm
+# Windows:       installer from https://nodejs.org
+
+# Then install the Claude Code CLI
 npm install -g @anthropic-ai/claude-code
 ```
 
-> **Note:** You need Node.js 18+ installed. If you don't have it: `sudo apt install nodejs npm` (Linux) or `brew install node` (macOS).
-
-### Why is the CLI required if Urika uses an API key?
-
-The Claude Agent SDK is a thin wrapper that spawns the `claude` CLI as a subprocess and communicates with it over stdin/stdout. The CLI is what actually:
-
-- runs the agent loop (multi-turn reasoning, tool calls, conversation state),
-- executes tools (Read, Write, Edit, Bash, Glob, Grep, …),
-- enforces the permission system (`bypassPermissions`, allowlists),
-- streams structured messages back.
-
-Authentication is just one piece. When you set `ANTHROPIC_API_KEY`, the CLI uses Anthropic's metered API for inference — that's the compliant path Urika requires. When the key is unset, the CLI would fall back to your local subscription OAuth login, which Urika's safety net actively blocks (see [Provider compliance](20-security.md#provider-compliance)).
-
-In short: **you install the CLI for the agent runtime; you set the API key for the auth.** Skipping the CLI install isn't an option — there's no other way to drive the agent.
-
-### Verify installation
+Verify:
 
 ```bash
-claude --version
+claude --version    # expect 2.1.100 or higher for claude-opus-4-7 support
 ```
 
-If you see a version number, the CLI is installed and ready. **Don't** run `claude login` for Urika — Urika reads `ANTHROPIC_API_KEY` directly. `claude login` is only relevant if you also use `claude` interactively as a human (typing into it yourself), which is a separate use case from running Urika.
+> **Don't** run `claude login` for Urika — Urika reads `ANTHROPIC_API_KEY` directly. `claude login` only matters if you also use `claude` interactively as a human, which is a separate use case from running Urika.
 
-## Step 2: Set up your Anthropic API key
+### Why does the agent runtime need a CLI at all?
 
-> **Important: Urika requires an Anthropic API key.**
->
-> Anthropic's Consumer Terms (§3.7) and the April 2026 Agent SDK
-> clarification prohibit using a Claude Pro/Max subscription with the
-> Claude Agent SDK, which Urika depends on. To use Urika, you need an
-> API key.
->
-> 1. Sign in at [console.anthropic.com](https://console.anthropic.com).
-> 2. Settings → API Keys → Create Key (label it e.g. `urika`).
-> 3. Settings → Billing → Spend limits — set a monthly cap (e.g. $20).
-> 4. Save the key into Urika's credential file:
->
->    ```bash
->    urika config api-key   # interactive prompt, saves to ~/.urika/secrets.env
->    ```
->
->    Or set the env var directly: `export ANTHROPIC_API_KEY=sk-ant-...`.
->
-> If you also have a Claude Pro / Max subscription, you can keep using it
-> for direct interactive work in Claude.ai or `claude` CLI — only the
-> Urika code path requires the API key.
+The Claude Agent SDK is a thin wrapper that spawns `claude` as a subprocess and communicates with it over stdin/stdout. The CLI is what actually runs the agent loop (multi-turn reasoning, tool calls, conversation state), executes tools (Read, Write, Edit, Bash, Glob, Grep, …), enforces the permission system, and streams structured messages back. Authentication via `ANTHROPIC_API_KEY` is one piece of the picture; the CLI is the runtime.
 
-### Verify your API key
+## Step 2: Install Urika
 
-Once saved, run a quick check that Urika can authenticate:
+**Recommended: install from source** in a Python virtual environment. Urika is under active development with frequent updates — new agents, tools, and improvements land regularly.
+
+### Use a virtual environment
+
+On Ubuntu 22.04+, Debian 12+, Fedora 38+, and recent macOS, system Python refuses `pip install` with `error: externally-managed-environment` (PEP 668). Create a venv before installing:
 
 ```bash
-urika config api-key --test
+python3 -m venv ~/.venvs/urika
+source ~/.venvs/urika/bin/activate    # Windows PowerShell: ~\.venvs\urika\Scripts\Activate.ps1
 ```
 
-This sends a minimal request to `api.anthropic.com` using the configured
-key. On success you'll see something like:
+`pipx`, `conda`, and `uv` work too — pick whichever your environment manages best. Conda users can skip the venv step if they're already inside a conda environment.
 
-    ✓ API key works.  key authenticated; model=claude-haiku-4-5; reply='ok'
-
-If the key is invalid or revoked you'll get a 401 with a hint to
-regenerate. The test consumes ~13 tokens (~$0.0001).
-
-You can also click **Test API key** on the dashboard's Settings page
-once the dashboard is running.
-
-See [Provider compliance](20-security.md#provider-compliance) for the full rationale and the citation to the Anthropic policy clarification.
-
-## Step 3: Install Urika
-
-**Recommended: install from source.** Urika is under active development with frequent updates — new agents, tools, and improvements land regularly. Installing from source ensures you always have the latest version:
+### Install
 
 ```bash
 git clone https://github.com/xkiwilabs/Urika.git
@@ -159,6 +149,51 @@ This installs everything you need for statistical analysis, machine learning, vi
 | slack-sdk | Slack notifications and remote commands |
 | python-telegram-bot | Telegram notifications and remote commands |
 
+## Step 3: Set up your Anthropic API key
+
+> **Important: Urika requires an Anthropic API key.**
+>
+> Anthropic's Consumer Terms (§3.7) and the April 2026 Agent SDK
+> clarification prohibit using a Claude Pro/Max subscription with the
+> Claude Agent SDK, which Urika depends on. To use Urika, you need an
+> API key.
+>
+> 1. Sign in at [console.anthropic.com](https://console.anthropic.com).
+> 2. Settings → API Keys → Create Key (label it e.g. `urika`).
+> 3. Settings → Billing → Spend limits — set a monthly cap (e.g. $20).
+> 4. Save the key into Urika's credential file:
+>
+>    ```bash
+>    urika config api-key   # interactive prompt, saves to ~/.urika/secrets.env
+>    ```
+>
+>    Or set the env var directly: `export ANTHROPIC_API_KEY=sk-ant-...`.
+>
+> If you also have a Claude Pro / Max subscription, you can keep using it
+> for direct interactive work in Claude.ai or `claude` CLI — only the
+> Urika code path requires the API key.
+
+### Verify your API key
+
+Once saved, run a quick check that Urika can authenticate:
+
+```bash
+urika config api-key --test
+```
+
+This sends a minimal request to `api.anthropic.com` using the configured
+key. On success you'll see something like:
+
+    ✓ API key works.  key authenticated; model=claude-haiku-4-5; reply='ok'
+
+If the key is invalid or revoked you'll get a 401 with a hint to
+regenerate. The test consumes ~13 tokens (~$0.0001).
+
+You can also click **Test API key** on the dashboard's Settings page
+once the dashboard is running.
+
+See [Provider compliance](20-security.md#provider-compliance) for the full rationale and the citation to the Anthropic policy clarification.
+
 ## Step 4: Verify installation
 
 ```bash
@@ -205,6 +240,21 @@ urika build-tool my-project "install lifelines and build a survival analysis too
 ```
 
 The tool builder installs the package, creates a reusable tool that wraps it, and registers it so all agents can use it in subsequent experiments. If you have a project venv enabled, packages install into the project's isolated environment rather than the global one.
+
+## Troubleshooting
+
+Common errors during install and first run:
+
+| Error | Cause | Fix |
+|---|---|---|
+| `error: externally-managed-environment` on `pip install` | PEP 668 — system Python on Ubuntu 22.04+, Debian 12+, Fedora 38+, recent macOS refuses to write into the system site-packages | Create a venv (Step 2 → "Use a virtual environment"), or install via `pipx` / `conda` / `uv` |
+| `Fatal error in message reader: Command failed with exit code 1` (running an agent) | The bundled `claude` CLI sends a request schema rejected by the selected model — most often `claude-opus-4-7` rejecting the deprecated `thinking.type.enabled` field | Install/upgrade the public CLI: `npm install -g @anthropic-ai/claude-code@latest` (Step 1 → "Claude Code CLI"). Or pick `claude-opus-4-6` in the dashboard's Models tab |
+| `claude: command not found` after `npm install -g` | npm's global bin directory isn't on your PATH | `export PATH="$HOME/.npm-global/bin:$PATH"` in your shell rc, or run `npm config set prefix ~/.npm-global` and re-run the install |
+| `npm install -g` fails with `EACCES` permission errors | npm prefix is `/usr/local` and you're not root | `npm config set prefix ~/.npm-global` then re-run the install. Avoid `sudo npm install -g` — it leaves binaries owned by root and outside your PATH |
+| `⚠ ANTHROPIC_API_KEY not set` warning every command | Key was exported in your shell once but not saved to Urika's vault, and the warning fires whenever the env var is unset in a fresh shell | Run `urika config api-key` to save it permanently to `~/.urika/secrets.env`, or add `export ANTHROPIC_API_KEY=...` to your shell rc |
+| `urika: command not found` after `pip install -e .` | Your venv isn't activated, or the install put the binary in a directory not on PATH | Activate the venv: `source ~/.venvs/urika/bin/activate`. Verify: `which urika` should resolve inside the venv |
+
+For provider-side compliance issues (Pro/Max OAuth refusal, etc.) see [Security Model → Provider compliance](20-security.md#provider-compliance). For per-agent model and endpoint configuration see [Models and Privacy](13-models-and-privacy.md).
 
 ## Three ways to use Urika
 
