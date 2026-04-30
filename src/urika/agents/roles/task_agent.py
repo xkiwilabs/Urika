@@ -92,7 +92,7 @@ def build_config(
         security=SecurityPolicy(
             writable_dirs=[experiment_dir],
             readable_dirs=[project_dir],
-            allowed_bash_prefixes=["python ", "pip "],
+            allowed_bash_prefixes=["python", "pip", "pytest"],
             blocked_bash_patterns=["rm -rf", "git push", "git reset"],
         ),
         max_turns=25,

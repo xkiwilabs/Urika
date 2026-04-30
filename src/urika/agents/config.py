@@ -30,26 +30,36 @@ class MissingPrivateEndpointError(RuntimeError):
 class SecurityPolicy:
     """Filesystem and command boundaries for an agent.
 
-    ADVISORY ONLY: These policies are not enforced at runtime.
-    The actual enforcement mechanism is the ``allowed_tools`` list in
-    :class:`AgentConfig`, which controls which tools an agent subprocess
-    may invoke.  The methods here (``is_write_allowed``,
-    ``is_bash_allowed``) exist for future enforcement and for use in
-    tests but are **not** called during normal agent execution.
+    **Enforced at runtime as of v0.4** via the SDK's ``can_use_tool``
+    permission callback. ``ClaudeSDKRunner._build_options`` wires
+    each agent's policy into a ``can_use_tool`` coroutine that the
+    SDK invokes before every tool dispatch
+    (``urika.agents.permission.make_can_use_tool``). The methods here
+    (``is_write_allowed``, ``is_bash_allowed``) are kept for unit
+    tests + introspection but are NOT the enforcement code path —
+    the SDK callback uses ``permission._decide`` directly so the
+    policy is applied to the actual ``tool_input`` dict the SDK
+    receives, including path canonicalisation that defeats ``..``
+    and symlinks.
+
+    Pre-v0.4 these fields were advisory only: a doc lie that the
+    v0.3.2 audit explicitly flagged. The orchestrator chat's
+    ``allowed_bash_prefixes=["urika ", "CLAUDECODE= urika "]`` was
+    paper — ``urika ; rm -rf /`` matched the prefix.
     """
 
     writable_dirs: list[Path]
-    readable_dirs: list[
-        Path
-    ]  # Informational only — read enforcement deferred to future phase
+    readable_dirs: list[Path]
     allowed_bash_prefixes: list[str]
     blocked_bash_patterns: list[str]
 
     def is_write_allowed(self, path: Path) -> bool:
         """Check if a file path is within any writable directory.
 
-        Note: Advisory only — not called at runtime.  Enforcement is via
-        ``allowed_tools`` in :class:`AgentConfig`.
+        Used by tests + introspection. The runtime enforcement path
+        is ``permission._path_decision`` which has identical logic
+        but operates on the SDK's ``tool_input`` directly with full
+        symlink resolution.
         """
         resolved = path.resolve()
         return any(
@@ -60,8 +70,11 @@ class SecurityPolicy:
     def is_bash_allowed(self, command: str) -> bool:
         """Check if a bash command is allowed by prefix rules and not blocked.
 
-        Note: Advisory only — not called at runtime.  Enforcement is via
-        ``allowed_tools`` in :class:`AgentConfig`.
+        Used by tests + introspection. The runtime enforcement path
+        is ``permission._bash_decision`` which additionally
+        shlex-parses + rejects shell metacharacters (so
+        ``urika ; rm -rf /`` is denied even when ``urika`` is
+        allow-listed).
         """
         cmd = command.strip()
         for pattern in self.blocked_bash_patterns:

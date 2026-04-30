@@ -321,6 +321,16 @@ class ClaudeSDKRunner(AgentRunner):
         # custom endpoint). We pass empty string values (not absence)
         # so the subprocess overrides any parent-inherited values.
         agent_env = scrub_oauth_env(config.env)
+        # SecurityPolicy enforcement (v0.4): wire the agent's
+        # writable_dirs / readable_dirs / allowed_bash_prefixes /
+        # blocked_bash_patterns into a real ``can_use_tool``
+        # callback that the SDK invokes before each tool dispatch.
+        # Pre-v0.4 these fields were advisory only; ``permission_mode``
+        # was ``"bypassPermissions"`` so the SDK never asked us. The
+        # mode change is required — ``can_use_tool`` does NOT fire
+        # under bypass.
+        from urika.agents.permission import make_can_use_tool
+
         kwargs: dict[str, object] = {
             "system_prompt": config.system_prompt,
             "allowed_tools": config.allowed_tools,
@@ -328,7 +338,10 @@ class ClaudeSDKRunner(AgentRunner):
             "max_turns": config.max_turns,
             "model": config.model,
             "cwd": str(config.cwd) if config.cwd else None,
-            "permission_mode": "bypassPermissions",
+            "permission_mode": "default",
+            "can_use_tool": make_can_use_tool(
+                config.security, config.cwd
+            ),
             "env": agent_env,
         }
         # Prefer the system-installed `claude` CLI over the SDK's

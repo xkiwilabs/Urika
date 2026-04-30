@@ -60,7 +60,13 @@ class TestClaudeSDKRunnerBuildOptions:
         assert options.allowed_tools == ["Read", "Glob"]
         assert options.disallowed_tools == ["Bash"]
         assert options.max_turns == 5
-        assert options.permission_mode == "bypassPermissions"
+        # v0.4: SecurityPolicy enforcement runs via the SDK's
+        # ``can_use_tool`` callback, which only fires when
+        # ``permission_mode`` is "default" or "acceptEdits".
+        # ``bypassPermissions`` skipped the callback entirely
+        # pre-v0.4 — that's the bug we just closed.
+        assert options.permission_mode == "default"
+        assert options.can_use_tool is not None
 
     def test_maps_cwd(self, read_only_config: AgentConfig, tmp_path: Path) -> None:
         runner = ClaudeSDKRunner()
@@ -79,10 +85,16 @@ class TestClaudeSDKRunnerBuildOptions:
         options = runner._build_options(read_only_config)
         assert options.cwd is None
 
-    def test_no_can_use_tool(self, read_only_config: AgentConfig) -> None:
+    def test_can_use_tool_is_set_for_security_enforcement(
+        self, read_only_config: AgentConfig
+    ) -> None:
+        """v0.4: ``can_use_tool`` is always set so SecurityPolicy
+        gets enforced. Pre-v0.4 this was None and policy was
+        advisory-only; the test was renamed accordingly."""
         runner = ClaudeSDKRunner()
         options = runner._build_options(read_only_config)
-        assert options.can_use_tool is None
+        assert options.can_use_tool is not None
+        assert callable(options.can_use_tool)
 
 
 class TestComplianceSafetyNet:

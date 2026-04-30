@@ -279,10 +279,15 @@ class OrchestratorChat:
             env = scrub_oauth_env(env)
 
             readable_dirs = [self.project_dir]
-            # Allow only urika CLI commands via Bash — for quick
+            # Allow only ``urika`` CLI commands via Bash — for quick
             # subagent queries (advisor, evaluate, plan, inspect).
-            # Both with and without the CLAUDECODE= prefix.
-            allowed_bash = ["urika ", "CLAUDECODE= urika "]
+            # v0.4: SecurityPolicy enforcement now shlex-parses the
+            # command and matches against tokenised prefixes. The
+            # pre-v0.4 ``"CLAUDECODE= urika "`` form was a string
+            # prefix that matched ``urika ; rm -rf /``; the new
+            # check rejects shell metacharacters outright AND
+            # requires the head token to be exactly ``urika``.
+            allowed_bash = ["urika"]
 
         return AgentConfig(
             name="orchestrator",
