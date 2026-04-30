@@ -159,7 +159,18 @@ def logs(project: str, experiment_id: str | None, json_output: bool) -> None:
     if experiment_id is None:
         experiments = list_experiments(project_path)
         if not experiments:
-            raise click.ClickException("No experiments in this project.")
+            # v0.4: a fresh project with no experiments is normal
+            # state, not an error. JSON mode returns an empty
+            # logs array; human mode prints a friendly message
+            # and exits zero so scripts can `if urika logs ...;
+            # then` without trapping non-zero on empty.
+            if json_output:
+                from urika.cli_helpers import output_json
+
+                output_json({"project": project, "logs": []})
+                return
+            click.echo(f"No experiments in {project} yet.")
+            return
         if len(experiments) == 1:
             experiment_id = experiments[0].experiment_id
         else:
