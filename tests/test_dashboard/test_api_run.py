@@ -840,3 +840,113 @@ def test_resume_post_422_for_unknown_experiment(run_client):
     client, _, _ = run_client
     r = client.post("/api/projects/alpha/experiments/exp-bogus/resume")
     assert r.status_code == 422
+
+
+# ── Stop endpoints for non-run operations (v0.4 Track 1) ─────────────
+
+
+def _setup_op_lock(tmp_path, lock_relpath: str, pid: int):
+    """Write a lock file with the given PID at <project>/lock_relpath."""
+    full = tmp_path / lock_relpath
+    full.parent.mkdir(parents=True, exist_ok=True)
+    full.write_text(str(pid), encoding="utf-8")
+    return full
+
+
+def _patch_kill(monkeypatch, calls, killpg_calls):
+    from urika.dashboard.routers import api as api_module
+
+    monkeypatch.setattr(
+        api_module.os, "kill", lambda pid, sig: calls.append((pid, sig))
+    )
+    monkeypatch.setattr(
+        api_module.os,
+        "killpg",
+        lambda pgid, sig: killpg_calls.append((pgid, sig)),
+    )
+    monkeypatch.setattr(api_module.os, "getpgid", lambda pid: pid)
+
+
+@pytest.mark.parametrize(
+    "endpoint,lock_relpath",
+    [
+        ("/api/projects/alpha/advisor/stop", "projectbook/.advisor.lock"),
+        ("/api/projects/alpha/finalize/stop", "projectbook/.finalize.lock"),
+        ("/api/projects/alpha/summarize/stop", "projectbook/.summarize.lock"),
+        ("/api/projects/alpha/build-tool/stop", "tools/.build.lock"),
+    ],
+)
+def test_op_stop_signals_process_group(
+    run_client, monkeypatch, endpoint, lock_relpath
+):
+    """Each non-run stop endpoint reads its lock file's PID and signals
+    the process group via os.killpg, mirroring api_run_stop."""
+    import os
+    import signal
+
+    client, _, proj = run_client
+    _setup_op_lock(proj, lock_relpath, os.getpid())
+    kill_calls: list[tuple[int, int]] = []
+    killpg_calls: list[tuple[int, int]] = []
+    _patch_kill(monkeypatch, kill_calls, killpg_calls)
+
+    r = client.post(endpoint)
+    assert r.status_code == 200
+    assert r.json()["status"] == "stop_signaled"
+    assert (os.getpid(), 0) in kill_calls  # probe
+    assert (os.getpid(), signal.SIGTERM) in killpg_calls
+    assert (os.getpid(), signal.SIGTERM) not in kill_calls
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/api/projects/alpha/advisor/stop",
+        "/api/projects/alpha/finalize/stop",
+        "/api/projects/alpha/summarize/stop",
+        "/api/projects/alpha/build-tool/stop",
+    ],
+)
+def test_op_stop_returns_not_running_when_no_lock(run_client, endpoint):
+    """No lock file → not_running."""
+    client, _, _proj = run_client
+    r = client.post(endpoint)
+    assert r.status_code == 200
+    assert r.json() == {"status": "not_running"}
+
+
+def test_present_stop_signals_process_group(run_client, monkeypatch):
+    """Present is scoped to an experiment; lock lives in the exp dir."""
+    import os
+    import signal
+
+    client, _, proj = run_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".present.lock").write_text(
+        str(os.getpid()), encoding="utf-8"
+    )
+    kill_calls: list[tuple[int, int]] = []
+    killpg_calls: list[tuple[int, int]] = []
+    _patch_kill(monkeypatch, kill_calls, killpg_calls)
+
+    r = client.post("/api/projects/alpha/runs/exp-001/present/stop")
+    assert r.status_code == 200
+    assert r.json()["status"] == "stop_signaled"
+    assert (os.getpid(), signal.SIGTERM) in killpg_calls
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/api/projects/unknown/advisor/stop",
+        "/api/projects/unknown/finalize/stop",
+        "/api/projects/unknown/summarize/stop",
+        "/api/projects/unknown/build-tool/stop",
+        "/api/projects/unknown/runs/exp-001/present/stop",
+    ],
+)
+def test_op_stop_404_unknown_project(run_client, endpoint):
+    client, _, _proj = run_client
+    r = client.post(endpoint)
+    assert r.status_code == 404

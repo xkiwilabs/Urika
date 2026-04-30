@@ -3420,6 +3420,116 @@ def api_run_stop(name: str, exp_id: str) -> dict:
     return {"status": "stop_signaled", "pid": pid}
 
 
+# ── Generic stop for non-experiment ops ──────────────────────────────
+#
+# Pre-v0.4 only ``/runs/<id>/stop`` existed. Long-running advisor /
+# finalize / summarize / build-tool / present invocations had no kill
+# switch from the dashboard — a remote-fired ``urika present`` that
+# went into a multi-minute LLM call would just keep running. v0.4
+# adds parallel ``/stop`` endpoints for those operations using the
+# same SIGTERM-to-process-group pattern as ``api_run_stop``.
+
+def _stop_op_by_lock(lock_path: Path) -> dict:
+    """Send SIGTERM to the process group recorded in *lock_path*.
+
+    Mirrors ``api_run_stop`` but for non-experiment ops, which don't
+    have a ``progress.json`` to write a graceful-stop flag to. We
+    kill the process group directly; the spawned ``urika`` CLI's
+    SIGTERM handler (registered in v0.3.2) writes whatever terminal
+    state is appropriate for the op type.
+
+    Returns ``{"status": "stop_signaled", "pid": pid}`` on success
+    or ``{"status": "not_running"}`` when no live PID is found.
+    """
+    if not lock_path.exists():
+        return {"status": "not_running"}
+    try:
+        pid_text = lock_path.read_text(encoding="utf-8").strip()
+        pid = int(pid_text)
+    except (OSError, ValueError):
+        return {"status": "not_running"}
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return {"status": "not_running"}
+    except PermissionError:
+        pass
+    except OSError:
+        return {"status": "not_running"}
+
+    try:
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        return {"status": "not_running"}
+
+    return {"status": "stop_signaled", "pid": pid}
+
+
+@router.post("/projects/{name}/advisor/stop")
+def api_advisor_stop(name: str) -> dict:
+    """Stop a running ``urika advisor`` subprocess for *name*.
+
+    Reads the PID from ``<project>/projectbook/.advisor.lock`` and
+    SIGTERMs the process group. The spawned CLI handles SIGTERM
+    cleanly (v0.3.2 fix); the reaper thread cleans up the lock.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(summary.path / "projectbook" / ".advisor.lock")
+
+
+@router.post("/projects/{name}/finalize/stop")
+def api_finalize_stop(name: str) -> dict:
+    """Stop a running ``urika finalize`` subprocess for *name*."""
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(summary.path / "projectbook" / ".finalize.lock")
+
+
+@router.post("/projects/{name}/summarize/stop")
+def api_summarize_stop(name: str) -> dict:
+    """Stop a running ``urika summarize`` subprocess for *name*."""
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(summary.path / "projectbook" / ".summarize.lock")
+
+
+@router.post("/projects/{name}/build-tool/stop")
+def api_build_tool_stop(name: str) -> dict:
+    """Stop a running ``urika build-tool`` subprocess for *name*."""
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(summary.path / "tools" / ".build.lock")
+
+
+@router.post("/projects/{name}/runs/{exp_id}/present/stop")
+def api_present_stop(name: str, exp_id: str) -> dict:
+    """Stop a running ``urika present`` subprocess for *name*/*exp_id*.
+
+    Present runs are scoped to a specific experiment; the lock lives
+    in the experiment dir alongside the experiment's ``.lock``.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(
+        summary.path / "experiments" / exp_id / ".present.lock"
+    )
+
+
 @router.post("/projects/{name}/runs/{exp_id}/pause")
 def api_run_pause(name: str, exp_id: str) -> dict:
     """Request a graceful pause at the next turn boundary.
