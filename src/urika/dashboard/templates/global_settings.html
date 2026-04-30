@@ -333,7 +333,7 @@
                   name="runtime_modes_open_model">
             {% for m in known_cloud_models %}
               <option value="{{ m }}"
-                      {% if m == (grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+                      {% if m == (grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
             {% endfor %}
           </select>
         </div>
@@ -359,7 +359,7 @@
                 <select name="runtime_modes_open_models[{{ row.agent }}][model]">
                   {% for m in known_cloud_models %}
                     <option value="{{ m }}"
-                            {% if m == (row.model or grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+                            {% if m == (row.model or grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
                   {% endfor %}
                 </select>
               </td>
@@ -474,7 +474,7 @@
                   name="runtime_modes_hybrid_model">
             {% for m in known_cloud_models %}
               <option value="{{ m }}"
-                      {% if m == (grid.default_model or "claude-opus-4-7") %}selected{% endif %}>{{ m }}</option>
+                      {% if m == (grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
             {% endfor %}
           </select>
         </div>
@@ -516,7 +516,7 @@
               {% set initial_ep = "" %}
             {% endif %}
             {# Initial chosen cloud model (used when cat=open). #}
-            {% set initial_cloud_model = row.model or grid.default_model or "claude-opus-4-7" %}
+            {% set initial_cloud_model = row.model or grid.default_model or "claude-opus-4-6" %}
             <tr x-data='{ cat: "{{ initial_cat }}", ep: "{{ initial_ep }}", cloud_model: "{{ initial_cloud_model }}", opts: {{ private_endpoint_options | tojson }} }'>
               <td><code>{{ row.agent }}</code></td>
               <td>

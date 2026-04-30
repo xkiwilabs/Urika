@@ -32,6 +32,14 @@ VALID_PRIVACY_MODES = ["private", "open", "university"]
 # Local-server model names stay free-text everywhere because they
 # vary per deployment.
 KNOWN_CLOUD_MODELS = [
+    # Order matters: the first entry is the visual default in dropdowns
+    # whose fallback expression also resolves to it. 4-6 leads because
+    # the SDK's bundled CLI (claude-agent-sdk 0.1.45 ships v2.1.63)
+    # speaks the older request schema that 4-6 still accepts; 4-7
+    # rejects ``thinking.type.enabled`` with HTTP 400. Users with a
+    # newer system ``claude`` on PATH (the SDK adapter prefers it over
+    # the bundled binary) can safely pick 4-7 from the dropdown.
+    "claude-opus-4-6",
     "claude-opus-4-7",
     "claude-sonnet-4-5",
     "claude-haiku-4-5",
@@ -932,8 +940,8 @@ def global_settings(request: Request) -> HTMLResponse:
 
     # Suggested cloud-model dropdown values; mirrors the interactive CLI.
     cloud_models = [
-        "claude-opus-4-7",
         "claude-opus-4-6",
+        "claude-opus-4-7",
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
     ]
@@ -956,7 +964,7 @@ def global_settings(request: Request) -> HTMLResponse:
                 }
             )
         # Per-mode default model.  Cloud modes fall back to the
-        # claude-opus-4-7 placeholder; private starts blank.
+        # claude-opus-4-6 placeholder; private starts blank.
         default_model = mode_cfg.get("model", "")
         mode_grids[mode_name] = {
             "default_model": default_model,
@@ -1229,8 +1237,8 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
 
     # Suggested cloud-model dropdown values; mirrors the global settings page.
     cloud_models = [
-        "claude-opus-4-7",
         "claude-opus-4-6",
+        "claude-opus-4-7",
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
     ]
@@ -1278,7 +1286,7 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             "endpoint_choices": ENDPOINT_CHOICES,
             "model_rows": model_rows,
             "runtime_model": runtime_section.get("model", ""),
-            "runtime_model_placeholder": (global_default_model or "claude-opus-4-7"),
+            "runtime_model_placeholder": (global_default_model or "claude-opus-4-6"),
             "data_paths_text": data_paths_text,
             "success_criteria_text": success_criteria_text,
             "project_privacy": project_privacy,
