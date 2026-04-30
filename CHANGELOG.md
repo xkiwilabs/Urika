@@ -5,6 +5,106 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0rc1] - 2026-04-30
+
+First v0.4 release candidate. v0.4.0 is positioned as the **first
+feature-complete Urika system, stable enough for extensive user
+testing**. Strip GitHub integration out (deferred to v0.5) and Urika
+is still a complete research-analysis platform.
+
+This RC1 closes Tracks 1 (carry-overs from v0.3.2 deferrals),
+3 (multi-provider thin abstraction), and most of 4 (user-facing
+features: shell completion, dataset hash + drift detection).
+Tracks 2 (project memory Phase 1), 5 (TUI polish), and the rest of
+4 (experiment comparison view, cost-aware budget) follow in
+subsequent RCs.
+
+### Added
+
+- **SecurityPolicy enforcement via SDK `can_use_tool` callback.**
+  Pre-v0.4 the `writable_dirs` / `readable_dirs` /
+  `allowed_bash_prefixes` / `blocked_bash_patterns` fields on
+  every agent role were advisory only. v0.4 wires them into a real
+  `can_use_tool` coroutine the SDK invokes before each tool
+  dispatch. Bash commands shlex-parsed; shell metacharacters
+  (`;`, `&&`, `||`, `|`, backticks, `$(`, `>`, `>>`, `<`, `&`,
+  newline) rejected outright. Path operations canonicalised
+  (collapse `..`, follow symlinks). Closes the orchestrator
+  Bash bypass (`urika ; rm -rf /` was matching the prefix string).
+- **Stop endpoints for non-run operations.** New `POST` routes:
+  `/projects/<n>/advisor/stop`, `/finalize/stop`,
+  `/summarize/stop`, `/build-tool/stop`, and
+  `/runs/<exp>/present/stop`. All use the same SIGTERM-to-process-
+  group pattern as `/runs/<exp>/stop`. Pre-v0.4 long-running
+  advisor / finalize / build-tool / present invocations had no
+  kill switch from the dashboard.
+- **Multi-provider thin abstraction.** `AgentRunner` ABC gains
+  `required_env` and `supported_tools` classmethods. New
+  `urika.runners` entry-point group lets external packages
+  register adapters (`OpenAIRunner`, `GoogleADKRunner`, etc.)
+  without modifying core. New `list_backends()` enumerates every
+  resolvable name. New `docs/contributing-an-adapter.md` walks
+  contributors through the seam. End-to-end second adapter is
+  deferred to v0.5.
+- **Dataset hash + drift detection.** `urika new` records SHA-256
+  of every data file under `[project.data_hashes]` in
+  `urika.toml`. `urika status` re-hashes registered files and
+  surfaces drift with a yellow warning. `--json` mode includes
+  `data_drift`. Closes a long-standing reproducibility gap:
+  pre-v0.4 there was no record at all, so editing a data file
+  silently between experiments was undetectable.
+- **`urika completion install / script / uninstall`.** Native
+  bash / zsh / fish completion via Click 8's built-in generator.
+  Auto-detects shell from `$SHELL`. Writes scripts to
+  `~/.urika/completions/urika.<shell>`.
+- **`OrchestratorSession` is now a real source of truth** in
+  documented form (was already shipping in v0.3.2 but undocumented
+  in CHANGELOG until this entry).
+
+### Fixed
+
+- **Cross-interface default consistency** — `audience` (`"standard"`
+  everywhere — was 4 sites disagreeing on novice/standard/expert),
+  `max_turns_per_experiment` (10 everywhere — was CLI=5, REPL=5,
+  dashboard=10).
+- **`KNOWN_AGENTS` (dashboard pages.py + api.py) adds
+  `project_summarizer`** so the per-agent model-override grid
+  renders all 12 agents instead of 11.
+- **Email password input in CLI notifications wizard now masks**
+  via `click.prompt(hide_input=True)`. Pre-v0.4 echoed plaintext
+  while the dashboard's matching field always masked.
+- **`VALID_SESSION_STATUSES` includes `pending` and `starting`.**
+  Pre-v0.4 the set omitted these even though `experiment.json`
+  and `progress.json` both used `pending` as the seed status.
+- **Surface swallowed exceptions across orchestrator + cli +
+  vault** — `loop_criteria.py` `pause_session` / `fail_session`,
+  `loop.py` `resume_session` / `start_session`, `parsing.py`
+  malformed JSON blocks (was a silent `continue` — most common
+  reason `criteria_met` was missed), `cli/_base.py` `UrikaError`
+  `__cause__` chain, `core/vault.py` `_read_env_file` and
+  `_read_meta` failures.
+- **`default_max_turns` upper bound** (200) in dashboard form
+  validation. Pre-v0.4 the field accepted any positive int, so
+  a paste of 999999 let every experiment run effectively forever.
+- **`_toml_value` quotes inline-table keys** that aren't valid TOML
+  bare keys (file paths contain `/` and `.`). Required for
+  `[project.data_hashes]` to round-trip.
+
+### Changed
+
+- **`SecurityPolicy` docstring** updated to drop the "ADVISORY ONLY"
+  warning (now actually enforced at runtime).
+- **`task_agent.allowed_bash_prefixes`** gains `"pytest"` (was on
+  `tool_builder` only). Required so ad-hoc pytest invocations from
+  task_agent don't get denied under the new enforcement.
+- **`OrchestratorChat._build_config` allowlist** updated from
+  `["urika ", "CLAUDECODE= urika "]` to `["urika"]` — the
+  pre-v0.4 string-prefix form was broken under shlex tokenisation
+  AND was the bypass that made `urika ; rm -rf /` match.
+- **`get_runner()` factory** now opens via entry points; raises
+  with an actionable message + link to
+  `docs/contributing-an-adapter.md` for unknown backends.
+
 ## [0.3.2] - 2026-04-30
 
 Hardening release. v0.3.0/0.3.1 shipped four families of bugs that share one
