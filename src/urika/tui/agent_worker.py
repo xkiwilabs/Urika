@@ -254,8 +254,18 @@ def run_command_in_worker(
                             # path below logs and cleans up normally.
                             raise RuntimeError(outcome["error"])
                 except SystemExit:
+                    # v0.4: only exit the whole TUI app for the
+                    # explicit ``/quit`` command; for other commands
+                    # (config wizards, agent invocations) a
+                    # ``sys.exit`` from the handler should bail just
+                    # the command, not kill the user's session.
+                    # Pre-v0.4 every SystemExit triggered ``app.exit``
+                    # so any wizard that called ``raise SystemExit(0)``
+                    # (urika config secret, etc.) silently quit the
+                    # TUI behind the user's back.
                     app.session.save_usage()
-                    app.call_from_thread(app.exit)
+                    if cmd_name == "quit":
+                        app.call_from_thread(app.exit)
                 except EOFError:
                     # Raised by _TuiStdinReader when cancelled via /stop
                     # or Ctrl+C — exit silently, cleanup in finally.

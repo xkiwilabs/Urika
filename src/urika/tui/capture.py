@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+import asyncio
 import threading
 from typing import TYPE_CHECKING
 
@@ -123,18 +124,36 @@ class _TuiWriter:
         except RuntimeError:
             pass
 
-        # Path 2: we might be on the app thread ourselves. This check
-        # probes Textual private attributes because 8.1.1 has no public
-        # "am I on the event loop thread" API. The semantics are NOT
-        # "we're definitely on the app thread" — they are "the app
-        # believes it owns this thread identity AND has a running
-        # loop". Both must be true for a direct write to be safe.
+        # Path 2: we might be on the app thread ourselves. We need
+        # to know "is this thread the one Textual's event loop is
+        # running on?". Textual exposes ``call_from_thread`` (Path 1
+        # above) but no first-class "am I on the loop thread?" check;
+        # we approximate by comparing against ``asyncio`` directly.
         #
-        # HACK: private-attribute access. Verify on Textual upgrades.
-        # Mirrors the logic inside textual/app.py's call_from_thread.
-        same_thread = getattr(self._app, "_thread_id", 0) == threading.get_ident()
-        loop = getattr(self._app, "_loop", None)
-        loop_running = loop is not None and loop.is_running()
+        # ``asyncio.get_running_loop()`` raises ``RuntimeError`` when
+        # there is no running loop in the current thread. If it
+        # succeeds we know we're on _some_ loop; if that loop also
+        # equals the one Textual is using, we're definitely safe.
+        # Falls back to the private-attribute probe (``app._loop``,
+        # ``app._thread_id``) only if asyncio's public API doesn't
+        # answer the question — keeps the Textual upgrade surface
+        # small. v0.4: prefer the public API; v0.3.x sites also
+        # checked both regardless of whether asyncio answered.
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        textual_loop = getattr(self._app, "_loop", None)
+        same_thread = current_loop is not None and current_loop is textual_loop
+        if not same_thread:
+            # Fallback to the legacy private-attribute path so behavior
+            # is unchanged on Textual versions that don't expose the
+            # loop the same way (e.g. when ``_loop`` lookup fails but
+            # ``_thread_id`` happens to match).
+            same_thread = (
+                getattr(self._app, "_thread_id", 0) == threading.get_ident()
+            )
+        loop_running = textual_loop is not None and textual_loop.is_running()
         if same_thread and loop_running:
             self._write_to_panel(line)
             return
