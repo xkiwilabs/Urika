@@ -32,6 +32,16 @@ class _UrikaCLI(click.Group):
                 print_error(str(exc))
                 if exc.hint:
                     click.echo(f"  hint: {exc.hint}", err=True)
+                # Surface the chained __cause__ when present — pre-v0.4
+                # a ConfigError raised "from" a tomllib decode error
+                # showed only the friendly message, hiding which line
+                # of TOML failed. The cause is one click.echo away.
+                cause = exc.__cause__
+                if cause is not None:
+                    click.echo(
+                        f"  caused by: {type(cause).__name__}: {cause}",
+                        err=True,
+                    )
                 raise SystemExit(2)
             raise
 

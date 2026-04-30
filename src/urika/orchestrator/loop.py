@@ -128,8 +128,12 @@ async def run_experiment(
             if state.max_turns is not None:
                 max_turns = state.max_turns
         except Exception as exc:
-            progress("phase", f"Experiment failed: {exc}")
-            return _usage_dict("failed", 0, error=str(exc))
+            logger.exception(
+                "resume_session failed for %s/%s", project_dir, experiment_id
+            )
+            err = f"{type(exc).__name__}: {exc}"
+            progress("phase", f"Experiment failed: {err}")
+            return _usage_dict("failed", 0, error=err)
 
         # Use the last run's next_step as the initial task prompt, if available
         task_prompt = "Continue the experiment with a different approach."
@@ -140,14 +144,32 @@ async def run_experiment(
                 last_next_step = runs[-1].get("next_step", "")
                 if last_next_step:
                     task_prompt = last_next_step
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            # Corrupt or missing progress file: continue with the
+            # default prompt, but emit so the user knows the resume
+            # didn't pick up where they left off. Pre-v0.4 this was a
+            # silent ``pass`` and the user assumed continuity.
+            if isinstance(exc, json.JSONDecodeError):
+                logger.warning(
+                    "progress.json unreadable for %s/%s; resuming with "
+                    "default task prompt",
+                    project_dir,
+                    experiment_id,
+                )
+                progress(
+                    "result",
+                    "progress.json unreadable; resuming with default prompt",
+                )
     else:
         try:
             start_session(project_dir, experiment_id, max_turns=max_turns)
         except Exception as exc:
-            progress("phase", f"Experiment failed: {exc}")
-            return _usage_dict("failed", 0, error=str(exc))
+            logger.exception(
+                "start_session failed for %s/%s", project_dir, experiment_id
+            )
+            err = f"{type(exc).__name__}: {exc}"
+            progress("phase", f"Experiment failed: {err}")
+            return _usage_dict("failed", 0, error=err)
         start_turn = 1
         task_prompt = "Begin the experiment. Try an initial approach."
 

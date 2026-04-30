@@ -1065,6 +1065,17 @@ async def api_global_settings_put(request: Request):
             status_code=422,
             detail="default_max_turns must be > 0",
         )
+    # Sanity cap: the API silently accepted any positive int, so a
+    # paste of 999999 (or a typo from 10 → 100000) would let every
+    # experiment run effectively forever. 200 is a generous ceiling
+    # — the historical mean per-experiment is ~10-25 turns, and
+    # autonomous mode bounds total work via ``--max-experiments``
+    # rather than per-experiment turns.
+    if max_turns > 200:
+        raise HTTPException(
+            status_code=422,
+            detail="default_max_turns must be <= 200 (use --max-experiments for longer autonomous runs)",
+        )
 
     # ---- Privacy tab: multi-endpoint editor ----------------------------
     # Form fields arrive as ``endpoints[<i>][name]`` /
