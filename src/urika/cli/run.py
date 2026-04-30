@@ -218,12 +218,12 @@ def run(
                 with open(toml_path, "rb") as f:
                     data = tomllib.load(f)
                 max_turns = data.get("preferences", {}).get(
-                    "max_turns_per_experiment", 5
+                    "max_turns_per_experiment", 10
                 )
             except Exception:
-                max_turns = 5
+                max_turns = 10
         else:
-            max_turns = 5
+            max_turns = 10
 
     # If no flags provided and not from REPL, show settings dialog.
     # Skip the dialog entirely when stdin is non-TTY (dashboard spawn,

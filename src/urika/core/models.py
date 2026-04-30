@@ -146,7 +146,29 @@ class RunRecord:
         )
 
 
-VALID_SESSION_STATUSES = {"running", "paused", "stopped", "completed", "failed"}
+VALID_SESSION_STATUSES = {
+    # Initial state — written by ``experiment.create_experiment`` to
+    # ``experiment.json`` before any run starts. The dashboard's
+    # experiment card renders this until the orchestrator transitions
+    # to ``running`` on first turn. Pre-v0.4 this set omitted
+    # ``"pending"`` even though ``experiment.json`` and
+    # ``progress.json`` both used it; the resulting alphabet split
+    # made state-machine consistency checks lie.
+    "pending",
+    # Optional intermediate state — written by the dashboard's spawn
+    # helpers when the orchestrator subprocess has been spawned but
+    # before it sends its first ``progress("phase", "running")``
+    # message. Distinguishes "spawn succeeded, child is bootstrapping"
+    # from "child has truly started its work". May not be used by
+    # every code path; safe to treat as equivalent to ``running`` for
+    # display.
+    "starting",
+    "running",
+    "paused",
+    "stopped",
+    "completed",
+    "failed",
+}
 
 
 @dataclass

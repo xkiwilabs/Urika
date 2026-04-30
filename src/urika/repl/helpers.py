@@ -61,7 +61,7 @@ def _run_single_agent(
     agent_name: str,
     experiment_id: str,
     prompt: str,
-    audience: str = "expert",
+    audience: str = "standard",
 ) -> str:
     """Run a single agent and display its output. Returns the text output."""
     try:
@@ -186,7 +186,7 @@ def _get_audience(session: ReplSession) -> str:
         try:
             with open(toml_path, "rb") as f:
                 data = tomllib.load(f)
-            return data.get("preferences", {}).get("audience", "expert")
+            return data.get("preferences", {}).get("audience", "standard")
         except Exception:
             pass
     return "expert"
@@ -307,7 +307,7 @@ def _load_run_defaults(session: ReplSession) -> dict:
             with open(toml_path, "rb") as f:
                 data = tomllib.load(f)
             prefs = data.get("preferences", {})
-            defaults["max_turns"] = prefs.get("max_turns_per_experiment", 5)
+            defaults["max_turns"] = prefs.get("max_turns_per_experiment", 10)
             defaults["auto_mode"] = prefs.get("auto_mode", "checkpoint")
         except Exception:
             pass

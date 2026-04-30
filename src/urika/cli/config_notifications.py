@@ -448,10 +448,14 @@ def _notifications_global_setup(*, settings, project_path):
             )
             to_addrs = [a.strip() for a in to_raw.split(",") if a.strip()]
 
-            # App password / SMTP password (shown — these are generated tokens, not personal passwords)
-            password = interactive_prompt(
-                "App password (e.g. Gmail app password)",
+            # App password / SMTP password — masked input. Pre-v0.4
+            # this used ``interactive_prompt`` which echoed plaintext;
+            # the dashboard's matching field has always masked.
+            password = click.prompt(
+                "  App password (e.g. Gmail app password)",
                 default="",
+                hide_input=True,
+                show_default=False,
             )
 
             if password:

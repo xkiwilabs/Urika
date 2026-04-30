@@ -60,6 +60,7 @@ KNOWN_AGENTS = [
     "project_builder",
     "data_agent",
     "finalizer",
+    "project_summarizer",
 ]
 
 # Endpoint choices for per-agent overrides on the Models tab.
@@ -1066,7 +1067,7 @@ def global_settings(request: Request) -> HTMLResponse:
             "model_rows": model_rows,
             "mode_grids": mode_grids,
             # Preferences tab
-            "default_audience": prefs.get("audience", "novice"),
+            "default_audience": prefs.get("audience", "standard"),
             "default_max_turns": prefs.get("max_turns_per_experiment", 10),
             "web_search": bool(prefs.get("web_search", False)),
             # venv default is OFF: use the global urika venv, not per-project.

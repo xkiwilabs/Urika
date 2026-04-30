@@ -47,6 +47,7 @@ _KNOWN_AGENTS = {
     "project_builder",
     "data_agent",
     "finalizer",
+    "project_summarizer",
 }
 _VALID_ENDPOINTS = {"open", "private"}  # 'inherit' means "no override".
 
@@ -100,7 +101,7 @@ async def api_create_project(request: Request):
     question = (body.get("question") or "").strip()
     description = (body.get("description") or "").strip()
     mode = (body.get("mode") or "exploratory").strip()
-    audience = (body.get("audience") or "expert").strip()
+    audience = (body.get("audience") or "standard").strip()
     data_paths_raw = (body.get("data_paths") or "").strip()
     # ``privacy_mode`` is optional — defaults to ``open`` for legacy
     # callers and the New Project modal that doesn't yet expose it.
