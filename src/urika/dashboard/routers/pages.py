@@ -525,6 +525,90 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     return templates.TemplateResponse(request, "experiments.html", ctx)
 
 
+@router.get("/projects/{name}/compare", response_class=HTMLResponse)
+def project_compare(
+    request: Request, name: str, experiments: str = ""
+) -> HTMLResponse:
+    """Side-by-side metric comparison across N experiments.
+
+    Query string ``?experiments=exp-001,exp-002`` selects which
+    experiments to compare. Renders a table with columns =
+    experiments, rows = metrics drawn from each experiment's best
+    run + project leaderboard, cells = best value + delta vs the
+    project leader.
+
+    Data is read from the per-experiment ``progress.json`` and the
+    project's ``methods.json`` / ``leaderboard.json`` — no new on-
+    disk schema. Pre-v0.4 users had to open separate experiment-
+    detail pages and compare in their head.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    requested = [
+        e.strip() for e in experiments.split(",") if e.strip()
+    ]
+    available = {
+        e.experiment_id: e for e in list_experiments(summary.path)
+    }
+    selected_ids = [eid for eid in requested if eid in available]
+    if not selected_ids:
+        # Fallback: show every completed experiment so the page
+        # isn't blank when the user navigates without query params.
+        selected_ids = list(available.keys())
+
+    # For each selected experiment, gather best-run metrics from
+    # progress.json. Format:
+    #   { "exp-001": {"r2": 0.87, "rmse": 0.23, "_best_method": ...}, ... }
+    from urika.core.progress import load_progress
+
+    per_exp: dict[str, dict[str, object]] = {}
+    metric_names: set[str] = set()
+    for eid in selected_ids:
+        progress = load_progress(summary.path, eid) or {}
+        runs = progress.get("runs", []) or []
+        # Pick the best run by primary metric if known; otherwise
+        # the last one.
+        best = runs[-1] if runs else {}
+        metrics = best.get("metrics", {}) or {}
+        per_exp[eid] = {
+            "metrics": metrics,
+            "method": best.get("method", ""),
+            "status": progress.get("status", "unknown"),
+            "n_runs": len(runs),
+        }
+        metric_names.update(
+            k for k, v in metrics.items() if isinstance(v, (int, float))
+        )
+
+    # Build rows: one per metric, columns = each selected experiment.
+    metric_rows = []
+    for metric in sorted(metric_names):
+        cells = []
+        for eid in selected_ids:
+            value = per_exp[eid]["metrics"].get(metric)
+            cells.append({"experiment_id": eid, "value": value})
+        metric_rows.append({"metric": metric, "cells": cells})
+
+    templates = request.app.state.templates
+    ctx = {
+        "project": summary,
+        "selected_ids": selected_ids,
+        "available": [
+            {"experiment_id": eid, "name": available[eid].name}
+            for eid in available
+        ],
+        "per_exp": per_exp,
+        "metric_rows": metric_rows,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(
+        request, "experiment_compare.html", ctx
+    )
+
+
 def _tools_to_rows(tool_registry) -> list[dict]:
     """Read every registered tool's name/description/category."""
     rows: list[dict] = []
