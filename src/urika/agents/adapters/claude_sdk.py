@@ -170,8 +170,31 @@ class ClaudeSDKRunner(AgentRunner):
         model_name = ""
         is_error = False
 
+        # v0.4: when ``can_use_tool`` is set (every agent run, post-
+        # SecurityPolicy enforcement), the SDK requires the prompt to
+        # be an ``AsyncIterable[dict]`` rather than a plain ``str``
+        # — otherwise it raises
+        # ``ValueError: can_use_tool callback requires streaming mode``.
+        # Wrap the str into a one-shot async generator that yields the
+        # SDK's user-message envelope.
+        prompt_arg: Any
+        if options.can_use_tool is not None and isinstance(prompt, str):
+            prompt_text = prompt
+
+            async def _one_shot_prompt():
+                yield {
+                    "type": "user",
+                    "session_id": "",
+                    "message": {"role": "user", "content": prompt_text},
+                    "parent_tool_use_id": None,
+                }
+
+            prompt_arg = _one_shot_prompt()
+        else:
+            prompt_arg = prompt
+
         try:
-          async for msg in query(prompt=prompt, options=options):
+          async for msg in query(prompt=prompt_arg, options=options):
             if on_message is not None:
                 try:
                     on_message(msg)
