@@ -114,6 +114,38 @@ if grep -q '"sessions"' /tmp/smoke_sessions.json; then ok "sessions list returns
 # === 11. Dry-run + budget ============================================
 run "urika run --dry-run" urika run "$PROJ" --dry-run
 
+# === 11b. Live agent round-trip (if API key configured) ==============
+# Catches the can_use_tool / streaming-mode class of regression.
+# Skipped silently when no ANTHROPIC_API_KEY is set in the env or
+# vault. Strips CLAUDE_CODE_* session vars so it works inside Claude-
+# Code-owned shells too.
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]] || \
+   ([[ -f "$HOME/.urika/secrets.env" ]] && grep -q "^ANTHROPIC_API_KEY=" "$HOME/.urika/secrets.env"); then
+  echo
+  echo "=== live advisor round-trip ==="
+  if env -u CLAUDECODE -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_ENTRYPOINT \
+        -u CLAUDE_CODE_EXECPATH timeout 90 \
+        urika advisor "$PROJ" "Briefly suggest one analytical approach." \
+        > /tmp/smoke_advisor.txt 2>&1
+  then
+    if [[ -s /tmp/smoke_advisor.txt ]] && \
+       ! grep -q "can_use_tool callback requires" /tmp/smoke_advisor.txt && \
+       ! grep -q "Fatal error in message reader" /tmp/smoke_advisor.txt; then
+      ok "live advisor round-trip"
+    else
+      fail "advisor returned but contains SDK error markers"
+      head -20 /tmp/smoke_advisor.txt
+    fi
+  else
+    fail "live advisor invocation failed (timeout or non-zero exit)"
+    tail -10 /tmp/smoke_advisor.txt
+  fi
+else
+  echo
+  echo "=== live advisor round-trip ==="
+  echo "  SKIP — no ANTHROPIC_API_KEY in env or ~/.urika/secrets.env"
+fi
+
 # === 12. Project memory injection: build planning agent config ========
 python3 - <<'PY'
 import os
