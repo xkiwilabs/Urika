@@ -151,9 +151,15 @@ def projects_list(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
     # Surface "is at least one private endpoint configured" so the New
     # Project modal can warn when the user picks private/hybrid.
-    has_private_endpoint = any(
-        (ep.get("base_url") or "").strip() for ep in get_named_endpoints()
-    )
+    # v0.4: also pass the named-endpoint list so the modal can render
+    # a dropdown letting the user pick which one to use, mirroring
+    # the CLI's new endpoint-picker.
+    private_endpoints = [
+        {"name": ep["name"], "base_url": ep["base_url"]}
+        for ep in get_named_endpoints()
+        if (ep.get("base_url") or "").strip()
+    ]
+    has_private_endpoint = bool(private_endpoints)
     return templates.TemplateResponse(
         request,
         "projects_list.html",
@@ -162,6 +168,7 @@ def projects_list(request: Request) -> HTMLResponse:
             "valid_modes": sorted(VALID_MODES),
             "valid_audiences": sorted(VALID_AUDIENCES),
             "has_private_endpoint": has_private_endpoint,
+            "private_endpoints": private_endpoints,
         },
     )
 

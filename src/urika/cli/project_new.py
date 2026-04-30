@@ -97,15 +97,32 @@ def new(
         name = interactive_prompt("Project name", required=True)
     name = _sanitize_project_name(name)
 
-    # Load saved endpoint connection details from ~/.urika/settings.toml.
-    # There is NO saved default mode — each project picks its mode fresh.
-    from urika.core.settings import get_default_privacy
+    # Load saved endpoints from ~/.urika/settings.toml. There is NO
+    # saved default mode — each project picks its mode fresh. v0.4:
+    # walk every named endpoint (not just the literal "private" key)
+    # so users can pick from a multi-endpoint setup
+    # (private-vllm-large, private-vllm-small, etc.) without retyping
+    # URLs.
+    from urika.core.settings import get_named_endpoints
 
-    _saved_privacy = get_default_privacy()
-    _saved_endpoints = _saved_privacy.get("endpoints", {})
-    _saved_private_ep = _saved_endpoints.get("private", {})
-    _saved_url = _saved_private_ep.get("base_url", "")
-    _saved_key_env = _saved_private_ep.get("api_key_env", "")
+    _named_endpoints = [
+        ep for ep in get_named_endpoints() if (ep.get("base_url") or "").strip()
+    ]
+    # Legacy fallback: pre-v0.4 only the literal "private" key was
+    # consulted. Keep that as the single-endpoint default URL so the
+    # JSON-mode fallback works unchanged when there's exactly one
+    # endpoint named "private".
+    _saved_url = ""
+    _saved_key_env = ""
+    for _ep in _named_endpoints:
+        if _ep.get("name") == "private":
+            _saved_url = (_ep.get("base_url") or "").strip()
+            _saved_key_env = (_ep.get("api_key_env") or "").strip()
+            break
+    if not _saved_url and _named_endpoints:
+        # Single configured endpoint → use it as the JSON-mode default.
+        _saved_url = (_named_endpoints[0].get("base_url") or "").strip()
+        _saved_key_env = (_named_endpoints[0].get("api_key_env") or "").strip()
 
     # In JSON mode, skip all interactive prompts. The default privacy
     # mode is ``open`` (cloud); the user may opt into private/hybrid via
@@ -158,57 +175,113 @@ def new(
         private_endpoint_url = ""
         private_endpoint_key_env = ""
         if privacy_mode_val in ("private", "hybrid"):
-            _url_default = _saved_url or "http://localhost:11434"
-            _key_default = _saved_key_env or ""
-            if _saved_url:
-                click.echo(f"\n  Using saved endpoint: {_saved_url}")
-                click.echo("  Press Enter to keep, or type a new URL.")
-            else:
-                click.echo(
-                    "\n  Configure the private endpoint.\n"
-                    "  This can be a local Ollama instance or "
-                    "a secure institutional server."
-                )
-            while True:
-                private_endpoint_url = interactive_prompt(
-                    "Private endpoint URL",
-                    default=_url_default,
-                    required=True,
-                )
-                # Defensive — if interactive_prompt somehow returned an
-                # empty string (e.g. EOF on piped stdin with no
-                # default), don't proceed with a blank base_url.
-                if not (private_endpoint_url or "").strip():
-                    print_error(
-                        "Private endpoint URL is required for "
-                        f"{privacy_mode_val} mode."
+            # v0.4: when global endpoints exist, present a numbered
+            # menu so users with a multi-endpoint setup
+            # (private-vllm-large, private-vllm-small, …) can pick
+            # one without retyping URLs. Last option is always
+            # "Configure a new endpoint" which falls through to the
+            # legacy URL prompt.
+            if _named_endpoints:
+                click.echo("\n  Configured private endpoints:")
+                _ep_options = []
+                for ep in _named_endpoints:
+                    label = (
+                        f"{ep['name']}  ({ep['base_url']}"
+                        + (f", key={ep['api_key_env']}" if ep.get("api_key_env") else "")
+                        + ")"
                     )
-                    raise click.Abort()
-                private_endpoint_key_env = interactive_prompt(
-                    "API key env var (empty for Ollama)",
-                    default=_key_default,
+                    _ep_options.append(label)
+                _ep_options.append("Configure a new endpoint")
+                ep_choice = _prompt_numbered(
+                    "  Use which endpoint?",
+                    _ep_options,
+                    default=1,
                 )
-                # Validate the endpoint is reachable
-                print_step("Testing endpoint connection…")
-                if _test_endpoint(private_endpoint_url):
-                    print_success(f"Connected to {private_endpoint_url}")
-                    break
+                if not ep_choice.startswith("Configure a new"):
+                    # User picked an existing endpoint by name.
+                    chosen_name = ep_choice.split("  (", 1)[0].strip()
+                    chosen_ep = next(
+                        (e for e in _named_endpoints if e["name"] == chosen_name),
+                        None,
+                    )
+                    if chosen_ep is not None:
+                        private_endpoint_url = (
+                            chosen_ep.get("base_url") or ""
+                        ).strip()
+                        private_endpoint_key_env = (
+                            chosen_ep.get("api_key_env") or ""
+                        ).strip()
+                        print_step(
+                            "Testing endpoint connection…"
+                        )
+                        if _test_endpoint(private_endpoint_url):
+                            print_success(
+                                f"Connected to {private_endpoint_url}"
+                            )
+                        else:
+                            print_error(
+                                f"Could not connect to "
+                                f"{private_endpoint_url} — proceeding "
+                                f"anyway; you can fix the endpoint "
+                                f"on the dashboard's Privacy tab."
+                            )
+            # When the user picked "Configure a new endpoint" or no
+            # global endpoints existed, fall through to the legacy
+            # URL prompt loop.
+            if not private_endpoint_url:
+                _url_default = _saved_url or "http://localhost:11434"
+                _key_default = _saved_key_env or ""
+                if _saved_url:
+                    click.echo(f"\n  Using saved endpoint: {_saved_url}")
+                    click.echo("  Press Enter to keep, or type a new URL.")
                 else:
-                    print_error(f"Could not connect to {private_endpoint_url}")
-                    retry = click.prompt(
-                        "  Try again, switch to open mode, or quit?",
-                        type=click.Choice(["retry", "open", "quit"]),
-                        default="retry",
+                    click.echo(
+                        "\n  Configure the private endpoint.\n"
+                        "  This can be a local Ollama instance or "
+                        "a secure institutional server."
                     )
-                    if retry == "open":
-                        privacy_mode_val = "open"
-                        private_endpoint_url = ""
-                        private_endpoint_key_env = ""
-                        print_step("Switched to open mode.")
-                        break
-                    elif retry == "quit":
+                while True:
+                    private_endpoint_url = interactive_prompt(
+                        "Private endpoint URL",
+                        default=_url_default,
+                        required=True,
+                    )
+                    # Defensive — if interactive_prompt somehow returned
+                    # an empty string (e.g. EOF on piped stdin with no
+                    # default), don't proceed with a blank base_url.
+                    if not (private_endpoint_url or "").strip():
+                        print_error(
+                            "Private endpoint URL is required for "
+                            f"{privacy_mode_val} mode."
+                        )
                         raise click.Abort()
-                    # retry loops back
+                    private_endpoint_key_env = interactive_prompt(
+                        "API key env var (empty for Ollama)",
+                        default=_key_default,
+                    )
+                    # Validate the endpoint is reachable
+                    print_step("Testing endpoint connection…")
+                    if _test_endpoint(private_endpoint_url):
+                        print_success(f"Connected to {private_endpoint_url}")
+                        break
+                    else:
+                        print_error(
+                            f"Could not connect to {private_endpoint_url}"
+                        )
+                        retry = click.prompt(
+                            "  Try again, switch to open mode, or quit?",
+                            type=click.Choice(["retry", "open", "quit"]),
+                            default="retry",
+                        )
+                        if retry == "open":
+                            privacy_mode_val = "open"
+                            private_endpoint_url = ""
+                            private_endpoint_key_env = ""
+                            print_step("Switched to open mode.")
+                            break
+                        elif retry == "quit":
+                            raise click.Abort()
+                        # retry loops back
 
         # Validate data path — keep asking until valid or skipped
         if data_path is not None:
