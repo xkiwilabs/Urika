@@ -75,6 +75,7 @@ async def run_experiment(
     get_user_input: Callable[..., Any] | None = None,
     pause_controller: object = None,
     audience: str = "expert",
+    budget_usd: float | None = None,
 ) -> dict[str, Any]:
     """Run the orchestration loop for an experiment.
 
@@ -229,6 +230,34 @@ async def run_experiment(
             pause_session(project_dir, experiment_id)
             progress("phase", f"Experiment paused after turn {turn - 1}")
             return _usage_dict("paused", turn - 1)
+
+        # v0.4: cost-aware budget gate. Pause-and-resume rather
+        # than fail — the user can `urika run --resume` after
+        # raising the budget. Pre-v0.4 the only safety net was
+        # Anthropic's spend cap, which only fires after the cost
+        # has already accrued.
+        if (
+            budget_usd is not None
+            and budget_usd > 0
+            and _total_cost_usd >= budget_usd
+        ):
+            _budget_msg = (
+                f"Budget ${budget_usd:.2f} reached after "
+                f"${_total_cost_usd:.2f} spent in {turn - 1} turn(s). "
+                "Pausing — resume with `urika run --resume` after "
+                "raising the budget."
+            )
+            progress("result", _budget_msg)
+            try:
+                pause_session(project_dir, experiment_id)
+            except Exception as exc:
+                logger.warning(
+                    "pause_session failed at budget gate: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+            progress("phase", f"Experiment paused (budget) after turn {turn - 1}")
+            return _usage_dict("paused", turn - 1, error=_budget_msg)
 
         # Verify private endpoint is still reachable (hybrid/private mode)
         from urika.core.privacy import check_private_endpoint, requires_private_endpoint

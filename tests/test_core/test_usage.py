@@ -139,3 +139,73 @@ class TestFormatUsage:
         }
         text = format_usage(last, totals, is_subscription=True)
         assert "plan" in text.lower() or "estimated" in text.lower()
+
+
+# ── per_session_cost_distribution (v0.4 Track 4) ─────────────────────
+
+
+class TestPerSessionCostDistribution:
+    """``per_session_cost_distribution`` powers ``urika run --dry-run``'s
+    cost estimate. Returns the last N non-zero session costs in
+    chronological order.
+    """
+
+    def test_empty_when_no_sessions(self, tmp_path):
+        from urika.core.usage import per_session_cost_distribution
+
+        assert per_session_cost_distribution(tmp_path) == []
+
+    def test_returns_recent_costs(self, tmp_path):
+        from urika.core.usage import (
+            per_session_cost_distribution,
+            record_session,
+        )
+
+        for cost in (0.10, 0.20, 0.30):
+            record_session(
+                tmp_path,
+                started="2026-04-30T00:00:00Z",
+                ended="2026-04-30T00:00:01Z",
+                duration_ms=1000,
+                cost_usd=cost,
+            )
+        costs = per_session_cost_distribution(tmp_path)
+        assert costs == [0.1, 0.2, 0.3]
+
+    def test_filters_zero_cost_sessions(self, tmp_path):
+        """Sessions with no recorded cost (smoke tests) shouldn't
+        anchor the distribution at zero."""
+        from urika.core.usage import (
+            per_session_cost_distribution,
+            record_session,
+        )
+
+        for cost in (0.0, 0.0, 0.50):
+            record_session(
+                tmp_path,
+                started="2026-04-30T00:00:00Z",
+                ended="2026-04-30T00:00:01Z",
+                duration_ms=1000,
+                cost_usd=cost,
+            )
+        costs = per_session_cost_distribution(tmp_path)
+        assert costs == [0.5]
+
+    def test_last_n_clipping(self, tmp_path):
+        from urika.core.usage import (
+            per_session_cost_distribution,
+            record_session,
+        )
+
+        for i in range(10):
+            record_session(
+                tmp_path,
+                started="2026-04-30T00:00:00Z",
+                ended="2026-04-30T00:00:01Z",
+                duration_ms=1000,
+                cost_usd=float(i + 1) * 0.1,
+            )
+        costs = per_session_cost_distribution(tmp_path, last_n=3)
+        assert len(costs) == 3
+        # Most-recent three: cost_usd = 0.8, 0.9, 1.0
+        assert costs[-1] > costs[0]
