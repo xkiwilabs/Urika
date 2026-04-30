@@ -12,6 +12,27 @@ from urika.cli._helpers import (
 )
 
 
+# Cloud (Claude) models the CLI wizard offers under ``urika config``.
+# Hoisted to module scope in v0.3.2 so the cross-interface invariant
+# test in ``tests/test_cross_interface_defaults.py`` can import it
+# and assert it agrees with the dashboard's ``KNOWN_CLOUD_MODELS``
+# list. Pre-v0.3.2 this lived inside ``_config_interactive`` and the
+# two interfaces drifted (CLI offered 4-6 / sonnet-4-5 / haiku-4-5;
+# dashboard offered 4-7 / 4-6 / sonnet / haiku) until users hit the
+# cryptic "Fatal error in message reader" symptom.
+#
+# Order matters in CLI display: ``sonnet-4-5`` first because it's
+# the recommended-default for the wizard. ``opus-4-6`` is the
+# fallback the dashboard uses for new selections (since the bundled
+# SDK CLI doesn't speak 4-7's request schema yet).
+_CLOUD_MODELS: list[tuple[str, str]] = [
+    ("claude-sonnet-4-5", "Best balance of speed and quality (recommended)"),
+    ("claude-opus-4-6", "Most capable, slower, higher cost"),
+    ("claude-opus-4-7", "Newest Opus — requires public claude CLI on PATH"),
+    ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
+]
+
+
 def _prompt_for_endpoint_key_value(key_env: str) -> None:
     """Paired masked-value prompt for a privacy endpoint API key.
 
@@ -290,12 +311,6 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         interactive_numbered,
         interactive_prompt,
     )
-
-    _CLOUD_MODELS = [
-        ("claude-sonnet-4-5", "Best balance of speed and quality (recommended)"),
-        ("claude-opus-4-6", "Most capable, slower, higher cost"),
-        ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
-    ]
 
     settings = session
 
