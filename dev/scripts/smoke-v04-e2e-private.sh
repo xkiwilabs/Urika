@@ -3,9 +3,13 @@
 #
 # Private = every agent runs against the user's configured private
 # endpoint (e.g. a local vLLM / Ollama / TGI deployment). No data is
-# sent to Anthropic. Drives the full Urika pipeline against the small
-# Stroop dataset so the run finishes in reasonable wall time even on
-# slower local models.
+# sent to Anthropic. Drives the full Urika pipeline against the
+# Depression-survey dataset (500 rows × 10 columns) — clinical
+# screening data is the canonical "this is why private mode exists"
+# use case. Different code paths from the Stroop paired-t-test
+# (open-mode dataset) and the Marketing clustering (hybrid-mode
+# dataset): regression / feature-importance for a continuous
+# clinical score.
 #
 # Usage:
 #   bash dev/scripts/smoke-v04-e2e-private.sh             # leave project for inspection
@@ -23,12 +27,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/smoke-v04-e2e-common.sh"
 
-DATASET="$SCRIPT_DIR/../test-datasets/stroop/data/stroop.csv"
+DATASET="$SCRIPT_DIR/../test-datasets/depression/data/depression_survey.csv"
 TS="$(date +%Y%m%d-%H%M%S)"
-PROJ="e2e-private-stroop-${TS}"
+PROJ="e2e-private-depression-${TS}"
 PROJ_DIR="$HOME/urika-projects/$PROJ"
-QUESTION="Is there a statistically significant Stroop interference effect, and what is the effect size?"
-DESCRIPTION="E2E smoke (private mode) — Stroop reaction-time data, all agents on private endpoint."
+QUESTION="Which modifiable lifestyle factors (sleep, exercise, social support, stress) are the strongest predictors of depression severity, and can we build a reliable predictive model for BDI score?"
+DESCRIPTION="E2E smoke (private mode) — synthetic clinical depression survey, all agents on private endpoint."
 
 CLEANUP="${1:-}"
 
@@ -102,7 +106,7 @@ if run_step_with_timeout "urika new" 360 \
      urika new "$PROJ" --json --data "$DATASET" \
        --question "$QUESTION" \
        --description "$DESCRIPTION" \
-       --mode confirmatory \
+       --mode exploratory \
        --privacy-mode private; then
   verify_artifact "project urika.toml" "$PROJ_DIR/urika.toml"
   verify_artifact_contains "privacy_mode = \"private\"" "$PROJ_DIR/urika.toml" "private"
@@ -119,13 +123,13 @@ run_step_with_timeout "inspect --json" 30 urika inspect "$PROJ" --json
 # === 3. advisor (private) ============================================
 step "3. urika advisor (private endpoint)"
 run_step_with_timeout "advisor" 360 \
-  urika advisor "$PROJ" "What single statistical test would best answer the research question for paired condition data?"
+  urika advisor "$PROJ" "Which single regression or feature-importance approach would you start with to identify the strongest lifestyle predictors of BDI score?"
 
 # === 4. build-tool (private) =========================================
 step "4. urika build-tool (private endpoint)"
 if run_step_with_timeout "build-tool" 720 \
      urika build-tool "$PROJ" \
-       "create a tool called paired_diff_summary that takes two columns and returns the mean, SD, and 95% CI of the differences"
+       "create a tool called bdi_severity_summary that takes a numeric BDI column and a categorical severity column and returns mean BDI per severity bucket, count per bucket, and the cutoff thresholds it inferred"
 then
   verify_artifact "tools/ dir present" "$PROJ_DIR/tools"
 fi
