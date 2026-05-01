@@ -69,19 +69,19 @@ my-project/
 
 ### urika.toml
 
-The project configuration file. Contains the project name, research question, mode, data paths, and optional preferences. Created by `urika new` and not modified during experiments. See [Configuration](14-configuration.md) for full details.
+The project configuration file. Contains the project name, research question, mode, data paths, and optional preferences. Created by `urika new` and not modified during experiments. See [Configuration](14a-project-config.md) for full details.
 
 ### criteria.json
 
-Versioned success criteria. The project builder sets initial criteria; the advisor agent evolves them as experiments progress. Each version is appended, preserving the full history. See [Configuration](14-configuration.md#criteriajson).
+Versioned success criteria. The project builder sets initial criteria; the advisor agent evolves them as experiments progress. Each version is appended, preserving the full history. See [Configuration](14a-project-config.md#criteriajson).
 
 ### methods.json
 
-Registry of all analytical methods created by agents. Each entry tracks the method name, description, script path, originating experiment, metrics, and status (active or superseded). See [Configuration](14-configuration.md#methodsjson).
+Registry of all analytical methods created by agents. Each entry tracks the method name, description, script path, originating experiment, metrics, and status (active or superseded). See [Configuration](14a-project-config.md#methodsjson).
 
 ### usage.json
 
-Cumulative session usage data: tokens consumed, estimated cost, duration, agent calls, and experiments run. Updated after each session. See [Configuration](14-configuration.md#usagejson).
+Cumulative session usage data: tokens consumed, estimated cost, duration, agent calls, and experiments run. Updated after each session. See [Configuration](14a-project-config.md#usagejson).
 
 ### README.md
 
@@ -108,7 +108,7 @@ Project-level directory for method scripts. Methods created by the task agent du
 
 ### tools/
 
-Project-specific tools created by the tool_builder agent. Each `.py` file must implement the `ITool` interface and export a `get_tool()` factory function. The tool registry discovers these automatically via `discover_project()`. See [Built-in Tools](12-built-in-tools.md#project-specific-tools).
+Project-specific tools created by the tool_builder agent. Each `.py` file must implement the `ITool` interface and export a `get_tool()` factory function. The tool registry discovers these automatically via `discover_project()`. See [Tools Overview](12a-tools-overview.md#project-specific-tools).
 
 ### suggestions/
 
@@ -251,4 +251,4 @@ Commands that interact with the registry:
 
 ---
 
-**Next:** [CLI Reference](16-cli-reference.md)
+**Next:** [CLI Reference](16a-cli-projects.md)

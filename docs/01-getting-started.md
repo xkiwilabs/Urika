@@ -26,7 +26,7 @@ Your hardware needs depend on what kind of analysis you plan to do:
 
 **Cloud-only mode (default):** All the heavy computation happens on your machine (Python code the agents write), but the AI reasoning happens via the Claude API. Your CPU and RAM matter for data processing; GPU only matters if agents build neural network models.
 
-**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](13-models-and-privacy.md) for configuration details.
+**Local/hybrid mode with Ollama:** Running local LLMs requires significant hardware. Smaller models like `qwen3:8b` need ~8 GB RAM. Larger models like `qwen3:14b` need ~16 GB RAM. See [Models and Privacy](13a-models-and-privacy.md) for configuration details.
 
 **Shared memory systems (Apple Silicon, etc.):** Macs with M-series chips share memory between CPU and GPU. A MacBook Pro with 64 GB unified memory can run models that would require a dedicated GPU on other systems. Ollama handles this automatically.
 
@@ -256,7 +256,7 @@ Common errors during install and first run:
 | `[WinError 32] The process cannot access the file ... urika.exe` on Windows `pip install --upgrade -e .` | A previous `urika` (dashboard, TUI, or even a closed terminal that left a child python alive) is holding the entry-point exe open | Open Task Manager → Details → end any `urika.exe` and any `python.exe` whose command line mentions urika, then re-run. Alternatively log out and back in to release every file lock. Then: `pip install --upgrade --force-reinstall --no-deps -e . --no-cache-dir` |
 | Garbled `?`/`???` instead of box-drawing chars in CLI banner / TUI on Windows cmd.exe | Console code page is `cp1252`. v0.4 reconfigures stdout/stderr to UTF-8 with `errors="replace"` automatically on startup, so this should self-fix | If you're still on v0.3.x, upgrade. Or set `PYTHONIOENCODING=utf-8` in your environment. Windows Terminal / PowerShell already use UTF-8 |
 
-For provider-side compliance issues (Pro/Max OAuth refusal, etc.) see [Security Model → Provider compliance](20-security.md#provider-compliance). For per-agent model and endpoint configuration see [Models and Privacy](13-models-and-privacy.md).
+For provider-side compliance issues (Pro/Max OAuth refusal, etc.) see [Security Model → Provider compliance](20-security.md#provider-compliance). For per-agent model and endpoint configuration see [Models and Privacy](13a-models-and-privacy.md).
 
 ## Three ways to use Urika
 
@@ -270,7 +270,7 @@ If you're new to Urika, **start with the TUI** — you can discover all commands
 
 A classic prompt-toolkit REPL is also available via `urika --classic` if you prefer a simpler interface.
 
-See [Interfaces Overview](02-interfaces-overview.md) for a task-by-task cheat sheet across all three. Detailed guides: [CLI Reference](16-cli-reference.md), [Interactive TUI](17-interactive-tui.md), [Dashboard](18-dashboard.md).
+See [Interfaces Overview](02-interfaces-overview.md) for a task-by-task cheat sheet across all three. Detailed guides: [CLI Reference](16a-cli-projects.md), [Interactive TUI](17-interactive-tui.md), [Dashboard](18a-dashboard-pages.md).
 
 ## Quickstart
 

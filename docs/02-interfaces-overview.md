@@ -16,7 +16,7 @@ urika results my-study
 
 When to reach for it: scripting a multi-project sweep, CI integration, remote sessions where you don't want a TUI redrawing.
 
-See [CLI Reference](16-cli-reference.md).
+See [CLI Reference](16a-cli-projects.md).
 
 ### TUI — `urika`
 
@@ -46,7 +46,7 @@ urika dashboard my-study --port 8000   # pin the port
 
 When to reach for it: monitoring an autonomous run, sharing results with a collaborator, configuring credentials with a form, picking up a paused session from another machine.
 
-See [Dashboard](18-dashboard.md).
+See [Dashboard](18a-dashboard-pages.md).
 
 ## Common tasks across all three
 

@@ -1,4 +1,6 @@
-# Dashboard
+# Dashboard — Pages and Navigation
+
+Dashboard launching, pages and routes, modals (New Project / New Experiment), live log streaming, mid-run prompts, advisor chat, sessions, sidebar navigation, status pills, artifact viewers, and the theme toggle. See [Operations](18b-dashboard-operations.md), [Settings](18c-dashboard-settings.md), and [API](18d-dashboard-api.md) for the rest of the dashboard surface.
 
 Urika ships a browser-based dashboard alongside the CLI and the TUI. It is the third primary interface for interacting with projects: read-only inspection, settings editing, and launching new runs all happen through server-rendered pages and HTMX-driven forms.
 
@@ -258,105 +260,6 @@ The experiment detail page composes all of these into a single view: hypotheses,
 The project home page surfaces the same artifacts as **"Final outputs"** cards — they appear whenever the corresponding file exists on disk. Each card links to the rendered page, never to the JSON.
 
 
-## Running operations
-
-Lock files are the source of truth for which agent operations are currently running for a project. The dashboard never holds in-memory run state across requests — every page render walks the project tree and asks: which `.lock` files are present, and is the PID inside still alive?
-
-The recognised lock shapes are:
-
-| Lock file | Op type |
-|---|---|
-| `experiments/<id>/.lock` | run (experiment orchestrator) |
-| `experiments/<id>/.evaluate.lock` | evaluate |
-| `experiments/<id>/.report.lock` | report |
-| `experiments/<id>/.present.lock` | present |
-| `projectbook/.finalize.lock` | finalize |
-| `projectbook/.summarize.lock` | summarize |
-| `tools/.build.lock` | build_tool |
-
-Each PID lock contains the subprocess PID. `urika.dashboard.active_ops.list_active_operations(project_name, project_path)` walks them, filters out stale ones (dead PID, empty file, non-numeric content), filters out JSON-write mutexes (`criteria.json.lock`, `usage.json.lock` from `urika.core.filelock` — basenames without a leading dot), and returns a flat list of `ActiveOp{type, project_name, experiment_id, lock_path, log_url}`.
-
-Three surfaces read from this list:
-
-**Idempotent spawn endpoints.** Every `POST` that spawns a subprocess (`/run`, `/finalize`, `/summarize`, `/experiments/<id>/evaluate`, `/experiments/<id>/report`, `/present`, `/tools/build`) checks for an existing live op of the same kind first. If one exists:
-- HTMX request → 200 + `HX-Redirect` to the running op's log URL (the user lands on the live stream they were going to see anyway).
-- Plain HTTP → 409 with `{"status": "already_running", "log_url": ..., "type": ...}` (curl / scripts can detect duplicates).
-
-For experiment-level ops the match is scoped to `(type, experiment_id)` so two different experiments can run evaluators in parallel; for project-level ops there can only be one of each kind at a time.
-
-**Trigger buttons reflect running state.** On the project home, experiment detail, project tools, and experiments-list pages, every button that spawns one of these ops reads its state from `running_by_type` / `running_by_exp` (passed into the template context). When the op is in flight, the button becomes an `<a class="btn btn--running">` linking directly to the log stream — pulsing dot, accent border — instead of an `<a>` that opens a modal. Idle buttons keep their normal label and modal flow.
-
-**Persistent banner.** Every project-scoped page renders a `_base.html` banner above the heading: `Running: <type> · <experiment_id?>` chips, each linking to its own log stream. The chip pointing at the current page is suppressed (no self-link) by comparing `op.log_url` against `request.url.path + ?query`. The banner is only rendered if at least one chip survives that filter — empty banners don't render. Global pages (`/projects`, `/settings`, docs) don't get the banner.
-
-### Animated thinking placeholder
-
-While a stream is connecting (or quietly waiting between agent steps), the log page renders an animated placeholder: a urika-blue braille spinner at 200ms per frame with rotating activity verbs ("Thinking", "Reasoning", "Analyzing", "Processing", …) at randomized 4–8 frame intervals plus jitter. The cadence is intentionally non-uniform so it feels alive rather than mechanical.
-
-The placeholder lives in `_thinking.html` (Jinja partial) backed by `static/urika-thinking.js` (`window.urikaThinking.start(el)` returning a `{stop()}` handle). Used by `advisor_chat.html`, `run_log.html`, `summarize_log.html`, `finalize_log.html`, and `tool_build_log.html`. Each log page stops the placeholder on the first SSE `data:` event AND on the completion `event: status`.
-
-### Completion CTAs
-
-When a stream ends, log pages fetch a small artifact-existence probe:
-
-- Per-experiment ops use the existing `GET /api/projects/<n>/experiments/<id>/artifacts`.
-- Project-level ops use the new `GET /api/projects/<n>/artifacts/projectbook` returning `{has_summary, has_report, has_presentation, has_findings}`.
-
-The probe response unhides whichever "view the result" buttons are relevant — "View summary" after summarize, "View report" / "Open presentation ↗" / "View findings" after finalize, "Back to tools" after build-tool. Failed runs that wrote partial output still surface whatever DID land on disk; everything else stays hidden.
-
-
-## Project deletion (Danger zone)
-
-Project settings (`/projects/<n>/settings`) ends with a **Danger zone** section. The "Move to trash" button is gated by a GitHub-style typed-name confirmation: the user must type the project name exactly before the button enables. Submitting `DELETE /api/projects/<n>` moves the project directory to `~/.urika/trash/<n>-<timestamp>/` and removes the registry entry; the response includes `HX-Redirect: /projects` so the browser lands on the projects list.
-
-If the project has any `.lock` file underneath it (active run / finalize / evaluate), the danger zone renders a disabled state with the lock path instead of the active button — the same active-run guard the CLI enforces.
-
-The projects list (`/projects`) shows an inline **Unregister** button next to any project whose registered path no longer exists on disk. Clicking it posts `DELETE` to the same endpoint, which falls into the registry-only branch (nothing to move — the folder is already gone).
-
-Files are preserved in `~/.urika/trash/`. Empty the trash manually when you're sure. There's no Restore command — copy the directory back yourself if you ever need to.
-
-
-## Settings UI
-
-Two settings pages share the same tabbed form pattern. Tabs are a small Alpine.js primitive — no router, no URL fragments — so saving a tab's form does not navigate away.
-
-- **Project settings** (`/projects/<name>/settings`) — writes to that project's `urika.toml`. Five tabs:
-  - **Basics**: name, mode, audience, research question.
-  - **Data**: dataset path, target column, feature columns. Saving appends a new entry to `revisions.json` so changes are auditable.
-  - **Models**: per-agent model overrides (planning, task, evaluator, advisor, etc.).
-  - **Privacy**: an **Inherit / Override global** picker. Inherit removes the `[privacy]` block from `urika.toml` and the project falls back to the global default. Override exposes privacy mode (`local`, `hybrid`, `cloud`) and any path allow-listing.
-  - **Notifications**: per-channel **Inherit / Enabled / Disabled** radios (slack, email, desktop) plus an editable extra-recipients list. Same inheritance pattern as Privacy.
-- **Global settings** (`/settings`) — writes to `~/.urika/settings.toml` and seeds new projects. Four tabs:
-  - **Privacy**: default privacy mode for new projects.
-  - **Models**: default per-agent model assignments.
-  - **Preferences**: default audience, max turns, theme preference.
-  - **Notifications**: default notification configuration.
-
-The Settings page also surfaces a **compliance banner above the form** whenever the dashboard process can't see `ANTHROPIC_API_KEY`. The banner explains that Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification prohibit using a Pro/Max subscription with the Claude Agent SDK and points the user at `urika config api-key` (or `export ANTHROPIC_API_KEY=...`) to fix it. When the env var is set the banner does not render. See [Provider compliance](20-security.md#provider-compliance) for the underlying rationale.
-
-Both pages POST to a `PUT /api/...` endpoint that validates the payload and saves through the same `_write_toml` helper used by the CLI's `urika config`. See [Configuration](14-configuration.md) for the underlying file formats.
-
-### Send-test notification button
-
-The Notifications tab on the global Settings page includes a **Send test
-notification** button. Clicking it:
-
-1. Calls `POST /api/settings/notifications/test-send` with the current form
-   contents (un-saved) so you can validate credentials before clicking Save.
-2. The endpoint reloads `~/.urika/secrets.env` (so credentials added by
-   `urika notifications` in another shell are visible without restarting
-   the dashboard) and constructs each enabled channel.
-3. Each channel's `health_check()` is called first (SMTP NOOP for email,
-   `auth_test` for Slack, `Bot.get_me()` for Telegram); failures are
-   reported with the SDK's actual error string.
-4. Channels that pass health-check then send a synthetic test event.
-5. Per-channel results render inline below the button — green tick for
-   sent, red cross with the error message for failures.
-
-This is the fastest way to debug a misconfigured channel: the button shows
-the real auth error (e.g. Slack `invalid_auth`, Gmail `530 Authentication
-Required`) instead of waiting for an experiment run to surface it.
-
-
 ## Theme toggle
 
 The light/dark toggle lives in the sidebar footer. It is pure Alpine + `localStorage`:
@@ -371,93 +274,11 @@ The light/dark toggle lives in the sidebar footer. It is pure Alpine + `localSto
 The button flips `theme` and persists the choice. CSS variables in `static/app.css` switch on `[data-theme="dark"]`. No server round-trip; no cookie.
 
 
-## Cross-surface coordination
+## See also
 
-The dashboard, CLI, and TUI all read and write the same project files. Coordination is filesystem-mediated:
-
-| Signal | Path | Meaning |
-|--------|------|---------|
-| Active run | `experiments/<id>/.lock` | A run is in progress. The PID is the file content. |
-| Active finalize | `projectbook/.finalize.lock` | A finalization sequence is running. |
-| Active presentation | `experiments/<id>/.present.lock` | A presentation render is running. |
-| Run output | `experiments/<id>/run.log` | Append-only stdout from the orchestrator. |
-| Progress | `experiments/<id>/progress.json` | Append-only run records (status, metrics, timestamps). |
-| Methods | `methods.json` | Project-wide method registry. |
-| Criteria | `criteria.json` | Versioned success criteria. |
-
-The dashboard never holds in-memory project state across requests; every page render reads from disk. As a result, a run started from the CLI shows up in the browser on the next refresh; a run started from the dashboard appears in the TUI's `/status` and `/results` immediately.
-
-The dashboard is the sole writer to `run.log` for runs it spawns -- agents `print()` to stdout, the dashboard's subprocess wrapper tees that to the log file. This avoids interleaved writes.
-
-
-## Auth
-
-By default the dashboard binds `127.0.0.1` and accepts every connection. For shared or networked deployments use `--auth-token`:
-
-```bash
-urika dashboard --auth-token "$(openssl rand -hex 32)"
-```
-
-When set, every request other than `/healthz` and `/static/...` requires:
-
-```
-Authorization: Bearer <token>
-```
-
-The check uses `secrets.compare_digest` for constant-time comparison. `/healthz` is exempt so external health probes work; `/static/...` is exempt so a token-aware client can still load the CSS and JS.
-
-**Limitation.** Browsers don't send `Authorization` headers on top-level page navigation, so the token mode is intended for token-aware HTTP clients (curl, internal tooling, reverse proxies that inject the header). For browser use over an untrusted network, front the dashboard with a reverse proxy that handles auth (e.g. an SSH tunnel, a VPN, or an OAuth proxy).
-
-
-## API endpoints
-
-The dashboard's HTMX/fetch endpoints (server-rendered pages above are the only thing users navigate to directly):
-
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/projects` | Create a new project — runs `urika new --json --non-interactive`. |
-| `DELETE /api/projects/<n>` | Move the project to `~/.urika/trash/` and unregister it. 422 if a `.lock` file exists. |
-| `POST /api/projects/<n>/run` | Spawn an experiment run. |
-| `GET  /api/projects/<n>/runs/<id>/stream` | SSE stream of the run log, including `event: prompt` for mid-run questions. |
-| `POST /api/projects/<n>/runs/<exp>/respond` | Answer a mid-run interactive prompt. |
-| `POST /api/projects/<n>/runs/<exp>/stop` | Send SIGTERM to a running experiment. |
-| `POST /api/projects/<n>/runs/<exp>/pause` | Request pause-at-next-turn for a running experiment. |
-| `POST /api/projects/<n>/finalize` | Kick off the finalize subprocess. |
-| `POST /api/projects/<n>/finalize/stop` | Send SIGTERM to a running finalize. |
-| `GET  /api/projects/<n>/finalize/stream` | SSE stream of the finalize log. |
-| `POST /api/projects/<n>/summarize` | Spawn the summarize subprocess. |
-| `POST /api/projects/<n>/summarize/stop` | Send SIGTERM to a running summarize. |
-| `GET  /api/projects/<n>/summarize/stream` | SSE stream of the summarize log. |
-| `POST /api/projects/<n>/experiments/<id>/evaluate` | Spawn the evaluate subprocess for an experiment. |
-| `POST /api/projects/<n>/experiments/<id>/report` | Spawn the report subprocess for an experiment. |
-| `POST /api/projects/<n>/runs/<exp>/present/stop` | Send SIGTERM to a running presentation generation. |
-| `POST /api/projects/<n>/tools/build` | Spawn the tool-builder subprocess. |
-| `POST /api/projects/<n>/build-tool/stop` | Send SIGTERM to a running tool-builder. |
-| `GET  /api/projects/<n>/tools/build/stream` | SSE stream of the tool-builder log. |
-| `POST /api/projects/<n>/advisor` | Send a chat message to the advisor; spawns `urika advisor` and HX-Redirects to the log stream. |
-| `POST /api/projects/<n>/advisor/stop` | Send SIGTERM to a running advisor. |
-| `GET  /api/projects/<n>/advisor/stream` | SSE endpoint tailing `projectbook/advisor.log` while the advisor subprocess runs. |
-| `DELETE /api/projects/<n>/sessions/<id>` | Trash an orchestrator chat session JSON file. HTMX-driven row swap. |
-| `POST /api/settings/notifications/test-send` | Send a test notification through every configured channel; returns per-channel success/failure JSON. |
-| `POST /api/projects/<n>/knowledge` | Add a knowledge entry from a path or URL. |
-| `PUT  /api/projects/<n>/settings/...` | Save settings tabs (basics / data / privacy / models / notifications / secrets). |
-| `PUT  /api/settings/...` | Save global settings tabs. |
-| `GET  /api/projects/<n>/findings` | Raw findings JSON (for agents/scripts; UI uses the rendered page). |
-
-No rendered link in the dashboard points at an `/api/*` URL — they are exclusively HTMX/fetch targets.
-
-
-## Tech stack
-
-- **FastAPI** -- routing and dependency injection.
-- **Uvicorn** -- ASGI server, run on a daemon thread.
-- **Jinja2** -- server-side templates.
-- **HTMX** (CDN) -- form posts and partial swaps.
-- **Alpine.js** (CDN) -- small reactive bits (theme toggle, conditional reveals, modals).
-- **Server-Sent Events** -- log streaming, mid-run prompt delivery.
-
-No build step. No JavaScript bundle. Everything is server-rendered HTML plus two CDN-loaded helpers.
-
----
-
-**Next:** [Notifications](19-notifications.md)
+- [Dashboard — Operations](18b-dashboard-operations.md)
+- [Dashboard — Settings](18c-dashboard-settings.md)
+- [Dashboard — API](18d-dashboard-api.md)
+- [CLI Reference](16a-cli-projects.md)
+- [Interactive TUI](17-interactive-tui.md)
+- [Configuration](14a-project-config.md)

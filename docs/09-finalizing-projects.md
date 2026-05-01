@@ -205,7 +205,7 @@ The project home page has a **Finalize project** button that runs the same seque
 
 The log page streams the running finalize subprocess via Server-Sent Events, with each agent's output appearing as it's produced (Finalizer → Report → Presentation → README updater). When the subprocess completes, the page emits a `status: completed` SSE event and links you straight to the rendered final report and presentation viewers.
 
-See [Dashboard](18-dashboard.md) for the modal options and SSE log walkthrough.
+See [Dashboard](18a-dashboard-pages.md) for the modal options and SSE log walkthrough.
 
 ---
 
