@@ -2,7 +2,49 @@
 
 from __future__ import annotations
 
+import sys
+
 import click
+
+
+def _ensure_utf8_streams() -> None:
+    """Reconfigure stdout/stderr to UTF-8 with replacement on Windows.
+
+    The CLI banner, spinners, agent-output framing, and TUI surfaces
+    all use box-drawing characters (``╭`` ``─`` ``╮``,
+    etc.). On Windows, ``sys.stdout`` defaults to the active console
+    code page (typically ``cp1252``), which does not encode those
+    glyphs and raises ``UnicodeEncodeError`` on the very first
+    ``print``. We reconfigure both streams to UTF-8 with
+    ``errors="replace"`` so a stray non-encodable byte degrades to
+    ``?`` rather than crashing the CLI.
+
+    No-op on Linux/macOS where stdout is already UTF-8.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if encoding in ("utf8", ""):
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # If reconfigure fails (e.g. closed stream, frozen
+            # interpreter, exotic test harness wrapping), silently
+            # leave the stream alone. Box-drawing chars will fall
+            # back to ``?`` once we wire that path in cli_display,
+            # but the CLI must not refuse to start because of this.
+            pass
+
+
+# Run before Click parses anything so even ``--help`` and version
+# output survive a cp1252 console.
+_ensure_utf8_streams()
 
 
 class _UrikaCLI(click.Group):
