@@ -520,6 +520,27 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     active = list_active_operations(name, summary.path)
     running_by_type = {op.type: op for op in active}
 
+    # Read the user's default max_turns from project urika.toml (falling
+    # back to global settings, then the hard default) so the New
+    # Experiment modal matches the rest of the system rather than
+    # hardcoding 5/10. Single source of truth: ``[preferences]
+    # max_turns_per_experiment``.
+    default_max_turns = 5
+    try:
+        import tomllib
+
+        toml_path = summary.path / "urika.toml"
+        if toml_path.exists():
+            with open(toml_path, "rb") as f:
+                proj_data = tomllib.load(f)
+            default_max_turns = (
+                proj_data.get("preferences", {}).get(
+                    "max_turns_per_experiment", default_max_turns
+                )
+            )
+    except Exception:
+        pass
+
     templates = request.app.state.templates
     ctx = {
         "project": summary,
@@ -527,6 +548,7 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
         "valid_modes": sorted(VALID_MODES),
         "valid_audiences": sorted(VALID_AUDIENCES),
         "running_by_type": running_by_type,
+        "default_max_turns": default_max_turns,
     }
     ctx.update(_project_template_context(name, summary))
     return templates.TemplateResponse(request, "experiments.html", ctx)
@@ -1159,7 +1181,7 @@ def global_settings(request: Request) -> HTMLResponse:
             "mode_grids": mode_grids,
             # Preferences tab
             "default_audience": prefs.get("audience", "standard"),
-            "default_max_turns": prefs.get("max_turns_per_experiment", 10),
+            "default_max_turns": prefs.get("max_turns_per_experiment", 5),
             "web_search": bool(prefs.get("web_search", False)),
             # venv default is OFF: use the global urika venv, not per-project.
             "venv": bool(prefs.get("venv", False)),

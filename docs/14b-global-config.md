@@ -43,7 +43,7 @@ endpoint = "private"
 
 [preferences]
 default_audience = "standard"
-max_turns_per_experiment = 10
+max_turns_per_experiment = 5
 auto_mode = "checkpoint"
 venv = true
 

@@ -231,7 +231,7 @@ To set a project-level default, add to your `urika.toml`:
 
 ```toml
 [preferences]
-max_turns_per_experiment = 10
+max_turns_per_experiment = 5
 ```
 
 Each turn involves all four agents (planning, task, evaluator, advisor), so the total number of agent invocations per experiment is roughly `4 * max_turns`.

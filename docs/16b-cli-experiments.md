@@ -105,7 +105,7 @@ urika run [PROJECT] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--experiment ID` | Specific experiment ID to run (auto-selected if omitted) |
-| `--max-turns N` | Maximum orchestrator turns (default: from `urika.toml`, or 10) |
+| `--max-turns N` | Maximum orchestrator turns (default: from `urika.toml`, or 5) |
 | `--max-experiments N` | Run multiple experiments (autonomous mode — meta-orchestrator) |
 | `--resume` | Resume a paused or failed experiment |
 | `-q`, `--quiet` | Suppress verbose tool-use streaming output |
@@ -159,7 +159,7 @@ The `max_turns` default can be set in `urika.toml`:
 
 ```toml
 [preferences]
-max_turns_per_experiment = 10
+max_turns_per_experiment = 5
 ```
 
 

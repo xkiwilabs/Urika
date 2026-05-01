@@ -30,7 +30,7 @@ Example ~/.urika/settings.toml:
     [preferences]
     web_search = false
     venv = true
-    max_turns_per_experiment = 10
+    max_turns_per_experiment = 5
 """
 
 from __future__ import annotations

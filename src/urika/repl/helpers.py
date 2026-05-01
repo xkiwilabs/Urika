@@ -307,7 +307,7 @@ def _load_run_defaults(session: ReplSession) -> dict:
             with open(toml_path, "rb") as f:
                 data = tomllib.load(f)
             prefs = data.get("preferences", {})
-            defaults["max_turns"] = prefs.get("max_turns_per_experiment", 10)
+            defaults["max_turns"] = prefs.get("max_turns_per_experiment", 5)
             defaults["auto_mode"] = prefs.get("auto_mode", "checkpoint")
         except Exception:
             pass
