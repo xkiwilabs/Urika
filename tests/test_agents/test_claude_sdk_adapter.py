@@ -252,3 +252,207 @@ class TestClassifyError:
         assert "billing" in _PAUSABLE_ERRORS
         assert "transient" in _PAUSABLE_ERRORS
         assert "config" in _PAUSABLE_ERRORS
+
+
+# ── Trailing-exit-1 tolerance ─────────────────────────────────────────
+
+
+class _FakeAssistantMessage:
+    """Minimal stand-in for ``claude_agent_sdk.AssistantMessage``."""
+
+    def __init__(self, text: str, model: str = "claude-opus-4-6") -> None:
+        # The adapter checks isinstance(block, TextBlock); we patch
+        # TextBlock to this class's block type below.
+        self.content = [_FakeTextBlock(text)]
+        self.model = model
+
+
+class _FakeTextBlock:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _FakeResultMessage:
+    """Minimal stand-in for ``claude_agent_sdk.ResultMessage``."""
+
+    def __init__(
+        self,
+        *,
+        is_error: bool = False,
+        num_turns: int = 1,
+        duration_ms: int = 100,
+        cost_usd: float = 0.0001,
+        result: str = "",
+    ) -> None:
+        self.session_id = "sess-1"
+        self.num_turns = num_turns
+        self.duration_ms = duration_ms
+        self.is_error = is_error
+        self.total_cost_usd = cost_usd
+        self.result = result
+        self.usage = {"input_tokens": 10, "output_tokens": 5}
+
+
+class TestTrailingExitTolerance:
+    """Regression: system claude CLI v2.1.124+ exits 1 in streaming
+    mode after a successful run (the bundled v2.1.63 exits 0). The
+    SDK surfaces this as ``Exception("Command failed with exit code
+    1")`` *after* yielding the final ``ResultMessage``. Pre-fix urika
+    treated this as a hard failure even though the agent's actual
+    work completed. The adapter now tolerates the trailing error
+    when ``num_turns > 0 and not is_error`` and returns ``success=
+    True`` with full state.
+    """
+
+    @pytest.mark.asyncio
+    async def test_trailing_exit_after_success_is_tolerated(
+        self, read_only_config: AgentConfig, monkeypatch
+    ) -> None:
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _fake_query(*_args, **_kwargs):
+            yield _FakeAssistantMessage("Hello")
+            yield _FakeResultMessage(is_error=False, num_turns=2)
+            # Trailing exit-1 mimicking the system CLI bug — raised
+            # *after* the ResultMessage was yielded.
+            raise Exception("Command failed with exit code 1 (exit code: 1)")
+
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.query", _fake_query
+        )
+        # The adapter checks ``isinstance(msg, AssistantMessage)`` /
+        # ``isinstance(msg, ResultMessage)`` — patch those names to
+        # our fakes so the type checks pass.
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.AssistantMessage",
+            _FakeAssistantMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage",
+            _FakeResultMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.TextBlock", _FakeTextBlock
+        )
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+
+        assert result.success is True, (
+            "trailing exit-1 after a clean ResultMessage must be tolerated"
+        )
+        assert result.text_output == "Hello"
+        assert result.num_turns == 2
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_exit_without_result_message_still_fails(
+        self, read_only_config: AgentConfig, monkeypatch
+    ) -> None:
+        """Counter-test: an exit-1 *before* any ResultMessage is a
+        real failure (e.g. credit-low or auth) and must still surface
+        as ``success=False`` with the classified category.
+        """
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _fake_query(*_args, **_kwargs):
+            if False:  # pragma: no cover — async-gen typing
+                yield None
+            raise Exception(
+                "Your credit balance is too low to access the Anthropic API."
+            )
+
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.query", _fake_query
+        )
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+
+        assert result.success is False
+        assert result.error_category == "billing"
+        assert "credit balance" in result.error.lower() or "billing" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_trailing_exit_after_is_error_result_still_fails(
+        self, read_only_config: AgentConfig, monkeypatch
+    ) -> None:
+        """Counter-test: if the ResultMessage itself is_error=True
+        (the agent reported an error before exit), don't paper over
+        it with the trailing-exit tolerance.
+        """
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _fake_query(*_args, **_kwargs):
+            yield _FakeAssistantMessage("partial")
+            yield _FakeResultMessage(
+                is_error=True,
+                num_turns=1,
+                result="agent reported an error",
+            )
+            raise Exception("Command failed with exit code 1 (exit code: 1)")
+
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.query", _fake_query
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.AssistantMessage",
+            _FakeAssistantMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage",
+            _FakeResultMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.TextBlock", _FakeTextBlock
+        )
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+
+        # is_error=True means the agent itself reported failure;
+        # tolerance must NOT flip this to success.
+        assert result.success is False
+
+    def test_sdk_logger_filter_drops_fatal_message_reader_line(self) -> None:
+        """The SDK's own ``logger.error('Fatal error in message reader: ...')``
+        call is suppressed by our adapter-installed filter so it
+        doesn't pollute agent output and trip automated smoke
+        harnesses.
+        """
+        import logging
+
+        # Importing the adapter installs the filter as a side effect.
+        import urika.agents.adapters.claude_sdk  # noqa: F401
+
+        sdk_logger = logging.getLogger("claude_agent_sdk._internal.query")
+        record = sdk_logger.makeRecord(
+            sdk_logger.name,
+            logging.ERROR,
+            __file__,
+            0,
+            "Fatal error in message reader: Command failed with exit code 1",
+            (),
+            None,
+        )
+        # Our filter should drop this specific record.
+        keep = all(f.filter(record) for f in sdk_logger.filters)
+        assert keep is False, (
+            "the trailing-exit suppression filter is missing — SDK noise will leak"
+        )
+
+        # Unrelated messages on the same logger must still pass through.
+        normal_record = sdk_logger.makeRecord(
+            sdk_logger.name,
+            logging.ERROR,
+            __file__,
+            0,
+            "Some other error worth seeing",
+            (),
+            None,
+        )
+        keep_other = all(f.filter(normal_record) for f in sdk_logger.filters)
+        assert keep_other is True

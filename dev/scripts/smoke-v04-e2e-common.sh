@@ -58,8 +58,25 @@ run_step_with_timeout() {
   local logfile="$URIKA_E2E_LOG_DIR/${name// /_}.log"
   log "▸ ${seconds}s timeout — output: $logfile"
   if timeout "$seconds" "$@" > "$logfile" 2>&1; then
-    if grep -qE "can_use_tool callback requires|Fatal error in message reader|Traceback \(most recent" "$logfile"; then
-      fail "$name" "$(grep -m1 -E 'can_use_tool|Fatal error|Traceback' "$logfile")"
+    # Fail only on *actionable* SDK regressions, not on noise the
+    # adapter already tolerates. Specifically:
+    #   - ``can_use_tool callback requires`` — streaming-mode bug
+    #     we already patched (regression marker).
+    #   - A Python traceback referencing our adapter module — means
+    #     the adapter raised, not that the SDK logged something.
+    # The bare "Fatal error in message reader" string used to be a
+    # FAIL trigger but the SDK emits it as benign noise after the
+    # system claude CLI exits 1 post-stream — the adapter's
+    # ``trailing_exit_after_success`` branch already returned a
+    # successful AgentResult by that point, and the urika command
+    # itself exits 0. Greping for it produced false positives.
+    if grep -qE "can_use_tool callback requires" "$logfile"; then
+      fail "$name" "$(grep -m1 -E 'can_use_tool callback requires' "$logfile")"
+      return 1
+    fi
+    if grep -qE "Traceback \(most recent" "$logfile" \
+       && grep -qE "urika/agents/adapters/claude_sdk\.py" "$logfile"; then
+      fail "$name" "$(grep -m1 -E 'Traceback|urika/agents/adapters' "$logfile")"
       return 1
     fi
     ok "$name"
