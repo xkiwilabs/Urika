@@ -347,10 +347,56 @@ class TestTrailingExitTolerance:
         assert result.error is None
 
     @pytest.mark.asyncio
+    async def test_trailing_exit_before_result_message_after_content(
+        self, read_only_config: AgentConfig, monkeypatch
+    ) -> None:
+        """Regression: the trailing exit-1 can fire AFTER the last
+        AssistantMessage but BEFORE the ResultMessage. text_parts
+        is populated, num_turns is still 0. This case must also be
+        tolerated — observed in the v0.4 E2E open-mode smoke where
+        the advisor's full markdown analysis streamed and suggestions
+        were saved to disk, but the SDK raised before the
+        ResultMessage arrived.
+        """
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _fake_query(*_args, **_kwargs):
+            yield _FakeAssistantMessage("full analysis here")
+            # No ResultMessage — trailing exit hits between content
+            # and result.
+            raise Exception("Command failed with exit code 1 (exit code: 1)")
+
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.query", _fake_query
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.AssistantMessage",
+            _FakeAssistantMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage",
+            _FakeResultMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.TextBlock", _FakeTextBlock
+        )
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+
+        assert result.success is True, (
+            "trailing exit-1 between AssistantMessage and ResultMessage "
+            "must be tolerated when text content already streamed"
+        )
+        assert result.text_output == "full analysis here"
+        assert result.num_turns == 0  # no ResultMessage was received
+
+    @pytest.mark.asyncio
     async def test_exit_without_result_message_still_fails(
         self, read_only_config: AgentConfig, monkeypatch
     ) -> None:
-        """Counter-test: an exit-1 *before* any ResultMessage is a
+        """Counter-test: an exit-1 *before* any AssistantMessage is a
         real failure (e.g. credit-low or auth) and must still surface
         as ``success=False`` with the classified category.
         """

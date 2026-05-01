@@ -82,9 +82,10 @@ then
 fi
 
 # === 5. urika plan ===================================================
-step "5. urika plan — design next method"
-run_step_with_timeout "plan" 300 \
-  urika plan "$PROJ"
+# Skipped — `urika plan` requires an existing experiment to plan
+# *for*, and at this point the project has none. The orchestrator
+# invokes the planning_agent internally as part of `urika run`, so
+# we rely on step 6 below for planning coverage.
 
 # === 6. urika run — single experiment, capped turns ==================
 step "6. urika run --max-turns 5 (single experiment)"

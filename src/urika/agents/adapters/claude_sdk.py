@@ -268,8 +268,11 @@ class ClaudeSDKRunner(AgentRunner):
             # Tolerate the system claude CLI v2.1.124+ streaming-mode
             # trailing exit-1 shutdown regression — see the matching
             # branch in the generic ``Exception`` handler below for
-            # rationale.
-            if num_turns > 0 and not is_error:
+            # rationale. Same dual-trigger logic: accept either a
+            # ResultMessage (num_turns > 0) OR streamed content
+            # (text_parts / messages) as success evidence.
+            got_content = bool(text_parts) or bool(messages)
+            if (num_turns > 0 or got_content) and not is_error:
                 logger.debug(
                     "Tolerating trailing CLI ProcessError after successful "
                     "stream (turns=%d, model=%s): %s",
@@ -338,8 +341,17 @@ class ClaudeSDKRunner(AgentRunner):
             # ResultMessage (``is_error=False``) before the trailing
             # error, treat the run as successful and log the shutdown
             # artifact at debug level.
+            # The system claude CLI v2.1.124+ trailing-exit-1 can fire
+            # at two different points in the message stream:
+            #   1. After the final ResultMessage (num_turns > 0).
+            #   2. After the last AssistantMessage but BEFORE the
+            #      ResultMessage (text_parts populated, num_turns == 0).
+            # Both manifest the same way in user-visible behaviour: the
+            # agent's content streamed, suggestions/files were
+            # persisted, but the SDK raises post-stream. Tolerate both.
+            got_content = bool(text_parts) or bool(messages)
             trailing_exit_after_success = (
-                num_turns > 0
+                (num_turns > 0 or got_content)
                 and not is_error
                 and "Command failed with exit code" in str(exc)
             )
