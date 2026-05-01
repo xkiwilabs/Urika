@@ -88,8 +88,12 @@ fi
 # we rely on step 6 below for planning coverage.
 
 # === 6. urika run — single experiment, capped turns ==================
+# 2700s = 45 min covers the full path: 5 turns of agents + the
+# orchestrator's post-criteria finalize sequence (which runs both
+# experiment-level AND project-level narrative agents — the project
+# narrative routinely takes 10-15 min on cloud models).
 step "6. urika run --max-turns 5 (single experiment)"
-if run_step_with_timeout "run experiment 1" 1500 \
+if run_step_with_timeout "run experiment 1" 2700 \
      urika run "$PROJ" --max-turns 5 --auto -q
 then
   verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
@@ -102,8 +106,11 @@ FIRST_EXP="$(urika experiment list "$PROJ" 2>/dev/null \
 log "First experiment: ${FIRST_EXP:-<none>}"
 
 # === 7. urika run --max-experiments 2 (autonomous) ===================
+# 4800s = 80 min: two experiments × ~30 min each + finalize
+# overhead. Budget gate (2.00 USD) will pause the run earlier on
+# Anthropic open mode; for slower endpoints this gives headroom.
 step "7. urika run --max-experiments 2 --budget 2.00"
-run_step_with_timeout "autonomous 2 experiments" 2400 \
+run_step_with_timeout "autonomous 2 experiments" 4800 \
   urika run "$PROJ" --max-experiments 2 --max-turns 5 --budget 2.00 --auto -q
 
 # === 8. urika evaluate ===============================================

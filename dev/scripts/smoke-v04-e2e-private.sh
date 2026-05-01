@@ -140,7 +140,7 @@ fi
 
 # === 6. run — single experiment ======================================
 step "6. urika run --max-turns 5"
-if run_step_with_timeout "run experiment 1" 2400 \
+if run_step_with_timeout "run experiment 1" 3600 \
      urika run "$PROJ" --max-turns 5 --auto -q
 then
   verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
@@ -148,7 +148,7 @@ fi
 
 # === 7. autonomous mode ==============================================
 step "7. urika run --max-experiments 2 (no $ budget cap on private)"
-run_step_with_timeout "autonomous 2 experiments" 3600 \
+run_step_with_timeout "autonomous 2 experiments" 7200 \
   urika run "$PROJ" --max-experiments 2 --max-turns 5 --auto -q
 
 # === 8. evaluate =====================================================
