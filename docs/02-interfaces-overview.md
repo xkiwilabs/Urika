@@ -36,11 +36,12 @@ See [Interactive TUI](17-interactive-tui.md).
 
 ### Dashboard — `urika dashboard [PROJECT]`
 
-For watching long runs, reviewing results visually, and editing settings through forms. FastAPI + HTMX + Alpine; opens at `http://localhost:8000`. Read-friendly: experiment timelines, leaderboards, log streams, advisor chat, sessions, knowledge browser, methods catalogue.
+For watching long runs, reviewing results visually, and editing settings through forms. FastAPI + HTMX + Alpine. By default the server picks a free port and prints the URL on startup; override with `--port`. Read-friendly: experiment timelines, leaderboards, log streams, advisor chat, sessions, knowledge browser, methods catalogue.
 
 ```bash
 urika dashboard my-study
-# Browser → http://localhost:8000/projects/my-study
+# Console prints e.g. → http://127.0.0.1:54321/projects/my-study
+urika dashboard my-study --port 8000   # pin the port
 ```
 
 When to reach for it: monitoring an autonomous run, sharing results with a collaborator, configuring credentials with a form, picking up a paused session from another machine.

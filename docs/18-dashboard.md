@@ -53,26 +53,25 @@ The dashboard is a multi-page app. Each route is a server-rendered Jinja templat
 | `/projects/<name>/advisor` | Advisor chat panel — persistent transcript per project (see below). |
 | `/projects/<name>/advisor/log` | Live SSE stream of the running `urika advisor` subprocess (see below). |
 | `/projects/<name>/sessions` | Recent orchestrator chat sessions, newest first, with Resume / Delete actions (see below). |
-| `/projects/<name>/data` | Data sources registered for the project (Phase 13). |
-| `/projects/<name>/data/inspect?path=...` | Schema, missing counts, head/tail preview for one file (Phase 13). |
-| `/projects/<name>/usage` | Token / cost time-series charts and recent sessions table (Phase 13). |
-| `/projects/<name>/projectbook/summary` | Rendered `projectbook/summary.md` from the summarizer agent (Phase 13). |
+| `/projects/<name>/data` | Data sources registered for the project. |
+| `/projects/<name>/data/inspect?path=...` | Schema, missing counts, head/tail preview for one file. |
+| `/projects/<name>/usage` | Token / cost time-series charts and recent sessions table. |
+| `/projects/<name>/projectbook/summary` | Rendered `projectbook/summary.md` from the summarizer agent. |
+| `/projects/<name>/compare` | Side-by-side metric comparison across selected experiments. |
 | `/projects/<name>/finalize/log` | Finalize log page: streams the running finalize subprocess via SSE. |
-| `/projects/<name>/summarize/log` | Summarize log page: streams the running summarize subprocess via SSE (Phase 13). |
-| `/projects/<name>/tools/build/log` | Build-tool log page: streams the running tool-builder subprocess via SSE (Phase 13). |
+| `/projects/<name>/summarize/log` | Summarize log page: streams the running summarize subprocess via SSE. |
+| `/projects/<name>/tools/build/log` | Build-tool log page: streams the running tool-builder subprocess via SSE. |
 | `/projects/<name>/experiments/<id>/log` | Live log streaming via SSE (see below). |
-| `/projects/<name>/settings` | Project settings (tabbed: basics / data / models / privacy / notifications). |
-| `/settings` | Global defaults (tabbed: privacy / models / preferences / notifications). |
+| `/projects/<name>/settings` | Project settings (tabbed: basics / data / privacy / models / notifications / secrets). |
+| `/settings` | Global defaults (tabbed: privacy / models / preferences / notifications / secrets). |
 | `/healthz` | Liveness probe. Always returns `{"status":"ok"}`. |
 
-The legacy `/projects/<name>/run` page was removed in Phase 11 — run launching now lives behind the **+ New experiment** modal on the experiments list (see [Modals](#modals-new-project--new-experiment) below).
-
-`/` redirects to `/projects`.
+Run launching lives behind the **+ New experiment** modal on the experiments list (see [Modals](#modals-new-project--new-experiment) below). `/` redirects to `/projects`.
 
 
 ## Modals: New Project + New Experiment
 
-Phase 11 replaced the standalone `/run` page (and the missing `/new` page) with two modal dialogs that open in-place from the relevant list pages. Both share the same `modal()` Jinja primitive — a small accessible dialog with a backdrop, an Alpine `x-data` toggle, and a labelled close button.
+Two modal dialogs open in-place from the relevant list pages. Both share the same `modal()` Jinja primitive — a small accessible dialog with a backdrop, an Alpine `x-data` toggle, and a labelled close button.
 
 - **+ New project** lives in the top-right of `/projects`. It opens a modal with the same questions the interactive `urika new` CLI asks: project name, dataset path, research question, mode, audience. Submitting POSTs to `POST /api/projects` (see below), which runs `urika new --json --non-interactive` as a subprocess and, on success, redirects the browser to the new project's home page.
 - **+ New experiment** lives in the top-right of `/projects/<name>/experiments`. The modal carries forward the fields from the old `/run` form — experiment name, hypothesis, mode, audience, max turns, and additional instructions — and posts to `POST /api/projects/<name>/run`. On success the response is an HTMX redirect to the live log page.
@@ -92,7 +91,7 @@ Finalization is streamed the same way at `GET /api/projects/<name>/finalize/stre
 
 ### Mid-run interactive prompts
 
-When the orchestrator pauses to ask a question (Phase 11F), the SSE stream emits a third event class alongside `data:` and `event: status`:
+When the orchestrator pauses to ask a question, the SSE stream emits a third event class alongside `data:` and `event: status`:
 
 ```
 event: prompt
@@ -182,7 +181,7 @@ The knowledge page now has an **+ Add knowledge** button (top-right) that opens 
 | `experiment` | `/projects/<n>/experiments` |
 | `methods` | `/projects/<n>/methods` |
 | `knowledge` (read) | `/projects/<n>/knowledge` |
-| `knowledge add` | **+ Add knowledge** modal → `POST /api/projects/<n>/knowledge` |
+| `knowledge ingest` | **+ Add knowledge** modal → `POST /api/projects/<n>/knowledge` |
 | `results` | experiment-detail runs table |
 | `report` | per-experiment + project-level report viewers |
 | `present` | per-experiment + project-level presentation viewers |
@@ -192,14 +191,14 @@ The knowledge page now has an **+ Add knowledge** button (top-right) that opens 
 | `notifications` | settings tab — global + per-project, full edit |
 | `update` | project settings PUT |
 | `criteria` | `/projects/<n>/criteria` (read-only viewer) |
-| `tools` | `/projects/<n>/tools` (read-only viewer) — **+ Build tool** modal launches `urika build-tool` (Phase 13) |
+| `tools` | `/projects/<n>/tools` (read-only viewer) — **+ Build tool** modal launches `urika build-tool` |
 | `logs` | `/projects/<n>/experiments/<id>/log` |
 | `status` | project home |
-| `evaluate` | **Evaluate** button on experiment detail → `POST /api/projects/<n>/experiments/<id>/evaluate` (Phase 13) |
-| `summarize` | **Summarize / Re-summarize project** button on project home → `POST /api/projects/<n>/summarize` (Phase 13) |
-| `build-tool` | **+ Build tool** modal on project tools page → `POST /api/projects/<n>/tools/build` (Phase 13) |
-| `inspect` | `/projects/<n>/data` and `/projects/<n>/data/inspect` (Phase 13) |
-| `usage` | `/projects/<n>/usage` (Phase 13) |
+| `evaluate` | **Evaluate** button on experiment detail → `POST /api/projects/<n>/experiments/<id>/evaluate` |
+| `summarize` | **Summarize / Re-summarize project** button on project home → `POST /api/projects/<n>/summarize` |
+| `build-tool` | **+ Build tool** modal on project tools page → `POST /api/projects/<n>/tools/build` |
+| `inspect` | `/projects/<n>/data` and `/projects/<n>/data/inspect` |
+| `usage` | `/projects/<n>/usage` |
 | `plan` | **CLI-only** — agent invocation, not user-facing |
 | `setup` | **CLI-only** — installation flow |
 | `dashboard` | **CLI-only** (it starts this server) |
@@ -218,7 +217,7 @@ The sidebar is **mode-aware** — it shows different links depending on whether 
 - **Project mode** (active on any `/projects/<name>/...` route):
   - A "← Back to projects" link returns the user to the registry.
   - Project-scoped links (canonical order): Home, Experiments, Advisor, Sessions, Knowledge, Methods, Tools, Data, Usage, Settings. Advisor sits second after Experiments so the conversational entry point is one click away; Sessions sits next to Advisor since the two are linked (Resume from Sessions pre-loads into the Advisor chat); Methods/Tools/Data cluster the analytical surfaces; Usage and Settings close the list.
-- **Footer**: the theme toggle (moved here in Phase 11A from its previous location in the page header).
+- **Footer**: the theme toggle.
 
 Sidebar links are muted by default, accent-coloured on hover, and accent + tinted-background when the current path matches the link's route. Active state is computed server-side from the request path.
 
@@ -288,16 +287,6 @@ For experiment-level ops the match is scoped to `(type, experiment_id)` so two d
 **Trigger buttons reflect running state.** On the project home, experiment detail, project tools, and experiments-list pages, every button that spawns one of these ops reads its state from `running_by_type` / `running_by_exp` (passed into the template context). When the op is in flight, the button becomes an `<a class="btn btn--running">` linking directly to the log stream — pulsing dot, accent border — instead of an `<a>` that opens a modal. Idle buttons keep their normal label and modal flow.
 
 **Persistent banner.** Every project-scoped page renders a `_base.html` banner above the heading: `Running: <type> · <experiment_id?>` chips, each linking to its own log stream. The chip pointing at the current page is suppressed (no self-link) by comparing `op.log_url` against `request.url.path + ?query`. The banner is only rendered if at least one chip survives that filter — empty banners don't render. Global pages (`/projects`, `/settings`, docs) don't get the banner.
-
-### Why this matters
-
-Before this work, the dashboard had three classes of bug:
-
-1. **Lost streams.** Click "Re-summarize", get redirected to the log, navigate away, no way back. The trigger button was still clickable and re-clicking either started a duplicate run or tripped the lock check with a 422.
-2. **Silent SSE.** Spawned subprocesses had block-buffered stdout (~8KB). The drainer thread couldn't write anything to disk until the child exited, so log pages showed "Connecting…" and then dumped everything at the end. Fixed in Phase A by adding `python -u` and `PYTHONUNBUFFERED=1` to every spawn helper.
-3. **Wrong log file tailed.** The experiment log page only knew about `run.log`. Evaluate / report / present write to `evaluate.log` / `report.log` / `present.log` with their own lock names. Fixed in Phase A by parameterizing the log page + SSE stream by `?type=run|evaluate|report|present`.
-
-The running-ops surface (this section) closes the loop: now no matter where you are, what's running is one click away.
 
 ### Animated thinking placeholder
 
@@ -370,7 +359,7 @@ Required`) instead of waiting for an experiment run to surface it.
 
 ## Theme toggle
 
-The light/dark toggle lives in the sidebar footer (Phase 11A — it used to sit in the page header). It is pure Alpine + `localStorage`:
+The light/dark toggle lives in the sidebar footer. It is pure Alpine + `localStorage`:
 
 ```html
 <html data-theme="{{ theme | default('light') }}"
@@ -424,58 +413,38 @@ The check uses `secrets.compare_digest` for constant-time comparison. `/healthz`
 
 The dashboard's HTMX/fetch endpoints (server-rendered pages above are the only thing users navigate to directly):
 
-| Endpoint | Purpose | Phase |
-|---|---|---|
-| `POST /api/projects` | Create a new project — runs `urika new --json --non-interactive`. | 11C |
-| `DELETE /api/projects/<n>` | Move the project to `~/.urika/trash/` and unregister it. 422 if a `.lock` file exists. | post-13 |
-| `POST /api/projects/<n>/run` | Spawn an experiment run. | — |
-| `GET  /api/projects/<n>/runs/<id>/stream` | SSE stream of the run log, including `event: prompt` for mid-run questions. | 11F |
-| `POST /api/projects/<n>/runs/<exp>/respond` | Answer a mid-run interactive prompt. | 11F.2 |
-| `POST /api/projects/<n>/finalize` | Kick off the finalize subprocess. | — |
-| `GET  /api/projects/<n>/finalize/stream` | SSE stream of the finalize log. | — |
-| `POST /api/projects/<n>/summarize` | Spawn the summarize subprocess. | 13C |
-| `GET  /api/projects/<n>/summarize/stream` | SSE stream of the summarize log. | 13C |
-| `POST /api/projects/<n>/experiments/<id>/evaluate` | Spawn the evaluate subprocess for an experiment. | 13B |
-| `POST /api/projects/<n>/experiments/<id>/report` | Spawn the report subprocess for an experiment. | 13B |
-| `POST /api/projects/<n>/tools/build` | Spawn the tool-builder subprocess. | 13D |
-| `GET  /api/projects/<n>/tools/build/stream` | SSE stream of the tool-builder log. | 13D |
-| `POST /api/projects/<n>/advisor` | Send a chat message to the advisor; spawns `urika advisor` and HX-Redirects to the log stream. | 11E.1 |
-| `GET  /api/projects/<n>/advisor/stream` | SSE endpoint tailing `projectbook/advisor.log` while the advisor subprocess runs. | v0.3 |
-| `DELETE /api/projects/<n>/sessions/<id>` | Trash an orchestrator chat session JSON file. HTMX-driven row swap. | v0.3 |
-| `POST /api/settings/notifications/test-send` | Send a test notification through every configured channel; returns per-channel success/failure JSON. | v0.3 |
-| `POST /api/projects/<n>/knowledge` | Add a knowledge entry from a path or URL. | 11E.3 |
-| `PUT  /api/projects/<n>/settings/...` | Save settings tabs (basics/data/models/privacy/notifications). | — |
-| `PUT  /api/settings/...` | Save global settings tabs. | — |
-| `GET  /api/projects/<n>/findings` | Raw findings JSON (for agents/scripts; UI uses the rendered page). | — |
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/projects` | Create a new project — runs `urika new --json --non-interactive`. |
+| `DELETE /api/projects/<n>` | Move the project to `~/.urika/trash/` and unregister it. 422 if a `.lock` file exists. |
+| `POST /api/projects/<n>/run` | Spawn an experiment run. |
+| `GET  /api/projects/<n>/runs/<id>/stream` | SSE stream of the run log, including `event: prompt` for mid-run questions. |
+| `POST /api/projects/<n>/runs/<exp>/respond` | Answer a mid-run interactive prompt. |
+| `POST /api/projects/<n>/runs/<exp>/stop` | Send SIGTERM to a running experiment. |
+| `POST /api/projects/<n>/runs/<exp>/pause` | Request pause-at-next-turn for a running experiment. |
+| `POST /api/projects/<n>/finalize` | Kick off the finalize subprocess. |
+| `POST /api/projects/<n>/finalize/stop` | Send SIGTERM to a running finalize. |
+| `GET  /api/projects/<n>/finalize/stream` | SSE stream of the finalize log. |
+| `POST /api/projects/<n>/summarize` | Spawn the summarize subprocess. |
+| `POST /api/projects/<n>/summarize/stop` | Send SIGTERM to a running summarize. |
+| `GET  /api/projects/<n>/summarize/stream` | SSE stream of the summarize log. |
+| `POST /api/projects/<n>/experiments/<id>/evaluate` | Spawn the evaluate subprocess for an experiment. |
+| `POST /api/projects/<n>/experiments/<id>/report` | Spawn the report subprocess for an experiment. |
+| `POST /api/projects/<n>/runs/<exp>/present/stop` | Send SIGTERM to a running presentation generation. |
+| `POST /api/projects/<n>/tools/build` | Spawn the tool-builder subprocess. |
+| `POST /api/projects/<n>/build-tool/stop` | Send SIGTERM to a running tool-builder. |
+| `GET  /api/projects/<n>/tools/build/stream` | SSE stream of the tool-builder log. |
+| `POST /api/projects/<n>/advisor` | Send a chat message to the advisor; spawns `urika advisor` and HX-Redirects to the log stream. |
+| `POST /api/projects/<n>/advisor/stop` | Send SIGTERM to a running advisor. |
+| `GET  /api/projects/<n>/advisor/stream` | SSE endpoint tailing `projectbook/advisor.log` while the advisor subprocess runs. |
+| `DELETE /api/projects/<n>/sessions/<id>` | Trash an orchestrator chat session JSON file. HTMX-driven row swap. |
+| `POST /api/settings/notifications/test-send` | Send a test notification through every configured channel; returns per-channel success/failure JSON. |
+| `POST /api/projects/<n>/knowledge` | Add a knowledge entry from a path or URL. |
+| `PUT  /api/projects/<n>/settings/...` | Save settings tabs (basics / data / privacy / models / notifications / secrets). |
+| `PUT  /api/settings/...` | Save global settings tabs. |
+| `GET  /api/projects/<n>/findings` | Raw findings JSON (for agents/scripts; UI uses the rendered page). |
 
 No rendered link in the dashboard points at an `/api/*` URL — they are exclusively HTMX/fetch targets.
-
-
-## Phase 13 additions at a glance
-
-For readers cross-referencing the Phase 13 plan (`dev/plans/2026-04-26-phase-13-coverage-and-modals.md`):
-
-- **Modal flag expansion (13A).** Run, Finalize, and New Project modals now expose every meaningful CLI flag — `--instructions`, `--audience`, `--draft`, `--auto`, `--max-experiments`, `--review-criteria`, `--resume`. Whatever you can pass on the CLI is now selectable in the browser.
-- **Per-experiment agent buttons (13B).** Experiment detail page got Evaluate, Generate / Re-generate report, and Generate / Re-generate presentation modals. Each spawns the matching CLI subprocess and HX-Redirects to the live log.
-- **Project home expansion (13C).** Summarize / Re-summarize project button alongside Finalize. The summarizer's text output is persisted to `projectbook/summary.md` so the Re-summarize label flips on disk state, and a "Summary" card appears in Final outputs when present. `urika summarize` gained an `--instructions` flag for parity with other commands.
-- **Tool builder in-browser (13D).** Project Tools page got a `+ Build tool` button that opens a modal with a free-text instructions textarea and posts to `urika build-tool`. Privacy gate fires before spawn — tool_builder runs in private mode under hybrid.
-- **Data inspection (13E).** New `/projects/<n>/data` page lists registered data sources from `urika.toml`'s `[project].data_paths`. `/data/inspect?path=...` shows column / dtype / missing / numeric stats plus head(10) and tail(10) preview, using the same loader registry the agents use. Path traversal is blocked by an allow-list validator against `data_paths` plus `<project>/data`.
-- **Usage charts (13F).** `/projects/<n>/usage` reads `usage.json`, shows totals plus token-over-time and cost-over-time line charts via Chart.js (4.4.1, CDN). Per-experiment / per-agent slices intentionally omitted — the usage schema doesn't carry that breakdown yet.
-- **Macro DRY (13G.1).** `action_label("Generate", "report", has_report)` → "Generate report" / "Re-generate report". One macro replaces four inlined ternaries across `project_home.html` and `experiment_detail.html`.
-- **Sidebar reorder (13G.2).** Canonical project-mode order is now Home / Experiments / Advisor / Sessions / Knowledge / Methods / Tools / Data / Usage / Settings. (Sessions was inserted alongside Advisor in v0.3.)
-
-
-## Phase 11 additions at a glance
-
-For readers cross-referencing the Phase 11 plan (`dev/plans/2026-04-26-dashboard-coverage-flows.md`):
-
-- **Visuals.** Theme toggle moved to sidebar footer; URIKA wordmark big & centered; sidebar links got muted/hover/active states; status pills picked up semantic colour tokens.
-- **Modal primitive.** Reusable `modal()` Jinja macro powers both **+ New project** and **+ New experiment**.
-- **Project lifecycle in-browser.** Creating a project, launching an experiment, kicking off finalize, and adding knowledge are all dashboard surfaces now.
-- **Advisor chat.** `/projects/<n>/advisor` panel shares the persistent transcript with the CLI/TUI.
-- **Tools + criteria viewers.** Read-only pages for the two remaining surfaces previously only reachable from the CLI.
-- **Project Privacy + Notifications full edit.** Inherit-from-global vs override semantics, persisted in `urika.toml`.
-- **Mid-run prompts.** SSE event class extension + answer form + `POST /respond` endpoint, ready for the orchestrator-side wiring.
 
 
 ## Tech stack

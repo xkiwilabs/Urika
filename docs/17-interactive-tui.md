@@ -62,7 +62,7 @@ The TUI provides tab completion for:
 A persistent status bar at the bottom displays session state in colored text:
 
 ```
-urika │ my-project │ claude-sonnet-4-20250514 │ 82K tokens · 8 calls │ ~$0.41 │ 12m 34s
+urika │ my-project │ claude-sonnet-4-5 │ 82K tokens · 8 calls │ ~$0.41 │ 12m 34s
 ```
 
 The status bar updates every 250ms and shows:

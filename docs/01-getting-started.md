@@ -54,7 +54,7 @@ python3 --version    # expect 3.11 or higher
 
 ### Claude Code CLI (recommended)
 
-The Claude Agent SDK that Urika depends on launches a `claude` CLI binary as a subprocess for every agent run. The SDK ships its own copy of the binary inside the wheel, so this step is technically optional — Urika falls back to the bundled binary if no `claude` is on your PATH, and the bundled binary works fine for `claude-opus-4-6`, `claude-sonnet-4-5`, and `claude-haiku-4-5` (the v0.3 default model is 4-6).
+The Claude Agent SDK that Urika depends on launches a `claude` CLI binary as a subprocess for every agent run. The SDK ships its own copy of the binary inside the wheel, so this step is technically optional — Urika falls back to the bundled binary if no `claude` is on your PATH, and the bundled binary works fine for `claude-opus-4-6`, `claude-sonnet-4-5`, and `claude-haiku-4-5` (the v0.4 default model is `claude-opus-4-6`).
 
 **Why install your own anyway:** the bundled binary lags the public `claude` release by several versions. The current bundled binary speaks an older request schema that newer models (e.g. `claude-opus-4-7`) reject with HTTP 400, surfacing as a cryptic *"Fatal error in message reader: Command failed with exit code 1"*. Installing the public CLI keeps you on the current schema and gives you per-model upgrade independence from the SDK's release cadence. Urika's runtime prefers the system `claude` over the bundled one whenever both are present.
 
@@ -253,6 +253,8 @@ Common errors during install and first run:
 | `npm install -g` fails with `EACCES` permission errors | npm prefix is `/usr/local` and you're not root | `npm config set prefix ~/.npm-global` then re-run the install. Avoid `sudo npm install -g` — it leaves binaries owned by root and outside your PATH |
 | `⚠ ANTHROPIC_API_KEY not set` warning every command | Key was exported in your shell once but not saved to Urika's vault, and the warning fires whenever the env var is unset in a fresh shell | Run `urika config api-key` to save it permanently to `~/.urika/secrets.env`, or add `export ANTHROPIC_API_KEY=...` to your shell rc |
 | `urika: command not found` after `pip install -e .` | Your venv isn't activated, or the install put the binary in a directory not on PATH | Activate the venv: `source ~/.venvs/urika/bin/activate`. Verify: `which urika` should resolve inside the venv |
+| `[WinError 32] The process cannot access the file ... urika.exe` on Windows `pip install --upgrade -e .` | A previous `urika` (dashboard, TUI, or even a closed terminal that left a child python alive) is holding the entry-point exe open | Open Task Manager → Details → end any `urika.exe` and any `python.exe` whose command line mentions urika, then re-run. Alternatively log out and back in to release every file lock. Then: `pip install --upgrade --force-reinstall --no-deps -e . --no-cache-dir` |
+| Garbled `?`/`???` instead of box-drawing chars in CLI banner / TUI on Windows cmd.exe | Console code page is `cp1252`. v0.4 reconfigures stdout/stderr to UTF-8 with `errors="replace"` automatically on startup, so this should self-fix | If you're still on v0.3.x, upgrade. Or set `PYTHONIOENCODING=utf-8` in your environment. Windows Terminal / PowerShell already use UTF-8 |
 
 For provider-side compliance issues (Pro/Max OAuth refusal, etc.) see [Security Model → Provider compliance](20-security.md#provider-compliance). For per-agent model and endpoint configuration see [Models and Privacy](13-models-and-privacy.md).
 

@@ -148,8 +148,8 @@ Once the adapter is registered:
 - The CLI wizard (`urika config`) and the dashboard's Models tab
   surface it as a backend option.
 - Per-project / per-mode `[runtime].backend` setting selects it.
-- Future: per-agent backend overrides (`runtime.modes.<mode>.models.<agent>.backend`)
-  — landing in v0.5 once a second adapter actually ships.
+- Per-agent backend overrides (`runtime.modes.<mode>.models.<agent>.backend`)
+  will become live once a second adapter ships.
 
 ## Reference
 

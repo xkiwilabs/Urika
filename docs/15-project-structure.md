@@ -7,11 +7,16 @@ Every Urika project follows a standard directory layout. This page documents eve
 
 ```
 my-project/
-  urika.toml                    # Project configuration
+  urika.toml                    # Project configuration (incl. [project.data_hashes] for drift detection)
   criteria.json                 # Versioned success criteria
   methods.json                  # Registry of agent-created methods
   usage.json                    # Session usage tracking (tokens, cost, duration)
+  revisions.json                # Audit trail of project edits made via `urika update`
   README.md                     # Auto-generated project README
+  reproduce.sh                  # Reproducibility script (POSIX) — written by finalize
+  reproduce.bat                 # Reproducibility script (Windows) — written by finalize
+  requirements.txt              # Pinned dependencies — written by finalize
+  findings.json                 # Structured findings — written by finalize
   data/                         # Dataset files
   experiments/                  # All experiments
     exp-001-baseline-models/    # One experiment
@@ -30,20 +35,33 @@ my-project/
     index.json                  # Knowledge entry metadata and content
     papers/                     # Convention for PDF sources
     notes/                      # Convention for text notes
+  memory/                       # Project memory (v0.4 Phase 1)
+    MEMORY.md                   # Index of structured markdown entries
+    feedback_*.md               # Feedback memory entries
+    instruction_*.md            # Instruction memory entries
+    decision_*.md               # Decision memory entries
+    .trash/                     # Trashed memory entries (preserved on `urika memory delete`)
   methods/                      # Project-level method scripts
   tools/                        # Project-specific tools (created by tool_builder)
   suggestions/                  # Project-level suggestions
     initial.json                # Initial analytical approach suggestions from project builder
     pending.json                # Queued experiment suggestions from advisor conversations
+  trash/                        # Trashed experiments (preserved on `urika experiment delete`)
   projectbook/                  # Project-level documentation
     results-summary.md          # Aggregated results across all experiments
     key-findings.md             # Important discoveries and conclusions
     progress-overview.md        # High-level progress narrative
     narrative.md                # Agent-written project narrative
+    final-report.md             # Polished final report (after `urika finalize`)
     advisor-history.json        # Persistent advisor conversation history
     advisor-context.md          # Rolling research context summary
     presentation/               # Project-level reveal.js slide deck
       index.html                # Rendered presentation
+  .urika/                       # Internal state (not user-edited)
+    sessions/                   # Orchestrator chat session history (auto-pruned at 20)
+    secrets.env                 # Per-project secret overrides (file backend, mode 0600)
+    secrets-meta.toml           # Metadata sidecar for the secrets vault
+    pause_requested             # Marker file when a turn-boundary pause is requested
 ```
 
 

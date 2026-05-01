@@ -530,7 +530,7 @@ A few behaviours worth knowing about up front:
 
 - **Pause / Stop / Resume buttons (Telegram inline keyboard) only appear on `experiment_started` events.** Mid-experiment notifications don't carry the keyboard — for fine-grained control during an active run, use the bot's `/pause`, `/stop`, `/resume` slash commands directly.
 - **Email batches low-priority events.** Events with `priority="low"` are queued and flushed only when a `medium` or `high` event arrives, or at shutdown. This avoids inbox flooding for routine progress events. Slack and Telegram do not batch — every event sends immediately.
-- **Per-channel priority filtering is not yet user-configurable.** Today, every enabled channel receives every event the bus emits. A future release will add per-event-type opt-in (issue #TBD).
+- **Per-channel priority filtering is not yet user-configurable.** Today, every enabled channel receives every event the bus emits.
 - **Health check on bad credentials excludes a channel from dispatch for the entire process lifetime.** Updating credentials in env vars does NOT re-probe the running bus — restart Urika so the next `bus.start()` re-runs the health check. The dashboard's Send-test button builds a fresh bus from un-saved form data and probes each channel directly, so use it to confirm fixes before restarting.
 - **Test sends count toward your channel's rate limits.** Slack rate-limits ~1 message/sec/channel; Telegram rate-limits ~30 messages/sec; Gmail rate-limits ~100/day on free SMTP. Don't spam the test button.
 - **Inbound Slack commands require Socket Mode + an app token in addition to the bot token.** Outbound notifications work with just the bot token; inbound (slash commands, button taps) needs the app-token env var set.

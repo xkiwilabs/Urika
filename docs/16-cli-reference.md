@@ -124,10 +124,10 @@ Moved 'my-old-project' to /home/user/.urika/trash/my-old-project-20260426-153012
 
 ### `urika status`
 
-Show project status including research question, mode, experiment count, and per-experiment status.
+Show project status including research question, mode, experiment count, per-experiment status, and **data drift** — a SHA-256 hash of every registered data file is captured at `urika new` time and re-checked here. Files whose hash has changed are flagged so you don't accidentally compare runs against drifted data.
 
 ```
-urika status [NAME]
+urika status [NAME] [--json]
 ```
 
 **Arguments:**
@@ -135,6 +135,12 @@ urika status [NAME]
 | Argument | Description |
 |----------|-------------|
 | `NAME` | Project name (prompted if multiple projects exist) |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Emit a JSON envelope with `experiments`, `data_drift`, and `path` fields for scripted callers. Used by the dashboard's project-home page. |
 
 **Example output:**
 
@@ -148,7 +154,12 @@ Experiments: 3
   exp-001: baseline-models [completed, 5 runs]
   exp-002: feature-engineering [completed, 4 runs]
   exp-003: ensemble-methods [running, 2 runs]
+
+Data drift:
+  ⚠ data/training.csv  hash changed since 2026-04-12 (registered: a3f1…  current: c40b…)
 ```
+
+The original hashes live in `urika.toml` under `[project.data_hashes]` and are re-computed on every `urika status` and `urika new`. To silence a drift warning after intentionally updating a dataset, run `urika update <project>` and accept the new hashes.
 
 ---
 
@@ -335,15 +346,19 @@ urika run [PROJECT] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--experiment ID` | Specific experiment ID to run (auto-selected if omitted) |
-| `--max-turns N` | Maximum orchestrator turns (default: from `urika.toml`, or 5) |
-| `--max-experiments N` | Run multiple experiments (autonomous mode) |
+| `--max-turns N` | Maximum orchestrator turns (default: from `urika.toml`, or 10) |
+| `--max-experiments N` | Run multiple experiments (autonomous mode — meta-orchestrator) |
 | `--resume` | Resume a paused or failed experiment |
 | `-q`, `--quiet` | Suppress verbose tool-use streaming output |
-| `--auto` | Fully autonomous mode -- no confirmation prompts |
-| `--dry-run` | Print the planned pipeline (agents, tools, writable directories) without invoking any agent. Useful for verifying configuration. |
+| `--auto` | Fully autonomous mode — no confirmation prompts |
+| `--dry-run` | Print the planned pipeline (agents, tools, writable directories) without invoking any agent. Includes a cost estimate row using prior session costs as a basis. |
 | `--instructions TEXT` | Guide the next experiment (e.g., "focus on tree-based models") |
 | `--review-criteria` | Re-run the criteria-review subroutine so the advisor can evolve project criteria based on accumulated experiment results (may raise the bar). |
-| `--audience [novice\|standard\|expert]` | Control explanation depth in reports and presentations (default: standard) |
+| `--budget FLOAT` | Pause the run when accumulated cost crosses this USD amount. Pause is at the next turn boundary; resumable via `--resume`. Default: no cap. |
+| `--advisor-first` | Run the advisor first to propose a name + hypothesis + direction, then proceed. Meaningful when paired with `--experiment` (the dashboard's handoff). |
+| `--legacy` | Use the deterministic Python orchestrator (default behaviour for now). |
+| `--audience [novice\|standard\|expert]` | Control explanation depth in reports and presentations (default: from `urika.toml`'s `[preferences].audience`) |
+| `--json` | Emit a JSON result envelope instead of the streaming-prose output. |
 
 **Interactive settings:** When called with no flags, shows a settings dialog:
 
@@ -809,6 +824,46 @@ urika config my-project --show   # show project settings
 
 For per-agent model overrides beyond what the interactive setup provides, edit `urika.toml` directly — see [Configuration](14-configuration.md).
 
+#### `urika config api-key`
+
+Interactive setup for the Anthropic API key. Saves to `~/.urika/secrets.env` (mode `0600`); the key is loaded into `os.environ["ANTHROPIC_API_KEY"]` on every subsequent CLI invocation.
+
+```
+urika config api-key [--test]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--test` | After saving, verify the key by making a real call to `api.anthropic.com`. Reports success/failure with the response body excerpt on error. |
+
+**Examples:**
+
+```bash
+urika config api-key             # interactive prompt, saves to vault
+urika config api-key --test      # save + verify
+```
+
+The same vault is used by every Urika surface (CLI, TUI, dashboard). To set a key per shell instead, export `ANTHROPIC_API_KEY` directly — process-env always wins over the vault.
+
+#### `urika config secret`
+
+Interactive setup for an arbitrary named secret (e.g., a private vLLM API token, a HuggingFace key, a third-party API credential). Saves to the same global secrets vault as `urika config api-key`. Agents and tools read the secret via `os.environ.get(NAME)`.
+
+```
+urika config secret
+```
+
+The wizard prompts for the secret name (defaults to a curated allowlist of well-known names from `urika.core.known_secrets` if you don't type one), value, and description. Mask preview shown on save.
+
+**Examples:**
+
+```bash
+urika config secret              # interactive — pick from known names
+urika config secret              # interactive — enter a custom name
+```
+
+Names referenced by `[privacy.endpoints.<n>].api_key_env` are auto-discovered and offered as suggestions.
+
 
 ### `urika notifications`
 
@@ -936,6 +991,111 @@ The TUI binary is searched in the following order: the `URIKA_TUI_BIN` environme
 
 ---
 
+### `urika memory`
+
+Read or edit the project memory directory at `<project>/memory/`. Project memory is structured markdown — a curated `MEMORY.md` index plus per-topic entry files (`feedback_*.md`, `instruction_*.md`, `decision_*.md`, …) — that gets injected into the planner's and advisor's system prompts on every run, so the agents stay aware of past decisions, user preferences, and constraints across experiments. Auto-capture from `<memory type="...">...</memory>` markers in agent output is on by default; manual edits live under this command group.
+
+```
+urika memory list   [PROJECT] [--json]
+urika memory show   [PROJECT] TOPIC
+urika memory add    [PROJECT] TOPIC [--type TYPE] [--from-file PATH | --stdin] [--description TEXT]
+urika memory delete [PROJECT] FILENAME [--force]
+```
+
+**Subcommands:**
+
+| Subcommand | Purpose |
+|---|---|
+| `list` | List every memory entry. `--json` emits structured output for scripts. |
+| `show TOPIC` | Print one entry by filename or slug. Partial matches resolve via prefix glob (`feedback_methods` finds `feedback_methods.md` or `feedback_methods_v2.md`). |
+| `add TOPIC` | Write a new entry. `--type` picks one of `user`, `feedback`, `instruction`, `decision`, `reference` (default: `instruction`). Body comes from `--from-file PATH`, `--stdin`, or an interactive editor. |
+| `delete FILENAME` | Move the entry to `memory/.trash/` (preserved on disk). Pass `--force` to skip the confirmation prompt. |
+
+**Examples:**
+
+```bash
+# Inspect what the agents are seeing
+urika memory list my-project
+
+# Capture a methodological constraint from a piped command
+echo "Always cross-validate by subject" | urika memory add my-project cv_strategy --stdin
+
+# Read one entry
+urika memory show my-project feedback_methods
+
+# Trash an outdated entry
+urika memory delete my-project instruction_old_baseline.md --force
+```
+
+Soft cap 5 KB per entry (warning), hard cap 20 KB (truncated with marker). Per-project disable via `[memory] auto_capture = false` in `urika.toml`.
+
+---
+
+### `urika sessions`
+
+List or export persisted orchestrator chat sessions. The TUI's orchestrator chat persists each conversation to `<project>/.urika/sessions/<id>.json` (auto-pruned at 20 sessions). This command surfaces them outside the TUI for sharing or scripted review.
+
+```
+urika sessions list   [PROJECT] [--json]
+urika sessions export [PROJECT] SESSION_ID [--format md|json] [-o FILE]
+```
+
+**Subcommands:**
+
+| Subcommand | Purpose |
+|---|---|
+| `list` | One row per session: ID, started timestamp, message count, preview of first user message. `--json` emits the full structure. |
+| `export SESSION_ID` | Render a session to Markdown (`--format md`, default — sharing) or JSON (`--format json`, full fidelity). Output goes to stdout unless `-o FILE` is provided. |
+
+**Examples:**
+
+```bash
+# What conversations does this project have?
+urika sessions list my-project
+
+# Share a session as a Markdown gist
+urika sessions export my-project 20260501-143022-a4b -o session.md
+
+# Full-fidelity dump for a downstream tool
+urika sessions export my-project 20260501-143022-a4b --format json
+```
+
+---
+
+### `urika completion`
+
+Manage shell completion for the `urika` CLI. Built on Click 8's native completion machinery — works in bash, zsh, and fish.
+
+```
+urika completion install    [SHELL] [--force]
+urika completion script     [SHELL]
+urika completion uninstall  [SHELL]
+```
+
+**Subcommands:**
+
+| Subcommand | Purpose |
+|---|---|
+| `install` | Generate the completion script and append a sourcing line to your shell's rc file. `--force` overwrites an existing entry. Auto-detects bash / zsh / fish from `$SHELL` if `SHELL` argument is omitted. |
+| `script` | Print the completion script to stdout — useful when you want to manage sourcing yourself or place the script in a non-default location. |
+| `uninstall` | Remove the sourcing line from your shell's rc file. The completion script file itself is left in place. |
+
+**Examples:**
+
+```bash
+# One-liner: install + source on next shell
+urika completion install
+exec $SHELL -l
+
+# Manual: stash the script wherever you keep your completions
+urika completion script bash > ~/.bash_completions/urika.bash
+echo 'source ~/.bash_completions/urika.bash' >> ~/.bashrc
+```
+
+After installing, `urika <TAB><TAB>` shows the command list, project names complete on `urika status <TAB>`, and so on.
+
+---
+
 ### `urika --version`
 
 Show the installed Urika version.
@@ -950,7 +1110,14 @@ urika --version
 | Variable | Description |
 |----------|-------------|
 | `URIKA_PROJECTS_DIR` | Override the default projects directory (default: `~/urika-projects`) |
-| `NO_COLOR` | Set to disable colored terminal output (colors are on by default for TTYs) |
+| `URIKA_HOME` | Override the global config directory (default: `~/.urika`). Also relocates `~/.urika/secrets.env` and the project registry. |
+| `URIKA_TUI_BIN` | Explicit path to the TypeScript TUI binary launched by `urika tui` (overrides PATH search). |
+| `URIKA_NO_BUILDER_AGENT` | Set to `1` to skip the project-builder agent loop in `urika new` (for scripted use). The agent loop is also auto-skipped under non-TTY stdin. |
+| `URIKA_DASHBOARD_AUTH_TOKEN` | Bearer-token gate for `urika dashboard` (matches the `--auth-token` flag). |
+| `ANTHROPIC_API_KEY` | API key for Anthropic-routed agent calls. Required for any cloud-bound run; see [Security → Provider compliance](20-security.md#provider-compliance). |
+| `ANTHROPIC_BASE_URL` | Custom OpenAI-compatible endpoint URL (set per-agent via `urika config secret`, not exported manually for global config). |
+| `INFERENCE_HUB_KEY` (or whichever name is referenced by your endpoint's `api_key_env`) | Auth token for a configured private endpoint. Loaded from `~/.urika/secrets.env` automatically; only needed manually when shelling out. |
+| `NO_COLOR` | Set to disable coloured terminal output (colours are on by default for TTYs). |
 
 
 ## Global Behaviors

@@ -13,7 +13,7 @@ Urika currently uses the **Claude Agent SDK** as its runtime backend. This suppo
 - **Local models** via Ollama (Llama, Mistral, etc.)
 - **Institutional endpoints** -- any Anthropic-compatible API server (e.g., an organisation's secure Claude instance)
 
-Future releases will add adapters for OpenAI Agents SDK, Google ADK, and PI.
+Additional backends can be plugged in through the `urika.runners` Python entry-point group — see [Contributing an Adapter](contributing-an-adapter.md).
 
 > **Important: Urika requires an Anthropic API key for cloud (open) use.**
 >
@@ -464,7 +464,7 @@ Not all local models work with Urika. The model must support **tool/function cal
 - **Default behavior is unchanged.** If you do not add `[privacy]` or `[runtime]` sections to `urika.toml`, everything runs on the Anthropic API as before.
 - **What needs to be private stays private.** You control exactly which agents access which endpoints. The hybrid default covers most cases, but full customization is available.
 - **Claude Code CLI required for local models.** The Claude Agent SDK spawns the `claude` CLI as a subprocess. For local model support, the system-installed CLI is used (not the bundled one). Install via `npm install -g @anthropic-ai/claude-code`.
-- **Currently only Claude Agent SDK is supported.** OpenAI Agents SDK, Google ADK, and PI adapters are planned for upcoming releases.
+- **One agent backend ships in v0.4** — the Anthropic Claude Agent SDK. Additional backends can be added via the `urika.runners` Python entry-point group; see [Contributing an Adapter](contributing-an-adapter.md).
 
 ### Data privacy disclaimer
 

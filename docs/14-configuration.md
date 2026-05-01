@@ -436,7 +436,7 @@ Each project also maintains its own state files at the project root. Most are do
 | `revisions.json` | Project root | `urika update` | Audit trail of project edits made through the update command. |
 | `experiments/<id>/progress.json` | Per experiment | task_agent, evaluator | Append-only run log. |
 | `experiments/<id>/session.json` | Per experiment | Orchestrator | Turn-by-turn experiment state. |
-| `.urika/sessions/<id>.json` | Per project | Orchestrator chat | Conversational session memory for the TUI / `urika chat`. |
+| `.urika/sessions/<id>.json` | Per project | Orchestrator chat | Conversational session memory for the TUI's orchestrator chat (auto-pruned at 20 sessions). |
 
 For the full directory layout, including `experiments/`, `methods/`, `tools/`, `knowledge/`, and `projectbook/`, see [Project Structure](15-project-structure.md).
 

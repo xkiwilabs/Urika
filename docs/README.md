@@ -22,3 +22,4 @@
 | [18 Dashboard](18-dashboard.md) | FastAPI multi-page dashboard, run launcher, settings UI, theme toggle, auth |
 | [19 Notifications](19-notifications.md) | Email, Slack, Telegram alerts and remote pause/stop |
 | [20 Security Model](20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard/notifications security |
+| [Contributing an Adapter](contributing-an-adapter.md) | Plugging a different agent backend into Urika via the `urika.runners` entry-point group |

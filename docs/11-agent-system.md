@@ -60,7 +60,7 @@ The only agent that writes and executes Python code. It takes a method plan (fro
 |----------|-------|
 | Tools | Read, Write, Bash, Glob, Grep |
 | Writable dirs | `experiments/<id>/` |
-| Allowed bash | `python`, `pip` |
+| Allowed bash | `python`, `pip`, `pytest` |
 | Blocked bash | `rm -rf`, `git push`, `git reset` |
 | Max turns | 25 |
 
@@ -286,7 +286,7 @@ Agents do not communicate directly. All state is persisted to the filesystem, an
 
 ## Security Boundaries
 
-Security is enforced through `SecurityPolicy` on each agent's configuration:
+Each agent declares a `SecurityPolicy` (`writable_dirs` / `readable_dirs` / `allowed_bash_prefixes` / `blocked_bash_patterns`). **v0.4 enforces the policy at runtime** via the SDK's `can_use_tool` callback — every tool dispatch is intercepted and the agent receives an explicit deny message when a request escapes the policy. Pre-v0.4 the same fields were declared but advisory only; an agent could still touch files outside its declared scope. See `urika/agents/permission.py` for the decision logic and [Security](20-security.md) for the threat model.
 
 ### Read-Only Agents
 
@@ -308,7 +308,7 @@ These agents have write access restricted to specific directories:
 
 | Agent | Writable Directory | Allowed Commands |
 |-------|-------------------|-----------------|
-| Task Agent | `experiments/<id>/` | `python`, `pip` |
+| Task Agent | `experiments/<id>/` | `python`, `pip`, `pytest` |
 | Tool Builder | `tools/` | `python`, `pip`, `pytest` |
 | Literature Agent | `knowledge/` | `python`, `pip` |
 | Finalizer | `methods/`, `projectbook/`, project root | `python`, `pip` |

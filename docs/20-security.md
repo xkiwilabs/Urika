@@ -25,7 +25,7 @@ Each agent role declares its own `SecurityPolicy` when invoked:
 | `allowed_bash_prefixes` | Bash command prefixes allowed (e.g. `"urika "`) |
 | `blocked_bash_patterns` | Bash fragments that are refused even if the prefix matches |
 
-These policies are passed to the Claude Agent SDK and **enforced by Claude Code**, not by Urika itself. Urika trusts the SDK's tool-permission system to honor the policy. If you need a stronger boundary (untrusted projects, regulated data, multi-tenant hosts), run Urika inside a container or VM.
+**v0.4 enforces these policies at runtime** via the SDK's `can_use_tool` callback (see `urika/agents/permission.py`): every tool dispatch is intercepted and the agent receives an explicit deny message — including a reason — when a request escapes the policy. Pre-v0.4 the same fields were declared but advisory only. Path checks resolve symlinks and `..` traversal before matching against `readable_dirs` / `writable_dirs`; Bash commands are tokenised with `shlex` and reject shell metacharacters (`;`, `&&`, `|`, `$(`, `` ` ``, redirections) outright before the prefix allowlist is consulted. If you need a stronger boundary still (untrusted projects, regulated data, multi-tenant hosts), run Urika inside a container or VM.
 
 Concrete examples of the policies in effect:
 
@@ -46,9 +46,9 @@ Precedence when the same secret is defined in multiple places: CLI argument → 
 
 ## Dashboard
 
-`urika dashboard` binds to `127.0.0.1:8420` (localhost only). Directory traversal is prevented by an `is_relative_to(project_dir)` check on every served path.
+`urika dashboard` binds to `127.0.0.1` (localhost only). The default port is a random free port chosen at startup and printed on the console; override with `--port`. Directory traversal is prevented by an `is_relative_to(project_dir)` check on every served path.
 
-**There is no authentication.** Anyone with shell access to the machine — and, over SSH forwarding, anyone who can tunnel to `localhost:8420` — can browse the dashboard. For networked use, put it behind an auth proxy (Caddy, nginx, Tailscale) rather than exposing it directly.
+**Authentication is opt-in.** Without `--auth-token`, anyone with shell access to the machine — and, over SSH forwarding, anyone who can tunnel to the chosen port — can browse the dashboard. To require a bearer token on every request, pass `--auth-token <secret>` (or set `URIKA_DASHBOARD_AUTH_TOKEN`). For networked use, put it behind an auth proxy (Caddy, nginx, Tailscale) rather than exposing it directly.
 
 ## Notifications
 
@@ -75,7 +75,7 @@ Please report security issues privately to michael.j.richardson@mq.edu.au rather
 
 ## Provider compliance
 
-Urika is provider-agnostic by design — it routes agent calls through whichever model SDK the project's privacy mode and agent config specify. v0.3 ships with one fully-supported adapter (Anthropic's Claude Agent SDK), with adapters for OpenAI, Google ADK, and PI planned. Each provider has its own terms of service and its own compliant authentication pattern. Urika's job is to enforce the right pattern per provider.
+Urika is provider-agnostic by design — it routes agent calls through whichever model SDK the project's privacy mode and agent config specify. v0.4 ships with one fully-supported adapter (Anthropic's Claude Agent SDK); additional adapters can be added through the `urika.runners` Python entry-point group (see [Contributing an Adapter](contributing-an-adapter.md)). Each provider has its own terms of service and its own compliant authentication pattern. Urika's job is to enforce the right pattern per provider.
 
 ### Are we using the Anthropic SDK in a sanctioned way?
 

@@ -310,7 +310,7 @@ Random forest regression using scikit-learn's `RandomForestRegressor`. Handles n
 
 ---
 
-#### xgboost_regression
+#### gradient_boosting
 
 Gradient boosting regression using scikit-learn's `GradientBoostingRegressor`. Provides strong predictive performance with configurable learning rate and tree depth.
 
