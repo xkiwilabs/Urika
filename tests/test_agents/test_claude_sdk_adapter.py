@@ -167,6 +167,25 @@ class TestComplianceSafetyNet:
         assert options.env.get("CLAUDE_CODE_OAUTH_TOKEN") == ""
         assert options.env.get("ANTHROPIC_AUTH_TOKEN") == ""
 
+    def test_build_options_preserves_deliberate_anthropic_auth_token(
+        self, read_only_config: AgentConfig
+    ) -> None:
+        """Regression: when ``build_agent_env_for_endpoint`` sets
+        ``ANTHROPIC_AUTH_TOKEN`` deliberately for a non-Anthropic
+        OpenAI-compatible private endpoint (Bearer auth), the
+        compliance scrub MUST preserve the value. Pre-fix it was
+        unconditionally blanked, which 401-ed every private-mode
+        run against vLLM/LiteLLM/OpenRouter.
+        """
+        read_only_config.env = {
+            "ANTHROPIC_BASE_URL": "http://100.127.175.6:4200",
+            "ANTHROPIC_AUTH_TOKEN": "sk-private-bearer-token",
+        }
+        runner = ClaudeSDKRunner()
+        options = runner._build_options(read_only_config)
+        assert options.env.get("ANTHROPIC_AUTH_TOKEN") == "sk-private-bearer-token"
+        assert options.env.get("ANTHROPIC_BASE_URL") == "http://100.127.175.6:4200"
+
     def test_build_options_preserves_base_url(
         self, read_only_config: AgentConfig
     ) -> None:

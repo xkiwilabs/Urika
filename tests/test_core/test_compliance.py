@@ -103,11 +103,39 @@ class TestScrubOauthEnv:
         assert out["ANTHROPIC_API_KEY"] == "sk-ant-x"
         assert out["CLAUDE_CODE_OAUTH_TOKEN"] == ""
 
-    def test_strips_anthropic_auth_token_var(self):
+    def test_preserves_deliberately_set_anthropic_auth_token(self):
+        """Regression: ``ANTHROPIC_AUTH_TOKEN`` is the standard Bearer-
+        auth header for OpenAI-compatible private endpoints
+        (vLLM/LiteLLM/OpenRouter expect ``Authorization: Bearer
+        <token>``, which the bundled CLI sends when this var is set).
+        ``build_agent_env_for_endpoint`` deliberately sets it for
+        non-Anthropic endpoints; the scrub MUST preserve a
+        deliberately-set value or every private-mode Bearer-auth
+        endpoint 401s.
+        """
         from urika.core.compliance import scrub_oauth_env
 
-        out = scrub_oauth_env({"ANTHROPIC_AUTH_TOKEN": "oauth-leaked"})
+        out = scrub_oauth_env({"ANTHROPIC_AUTH_TOKEN": "sk-private-token"})
+        assert out["ANTHROPIC_AUTH_TOKEN"] == "sk-private-token"
+
+    def test_blanks_absent_anthropic_auth_token(self):
+        """When the var isn't deliberately set, blank it to block
+        parent-shell leakage of a Pro/Max OAuth token.
+        """
+        from urika.core.compliance import scrub_oauth_env
+
+        out = scrub_oauth_env({"ANTHROPIC_API_KEY": "sk-ant-x"})
         assert out["ANTHROPIC_AUTH_TOKEN"] == ""
+
+    def test_always_blanks_claude_code_oauth_token(self):
+        """``CLAUDE_CODE_OAUTH_TOKEN`` has no legitimate use in a
+        Urika-spawned subprocess — must always be zeroed, even when
+        deliberately set in agent_env.
+        """
+        from urika.core.compliance import scrub_oauth_env
+
+        out = scrub_oauth_env({"CLAUDE_CODE_OAUTH_TOKEN": "leaked"})
+        assert out["CLAUDE_CODE_OAUTH_TOKEN"] == ""
 
     def test_does_not_mutate_input(self):
         from urika.core.compliance import scrub_oauth_env

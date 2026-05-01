@@ -113,11 +113,12 @@ def require_api_key(
 def scrub_oauth_env(agent_env: Mapping[str, str] | None) -> dict[str, str]:
     """Return a copy of *agent_env* with parent-session leakage zeroed.
 
-    Two classes of vars get blanked:
+    Two classes of vars get blanked when not already set:
 
     1. OAuth tokens (``CLAUDE_CODE_OAUTH_TOKEN``, ``ANTHROPIC_AUTH_TOKEN``)
        — Urika must not let the spawned ``claude`` subprocess authenticate
-       via OAuth (Anthropic Consumer Terms §3.7).
+       via a Pro/Max OAuth token leaked from the parent shell
+       (Anthropic Consumer Terms §3.7).
     2. Claude Code session markers (``CLAUDECODE``, ``CLAUDE_CODE_SSE_PORT``,
        ``CLAUDE_CODE_ENTRYPOINT``, ``CLAUDE_CODE_EXECPATH``) — set when
        Urika itself is launched from a terminal owned by the Claude Code
@@ -128,14 +129,30 @@ def scrub_oauth_env(agent_env: Mapping[str, str] | None) -> dict[str, str]:
 
     Empty strings (not absence) are written so the spawned subprocess
     overrides any value it would otherwise inherit from ``os.environ``
-    via the SDK's ``{**os.environ, **options.env}`` merge.
+    via the SDK's ``{**os.environ, **options.env}`` merge — but only
+    when the var isn't already deliberately set in *agent_env*.
+
+    The deliberate-set carve-out is necessary because
+    ``ANTHROPIC_AUTH_TOKEN`` is the legitimate auth header for non-
+    Anthropic OpenAI-compatible endpoints (vLLM / LiteLLM / OpenRouter
+    expect ``Authorization: Bearer <token>``, which the bundled CLI
+    sends when ``ANTHROPIC_AUTH_TOKEN`` is set). The privacy-mode
+    endpoint builder in ``urika.agents.config.build_agent_env_for_endpoint``
+    sets it deliberately for those endpoints; unconditionally
+    blanking it here would break private-mode auth for every non-
+    Anthropic endpoint with a Bearer-token auth header.
 
     The input mapping is **not** mutated — a fresh ``dict`` is
     returned.
     """
     out = dict(agent_env or {})
-    for var in _OAUTH_TOKEN_VARS:
-        out[var] = ""
+    # CLAUDE_CODE_OAUTH_TOKEN has no legitimate use in a Urika-spawned
+    # subprocess — always zero it. ANTHROPIC_AUTH_TOKEN is the standard
+    # Bearer-auth header for OpenAI-compatible private endpoints and
+    # MUST be preserved when deliberately set; only blank it when
+    # absent (to block parent-shell leakage).
+    out["CLAUDE_CODE_OAUTH_TOKEN"] = ""
+    out.setdefault("ANTHROPIC_AUTH_TOKEN", "")
     for var in _NESTED_SESSION_VARS:
         out[var] = ""
     return out

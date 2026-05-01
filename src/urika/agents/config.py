@@ -333,11 +333,28 @@ def build_agent_env_for_endpoint(
                 env["ANTHROPIC_BASE_URL"] = endpoint.base_url
                 # Disable beta headers that local servers reject
                 env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] = "1"
+            # Auth-header selection for non-Anthropic endpoints. The
+            # bundled Claude Agent SDK CLI sends:
+            #   ANTHROPIC_API_KEY   -> header ``x-api-key: <key>``
+            #   ANTHROPIC_AUTH_TOKEN -> header ``Authorization: Bearer <token>``
+            # api.anthropic.com expects the former; vLLM / LiteLLM /
+            # OpenRouter / most OpenAI-compatible private endpoints
+            # expect the latter (and reject ``x-api-key`` with a 401
+            # "Ensure Key has 'Bearer ' prefix"). Detect non-Anthropic
+            # base_urls and set the auth-token form instead.
+            is_anthropic = "anthropic.com" in (endpoint.base_url or "").lower()
             if endpoint.api_key_env:
-                # Read the actual key from the environment
                 key = os.environ.get(endpoint.api_key_env, "")
                 if key:
-                    env["ANTHROPIC_API_KEY"] = key
+                    if is_anthropic:
+                        env["ANTHROPIC_API_KEY"] = key
+                        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+                    else:
+                        # OpenAI-compatible endpoint — Bearer-token
+                        # auth. Clear ANTHROPIC_API_KEY so the SDK
+                        # doesn't double-send the conflicting header.
+                        env["ANTHROPIC_AUTH_TOKEN"] = key
+                        env.pop("ANTHROPIC_API_KEY", None)
                 elif _is_local_endpoint(endpoint.base_url):
                     env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
                     env.pop("ANTHROPIC_API_KEY", None)
