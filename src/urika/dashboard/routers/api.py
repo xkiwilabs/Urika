@@ -2625,7 +2625,7 @@ async def api_run_stream(name: str, exp_id: str, type: str = "run"):
         # Initial backlog — drain whatever's already on disk.
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield _format_log_line(line.rstrip())
                 position = f.tell()
@@ -2634,7 +2634,7 @@ async def api_run_stream(name: str, exp_id: str, type: str = "run"):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -2770,7 +2770,7 @@ async def api_finalize_stream(name: str):
     async def event_stream():
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield f"data: {line.rstrip()}\n\n"
                 position = f.tell()
@@ -2778,7 +2778,7 @@ async def api_finalize_stream(name: str):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -2854,7 +2854,7 @@ async def api_summarize_stream(name: str):
     async def event_stream():
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield f"data: {line.rstrip()}\n\n"
                 position = f.tell()
@@ -2862,7 +2862,7 @@ async def api_summarize_stream(name: str):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -2940,7 +2940,7 @@ async def api_build_tool_stream(name: str):
     async def event_stream():
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield f"data: {line.rstrip()}\n\n"
                 position = f.tell()
@@ -2948,7 +2948,7 @@ async def api_build_tool_stream(name: str):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -3239,7 +3239,7 @@ async def api_advisor_stream(name: str):
     async def event_stream():
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield f"data: {line.rstrip()}\n\n"
                 position = f.tell()
@@ -3247,7 +3247,7 @@ async def api_advisor_stream(name: str):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()

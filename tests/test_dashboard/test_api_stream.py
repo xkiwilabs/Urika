@@ -81,6 +81,49 @@ def test_stream_404_unknown_project(stream_client_completed):
     assert r.status_code == 404
 
 
+def test_stream_survives_non_utf8_bytes_in_log(tmp_path: Path, monkeypatch):
+    """Regression: the SSE log tailer used to open run.log with strict
+    ``encoding="utf-8"``, so a single non-UTF8 byte (e.g. cp1252
+    em-dash 0x97 emitted by the bundled claude CLI on Windows) would
+    blow up the SSE connection with a UnicodeDecodeError. The stream
+    now uses ``errors="replace"`` so bad bytes render as the
+    Unicode replacement char without breaking the connection.
+    """
+    proj = tmp_path / "alpha"
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        '[project]\nname = "alpha"\nquestion = "q"\nmode = "exploratory"\n'
+        'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    # Write three lines, the middle one containing cp1252 byte 0x97
+    # (em-dash) which is invalid as UTF-8.
+    log_bytes = b"line1\nbefore\x97after\nline3\n"
+    (exp_dir / "run.log").write_bytes(log_bytes)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    with client.stream(
+        "GET", "/api/projects/alpha/runs/exp-001/stream"
+    ) as r:
+        assert r.status_code == 200
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+
+    # Both healthy lines came through and the bad line is rendered
+    # with the Unicode replacement char rather than killing the SSE
+    # response with a 500.
+    assert "data: line1" in body
+    assert "data: line3" in body
+    assert "event: status" in body
+    assert '"completed"' in body
+
+
 def test_stream_includes_new_lines_then_completes(stream_client_running):
     client, proj = stream_client_running
     log_path = proj / "experiments" / "exp-001" / "run.log"
