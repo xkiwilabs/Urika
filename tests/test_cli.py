@@ -1302,9 +1302,14 @@ class TestLogsCommand:
     def test_logs_no_experiments(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
+        """Post-v0.3.2 (commit d908f1fb), ``urika logs`` returns
+        exit 0 with a friendly message when no experiments exist
+        rather than erroring — easier for shell pipelines and the
+        smoke harness. Pre-v0.3.2 this asserted a non-zero exit.
+        """
         _create_project(runner, urika_env)
         result = runner.invoke(cli, ["logs", "test-proj"], env=urika_env)
-        assert result.exit_code != 0
+        assert result.exit_code == 0
         assert "No experiments" in result.output
 
     def test_logs_empty_runs(
