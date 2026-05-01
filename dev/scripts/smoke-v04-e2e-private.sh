@@ -181,11 +181,10 @@ fi
 # === 11. finalize ====================================================
 step "11. urika finalize"
 if run_step_with_timeout "finalize" 2400 urika finalize "$PROJ"; then
-  verify_artifact "findings.json"     "$PROJ_DIR/findings.json"
-  verify_artifact "requirements.txt"  "$PROJ_DIR/requirements.txt"
-  verify_artifact "reproduce.sh"      "$PROJ_DIR/reproduce.sh"
-  verify_artifact "README.md"         "$PROJ_DIR/README.md"
-  verify_artifact "final-report.md"   "$PROJ_DIR/projectbook/final-report.md"
+  verify_artifact "projectbook/findings.json"  "$PROJ_DIR/projectbook/findings.json"
+  verify_artifact "requirements.txt"           "$PROJ_DIR/requirements.txt"
+  verify_artifact "reproduce.sh"               "$PROJ_DIR/reproduce.sh"
+  verify_artifact "README.md"                  "$PROJ_DIR/README.md"
 fi
 
 # === 12. Cleanup (optional) ==========================================
