@@ -126,9 +126,14 @@ else
 fi
 
 # === 9. urika report =================================================
+# `urika report` (project-level) writes key-findings.md and
+# results-summary.md to projectbook/. The agent-written narrative.md
+# is produced by the orchestrator's post-criteria finalize sequence
+# during `urika run`, not by `urika report` itself.
 step "9. urika report (project-level)"
 if run_step_with_timeout "report" 600 urika report "$PROJ"; then
-  verify_artifact "projectbook/narrative.md" "$PROJ_DIR/projectbook/narrative.md"
+  verify_artifact "projectbook/key-findings.md" "$PROJ_DIR/projectbook/key-findings.md"
+  verify_artifact "projectbook/results-summary.md" "$PROJ_DIR/projectbook/results-summary.md"
 fi
 
 # === 10. urika present (project-level) ===============================
@@ -136,7 +141,8 @@ step "10. urika present --experiment project"
 if run_step_with_timeout "present project" 900 \
      urika present "$PROJ" --experiment project
 then
-  verify_artifact "final-presentation dir" "$PROJ_DIR/projectbook/final-presentation"
+  verify_artifact "presentation dir" "$PROJ_DIR/projectbook/presentation"
+  verify_artifact "presentation index.html" "$PROJ_DIR/projectbook/presentation/index.html"
 fi
 
 # === 11. urika finalize ==============================================

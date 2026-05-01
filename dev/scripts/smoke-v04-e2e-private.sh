@@ -165,7 +165,8 @@ fi
 # === 9. report =======================================================
 step "9. urika report"
 if run_step_with_timeout "report" 1200 urika report "$PROJ"; then
-  verify_artifact "projectbook/narrative.md" "$PROJ_DIR/projectbook/narrative.md"
+  verify_artifact "projectbook/key-findings.md" "$PROJ_DIR/projectbook/key-findings.md"
+  verify_artifact "projectbook/results-summary.md" "$PROJ_DIR/projectbook/results-summary.md"
 fi
 
 # === 10. present =====================================================
@@ -173,7 +174,8 @@ step "10. urika present --experiment project"
 if run_step_with_timeout "present project" 1200 \
      urika present "$PROJ" --experiment project
 then
-  verify_artifact "final-presentation dir" "$PROJ_DIR/projectbook/final-presentation"
+  verify_artifact "presentation dir" "$PROJ_DIR/projectbook/presentation"
+  verify_artifact "presentation index.html" "$PROJ_DIR/projectbook/presentation/index.html"
 fi
 
 # === 11. finalize ====================================================

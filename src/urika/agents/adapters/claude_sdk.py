@@ -268,11 +268,11 @@ class ClaudeSDKRunner(AgentRunner):
             # Tolerate the system claude CLI v2.1.124+ streaming-mode
             # trailing exit-1 shutdown regression — see the matching
             # branch in the generic ``Exception`` handler below for
-            # rationale. Same dual-trigger logic: accept either a
-            # ResultMessage (num_turns > 0) OR streamed content
-            # (text_parts / messages) as success evidence.
+            # rationale. Same triple-trigger logic: any of
+            # ResultMessage / streamed content / is_error-from-max-turns
+            # counts as "agent did work; trailing exit-1 is benign".
             got_content = bool(text_parts) or bool(messages)
-            if (num_turns > 0 or got_content) and not is_error:
+            if num_turns > 0 or got_content:
                 logger.debug(
                     "Tolerating trailing CLI ProcessError after successful "
                     "stream (turns=%d, model=%s): %s",
@@ -341,18 +341,28 @@ class ClaudeSDKRunner(AgentRunner):
             # ResultMessage (``is_error=False``) before the trailing
             # error, treat the run as successful and log the shutdown
             # artifact at debug level.
-            # The system claude CLI v2.1.124+ trailing-exit-1 can fire
-            # at two different points in the message stream:
-            #   1. After the final ResultMessage (num_turns > 0).
+            # The system claude CLI v2.1.124+ trailing-exit-1 fires at
+            # several points in the message stream:
+            #   1. After the final ResultMessage (num_turns > 0,
+            #      is_error=False).
             #   2. After the last AssistantMessage but BEFORE the
             #      ResultMessage (text_parts populated, num_turns == 0).
-            # Both manifest the same way in user-visible behaviour: the
-            # agent's content streamed, suggestions/files were
-            # persisted, but the SDK raises post-stream. Tolerate both.
+            #   3. After a ResultMessage with ``is_error=True`` from
+            #      ``max_turns`` exhaustion — the agent's tool calls
+            #      already wrote real files (methods, narratives,
+            #      figures) before the limit was hit. The trailing
+            #      exit-1 in this case still represents a CLI shutdown
+            #      bug, NOT the cause of the run failure.
+            # All three share the same signature — the SDK wraps the
+            # subprocess's non-zero exit as ``Exception("Command failed
+            # with exit code N")`` AFTER content has streamed. Treat
+            # all three as success-with-content. Genuine API/config
+            # errors raise different exception strings (auth, billing,
+            # rate-limit) that don't match this signature, so they
+            # still propagate as failures via the path below.
             got_content = bool(text_parts) or bool(messages)
             trailing_exit_after_success = (
                 (num_turns > 0 or got_content)
-                and not is_error
                 and "Command failed with exit code" in str(exc)
             )
             if trailing_exit_after_success:

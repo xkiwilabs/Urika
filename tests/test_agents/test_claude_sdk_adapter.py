@@ -422,22 +422,35 @@ class TestTrailingExitTolerance:
         assert "credit balance" in result.error.lower() or "billing" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_trailing_exit_after_is_error_result_still_fails(
+    async def test_trailing_exit_after_is_error_max_turns_is_tolerated(
         self, read_only_config: AgentConfig, monkeypatch
     ) -> None:
-        """Counter-test: if the ResultMessage itself is_error=True
-        (the agent reported an error before exit), don't paper over
-        it with the trailing-exit tolerance.
+        """Regression: when the agent hits ``max_turns`` it emits a
+        ResultMessage with ``is_error=True`` (the SDK's standard
+        signal), and the bundled CLI then exits 1 in streaming mode
+        as the same trailing-exit-1 we tolerate elsewhere. The
+        agent's tool calls during those turns already wrote real
+        files — the trailing exit is still a CLI shutdown bug, not
+        the cause of run failure. Marking the result as failure here
+        loses the caller's ability to use what the agent produced
+        (observed in the v0.4 E2E open-mode finalize step where the
+        Finalizer wrote 50+ files then hit max_turns + trailing
+        exit-1).
+
+        Genuine errors (auth, billing, rate-limit) raise different
+        exception strings and still surface as failures via the
+        post-tolerance branch — covered by
+        ``test_exit_without_result_message_still_fails``.
         """
         read_only_config.model = "claude-haiku-4-5"
         read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
 
         async def _fake_query(*_args, **_kwargs):
-            yield _FakeAssistantMessage("partial")
+            yield _FakeAssistantMessage("partial work product")
             yield _FakeResultMessage(
                 is_error=True,
-                num_turns=1,
-                result="agent reported an error",
+                num_turns=15,
+                result="max_turns exceeded",
             )
             raise Exception("Command failed with exit code 1 (exit code: 1)")
 
@@ -459,9 +472,12 @@ class TestTrailingExitTolerance:
         runner = ClaudeSDKRunner()
         result = await runner.run(read_only_config, "hello")
 
-        # is_error=True means the agent itself reported failure;
-        # tolerance must NOT flip this to success.
-        assert result.success is False
+        # Tolerated: the trailing exit-1 supersedes is_error=True.
+        # Caller gets the agent's text content and num_turns to work
+        # with downstream.
+        assert result.success is True
+        assert "partial work product" in result.text_output
+        assert result.num_turns == 15
 
     def test_sdk_logger_filter_drops_fatal_message_reader_line(self) -> None:
         """The SDK's own ``logger.error('Fatal error in message reader: ...')``
