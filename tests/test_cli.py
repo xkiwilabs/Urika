@@ -30,6 +30,81 @@ def urika_env(tmp_path: Path) -> dict[str, str]:
 
 
 class TestNewCommand:
+    def test_no_agent_spawn_under_cli_runner(
+        self, runner: CliRunner, urika_env: dict[str, str], monkeypatch
+    ) -> None:
+        """Regression: ``urika new`` must NOT spawn the project-builder
+        LLM agent loop when stdin is not a TTY (CliRunner, CI, piped
+        scripts). Pre-fix every test in this class silently invoked
+        the live Anthropic API and burned credits until pytest's
+        timeout — or beyond, when the orphan ``claude`` subprocess
+        outlived pytest itself.
+        """
+        from urika.agents import runner as runner_module
+
+        live_calls: list[tuple] = []
+
+        def _explode_runner(*_args, **_kwargs):
+            class _Boom:
+                async def run(self, *a, **kw):
+                    live_calls.append((a, kw))
+                    raise AssertionError(
+                        "project-builder agent must not run under non-TTY stdin"
+                    )
+
+            return _Boom()
+
+        monkeypatch.setattr(runner_module, "get_runner", _explode_runner)
+
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "no-agent-proj",
+                "-q",
+                "Does X?",
+                "-m",
+                "exploratory",
+            ],
+            env=urika_env,
+        )
+        assert result.exit_code == 0, result.output
+        assert live_calls == [], (
+            "live agent was invoked despite non-TTY stdin"
+        )
+
+    def test_no_agent_spawn_with_env_opt_out(
+        self, runner: CliRunner, urika_env: dict[str, str], monkeypatch
+    ) -> None:
+        """``URIKA_NO_BUILDER_AGENT=1`` skips the builder loop even
+        when stdin is a TTY (scripted use, CI, automation)."""
+        from urika.agents import runner as runner_module
+
+        def _explode_runner(*_args, **_kwargs):
+            class _Boom:
+                async def run(self, *a, **kw):
+                    raise AssertionError(
+                        "URIKA_NO_BUILDER_AGENT=1 must skip the agent loop"
+                    )
+
+            return _Boom()
+
+        monkeypatch.setattr(runner_module, "get_runner", _explode_runner)
+        env = {**urika_env, "URIKA_NO_BUILDER_AGENT": "1"}
+        result = runner.invoke(
+            cli,
+            [
+                "new",
+                "no-agent-env",
+                "-q",
+                "Does X?",
+                "-m",
+                "exploratory",
+            ],
+            env=env,
+        )
+        assert result.exit_code == 0, result.output
+
     def test_creates_project(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:

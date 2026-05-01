@@ -537,23 +537,48 @@ def new(
                 print_error(f"Could not ingest: {exc}")
 
     # --- Interactive agent loop (after knowledge is available) ---
-    print_agent("project_builder")
-    try:
-        _run_builder_agent_loop(
-            builder,
-            scan_result,
-            data_summary,
-            description or "",
-            question,
-            extra_profiles=extra_profiles if data_path else None,
-        )
-    except Exception as exc:
-        print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
+    # The loop asks clarifying questions and waits for user input. It
+    # has no value — and no possible answer source — when stdin is not
+    # a TTY (CliRunner tests, ``urika new ... < /dev/null``, CI
+    # scripts). Pre-v0.4.0 this guard was missing, so every
+    # CliRunner-based unit test of ``urika new`` silently spawned a
+    # real Anthropic API agent loop and burned credits until something
+    # killed it. Also honour ``URIKA_NO_BUILDER_AGENT=1`` as an
+    # explicit opt-out for non-CliRunner scripted callers.
+    import sys as _sys
+
+    _no_builder_env = bool(os.environ.get("URIKA_NO_BUILDER_AGENT"))
+    _stdin_is_tty = bool(getattr(_sys.stdin, "isatty", lambda: False)())
+    if not _no_builder_env and _stdin_is_tty:
+        print_agent("project_builder")
+        try:
+            _run_builder_agent_loop(
+                builder,
+                scan_result,
+                data_summary,
+                description or "",
+                question,
+                extra_profiles=extra_profiles if data_path else None,
+            )
+        except Exception as exc:
+            print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
+    elif _no_builder_env:
+        click.echo("  Skipping project-builder agent (URIKA_NO_BUILDER_AGENT set).")
 
     registry = ProjectRegistry()
     registry.register(name, project_dir)
 
     print_success(f"Created project '{name}' at {project_dir}")
+
+    # The post-creation "offer to run an experiment" block prompts via
+    # ``_prompt_numbered`` whose default is "Run one experiment", which
+    # under non-TTY stdin (CliRunner, CI) silently dispatches to
+    # ``urika run`` and spawns the orchestrator's planning_agent +
+    # task_agent against the live API. Skip the entire block when
+    # there's nobody to answer the prompt OR when the caller opted
+    # out via env. Same guards as the project-builder loop above.
+    if _no_builder_env or not _stdin_is_tty:
+        return
 
     # Offer to run the first planned experiment
     import json
