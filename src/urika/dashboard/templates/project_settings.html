@@ -151,9 +151,23 @@
     <div class="tab-panel" x-show="active === 'models'" x-cloak>
       {# Reset-to-recommended-defaults action. Sits OUTSIDE the main
          settings form because it has its own POST endpoint and writes
-         back the whole [runtime.models] block atomically.  HTMX swaps
-         the result message in-place; no page reload needed. #}
-      <div class="form-row" x-data="{ resetMsg: '', resetting: false }">
+         back the whole [runtime.models] block atomically. The button
+         auto-reloads the page on success so the per-agent grid below
+         re-fetches from disk; the success banner is restored from
+         the query string after the reload. #}
+      <div class="form-row" x-data="{
+             resetMsg: (() => {
+               const p = new URLSearchParams(window.location.search);
+               if (p.has('reset_applied')) {
+                 return 'Reset applied: reasoning agents on ' + decodeURIComponent(p.get('reset_applied')) + ', execution agents on claude-sonnet-4-5. Per-agent assignments below have been reloaded from disk.';
+               }
+               if (p.has('reset_cleared')) {
+                 return 'Reset cleared per-agent overrides. Default model is already at the cheaper tier — no split applied.';
+               }
+               return '';
+             })(),
+             resetting: false,
+           }">
         <label>Recommended defaults</label>
         <div>
           <button type="button"
@@ -164,10 +178,14 @@
                     fetch('/api/projects/{{ project.name }}/settings/models/reset', { method: 'POST' })
                       .then(r => r.json())
                       .then(j => {
-                        resetting = false;
-                        resetMsg = j.split_applied
-                          ? 'Reset applied: reasoning agents on ' + j.default_model + ', execution agents on claude-sonnet-4-5. Reload the page to see the new assignments.'
-                          : 'Reset cleared per-agent overrides. Default is ' + (j.default_model || '(unset)') + ' — split not applied (already at the cheaper tier).';
+                        // Auto-reload so the per-agent grid below re-fetches
+                        // from disk. Without this the user would see the
+                        // success message but the dropdowns would still show
+                        // stale values from the initial page render.
+                        const flag = j.split_applied
+                          ? ('reset_applied=' + encodeURIComponent(j.default_model || ''))
+                          : 'reset_cleared=1';
+                        window.location.search = '?tab=models&' + flag;
                       })
                       .catch(e => { resetting = false; resetMsg = 'Reset failed: ' + e; });
                   }">

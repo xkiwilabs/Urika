@@ -302,7 +302,20 @@
        (read-only text vs UI-category select) but the visual rhythm
        stays consistent across modes. #}
     <div class="tab-panel" x-show="active === 'models'" x-cloak
-         x-data="{ mode: 'open', resetMsg: '', resetting: false }">
+         x-data="{
+           mode: 'open',
+           resetMsg: (() => {
+             const p = new URLSearchParams(window.location.search);
+             if (p.has('reset_applied')) {
+               return 'Reset applied. Split is now active in: ' + decodeURIComponent(p.get('reset_applied')) + '. Per-agent assignments below have been reloaded from disk.';
+             }
+             if (p.has('reset_cleared')) {
+               return 'Reset cleared per-agent overrides. No mode required a split (every default is already at the cheaper tier).';
+             }
+             return '';
+           })(),
+           resetting: false,
+         }">
       {# Reset-to-recommended-defaults across every configured mode. #}
       <div class="form-row">
         <label>Recommended defaults</label>
@@ -315,10 +328,15 @@
                     fetch('/api/settings/models/reset', { method: 'POST' })
                       .then(r => r.json())
                       .then(j => {
-                        resetting = false;
-                        resetMsg = (j.split_applied_to && j.split_applied_to.length)
-                          ? 'Reset applied. Split is now active in: ' + j.split_applied_to.join(', ') + '. Reload the page to see the new assignments.'
-                          : 'Reset cleared per-agent overrides. No mode required a split (every default is already at the cheaper tier).';
+                        // Auto-reload so each mode's per-agent grid below
+                        // re-fetches from disk. Without this the user would
+                        // see the success message but the dropdowns would
+                        // still show stale values from the initial render.
+                        const modes = (j.split_applied_to || []).join(',');
+                        const flag = modes
+                          ? ('reset_applied=' + encodeURIComponent(modes))
+                          : 'reset_cleared=1';
+                        window.location.search = '?tab=models&' + flag;
                       })
                       .catch(e => { resetting = false; resetMsg = 'Reset failed: ' + e; });
                   }">
