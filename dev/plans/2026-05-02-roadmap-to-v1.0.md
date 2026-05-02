@@ -142,13 +142,35 @@ to a user-configured remote. Scope is **backup**, not
 collaboration — no OAuth, no audit log, no PR flows. The thicker
 "Connect GitHub" experience is a v1.1+ surface.
 
+**Important: Urika never talks to the GitHub API.** The user creates
+the remote repository manually on GitHub (or via the `gh` CLI / web
+UI / GitHub Desktop / whatever), copies the URL, and hands that
+URL to Urika. Urika is purely a `git` shell-out wrapper from that
+point forward — `git init`, `git remote add`, `git push`. The user's
+existing `git` authentication (HTTPS+PAT in OS keyring, SSH keys,
+gh-stored creds — whatever already makes `git push` work on the
+machine) handles authentication.
+
+This is a deliberate scope choice:
+- Zero auth surface for Urika to manage. We never see, ask for, or
+  store GitHub credentials.
+- Works against any git remote — public/private GitHub, GitHub
+  Enterprise, GitLab, Bitbucket, self-hosted Gitea — because we
+  don't know it's GitHub. The `urika github` namespace is a UX
+  nicety; the implementation is provider-agnostic.
+- Public-repo creation requires explicit human intent — making a
+  public repo is irreversible if you'd accidentally automate it on
+  a project with sensitive data.
+
 **Ships:**
 
-1. **`urika github init <project>` / `urika github remote add <project> <url>`**
-   — wraps `git init` (if needed) + `git remote add origin <url>`.
-   Initialises `.gitignore` with sensible defaults
-   (large-binary artifacts, `.env`-style secrets, `__pycache__`).
-   ~1 day.
+1. **`urika github init <project> --remote <url>`** — wraps
+   `git init` (if needed) + `git remote add origin <url>`.
+   Initialises `.gitignore` with sensible defaults (`.urika/`
+   internal state, `.lock` files, `__pycache__`, large-binary
+   artifacts). Pre-condition: the user has already created the
+   empty remote repo on GitHub (or wherever) and has a working
+   URL. ~1 day.
 2. **`urika github push <project>` / `urika github status <project>` /
    `urika github pull <project>`** — manual push wraps
    `git add -A && git commit -m "<auto-message>" && git push`.
@@ -203,27 +225,33 @@ test project.
 
 ---
 
-## v0.9.0 — UX polish (target: ~1 week, week 7)
+## v0.9.0 — accessibility + i18n stubs (target: ~3 days, week 6.5)
 
-**Focus:** Last release before feature freeze. Dashboard works
-everywhere, accessibility audit clean, the system feels finished.
+**Focus:** Last release before feature freeze. The system is
+desktop-finished; mobile responsiveness is *not* a 1.0 goal (the
+mobile use case is "check on a long-running run while away from
+my desk", which is already covered by Slack/Telegram
+notifications shipped in v0.3).
 
 **Ships:**
 
-1. **Mobile-responsive dashboard** — works on iPhone Safari and
-   Android Chrome down to ~360px width. Existing pages adapt;
-   the tab-based settings UI collapses to an accordion below
-   ~600px. ~2 days.
-2. **Accessibility pass** — keyboard navigation through every
+1. **Accessibility pass** — keyboard navigation through every
    form, focus states, ARIA labels on icon-only buttons,
    colour-contrast audit of light + dark themes. ~2 days.
-3. **i18n string-extraction stubs** — extract user-facing strings
+2. **i18n string-extraction stubs** — extract user-facing strings
    into `urika/i18n/en.toml` so future translations are
    mechanical. No actual translations shipped. ~1 day.
 
-**Cut criterion:** Dashboard works on a phone (functional, not
-just rendered). axe-core / WAVE accessibility audit returns zero
-P0/P1 issues. Every user-facing CLI string is in `en.toml`.
+**Cut criterion:** axe-core / WAVE accessibility audit returns
+zero P0/P1 issues. Every user-facing CLI + dashboard string is in
+`en.toml`.
+
+**Explicitly NOT in v1.0:** mobile-responsive dashboard. The phone
+use case is the notification (Slack/Telegram inline-keyboard
+buttons for pause/stop/resume — already shipped in v0.3). If real
+users at v1.0 ask for in-browser mobile experience, it's a v1.1
+candidate; the right v1.1 answer might be richer notification
+actions instead of a responsive dashboard.
 
 ---
 
@@ -309,6 +337,11 @@ Documented here so they don't accidentally creep back in:
 - **Plotly / Bokeh interactive figures.** v1.1.
 - **Optuna hyperopt agent** as a new agent role. v1.1.
 - **Run replay / decision-log HTML viewer.** v1.1 if requested.
+- **Mobile-responsive dashboard.** Phone use case is covered by
+  notifications (Slack/Telegram inline buttons for pause/stop/
+  resume). v1.1 candidate only if users explicitly ask; the
+  right v1.1 answer might be richer notification actions rather
+  than a responsive dashboard.
 - **Automatic model deployment** (HF Spaces, Modal, etc.). v2 at
   earliest.
 
@@ -338,14 +371,15 @@ Week 1.5   v0.5.0    memory phases 2–4
 Week 3     v0.6.0    OpenAI adapter + project templates
 Week 4     v0.7.0    GitHub auto-backup
 Week 5.5   v0.8.0    PDF/LaTeX/Jupyter export + model cards
-Week 7     v0.9.0    mobile dashboard + accessibility + i18n stubs
-Week 7.5   v1.0.0rc1 feature freeze + API audit
-Week 7.8   v1.0.0rc2 RC feedback fixes only
-Week 8     v1.0.0    OFFICIAL RELEASE 🎉
+Week 6.5   v0.9.0    accessibility + i18n stubs
+Week 7     v1.0.0rc1 feature freeze + API audit
+Week 7.3   v1.0.0rc2 RC feedback fixes only
+Week 7.5   v1.0.0    OFFICIAL RELEASE 🎉
 ```
 
-**Total: ~34 dev-days over 8 weeks** (~4–5 dev-days per week
-sustained).
+**Total: ~32 dev-days over ~7.5 weeks** (~4–5 dev-days per week
+sustained). Mobile dashboard explicitly cut — the phone use case
+is the notification, not the browser.
 
 ---
 

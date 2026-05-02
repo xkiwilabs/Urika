@@ -104,12 +104,12 @@ See `CHANGELOG.md` for the full per-fix accounting.
 | **v0.6.0** | OpenAI Agents SDK adapter + project templates | ~1.5 weeks (week 3) |
 | **v0.7.0** | GitHub auto-backup (`urika github init/push/pull`, opt-in auto-push hook on event triggers, dashboard Git tab) | ~1 week (week 4) |
 | **v0.8.0** | Output exports (PDF/LaTeX/Jupyter via Pandoc, model-card auto-generation) | ~1.5 weeks (week 5.5) |
-| **v0.9.0** | UX polish (mobile-responsive dashboard, accessibility audit, i18n string-extraction stubs) | ~1 week (week 7) |
-| **v1.0.0rc1** | Feature freeze + API audit + migration guide | ~3 days (week 7.5) |
-| **v1.0.0rc2** | RC feedback fixes only | ~3 days (week 7.8) |
-| **v1.0.0** | OFFICIAL RELEASE — API stability commitment | week 8 |
+| **v0.9.0** | Accessibility audit + i18n string-extraction stubs | ~3 days (week 6.5) |
+| **v1.0.0rc1** | Feature freeze + API audit + migration guide | ~3 days (week 7) |
+| **v1.0.0rc2** | RC feedback fixes only | ~2-3 days (week 7.3) |
+| **v1.0.0** | OFFICIAL RELEASE — API stability commitment | week 7.5 |
 
-**Total: ~34 dev-days over 8 weeks.** No `.x` stabilisation
+**Total: ~32 dev-days over ~7.5 weeks.** No `.x` stabilisation
 windows between minors — bug-fix budget is folded into the first
 1–2 days of the next minor. Cut criteria are hard — the version is
 the contract, the schedule is a guess.
@@ -122,6 +122,8 @@ the contract, the schedule is a guess.
 - **GitHub thick** — OAuth flow, "Connect GitHub" dashboard button,
   audit log, PR/issue surface. v0.7 auto-backup covers the high-
   frequency case.
+- **Mobile-responsive dashboard.** Phone use case = notifications
+  (Slack/Telegram inline buttons), already shipped in v0.3.
 - **arXiv fetcher**, **Plotly / Bokeh interactive figures**,
   **Optuna hyperopt agent**, **run replay / decision-log viewer**.
 
