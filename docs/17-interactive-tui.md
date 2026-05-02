@@ -62,7 +62,7 @@ The TUI provides tab completion for:
 A persistent status bar at the bottom displays session state in colored text:
 
 ```
-urika │ my-project │ claude-sonnet-4-20250514 │ 82K tokens · 8 calls │ ~$0.41 │ 12m 34s
+urika │ my-project │ claude-sonnet-4-5 │ 82K tokens · 8 calls │ ~$0.41 │ 12m 34s
 ```
 
 The status bar updates every 250ms and shows:
@@ -169,7 +169,7 @@ These require a project to be loaded first. Running them without a project shows
 | `/config show` | Show current configuration (project or global). |
 | `/config global` | Configure global defaults (used for new projects). |
 | `/config global show` | Show global defaults. |
-| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](18-dashboard.md) for pages, run launcher, and auth. |
+| `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](18a-dashboard-pages.md) for pages, run launcher, and auth. |
 | `/pause` | Request a pause of the running experiment. The orchestrator pauses cleanly after the current subagent finishes its turn. Writes `<project>/.urika/pause_requested` (contents: `pause`). Resume with `/run` or `/resume`. |
 | `/stop` | Request an immediate stop of the running agent or experiment. Writes `<project>/.urika/pause_requested` (contents: `stop`); the orchestrator's pause controller picks it up at the next loop boundary. Use this when you want the run to end now rather than continue to the next experiment. |
 | `/delete-experiment <exp_id>` | Move an experiment to `<project>/trash/`. Mirrors `urika experiment delete`. Prompts for confirmation. Refuses if the experiment has a `.lock` file (active run). |

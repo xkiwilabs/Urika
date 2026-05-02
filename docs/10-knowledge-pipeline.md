@@ -167,9 +167,9 @@ entry = store.get("k-001")
 
 Open a project in the dashboard and navigate to `/projects/<n>/knowledge` — the Knowledge tab shows every ingested entry as a card with title, source type, ingestion date, and a snippet of extracted content. Clicking an entry opens the full record at `/projects/<n>/knowledge/<id>`.
 
-The **+ Add knowledge** button in the top-right opens a modal with two ingest paths: drop in a file (PDF, markdown, plain text) or paste a URL. Submitting runs the same extractor pipeline as `urika knowledge add` and returns an HTMX fragment with the new entry inline — no page reload.
+The **+ Add knowledge** button in the top-right opens a modal with two ingest paths: drop in a file (PDF, markdown, plain text) or paste a URL. Submitting runs the same extractor pipeline as `urika knowledge ingest` and returns an HTMX fragment with the new entry inline — no page reload.
 
-Use the dashboard route when you want to drag-and-drop a paper from your downloads folder, or batch-ingest a few URLs without juggling shell commands. See [Dashboard](18-dashboard.md) for the full Knowledge page walkthrough.
+Use the dashboard route when you want to drag-and-drop a paper from your downloads folder, or batch-ingest a few URLs without juggling shell commands. See [Dashboard](18a-dashboard-pages.md) for the full Knowledge page walkthrough.
 
 ---
 

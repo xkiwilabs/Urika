@@ -278,7 +278,7 @@ The same builder flow is available as a form. Open `urika dashboard` (no project
 
 Submitting the modal posts to `POST /api/projects`, which runs `urika new --json --non-interactive` as a subprocess and, on success, redirects the browser to the new project's home page. Validation errors (missing data file, name collision) come back as inline messages without leaving the modal.
 
-Use the dashboard route when you'd rather fill out a form than answer interactive prompts, or when onboarding a collaborator who doesn't want to touch the CLI. See [Dashboard](18-dashboard.md) for the full modal walkthrough.
+Use the dashboard route when you'd rather fill out a form than answer interactive prompts, or when onboarding a collaborator who doesn't want to touch the CLI. See [Dashboard](18a-dashboard-pages.md) for the full modal walkthrough.
 
 ---
 

@@ -175,6 +175,21 @@
           <option value="private">private — agents use local/private endpoints only</option>
           <option value="hybrid">hybrid — data agents private, others cloud</option>
         </select>
+        {# v0.4: when private/hybrid is selected AND globals have at
+           least one configured endpoint, render a dropdown listing
+           every named endpoint so the user can pick which one to
+           use. Mirrors the CLI's endpoint-picker. The selected
+           endpoint name is posted as ``private_endpoint_name``;
+           the server resolves it. #}
+        <template x-if="(pmode === 'private' || pmode === 'hybrid') && {{ private_endpoints | tojson }}.length > 0">
+          <select name="private_endpoint_name" style="margin-left: 0.5rem;">
+            {% for ep in private_endpoints %}
+              <option value="{{ ep.name }}">
+                {{ ep.name }} ({{ ep.base_url }})
+              </option>
+            {% endfor %}
+          </select>
+        </template>
         {# Hint shown only when the user picks private/hybrid AND there
            is no globally-configured endpoint with a non-empty base_url.
            The Submit button stays clickable on purpose — the server-side

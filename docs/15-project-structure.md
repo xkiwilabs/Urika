@@ -7,11 +7,16 @@ Every Urika project follows a standard directory layout. This page documents eve
 
 ```
 my-project/
-  urika.toml                    # Project configuration
+  urika.toml                    # Project configuration (incl. [project.data_hashes] for drift detection)
   criteria.json                 # Versioned success criteria
   methods.json                  # Registry of agent-created methods
   usage.json                    # Session usage tracking (tokens, cost, duration)
+  revisions.json                # Audit trail of project edits made via `urika update`
   README.md                     # Auto-generated project README
+  reproduce.sh                  # Reproducibility script (POSIX) — written by finalize
+  reproduce.bat                 # Reproducibility script (Windows) — written by finalize
+  requirements.txt              # Pinned dependencies — written by finalize
+  findings.json                 # Structured findings — written by finalize
   data/                         # Dataset files
   experiments/                  # All experiments
     exp-001-baseline-models/    # One experiment
@@ -30,20 +35,33 @@ my-project/
     index.json                  # Knowledge entry metadata and content
     papers/                     # Convention for PDF sources
     notes/                      # Convention for text notes
+  memory/                       # Project memory (v0.4 Phase 1)
+    MEMORY.md                   # Index of structured markdown entries
+    feedback_*.md               # Feedback memory entries
+    instruction_*.md            # Instruction memory entries
+    decision_*.md               # Decision memory entries
+    .trash/                     # Trashed memory entries (preserved on `urika memory delete`)
   methods/                      # Project-level method scripts
   tools/                        # Project-specific tools (created by tool_builder)
   suggestions/                  # Project-level suggestions
     initial.json                # Initial analytical approach suggestions from project builder
     pending.json                # Queued experiment suggestions from advisor conversations
+  trash/                        # Trashed experiments (preserved on `urika experiment delete`)
   projectbook/                  # Project-level documentation
     results-summary.md          # Aggregated results across all experiments
     key-findings.md             # Important discoveries and conclusions
     progress-overview.md        # High-level progress narrative
     narrative.md                # Agent-written project narrative
+    final-report.md             # Polished final report (after `urika finalize`)
     advisor-history.json        # Persistent advisor conversation history
     advisor-context.md          # Rolling research context summary
     presentation/               # Project-level reveal.js slide deck
       index.html                # Rendered presentation
+  .urika/                       # Internal state (not user-edited)
+    sessions/                   # Orchestrator chat session history (auto-pruned at 20)
+    secrets.env                 # Per-project secret overrides (file backend, mode 0600)
+    secrets-meta.toml           # Metadata sidecar for the secrets vault
+    pause_requested             # Marker file when a turn-boundary pause is requested
 ```
 
 
@@ -51,19 +69,19 @@ my-project/
 
 ### urika.toml
 
-The project configuration file. Contains the project name, research question, mode, data paths, and optional preferences. Created by `urika new` and not modified during experiments. See [Configuration](14-configuration.md) for full details.
+The project configuration file. Contains the project name, research question, mode, data paths, and optional preferences. Created by `urika new` and not modified during experiments. See [Configuration](14a-project-config.md) for full details.
 
 ### criteria.json
 
-Versioned success criteria. The project builder sets initial criteria; the advisor agent evolves them as experiments progress. Each version is appended, preserving the full history. See [Configuration](14-configuration.md#criteriajson).
+Versioned success criteria. The project builder sets initial criteria; the advisor agent evolves them as experiments progress. Each version is appended, preserving the full history. See [Configuration](14a-project-config.md#criteriajson).
 
 ### methods.json
 
-Registry of all analytical methods created by agents. Each entry tracks the method name, description, script path, originating experiment, metrics, and status (active or superseded). See [Configuration](14-configuration.md#methodsjson).
+Registry of all analytical methods created by agents. Each entry tracks the method name, description, script path, originating experiment, metrics, and status (active or superseded). See [Configuration](14a-project-config.md#methodsjson).
 
 ### usage.json
 
-Cumulative session usage data: tokens consumed, estimated cost, duration, agent calls, and experiments run. Updated after each session. See [Configuration](14-configuration.md#usagejson).
+Cumulative session usage data: tokens consumed, estimated cost, duration, agent calls, and experiments run. Updated after each session. See [Configuration](14a-project-config.md#usagejson).
 
 ### README.md
 
@@ -90,7 +108,7 @@ Project-level directory for method scripts. Methods created by the task agent du
 
 ### tools/
 
-Project-specific tools created by the tool_builder agent. Each `.py` file must implement the `ITool` interface and export a `get_tool()` factory function. The tool registry discovers these automatically via `discover_project()`. See [Built-in Tools](12-built-in-tools.md#project-specific-tools).
+Project-specific tools created by the tool_builder agent. Each `.py` file must implement the `ITool` interface and export a `get_tool()` factory function. The tool registry discovers these automatically via `discover_project()`. See [Tools Overview](12a-tools-overview.md#project-specific-tools).
 
 ### suggestions/
 
@@ -233,4 +251,4 @@ Commands that interact with the registry:
 
 ---
 
-**Next:** [CLI Reference](16-cli-reference.md)
+**Next:** [CLI Reference](16a-cli-projects.md)

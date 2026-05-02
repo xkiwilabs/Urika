@@ -160,3 +160,23 @@ def _empty_totals() -> dict[str, Any]:
         "total_agent_calls": 0,
         "total_experiments": 0,
     }
+
+
+def per_session_cost_distribution(
+    project_dir: Path, *, last_n: int = 7
+) -> list[float]:
+    """Return the cost (USD) of the last *last_n* sessions, oldest-first.
+
+    Used by ``urika run --dry-run`` (v0.4 Track 4) to give the user a
+    rough cost estimate based on prior runs in the project. Sessions
+    with zero recorded cost are filtered out so a long history of
+    free smoke-test runs doesn't anchor the estimate at zero.
+    """
+    data = load_usage(project_dir)
+    sessions = data.get("sessions", []) or []
+    costs: list[float] = []
+    for s in sessions[-last_n:]:
+        c = float(s.get("cost_usd") or 0.0)
+        if c > 0:
+            costs.append(c)
+    return costs

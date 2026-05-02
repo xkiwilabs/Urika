@@ -130,6 +130,17 @@ def _update_repl_activity(event: str, detail: str) -> None:
         "--experiment (the dashboard's handoff)."
     ),
 )
+@click.option(
+    "--budget",
+    "budget_usd",
+    type=float,
+    default=None,
+    help=(
+        "Pause the run when accumulated cost crosses this USD amount. "
+        "Pause is at the next turn boundary; the experiment is "
+        "resumable via 'urika run --resume'. Default: no budget cap."
+    ),
+)
 def run(
     project: str,
     experiment_id: str | None,
@@ -145,6 +156,7 @@ def run(
     audience: str | None = None,
     legacy: bool = False,
     advisor_first: bool = False,
+    budget_usd: float | None = None,
 ) -> None:
     """Run an experiment using the orchestrator."""
     # TODO: When --legacy is False and TUI binary is available,
@@ -851,6 +863,7 @@ def run(
                     get_user_input=_get_user_input,
                     pause_controller=pause_ctrl,
                     audience=audience,
+                    budget_usd=budget_usd,
                 )
             )
         else:
@@ -870,6 +883,7 @@ def run(
                         get_user_input=_get_user_input,
                         pause_controller=pause_ctrl,
                         audience=audience,
+                        budget_usd=budget_usd,
                     )
                 )
 

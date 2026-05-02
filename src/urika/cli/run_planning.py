@@ -60,6 +60,39 @@ def _print_dry_run_plan(
     click.echo("  Pipeline stages (per experiment):")
     click.echo("    planning  →  task  →  evaluator  →  advisor")
     click.echo()
+
+    # v0.4: rough cost estimate based on prior sessions in this project.
+    # Useful for budgeting autonomous (--max-experiments) runs.
+    try:
+        from urika.core.usage import per_session_cost_distribution
+
+        costs = per_session_cost_distribution(project_path, last_n=7)
+        if costs:
+            costs_sorted = sorted(costs)
+            mid = costs_sorted[len(costs_sorted) // 2]
+            n_runs_planned = (
+                max_experiments
+                if max_experiments is not None
+                else 1
+            )
+            est_low = min(costs_sorted) * n_runs_planned
+            est_high = max(costs_sorted) * n_runs_planned
+            est_mid = mid * n_runs_planned
+            click.echo(
+                f"  Estimated cost: ${est_low:.2f}-${est_high:.2f} "
+                f"(median ~${est_mid:.2f}; based on "
+                f"{len(costs)} prior session(s) in this project)"
+            )
+        else:
+            click.echo(
+                "  Estimated cost: no prior runs to extrapolate from "
+                "(hint: pass --budget USD to cap spend)"
+            )
+        click.echo()
+    except Exception:
+        # Best-effort — don't let a usage.json read failure break
+        # the dry-run output.
+        pass
     click.echo("  Writable directories agents will touch:")
     click.echo(f"    {project_path / 'experiments'}/         (experiment records)")
     click.echo(

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 from urika.core.models import RunRecord
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
@@ -17,7 +20,20 @@ def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
         raw = match.group(1).strip()
         try:
             parsed = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError) as exc:
+            # Pre-v0.4 this silently `continue`d. A malformed
+            # evaluator/advisor JSON block is the single most common
+            # reason ``criteria_met`` is silently missed and the loop
+            # runs to max_turns wondering why criteria never matched.
+            # Emit at debug so verbose runs can grep for the cause
+            # without spamming normal logs.
+            preview = raw[:120].replace("\n", "\\n")
+            logger.debug(
+                "Skipping malformed JSON block: %s: %s; raw[:120]=%r",
+                type(exc).__name__,
+                exc,
+                preview,
+            )
             continue
         if isinstance(parsed, dict):
             results.append(parsed)

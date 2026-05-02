@@ -128,40 +128,23 @@ async def _generate_reports(
         except Exception as exc:
             logger.warning("Experiment narrative generation failed: %s", exc)
 
-    # Generate project-level narrative
-    if runner is not None:
-        try:
-            registry = AgentRegistry()
-            registry.discover()
-            report_role = registry.get("report_agent")
-            if report_role is not None:
-                progress("agent", "Report agent — writing project narrative")
-                config = report_role.build_config(
-                    project_dir=project_dir,
-                    experiment_id="",
-                    audience=audience,
-                )
-                result = await runner.run(
-                    config,
-                    "Write a project-level narrative report covering all experiments and the research progression.",
-                    on_message=on_message,
-                )
-                _track(result)
-                if result.success and result.text_output:
-                    content = result.text_output.strip()
-                    # Only write if the output looks like actual report content
-                    # (has markdown headings and is substantial), not agent narration
-                    if len(content) > 500 and content.count("\n#") >= 2:
-                        from urika.core.report_writer import write_versioned
-
-                        narrative_path = project_dir / "projectbook" / "narrative.md"
-                        narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                        write_versioned(narrative_path, content + "\n")
-                        progress("result", "Project narrative written")
-                    else:
-                        progress("result", "Project narrative generated")
-        except Exception as exc:
-            logger.warning("Project narrative generation failed: %s", exc)
+    # NOTE: the project-level narrative (projectbook/narrative.md) used
+    # to be regenerated here after every successful experiment. That
+    # was duplicate work — it summarised "all experiments and the
+    # research progression" from scratch on each criteria-met event,
+    # adding 10–25 minutes of cloud-LLM tail to every `urika run`.
+    # The same narrative is now produced on demand by `urika report`
+    # (cheaper prompt) and superseded at project end by
+    # `urika finalize` (which writes projectbook/final-report.md from
+    # the structured findings.json). Removed as part of v0.4.0 to
+    # cut per-experiment wall-clock and stop the smoke-harness
+    # SIGTERM-during-narrative false-positives.
+    #
+    # Agent feedback loop is unaffected — neither the planner nor the
+    # advisor reads projectbook/narrative.md. Their cross-experiment
+    # memory is methods.json + criteria.json + advisor-history.json +
+    # advisor-context.md (rolling summary refreshed per advisor call)
+    # + project memory.
 
     # Generate presentation slide deck
     if runner is not None:

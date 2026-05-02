@@ -32,3 +32,6 @@ urika-projects/
 
 # Test dataset downloads (configs and knowledge ARE tracked)
 dev/test-datasets/*/data/
+
+# Smoke harness logs (per-step output dirs)
+dev/scripts/.smoke-logs/

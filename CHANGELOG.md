@@ -5,6 +5,382 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-02
+
+First feature-complete v0.4 release. Bundles every v0.4 track
+(SecurityPolicy enforcement, multi-provider runtime abstraction,
+project memory Phase 1, experiment comparison view, dataset hash +
+drift detection, cost-aware budget, shell completion, sessions list/
+export) plus Windows hardening, sensible defaults, and per-agent
+model curation discovered during pre-release testing.
+
+### Added (post-rc2)
+
+- **Reasoning vs execution model split** — when the user picks Opus
+  as the open-mode or hybrid-mode default in `urika config`, the
+  wizard now auto-pins **reasoning agents** (`planning_agent`,
+  `advisor_agent`, `finalizer`, `project_builder`) to that Opus
+  tier and **execution agents** (`task_agent`, `evaluator`,
+  `report_agent`, `presentation_agent`, `tool_builder`,
+  `literature_agent`, `data_agent`, `project_summarizer`) to
+  `claude-sonnet-4-5`. Sonnet performs indistinguishably from Opus
+  on "execute this plan" / "format these numbers" / "apply rule to
+  metric" tasks and saves ~5× per call. Net ~50–65% cost reduction
+  per experiment with zero quality impact. Sonnet/Haiku defaults
+  skip the split entirely (already at the cheaper tier). Single
+  source of truth in new `urika.core.recommended_models`.
+- **`urika config [PROJECT] --reset-models`** — re-applies the
+  reasoning/execution split to an existing project's `urika.toml`
+  or, without `PROJECT`, to every configured mode in
+  `~/.urika/settings.toml`. Idempotent. Hybrid projects keep their
+  data-agent + tool-builder private-endpoint pin across the
+  rebuild. Designed for upgrading from pre-v0.4.0 settings files
+  or after manual drift.
+- **Dashboard "Reset to recommended defaults" button** on the
+  Models tab in both `/settings` (global) and `/projects/<n>/settings`
+  (project-scoped). New endpoints: `POST /api/settings/models/reset`
+  and `POST /api/projects/<n>/settings/models/reset`. Same shared
+  helper as the CLI flag; confirmation dialog + Alpine-driven
+  progress + inline success/failure message.
+
+### Changed (post-rc2)
+
+- **Per-experiment finalize no longer auto-writes the project-level
+  narrative.** The post-criteria-met sequence in
+  `orchestrator/loop_finalize._generate_reports` was running TWO
+  agent-written narratives back-to-back: the experiment-level
+  one (`experiments/<id>/labbook/narrative.md`, fast and
+  per-experiment) and a project-level one
+  (`projectbook/narrative.md`, summarising "all experiments and
+  the research progression"). The project-level pass added
+  10–25 minutes of cloud-LLM tail to every successful
+  experiment and is fundamentally redundant — `urika report`
+  produces the same narrative on demand with a leaner prompt,
+  and `urika finalize` produces the canonical
+  `projectbook/final-report.md` from the structured
+  `findings.json` at end-of-project. Removed the inline pass;
+  per-experiment narrative + per-experiment presentation are
+  unchanged. **Agent feedback loop is unaffected** — the planner
+  and advisor never read `projectbook/narrative.md`; their
+  cross-experiment memory is `methods.json` + `criteria.json`
+  + `advisor-history.json` + `advisor-context.md` (rolling
+  summary refreshed per advisor call) + project memory.
+- **`max_turns_per_experiment` default unified at 5** across every
+  surface (was 10). Five sites flipped (factory `settings.py`, CLI
+  fallback, TUI defaults helper, dashboard New-Experiment modal,
+  dashboard global Settings page). Cap on a stuck-loop experiment's
+  worst-case spend drops from ~$1+ to ~$0.50; well-set criteria
+  still converge in 2–3 turns. Override per experiment via
+  `urika run --max-turns N` or per project via `[preferences]
+  max_turns_per_experiment`.
+- **Dashboard New-Experiment modal max-turns input** now reads from
+  the project's `[preferences].max_turns_per_experiment` (with
+  global-default fallback) rather than hardcoding the value.
+  Editing the project-level preference now flows through to the
+  modal — single source of truth.
+
+### Fixed (post-rc2)
+
+- **Bearer-token auth for non-Anthropic private endpoints.** The
+  bundled Claude Agent SDK CLI sends the auth header based on
+  which env var it sees: `ANTHROPIC_API_KEY` → `x-api-key`,
+  `ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`.
+  api.anthropic.com expects the former; vLLM, LiteLLM, OpenRouter,
+  and most OpenAI-compatible private endpoints expect the latter
+  and 401 with "Ensure Key has 'Bearer ' prefix" otherwise. Pre-fix
+  urika set `ANTHROPIC_API_KEY` for all configured endpoints, so
+  every private-mode agent call 401-ed. Two-part fix: (a)
+  `urika.agents.config.build_agent_env_for_endpoint` now sets
+  `ANTHROPIC_AUTH_TOKEN` (and clears `ANTHROPIC_API_KEY`) for
+  non-Anthropic base URLs; (b)
+  `urika.core.compliance.scrub_oauth_env` no longer
+  unconditionally blanks `ANTHROPIC_AUTH_TOKEN` — it preserves
+  deliberately-set values (the parent-leakage protection still
+  blanks the var when absent). `CLAUDE_CODE_OAUTH_TOKEN` is still
+  unconditionally blanked (no legitimate use in a Urika subprocess).
+- **System claude CLI v2.1.124+ trailing exit-1 in streaming mode.**
+  The system-installed `claude` CLI (which urika prefers for newer
+  request schemas, e.g. `claude-opus-4-7`) exits 1 in streaming
+  bidirectional mode *after* successfully streaming the final
+  `ResultMessage`. Pre-fix, every multi-agent step in urika
+  (advisor, build-tool, plan, run, evaluate, report, present,
+  finalize) treated this as a hard failure even though the work
+  completed cleanly. The adapter now detects "we already saw a
+  clean ResultMessage" (`num_turns > 0` AND `not is_error`) and
+  returns `success=True` with the captured state. Counter-cases —
+  exit before any ResultMessage (credit-low, auth) and exit after
+  `is_error=True` — still propagate as failures with the
+  classified category. Also installs a `logging.Filter` on
+  `claude_agent_sdk._internal.query` that drops the SDK's noisy
+  `Fatal error in message reader: ...` log line when our adapter
+  has already tolerated the error. Captures the bundled CLI's
+  stderr for the first time so future post-stream errors actually
+  reach urika logs (the SDK transport hardcoded a useless
+  placeholder before).
+- **`urika new` no longer spawns live agent under non-TTY stdin.**
+  Two paths in `urika new` invoked the project-builder LLM agent
+  loop with no stdin guard: the clarifying-questions loop and the
+  post-creation "offer to run an experiment" prompt (whose
+  default-on-EOF auto-fired `urika run`). Every CliRunner-based
+  unit test of `urika new` was silently making real API calls
+  until something killed it, and any CI script running
+  `urika new --data foo.csv` without `--description` was paying
+  for an unwanted agent loop. Both paths now skip when
+  `sys.stdin.isatty()` is False or `URIKA_NO_BUILDER_AGENT=1` is
+  set. `--json` mode was already safe via its own fast path.
+- **Windows: SSE log streamers crashed on cp1252 bytes** (e.g.
+  `0x97` em-dash) emitted by the bundled claude CLI's tool-use
+  markers. All ten SSE endpoints (`run` / `evaluate` / `report` /
+  `present` / `finalize` / `summarize` / `build-tool` / `advisor`
+  / `_log` paths in `dashboard/routers/api.py`) now open log files
+  with `errors="replace"` so a stray byte renders as `?` instead
+  of tearing down the dashboard's live log view with
+  `UnicodeDecodeError`.
+- **Windows: stdout/stderr UnicodeEncodeError on box-drawing chars.**
+  Python on Windows defaults `sys.stdout` to the active console
+  code page (typically `cp1252`), which can't encode urika's
+  `╭─╮` banner / spinner / TUI glyphs. `cli/_base._ensure_utf8_streams`
+  now reconfigures both streams to UTF-8 with `errors="replace"`
+  at import time (before Click parses anything), no-op on
+  already-UTF-8 streams. Survives streams that lack
+  `reconfigure()` (older Python, exotic test wrappers).
+- **CLI smoke harness greps too aggressively.** The bare
+  `Fatal error in message reader` string is no longer a FAIL
+  trigger — the adapter already tolerates it cleanly. The harness
+  now only flags the actionable `can_use_tool callback requires`
+  streaming-mode regression marker or a Python traceback that
+  references the adapter module.
+
+### Docs (post-rc2)
+
+- **20 → 32 user-facing docs** — split six over-long pages into
+  focused sub-pages so reference material stays search-friendly
+  and reading material stays linear. `12-built-in-tools.md` →
+  `12a/12b`, `13-models-and-privacy.md` → `13a/13b`,
+  `14-configuration.md` → `14a/14b`, `16-cli-reference.md` →
+  `16a/16b/16c/16d/16e`, `18-dashboard.md` →
+  `18a/18b/18c/18d`, `19-notifications.md` → `19a/19b`. Every
+  cross-reference inside `docs/` and the top-level `README.md`
+  was rewritten to point at the right sub-page; orphaned
+  `contributing-an-adapter.md` was added to the index.
+- **Audit pass** corrected the dashboard's actual default port
+  (random free port, override with `--port`; `--auth-token`
+  documented), the `task_agent`'s actual allowed bash list
+  (`python` + `pip` + `pytest`), the dashboard settings tab counts
+  (project: 6 with Secrets, global: 5 with Secrets), the project
+  tree (added `memory/`, `.urika/sessions/`, etc.), and stripped
+  every internal "(Phase 11/13)" annotation from
+  `18a-dashboard-pages.md` that had been leaking into the public
+  docs.
+- **Windows install troubleshooting** — `01-getting-started.md`
+  now covers the `WinError 32` urika.exe file-lock and the
+  cp1252 console-encoding self-fix.
+
+### Plans
+
+- **`dev/plans/2026-05-02-prompt-bloat-and-context-budget.md`** —
+  three-layer plan for v0.4.1 covering prompt-assembly trim,
+  per-endpoint `context_window` declaration + output-token clamp,
+  and summarisation fallback. Tracks the issue surfaced by the
+  v0.4 E2E private-mode smoke (32K-context vLLM endpoint hit a
+  94K-char advisor prompt + 32K-token output-cap request).
+
+- **System claude CLI v2.1.124+ trailing exit-1 in streaming mode.**
+  The system-installed `claude` CLI (which urika prefers for newer
+  request schemas, e.g. `claude-opus-4-7`) exits 1 in streaming
+  bidirectional mode *after* successfully streaming the final
+  `ResultMessage`. Pre-fix, every multi-agent step in urika
+  (advisor, build-tool, plan, run, evaluate, report, present,
+  finalize) treated this as a hard failure even though the work
+  completed cleanly. The adapter now detects "we already saw a
+  clean ResultMessage" (`num_turns > 0` AND `not is_error`) and
+  returns `success=True` with the captured state. Counter-cases —
+  exit before any ResultMessage (credit-low, auth) and exit after
+  `is_error=True` — still propagate as failures with the
+  classified category. Also installs a `logging.Filter` on
+  `claude_agent_sdk._internal.query` that drops the SDK's noisy
+  `Fatal error in message reader: ...` log line when our adapter
+  has already tolerated the error. Captures the bundled CLI's
+  stderr for the first time so future post-stream errors actually
+  reach urika logs (the SDK transport hardcoded a useless
+  placeholder before).
+- **Windows: SSE log streamers crashed on cp1252 bytes** (e.g.
+  `0x97` em-dash) emitted by the bundled claude CLI's tool-use
+  markers. All ten SSE endpoints (`run` / `evaluate` / `report` /
+  `present` / `finalize` / `summarize` / `build-tool` / `advisor`
+  / `_log` paths in `dashboard/routers/api.py`) now open log files
+  with `errors="replace"` so a stray byte renders as `?` instead
+  of tearing down the dashboard's live log view with
+  `UnicodeDecodeError`.
+- **Windows: stdout/stderr UnicodeEncodeError on box-drawing chars.**
+  Python on Windows defaults `sys.stdout` to the active console
+  code page (typically `cp1252`), which can't encode urika's
+  `╭─╮` banner / spinner / TUI glyphs. `cli/_base._ensure_utf8_streams`
+  now reconfigures both streams to UTF-8 with `errors="replace"`
+  at import time (before Click parses anything), no-op on
+  already-UTF-8 streams. Survives streams that lack
+  `reconfigure()` (older Python, exotic test wrappers).
+- **CLI smoke harness greps too aggressively.** The bare
+  `Fatal error in message reader` string is no longer a FAIL
+  trigger — the adapter already tolerates it cleanly. The harness
+  now only flags the actionable `can_use_tool callback requires`
+  streaming-mode regression marker or a Python traceback that
+  references the adapter module.
+
+## [0.4.0rc2] - 2026-04-30
+
+Second v0.4 release candidate. Closes the remaining v0.4 tracks
+(2, 5, and the rest of 4) on top of rc1.
+
+### Added
+
+- **Project memory Phase 1** (Track 2). New
+  `<project>/memory/MEMORY.md`-indexed directory of structured
+  markdown entries (user / feedback / instruction / decision /
+  reference). `urika.core.project_memory` provides
+  `load_project_memory(project_dir)` for system-prompt injection,
+  `save_entry(...)` / `delete_entry(...)` for writes, and
+  `parse_and_persist_memory_markers(project_dir, agent_text)` —
+  strips `<memory type="...">...</memory>` markers from agent
+  output and persists each as an entry. Per-project disable via
+  `[memory] auto_capture = false` in `urika.toml`. Soft cap 5 KB
+  (warns), hard cap 20 KB (truncates with marker). Phase 2-4
+  (advisor/planner-emit prompts, curator agent, dashboard page,
+  TUI slash command) defer to v0.5.
+- **`urika memory list / show / add / delete`** CLI group as the
+  manual surface over Phase 1.
+- **Planner reads context summary + project memory** at
+  `build_config` time. Pre-v0.4 only the advisor saw the rolling
+  context summary; the planner had to rediscover prior decisions
+  from `advisor-history.json` on its own.
+- **`urika sessions list / export`** (Track 2 cheap win). Export
+  an `OrchestratorSession` to Markdown (default — sharing) or JSON
+  (full fidelity). Both stdout and `-o file`.
+- **Experiment comparison view** (Track 4). New
+  `GET /projects/<n>/compare?experiments=exp-001,exp-002` route
+  renders a side-by-side metric table. Pre-v0.4 users had to open
+  separate experiment-detail tabs and compare in their head —
+  table-stakes for the experiment-tracking competitive set.
+- **Cost-aware budget** (Track 4). `urika run --budget USD` flag
+  pauses the experiment at the next turn boundary when accumulated
+  cost crosses the budget; resumable. `urika run --dry-run` adds
+  a cost estimate row using the project's prior session costs
+  (last 7 non-zero, range + median × planned experiments).
+
+### Fixed
+
+- **TUI `_TuiWriter._post_line` prefers public `asyncio` API**
+  over Textual's private `app._loop` / `app._thread_id` for the
+  same-thread check. Fallback to private-attribute path is
+  preserved for older Textual versions. Pre-v0.4 a Textual upgrade
+  that renamed the private attrs would silently break thread-safe
+  routing.
+- **TUI `SystemExit` handler in `agent_worker.py` only exits the
+  app for the explicit `/quit` command.** Pre-v0.4 every
+  `SystemExit` (e.g. `urika config secret` wizards calling
+  `raise SystemExit(0)` on user-cancel) silently quit the TUI
+  behind the user's back.
+
+## [0.4.0rc1] - 2026-04-30
+
+First v0.4 release candidate. v0.4.0 is positioned as the **first
+feature-complete Urika system, stable enough for extensive user
+testing**. Strip GitHub integration out (deferred to v0.5) and Urika
+is still a complete research-analysis platform.
+
+This RC1 closes Tracks 1 (carry-overs from v0.3.2 deferrals),
+3 (multi-provider thin abstraction), and most of 4 (user-facing
+features: shell completion, dataset hash + drift detection).
+Tracks 2 (project memory Phase 1), 5 (TUI polish), and the rest of
+4 (experiment comparison view, cost-aware budget) follow in
+subsequent RCs.
+
+### Added
+
+- **SecurityPolicy enforcement via SDK `can_use_tool` callback.**
+  Pre-v0.4 the `writable_dirs` / `readable_dirs` /
+  `allowed_bash_prefixes` / `blocked_bash_patterns` fields on
+  every agent role were advisory only. v0.4 wires them into a real
+  `can_use_tool` coroutine the SDK invokes before each tool
+  dispatch. Bash commands shlex-parsed; shell metacharacters
+  (`;`, `&&`, `||`, `|`, backticks, `$(`, `>`, `>>`, `<`, `&`,
+  newline) rejected outright. Path operations canonicalised
+  (collapse `..`, follow symlinks). Closes the orchestrator
+  Bash bypass (`urika ; rm -rf /` was matching the prefix string).
+- **Stop endpoints for non-run operations.** New `POST` routes:
+  `/projects/<n>/advisor/stop`, `/finalize/stop`,
+  `/summarize/stop`, `/build-tool/stop`, and
+  `/runs/<exp>/present/stop`. All use the same SIGTERM-to-process-
+  group pattern as `/runs/<exp>/stop`. Pre-v0.4 long-running
+  advisor / finalize / build-tool / present invocations had no
+  kill switch from the dashboard.
+- **Multi-provider thin abstraction.** `AgentRunner` ABC gains
+  `required_env` and `supported_tools` classmethods. New
+  `urika.runners` entry-point group lets external packages
+  register adapters (`OpenAIRunner`, `GoogleADKRunner`, etc.)
+  without modifying core. New `list_backends()` enumerates every
+  resolvable name. New `docs/contributing-an-adapter.md` walks
+  contributors through the seam. End-to-end second adapter is
+  deferred to v0.5.
+- **Dataset hash + drift detection.** `urika new` records SHA-256
+  of every data file under `[project.data_hashes]` in
+  `urika.toml`. `urika status` re-hashes registered files and
+  surfaces drift with a yellow warning. `--json` mode includes
+  `data_drift`. Closes a long-standing reproducibility gap:
+  pre-v0.4 there was no record at all, so editing a data file
+  silently between experiments was undetectable.
+- **`urika completion install / script / uninstall`.** Native
+  bash / zsh / fish completion via Click 8's built-in generator.
+  Auto-detects shell from `$SHELL`. Writes scripts to
+  `~/.urika/completions/urika.<shell>`.
+- **`OrchestratorSession` is now a real source of truth** in
+  documented form (was already shipping in v0.3.2 but undocumented
+  in CHANGELOG until this entry).
+
+### Fixed
+
+- **Cross-interface default consistency** — `audience` (`"standard"`
+  everywhere — was 4 sites disagreeing on novice/standard/expert),
+  `max_turns_per_experiment` (10 everywhere — was CLI=5, REPL=5,
+  dashboard=10).
+- **`KNOWN_AGENTS` (dashboard pages.py + api.py) adds
+  `project_summarizer`** so the per-agent model-override grid
+  renders all 12 agents instead of 11.
+- **Email password input in CLI notifications wizard now masks**
+  via `click.prompt(hide_input=True)`. Pre-v0.4 echoed plaintext
+  while the dashboard's matching field always masked.
+- **`VALID_SESSION_STATUSES` includes `pending` and `starting`.**
+  Pre-v0.4 the set omitted these even though `experiment.json`
+  and `progress.json` both used `pending` as the seed status.
+- **Surface swallowed exceptions across orchestrator + cli +
+  vault** — `loop_criteria.py` `pause_session` / `fail_session`,
+  `loop.py` `resume_session` / `start_session`, `parsing.py`
+  malformed JSON blocks (was a silent `continue` — most common
+  reason `criteria_met` was missed), `cli/_base.py` `UrikaError`
+  `__cause__` chain, `core/vault.py` `_read_env_file` and
+  `_read_meta` failures.
+- **`default_max_turns` upper bound** (200) in dashboard form
+  validation. Pre-v0.4 the field accepted any positive int, so
+  a paste of 999999 let every experiment run effectively forever.
+- **`_toml_value` quotes inline-table keys** that aren't valid TOML
+  bare keys (file paths contain `/` and `.`). Required for
+  `[project.data_hashes]` to round-trip.
+
+### Changed
+
+- **`SecurityPolicy` docstring** updated to drop the "ADVISORY ONLY"
+  warning (now actually enforced at runtime).
+- **`task_agent.allowed_bash_prefixes`** gains `"pytest"` (was on
+  `tool_builder` only). Required so ad-hoc pytest invocations from
+  task_agent don't get denied under the new enforcement.
+- **`OrchestratorChat._build_config` allowlist** updated from
+  `["urika ", "CLAUDECODE= urika "]` to `["urika"]` — the
+  pre-v0.4 string-prefix form was broken under shlex tokenisation
+  AND was the bypass that made `urika ; rm -rf /` match.
+- **`get_runner()` factory** now opens via entry points; raises
+  with an actionable message + link to
+  `docs/contributing-an-adapter.md` for unknown backends.
+
 ## [0.3.2] - 2026-04-30
 
 Hardening release. v0.3.0/0.3.1 shipped four families of bugs that share one

@@ -1,0 +1,94 @@
+{% extends "_base.html" %}
+
+{% block title %}Compare experiments · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Compare experiments{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}/experiments">Experiments</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Compare</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+<style>
+  .compare-form { margin-bottom: 1rem; }
+  .compare-form label { margin-right: 1rem; }
+  table.compare-grid { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  table.compare-grid th, table.compare-grid td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-subtle, #ddd);
+    text-align: left;
+  }
+  table.compare-grid th { background: var(--surface-soft, #f5f5f5); }
+  table.compare-grid td.metric-name { font-weight: 600; }
+  table.compare-grid td.numeric { font-variant-numeric: tabular-nums; }
+  table.compare-grid td.empty { color: var(--text-muted, #888); font-style: italic; }
+  .summary-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .summary-row .pill { padding: 0.25rem 0.5rem; background: var(--surface-soft, #f5f5f5); border-radius: 4px; font-size: 0.875rem; }
+</style>
+
+<form method="get" action="" class="compare-form">
+  <p>Select experiments to compare side-by-side:</p>
+  {% for exp in available %}
+    <label>
+      <input type="checkbox" name="experiments" value="{{ exp.experiment_id }}"
+        {% if exp.experiment_id in selected_ids %}checked{% endif %}>
+      <code>{{ exp.experiment_id }}</code> — {{ exp.name }}
+    </label>
+  {% endfor %}
+  <div style="margin-top: 0.5rem;">
+    <button type="submit" class="btn btn-primary">Compare</button>
+    <a href="/projects/{{ project.name }}/experiments" class="btn">Back to list</a>
+  </div>
+</form>
+
+{% if selected_ids %}
+<div class="summary-row">
+  {% for eid in selected_ids %}
+    <span class="pill">
+      <code>{{ eid }}</code>
+      [{{ per_exp[eid].status }}, {{ per_exp[eid].n_runs }} runs]
+      {% if per_exp[eid].method %}— {{ per_exp[eid].method }}{% endif %}
+    </span>
+  {% endfor %}
+</div>
+
+{% if metric_rows %}
+<table class="compare-grid">
+  <thead>
+    <tr>
+      <th>Metric</th>
+      {% for eid in selected_ids %}
+        <th><code>{{ eid }}</code></th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in metric_rows %}
+      <tr>
+        <td class="metric-name">{{ row.metric }}</td>
+        {% for cell in row.cells %}
+          {% if cell.value is none %}
+            <td class="empty">—</td>
+          {% else %}
+            <td class="numeric">{{ "%.4g" | format(cell.value) }}</td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No numeric metrics in the selected experiments' best runs.</p>
+{% endif %}
+{% else %}
+<p>No experiments to compare yet. Create some via <code>urika run</code> or the
+   <a href="/projects/{{ project.name }}/experiments">+ New experiment</a> button.</p>
+{% endif %}
+{% endblock %}

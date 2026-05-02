@@ -60,7 +60,7 @@ The only agent that writes and executes Python code. It takes a method plan (fro
 |----------|-------|
 | Tools | Read, Write, Bash, Glob, Grep |
 | Writable dirs | `experiments/<id>/` |
-| Allowed bash | `python`, `pip` |
+| Allowed bash | `python`, `pip`, `pytest` |
 | Blocked bash | `rm -rf`, `git push`, `git reset` |
 | Max turns | 25 |
 
@@ -126,7 +126,7 @@ Or provide a list of tools you know you'll need in the project description durin
 
 Searches the project's knowledge base for domain-relevant information. When the planning agent flags that a method requires literature context (e.g., a specific algorithm or domain knowledge), the literature agent searches ingested documents and returns relevant excerpts.
 
-The literature agent can also search the web for relevant papers and methods when web search is enabled (see [Configuration](14-configuration.md)). This allows it to find whether a proposed method has been used in similar research before, or discover methods that might be useful for your specific problem.
+The literature agent can also search the web for relevant papers and methods when web search is enabled (see [Configuration](14a-project-config.md)). This allows it to find whether a proposed method has been used in similar research before, or discover methods that might be useful for your specific problem.
 
 Adding even 1-2 relevant papers to your project's `knowledge/papers/` directory significantly improves the quality of the agents' work. See [Knowledge Pipeline](10-knowledge-pipeline.md) for details.
 
@@ -286,7 +286,7 @@ Agents do not communicate directly. All state is persisted to the filesystem, an
 
 ## Security Boundaries
 
-Security is enforced through `SecurityPolicy` on each agent's configuration:
+Each agent declares a `SecurityPolicy` (`writable_dirs` / `readable_dirs` / `allowed_bash_prefixes` / `blocked_bash_patterns`). **v0.4 enforces the policy at runtime** via the SDK's `can_use_tool` callback — every tool dispatch is intercepted and the agent receives an explicit deny message when a request escapes the policy. Pre-v0.4 the same fields were declared but advisory only; an agent could still touch files outside its declared scope. See `urika/agents/permission.py` for the decision logic and [Security](20-security.md) for the threat model.
 
 ### Read-Only Agents
 
@@ -308,7 +308,7 @@ These agents have write access restricted to specific directories:
 
 | Agent | Writable Directory | Allowed Commands |
 |-------|-------------------|-----------------|
-| Task Agent | `experiments/<id>/` | `python`, `pip` |
+| Task Agent | `experiments/<id>/` | `python`, `pip`, `pytest` |
 | Tool Builder | `tools/` | `python`, `pip`, `pytest` |
 | Literature Agent | `knowledge/` | `python`, `pip` |
 | Finalizer | `methods/`, `projectbook/`, project root | `python`, `pip` |
@@ -338,4 +338,4 @@ The Claude Agent SDK adapter (`ClaudeSDKRunner`) translates these configurations
 
 ---
 
-**Next:** [Built-in Tools](12-built-in-tools.md)
+**Next:** [Tools Overview](12a-tools-overview.md)

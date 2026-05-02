@@ -47,6 +47,7 @@ _KNOWN_AGENTS = {
     "project_builder",
     "data_agent",
     "finalizer",
+    "project_summarizer",
 }
 _VALID_ENDPOINTS = {"open", "private"}  # 'inherit' means "no override".
 
@@ -100,7 +101,7 @@ async def api_create_project(request: Request):
     question = (body.get("question") or "").strip()
     description = (body.get("description") or "").strip()
     mode = (body.get("mode") or "exploratory").strip()
-    audience = (body.get("audience") or "expert").strip()
+    audience = (body.get("audience") or "standard").strip()
     data_paths_raw = (body.get("data_paths") or "").strip()
     # ``privacy_mode`` is optional — defaults to ``open`` for legacy
     # callers and the New Project modal that doesn't yet expose it.
@@ -1063,6 +1064,17 @@ async def api_global_settings_put(request: Request):
         raise HTTPException(
             status_code=422,
             detail="default_max_turns must be > 0",
+        )
+    # Sanity cap: the API silently accepted any positive int, so a
+    # paste of 999999 (or a typo from 10 → 100000) would let every
+    # experiment run effectively forever. 200 is a generous ceiling
+    # — the historical mean per-experiment is ~10-25 turns, and
+    # autonomous mode bounds total work via ``--max-experiments``
+    # rather than per-experiment turns.
+    if max_turns > 200:
+        raise HTTPException(
+            status_code=422,
+            detail="default_max_turns must be <= 200 (use --max-experiments for longer autonomous runs)",
         )
 
     # ---- Privacy tab: multi-endpoint editor ----------------------------
@@ -2613,7 +2625,7 @@ async def api_run_stream(name: str, exp_id: str, type: str = "run"):
         # Initial backlog — drain whatever's already on disk.
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield _format_log_line(line.rstrip())
                 position = f.tell()
@@ -2622,7 +2634,7 @@ async def api_run_stream(name: str, exp_id: str, type: str = "run"):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -2758,7 +2770,7 @@ async def api_finalize_stream(name: str):
     async def event_stream():
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield f"data: {line.rstrip()}\n\n"
                 position = f.tell()
@@ -2766,7 +2778,7 @@ async def api_finalize_stream(name: str):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -2842,7 +2854,7 @@ async def api_summarize_stream(name: str):
     async def event_stream():
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield f"data: {line.rstrip()}\n\n"
                 position = f.tell()
@@ -2850,7 +2862,7 @@ async def api_summarize_stream(name: str):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -2928,7 +2940,7 @@ async def api_build_tool_stream(name: str):
     async def event_stream():
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield f"data: {line.rstrip()}\n\n"
                 position = f.tell()
@@ -2936,7 +2948,7 @@ async def api_build_tool_stream(name: str):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -3227,7 +3239,7 @@ async def api_advisor_stream(name: str):
     async def event_stream():
         position = 0
         if log_path.exists():
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     yield f"data: {line.rstrip()}\n\n"
                 position = f.tell()
@@ -3235,7 +3247,7 @@ async def api_advisor_stream(name: str):
         while lock_path.exists() or log_path.exists():
             new_data = ""
             if log_path.exists():
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(position)
                     new_data = f.read()
                     position = f.tell()
@@ -3408,6 +3420,116 @@ def api_run_stop(name: str, exp_id: str) -> dict:
     return {"status": "stop_signaled", "pid": pid}
 
 
+# ── Generic stop for non-experiment ops ──────────────────────────────
+#
+# Pre-v0.4 only ``/runs/<id>/stop`` existed. Long-running advisor /
+# finalize / summarize / build-tool / present invocations had no kill
+# switch from the dashboard — a remote-fired ``urika present`` that
+# went into a multi-minute LLM call would just keep running. v0.4
+# adds parallel ``/stop`` endpoints for those operations using the
+# same SIGTERM-to-process-group pattern as ``api_run_stop``.
+
+def _stop_op_by_lock(lock_path: Path) -> dict:
+    """Send SIGTERM to the process group recorded in *lock_path*.
+
+    Mirrors ``api_run_stop`` but for non-experiment ops, which don't
+    have a ``progress.json`` to write a graceful-stop flag to. We
+    kill the process group directly; the spawned ``urika`` CLI's
+    SIGTERM handler (registered in v0.3.2) writes whatever terminal
+    state is appropriate for the op type.
+
+    Returns ``{"status": "stop_signaled", "pid": pid}`` on success
+    or ``{"status": "not_running"}`` when no live PID is found.
+    """
+    if not lock_path.exists():
+        return {"status": "not_running"}
+    try:
+        pid_text = lock_path.read_text(encoding="utf-8").strip()
+        pid = int(pid_text)
+    except (OSError, ValueError):
+        return {"status": "not_running"}
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return {"status": "not_running"}
+    except PermissionError:
+        pass
+    except OSError:
+        return {"status": "not_running"}
+
+    try:
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        return {"status": "not_running"}
+
+    return {"status": "stop_signaled", "pid": pid}
+
+
+@router.post("/projects/{name}/advisor/stop")
+def api_advisor_stop(name: str) -> dict:
+    """Stop a running ``urika advisor`` subprocess for *name*.
+
+    Reads the PID from ``<project>/projectbook/.advisor.lock`` and
+    SIGTERMs the process group. The spawned CLI handles SIGTERM
+    cleanly (v0.3.2 fix); the reaper thread cleans up the lock.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(summary.path / "projectbook" / ".advisor.lock")
+
+
+@router.post("/projects/{name}/finalize/stop")
+def api_finalize_stop(name: str) -> dict:
+    """Stop a running ``urika finalize`` subprocess for *name*."""
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(summary.path / "projectbook" / ".finalize.lock")
+
+
+@router.post("/projects/{name}/summarize/stop")
+def api_summarize_stop(name: str) -> dict:
+    """Stop a running ``urika summarize`` subprocess for *name*."""
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(summary.path / "projectbook" / ".summarize.lock")
+
+
+@router.post("/projects/{name}/build-tool/stop")
+def api_build_tool_stop(name: str) -> dict:
+    """Stop a running ``urika build-tool`` subprocess for *name*."""
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(summary.path / "tools" / ".build.lock")
+
+
+@router.post("/projects/{name}/runs/{exp_id}/present/stop")
+def api_present_stop(name: str, exp_id: str) -> dict:
+    """Stop a running ``urika present`` subprocess for *name*/*exp_id*.
+
+    Present runs are scoped to a specific experiment; the lock lives
+    in the experiment dir alongside the experiment's ``.lock``.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    return _stop_op_by_lock(
+        summary.path / "experiments" / exp_id / ".present.lock"
+    )
+
+
 @router.post("/projects/{name}/runs/{exp_id}/pause")
 def api_run_pause(name: str, exp_id: str) -> dict:
     """Request a graceful pause at the next turn boundary.
@@ -3430,3 +3552,82 @@ def api_run_pause(name: str, exp_id: str) -> dict:
     (flag_dir / "pause_requested").write_text("pause", encoding="utf-8")
 
     return {"status": "pause_requested", "experiment_id": exp_id}
+
+
+@router.post("/settings/models/reset")
+def api_global_models_reset() -> dict:
+    """Re-apply the recommended reasoning/execution model split to
+    every configured mode in ``~/.urika/settings.toml``.
+
+    Reasoning agents (``planning_agent``, ``advisor_agent``,
+    ``finalizer``, ``project_builder``) get pinned to whatever model
+    is currently set as the mode default. Execution agents
+    (``task_agent``, ``evaluator``, ``report_agent``,
+    ``presentation_agent``, ``tool_builder``, ``literature_agent``,
+    ``data_agent``, ``project_summarizer``) get pinned to
+    ``claude-sonnet-4-5`` — indistinguishable quality on those tasks
+    and ~5× cheaper per call. Modes whose default is already Sonnet
+    or Haiku skip the split (cheaper-tier already); their leftover
+    per-agent overrides are dropped to keep the file clean.
+
+    Hybrid mode preserves the ``data_agent`` + ``tool_builder``
+    private-endpoint pin across the rebuild.
+
+    Idempotent. Returns the modes the split was applied to.
+    """
+    from urika.core.recommended_models import (
+        reset_global_models,
+        split_applies,
+    )
+    from urika.core.settings import load_settings, save_settings
+
+    settings = load_settings()
+    reset_global_models(settings)
+    save_settings(settings)
+
+    modes = settings.get("runtime", {}).get("modes", {}) or {}
+    split_modes = [
+        m for m in ("open", "private", "hybrid")
+        if isinstance(modes.get(m), dict)
+        and split_applies(modes[m].get("model", ""))
+    ]
+    return {"ok": True, "split_applied_to": split_modes}
+
+
+@router.post("/projects/{name}/settings/models/reset")
+def api_project_models_reset(name: str) -> dict:
+    """Project-scoped equivalent of ``POST /settings/models/reset``.
+
+    Rewrites ``<project>/urika.toml`` ``[runtime.models]`` from the
+    project's current ``[runtime].model`` and privacy mode. Hybrid
+    projects preserve their data_agent + tool_builder private pins;
+    every other per-agent override is dropped.
+
+    Idempotent.
+    """
+    from urika.core.recommended_models import (
+        reset_project_models,
+        split_applies,
+    )
+    from urika.core.workspace import _write_toml
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    import tomllib
+
+    toml_path = summary.path / "urika.toml"
+    with open(toml_path, "rb") as f:
+        settings = tomllib.load(f)
+
+    reset_project_models(settings)
+    _write_toml(toml_path, settings)
+
+    chosen = settings.get("runtime", {}).get("model", "")
+    return {
+        "ok": True,
+        "default_model": chosen,
+        "split_applied": split_applies(chosen),
+    }

@@ -61,7 +61,7 @@ def _run_single_agent(
     agent_name: str,
     experiment_id: str,
     prompt: str,
-    audience: str = "expert",
+    audience: str = "standard",
 ) -> str:
     """Run a single agent and display its output. Returns the text output."""
     try:
@@ -186,7 +186,7 @@ def _get_audience(session: ReplSession) -> str:
         try:
             with open(toml_path, "rb") as f:
                 data = tomllib.load(f)
-            return data.get("preferences", {}).get("audience", "expert")
+            return data.get("preferences", {}).get("audience", "standard")
         except Exception:
             pass
     return "expert"

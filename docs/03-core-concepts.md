@@ -89,7 +89,7 @@ The 24 built-in tools, grouped by category:
 | `train_val_test_split` | preprocessing | Train/validation/test data splitting |
 | `visualization` | exploration | Chart and plot generation |
 
-The **tool builder** agent can also create project-specific tools at runtime when the planning agent identifies a capability gap (see above). See [Built-in Tools](12-built-in-tools.md) for a full catalogue and the project-tool building workflow.
+The **tool builder** agent can also create project-specific tools at runtime when the planning agent identifies a capability gap (see above). See [Tools Overview](12a-tools-overview.md) for a full catalogue and the project-tool building workflow.
 
 List available tools with:
 

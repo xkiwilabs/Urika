@@ -129,6 +129,23 @@ def _toml_value(val: object) -> str:
         items = ", ".join(_toml_value(v) for v in val)
         return f"[{items}]"
     if isinstance(val, dict):
-        items = ", ".join(f"{k} = {_toml_value(v)}" for k, v in val.items())
+        # Quote inline-table keys that aren't valid TOML bare keys.
+        # File paths (used in [project.data_hashes]) contain '/' and
+        # '.' which TOML rejects as bare keys; treating them as
+        # quoted strings is always safe and matches what tomllib
+        # round-trips back to.
+        import re as _re
+
+        bare_key = _re.compile(r"^[A-Za-z0-9_-]+$")
+
+        def _fmt_key(k: str) -> str:
+            if isinstance(k, str) and bare_key.match(k):
+                return k
+            escaped = str(k).replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+
+        items = ", ".join(
+            f"{_fmt_key(k)} = {_toml_value(v)}" for k, v in val.items()
+        )
         return "{" + items + "}"
     return repr(val)

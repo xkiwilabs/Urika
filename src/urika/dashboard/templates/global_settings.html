@@ -302,7 +302,54 @@
        (read-only text vs UI-category select) but the visual rhythm
        stays consistent across modes. #}
     <div class="tab-panel" x-show="active === 'models'" x-cloak
-         x-data="{ mode: 'open' }">
+         x-data="{
+           mode: 'open',
+           resetMsg: (() => {
+             const p = new URLSearchParams(window.location.search);
+             if (p.has('reset_applied')) {
+               return 'Reset applied. Split is now active in: ' + decodeURIComponent(p.get('reset_applied')) + '. Per-agent assignments below have been reloaded from disk.';
+             }
+             if (p.has('reset_cleared')) {
+               return 'Reset cleared per-agent overrides. No mode required a split (every default is already at the cheaper tier).';
+             }
+             return '';
+           })(),
+           resetting: false,
+         }">
+      {# Reset-to-recommended-defaults across every configured mode. #}
+      <div class="form-row">
+        <label>Recommended defaults</label>
+        <div>
+          <button type="button"
+                  class="btn btn--secondary"
+                  :disabled="resetting"
+                  @click="if (confirm('Reset per-agent model assignments to the recommended split for every configured mode? Reasoning agents stay on the configured mode default; execution agents (task / evaluator / report / etc.) flip to claude-sonnet-4-5. Custom per-agent overrides will be replaced.')) {
+                    resetting = true;
+                    fetch('/api/settings/models/reset', { method: 'POST' })
+                      .then(r => r.json())
+                      .then(j => {
+                        // Auto-reload so each mode's per-agent grid below
+                        // re-fetches from disk. Without this the user would
+                        // see the success message but the dropdowns would
+                        // still show stale values from the initial render.
+                        const modes = (j.split_applied_to || []).join(',');
+                        const flag = modes
+                          ? ('reset_applied=' + encodeURIComponent(modes))
+                          : 'reset_cleared=1';
+                        window.location.search = '?tab=models&' + flag;
+                      })
+                      .catch(e => { resetting = false; resetMsg = 'Reset failed: ' + e; });
+                  }">
+            <span x-show="!resetting">Reset to recommended defaults</span>
+            <span x-show="resetting">Resetting…</span>
+          </button>
+          <span class="form-help" x-show="!resetMsg">
+            Pins reasoning agents (planning / advisor / finalize / project-builder) to each mode's configured default model, and execution agents to <code>claude-sonnet-4-5</code> — indistinguishable quality on those roles, ~5× cheaper per call. Hybrid mode keeps the data-agent + tool-builder private-endpoint pin.
+          </span>
+          <span class="form-help" x-text="resetMsg" x-show="resetMsg"></span>
+        </div>
+      </div>
+
       <div class="tab-list" role="tablist" style="margin-bottom: var(--space-3);">
         <button class="tab-button" type="button"
                 :class="{ 'tab-button--active': mode === 'open' }"

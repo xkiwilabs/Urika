@@ -5,11 +5,11 @@
 <p align="center">
   <a href="docs/01-getting-started.md">Getting Started</a> &middot;
   <a href="docs/11-agent-system.md">Agent System</a> &middot;
-  <a href="docs/13-models-and-privacy.md">Models &amp; Privacy</a> &middot;
-  <a href="docs/19-notifications.md">Notifications</a> &middot;
-  <a href="docs/16-cli-reference.md">CLI Reference</a> &middot;
+  <a href="docs/13a-models-and-privacy.md">Models &amp; Privacy</a> &middot;
+  <a href="docs/19a-notifications-channels.md">Notifications</a> &middot;
+  <a href="docs/16a-cli-projects.md">CLI Reference</a> &middot;
   <a href="docs/17-interactive-tui.md">Interactive TUI</a> &middot;
-  <a href="docs/18-dashboard.md">Dashboard</a>
+  <a href="docs/18a-dashboard-pages.md">Dashboard</a>
 </p>
 
 ---
@@ -20,7 +20,7 @@ Urika uses multiple AI agents to autonomously explore analytical approaches for 
 
 Currently supports the **Claude Agent SDK** (Anthropic), including local models via Ollama. Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **PI** are planned for upcoming releases.
 
-**Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/13-models-and-privacy.md).
+**Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/13a-models-and-privacy.md).
 
 ## Three interfaces
 
@@ -164,7 +164,7 @@ urika methods my-study --json
 # See Notifications docs for setup
 ```
 
-This makes it straightforward to build custom workflows, batch processing scripts, CI pipelines, or wrap Urika in your own research tools. See [CLI Reference](docs/16-cli-reference.md) for the full command list.
+This makes it straightforward to build custom workflows, batch processing scripts, CI pipelines, or wrap Urika in your own research tools. See [CLI Reference](docs/16a-cli-projects.md) for the full command list.
 
 ## Privacy and Model Configuration
 
@@ -178,7 +178,7 @@ Per-agent model routing lets you optimize for cost (Haiku for simple tasks, Opus
 
 See above for supported and upcoming SDK adapters.
 
-See [Models and Privacy](docs/13-models-and-privacy.md) for configuration details.
+See [Models and Privacy](docs/13a-models-and-privacy.md) for configuration details.
 
 ## Documentation
 
@@ -195,14 +195,25 @@ See [Models and Privacy](docs/13-models-and-privacy.md) for configuration detail
 | [Finalizing Projects](docs/09-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
 | [Knowledge Pipeline](docs/10-knowledge-pipeline.md) | Ingesting papers, PDFs, searching |
 | [Agent System](docs/11-agent-system.md) | All 12 agent roles and how they interact |
-| [Built-in Tools](docs/12-built-in-tools.md) | 24-tool seed library — agents build new tools on demand per project |
-| [Models and Privacy](docs/13-models-and-privacy.md) | Per-agent model routing, endpoints, hybrid privacy mode |
-| [Configuration](docs/14-configuration.md) | urika.toml, criteria, preferences |
+| [Tools Overview](docs/12a-tools-overview.md) | Philosophy, ITool / ToolResult API, registry, project-specific tools |
+| [Tools Catalogue](docs/12b-tools-catalogue.md) | Per-category reference for all 24 built-in tools |
+| [Models and Privacy](docs/13a-models-and-privacy.md) | Privacy modes, hybrid architecture, per-agent endpoint assignment |
+| [Local Models](docs/13b-local-models.md) | Ollama, LM Studio, vLLM/LiteLLM proxy setup, tested-models table |
+| [Project Configuration](docs/14a-project-config.md) | Per-project urika.toml, criteria, methods, usage |
+| [Global Configuration](docs/14b-global-config.md) | `~/.urika/settings.toml`, secrets vault, environment variables |
 | [Project Structure](docs/15-project-structure.md) | File layout and what each file does |
-| [CLI Reference](docs/16-cli-reference.md) | Every command with full options |
+| [CLI Reference — Projects](docs/16a-cli-projects.md) | `urika new`, `list`, `delete`, `status`, `inspect`, `update` |
+| [CLI Reference — Experiments](docs/16b-cli-experiments.md) | `urika experiment` group and `urika run` |
+| [CLI Reference — Results and Reports](docs/16c-cli-results.md) | `dashboard`, `results`, `methods`, `logs`, `report`, `present`, `criteria`, `usage` |
+| [CLI Reference — Agents](docs/16d-cli-agents.md) | `advisor`, `evaluate`, `plan`, `finalize`, `build-tool`, `summarize` |
+| [CLI Reference — System](docs/16e-cli-system.md) | `knowledge`, `venv`, `config`, `notifications`, `setup`, `tools`, env vars |
 | [Interactive TUI](docs/17-interactive-tui.md) | TUI interface, slash commands, tab completion, orchestrator chat |
-| [Dashboard](docs/18-dashboard.md) | FastAPI multi-page dashboard, run launcher, settings UI, theme toggle, auth |
-| [Notifications](docs/19-notifications.md) | Email, Slack, Telegram alerts and remote commands |
+| [Dashboard — Pages](docs/18a-dashboard-pages.md) | Pages, modals, live log, advisor chat, sessions, sidebar, theme |
+| [Dashboard — Operations](docs/18b-dashboard-operations.md) | Lockfiles, idempotent spawn endpoints, completion CTAs, project deletion |
+| [Dashboard — Settings](docs/18c-dashboard-settings.md) | Project + global settings, notification test-send, `--auth-token` |
+| [Dashboard — API](docs/18d-dashboard-api.md) | Cross-surface coordination, HTMX/fetch endpoint reference, tech stack |
+| [Notifications — Channels](docs/19a-notifications-channels.md) | Email, Slack, Telegram setup walkthroughs |
+| [Notifications — Remote](docs/19b-notifications-remote.md) | Remote `/commands`, what gets notified, troubleshooting, caveats |
 | [Security Model](docs/20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
 
 ## Citation

@@ -76,9 +76,21 @@ def _read_env_file(path: Path) -> dict[str, str]:
             if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
                 value = value[1:-1]
             out[key] = value
-    except Exception:
-        # Unreadable — silently fall through to "no values".
-        pass
+    except Exception as exc:
+        # Unreadable — fall through to "no values" so the caller
+        # doesn't crash. But emit at error level: pre-v0.4 this
+        # silenced everything (bad permissions, encoding, partial
+        # writes), so users with a corrupted secrets.env got "no
+        # secrets" with zero diagnostic and their API calls
+        # mysteriously failed auth.
+        import logging as _logging
+
+        _logging.getLogger(__name__).error(
+            "Vault env-file read failed at %s: %s: %s",
+            path,
+            type(exc).__name__,
+            exc,
+        )
     return out
 
 
@@ -200,7 +212,20 @@ def _read_meta(path: Path) -> dict[str, dict]:
     try:
         with path.open("rb") as f:
             data = tomllib.load(f)
-    except Exception:
+    except Exception as exc:
+        # Pre-v0.4 this silently dropped to ``return {}`` so a
+        # corrupted secrets-meta.toml left the dashboard with no
+        # diagnostic about why metadata (descriptions, last_modified,
+        # required_by_tools) had vanished. Log so the failure mode is
+        # at least observable.
+        import logging as _logging
+
+        _logging.getLogger(__name__).error(
+            "Vault meta-file read failed at %s: %s: %s",
+            path,
+            type(exc).__name__,
+            exc,
+        )
         return {}
     # Top-level keys are secret names; values are tables (dicts).
     return {k: v for k, v in data.items() if isinstance(v, dict)}

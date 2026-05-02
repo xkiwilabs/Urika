@@ -233,7 +233,7 @@ The dashboard is the visual lens on the same data. Open `urika dashboard my-stud
 - **Usage charts** (`/projects/<n>/usage`) — token and cost time-series plus a recent-sessions table.
 - **Per-experiment artifact viewer** (`/projects/<n>/experiments/<id>/files/<path>`) — click any artifact in an experiment for an inline preview (text, image) or download.
 
-All views are read-only and reflect the same on-disk files the CLI reads. See [Dashboard](18-dashboard.md) for the full route map.
+All views are read-only and reflect the same on-disk files the CLI reads. See [Dashboard](18a-dashboard-pages.md) for the full route map.
 
 ---
 

@@ -16,7 +16,7 @@ urika results my-study
 
 When to reach for it: scripting a multi-project sweep, CI integration, remote sessions where you don't want a TUI redrawing.
 
-See [CLI Reference](16-cli-reference.md).
+See [CLI Reference](16a-cli-projects.md).
 
 ### TUI — `urika`
 
@@ -36,16 +36,17 @@ See [Interactive TUI](17-interactive-tui.md).
 
 ### Dashboard — `urika dashboard [PROJECT]`
 
-For watching long runs, reviewing results visually, and editing settings through forms. FastAPI + HTMX + Alpine; opens at `http://localhost:8000`. Read-friendly: experiment timelines, leaderboards, log streams, advisor chat, sessions, knowledge browser, methods catalogue.
+For watching long runs, reviewing results visually, and editing settings through forms. FastAPI + HTMX + Alpine. By default the server picks a free port and prints the URL on startup; override with `--port`. Read-friendly: experiment timelines, leaderboards, log streams, advisor chat, sessions, knowledge browser, methods catalogue.
 
 ```bash
 urika dashboard my-study
-# Browser → http://localhost:8000/projects/my-study
+# Console prints e.g. → http://127.0.0.1:54321/projects/my-study
+urika dashboard my-study --port 8000   # pin the port
 ```
 
 When to reach for it: monitoring an autonomous run, sharing results with a collaborator, configuring credentials with a form, picking up a paused session from another machine.
 
-See [Dashboard](18-dashboard.md).
+See [Dashboard](18a-dashboard-pages.md).
 
 ## Common tasks across all three
 

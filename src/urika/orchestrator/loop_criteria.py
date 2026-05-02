@@ -84,16 +84,29 @@ def _check_result(
         progress("result", error_msg)
         try:
             pause_session(project_dir, experiment_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Pre-v0.4 this swallowed silently; if session-state
+            # persistence fails the run keeps going with a stale
+            # session.json. Log so the failure mode is observable.
+            logger.warning(
+                "pause_session failed during _check_result: %s: %s",
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
         return error_msg
 
     # Auth or unknown errors — fail the session.
     progress("result", error_msg)
     try:
         fail_session(project_dir, experiment_id, error=error_msg)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "fail_session failed during _check_result: %s: %s",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
     return error_msg
 
 

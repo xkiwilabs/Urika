@@ -60,6 +60,7 @@ KNOWN_AGENTS = [
     "project_builder",
     "data_agent",
     "finalizer",
+    "project_summarizer",
 ]
 
 # Endpoint choices for per-agent overrides on the Models tab.
@@ -150,9 +151,15 @@ def projects_list(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
     # Surface "is at least one private endpoint configured" so the New
     # Project modal can warn when the user picks private/hybrid.
-    has_private_endpoint = any(
-        (ep.get("base_url") or "").strip() for ep in get_named_endpoints()
-    )
+    # v0.4: also pass the named-endpoint list so the modal can render
+    # a dropdown letting the user pick which one to use, mirroring
+    # the CLI's new endpoint-picker.
+    private_endpoints = [
+        {"name": ep["name"], "base_url": ep["base_url"]}
+        for ep in get_named_endpoints()
+        if (ep.get("base_url") or "").strip()
+    ]
+    has_private_endpoint = bool(private_endpoints)
     return templates.TemplateResponse(
         request,
         "projects_list.html",
@@ -161,6 +168,7 @@ def projects_list(request: Request) -> HTMLResponse:
             "valid_modes": sorted(VALID_MODES),
             "valid_audiences": sorted(VALID_AUDIENCES),
             "has_private_endpoint": has_private_endpoint,
+            "private_endpoints": private_endpoints,
         },
     )
 
@@ -512,6 +520,27 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     active = list_active_operations(name, summary.path)
     running_by_type = {op.type: op for op in active}
 
+    # Read the user's default max_turns from project urika.toml (falling
+    # back to global settings, then the hard default) so the New
+    # Experiment modal matches the rest of the system rather than
+    # hardcoding 5/10. Single source of truth: ``[preferences]
+    # max_turns_per_experiment``.
+    default_max_turns = 5
+    try:
+        import tomllib
+
+        toml_path = summary.path / "urika.toml"
+        if toml_path.exists():
+            with open(toml_path, "rb") as f:
+                proj_data = tomllib.load(f)
+            default_max_turns = (
+                proj_data.get("preferences", {}).get(
+                    "max_turns_per_experiment", default_max_turns
+                )
+            )
+    except Exception:
+        pass
+
     templates = request.app.state.templates
     ctx = {
         "project": summary,
@@ -519,9 +548,94 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
         "valid_modes": sorted(VALID_MODES),
         "valid_audiences": sorted(VALID_AUDIENCES),
         "running_by_type": running_by_type,
+        "default_max_turns": default_max_turns,
     }
     ctx.update(_project_template_context(name, summary))
     return templates.TemplateResponse(request, "experiments.html", ctx)
+
+
+@router.get("/projects/{name}/compare", response_class=HTMLResponse)
+def project_compare(
+    request: Request, name: str, experiments: str = ""
+) -> HTMLResponse:
+    """Side-by-side metric comparison across N experiments.
+
+    Query string ``?experiments=exp-001,exp-002`` selects which
+    experiments to compare. Renders a table with columns =
+    experiments, rows = metrics drawn from each experiment's best
+    run + project leaderboard, cells = best value + delta vs the
+    project leader.
+
+    Data is read from the per-experiment ``progress.json`` and the
+    project's ``methods.json`` / ``leaderboard.json`` — no new on-
+    disk schema. Pre-v0.4 users had to open separate experiment-
+    detail pages and compare in their head.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    requested = [
+        e.strip() for e in experiments.split(",") if e.strip()
+    ]
+    available = {
+        e.experiment_id: e for e in list_experiments(summary.path)
+    }
+    selected_ids = [eid for eid in requested if eid in available]
+    if not selected_ids:
+        # Fallback: show every completed experiment so the page
+        # isn't blank when the user navigates without query params.
+        selected_ids = list(available.keys())
+
+    # For each selected experiment, gather best-run metrics from
+    # progress.json. Format:
+    #   { "exp-001": {"r2": 0.87, "rmse": 0.23, "_best_method": ...}, ... }
+    from urika.core.progress import load_progress
+
+    per_exp: dict[str, dict[str, object]] = {}
+    metric_names: set[str] = set()
+    for eid in selected_ids:
+        progress = load_progress(summary.path, eid) or {}
+        runs = progress.get("runs", []) or []
+        # Pick the best run by primary metric if known; otherwise
+        # the last one.
+        best = runs[-1] if runs else {}
+        metrics = best.get("metrics", {}) or {}
+        per_exp[eid] = {
+            "metrics": metrics,
+            "method": best.get("method", ""),
+            "status": progress.get("status", "unknown"),
+            "n_runs": len(runs),
+        }
+        metric_names.update(
+            k for k, v in metrics.items() if isinstance(v, (int, float))
+        )
+
+    # Build rows: one per metric, columns = each selected experiment.
+    metric_rows = []
+    for metric in sorted(metric_names):
+        cells = []
+        for eid in selected_ids:
+            value = per_exp[eid]["metrics"].get(metric)
+            cells.append({"experiment_id": eid, "value": value})
+        metric_rows.append({"metric": metric, "cells": cells})
+
+    templates = request.app.state.templates
+    ctx = {
+        "project": summary,
+        "selected_ids": selected_ids,
+        "available": [
+            {"experiment_id": eid, "name": available[eid].name}
+            for eid in available
+        ],
+        "per_exp": per_exp,
+        "metric_rows": metric_rows,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(
+        request, "experiment_compare.html", ctx
+    )
 
 
 def _tools_to_rows(tool_registry) -> list[dict]:
@@ -1066,8 +1180,8 @@ def global_settings(request: Request) -> HTMLResponse:
             "model_rows": model_rows,
             "mode_grids": mode_grids,
             # Preferences tab
-            "default_audience": prefs.get("audience", "novice"),
-            "default_max_turns": prefs.get("max_turns_per_experiment", 10),
+            "default_audience": prefs.get("audience", "standard"),
+            "default_max_turns": prefs.get("max_turns_per_experiment", 5),
             "web_search": bool(prefs.get("web_search", False)),
             # venv default is OFF: use the global urika venv, not per-project.
             "venv": bool(prefs.get("venv", False)),

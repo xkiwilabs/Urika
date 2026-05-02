@@ -231,7 +231,7 @@ To set a project-level default, add to your `urika.toml`:
 
 ```toml
 [preferences]
-max_turns_per_experiment = 10
+max_turns_per_experiment = 5
 ```
 
 Each turn involves all four agents (planning, task, evaluator, advisor), so the total number of agent invocations per experiment is roughly `4 * max_turns`.
@@ -380,7 +380,7 @@ Submitting posts to `POST /api/projects/<name>/run` and HTMX-redirects you to th
 
 If an experiment is already running (a `.lock` file exists), the **+ New experiment** button is replaced by a "View live log" link so two sessions can't accidentally launch concurrent runs. Mid-run interactive prompts are surfaced inline in the log page — the orchestrator can ask clarifying questions and you answer through the same SSE channel.
 
-See [Dashboard](18-dashboard.md) for the full modal, log page, and prompt-handling walkthrough.
+See [Dashboard](18a-dashboard-pages.md) for the full modal, log page, and prompt-handling walkthrough.
 
 ## Finalizing a project
 

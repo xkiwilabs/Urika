@@ -83,6 +83,12 @@ def status(name: str | None, json_output: bool) -> None:
 
     experiments = list_experiments(project_path)
 
+    # Detect dataset drift by comparing recorded SHA-256 hashes (in
+    # urika.toml under [project.data_hashes]) against current file
+    # state. Pre-v0.4 there was no record at all, so editing a data
+    # file silently between experiments was undetectable.
+    drifted = _detect_data_drift(project_path)
+
     if json_output:
         from urika.cli_helpers import output_json
 
@@ -104,6 +110,7 @@ def status(name: str | None, json_output: bool) -> None:
                 "mode": config.mode,
                 "path": str(project_path),
                 "experiments": exps_data,
+                "data_drift": drifted,
             }
         )
         return
@@ -114,6 +121,25 @@ def status(name: str | None, json_output: bool) -> None:
     click.echo(f"Path: {project_path}")
     click.echo(f"Experiments: {len(experiments)}")
 
+    if drifted:
+        click.echo("")
+        click.secho(
+            f"  ⚠ Dataset drift detected for {len(drifted)} file(s):",
+            fg="yellow",
+            err=False,
+        )
+        for d in drifted:
+            new_state = (
+                "missing on disk" if not d["new_hash"] else f"now {d['new_hash'][:12]}…"
+            )
+            click.echo(
+                f"    {d['path']}: was {d['old_hash'][:12]}… → {new_state}"
+            )
+        click.echo(
+            "  (data file changed since project was created — runs after "
+            "this point may not reproduce earlier results)"
+        )
+
     if experiments:
         click.echo("")
         for exp in experiments:
@@ -123,6 +149,27 @@ def status(name: str | None, json_output: bool) -> None:
             click.echo(
                 f"  {exp.experiment_id}: {exp.name} [{exp_status}, {n_runs} runs]"
             )
+
+
+def _detect_data_drift(project_path: "Path") -> list[dict[str, str]]:
+    """Compare recorded data hashes against current files."""
+    import tomllib
+    from pathlib import Path
+
+    from urika.data.data_hash import detect_drift
+
+    toml_path = project_path / "urika.toml"
+    if not toml_path.exists():
+        return []
+    try:
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return []
+    recorded = (data.get("project", {}) or {}).get("data_hashes", {}) or {}
+    if not recorded:
+        return []
+    return detect_drift(recorded, [Path(p) for p in recorded.keys()])
 
 
 @cli.command()

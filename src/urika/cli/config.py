@@ -32,6 +32,15 @@ _CLOUD_MODELS: list[tuple[str, str]] = [
     ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
 ]
 
+# Re-exported from the shared module so existing imports
+# (``from urika.cli.config import _REASONING_AGENTS``) keep working.
+# Single source of truth lives in ``urika.core.recommended_models``.
+from urika.core.recommended_models import (  # noqa: E402
+    EXECUTION_AGENT_DEFAULT_MODEL as _EXECUTION_AGENT_DEFAULT_MODEL,
+    EXECUTION_AGENTS as _EXECUTION_AGENTS,
+    REASONING_AGENTS as _REASONING_AGENTS,
+)
+
 
 def _prompt_for_endpoint_key_value(key_env: str) -> None:
     """Paired masked-value prompt for a privacy endpoint API key.
@@ -148,11 +157,24 @@ def dashboard(
         "to verify the configured ANTHROPIC_API_KEY actually works."
     ),
 )
+@click.option(
+    "--reset-models",
+    "reset_models",
+    is_flag=True,
+    help=(
+        "Reset per-agent model assignments to the recommended split "
+        "(reasoning agents on the configured default, execution agents "
+        "on claude-sonnet-4-5). Applies to the project's urika.toml or, "
+        "without PROJECT, to every configured mode in "
+        "~/.urika/settings.toml. Idempotent."
+    ),
+)
 def config_command(
     project: str | None,
     show: bool,
     json_output: bool,
     test_flag: bool,
+    reset_models: bool,
 ) -> None:
     """View or configure privacy mode and models.
 
@@ -225,6 +247,60 @@ def config_command(
         from urika.core.settings import load_settings
 
         settings = load_settings()
+
+    # ── Reset-models mode ──
+    # Re-applies the recommended reasoning/execution split to every
+    # mode currently configured in the file. Idempotent — running
+    # twice is a no-op the second time. Safe to run on pre-v0.4.0
+    # projects that pre-date the split.
+    if reset_models:
+        from urika.cli_display import print_success
+        from urika.core.recommended_models import (
+            EXECUTION_AGENT_DEFAULT_MODEL,
+            reset_global_models,
+            reset_project_models,
+            split_applies,
+        )
+
+        if is_project:
+            reset_project_models(settings)
+            from urika.core.workspace import _write_toml
+
+            _write_toml(project_path / "urika.toml", settings)
+            chosen = settings.get("runtime", {}).get("model", "")
+            if split_applies(chosen):
+                print_success(
+                    f"Reset {project}: reasoning agents → {chosen}, "
+                    f"execution agents → {EXECUTION_AGENT_DEFAULT_MODEL}"
+                )
+            else:
+                print_success(
+                    f"Reset {project}: default model is {chosen or '(unset)'} — "
+                    f"split not applied (already at the cheaper tier)"
+                )
+        else:
+            reset_global_models(settings)
+            from urika.core.settings import save_settings
+
+            save_settings(settings)
+            modes = settings.get("runtime", {}).get("modes", {})
+            split_modes = [
+                m for m in ("open", "private", "hybrid")
+                if isinstance(modes.get(m), dict)
+                and split_applies(modes[m].get("model", ""))
+            ]
+            if split_modes:
+                print_success(
+                    f"Reset global per-agent assignments. Split applied to: "
+                    f"{', '.join(split_modes)}. Other configured modes are "
+                    f"already at the cheaper tier."
+                )
+            else:
+                print_success(
+                    "Reset global per-agent assignments — every configured "
+                    "mode is already at the cheaper tier; no split applied."
+                )
+        return
 
     # ── Show mode ──
     if show:
@@ -372,22 +448,65 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             mode_cfg = modes_section.setdefault(mode, {})
             mode_cfg.setdefault("models", {})[agent] = row
 
+    def _apply_reasoning_execution_split(
+        set_per_agent_fn,  # noqa: ANN001 — same signature as _set_per_agent
+        mode_name: str,
+        chosen_default: str,
+        cloud_endpoint: str,
+    ) -> bool:
+        """Auto-write per-agent overrides when the user picks Opus.
+
+        - Reasoning agents (planning / advisor / finalize / project_builder)
+          stay on the chosen "best" model.
+        - Execution agents (task / evaluator / report / presentation /
+          tool / literature / data / summarizer) flip to the cheaper
+          tier (Sonnet 4.5) — performs indistinguishably for "execute
+          this plan" / "format these numbers" tasks and saves ~5x per
+          call.
+
+        Skipped when the user already picked Sonnet or Haiku (no
+        gain). Returns True iff the split was actually applied.
+
+        In hybrid mode, ``data_agent`` and ``tool_builder`` are
+        forced-private downstream of this call; the cloud-Sonnet
+        assignment we write here gets overwritten by the explicit
+        private assignment for those two agents.
+        """
+        if not chosen_default.lower().startswith("claude-opus"):
+            return False
+        for agent in _REASONING_AGENTS:
+            set_per_agent_fn(agent, chosen_default, cloud_endpoint)
+        for agent in _EXECUTION_AGENTS:
+            set_per_agent_fn(
+                agent, _EXECUTION_AGENT_DEFAULT_MODEL, cloud_endpoint
+            )
+        return True
+
     # ── Open mode: pick cloud model ──
     if mode == "open":
         click.echo()
         options = [f"{m} — {desc}" for m, desc in _CLOUD_MODELS]
         choice = interactive_numbered(
-            "  Default model for all agents:",
+            "  Default model (for reasoning agents — planning / advisor / finalize):",
             options,
             default=1,
         )
         model_name = choice.split(" —")[0].strip()
         _set_default_model(model_name)
+        _split_applied = _apply_reasoning_execution_split(
+            _set_per_agent, mode, model_name, "open"
+        )
         # Clear any private endpoints (project-scope only — globals
         # share endpoint defs across modes).
         if is_project:
             settings.get("privacy", {}).pop("endpoints", None)
-        print_success(f"Mode: open · Model: {model_name}")
+        if _split_applied:
+            print_success(
+                f"Mode: open · Reasoning agents: {model_name} · "
+                f"Execution agents: {_EXECUTION_AGENT_DEFAULT_MODEL}"
+            )
+        else:
+            print_success(f"Mode: open · Model: {model_name}")
 
     # ── Private mode: configure endpoint + model ──
     elif mode == "private":
@@ -491,16 +610,21 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
 
     # ── Hybrid mode: cloud model + private endpoint for data agents ──
     elif mode == "hybrid":
-        # Cloud model for most agents
+        # Cloud model for the reasoning agents (planning / advisor /
+        # finalize / project_builder). Execution-agent reads/reports
+        # auto-pick the cheaper tier when this is Opus.
         click.echo()
         options = [f"{m} — {desc}" for m, desc in _CLOUD_MODELS]
         choice = interactive_numbered(
-            "  Cloud model for most agents:",
+            "  Cloud model (for reasoning agents — planning / advisor / finalize):",
             options,
             default=1,
         )
         cloud_model = choice.split(" —")[0].strip()
         _set_default_model(cloud_model)
+        _hybrid_split_applied = _apply_reasoning_execution_split(
+            _set_per_agent, mode, cloud_model, "open"
+        )
 
         # Project-scope: if globals already define a usable private
         # endpoint, the project doesn't need its own copy — leaving the
@@ -604,10 +728,17 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         _set_per_agent("tool_builder", private_model, "private")
 
         _ep_label = ep_url if ep_url else "(inherits from globals)"
-        print_success(
-            f"Mode: hybrid · Cloud: {cloud_model} · "
-            f"Data agents: {private_model} via {_ep_label}"
-        )
+        if _hybrid_split_applied:
+            print_success(
+                f"Mode: hybrid · Reasoning: {cloud_model} · "
+                f"Cloud execution: {_EXECUTION_AGENT_DEFAULT_MODEL} · "
+                f"Data agents: {private_model} via {_ep_label}"
+            )
+        else:
+            print_success(
+                f"Mode: hybrid · Cloud: {cloud_model} · "
+                f"Data agents: {private_model} via {_ep_label}"
+            )
 
     # ── Save ──
     if is_project:
