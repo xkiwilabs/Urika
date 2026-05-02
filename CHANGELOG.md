@@ -45,6 +45,26 @@ model curation discovered during pre-release testing.
 
 ### Changed (post-rc2)
 
+- **Per-experiment finalize no longer auto-writes the project-level
+  narrative.** The post-criteria-met sequence in
+  `orchestrator/loop_finalize._generate_reports` was running TWO
+  agent-written narratives back-to-back: the experiment-level
+  one (`experiments/<id>/labbook/narrative.md`, fast and
+  per-experiment) and a project-level one
+  (`projectbook/narrative.md`, summarising "all experiments and
+  the research progression"). The project-level pass added
+  10–25 minutes of cloud-LLM tail to every successful
+  experiment and is fundamentally redundant — `urika report`
+  produces the same narrative on demand with a leaner prompt,
+  and `urika finalize` produces the canonical
+  `projectbook/final-report.md` from the structured
+  `findings.json` at end-of-project. Removed the inline pass;
+  per-experiment narrative + per-experiment presentation are
+  unchanged. **Agent feedback loop is unaffected** — the planner
+  and advisor never read `projectbook/narrative.md`; their
+  cross-experiment memory is `methods.json` + `criteria.json`
+  + `advisor-history.json` + `advisor-context.md` (rolling
+  summary refreshed per advisor call) + project memory.
 - **`max_turns_per_experiment` default unified at 5** across every
   surface (was 10). Five sites flipped (factory `settings.py`, CLI
   fallback, TUI defaults helper, dashboard New-Experiment modal,
