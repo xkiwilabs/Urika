@@ -135,7 +135,7 @@ Anthropic-specific.
 
 ---
 
-## v0.7.0 — GitHub auto-backup (target: ~1 week, week 4)
+## v0.7.0 — GitHub auto-backup (target: ~1.2 weeks, week 4.2)
 
 **Focus:** Each project becomes a git repo automatically backed up
 to a user-configured remote. Scope is **backup**, not
@@ -171,6 +171,28 @@ This is a deliberate scope choice:
    artifacts). Pre-condition: the user has already created the
    empty remote repo on GitHub (or wherever) and has a working
    URL. ~1 day.
+1b. **`urika github init <project> --create [--public]`** — uses
+   the `gh` CLI (if installed and authed) to create a fresh
+   private GitHub repo named after the project, set the remote,
+   and do the first push in one shot. Wraps
+   `gh repo create <name> --private --source <dir> --push`.
+   Falls back gracefully if `gh` isn't installed/authed: prints
+   a one-line install hint and tells the user to either create
+   the remote manually or install `gh`. **Urika never sees a
+   GitHub credential** — `gh`'s own stored token does the work.
+   ~0.5 day.
+1c. **Auto-create at project-creation time.** Two opt-ins:
+   - **Per-invocation:** `urika new my-project --github` (private
+     by default) or `--github --public`. Project wizard's
+     interactive flow gains a "Create a private GitHub repo for
+     this project? [Y/n]" question if `gh` is detected.
+   - **Global default:** `[preferences] github_auto_create = true`
+     and `github_auto_create_visibility = "private"|"public"` in
+     `~/.urika/settings.toml` so every `urika new` defaults to
+     creating a remote without re-prompting. Override with
+     `--no-github`. Dashboard New Project modal gets a checkbox
+     + visibility selector wired to the same path.
+   ~0.5 day.
 2. **`urika github push <project>` / `urika github status <project>` /
    `urika github pull <project>`** — manual push wraps
    `git add -A && git commit -m "<auto-message>" && git push`.
@@ -377,9 +399,11 @@ Week 7.3   v1.0.0rc2 RC feedback fixes only
 Week 7.5   v1.0.0    OFFICIAL RELEASE 🎉
 ```
 
-**Total: ~32 dev-days over ~7.5 weeks** (~4–5 dev-days per week
+**Total: ~33 dev-days over ~7.5 weeks** (~4–5 dev-days per week
 sustained). Mobile dashboard explicitly cut — the phone use case
-is the notification, not the browser.
+is the notification, not the browser. v0.7 includes optional
+`--create` shell-out to the `gh` CLI for one-command repo
+creation; Urika never manages GitHub credentials directly.
 
 ---
 

@@ -102,7 +102,7 @@ See `CHANGELOG.md` for the full per-fix accounting.
 | **v0.4.1** | Bug-fix hotfix (dashboard footer, prompt-bloat trim + per-endpoint context_window, sigterm exit, bash timeout) | ~4 days (week 0.5) |
 | **v0.5.0** | Project memory Phases 2–4 (curator agent, archive viewer, diff view) | ~1 week (week 1.5) |
 | **v0.6.0** | OpenAI Agents SDK adapter + project templates | ~1.5 weeks (week 3) |
-| **v0.7.0** | GitHub auto-backup (`urika github init/push/pull`, opt-in auto-push hook on event triggers, dashboard Git tab) | ~1 week (week 4) |
+| **v0.7.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | ~1.2 weeks (week 4.2) |
 | **v0.8.0** | Output exports (PDF/LaTeX/Jupyter via Pandoc, model-card auto-generation) | ~1.5 weeks (week 5.5) |
 | **v0.9.0** | Accessibility audit + i18n string-extraction stubs | ~3 days (week 6.5) |
 | **v1.0.0rc1** | Feature freeze + API audit + migration guide | ~3 days (week 7) |
