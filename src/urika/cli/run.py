@@ -761,15 +761,38 @@ def run(
     def _cleanup_on_interrupt(signum: int, frame: object) -> None:
         if key_listener is not None:
             key_listener.stop()
-        print_warning(f"\n  Experiment run stopped ({experiment_id})")
+        # Detect the "stopped post-completion" case before stopping the
+        # session: if criteria were already met and we're in
+        # ``_generate_reports``, the experiment has effectively finished
+        # successfully and the user just wants to abandon the cosmetic
+        # narrative/presentation pass. Pre-v0.4.1 we still exited 1 here
+        # and the dashboard's experiment card flipped from completed to
+        # stopped, hiding a successful result.
+        already_completed = False
         try:
-            from urika.core.session import stop_session
+            from urika.core.session import load_session, stop_session
 
+            _state = load_session(project_path, experiment_id)
+            if _state is not None and _state.status == "completed":
+                already_completed = True
             stop_session(project_path, experiment_id, reason="Stopped by user")
         except Exception:
             # Force remove lockfile if stop_session fails
             lock = project_path / "experiments" / experiment_id / ".lock"
             lock.unlink(missing_ok=True)
+
+        if already_completed:
+            print_warning(
+                f"\n  Experiment {experiment_id} already met criteria "
+                "before stop — keeping completed status."
+            )
+            print_step(
+                "  Report generation was interrupted; "
+                "re-run `urika report` to retry the narrative."
+            )
+            raise SystemExit(0)
+
+        print_warning(f"\n  Experiment run stopped ({experiment_id})")
         print_step("  Options:")
         print_step("    urika run --resume              Resume from next turn")
         print_step("    urika advisor <project> <text>   Chat with advisor first")

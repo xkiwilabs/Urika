@@ -22,6 +22,7 @@ from urika.core.session import (
     resume_session,
     save_session,
     start_session,
+    stop_session,
     update_turn,
 )
 from urika.core.workspace import create_project_workspace
@@ -406,6 +407,69 @@ class TestFailSession:
         state = fail_session(project_dir, experiment_id)
         assert state.status == "failed"
         assert "error" not in state.checkpoint
+
+
+class TestStopSession:
+    """Coverage for stop_session, including the v0.4.1 fix that
+    refuses to downgrade a terminal status."""
+
+    def test_stop_marks_running_session_as_stopped(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        start_session(project_dir, experiment_id)
+        state = stop_session(project_dir, experiment_id, reason="Stopped by user")
+        assert state.status == "stopped"
+        assert state.completed_at is not None
+        assert state.checkpoint.get("reason") == "Stopped by user"
+        assert is_locked(project_dir, experiment_id) is False
+
+    def test_stop_does_not_downgrade_completed_session(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        """Regression (v0.4.1): a SIGTERM from the dashboard's Stop
+        button arriving AFTER ``complete_session`` had already run
+        used to overwrite ``completed`` with ``stopped`` and exit 1,
+        making a successful run look like a failure. The success
+        metrics on disk (``progress.json``) showed the run was good
+        but the session card flipped to stopped.
+        """
+        start_session(project_dir, experiment_id)
+        complete_session(project_dir, experiment_id)
+        # Now SIGTERM arrives during _generate_reports.
+        state = stop_session(
+            project_dir, experiment_id, reason="Stopped by user"
+        )
+        assert state.status == "completed", (
+            "stop_session must NOT downgrade an already-completed session"
+        )
+        # The reason gets recorded as a side note so dashboards can
+        # distinguish a clean finish from a stopped-during-narrative
+        # run when they want to.
+        assert (
+            state.checkpoint.get("post_terminal_stop_reason") == "Stopped by user"
+        )
+        # Lock is released either way so future runs aren't blocked.
+        assert is_locked(project_dir, experiment_id) is False
+
+    def test_stop_does_not_downgrade_failed_session(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        """A failure should not be silently rewritten as a stop, even
+        if SIGTERM arrives during cleanup."""
+        start_session(project_dir, experiment_id)
+        fail_session(project_dir, experiment_id, error="boom")
+        state = stop_session(project_dir, experiment_id)
+        assert state.status == "failed"
+
+    def test_stop_is_idempotent_on_already_stopped(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        """Calling stop twice in a row must not crash and must keep
+        the original ``stopped`` state."""
+        start_session(project_dir, experiment_id)
+        stop_session(project_dir, experiment_id, reason="first")
+        state = stop_session(project_dir, experiment_id, reason="second")
+        assert state.status == "stopped"
 
 
 class TestUpdateTurn:
