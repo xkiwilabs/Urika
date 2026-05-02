@@ -82,14 +82,20 @@ def get_default_privacy() -> dict[str, Any]:
     return {"endpoints": privacy.get("endpoints", {})}
 
 
-def get_named_endpoints() -> list[dict[str, str]]:
+def get_named_endpoints() -> list[dict[str, Any]]:
     """Return every named endpoint defined in ``~/.urika/settings.toml``.
 
     Each element has shape ``{"name", "base_url", "api_key_env",
-    "default_model"}``.  The ``default_model`` field is read from an
-    optional ``[privacy.endpoints.<name>].default_model`` key — surfaced
-    here so the dashboard can edit it; the runtime loader's per-endpoint
-    fallback semantics live elsewhere.
+    "default_model", "context_window", "max_output_tokens"}``.
+
+    * ``default_model`` is read from an optional
+      ``[privacy.endpoints.<name>].default_model`` key — surfaced
+      here so the dashboard can edit it.
+    * ``context_window`` and ``max_output_tokens`` (v0.4.1) are
+      passed through verbatim from the TOML so the runtime loader
+      can resolve the auto-defaults via
+      ``urika.agents.config.resolve_endpoint_limits``. Both default
+      to 0 (= "use auto-default for this URL") when absent.
 
     Reads ``[privacy.endpoints.<name>]``.  Order is sorted by name for
     deterministic UI rendering.  Returns ``[]`` when the settings file
@@ -100,7 +106,7 @@ def get_named_endpoints() -> list[dict[str, str]]:
     endpoints = privacy.get("endpoints", {})
     if not isinstance(endpoints, dict):
         return []
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     for name in sorted(endpoints):
         cfg = endpoints[name]
         if not isinstance(cfg, dict):
@@ -111,6 +117,8 @@ def get_named_endpoints() -> list[dict[str, str]]:
                 "base_url": cfg.get("base_url", ""),
                 "api_key_env": cfg.get("api_key_env", ""),
                 "default_model": cfg.get("default_model", ""),
+                "context_window": int(cfg.get("context_window", 0) or 0),
+                "max_output_tokens": int(cfg.get("max_output_tokens", 0) or 0),
             }
         )
     return out

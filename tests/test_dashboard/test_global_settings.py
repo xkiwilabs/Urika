@@ -1979,3 +1979,115 @@ def test_round_trip_project_telegram_chat_id_save_round_trips(
     assert merged["telegram"]["chat_id"] == "999"
     # Global token still survives — only chat_id is overridden.
     assert merged["telegram"]["bot_token_env"] == "TG_TOKEN"
+
+
+# ---- v0.4.1: per-endpoint context_window + max_output_tokens ----------
+
+
+def test_endpoint_context_window_persisted_via_json_form(
+    settings_client, tmp_path
+):
+    """Regression: pre-v0.4.1 the dashboard's endpoint editor only
+    captured base_url/api_key/default_model. The new context_window +
+    max_output_tokens fields surface the bundled CLI's per-request
+    limits to local endpoints — without them, the CLI's 32K-output
+    default fills a 32K-window vLLM and yields HTTP 400.
+    """
+    import json as _json
+
+    payload = _json.dumps(
+        [
+            {
+                "name": "vllm-large",
+                "base_url": "http://100.127.175.6:4200",
+                "api_key_env": "INFERENCE_HUB_KEY",
+                "api_key_value": "",
+                "default_model": "qwen3:14b",
+                "context_window": 32768,
+                "max_output_tokens": 8000,
+            }
+        ]
+    )
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "5",
+            "endpoints_json": payload,
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # Inspect the on-disk settings file
+    settings_toml = (tmp_path / "home" / "settings.toml").read_text()
+    parsed = tomllib.loads(settings_toml)
+    ep = parsed["privacy"]["endpoints"]["vllm-large"]
+    assert ep["context_window"] == 32768
+    assert ep["max_output_tokens"] == 8000
+    assert ep["base_url"] == "http://100.127.175.6:4200"
+
+
+def test_endpoint_zero_limits_omitted_from_toml(settings_client, tmp_path):
+    """When the user leaves the new fields blank (= 0 = "auto-default"),
+    they must NOT clutter the TOML with redundant entries that match
+    the auto-default anyway. Only explicit non-zero values get
+    persisted."""
+    import json as _json
+
+    payload = _json.dumps(
+        [
+            {
+                "name": "ep-default",
+                "base_url": "http://localhost:8000",
+                "api_key_env": "",
+                "api_key_value": "",
+                "default_model": "",
+                "context_window": 0,
+                "max_output_tokens": 0,
+            }
+        ]
+    )
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "5",
+            "endpoints_json": payload,
+        },
+    )
+    assert r.status_code == 200, r.text
+    parsed = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
+    ep = parsed["privacy"]["endpoints"]["ep-default"]
+    assert "context_window" not in ep
+    assert "max_output_tokens" not in ep
+
+
+def test_endpoint_negative_limit_rejected_with_422(settings_client):
+    """A typo or copy-paste mishap that puts a negative number in
+    either field must be rejected — silently saving and then
+    auto-defaulting at runtime would mask the user's intent."""
+    import json as _json
+
+    payload = _json.dumps(
+        [
+            {
+                "name": "broken",
+                "base_url": "http://localhost:8000",
+                "api_key_env": "",
+                "api_key_value": "",
+                "default_model": "",
+                "context_window": -1,
+                "max_output_tokens": 0,
+            }
+        ]
+    )
+    r = settings_client.put(
+        "/api/settings",
+        data={
+            "default_audience": "expert",
+            "default_max_turns": "5",
+            "endpoints_json": payload,
+        },
+    )
+    assert r.status_code == 422
+    assert "context_window" in r.text
