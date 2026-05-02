@@ -339,3 +339,174 @@ def test_global_hybrid_prompts_for_endpoint_key_value(urika_home, monkeypatch):
     # secrets.env: value lands here.
     secrets_env = (urika_home / "secrets.env").read_text()
     assert "MY_PRIVATE_KEY=sk-private-value-padding" in secrets_env
+
+
+# ── --reset-models flag ──────────────────────────────────────────────
+
+
+def test_reset_models_global_opus_writes_split(urika_home, monkeypatch):
+    """`urika config --reset-models` rebuilds the per-agent split for
+    every mode whose default model is Opus. Pre-existing custom
+    overrides are dropped (idempotent: running twice produces the
+    same file).
+    """
+    from click.testing import CliRunner
+
+    from urika.cli import cli
+
+    # Seed a global settings.toml with an Opus open default and a
+    # bunch of stale per-agent pinning that pre-dates the split.
+    (urika_home / "settings.toml").write_text(
+        """[runtime.modes.open]
+model = "claude-opus-4-6"
+
+[runtime.modes.open.models.task_agent]
+model = "claude-opus-4-6"
+endpoint = "open"
+
+[runtime.modes.open.models.advisor_agent]
+model = "claude-opus-4-6"
+endpoint = "open"
+
+[runtime.modes.open.models.report_agent]
+model = "claude-haiku-4-5"
+endpoint = "open"
+"""
+    )
+
+    result = CliRunner().invoke(cli, ["config", "--reset-models"])
+    assert result.exit_code == 0, result.output
+    assert "open" in result.output
+
+    s = tomllib.loads((urika_home / "settings.toml").read_text())
+    open_mode = s["runtime"]["modes"]["open"]
+    assert open_mode["model"] == "claude-opus-4-6"
+    # Reasoning agents pinned to the configured default.
+    for agent in ("planning_agent", "advisor_agent", "finalizer", "project_builder"):
+        assert open_mode["models"][agent]["model"] == "claude-opus-4-6"
+        assert open_mode["models"][agent]["endpoint"] == "open"
+    # Execution agents pinned to the cheaper tier.
+    for agent in ("task_agent", "evaluator", "report_agent", "presentation_agent",
+                  "tool_builder", "literature_agent", "data_agent",
+                  "project_summarizer"):
+        assert open_mode["models"][agent]["model"] == "claude-sonnet-4-5"
+        assert open_mode["models"][agent]["endpoint"] == "open"
+
+    # Idempotent — second run produces the same file.
+    before = (urika_home / "settings.toml").read_text()
+    result2 = CliRunner().invoke(cli, ["config", "--reset-models"])
+    assert result2.exit_code == 0
+    after = (urika_home / "settings.toml").read_text()
+    assert before == after
+
+
+def test_reset_models_global_sonnet_clears_overrides(urika_home, monkeypatch):
+    """When the mode default is already Sonnet, the split is a no-op
+    and any leftover per-agent overrides are dropped (they would
+    just be noise — the runtime falls back to the mode default).
+    """
+    from click.testing import CliRunner
+
+    from urika.cli import cli
+
+    (urika_home / "settings.toml").write_text(
+        """[runtime.modes.open]
+model = "claude-sonnet-4-5"
+
+[runtime.modes.open.models.task_agent]
+model = "claude-haiku-4-5"
+endpoint = "open"
+"""
+    )
+
+    result = CliRunner().invoke(cli, ["config", "--reset-models"])
+    assert result.exit_code == 0, result.output
+
+    s = tomllib.loads((urika_home / "settings.toml").read_text())
+    open_mode = s["runtime"]["modes"]["open"]
+    assert open_mode["model"] == "claude-sonnet-4-5"
+    # No per-agent block — the leftover task_agent override is gone.
+    assert "models" not in open_mode
+
+
+def test_reset_models_global_hybrid_preserves_private_pins(urika_home, monkeypatch):
+    """Hybrid mode's data_agent + tool_builder private-endpoint pins
+    are preserved across a reset — the rebuild puts cloud-Sonnet
+    placeholders for execution agents, then overrides those two
+    with the carried-forward private assignment.
+    """
+    from click.testing import CliRunner
+
+    from urika.cli import cli
+
+    (urika_home / "settings.toml").write_text(
+        """[runtime.modes.hybrid]
+model = "claude-opus-4-6"
+
+[runtime.modes.hybrid.models.data_agent]
+model = "qwen3:14b"
+endpoint = "private"
+
+[runtime.modes.hybrid.models.tool_builder]
+model = "qwen3:14b"
+endpoint = "private"
+"""
+    )
+
+    result = CliRunner().invoke(cli, ["config", "--reset-models"])
+    assert result.exit_code == 0, result.output
+
+    s = tomllib.loads((urika_home / "settings.toml").read_text())
+    hybrid = s["runtime"]["modes"]["hybrid"]
+    assert hybrid["model"] == "claude-opus-4-6"
+    # Reasoning + cloud-execution split applied.
+    assert hybrid["models"]["planning_agent"]["model"] == "claude-opus-4-6"
+    assert hybrid["models"]["task_agent"]["model"] == "claude-sonnet-4-5"
+    # Private pins survived the rebuild.
+    assert hybrid["models"]["data_agent"]["model"] == "qwen3:14b"
+    assert hybrid["models"]["data_agent"]["endpoint"] == "private"
+    assert hybrid["models"]["tool_builder"]["model"] == "qwen3:14b"
+    assert hybrid["models"]["tool_builder"]["endpoint"] == "private"
+
+
+def test_reset_models_project_scope(urika_home, monkeypatch, tmp_path):
+    """`urika config <project> --reset-models` rebuilds the project's
+    own urika.toml under the flat [runtime] / [runtime.models.*]
+    keys.
+    """
+    from click.testing import CliRunner
+
+    from urika.cli import cli
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    (project_dir / "urika.toml").write_text(
+        """[project]
+name = "my-proj"
+question = "?"
+mode = "exploratory"
+
+[privacy]
+mode = "open"
+
+[runtime]
+model = "claude-opus-4-6"
+
+[runtime.models.task_agent]
+model = "claude-opus-4-6"
+endpoint = "open"
+"""
+    )
+
+    monkeypatch.setattr(
+        "urika.cli.config._resolve_project",
+        lambda name: (project_dir, None),
+    )
+
+    result = CliRunner().invoke(cli, ["config", "my-proj", "--reset-models"])
+    assert result.exit_code == 0, result.output
+
+    s = tomllib.loads((project_dir / "urika.toml").read_text())
+    assert s["runtime"]["model"] == "claude-opus-4-6"
+    assert s["runtime"]["models"]["task_agent"]["model"] == "claude-sonnet-4-5"
+    assert s["runtime"]["models"]["planning_agent"]["model"] == "claude-opus-4-6"

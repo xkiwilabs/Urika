@@ -3552,3 +3552,82 @@ def api_run_pause(name: str, exp_id: str) -> dict:
     (flag_dir / "pause_requested").write_text("pause", encoding="utf-8")
 
     return {"status": "pause_requested", "experiment_id": exp_id}
+
+
+@router.post("/settings/models/reset")
+def api_global_models_reset() -> dict:
+    """Re-apply the recommended reasoning/execution model split to
+    every configured mode in ``~/.urika/settings.toml``.
+
+    Reasoning agents (``planning_agent``, ``advisor_agent``,
+    ``finalizer``, ``project_builder``) get pinned to whatever model
+    is currently set as the mode default. Execution agents
+    (``task_agent``, ``evaluator``, ``report_agent``,
+    ``presentation_agent``, ``tool_builder``, ``literature_agent``,
+    ``data_agent``, ``project_summarizer``) get pinned to
+    ``claude-sonnet-4-5`` — indistinguishable quality on those tasks
+    and ~5× cheaper per call. Modes whose default is already Sonnet
+    or Haiku skip the split (cheaper-tier already); their leftover
+    per-agent overrides are dropped to keep the file clean.
+
+    Hybrid mode preserves the ``data_agent`` + ``tool_builder``
+    private-endpoint pin across the rebuild.
+
+    Idempotent. Returns the modes the split was applied to.
+    """
+    from urika.core.recommended_models import (
+        reset_global_models,
+        split_applies,
+    )
+    from urika.core.settings import load_settings, save_settings
+
+    settings = load_settings()
+    reset_global_models(settings)
+    save_settings(settings)
+
+    modes = settings.get("runtime", {}).get("modes", {}) or {}
+    split_modes = [
+        m for m in ("open", "private", "hybrid")
+        if isinstance(modes.get(m), dict)
+        and split_applies(modes[m].get("model", ""))
+    ]
+    return {"ok": True, "split_applied_to": split_modes}
+
+
+@router.post("/projects/{name}/settings/models/reset")
+def api_project_models_reset(name: str) -> dict:
+    """Project-scoped equivalent of ``POST /settings/models/reset``.
+
+    Rewrites ``<project>/urika.toml`` ``[runtime.models]`` from the
+    project's current ``[runtime].model`` and privacy mode. Hybrid
+    projects preserve their data_agent + tool_builder private pins;
+    every other per-agent override is dropped.
+
+    Idempotent.
+    """
+    from urika.core.recommended_models import (
+        reset_project_models,
+        split_applies,
+    )
+    from urika.core.workspace import _write_toml
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    import tomllib
+
+    toml_path = summary.path / "urika.toml"
+    with open(toml_path, "rb") as f:
+        settings = tomllib.load(f)
+
+    reset_project_models(settings)
+    _write_toml(toml_path, settings)
+
+    chosen = settings.get("runtime", {}).get("model", "")
+    return {
+        "ok": True,
+        "default_model": chosen,
+        "split_applied": split_applies(chosen),
+    }

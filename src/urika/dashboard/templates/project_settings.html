@@ -149,6 +149,38 @@
        Field names remain on the existing scheme (``model[<agent>]`` /
        ``endpoint[<agent>]``) — the project-settings API is unchanged. #}
     <div class="tab-panel" x-show="active === 'models'" x-cloak>
+      {# Reset-to-recommended-defaults action. Sits OUTSIDE the main
+         settings form because it has its own POST endpoint and writes
+         back the whole [runtime.models] block atomically.  HTMX swaps
+         the result message in-place; no page reload needed. #}
+      <div class="form-row" x-data="{ resetMsg: '', resetting: false }">
+        <label>Recommended defaults</label>
+        <div>
+          <button type="button"
+                  class="btn btn--secondary"
+                  :disabled="resetting"
+                  @click="if (confirm('Reset every per-agent model assignment to the recommended split? Reasoning agents stay on the project default; execution agents (task / evaluator / report / etc.) flip to claude-sonnet-4-5. Custom per-agent overrides will be replaced.')) {
+                    resetting = true;
+                    fetch('/api/projects/{{ project.name }}/settings/models/reset', { method: 'POST' })
+                      .then(r => r.json())
+                      .then(j => {
+                        resetting = false;
+                        resetMsg = j.split_applied
+                          ? 'Reset applied: reasoning agents on ' + j.default_model + ', execution agents on claude-sonnet-4-5. Reload the page to see the new assignments.'
+                          : 'Reset cleared per-agent overrides. Default is ' + (j.default_model || '(unset)') + ' — split not applied (already at the cheaper tier).';
+                      })
+                      .catch(e => { resetting = false; resetMsg = 'Reset failed: ' + e; });
+                  }">
+            <span x-show="!resetting">Reset to recommended defaults</span>
+            <span x-show="resetting">Resetting…</span>
+          </button>
+          <span class="form-help" x-show="!resetMsg">
+            Pins reasoning agents (planning / advisor / finalize / project-builder) to the project default model, and execution agents to <code>claude-sonnet-4-5</code> — indistinguishable quality on those roles, ~5× cheaper per call. Hybrid projects keep their data-agent + tool-builder private-endpoint pin.
+          </span>
+          <span class="form-help" x-text="resetMsg" x-show="resetMsg"></span>
+        </div>
+      </div>
+
       <div class="form-row">
         <label for="runtime_model">Project-wide model override</label>
         {% if project_privacy_mode in ["open", "hybrid"] %}

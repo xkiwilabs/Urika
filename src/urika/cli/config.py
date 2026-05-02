@@ -32,35 +32,14 @@ _CLOUD_MODELS: list[tuple[str, str]] = [
     ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
 ]
 
-# Agents whose decision quality directly shapes the experiment's
-# trajectory — keep these on the user's selected "best" model.
-_REASONING_AGENTS: tuple[str, ...] = (
-    "planning_agent",
-    "advisor_agent",
-    "finalizer",
-    "project_builder",
+# Re-exported from the shared module so existing imports
+# (``from urika.cli.config import _REASONING_AGENTS``) keep working.
+# Single source of truth lives in ``urika.core.recommended_models``.
+from urika.core.recommended_models import (  # noqa: E402
+    EXECUTION_AGENT_DEFAULT_MODEL as _EXECUTION_AGENT_DEFAULT_MODEL,
+    EXECUTION_AGENTS as _EXECUTION_AGENTS,
+    REASONING_AGENTS as _REASONING_AGENTS,
 )
-
-# Agents whose work is "execute this plan" / "format these numbers" /
-# "compare against threshold" — Sonnet performs indistinguishably from
-# Opus on these and saves ~5x per call. Auto-applied when the user
-# picks Opus as the default; Sonnet-default users skip the split
-# (already at the cheaper tier).
-_EXECUTION_AGENTS: tuple[str, ...] = (
-    "task_agent",
-    "evaluator",
-    "report_agent",
-    "presentation_agent",
-    "tool_builder",
-    "literature_agent",
-    "data_agent",
-    "project_summarizer",
-)
-
-# Cheaper-tier model used for execution agents when the user picks
-# Opus. Single source of truth so the CLI wizard, the dashboard's
-# Models tab, and the recommended-defaults plan agree.
-_EXECUTION_AGENT_DEFAULT_MODEL = "claude-sonnet-4-5"
 
 
 def _prompt_for_endpoint_key_value(key_env: str) -> None:
@@ -178,11 +157,24 @@ def dashboard(
         "to verify the configured ANTHROPIC_API_KEY actually works."
     ),
 )
+@click.option(
+    "--reset-models",
+    "reset_models",
+    is_flag=True,
+    help=(
+        "Reset per-agent model assignments to the recommended split "
+        "(reasoning agents on the configured default, execution agents "
+        "on claude-sonnet-4-5). Applies to the project's urika.toml or, "
+        "without PROJECT, to every configured mode in "
+        "~/.urika/settings.toml. Idempotent."
+    ),
+)
 def config_command(
     project: str | None,
     show: bool,
     json_output: bool,
     test_flag: bool,
+    reset_models: bool,
 ) -> None:
     """View or configure privacy mode and models.
 
@@ -255,6 +247,60 @@ def config_command(
         from urika.core.settings import load_settings
 
         settings = load_settings()
+
+    # ── Reset-models mode ──
+    # Re-applies the recommended reasoning/execution split to every
+    # mode currently configured in the file. Idempotent — running
+    # twice is a no-op the second time. Safe to run on pre-v0.4.0
+    # projects that pre-date the split.
+    if reset_models:
+        from urika.cli_display import print_success
+        from urika.core.recommended_models import (
+            EXECUTION_AGENT_DEFAULT_MODEL,
+            reset_global_models,
+            reset_project_models,
+            split_applies,
+        )
+
+        if is_project:
+            reset_project_models(settings)
+            from urika.core.workspace import _write_toml
+
+            _write_toml(project_path / "urika.toml", settings)
+            chosen = settings.get("runtime", {}).get("model", "")
+            if split_applies(chosen):
+                print_success(
+                    f"Reset {project}: reasoning agents → {chosen}, "
+                    f"execution agents → {EXECUTION_AGENT_DEFAULT_MODEL}"
+                )
+            else:
+                print_success(
+                    f"Reset {project}: default model is {chosen or '(unset)'} — "
+                    f"split not applied (already at the cheaper tier)"
+                )
+        else:
+            reset_global_models(settings)
+            from urika.core.settings import save_settings
+
+            save_settings(settings)
+            modes = settings.get("runtime", {}).get("modes", {})
+            split_modes = [
+                m for m in ("open", "private", "hybrid")
+                if isinstance(modes.get(m), dict)
+                and split_applies(modes[m].get("model", ""))
+            ]
+            if split_modes:
+                print_success(
+                    f"Reset global per-agent assignments. Split applied to: "
+                    f"{', '.join(split_modes)}. Other configured modes are "
+                    f"already at the cheaper tier."
+                )
+            else:
+                print_success(
+                    "Reset global per-agent assignments — every configured "
+                    "mode is already at the cheaper tier; no split applied."
+                )
+        return
 
     # ── Show mode ──
     if show:

@@ -65,6 +65,17 @@ When you run `urika config` and pick **Opus** as your default cloud model, the w
 
 Net effect: reasoning quality is unchanged, execution cost drops ~50–65% per experiment. To opt out and put every agent on the same model, edit `~/.urika/settings.toml` directly or override individual agents in the dashboard's Settings → Models tab. Picking **Sonnet** as the default skips the split entirely (everything's already at the cheaper tier).
 
+#### Re-applying the split to existing projects
+
+Projects created before v0.4.0 — or any project whose per-agent assignments have drifted — can be reset to the recommended split without going through the full wizard:
+
+```bash
+urika config <project> --reset-models     # rebuild that project's urika.toml
+urika config --reset-models               # rebuild every configured mode in ~/.urika/settings.toml
+```
+
+The dashboard's Models tab also has a **Reset to recommended defaults** button at the top, both globally (`/settings`) and per-project (`/projects/<n>/settings`). The reset is idempotent — running it twice is a no-op the second time. Hybrid projects keep their data-agent + tool-builder private-endpoint pin across the rebuild.
+
 
 ## Named Endpoints
 
