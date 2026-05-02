@@ -99,19 +99,31 @@ See `CHANGELOG.md` for the full per-fix accounting.
 
 | Release | Focus | Target |
 |---|---|---|
-| **v0.4.1** | Bug-fix hotfix from v0.4.0 reports (dashboard footer, prompt-bloat trim, sigterm exit, bash timeout, checkpoint docs) | ~1 week (≈ 2026-05-09) |
-| **v0.4.2** | Tester-driven hotfix | ~2 weeks after v0.4.1 |
-| **v0.5.0** | GitHub integration + OpenAI adapter + Memory Phases 2-4 + Project templates + Plugin system | ~5-7 weeks |
-| **v0.5.x** | Stabilisation | 3-4 weeks |
-| **v0.6.0** | Output polish (PDF/LaTeX/Jupyter export, arXiv fetcher, Plotly figures, model cards, Optuna agent) | ~4 weeks |
-| **v0.6.x** | Stabilisation | 2-3 weeks |
-| **v0.7.0** | Final feature work (mobile dashboard, run replay, accessibility, i18n stubs, API audit) — last release before feature freeze | ~3 weeks |
-| **v0.7.x** | Final stabilisation before RC cycle | 2-3 weeks |
-| **v1.0.0rcN** | Release-candidate cycle, no new features | 2-4 weeks total |
-| **v1.0.0** | Official release with API stability commitment | ~5-6 months from today |
+| **v0.4.1** | Bug-fix hotfix (dashboard footer, prompt-bloat trim + per-endpoint context_window, sigterm exit, bash timeout) | ~4 days (week 0.5) |
+| **v0.5.0** | Project memory Phases 2–4 (curator agent, archive viewer, diff view) | ~1 week (week 1.5) |
+| **v0.6.0** | OpenAI Agents SDK adapter + project templates | ~1.5 weeks (week 3) |
+| **v0.7.0** | GitHub auto-backup (`urika github init/push/pull`, opt-in auto-push hook on event triggers, dashboard Git tab) | ~1 week (week 4) |
+| **v0.8.0** | Output exports (PDF/LaTeX/Jupyter via Pandoc, model-card auto-generation) | ~1.5 weeks (week 5.5) |
+| **v0.9.0** | UX polish (mobile-responsive dashboard, accessibility audit, i18n string-extraction stubs) | ~1 week (week 7) |
+| **v1.0.0rc1** | Feature freeze + API audit + migration guide | ~3 days (week 7.5) |
+| **v1.0.0rc2** | RC feedback fixes only | ~3 days (week 7.8) |
+| **v1.0.0** | OFFICIAL RELEASE — API stability commitment | week 8 |
 
-Cut criteria are hard — the version is the contract, the schedule is
-a guess.
+**Total: ~34 dev-days over 8 weeks.** No `.x` stabilisation
+windows between minors — bug-fix budget is folded into the first
+1–2 days of the next minor. Cut criteria are hard — the version is
+the contract, the schedule is a guess.
+
+### Cut from 1.0 (deferred to v1.1+)
+
+- **Plugin / extension system** (`urika.tools` / `urika.agents`
+  entry points). API commitment problem; wait for real-world
+  feedback after 1.0.
+- **GitHub thick** — OAuth flow, "Connect GitHub" dashboard button,
+  audit log, PR/issue surface. v0.7 auto-backup covers the high-
+  frequency case.
+- **arXiv fetcher**, **Plotly / Bokeh interactive figures**,
+  **Optuna hyperopt agent**, **run replay / decision-log viewer**.
 
 ---
 
