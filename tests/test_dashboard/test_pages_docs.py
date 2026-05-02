@@ -132,7 +132,13 @@ def test_docs_page_empty_state_when_no_docs(tmp_path, monkeypatch):
     client = TestClient(app)
     r = client.get("/docs", follow_redirects=False)
     assert r.status_code == 200
-    assert "Documentation not available" in r.text
+    body = r.text
+    # Empty state must explain what's wrong AND link to the real repo
+    # docs (regression: previously linked to placeholder ``yourorg/urika``
+    # which 404s).
+    assert "Documentation not bundled" in body
+    assert "github.com/xkiwilabs/Urika/tree/main/docs" in body
+    assert "yourorg" not in body
 
 
 def test_docs_link_in_sidebar(client_with_docs):

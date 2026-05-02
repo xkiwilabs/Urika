@@ -80,8 +80,20 @@ dev = [
 [project.scripts]
 urika = "urika.cli:cli"
 
+[project.urls]
+Homepage = "https://github.com/xkiwilabs/Urika"
+Repository = "https://github.com/xkiwilabs/Urika"
+Documentation = "https://github.com/xkiwilabs/Urika/tree/main/docs"
+Issues = "https://github.com/xkiwilabs/Urika/issues"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/urika"]
+
+# Bundle the user-facing docs/ tree inside the wheel so the dashboard's
+# Documentation page works on pip-installed Urika (otherwise docs/ only
+# ships with editable installs from a source checkout).
+[tool.hatch.build.targets.wheel.force-include]
+"docs" = "urika/_docs"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -19,21 +19,24 @@ router = APIRouter(tags=["docs"])
 
 
 def _docs_dir() -> Path | None:
-    """Find the repo's ``docs/`` directory if it exists.
+    """Find the docs/ tree if it exists.
 
-    For an editable install this file lives at
-    ``<repo>/src/urika/dashboard/routers/docs.py`` so the repo root is
-    four parents up. For a wheel install we instead try the package's
-    grandparent directory; in practice ``docs/`` is rarely shipped
-    that way and we return ``None``.
+    Two layouts are supported:
+
+    1. Editable install from a source checkout — docs live at
+       ``<repo>/docs`` (four parents up from this file).
+    2. Wheel / pip install — ``pyproject.toml`` force-includes the
+       repo's ``docs/`` tree at ``urika/_docs`` inside the wheel, so it
+       sits next to ``urika/__init__.py``.
+
+    Returns ``None`` only if neither location exists.
     """
     candidate = Path(__file__).resolve().parents[4] / "docs"
     if candidate.is_dir():
         return candidate
-    pkg_root = Path(urika.__file__).resolve().parent.parent
-    candidate2 = pkg_root.parent / "docs"
-    if candidate2.is_dir():
-        return candidate2
+    bundled = Path(urika.__file__).resolve().parent / "_docs"
+    if bundled.is_dir():
+        return bundled
     return None
 
 
