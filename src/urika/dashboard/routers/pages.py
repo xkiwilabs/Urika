@@ -200,9 +200,19 @@ def project_home(request: Request, name: str) -> HTMLResponse:
         # narrative.md (written at the end of every run). The view
         # route picks whichever exists.
         "has_report": (book / "report.md").exists() or (book / "narrative.md").exists(),
+        # Project-level presentations are written to one of two
+        # directories depending on which command produced them:
+        #
+        #   urika present --experiment project    -> projectbook/presentation/index.html
+        #   urika finalize                        -> projectbook/final-presentation/index.html
+        #
+        # The card surfaces if EITHER exists; the view route below
+        # checks both with `final-presentation/` taking precedence
+        # (the polished, findings.json-grounded version).
         "has_presentation": (
             (book / "presentation.html").exists()
             or (book / "presentation" / "index.html").exists()
+            or (book / "final-presentation" / "index.html").exists()
         ),
     }
     has_summary = (book / "summary.md").exists()
@@ -375,6 +385,12 @@ def projectbook_presentation_asset(name: str, rest: str) -> FileResponse:
     ``<link rel="stylesheet" href="reveal.css">`` and
     ``<script src="reveal.min.js">`` references 404, and the deck
     renders as a single vertically-stacked page instead of slide-by-slide.
+
+    Falls back to ``projectbook/final-presentation/`` when the
+    requested asset is not found under ``projectbook/presentation/``.
+    Both directories can hold a project-level deck — `urika present
+    --experiment project` writes to ``presentation/``,
+    `urika finalize` writes to ``final-presentation/``.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -382,14 +398,15 @@ def projectbook_presentation_asset(name: str, rest: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Unknown project")
     if not rest or ".." in rest or rest.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid path")
-    pres_root = (summary.path / "projectbook" / "presentation").resolve()
-    asset_path = pres_root / rest
-    if not asset_path.exists() or not asset_path.is_file():
-        raise HTTPException(status_code=404, detail="Asset not found")
-    # Ensure we did not escape the presentation dir.
-    if not asset_path.resolve().is_relative_to(pres_root):
-        raise HTTPException(status_code=400, detail="Invalid path")
-    return FileResponse(asset_path)
+    for sub in ("presentation", "final-presentation"):
+        pres_root = (summary.path / "projectbook" / sub).resolve()
+        asset_path = pres_root / rest
+        if asset_path.exists() and asset_path.is_file():
+            # Ensure we did not escape the presentation dir.
+            if not asset_path.resolve().is_relative_to(pres_root):
+                raise HTTPException(status_code=400, detail="Invalid path")
+            return FileResponse(asset_path)
+    raise HTTPException(status_code=404, detail="Asset not found")
 
 
 @router.get("/projects/{name}/projectbook/presentation")
@@ -411,7 +428,12 @@ def projectbook_presentation(name: str) -> HTMLResponse:
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
     book = summary.path / "projectbook"
+    # Search order matters: `final-presentation/` is the polished
+    # findings.json-grounded version produced by `urika finalize`,
+    # and should win over the per-project `urika present` output
+    # when both exist (the user just finalized the project).
     for candidate in (
+        book / "final-presentation" / "index.html",
         book / "presentation.html",
         book / "presentation" / "index.html",
     ):

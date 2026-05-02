@@ -90,6 +90,34 @@ def test_returns_true_when_artifacts_exist(tmp_path: Path, monkeypatch):
     }
 
 
+def test_presentation_final_presentation_dir(tmp_path: Path, monkeypatch):
+    """Regression (v0.4.1): `urika finalize` writes the project-level
+    deck to ``projectbook/final-presentation/index.html``, but the
+    artifact probe was only checking ``projectbook/presentation/``
+    — so a finalized project showed no Presentation card on the
+    project home and no "view the result" CTA on the finalize log
+    page. Probe must now accept the final-presentation/ directory
+    too.
+    """
+    proj = _make_project(tmp_path, "alpha")
+    book = proj / "projectbook"
+    (book / "final-presentation").mkdir(parents=True)
+    (book / "final-presentation" / "index.html").write_text(
+        "<html><body>final deck</body></html>"
+    )
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    r = client.get("/api/projects/alpha/artifacts/projectbook")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["has_presentation"] is True
+
+
 def test_presentation_either_form(tmp_path: Path, monkeypatch):
     """has_presentation must accept the single-file form
     (projectbook/presentation.html) just as it accepts the

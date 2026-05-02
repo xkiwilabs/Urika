@@ -1083,6 +1083,81 @@ def test_experiment_presentation_injects_base_tag(client_with_runs):
     assert "deck" in r.text
 
 
+def test_project_home_shows_presentation_card_for_final_presentation_dir(
+    client_with_runs,
+):
+    """Regression (v0.4.1): `urika finalize` writes the project-level
+    deck to ``projectbook/final-presentation/`` (NOT
+    ``projectbook/presentation/``). Pre-fix the project-home card
+    detection only checked the latter, so a finalized project
+    showed no Presentation card on the home page even though the
+    deck was on disk and the finalize agent had completed.
+    """
+    proj = client_with_runs.app.state.project_root / "alpha"
+    final = proj / "projectbook" / "final-presentation"
+    final.mkdir(parents=True, exist_ok=True)
+    (final / "index.html").write_text(
+        "<!DOCTYPE html><html><body>final deck</body></html>"
+    )
+    r = client_with_runs.get("/projects/alpha")
+    assert r.status_code == 200
+    # The Presentation card link points at /projectbook/presentation
+    # (which the view route resolves to final-presentation/index.html
+    # when that's what's on disk).
+    assert "/projects/alpha/projectbook/presentation" in r.text
+    assert "Presentation" in r.text
+
+
+def test_projectbook_presentation_serves_final_presentation_dir(client_with_runs):
+    """The /projectbook/presentation view route must fall back to
+    final-presentation/ when the polished deck lives there.
+    final-presentation/ takes precedence (latest finalize output)."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    final = proj / "projectbook" / "final-presentation"
+    final.mkdir(parents=True, exist_ok=True)
+    (final / "index.html").write_text(
+        "<!DOCTYPE html><html><body>polished deck</body></html>"
+    )
+    r = client_with_runs.get("/projects/alpha/projectbook/presentation")
+    assert r.status_code == 200
+    assert "polished deck" in r.text
+
+
+def test_projectbook_presentation_serves_final_presentation_assets(client_with_runs):
+    """The asset sub-route falls back to final-presentation/ too,
+    so reveal.css / reveal.min.js resolve when the deck was
+    produced by `urika finalize`."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    final = proj / "projectbook" / "final-presentation"
+    final.mkdir(parents=True, exist_ok=True)
+    (final / "index.html").write_text("<html></html>")
+    (final / "reveal.css").write_text("body{ color: red; }")
+    r = client_with_runs.get(
+        "/projects/alpha/projectbook/presentation/reveal.css"
+    )
+    assert r.status_code == 200
+    assert "color: red" in r.text
+
+
+def test_projectbook_presentation_prefers_final_over_legacy(client_with_runs):
+    """When both projectbook/presentation/ and projectbook/final-
+    presentation/ exist, the final-presentation/ deck (the
+    findings.json-grounded polished version produced by
+    `urika finalize`) should win — it's the latest authoritative
+    output."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    legacy = proj / "projectbook" / "presentation"
+    final = proj / "projectbook" / "final-presentation"
+    legacy.mkdir(parents=True, exist_ok=True)
+    final.mkdir(parents=True, exist_ok=True)
+    (legacy / "index.html").write_text("<html><body>old draft</body></html>")
+    (final / "index.html").write_text("<html><body>final polished</body></html>")
+    r = client_with_runs.get("/projects/alpha/projectbook/presentation")
+    assert r.status_code == 200
+    assert "final polished" in r.text
+    assert "old draft" not in r.text
+
+
 def test_projectbook_presentation_injects_base_tag(client_with_runs):
     proj = client_with_runs.app.state.project_root / "alpha"
     pres_dir = proj / "projectbook" / "presentation"

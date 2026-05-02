@@ -2490,8 +2490,12 @@ def api_projectbook_artifacts(name: str):
     return {
         "has_summary": (book / "summary.md").exists(),
         "has_report": (book / "report.md").exists(),
+        # Project-level presentations land in either directory:
+        #   urika present --experiment project  -> projectbook/presentation/
+        #   urika finalize                      -> projectbook/final-presentation/
         "has_presentation": (book / "presentation.html").exists()
-        or (book / "presentation" / "index.html").exists(),
+        or (book / "presentation" / "index.html").exists()
+        or (book / "final-presentation" / "index.html").exists(),
         "has_findings": (book / "findings.json").exists(),
     }
 
