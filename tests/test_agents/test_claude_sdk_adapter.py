@@ -537,3 +537,138 @@ class TestTrailingExitTolerance:
         )
         keep_other = all(f.filter(normal_record) for f in sdk_logger.filters)
         assert keep_other is True
+
+
+# ── Prompt-size trace (v0.4.1 instrumentation) ────────────────────────
+
+
+class TestPromptSizeTrace:
+    """Regression: v0.4.1 added optional JSONL prompt-size instrumentation
+    gated by ``URIKA_PROMPT_TRACE_FILE``. The instrumentation must
+
+    1. be off by default (no file written, no perf cost beyond an
+       env-var lookup),
+    2. emit one record per agent call when enabled,
+    3. break out the cache-token components (input / cache_creation /
+       cache_read) so a real run can show whether the SDK's bundled
+       CLI is actually hitting the prompt cache.
+
+    Without the breakdown the orchestrator's existing ``tokens_in``
+    field is the *sum* of all three, which makes cache-hit ratio
+    invisible — that was the original blocker for evidence-based
+    prompt-bloat trim.
+    """
+
+    @pytest.mark.asyncio
+    async def test_trace_disabled_by_default_writes_nothing(
+        self, read_only_config: AgentConfig, monkeypatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.delenv("URIKA_PROMPT_TRACE_FILE", raising=False)
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "x"}
+
+        async def _fake_query(*_args, **_kwargs):
+            yield _FakeAssistantMessage("ok")
+            yield _FakeResultMessage(is_error=False, num_turns=1)
+
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.AssistantMessage",
+            _FakeAssistantMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage", _FakeResultMessage
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.TextBlock", _FakeTextBlock
+        )
+
+        runner = ClaudeSDKRunner()
+        await runner.run(read_only_config, "hello")
+        assert list(tmp_path.glob("*.jsonl")) == []
+
+    @pytest.mark.asyncio
+    async def test_trace_emits_jsonl_with_size_and_cache_breakdown(
+        self, read_only_config: AgentConfig, monkeypatch, tmp_path: Path
+    ) -> None:
+        import json as _json
+
+        trace_file = tmp_path / "prompts.jsonl"
+        monkeypatch.setenv("URIKA_PROMPT_TRACE_FILE", str(trace_file))
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "x"}
+
+        class _CacheHitResult(_FakeResultMessage):
+            def __init__(self) -> None:
+                super().__init__(is_error=False, num_turns=1)
+                self.usage = {
+                    "input_tokens": 50,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 4000,
+                    "output_tokens": 200,
+                }
+
+        async def _fake_query(*_args, **_kwargs):
+            yield _FakeAssistantMessage("done")
+            yield _CacheHitResult()
+
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.AssistantMessage",
+            _FakeAssistantMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage", _CacheHitResult
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.TextBlock", _FakeTextBlock
+        )
+
+        runner = ClaudeSDKRunner()
+        prompt_text = "explain the dataset" * 10
+        await runner.run(read_only_config, prompt_text)
+
+        assert trace_file.exists(), "trace file must be written when env var is set"
+        lines = trace_file.read_text().splitlines()
+        assert len(lines) == 1, "exactly one record per agent call"
+        rec = _json.loads(lines[0])
+        assert rec["agent"] == "test_agent"
+        assert rec["system_bytes"] == len("You are a test agent.")
+        assert rec["prompt_bytes"] == len(prompt_text)
+        assert rec["input_tokens"] == 50
+        assert rec["cache_creation_in"] == 0
+        assert rec["cache_read_in"] == 4000
+        assert rec["tokens_out"] == 200
+        assert rec["tokens_in_total"] == 50 + 0 + 4000
+        assert rec["success"] is True
+        assert rec["duration_ms"] >= 0
+
+    @pytest.mark.asyncio
+    async def test_trace_io_failure_does_not_break_the_run(
+        self, read_only_config: AgentConfig, monkeypatch, tmp_path: Path
+    ) -> None:
+        bad_path = tmp_path / "no-such-dir" / "trace.jsonl"
+        monkeypatch.setenv("URIKA_PROMPT_TRACE_FILE", str(bad_path))
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "x"}
+
+        async def _fake_query(*_args, **_kwargs):
+            yield _FakeAssistantMessage("ok")
+            yield _FakeResultMessage(is_error=False, num_turns=1)
+
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.AssistantMessage",
+            _FakeAssistantMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage", _FakeResultMessage
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.TextBlock", _FakeTextBlock
+        )
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+        assert result.success is True
+        assert not bad_path.exists()
