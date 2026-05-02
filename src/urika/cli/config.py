@@ -32,6 +32,36 @@ _CLOUD_MODELS: list[tuple[str, str]] = [
     ("claude-haiku-4-5", "Fastest, lowest cost, less capable"),
 ]
 
+# Agents whose decision quality directly shapes the experiment's
+# trajectory — keep these on the user's selected "best" model.
+_REASONING_AGENTS: tuple[str, ...] = (
+    "planning_agent",
+    "advisor_agent",
+    "finalizer",
+    "project_builder",
+)
+
+# Agents whose work is "execute this plan" / "format these numbers" /
+# "compare against threshold" — Sonnet performs indistinguishably from
+# Opus on these and saves ~5x per call. Auto-applied when the user
+# picks Opus as the default; Sonnet-default users skip the split
+# (already at the cheaper tier).
+_EXECUTION_AGENTS: tuple[str, ...] = (
+    "task_agent",
+    "evaluator",
+    "report_agent",
+    "presentation_agent",
+    "tool_builder",
+    "literature_agent",
+    "data_agent",
+    "project_summarizer",
+)
+
+# Cheaper-tier model used for execution agents when the user picks
+# Opus. Single source of truth so the CLI wizard, the dashboard's
+# Models tab, and the recommended-defaults plan agree.
+_EXECUTION_AGENT_DEFAULT_MODEL = "claude-sonnet-4-5"
+
 
 def _prompt_for_endpoint_key_value(key_env: str) -> None:
     """Paired masked-value prompt for a privacy endpoint API key.
@@ -372,22 +402,65 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
             mode_cfg = modes_section.setdefault(mode, {})
             mode_cfg.setdefault("models", {})[agent] = row
 
+    def _apply_reasoning_execution_split(
+        set_per_agent_fn,  # noqa: ANN001 — same signature as _set_per_agent
+        mode_name: str,
+        chosen_default: str,
+        cloud_endpoint: str,
+    ) -> bool:
+        """Auto-write per-agent overrides when the user picks Opus.
+
+        - Reasoning agents (planning / advisor / finalize / project_builder)
+          stay on the chosen "best" model.
+        - Execution agents (task / evaluator / report / presentation /
+          tool / literature / data / summarizer) flip to the cheaper
+          tier (Sonnet 4.5) — performs indistinguishably for "execute
+          this plan" / "format these numbers" tasks and saves ~5x per
+          call.
+
+        Skipped when the user already picked Sonnet or Haiku (no
+        gain). Returns True iff the split was actually applied.
+
+        In hybrid mode, ``data_agent`` and ``tool_builder`` are
+        forced-private downstream of this call; the cloud-Sonnet
+        assignment we write here gets overwritten by the explicit
+        private assignment for those two agents.
+        """
+        if not chosen_default.lower().startswith("claude-opus"):
+            return False
+        for agent in _REASONING_AGENTS:
+            set_per_agent_fn(agent, chosen_default, cloud_endpoint)
+        for agent in _EXECUTION_AGENTS:
+            set_per_agent_fn(
+                agent, _EXECUTION_AGENT_DEFAULT_MODEL, cloud_endpoint
+            )
+        return True
+
     # ── Open mode: pick cloud model ──
     if mode == "open":
         click.echo()
         options = [f"{m} — {desc}" for m, desc in _CLOUD_MODELS]
         choice = interactive_numbered(
-            "  Default model for all agents:",
+            "  Default model (for reasoning agents — planning / advisor / finalize):",
             options,
             default=1,
         )
         model_name = choice.split(" —")[0].strip()
         _set_default_model(model_name)
+        _split_applied = _apply_reasoning_execution_split(
+            _set_per_agent, mode, model_name, "open"
+        )
         # Clear any private endpoints (project-scope only — globals
         # share endpoint defs across modes).
         if is_project:
             settings.get("privacy", {}).pop("endpoints", None)
-        print_success(f"Mode: open · Model: {model_name}")
+        if _split_applied:
+            print_success(
+                f"Mode: open · Reasoning agents: {model_name} · "
+                f"Execution agents: {_EXECUTION_AGENT_DEFAULT_MODEL}"
+            )
+        else:
+            print_success(f"Mode: open · Model: {model_name}")
 
     # ── Private mode: configure endpoint + model ──
     elif mode == "private":
@@ -491,16 +564,21 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
 
     # ── Hybrid mode: cloud model + private endpoint for data agents ──
     elif mode == "hybrid":
-        # Cloud model for most agents
+        # Cloud model for the reasoning agents (planning / advisor /
+        # finalize / project_builder). Execution-agent reads/reports
+        # auto-pick the cheaper tier when this is Opus.
         click.echo()
         options = [f"{m} — {desc}" for m, desc in _CLOUD_MODELS]
         choice = interactive_numbered(
-            "  Cloud model for most agents:",
+            "  Cloud model (for reasoning agents — planning / advisor / finalize):",
             options,
             default=1,
         )
         cloud_model = choice.split(" —")[0].strip()
         _set_default_model(cloud_model)
+        _hybrid_split_applied = _apply_reasoning_execution_split(
+            _set_per_agent, mode, cloud_model, "open"
+        )
 
         # Project-scope: if globals already define a usable private
         # endpoint, the project doesn't need its own copy — leaving the
@@ -604,10 +682,17 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         _set_per_agent("tool_builder", private_model, "private")
 
         _ep_label = ep_url if ep_url else "(inherits from globals)"
-        print_success(
-            f"Mode: hybrid · Cloud: {cloud_model} · "
-            f"Data agents: {private_model} via {_ep_label}"
-        )
+        if _hybrid_split_applied:
+            print_success(
+                f"Mode: hybrid · Reasoning: {cloud_model} · "
+                f"Cloud execution: {_EXECUTION_AGENT_DEFAULT_MODEL} · "
+                f"Data agents: {private_model} via {_ep_label}"
+            )
+        else:
+            print_success(
+                f"Mode: hybrid · Cloud: {cloud_model} · "
+                f"Data agents: {private_model} via {_ep_label}"
+            )
 
     # ── Save ──
     if is_project:

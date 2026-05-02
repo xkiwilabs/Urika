@@ -103,6 +103,93 @@ def test_global_hybrid_writes_per_mode_per_agent(urika_home, monkeypatch):
     assert hybrid["models"]["tool_builder"]["endpoint"] == "private"
 
 
+def test_global_open_opus_applies_reasoning_execution_split(urika_home, monkeypatch):
+    """When the user picks Opus as the open-mode default, the wizard
+    auto-writes a per-agent split: reasoning agents on Opus,
+    execution agents on Sonnet 4.5. Saves ~5x per execution call
+    with no quality impact (Sonnet is indistinguishable on
+    "execute this plan" / "format these numbers" tasks).
+    """
+    from urika.cli.config import _config_interactive, _EXECUTION_AGENT_DEFAULT_MODEL
+
+    seq = iter(
+        [
+            "open — agents use cloud models",
+            "claude-opus-4-6 — most capable",
+        ]
+    )
+
+    def fake_numbered(*args, **kwargs):
+        return next(seq)
+
+    monkeypatch.setattr(
+        "urika.cli_helpers.interactive_numbered", fake_numbered
+    )
+
+    settings: dict = {}
+    _config_interactive(
+        session=settings,
+        current_mode="open",
+        is_project=False,
+        project_path=None,
+    )
+
+    s = tomllib.loads((urika_home / "settings.toml").read_text())
+    open_mode = s["runtime"]["modes"]["open"]
+    # The "default model" still records Opus — that's what gets
+    # used for any agent without an explicit override.
+    assert open_mode["model"] == "claude-opus-4-6"
+    # Reasoning agents got explicit Opus pins.
+    for agent in ("planning_agent", "advisor_agent", "finalizer", "project_builder"):
+        assert open_mode["models"][agent]["model"] == "claude-opus-4-6"
+        assert open_mode["models"][agent]["endpoint"] == "open"
+    # Execution agents got the cheaper tier.
+    for agent in (
+        "task_agent", "evaluator", "report_agent", "presentation_agent",
+        "tool_builder", "literature_agent", "data_agent", "project_summarizer",
+    ):
+        assert open_mode["models"][agent]["model"] == _EXECUTION_AGENT_DEFAULT_MODEL
+        assert open_mode["models"][agent]["endpoint"] == "open"
+
+
+def test_global_open_sonnet_skips_split(urika_home, monkeypatch):
+    """When the user picks Sonnet as the default, no split is
+    needed — everything's already at the cheaper tier. The wizard
+    writes only the [runtime.modes.open].model field, no per-agent
+    overrides.
+    """
+    from urika.cli.config import _config_interactive
+
+    seq = iter(
+        [
+            "open — agents use cloud models",
+            "claude-sonnet-4-5 — best",
+        ]
+    )
+
+    def fake_numbered(*args, **kwargs):
+        return next(seq)
+
+    monkeypatch.setattr(
+        "urika.cli_helpers.interactive_numbered", fake_numbered
+    )
+
+    settings: dict = {}
+    _config_interactive(
+        session=settings,
+        current_mode="open",
+        is_project=False,
+        project_path=None,
+    )
+
+    s = tomllib.loads((urika_home / "settings.toml").read_text())
+    open_mode = s["runtime"]["modes"]["open"]
+    assert open_mode["model"] == "claude-sonnet-4-5"
+    # No split applied — Sonnet is already the execution-tier default,
+    # so per-agent overrides would just be noise.
+    assert "models" not in open_mode
+
+
 def test_project_scoped_config_still_uses_flat_keys(
     urika_home, monkeypatch, tmp_path
 ):

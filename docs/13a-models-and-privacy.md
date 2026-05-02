@@ -56,6 +56,15 @@ model = "claude-haiku-4-5"
 
 If no `[runtime]` section is present, Urika uses the default Claude model.
 
+### Recommended defaults — reasoning vs execution split
+
+When you run `urika config` and pick **Opus** as your default cloud model, the wizard auto-applies a per-agent split:
+
+- **Reasoning agents** (`planning_agent`, `advisor_agent`, `finalizer`, `project_builder`) — kept on the Opus model you selected. These are the agents whose decision quality directly shapes what the experiment becomes.
+- **Execution agents** (`task_agent`, `evaluator`, `report_agent`, `presentation_agent`, `tool_builder`, `literature_agent`, `data_agent`, `project_summarizer`) — automatically pinned to `claude-sonnet-4-5`. These execute already-decided plans, format already-decided findings, or apply rules to metrics. Sonnet performs indistinguishably from Opus on these tasks and saves roughly 5× per call.
+
+Net effect: reasoning quality is unchanged, execution cost drops ~50–65% per experiment. To opt out and put every agent on the same model, edit `~/.urika/settings.toml` directly or override individual agents in the dashboard's Settings → Models tab. Picking **Sonnet** as the default skips the split entirely (everything's already at the cheaper tier).
+
 
 ## Named Endpoints
 
