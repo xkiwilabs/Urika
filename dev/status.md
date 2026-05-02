@@ -1,288 +1,180 @@
 # Urika — Current Status
 
-**Date:** 2026-04-30
-**Version:** v0.3.2 (released)
-**Branch:** `dev` ahead of `origin/dev` by 0 commits (pushed); `main`
-synced and tagged `v0.3.2`.
-**Tests:** 2498 passing in focused suites; full pytest --collect-only
-reports 2498. TUI subset: 15 in `tests/test_tui/` + 5 in
-`tests/test_cli_tui.py`.
+**Date:** 2026-05-02
+**Version:** v0.4.0 (released to PyPI as `urika==0.4.0`)
+**Branch:** `dev` synced with `origin/dev`; `main` synced on both
+`origin` and `public` and tagged `v0.4.0`.
+**Tests:** 1816 passed / 1 skipped / 0 failed in the dashboard-
+excluded fast suite.
 
-The next planning doc is `dev/plans/2026-04-30-v0.4-roadmap.md`.
+The active roadmap is **`dev/plans/2026-05-02-roadmap-to-v1.0.md`** —
+covers v0.4.0 → v1.0.0 with cut criteria, release contents, and
+testing windows. Single source of truth.
 
-## v0.3.2 hardening release (just shipped)
+---
 
-Audit-driven release closing four bug families that v0.3.0/0.3.1
-shipped:
+## Active plans (`dev/plans/`)
 
-- **Stop button** — SIGTERM handler in `cli/run.py` (was SIGINT only),
-  `os.killpg(getpgid(pid), SIGTERM)` to reach process-group children,
-  `_start_reaper` writeback for terminal status, SSE stream emits real
-  state from `progress.json`.
-- **Dashboard advisor chat no longer auto-fires experiments** —
-  non-TTY guard at `_offer_to_run_advisor_suggestions`. Same pattern
-  applied to every other destructive prompt
-  (run_planning, run, present, report, build-tool).
-- **Stale `claude-opus-4-7` settings auto-migrate** on first launch,
-  backed up to `~/.urika/settings.toml.pre-0.3.2.bak`. Idempotent via
-  `~/.urika/.migrated_0.3.2` marker.
-- **`urika new` honors global default model** — was reading legacy
-  flat `[runtime].model` only, now prefers
-  `[runtime.modes.<mode>].model` (the canonical write path used by the
-  dashboard form).
-- **Prefer system `claude` CLI over the bundled SDK binary** — the
-  bundled binary in `claude-agent-sdk 0.1.45` is v2.1.63 and rejects
-  the request schema for newer Anthropic models.
-- **Sessions tab now captures dashboard advisor chats** — CLI
-  `urika advisor` writes an `OrchestratorSession` after a successful
-  exchange (was TUI/REPL-only).
-- **5 P0 error-surfacing fixes** — preserve type/traceback/cause across
-  SDK adapter, orchestrator loop, dashboard runs Popen failure path,
-  reaper thread exception, vault writes during dashboard form save.
-- **Cross-interface invariant tests**
-  (`tests/test_cross_interface_defaults.py`) pin: CLI wizard's
-  `_CLOUD_MODELS` and dashboard's `KNOWN_CLOUD_MODELS` agree;
-  `VALID_PRIVACY_MODES` agrees with `_VALID_PRIVACY_MODES`;
-  `get_default_runtime(mode)` round-trips dashboard form PUT.
-- **Transient + config errors pause-and-resume** rather than failing
-  experiments mid-loop. New error categories `transient` (5xx /
-  connection / timeout) and `config` (MissingPrivateEndpointError /
-  APIKeyRequiredError).
-- **`VALID_PRIVACY_MODES` fixed** — was `{open, private, university}`,
-  now `{open, private, hybrid}`.
+| Plan | Status |
+|------|--------|
+| `2026-05-02-roadmap-to-v1.0.md` | **Master roadmap** — v0.4.0 → v1.0.0 |
+| `2026-05-02-v0.4.x-bug-backlog.md` | Bugs queued for v0.4.1 / v0.4.2 |
+| `2026-05-02-prompt-bloat-and-context-budget.md` | Layer 1+2 in v0.4.1, Layer 3 in v0.5.x |
+| `2026-04-30-github-integration.md` | Full design — implementation in v0.5.0 |
 
-11 commits on `dev`, all pushed to `origin/dev` and `public/main`,
-tagged `v0.3.2` (`3e093673`).
+Everything else lives under `dev/archive/plans/` — see the
+"Plan-doc hygiene rules" section of the master roadmap for the
+discipline.
 
-## What's built
+---
 
-### Core infrastructure
+## v0.4.0 — what shipped (2026-05-02)
 
-- **Project lifecycle** — create / register / list / inspect / delete
-  / trash with `~/.urika/deletion-log.jsonl`. `core/workspace.py`,
-  `core/registry.py`, `core/project_delete.py`.
-- **Project Builder** — source scanning, data profiling, multi-file
-  dataset support, builder prompts for interactive agent setup.
-  `core/project_builder.py`, `core/source_scanner.py`,
-  `agents/roles/project_builder.py`.
-- **Experiment lifecycle** — create / list / load / progress tracking
-  / delete. `core/experiment.py`, `core/experiment_delete.py`.
-- **Session management** — start / pause / resume / complete / fail /
-  lockfiles with PID-aware probes. `core/session.py`.
-- **Progress tracking** — append-only JSONL with best-run queries.
-  `core/progress.py`.
-- **Labbook** — auto-generated `notes.md` / `summary.md` per
-  experiment + `key-findings.md` per project, inline figures.
-  `core/labbook.py`.
-- **Versioned criteria** — immutable history of project success
-  criteria. `core/criteria.py`.
-- **Method registry** — tracks methods, metrics, status, supersession
-  across runs. `core/method_registry.py`.
-- **Usage / cost tracking** — per-project `usage.json` aggregating
-  totals + per-session list. `core/usage.py`.
-- **Auto-generated README.md** with agent-written summary.
-  `core/readme_generator.py`.
-- **Reveal.js presentation rendering** from slide JSON.
-  `core/presentation.py`.
-- **Versioned report writes** with timestamped backups.
-  `core/report_writer.py`.
-- **Persistent advisor memory** — append-only history + rolling
-  context summary in `projectbook/`. `core/advisor_memory.py`.
-- **Orchestrator session persistence** — `<project>/.urika/sessions/`
-  with auto-prune at 20, preview text. `core/orchestrator_sessions.py`.
-- **Tiered secrets vault** — process env → project `.env` → global
-  keyring/file. Sidecar metadata, foot-gun guards, full dashboard
-  CRUD on global + per-project tabs. `core/vault.py`,
-  `core/secrets.py`, `core/known_secrets.py`.
-- **Anthropic Consumer Terms §3.7 enforcement** — refuses to spawn a
-  Claude SDK subprocess for cloud-bound agents without
-  `ANTHROPIC_API_KEY`; scrubs OAuth tokens + Claude Code session
-  markers in env passed to subprocess. `core/compliance.py`.
-- **Privacy preflight** — bearer-token-aware GET to
-  `/v1/models` for auth-protected private endpoints.
-  `core/privacy.py`.
-- **Notifications bus** — email / Slack / Telegram with remote
-  command surface, dashboard test-send, canonical event vocabulary.
-  `notifications/`.
-- **Update banner** — GitHub Releases check, suppressed in non-TTY
-  contexts. `core/updates.py`.
-- **Hardware probe + venv detection** — for `urika setup`.
-  `core/hardware.py`, `core/venv.py`, `core/anthropic_check.py`.
+First feature-complete v0.4 release. PyPI: `pip install urika==0.4.0`.
 
-### Tools (24 built-in)
+### Major surfaces (the v0.4 tracks)
 
-`tools/`: cluster_analysis, correlation_analysis, cross_validation,
-data_profiler, descriptive_stats, feature_scaler, gradient_boosting,
-group_split, hypothesis_tests, linear_mixed_model, linear_regression,
-logistic_regression, mann_whitney_u, one_way_anova, outlier_detection,
-paired_t_test, pca, polynomial_regression, random_forest,
-random_forest_classifier, regularized_regression,
-time_series_decomposition, train_val_test_split, visualization.
+- **SecurityPolicy enforcement** — runtime enforcement via the SDK's
+  `can_use_tool` callback (was advisory pre-v0.4). Path checks resolve
+  symlinks and `..` traversal; Bash commands tokenised with `shlex`
+  before allowlist matching; metacharacters rejected outright.
+  `urika/agents/permission.py`.
+- **Multi-provider thin abstraction** — `urika.runners` Python
+  entry-point group + `AgentRunner` ABC + `AgentConfig`. Single
+  Anthropic adapter ships in v0.4; the boundary is what the OpenAI
+  adapter will plug into in v0.5.
+- **Project memory Phase 1** — `<project>/memory/MEMORY.md`-indexed
+  directory of structured markdown entries. Auto-capture from
+  `<memory type="...">...</memory>` markers. CLI surface
+  (`urika memory list/show/add/delete`). Phases 2-4 in v0.5.
+- **Experiment comparison view** — `/projects/<n>/compare`.
+- **Dataset hash + drift detection** — SHA-256 per data file at
+  `urika new`, re-checked on `urika status`. `[project.data_hashes]`
+  in `urika.toml`.
+- **Cost-aware budget** — `urika run --budget USD` pauses at next
+  turn boundary when accumulated cost crosses threshold; resumable.
+- **Shell completion** — `urika completion install/script/uninstall`
+  for bash / zsh / fish.
+- **Sessions list/export** — `urika sessions list/export`.
 
-Plus agent-built project-specific tools via `tool_builder` agent.
+### Post-rc2 hardening (the day-of-ship fixes)
 
-### Knowledge pipeline
+- **Bearer-token auth for non-Anthropic private endpoints.** Sets
+  `ANTHROPIC_AUTH_TOKEN` (Bearer header) instead of
+  `ANTHROPIC_API_KEY` (x-api-key) when the endpoint isn't
+  api.anthropic.com. The compliance scrubber now preserves
+  deliberately-set values.
+- **Trailing-exit-1 tolerance** — system claude CLI v2.1.124+
+  exits 1 in streaming mode after a successful run. Adapter detects
+  "we already saw a clean ResultMessage / streamed content" and
+  returns success regardless. Counter-cases (no content, real auth/
+  billing/credit failures) still propagate as failures.
+- **Reasoning vs execution model split** — Opus default auto-pins
+  4 reasoning agents on Opus and 8 execution agents on Sonnet 4.5.
+  ~50-65% cost reduction per experiment, no quality impact. Single
+  source of truth in `urika/core/recommended_models.py`.
+- **`urika config --reset-models` + dashboard "Reset to recommended
+  defaults" button** — re-applies the split to existing settings.
+  Idempotent. Hybrid mode preserves data_agent + tool_builder
+  private pins.
+- **`max_turns_per_experiment` unified at 5** across all five sites
+  (was 10).
+- **Per-experiment finalize no longer auto-writes the redundant
+  project-level narrative** — saved 10-25 min per successful
+  experiment. Per-experiment narrative + presentation still written.
+  Agent feedback loop unaffected.
+- **`urika new` no longer spawns live agent under non-TTY stdin** —
+  CliRunner / CI / scripts all safe now.
+- **Windows: SSE log streamers tolerate cp1252 bytes**; **Windows:
+  stdout/stderr auto-reconfigure to UTF-8** at import time.
+- **Doc reorg** — 20 user-facing docs split into 32 focused sub-pages
+  (12a/b, 13a/b, 14a/b, 16a-e, 18a-d, 19a/b). Cross-references
+  rewritten across the tree.
 
-PDF / text / URL extractors → `KnowledgeStore` with keyword search.
-Literature agent ingests + cross-references. `knowledge/`.
+See `CHANGELOG.md` for the full per-fix accounting.
 
-### Evaluation framework
+---
 
-Per-method leaderboard with primary-metric direction awareness.
-9 metrics. `evaluation/`.
+## What's next (per the roadmap)
 
-### Agent system (12 roles + Orchestrator)
+| Release | Focus | Target |
+|---|---|---|
+| **v0.4.1** | Bug-fix hotfix from v0.4.0 reports (dashboard footer, prompt-bloat trim, sigterm exit, bash timeout, checkpoint docs) | ~1 week (≈ 2026-05-09) |
+| **v0.4.2** | Tester-driven hotfix | ~2 weeks after v0.4.1 |
+| **v0.5.0** | GitHub integration + OpenAI adapter + Memory Phases 2-4 + Project templates + Plugin system | ~5-7 weeks |
+| **v0.5.x** | Stabilisation | 3-4 weeks |
+| **v0.6.0** | Output polish (PDF/LaTeX/Jupyter export, arXiv fetcher, Plotly figures, model cards, Optuna agent) | ~4 weeks |
+| **v0.6.x** | Stabilisation | 2-3 weeks |
+| **v0.7.0** | Final feature work (mobile dashboard, run replay, accessibility, i18n stubs, API audit) — last release before feature freeze | ~3 weeks |
+| **v0.7.x** | Final stabilisation before RC cycle | 2-3 weeks |
+| **v1.0.0rcN** | Release-candidate cycle, no new features | 2-4 weeks total |
+| **v1.0.0** | Official release with API stability commitment | ~5-6 months from today |
 
-- **Project Builder** — interactive project setup
-- **Planning Agent** — designs the next analytical step
-- **Task Agent** — writes Python code, runs experiments
-- **Evaluator** — read-only scoring against criteria
-- **Advisor Agent** — analyzes results, proposes next experiments
-- **Tool Builder** — creates project-specific tools at runtime
-- **Literature Agent** — searches papers, builds knowledge base
-- **Data Agent** — extracts and prepares features in hybrid privacy
-  mode
-- **Report Agent** — experiment narratives + project summaries
-- **Presentation Agent** — reveal.js slide decks from results
-- **Project Summarizer** — high-level project synthesis
-- **Finalizer** — selects best methods, writes standalone code,
-  produces `findings.json`, `requirements.txt`, reproduce scripts
-- **Orchestrator** — hybrid deterministic loop (planning → task →
-  evaluator → advisor) plus the conversational `OrchestratorChat`
-  that can call subagents via Bash
+Cut criteria are hard — the version is the contract, the schedule is
+a guess.
 
-`agents/roles/`, `agents/registry.py`, `agents/runner.py`,
-`agents/adapters/claude_sdk.py`.
+---
 
-### Orchestration
+## Repo / branch hygiene
 
-- **Experiment loop** — planning → task → evaluator → advisor each
-  turn. `orchestrator/loop.py`, `loop_criteria.py`, `loop_display.py`.
-- **Meta-orchestrator** — autonomous experiment-to-experiment mode.
-  `orchestrator/meta.py`.
-- **Finalize sequence** — finalizer → report → presentation → README.
-  `orchestrator/finalize.py`, `loop_finalize.py`.
-- **Conversational chat** — `OrchestratorChat` maintains conversation
-  state, calls subagents via Bash, recommends slash commands for
-  long-running operations. `orchestrator/chat.py`.
+- `dev` is the working branch; daily commits go here.
+- `dev/scripts/release-to-main.sh` syncs `dev` → `main` on both
+  `origin` (urika-dev) and `public` (Urika), checks out only public-
+  facing files, commits "release: sync from dev (<sha>)", pushes
+  both remotes.
+- GitHub Release published on `xkiwilabs/Urika` (public) — fires
+  the `Publish to PyPI` workflow which trusted-publishes (no token
+  needed).
+- Tags: `vMAJOR.MINOR.PATCH` (e.g. `v0.4.0`).
 
-### Interfaces
+---
 
-Three peer interfaces sharing the same on-disk project state:
+## Test data
 
-- **CLI** — `urika <command>`, ~25 commands. `cli/`. Every command
-  has a `--json` flag for scripting.
-- **Textual TUI (default)** — `urika` with no args. Three-zone layout
-  (OutputPanel + InputBar + ActivityBar + StatusBar), background
-  Workers for agent commands, OutputCapture routing print/click.echo
-  to the panel, stdin bridge for interactive prompts (click.prompt /
-  input), tab completion with contextual suggester. `tui/`.
-- **Classic REPL fallback** — `urika --classic`. `repl/`.
-- **Dashboard** — `urika dashboard [project]`. FastAPI multi-page app
-  with HTMX + Alpine. Run launcher modal, live SSE log streaming,
-  advisor chat, sessions list, secrets/vault CRUD, settings forms,
-  notifications test-send, danger zones, light/dark theme, optional
-  bearer-token auth. `dashboard/`.
+`dev/test-datasets/` contains the canonical fixture projects used
+by the smoke harness:
 
-### RPC server
+- `stroop` — 50 rows × 4 cols, paired t-test (confirmatory). Used by
+  open-mode E2E.
+- `marketing` — 400 rows × 8 cols, unsupervised clustering
+  (exploratory). Used by hybrid-mode E2E.
+- `depression` — 500 rows × 10 cols, regression / feature
+  importance (exploratory). Used by private-mode E2E.
+- `housing`, `eeg`, `climate`, `gene-expression`, `text-sentiment`,
+  `images`, `energy-forecast` — additional fixtures for
+  domain-specific test runs.
 
-JSON-RPC server for external tooling. `rpc/`.
+The smoke harness in `dev/scripts/smoke-v04-e2e-{open,hybrid,
+private,all}.sh` drives the full pipeline against real LLMs (no
+`--dry-run`).
 
-### Real-world testing
+---
 
-Tested on DHT target selection data (35 experiments, 288 methods),
-plus other behavioral / cognitive / linguistic datasets per
-`testing-plan.md`.
+## Working tree
 
-## CLI commands (25+)
-
-`new`, `list`, `status`, `inspect`, `delete`, `update`, `experiment`
-(create/list/delete), `run`, `results`, `methods`, `tools`, `report`,
-`logs`, `knowledge`, `advisor`, `evaluate`, `present`, `plan`,
-`finalize`, `build-tool`, `criteria`, `usage`, `summarize`,
-`dashboard`, `setup`, `config` (api-key/secret/notifications/
-endpoints/...), `notifications`, `venv` (create/status), `tui`.
-
-`--classic` flag on `urika` switches to the classic REPL. Every
-command supports `--json` for non-TTY scripting.
-
-## v0.4 — first feature-complete release
-
-**Positioning:** v0.4.0 is the first complete Urika system, stable
-enough for extensive user testing. Strip GitHub out and Urika is
-still a complete research-analysis platform — the core value loop is
-unchanged. GitHub is a backup / repo / collaboration overlay on top
-of an already-functioning system, so it's deferred to v0.5 to keep
-the v0.4 testing surface contained.
-
-See `dev/plans/2026-04-30-v0.4-roadmap.md` for the full track
-breakdown (~21 dev-days, ~4 calendar weeks at single-dev cadence).
-Five tracks:
-
-- **Track 1 — v0.3.2 carry-overs (~6d).** SecurityPolicy enforcement
-  via SDK `can_use_tool` hook (advisory-only today; v0.3.2 CHANGELOG
-  promised this). Closes orchestrator Bash allow-list bypass too.
-  Plus consistency-sweep PR for ~12 small P1s (audience defaults,
-  max_turns defaults, email masking, swallowed exceptions, form
-  validation). Plus Stop endpoints for non-run operations.
-- **Track 2 — Memory + persistence (~5d).** Project memory Phase 1
-  (design locked at `2026-04-28-project-memory-design.md`; unbuilt),
-  inject context summary into planner+finalizer, persist
-  `--instructions` to `projectbook/instructions.md`, `urika sessions
-  export`, `success_criteria` ↔ `criteria.json` unification.
-- **Track 3 — Multi-provider thin abstraction (~3d).** Abstraction
-  is ~60% real; v0.4 closes the seam so contributors can add
-  OpenAI / ADK / Pi adapters. Second working adapter end-to-end
-  deferred to v0.5.
-- **Track 4 — User-facing features (~6d).** Experiment comparison
-  view, shell completion, dataset hash + drift detection,
-  cost-aware budget.
-- **Track 5 — TUI v2 polish (~1-2d).** Replace private-Textual-
-  attribute access in `_TuiWriter._post_line`, regression test for
-  orchestrator-chat → Bash → urika → SDK env-scrub through TUI
-  worker, Esc-key binding parity with CLI pause.
-
-## Deferred to v0.5 (post-test-feedback release)
-
-- **GitHub integration (thick)** — full design preserved at
-  `dev/plans/2026-04-30-github-integration.md`. pygit2 +
-  device-flow OAuth + dashboard "Connect" button + Integrations tab
-  + Git tab per project + audit-log viewer. ~24 dev-days.
-- **OpenAI Agents SDK adapter end-to-end** — second working agent
-  backend (~6-7 days on top of v0.4's thin abstraction).
-- **Project memory Phases 2-4** — curator agent, archive viewer,
-  diff view.
-- **Project templates** — `urika new --template
-  behavioral|timeseries|imaging`.
-- **Plugin / extension system via entry_points.**
-
-## Active plan docs
-
-After the 2026-04-30 cleanup, `dev/plans/` holds:
-
-- `2026-04-10-agent-runtime-abstraction-design.md` (Track 3 reference)
-- `2026-04-10-agent-runtime-implementation.md` (Track 3 reference)
-- `2026-04-24-release-polish.md` (Track 6 + LiteLLM-as-multi-provider
-  alternative)
-- `2026-04-27-feature-priorities.md` (still-active prioritization)
-- `2026-04-28-project-memory-design.md` (Track 2 — locked,
-  unimplemented)
-- `2026-04-30-v0.4-roadmap.md` — **canonical v0.4 scope**
-- `2026-04-30-securitypolicy-enforcement.md` (Track 1)
-- `2026-04-30-github-integration.md` (Track 5)
-- `2026-04-30-multi-provider-thin-abstraction.md` (Track 3)
-- `2026-04-30-experiment-comparison-view.md` (Track 4)
-- `2026-04-30-dataset-hash-drift.md` (Track 4)
-- `2026-04-30-cost-aware-budget.md` (Track 4)
-- `2026-04-30-shell-completion.md` (Track 4)
-
-73 stale designs (v0.1 / v0.2 / pre-v0.3.2 shipped designs +
-completed smoke checklists) moved to `dev/archive/plans/`.
-
-## Cleanup outstanding
-
-- **`dev/archive/typescript-tui/`** (~186 MB / 7,649 files) — the
-  v2-TS-pivot was abandoned 2026-04-12 per
-  `project_tui_v2_status.md`. Listed for deletion in
-  `2026-04-24-release-polish.md` Phase 1 Task 1.1, never executed.
-  Drop in a Track 1 PR or a standalone `chore` commit.
+```
+dev/
+├── archive/
+│   ├── plans/
+│   │   └── v0.4-shipped/            # all v0.4 plan docs after ship
+│   ├── option-{a,b,c}-*.md          # historical adapter options
+│   ├── 2026-04-27-tester-checklist.md
+│   └── typescript-tui/              # 186MB, untracked, can be `rm -rf`d
+├── plans/
+│   ├── 2026-05-02-roadmap-to-v1.0.md      # **master**
+│   ├── 2026-05-02-v0.4.x-bug-backlog.md
+│   ├── 2026-05-02-prompt-bloat-and-context-budget.md
+│   └── 2026-04-30-github-integration.md   # for v0.5
+├── scripts/
+│   ├── release-to-main.sh
+│   ├── smoke-v04-e2e-{open,hybrid,private,all}.sh
+│   ├── smoke-v04-e2e-common.sh
+│   ├── smoke-v04-cli.sh
+│   ├── smoke-v04-multi.sh
+│   └── ... (other dev tooling)
+├── test-datasets/                    # canonical fixtures
+├── contributing-an-adapter.md        # contributor doc (moved from docs/)
+├── status.md                         # this file
+├── testing-plan.md
+└── tutorials-01-project-setup-walkthrough.md
+```
