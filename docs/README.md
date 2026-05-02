@@ -33,4 +33,3 @@
 | [19a Notifications — Channels](19a-notifications-channels.md) | Email, Slack, Telegram setup walkthroughs |
 | [19b Notifications — Remote](19b-notifications-remote.md) | Remote `/commands`, what gets notified, troubleshooting, caveats |
 | [20 Security Model](20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard/notifications security |
-| [Contributing an Adapter](contributing-an-adapter.md) | Plugging a different agent backend into Urika via the `urika.runners` entry-point group |

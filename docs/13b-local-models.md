@@ -183,7 +183,7 @@ Not all local models work with Urika. The model must support **tool/function cal
 - **Default behavior is unchanged.** If you do not add `[privacy]` or `[runtime]` sections to `urika.toml`, everything runs on the Anthropic API as before.
 - **What needs to be private stays private.** You control exactly which agents access which endpoints. The hybrid default covers most cases, but full customization is available.
 - **Claude Code CLI required for local models.** The Claude Agent SDK spawns the `claude` CLI as a subprocess. For local model support, the system-installed CLI is used (not the bundled one). Install via `npm install -g @anthropic-ai/claude-code`.
-- **One agent backend ships in v0.4** — the Anthropic Claude Agent SDK. Additional backends can be added via the `urika.runners` Python entry-point group; see [Contributing an Adapter](contributing-an-adapter.md).
+- **One agent backend ships in v0.4** — the Anthropic Claude Agent SDK. Additional backends can be added via the `urika.runners` Python entry-point group; see [Contributing an Adapter](../dev/contributing-an-adapter.md).
 
 ---
 
@@ -195,4 +195,4 @@ Not all local models work with Urika. The model must support **tool/function cal
 - [Models and Privacy](13a-models-and-privacy.md)
 - [Configuration](14a-project-config.md)
 - [Security Model](20-security.md)
-- [Contributing an Adapter](contributing-an-adapter.md)
+- [Contributing an Adapter](../dev/contributing-an-adapter.md)

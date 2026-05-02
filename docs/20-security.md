@@ -75,7 +75,7 @@ Please report security issues privately to michael.j.richardson@mq.edu.au rather
 
 ## Provider compliance
 
-Urika is provider-agnostic by design — it routes agent calls through whichever model SDK the project's privacy mode and agent config specify. v0.4 ships with one fully-supported adapter (Anthropic's Claude Agent SDK); additional adapters can be added through the `urika.runners` Python entry-point group (see [Contributing an Adapter](contributing-an-adapter.md)). Each provider has its own terms of service and its own compliant authentication pattern. Urika's job is to enforce the right pattern per provider.
+Urika is provider-agnostic by design — it routes agent calls through whichever model SDK the project's privacy mode and agent config specify. v0.4 ships with one fully-supported adapter (Anthropic's Claude Agent SDK); additional adapters can be added through the `urika.runners` Python entry-point group (see [Contributing an Adapter](../dev/contributing-an-adapter.md)). Each provider has its own terms of service and its own compliant authentication pattern. Urika's job is to enforce the right pattern per provider.
 
 ### Are we using the Anthropic SDK in a sanctioned way?
 

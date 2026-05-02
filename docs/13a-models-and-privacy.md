@@ -15,7 +15,7 @@ Urika currently uses the **Claude Agent SDK** as its runtime backend. This suppo
 - **Local models** via Ollama (Llama, Mistral, etc.)
 - **Institutional endpoints** -- any Anthropic-compatible API server (e.g., an organisation's secure Claude instance)
 
-Additional backends can be plugged in through the `urika.runners` Python entry-point group — see [Contributing an Adapter](contributing-an-adapter.md).
+Additional backends can be plugged in through the `urika.runners` Python entry-point group — see [Contributing an Adapter](../dev/contributing-an-adapter.md).
 
 > **Important: Urika requires an Anthropic API key for cloud (open) use.**
 >
@@ -319,4 +319,4 @@ Urika is provided "as is" without warranty. The authors do not guarantee that hy
 - [Local Models](13b-local-models.md)
 - [Configuration](14a-project-config.md)
 - [Security Model](20-security.md)
-- [Contributing an Adapter](contributing-an-adapter.md)
+- [Contributing an Adapter](../dev/contributing-an-adapter.md)
