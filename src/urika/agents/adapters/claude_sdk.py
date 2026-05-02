@@ -29,6 +29,24 @@ from urika.core.compliance import require_api_key, scrub_oauth_env
 logger = logging.getLogger(__name__)
 
 
+def _resolve_max_method_seconds(config: AgentConfig) -> int | None:
+    """Resolve the per-Bash-tool-call wall-clock cap for this agent run.
+
+    Precedence:
+      1. ``config.max_method_seconds`` if a role's ``build_config``
+         set it explicitly (rare — most don't).
+      2. ``[preferences].max_method_seconds`` from the project's
+         ``urika.toml`` via ``load_max_method_seconds``.
+      3. ``None`` if neither is present and no project_dir is set
+         (lets the bundled CLI's own default stand).
+    """
+    if config.max_method_seconds is not None:
+        return config.max_method_seconds
+    from urika.agents.config import load_max_method_seconds
+
+    return load_max_method_seconds(config.cwd)
+
+
 def _trace_prompt_event(record: dict[str, Any]) -> None:
     """Append a JSONL prompt-size record when ``URIKA_PROMPT_TRACE_FILE`` is set.
 
@@ -544,7 +562,9 @@ class ClaudeSDKRunner(AgentRunner):
             "cwd": str(config.cwd) if config.cwd else None,
             "permission_mode": "default",
             "can_use_tool": make_can_use_tool(
-                config.security, config.cwd
+                config.security,
+                config.cwd,
+                max_method_seconds=_resolve_max_method_seconds(config),
             ),
             "env": agent_env,
             "stderr": _stderr_cb,

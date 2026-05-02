@@ -158,17 +158,28 @@ def _path_decision(
 def make_can_use_tool(
     policy: SecurityPolicy,
     project_root: Path | None,
+    max_method_seconds: int | None = None,
 ):
     """Build a ``can_use_tool`` async callback bound to *policy*.
 
     The returned coroutine accepts ``(tool_name, tool_input,
     context)`` per the ``claude-agent-sdk`` ``CanUseTool`` protocol
-    and returns either a ``PermissionResultAllow()`` or a
+    and returns ``PermissionResultAllow()`` (optionally with
+    ``updated_input`` to clamp the request) or
     ``PermissionResultDeny(message=...)``.
 
     The factory is split out so ``ClaudeSDKRunner._build_options``
-    can ``functools.partial`` the policy + project_root in once
-    per agent invocation.
+    can ``functools.partial`` the policy + project_root + cap in
+    once per agent invocation.
+
+    *max_method_seconds* (v0.4.1): when set, every Bash tool call
+    has its ``timeout`` field clamped to ``max_method_seconds *
+    1000`` ms before the SDK dispatches it. An agent that asks for
+    a longer timeout sees its request silently capped; an agent
+    that doesn't specify a timeout gets the cap as default. This
+    upper-bound prevents a runaway training script from wedging an
+    experiment for hours. ``None`` = no cap (use whatever the CLI
+    defaults to, currently ~10 min).
     """
     # Lazy import — keep the SDK out of import time so unit tests of
     # this module can mock the result classes if they want.
@@ -176,6 +187,8 @@ def make_can_use_tool(
         PermissionResultAllow,
         PermissionResultDeny,
     )
+
+    cap_ms = max_method_seconds * 1000 if max_method_seconds else None
 
     async def can_use_tool(
         tool_name: str,
@@ -185,18 +198,38 @@ def make_can_use_tool(
         decision, reason = _decide(
             tool_name, tool_input, policy, project_root
         )
-        if decision:
-            return PermissionResultAllow()
-        # Surface the reason to the agent so it can adapt its next
-        # action ("use Write tool instead of `python -c`", "split into
-        # two Bash calls"). Pre-v0.4 the agent saw nothing.
-        logger.info(
-            "permission_check denied %s: %s (input=%r)",
-            tool_name,
-            reason,
-            tool_input,
-        )
-        return PermissionResultDeny(message=reason)
+        if not decision:
+            # Surface the reason to the agent so it can adapt its next
+            # action ("use Write tool instead of `python -c`", "split
+            # into two Bash calls"). Pre-v0.4 the agent saw nothing.
+            logger.info(
+                "permission_check denied %s: %s (input=%r)",
+                tool_name,
+                reason,
+                tool_input,
+            )
+            return PermissionResultDeny(message=reason)
+
+        # Allow-with-clamp path: only Bash currently has a timeout
+        # field worth capping. Other tools fall through to a plain
+        # allow.
+        if tool_name == "Bash" and cap_ms is not None:
+            existing = tool_input.get("timeout")
+            try:
+                existing_ms = int(existing) if existing is not None else None
+            except (TypeError, ValueError):
+                existing_ms = None
+            if existing_ms is None or existing_ms > cap_ms:
+                # Two cases: the agent didn't ask for a timeout (we
+                # set ours as default), or asked for one bigger than
+                # our cap (we clamp). Smaller-than-cap requests pass
+                # through unchanged so the agent can still ask for
+                # short timeouts on quick checks.
+                return PermissionResultAllow(
+                    updated_input={**tool_input, "timeout": cap_ms},
+                )
+
+        return PermissionResultAllow()
 
     return can_use_tool
 

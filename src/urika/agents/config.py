@@ -107,6 +107,14 @@ class AgentConfig:
     model: str | None = None
     cwd: Path | None = None
     env: dict[str, str] | None = None  # environment vars for agent subprocess
+    # v0.4.1: per-Bash-tool-call wall-clock cap. The bundled claude
+    # CLI's Bash tool accepts a ``timeout`` field (ms); the
+    # ``can_use_tool`` callback injects this cap so a runaway training
+    # script (infinite loop, deadlocked GPU op) can't wedge an
+    # experiment indefinitely. ``None`` = use whatever the CLI
+    # defaults to. Resolved from ``[preferences].max_method_seconds``
+    # in the project's ``urika.toml`` by the adapter; default 1800s.
+    max_method_seconds: int | None = None
 
 
 @dataclass
@@ -127,6 +135,43 @@ class EndpointConfig:
     # ``resolve_endpoint_limits``).
     context_window: int = 0
     max_output_tokens: int = 0
+
+
+def load_max_method_seconds(project_dir: Path | None) -> int | None:
+    """Read ``[preferences].max_method_seconds`` from a project's
+    ``urika.toml``.
+
+    Returns the configured value, or ``1800`` (30 min) when the field
+    is absent — that's the default cap for "method runs that take
+    minutes". Returns ``None`` if there's no project_dir or the file
+    can't be parsed at all (in which case the adapter falls back to
+    the bundled CLI's own default Bash timeout).
+
+    Pre-v0.4.1 there was no per-call cap and a deadlocked Bash
+    invocation could wedge an experiment for hours. The cap is
+    upper-bound: an agent that asks for 10s gets 10s; an agent that
+    asks for 4 hours gets clamped to ``max_method_seconds``.
+    """
+    if project_dir is None:
+        return None
+    toml_path = project_dir / "urika.toml"
+    if not toml_path.exists():
+        return None
+    try:
+        import tomllib
+
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+    except (OSError, ValueError):
+        return None
+    raw = data.get("preferences", {}).get("max_method_seconds")
+    if raw is None:
+        return 1800  # 30 min default
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return 1800
+    return v if v > 0 else 1800
 
 
 def resolve_endpoint_limits(endpoint: EndpointConfig) -> tuple[int, int]:

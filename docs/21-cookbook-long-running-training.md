@@ -148,12 +148,23 @@ and runs it via Bash. That's where the next two pitfalls show up:
 
 ### Bash tool timeout
 
-The bundled `claude` CLI applies a default per-tool-call wall-clock
-timeout to Bash invocations. For training scripts that legitimately
-run for tens of minutes, this can be hit. v0.4.1 introduces
-`[preferences].max_method_seconds` to surface a clean per-method
-cap and a clearer error when it fires; until then, prefer the
-built-in tools above for anything > 5 minutes.
+Urika caps each Bash tool call at `[preferences].max_method_seconds`
+(default 1800 s = 30 min) via the `can_use_tool` permission callback.
+A method that legitimately needs longer must raise the cap
+explicitly:
+
+```toml
+[preferences]
+max_method_seconds = 14400   # 4 hours, e.g. for full-data DL training
+```
+
+The cap is an upper bound: short Bash calls (`python --version`,
+`ls` checks) pass through unchanged. An agent that asks for a
+longer timeout in its tool input is silently clamped to the cap.
+Setting `max_method_seconds = 0` falls back to the default rather
+than disabling the cap — there is no "no-cap" mode by design, since
+a wedged training script with no cap can burn an entire token
+budget over a weekend.
 
 ### Method runs that produce no metric
 

@@ -348,3 +348,196 @@ class TestMakeCanUseTool:
         result = await cb("Bash", {"command": "urika ; rm -rf /"}, None)
         assert hasattr(result, "message")
         assert result.message
+
+
+# ── v0.4.1 #4: Bash timeout cap via max_method_seconds ────────────────
+
+
+class TestBashTimeoutCap:
+    """Regression: pre-v0.4.1 there was no Urika-controlled per-Bash-
+    tool-call wall-clock cap. A deadlocked training script (infinite
+    loop, stuck GPU op) could wedge an experiment for hours, since
+    the bundled CLI's own default Bash timeout is ~10 min and the
+    task agent's max_turns lets it retry many times.
+
+    The fix injects ``max_method_seconds * 1000`` ms into the Bash
+    tool_input via the ``can_use_tool`` callback's
+    ``PermissionResultAllow.updated_input`` field. The agent sees
+    its request silently capped; the SDK forwards the updated input
+    to the CLI, which honours the timeout field per Anthropic's tool
+    spec.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_cap_when_max_method_seconds_unset(self):
+        """Default behaviour (no cap configured) must not change the
+        tool input — pre-v0.4.1 callers relied on the bundled CLI's
+        own default."""
+        from urika.agents.permission import make_can_use_tool
+
+        cb = make_can_use_tool(
+            _policy(allowed_bash=["python"]), None,
+            max_method_seconds=None,
+        )
+        result = await cb("Bash", {"command": "python -c 'pass'"}, None)
+        # Plain allow — no updated_input.
+        assert getattr(result, "updated_input", None) is None
+
+    @pytest.mark.asyncio
+    async def test_cap_injected_when_no_timeout_specified(self):
+        """When the agent doesn't ask for a timeout, the cap becomes
+        the default. This is the dominant case — the agent rarely
+        sets timeout explicitly."""
+        from urika.agents.permission import make_can_use_tool
+
+        cb = make_can_use_tool(
+            _policy(allowed_bash=["python"]), None,
+            max_method_seconds=1800,  # 30 min default
+        )
+        result = await cb("Bash", {"command": "python train.py"}, None)
+        assert result.updated_input == {
+            "command": "python train.py",
+            "timeout": 1_800_000,  # 30 min in ms
+        }
+
+    @pytest.mark.asyncio
+    async def test_oversized_request_clamped_down(self):
+        """An agent that asks for 4 hours when the cap is 30 min gets
+        clamped to 30 min — silently. The agent's intent is logged in
+        its own narration, but Urika enforces the project ceiling."""
+        from urika.agents.permission import make_can_use_tool
+
+        cb = make_can_use_tool(
+            _policy(allowed_bash=["python"]), None,
+            max_method_seconds=1800,
+        )
+        result = await cb(
+            "Bash",
+            {"command": "python train.py", "timeout": 14_400_000},  # 4h
+            None,
+        )
+        assert result.updated_input["timeout"] == 1_800_000
+
+    @pytest.mark.asyncio
+    async def test_smaller_request_passes_through_unchanged(self):
+        """An agent that asks for 10 seconds (e.g. a quick health
+        check) gets 10 seconds — the cap is an upper bound, not a
+        floor. Forcing every Bash to wait 30 min would make quick
+        failures slow."""
+        from urika.agents.permission import make_can_use_tool
+
+        cb = make_can_use_tool(
+            _policy(allowed_bash=["python"]), None,
+            max_method_seconds=1800,
+        )
+        result = await cb(
+            "Bash",
+            {"command": "python -c 'pass'", "timeout": 10_000},  # 10s
+            None,
+        )
+        # Plain allow — no clamp because the request is under the cap.
+        assert getattr(result, "updated_input", None) is None
+
+    @pytest.mark.asyncio
+    async def test_cap_does_not_apply_to_non_bash_tools(self):
+        """The timeout cap is Bash-specific. Read / Write / Glob etc.
+        don't have a timeout field worth capping."""
+        from urika.agents.permission import make_can_use_tool
+
+        cb = make_can_use_tool(
+            _policy(readable=[Path("/tmp")]), Path("/tmp"),
+            max_method_seconds=1800,
+        )
+        result = await cb("Read", {"file_path": "/tmp/x"}, None)
+        assert getattr(result, "updated_input", None) is None
+
+    @pytest.mark.asyncio
+    async def test_deny_path_still_overrides_cap(self):
+        """A denied Bash command must still be denied — the cap path
+        only affects already-allowed tools. Pre-fix concern: making
+        sure the Bash-cap branch doesn't accidentally swallow denials.
+        """
+        from urika.agents.permission import make_can_use_tool
+
+        cb = make_can_use_tool(
+            _policy(allowed_bash=["urika"]), None,
+            max_method_seconds=1800,
+        )
+        result = await cb("Bash", {"command": "rm -rf /"}, None)
+        assert hasattr(result, "message")
+        assert result.message
+
+    @pytest.mark.asyncio
+    async def test_invalid_timeout_field_treated_as_missing(self):
+        """If an agent (or upstream tool injection) sends a non-int
+        timeout, treat it as missing and apply the cap as default
+        rather than crashing inside the callback."""
+        from urika.agents.permission import make_can_use_tool
+
+        cb = make_can_use_tool(
+            _policy(allowed_bash=["python"]), None,
+            max_method_seconds=600,
+        )
+        result = await cb(
+            "Bash",
+            {"command": "python x.py", "timeout": "not-a-number"},
+            None,
+        )
+        assert result.updated_input["timeout"] == 600_000
+
+
+# ── v0.4.1 #4: load_max_method_seconds ────────────────────────────────
+
+
+class TestLoadMaxMethodSeconds:
+    def test_default_when_field_missing(self, tmp_path: Path) -> None:
+        from urika.agents.config import load_max_method_seconds
+
+        proj = tmp_path / "p"
+        proj.mkdir()
+        (proj / "urika.toml").write_text(
+            '[project]\nname="x"\nquestion="?"\nmode="exploratory"\n'
+        )
+        assert load_max_method_seconds(proj) == 1800  # 30 min default
+
+    def test_explicit_override(self, tmp_path: Path) -> None:
+        from urika.agents.config import load_max_method_seconds
+
+        proj = tmp_path / "p"
+        proj.mkdir()
+        (proj / "urika.toml").write_text(
+            '[project]\nname="x"\nquestion="?"\nmode="exploratory"\n\n'
+            "[preferences]\nmax_method_seconds = 7200\n"  # 2 hours
+        )
+        assert load_max_method_seconds(proj) == 7200
+
+    def test_zero_or_negative_falls_back_to_default(
+        self, tmp_path: Path
+    ) -> None:
+        """A user typing 0 (or a negative) gets the default — not no-cap.
+        Letting 0 disable the cap silently would be a footgun for
+        people who think they're "removing the cap"."""
+        from urika.agents.config import load_max_method_seconds
+
+        proj = tmp_path / "p"
+        proj.mkdir()
+        (proj / "urika.toml").write_text(
+            '[project]\nname="x"\nquestion="?"\nmode="exploratory"\n\n'
+            "[preferences]\nmax_method_seconds = 0\n"
+        )
+        assert load_max_method_seconds(proj) == 1800
+
+    def test_no_project_dir_returns_none(self) -> None:
+        """Out-of-project agent runs (e.g. orchestrator chat from the
+        REPL with no project context) get None so the bundled CLI's
+        own default stands."""
+        from urika.agents.config import load_max_method_seconds
+
+        assert load_max_method_seconds(None) is None
+
+    def test_no_urika_toml_returns_none(self, tmp_path: Path) -> None:
+        from urika.agents.config import load_max_method_seconds
+
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        assert load_max_method_seconds(empty) is None
