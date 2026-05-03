@@ -216,6 +216,56 @@ See [Models and Privacy](docs/13a-models-and-privacy.md) for configuration detai
 | [Notifications — Remote](docs/19b-notifications-remote.md) | Remote `/commands`, what gets notified, troubleshooting, caveats |
 | [Security Model](docs/20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
 
+## Coming soon
+
+Roadmap to **v1.0.0**. Order is firm; bug-fix point releases (`v0.x.y`)
+are interleaved between feature releases as issues surface.
+
+**v0.5 — project memory deepening**
+- Curator agent that auto-organises captured memory entries, merges near-duplicates, flags contradictions
+- `urika memory archive` CLI + dashboard "show archived" toggle for browsing superseded entries
+- `urika memory diff <from> <to>` + dashboard timeline view of memory growth
+- Planner / advisor read-rule refinement so curator-grown memory stays under the prompt token budget
+
+**v0.6 — second LLM backend + project templates**
+- OpenAI Agents SDK adapter (validates the `urika.runners` entry-point seam shipped in v0.4)
+- `urika new --template behavioral|timeseries|imaging|nlp|ml-baseline` with seeded criteria, recommended tools, sample knowledge entries
+
+**v0.7 — GitHub auto-backup**
+- `urika github init <project> --remote <url>` — wraps `git init` + `git remote add`
+- `urika github init <project> --create [--public]` — uses `gh` CLI to create the repo + push in one shot (Urika never holds GitHub credentials)
+- Auto-create at project-creation time via `urika new --github` or a global `[preferences] github_auto_create` default
+- `urika github push|status|pull <project>` for manual control
+- Opt-in auto-push hook that fires after `urika run` / `finalize` / `build-tool`
+- Dashboard Git tab — remote URL, last push, recent commit log, manual "Push now"
+
+**v0.8 — publication-ready output polish**
+- PDF / LaTeX export via `urika report --format pdf|latex` and `urika finalize --format pdf|latex` (Pandoc-based)
+- Jupyter notebook export — `urika finalize --jupyter` produces a runnable `reproduce.ipynb` alongside `reproduce.sh`
+- Auto-generated model cards per finalized method (Hugging Face template)
+
+**v0.9 — accessibility + i18n stubs**
+- Keyboard navigation, focus states, ARIA labels, light/dark colour-contrast audit on the dashboard
+- User-facing strings extracted into `urika/i18n/en.toml` so future translations are mechanical (no actual translations shipped)
+
+**v1.0 — first stable release**
+- Semantic-versioning commitment: v1.x = no breaking changes to documented public API; ≥ 6 months deprecation telegraph for v2
+- Project file format stable across v1.x (`urika.toml`, `criteria.json`, `methods.json`, `progress.json`, `findings.json`, `memory/MEMORY.md`); auto-migrate via `urika upgrade`
+- CLI command surface + dashboard URL surface stable
+- Full test coverage on Linux + macOS + Windows on Python 3.11 / 3.12
+- Comprehensive documentation for every command, agent role, and config key
+- Documented security model and permission boundaries
+
+**Cut from v1.0** (parked for v1.1+):
+- Plugin system (API commitment problem — needs a year of real-world adapter usage first)
+- Mobile-responsive dashboard (the phone use case is already covered by Slack/Telegram notifications)
+- GitHub thick integration (OAuth, audit log, in-app PR flows — beyond pure git shell-out)
+- arXiv fetcher, Plotly figures, Optuna agent (great-to-haves, not blockers for 1.0)
+
+In between feature releases, bug-fix hotfixes (`v0.x.y`) ship as
+issues are reported. v0.4.1 (this release) closed the v0.4.x bug
+backlog. See [CHANGELOG.md](CHANGELOG.md) for the full history.
+
 ## Citation
 
 If you use Urika in your research or analysis, please acknowledge its use in your publications:
