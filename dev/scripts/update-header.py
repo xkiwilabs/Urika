@@ -107,7 +107,17 @@ def _capture_header_ansi(version: str) -> str:
         buf = io.StringIO()
         with redirect_stdout(buf):
             cli_display.print_header()
-        return buf.getvalue()
+        captured = buf.getvalue()
+        # JetBrains Mono is the only programming font commonly
+        # available on Linux that renders box-drawing characters
+        # cell-perfectly, but it's missing the sparkle bullet
+        # (U+2726 ✦) print_header uses on two of its three label
+        # lines. Cairo does not per-glyph-fallback for missing
+        # glyphs, so we'd see tofu boxes in the rasterised PNG.
+        # Substituting ✦ → ◆ (which JetBrains Mono does have) gives
+        # a uniform diamond-bullet style — minor visual change vs.
+        # the live terminal, no missing-glyph artefacts.
+        return captured.replace("✦", "◆")
     finally:
         sys.path.pop(0)
 
@@ -198,17 +208,42 @@ def _patch_svg_font(svg_text: str) -> str:
     """Swap Rich's default font-family for JetBrains Mono so cairosvg
     rasterises the box-drawing ASCII art cell-perfectly.
 
-    Rich's SVG_EXPORT template names ``Fira Code`` first; cairosvg
-    can't resolve the cdn ``@font-face`` URL offline so it falls
-    through to whatever fontconfig picks for ``monospace`` (usually
-    DejaVu Sans Mono on Linux), whose box-drawing glyphs are too
-    tall for the line height. Substituting JetBrains Mono in CSS
-    fixes the rendering without touching Rich internals.
+    Rich's SVG_EXPORT template puts ``Fira Code`` first in TWO
+    places:
+      1. ``@font-face { font-family: "Fira Code"; }`` — a remote
+         CDN-loaded font; browsers fetch it and render correctly.
+      2. ``text { font-family: Fira Code, monospace; }`` — the
+         actual rule applied to text elements. Cairosvg can't fetch
+         the remote @font-face URL so it falls through to the
+         second rule, fontconfig resolves ``Fira Code`` → not
+         installed → ``monospace`` → DejaVu Sans Mono on Linux,
+         whose box-drawing glyphs are too tall for the line
+         height (the URIKA art ends up smudged in the PNG even
+         though the SVG looks fine in a browser).
+
+    The fix needs to hit BOTH declarations so cairosvg picks
+    JetBrains Mono (cell-perfect at this size) on the actual text
+    elements. Browsers see ``JetBrains Mono`` first too, fail to
+    resolve it (no remote source), fall through to ``Fira Code``
+    via the @font-face, and render exactly as before. Symmetric.
     """
-    return svg_text.replace(
+    out = svg_text
+    # The literal CSS rule on text elements (no quotes around names).
+    # ``DejaVu Sans Mono`` sits AFTER JetBrains Mono as a per-glyph
+    # fallback: JetBrains Mono is cell-perfect for box-drawing chars
+    # but lacks the sparkle (U+2726) bullet print_header uses; DejaVu
+    # has it. Fontconfig per-glyph fallback picks JetBrains Mono for
+    # the URIKA art and DejaVu Sans Mono for the missing bullets.
+    out = out.replace(
+        "font-family: Fira Code, monospace",
+        "font-family: JetBrains Mono, Fira Code, DejaVu Sans Mono, monospace",
+    )
+    # The @font-face declarations (quoted name).
+    out = out.replace(
         '"Fira Code"',
         '"JetBrains Mono", "Fira Code"',
     )
+    return out
 
 
 def _render_svg(version: str) -> str:
