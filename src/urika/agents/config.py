@@ -107,6 +107,14 @@ class AgentConfig:
     model: str | None = None
     cwd: Path | None = None
     env: dict[str, str] | None = None  # environment vars for agent subprocess
+    # v0.4.1: per-Bash-tool-call wall-clock cap. The bundled claude
+    # CLI's Bash tool accepts a ``timeout`` field (ms); the
+    # ``can_use_tool`` callback injects this cap so a runaway training
+    # script (infinite loop, deadlocked GPU op) can't wedge an
+    # experiment indefinitely. ``None`` = use whatever the CLI
+    # defaults to. Resolved from ``[preferences].max_method_seconds``
+    # in the project's ``urika.toml`` by the adapter; default 1800s.
+    max_method_seconds: int | None = None
 
 
 @dataclass
@@ -115,6 +123,78 @@ class EndpointConfig:
 
     base_url: str = ""  # empty = default Anthropic API
     api_key_env: str = ""  # env var name containing the API key (e.g. "UNI_API_KEY")
+    # v0.4.1: context-window declaration. Local endpoints (vLLM,
+    # LiteLLM, OpenRouter, Ollama, LM Studio) typically have hard
+    # 32K-128K windows; the bundled ``claude`` CLI requests 32K
+    # output by default, which alone fills a 32K-window endpoint and
+    # produces HTTP 400 ``ContextWindowExceededError``. Setting these
+    # fields surfaces the limit to the CLI via
+    # ``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` and
+    # ``CLAUDE_CODE_MAX_OUTPUT_TOKENS`` so the request fits.
+    # Both default to 0 = "use auto-default for this URL" (see
+    # ``resolve_endpoint_limits``).
+    context_window: int = 0
+    max_output_tokens: int = 0
+
+
+def load_max_method_seconds(project_dir: Path | None) -> int | None:
+    """Read ``[preferences].max_method_seconds`` from a project's
+    ``urika.toml``.
+
+    Returns the configured value, or ``1800`` (30 min) when the field
+    is absent — that's the default cap for "method runs that take
+    minutes". Returns ``None`` if there's no project_dir or the file
+    can't be parsed at all (in which case the adapter falls back to
+    the bundled CLI's own default Bash timeout).
+
+    Pre-v0.4.1 there was no per-call cap and a deadlocked Bash
+    invocation could wedge an experiment for hours. The cap is
+    upper-bound: an agent that asks for 10s gets 10s; an agent that
+    asks for 4 hours gets clamped to ``max_method_seconds``.
+    """
+    if project_dir is None:
+        return None
+    toml_path = project_dir / "urika.toml"
+    if not toml_path.exists():
+        return None
+    try:
+        import tomllib
+
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+    except (OSError, ValueError):
+        return None
+    raw = data.get("preferences", {}).get("max_method_seconds")
+    if raw is None:
+        return 1800  # 30 min default
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return 1800
+    return v if v > 0 else 1800
+
+
+def resolve_endpoint_limits(endpoint: EndpointConfig) -> tuple[int, int]:
+    """Return ``(context_window, max_output_tokens)`` with auto-defaults.
+
+    When an endpoint declares either field, the declared value is
+    used. When a field is 0 (the default), it falls back to a
+    URL-based default:
+
+    * api.anthropic.com → ``200000`` / ``32000`` (preserves the
+      cloud experience pre-v0.4.1).
+    * Anything else (private vLLM / LiteLLM / OpenRouter / Ollama /
+      LM Studio / etc.) → ``32768`` / ``8000``. Conservative; leaves
+      ~24K for input. Endpoints with bigger windows should declare
+      explicitly.
+
+    The two values are independent so a user can declare one and
+    let the other auto-resolve.
+    """
+    is_anthropic = "anthropic.com" in (endpoint.base_url or "").lower()
+    cw = endpoint.context_window or (200000 if is_anthropic else 32768)
+    mo = endpoint.max_output_tokens or (32000 if is_anthropic else 8000)
+    return cw, mo
 
 
 @dataclass
@@ -219,6 +299,10 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
                 endpoints[ep_name] = EndpointConfig(
                     base_url=ep_cfg.get("base_url", ""),
                     api_key_env=ep_cfg.get("api_key_env", ""),
+                    context_window=int(ep_cfg.get("context_window", 0) or 0),
+                    max_output_tokens=int(
+                        ep_cfg.get("max_output_tokens", 0) or 0
+                    ),
                 )
 
         # ── Live-inherit endpoint definitions from globals ────────────
@@ -237,6 +321,8 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
             endpoints[ep_name] = EndpointConfig(
                 base_url=ep.get("base_url", ""),
                 api_key_env=ep.get("api_key_env", ""),
+                context_window=int(ep.get("context_window", 0) or 0),
+                max_output_tokens=int(ep.get("max_output_tokens", 0) or 0),
             )
 
         # ── Live-inherit from global per-mode defaults ────────────────
@@ -333,6 +419,17 @@ def build_agent_env_for_endpoint(
                 env["ANTHROPIC_BASE_URL"] = endpoint.base_url
                 # Disable beta headers that local servers reject
                 env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] = "1"
+            # v0.4.1: declare context window + output cap to the bundled
+            # claude CLI. Without these, the CLI defaults to a 32K
+            # output request which alone fills a 32K-window vLLM
+            # endpoint and yields HTTP 400 ContextWindowExceededError.
+            # Auto-defaults via ``resolve_endpoint_limits``: cloud
+            # endpoints get 200K/32K (no behaviour change), local /
+            # private endpoints get 32K/8K conservative bounds. Users
+            # override per-endpoint in urika.toml or settings.toml.
+            cw, mo = resolve_endpoint_limits(endpoint)
+            env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(cw)
+            env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(mo)
             # Auth-header selection for non-Anthropic endpoints. The
             # bundled Claude Agent SDK CLI sends:
             #   ANTHROPIC_API_KEY   -> header ``x-api-key: <key>``

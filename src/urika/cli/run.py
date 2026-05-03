@@ -31,6 +31,17 @@ from urika.core.experiment import list_experiments
 from urika.core.progress import load_progress
 
 
+def _stdin_is_interactive() -> bool:
+    """Return True when the run-settings dialog should be shown.
+
+    Pulled out of the run() body so tests (CliRunner replaces stdin
+    with a non-tty stream) can monkeypatch this single function instead
+    of fighting click's stdin redirection.
+    """
+    _tui_active = getattr(sys.stdin, "_tui_bridge", False)
+    return sys.stdin.isatty() or _tui_active
+
+
 def _update_repl_activity(event: str, detail: str) -> None:
     """Push orchestrator progress events to the REPL session's activity bar.
 
@@ -242,8 +253,7 @@ def run(
     # CI, scripts): the default option below is "Run with defaults",
     # which would silently auto-fire a multi-hour run on EOF
     # fallthrough. Non-TTY callers must supply explicit flags.
-    _tui_active = getattr(sys.stdin, "_tui_bridge", False)
-    _interactive = sys.stdin.isatty() or _tui_active
+    _interactive = _stdin_is_interactive()
     if (
         not json_output
         and not os.environ.get("URIKA_REPL")
@@ -255,13 +265,22 @@ def run(
         and not instructions
     ):
         click.echo(f"\n  Run settings for {project}:")
-        click.echo(f"    Max turns: {max_turns}")
+        click.echo(f"    Max turns:  {max_turns}")
+        # Surface the autonomous-mode default before the menu so the user
+        # isn't surprised by the "Proceed?" gate that ``urika run`` shows
+        # after the advisor picks an experiment. Mirrors the dashboard
+        # modal's ``Autonomous`` checkbox — invisible here pre-v0.4.1.
+        click.echo(
+            "    Autonomous: no — will prompt after advisor picks an experiment"
+        )
+        click.echo("                (use option 2, or pass --auto)")
 
         choice = _prompt_numbered(
             "\n  Proceed?",
             [
                 "Run with defaults",
-                "Run multiple experiments (meta-orchestrator)",
+                "Run autonomously (no prompts)",
+                "Run multiple experiments (autonomous, meta-orchestrator)",
                 "Custom max turns",
                 "Skip",
             ],
@@ -270,6 +289,8 @@ def run(
 
         if choice.startswith("Skip"):
             return
+        elif choice.startswith("Run autonomously"):
+            auto = True
         elif choice.startswith("Run multiple"):
             try:
                 max_experiments = int(
@@ -294,6 +315,8 @@ def run(
         click.echo(f"    Max turns:    {max_turns}")
         if max_experiments:
             click.echo(f"    Experiments:  up to {max_experiments} (autonomous)")
+        elif auto:
+            click.echo("    Mode:         single experiment (autonomous)")
         else:
             click.echo("    Mode:         single experiment")
         if instructions:
@@ -738,15 +761,38 @@ def run(
     def _cleanup_on_interrupt(signum: int, frame: object) -> None:
         if key_listener is not None:
             key_listener.stop()
-        print_warning(f"\n  Experiment run stopped ({experiment_id})")
+        # Detect the "stopped post-completion" case before stopping the
+        # session: if criteria were already met and we're in
+        # ``_generate_reports``, the experiment has effectively finished
+        # successfully and the user just wants to abandon the cosmetic
+        # narrative/presentation pass. Pre-v0.4.1 we still exited 1 here
+        # and the dashboard's experiment card flipped from completed to
+        # stopped, hiding a successful result.
+        already_completed = False
         try:
-            from urika.core.session import stop_session
+            from urika.core.session import load_session, stop_session
 
+            _state = load_session(project_path, experiment_id)
+            if _state is not None and _state.status == "completed":
+                already_completed = True
             stop_session(project_path, experiment_id, reason="Stopped by user")
         except Exception:
             # Force remove lockfile if stop_session fails
             lock = project_path / "experiments" / experiment_id / ".lock"
             lock.unlink(missing_ok=True)
+
+        if already_completed:
+            print_warning(
+                f"\n  Experiment {experiment_id} already met criteria "
+                "before stop — keeping completed status."
+            )
+            print_step(
+                "  Report generation was interrupted; "
+                "re-run `urika report` to retry the narrative."
+            )
+            raise SystemExit(0)
+
+        print_warning(f"\n  Experiment run stopped ({experiment_id})")
         print_step("  Options:")
         print_step("    urika run --resume              Resume from next turn")
         print_step("    urika advisor <project> <text>   Chat with advisor first")

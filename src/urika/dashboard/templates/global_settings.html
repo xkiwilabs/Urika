@@ -239,6 +239,34 @@
                    x-model="ep.default_model"
                    placeholder="e.g. qwen3:14b">
           </div>
+          {# v0.4.1: per-endpoint context-window declaration. Without
+             these, the bundled claude CLI requests 32K output by
+             default — fills a 32K-window vLLM endpoint and yields
+             HTTP 400. Both blank = auto-default (32768/8000 for
+             local URLs, 200000/32000 for anthropic.com). #}
+          <div class="form-row">
+            <label>Context window (tokens, optional)</label>
+            <input type="number"
+                   x-model.number="ep.context_window"
+                   placeholder="auto: 32768 for local, 200000 for anthropic.com"
+                   min="0">
+            <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+              Total context window of this endpoint's model. Blank or 0 =
+              use auto-default for the URL.
+            </span>
+          </div>
+          <div class="form-row">
+            <label>Max output tokens (optional)</label>
+            <input type="number"
+                   x-model.number="ep.max_output_tokens"
+                   placeholder="auto: 8000 for local, 32000 for anthropic.com"
+                   min="0">
+            <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+              Per-request output cap. Set this conservatively for
+              local/private models so the request fits inside the
+              context window with room for input.
+            </span>
+          </div>
           {# Per-row "Test endpoint" affordance.  Probes the URL via
              POST /api/settings/test-endpoint and shows reachability +
              whether the named API-key env var is actually set in the
@@ -289,7 +317,7 @@
 
       <div style="margin-top: var(--space-3);">
         <button type="button" class="btn btn--secondary"
-                @click="endpoints.push({name: '', base_url: '', api_key_env: '', api_key_value: '', show_value: false, default_model: ''})">
+                @click="endpoints.push({name: '', base_url: '', api_key_env: '', api_key_value: '', show_value: false, default_model: '', context_window: 0, max_output_tokens: 0})">
           + Add endpoint
         </button>
       </div>

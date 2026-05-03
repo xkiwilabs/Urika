@@ -5,6 +5,96 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-05-03
+
+Hardening release. No new feature surface — closes the v0.4.x bug
+backlog discovered after v0.4.0 shipped, plus instrumentation for
+the prompt-bloat investigation that ultimately deprioritised the
+work originally planned. Hybrid-mode E2E smoke run end-to-end
+against the marketing dataset (vLLM + Anthropic split, 50 agent
+calls, 87.5% cache hit, no `ContextWindowExceededError`).
+
+### Added
+
+- **Per-endpoint `context_window` + `max_output_tokens`** on
+  `[privacy.endpoints.<name>]`. Closes the v0.4 E2E private-mode
+  smoke regression where local vLLM endpoints (32K window)
+  returned HTTP 400 `ContextWindowExceededError` because the
+  bundled `claude` CLI defaulted to a 32K output request that
+  alone filled the window. Auto-default by URL: `anthropic.com` →
+  200000 / 32000 (no behaviour change for cloud), anything else →
+  32768 / 8000 (conservative; leaves 24K for input). Forwarded to
+  the CLI via `CLAUDE_CODE_MAX_CONTEXT_TOKENS` and
+  `CLAUDE_CODE_MAX_OUTPUT_TOKENS` env vars. Configurable via the
+  dashboard's Settings → Privacy tab and via `urika.toml` /
+  `~/.urika/settings.toml` directly.
+- **Per-Bash-tool-call timeout cap** via
+  `[preferences].max_method_seconds` (default 1800 s = 30 min).
+  Pre-fix a deadlocked training script (infinite loop, stuck GPU
+  op, hung network call) could wedge an experiment for hours. The
+  `can_use_tool` permission callback now clamps every Bash tool
+  call to the configured ceiling via
+  `PermissionResultAllow.updated_input`. Smaller-than-cap requests
+  pass through unchanged so quick health checks stay fast. 0 /
+  negative falls back to the default — no "no-cap" mode by design.
+- **CLI launcher: "Run autonomously (no prompts)" option.** The
+  bare `urika run <project>` settings dialog gained an `Autonomous`
+  status line in the header and a new menu option that flips
+  `auto=True` for a single-experiment run. Pre-fix users who
+  expected the loop to flow advisor → planner → run without
+  confirmation had to know about the `--auto` flag.
+- **`URIKA_PROMPT_TRACE_FILE` instrumentation.** When set,
+  `ClaudeSDKRunner.run` appends one JSONL record per agent call
+  with system / prompt bytes, tokens broken down by
+  input / cache_creation / cache_read, output tokens, and
+  duration. Companion script `dev/scripts/analyze_prompt_trace.py`
+  summarises the per-agent table. Off by default — zero overhead
+  beyond an env-var lookup.
+- **Cookbook docs page**
+  `21-cookbook-long-running-training.md` covering the
+  multi-minute-per-method project shape: `max_turns` sizing,
+  budget calibration, stop / resume semantics, the prompt-trace
+  loop, and a defensive metric-write template.
+
+### Fixed
+
+- **SIGTERM after criteria met no longer downgrades completed
+  status.** Pre-fix the dashboard's Stop button (or any SIGTERM)
+  arriving while `_generate_reports` was producing the
+  per-experiment narrative overwrote the on-disk `completed`
+  status with `stopped` and exited 1. A successful run with a
+  user-abandoned cosmetic narrative pass showed up as a failure.
+  `stop_session` now refuses to downgrade a terminal status; the
+  CLI's signal handler exits 0 when it detects the
+  already-completed case and prints a clarifying message.
+- **Documentation page on pip-installed Urika** now works.
+  Pre-fix the dashboard's `/docs` page rendered `Documentation
+  not available` and linked to a placeholder
+  `github.com/yourorg/urika` URL because `docs/` only shipped
+  with editable installs. The wheel now bundles the `docs/` tree
+  at `urika/_docs/` via `hatch.build.targets.wheel.force-include`
+  and the resolver checks the bundled location. Empty-state copy
+  + GitHub link fixed to point at the real repo.
+- **Sessions tab empty-state copy** re-written to disambiguate
+  what creates sessions (Advisor tab, `urika advisor` CLI, TUI
+  free-text) from what doesn't (`urika run`, `urika finalize`).
+  Pre-fix users who ran `urika run` and saw an empty Sessions tab
+  assumed the feature was broken.
+
+### Investigated, not changed
+
+- **Prompt-bloat global trim (originally v0.4.1 #2):** dropped.
+  Live-trace data from a real run showed 88.6% prompt-cache hit
+  ratio and a 200:1 output:fresh-input token ratio. Trimming
+  user-prompt blobs would save tens of fresh input tokens per
+  turn against an output stream of ~21K tokens — not a meaningful
+  lever. Plan rewritten in
+  `dev/plans/2026-05-02-prompt-bloat-and-context-budget.md` —
+  the per-endpoint declarations above (Layer 2 in the original
+  plan) were kept because they solve a different problem
+  (local-model context exceeded); the global audit (Layer 1) is
+  cancelled.
+
 ## [0.4.0] - 2026-05-02
 
 First feature-complete v0.4 release. Bundles every v0.4 track

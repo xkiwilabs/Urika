@@ -5,8 +5,17 @@
 {% block content %}
 {% if not docs %}
   <div class="empty-state">
-    <p>Documentation not available.</p>
-    <p class="text-muted">Docs files weren't found on disk. If you're running Urika from a pip install, the docs are at <a href="https://github.com/yourorg/urika/tree/main/docs">the repo</a>.</p>
+    <p><strong>Documentation not bundled with this install.</strong></p>
+    <p class="text-muted">
+      The full docs are on GitHub:
+      <a href="https://github.com/xkiwilabs/Urika/tree/main/docs"
+         target="_blank" rel="noopener">github.com/xkiwilabs/Urika/tree/main/docs</a>.
+    </p>
+    <p class="text-muted">
+      To bundle the docs locally, reinstall the latest release
+      (<code>pip install --upgrade urika</code>) — versions from v0.4.1
+      onward ship the docs inside the wheel.
+    </p>
   </div>
 {% elif current %}
   <article class="card markdown-body">

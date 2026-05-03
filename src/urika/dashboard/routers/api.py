@@ -9,6 +9,7 @@ import re
 import signal
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -948,6 +949,33 @@ def _parse_endpoints_form(
                     detail=f"endpoint name '{name}' appears more than once",
                 )
             seen_names.add(name)
+
+            def _ep_int(field_name: str) -> int:
+                """Parse an optional non-negative integer field from the
+                JSON shape. Blank / missing / 0 = "use auto-default";
+                anything else is validated and rejected if invalid so a
+                typo doesn't silently disable the cap downstream.
+                """
+                raw = item.get(field_name)
+                if raw is None or raw == "":
+                    return 0
+                try:
+                    v = int(raw)
+                except (TypeError, ValueError) as e:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"endpoint '{name}' {field_name} must be an "
+                            f"integer (got {raw!r})"
+                        ),
+                    ) from e
+                if v < 0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"endpoint '{name}' {field_name} must be >= 0",
+                    )
+                return v
+
             rows.append(
                 {
                     "name": name,
@@ -958,14 +986,21 @@ def _parse_endpoints_form(
                     # side decides whether to write it to the vault.
                     "api_key_value": item.get("api_key_value") or "",
                     "default_model": (item.get("default_model") or "").strip(),
+                    "context_window": _ep_int("context_window"),
+                    "max_output_tokens": _ep_int("max_output_tokens"),
                 }
             )
         return rows, True
 
     # Find every index that appears in the form. We accept any of the
-    # four bracketed keys as evidence that the row exists.
+    # bracketed keys as evidence that the row exists. v0.4.1 added the
+    # ``context_window`` and ``max_output_tokens`` fields so private
+    # endpoints can declare the bundled CLI's per-request limits.
     indexed_re = re.compile(
-        r"^endpoints\[(\d+)\]\[(name|base_url|api_key_env|api_key_value|default_model)\]$"
+        r"^endpoints\[(\d+)\]\["
+        r"(name|base_url|api_key_env|api_key_value|default_model"
+        r"|context_window|max_output_tokens)"
+        r"\]$"
     )
     indices: set[int] = set()
     has_field = False
@@ -1001,6 +1036,31 @@ def _parse_endpoints_form(
                 detail=f"endpoint name '{name}' appears more than once",
             )
         seen_names.add(name)
+        # v0.4.1: parse optional context_window / max_output_tokens.
+        # Treat blank or non-integer input as "use auto-default" (= 0).
+        # Reject negatives so a typo doesn't silently disable the
+        # downstream cap.
+        def _opt_int(field_name: str) -> int:
+            raw = (form.get(f"endpoints[{idx}][{field_name}]") or "").strip()
+            if not raw:
+                return 0
+            try:
+                v = int(raw)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"endpoint '{name}' {field_name} must be an integer "
+                        f"(got {raw!r})"
+                    ),
+                ) from e
+            if v < 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"endpoint '{name}' {field_name} must be >= 0",
+                )
+            return v
+
         rows.append(
             {
                 "name": name,
@@ -1014,6 +1074,8 @@ def _parse_endpoints_form(
                 "default_model": (
                     form.get(f"endpoints[{idx}][default_model]") or ""
                 ).strip(),
+                "context_window": _opt_int("context_window"),
+                "max_output_tokens": _opt_int("max_output_tokens"),
             }
         )
     return rows, has_field
@@ -1119,15 +1181,23 @@ async def api_global_settings_put(request: Request):
         # the env-var reference + the secret itself land in their
         # respective stores. NEVER write the value to settings.toml.
         _vault_for_save = None
-        new_endpoints: dict[str, dict[str, str]] = {}
+        new_endpoints: dict[str, dict[str, Any]] = {}
         for ep in submitted_endpoints:
-            row: dict[str, str] = {
+            row: dict[str, Any] = {
                 "base_url": ep["base_url"],
                 "api_key_env": ep["api_key_env"],
             }
             # ``default_model`` is optional — only persist when set.
             if ep["default_model"]:
                 row["default_model"] = ep["default_model"]
+            # v0.4.1: persist context_window / max_output_tokens only
+            # when explicitly declared (>0). Zero means "use auto-
+            # default for this URL" — keeping the TOML clean of noise
+            # entries that match the auto-default anyway.
+            if ep.get("context_window"):
+                row["context_window"] = ep["context_window"]
+            if ep.get("max_output_tokens"):
+                row["max_output_tokens"] = ep["max_output_tokens"]
             new_endpoints[ep["name"]] = row
 
             key_env = (ep.get("api_key_env") or "").strip()
@@ -2490,8 +2560,12 @@ def api_projectbook_artifacts(name: str):
     return {
         "has_summary": (book / "summary.md").exists(),
         "has_report": (book / "report.md").exists(),
+        # Project-level presentations land in either directory:
+        #   urika present --experiment project  -> projectbook/presentation/
+        #   urika finalize                      -> projectbook/final-presentation/
         "has_presentation": (book / "presentation.html").exists()
-        or (book / "presentation" / "index.html").exists(),
+        or (book / "presentation" / "index.html").exists()
+        or (book / "final-presentation" / "index.html").exists(),
         "has_findings": (book / "findings.json").exists(),
     }
 

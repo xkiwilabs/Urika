@@ -214,13 +214,39 @@ def fail_session(
 def stop_session(
     project_dir: Path, experiment_id: str, reason: str | None = None
 ) -> SessionState:
-    """Mark session as stopped (deliberate user interruption). Removes lockfile."""
+    """Mark session as stopped (deliberate user interruption). Removes lockfile.
+
+    Refuses to downgrade a terminal state (``completed`` / ``failed`` /
+    ``stopped``). v0.4.1 fix: pre-fix, a SIGTERM arriving AFTER
+    ``complete_session`` had already run (e.g. the dashboard's Stop
+    button clicked while ``_generate_reports`` was producing the
+    per-experiment narrative) overwrote the on-disk ``completed``
+    status with ``stopped`` and exited 1, making a successful run
+    look like a failed one. The experiment had already met criteria
+    by that point and ``progress.json`` already showed the success
+    metrics — the report-generation pass is cosmetic.
+
+    Lockfile is released regardless so a stuck terminal state never
+    prevents future runs.
+    """
     from urika.core.progress import update_experiment_status
 
     state = load_session(project_dir, experiment_id)
     if state is None:
         msg = f"No session found for experiment {experiment_id}"
         raise FileNotFoundError(msg)
+
+    if state.status in ("completed", "failed", "stopped"):
+        # Already terminal — release the lock but keep the existing
+        # status. Use the reason field to record that a stop was
+        # requested post-completion (useful for distinguishing a
+        # "completed-narrative-pending" run from one that finished
+        # cleanly).
+        if reason is not None:
+            state.checkpoint.setdefault("post_terminal_stop_reason", reason)
+            save_session(project_dir, experiment_id, state)
+        release_lock(project_dir, experiment_id)
+        return state
 
     state.status = "stopped"
     state.completed_at = _now_iso()

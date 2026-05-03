@@ -6,8 +6,11 @@ to change the runtime (e.g. custom runtime, Pi SDK).
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
+import time
 from typing import Any, Callable
 
 from claude_agent_sdk import (
@@ -24,6 +27,49 @@ from urika.agents.runner import AgentResult, AgentRunner
 from urika.core.compliance import require_api_key, scrub_oauth_env
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_max_method_seconds(config: AgentConfig) -> int | None:
+    """Resolve the per-Bash-tool-call wall-clock cap for this agent run.
+
+    Precedence:
+      1. ``config.max_method_seconds`` if a role's ``build_config``
+         set it explicitly (rare — most don't).
+      2. ``[preferences].max_method_seconds`` from the project's
+         ``urika.toml`` via ``load_max_method_seconds``.
+      3. ``None`` if neither is present and no project_dir is set
+         (lets the bundled CLI's own default stand).
+    """
+    if config.max_method_seconds is not None:
+        return config.max_method_seconds
+    from urika.agents.config import load_max_method_seconds
+
+    return load_max_method_seconds(config.cwd)
+
+
+def _trace_prompt_event(record: dict[str, Any]) -> None:
+    """Append a JSONL prompt-size record when ``URIKA_PROMPT_TRACE_FILE`` is set.
+
+    Diagnostic-only (v0.4.1). Used to collect real prompt-size and
+    cache-hit distributions during an experiment so trim decisions
+    can be evidence-based instead of guesswork. Off by default —
+    zero overhead beyond the env-var lookup. The trace file is
+    append-only JSONL (one record per agent call); the run itself
+    is unaffected by I/O failures.
+
+    Record shape:
+        ts, agent, model, system_bytes, prompt_bytes,
+        tokens_in_total, input_tokens, cache_creation_in,
+        cache_read_in, tokens_out, duration_ms, success
+    """
+    path = os.environ.get("URIKA_PROMPT_TRACE_FILE", "").strip()
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except Exception:
+        pass
 
 
 # Suppress the noisy "Fatal error in message reader" log line emitted
@@ -190,8 +236,38 @@ class ClaudeSDKRunner(AgentRunner):
         cost_usd: float | None = None
         tokens_in = 0
         tokens_out = 0
+        # Broken-out input-token components for the prompt-size trace.
+        # ``tokens_in`` keeps its existing total-input semantic (used by
+        # the dashboard usage tab); these are extras for the trace only.
+        input_tokens_only = 0
+        cache_creation_in = 0
+        cache_read_in = 0
         model_name = ""
         is_error = False
+        # Wall-clock timing + raw prompt bytes for the trace. Cheap;
+        # always computed so the success-path return can emit a record
+        # without an extra branch on the trace env var.
+        _trace_t0 = time.monotonic()
+        _trace_sys_bytes = len(config.system_prompt or "")
+        _trace_prompt_bytes = len(prompt) if isinstance(prompt, str) else 0
+
+        def _emit_trace(success: bool) -> None:
+            _trace_prompt_event(
+                {
+                    "ts": time.time(),
+                    "agent": config.name,
+                    "model": model_name,
+                    "system_bytes": _trace_sys_bytes,
+                    "prompt_bytes": _trace_prompt_bytes,
+                    "tokens_in_total": tokens_in,
+                    "input_tokens": input_tokens_only,
+                    "cache_creation_in": cache_creation_in,
+                    "cache_read_in": cache_read_in,
+                    "tokens_out": tokens_out,
+                    "duration_ms": int((time.monotonic() - _trace_t0) * 1000),
+                    "success": success,
+                }
+            )
 
         # v0.4: when ``can_use_tool`` is set (every agent run, post-
         # SecurityPolicy enforcement), the SDK requires the prompt to
@@ -257,11 +333,13 @@ class ClaudeSDKRunner(AgentRunner):
                 # Populate token counts from usage dict, including the
                 # cache fields newer SDKs emit separately.
                 usage = getattr(msg, "usage", None) or {}
-                tokens_in += (
-                    (usage.get("input_tokens") or 0)
-                    + (usage.get("cache_creation_input_tokens") or 0)
-                    + (usage.get("cache_read_input_tokens") or 0)
-                )
+                _input = usage.get("input_tokens") or 0
+                _cache_create = usage.get("cache_creation_input_tokens") or 0
+                _cache_read = usage.get("cache_read_input_tokens") or 0
+                tokens_in += _input + _cache_create + _cache_read
+                input_tokens_only += _input
+                cache_creation_in += _cache_create
+                cache_read_in += _cache_read
                 tokens_out += usage.get("output_tokens") or 0
 
         except ProcessError as exc:
@@ -280,6 +358,7 @@ class ClaudeSDKRunner(AgentRunner):
                     model_name,
                     exc,
                 )
+                _emit_trace(True)
                 return AgentResult(
                     success=True,
                     messages=messages,
@@ -318,6 +397,7 @@ class ClaudeSDKRunner(AgentRunner):
             category = _classify_error(raw_detail)
             error_detail = _friendly_error(category, raw_detail)
             logger.exception("Agent SDK ProcessError [%s]", category)
+            _emit_trace(False)
             return AgentResult(
                 success=False,
                 messages=messages,
@@ -373,6 +453,7 @@ class ClaudeSDKRunner(AgentRunner):
                     model_name,
                     exc,
                 )
+                _emit_trace(True)
                 return AgentResult(
                     success=True,
                     messages=messages,
@@ -394,6 +475,7 @@ class ClaudeSDKRunner(AgentRunner):
             category = _classify_error(raw_detail)
             error_detail = _friendly_error(category, raw_detail)
             logger.exception("Agent SDK error [%s]", category)
+            _emit_trace(False)
             return AgentResult(
                 success=False,
                 messages=messages,
@@ -426,6 +508,7 @@ class ClaudeSDKRunner(AgentRunner):
                     + (f": {_last_assistant!r}" if _last_assistant else "")
                 )
 
+        _emit_trace(not is_error)
         return AgentResult(
             success=not is_error,
             messages=messages,
@@ -479,7 +562,9 @@ class ClaudeSDKRunner(AgentRunner):
             "cwd": str(config.cwd) if config.cwd else None,
             "permission_mode": "default",
             "can_use_tool": make_can_use_tool(
-                config.security, config.cwd
+                config.security,
+                config.cwd,
+                max_method_seconds=_resolve_max_method_seconds(config),
             ),
             "env": agent_env,
             "stderr": _stderr_cb,

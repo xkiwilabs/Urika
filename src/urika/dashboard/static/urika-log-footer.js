@@ -27,21 +27,45 @@
 
   // Agent + model: hook into the log container's mutation observer so
   // any new line that arrives via the SSE handler triggers reclassify.
+  //
+  // Pre-fix the agent regex anchored at ^─── which expected the line
+  // to LITERALLY start with "───". cli_display.print_agent prefixes
+  // every agent header with two spaces ("\n  ─── Planning Agent ───…")
+  // so the start anchor never matched and the footer agent + model
+  // fields stayed at "—" forever, even with ANSI colour codes
+  // disabled. Fix: strip ANSI escapes + leading whitespace before
+  // matching. Also widened the model regex to recognise local-model
+  // formats (qwen2.5:14b, llama-3.2:8b) used by private endpoints.
   const agentEl = footer.querySelector("[data-footer-agent]");
   const modelEl = footer.querySelector("[data-footer-model]");
+  // ANSI CSI escape sequence regex — matches \x1b[<digits>;…m
+  const ANSI_RE = /\x1b\[[0-9;]*m/g;
   const log = document.getElementById("log");
   if (log) {
     const obs = new MutationObserver((mutations) => {
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (!(node instanceof HTMLElement)) continue;
-          const text = node.textContent || "";
-          // Re-run the classifier and extract the agent name
-          const m2 = text.match(/^─── ([\w ]+?)(?: Agent)? ─/);
-          if (m2 && agentEl) {
-            agentEl.textContent = m2[1].toLowerCase();
+          // textContent strips browser-rendered escapes, but the SSE
+          // payload arrives as raw text (we set textContent directly
+          // in the run-log handler), so ANSI codes survive the trip
+          // when stdout was a TTY at orchestrator-spawn time.
+          const raw = node.textContent || "";
+          const text = raw.replace(ANSI_RE, "").trimStart();
+
+          // "─── Planning Agent ───…", "─── Tool Builder ───…",
+          // "─── Finalizer ───…" — optional " Agent" suffix.
+          const agentMatch = text.match(/^─── ([\w ]+?)(?: Agent)? ─/);
+          if (agentMatch && agentEl) {
+            agentEl.textContent = agentMatch[1].toLowerCase();
           }
-          const modelMatch = text.match(/\b(claude-[a-z0-9.-]+|gpt-[a-z0-9.-]+|gemini-[a-z0-9.-]+|qwen[a-z0-9.-]+)\b/i);
+          // Model spotted anywhere in the line — first match wins per
+          // line; the latest match across lines wins overall, which is
+          // what we want when an agent switches model mid-experiment
+          // (reasoning/execution split case).
+          const modelMatch = text.match(
+            /\b(claude-[a-z0-9.-]+|gpt-[a-z0-9.-]+|gemini-[a-z0-9.-]+|qwen[a-z0-9.:_-]+|llama[a-z0-9.:_-]+|mistral[a-z0-9.:_-]+)\b/i
+          );
           if (modelMatch && modelEl) {
             modelEl.textContent = modelMatch[1];
           }

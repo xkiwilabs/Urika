@@ -79,12 +79,30 @@
   {% else %}
     <div class="empty-state">
       <p>
-        No sessions yet. Sessions are saved automatically when you chat with the
-        orchestrator from the terminal — launch <code>urika</code> and start typing,
-        or use slash commands like <code>/run</code>, <code>/advisor</code>, or
-        <code>/inspect</code>. Each conversation persists here so you can resume
-        it later via the <strong>Resume</strong> button below or
-        <code>/resume-session</code> in the terminal.
+        <strong>No conversation sessions yet.</strong>
+      </p>
+      <p>
+        Sessions are persistent <em>chats</em> with the orchestrator —
+        free-text questions and follow-ups about the project. They are
+        <strong>not</strong> created by autonomous commands like
+        <code>urika run</code> or <code>urika finalize</code>; those
+        run the agent loop end-to-end without an interactive
+        conversation.
+      </p>
+      <p>To start a session, do any of:</p>
+      <ul>
+        <li>Open the <a href="/projects/{{ project.name }}/advisor">Advisor</a>
+          tab and ask a question.</li>
+        <li>Run <code>urika advisor {{ project.name }} "your question"</code>
+          from the terminal.</li>
+        <li>Launch the TUI with <code>urika</code>, type free-text into
+          the orchestrator, and your conversation persists here
+          automatically.</li>
+      </ul>
+      <p>
+        Each conversation appears here with a <strong>Resume</strong>
+        button and shows up in <code>urika sessions list</code> from
+        the CLI.
       </p>
     </div>
   {% endif %}
