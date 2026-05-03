@@ -227,9 +227,13 @@ def _render_svg(version: str) -> str:
     ansi = _capture_header_ansi(version)
     text = _ansi_to_rich_text(ansi)
 
+    # Width 78 cols: print_header itself caps the box at ~76 chars
+    # wide (max_width=76 in cli_display.print_header). 78 leaves a
+    # 1-col breathing room on each side of the box without the
+    # 14-col right-side padding gap that width=90 produced.
     console = Console(
         record=True,
-        width=90,
+        width=78,
         legacy_windows=False,
         color_system="truecolor",
         file=io.StringIO(),  # discard live output
