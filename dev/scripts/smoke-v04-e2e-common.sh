@@ -106,6 +106,23 @@ verify_artifact_contains() {
   fi
 }
 
+# Pass when ANY of the supplied paths exists. v0.4.0 renamed the
+# project-level deck dir from ``presentation/`` to
+# ``final-presentation/``; the smoke harness was still asserting
+# only the old name and reporting a false-positive failure on every
+# hybrid / private run after the rename. Use this for any artifact
+# whose location can vary between equivalent layouts.
+verify_artifact_any() {
+  local desc="$1"; shift
+  for p in "$@"; do
+    if [[ -e "$p" ]]; then
+      ok "artifact exists: $desc ($p)"
+      return 0
+    fi
+  done
+  fail "artifact missing: $desc (none of: $*)"
+}
+
 print_summary() {
   echo
   echo "============================================================"

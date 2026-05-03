@@ -174,8 +174,12 @@ step "10. urika present --experiment project"
 if run_step_with_timeout "present project" 1200 \
      urika present "$PROJ" --experiment project
 then
-  verify_artifact "presentation dir" "$PROJ_DIR/projectbook/presentation"
-  verify_artifact "presentation index.html" "$PROJ_DIR/projectbook/presentation/index.html"
+  verify_artifact_any "presentation dir" \
+    "$PROJ_DIR/projectbook/presentation" \
+    "$PROJ_DIR/projectbook/final-presentation"
+  verify_artifact_any "presentation index.html" \
+    "$PROJ_DIR/projectbook/presentation/index.html" \
+    "$PROJ_DIR/projectbook/final-presentation/index.html"
 fi
 
 # === 11. finalize ====================================================

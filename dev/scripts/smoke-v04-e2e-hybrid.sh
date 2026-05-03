@@ -109,8 +109,15 @@ fi
 # orchestrator invokes the planning_agent internally during run.
 
 # === 6. run — single experiment ======================================
+# Hybrid mode hits the network for every private-endpoint agent call,
+# so 5 turns + reports + presentation can comfortably exceed the
+# pre-v0.4.1 50-min budget. Bumped to 90 min — the timeout still
+# guards against true wedges but stops misclassifying legit-but-slow
+# hybrid runs as failures (the v0.4.1 #3 fix means the
+# `keeping completed status` branch is the right outcome when this
+# does fire).
 step "6. urika run --max-turns 5"
-if run_step_with_timeout "run experiment 1" 3000 \
+if run_step_with_timeout "run experiment 1" 5400 \
      urika run "$PROJ" --max-turns 5 --auto -q
 then
   verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
@@ -140,12 +147,19 @@ if run_step_with_timeout "report" 600 urika report "$PROJ"; then
 fi
 
 # === 10. present =====================================================
+# Project-level decks land under either ``projectbook/presentation/``
+# (legacy / agent-default) or ``projectbook/final-presentation/``
+# (v0.4.0+ finalize rename). Accept either.
 step "10. urika present --experiment project"
 if run_step_with_timeout "present project" 900 \
      urika present "$PROJ" --experiment project
 then
-  verify_artifact "presentation dir" "$PROJ_DIR/projectbook/presentation"
-  verify_artifact "presentation index.html" "$PROJ_DIR/projectbook/presentation/index.html"
+  verify_artifact_any "presentation dir" \
+    "$PROJ_DIR/projectbook/presentation" \
+    "$PROJ_DIR/projectbook/final-presentation"
+  verify_artifact_any "presentation index.html" \
+    "$PROJ_DIR/projectbook/presentation/index.html" \
+    "$PROJ_DIR/projectbook/final-presentation/index.html"
 fi
 
 # === 11. finalize ====================================================
