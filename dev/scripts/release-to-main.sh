@@ -55,6 +55,13 @@ git rm -rq docs/tutorials/ 2>/dev/null || true
 git rm -rq docs/plans/ 2>/dev/null || true
 git rm -rq packages/ 2>/dev/null || true
 git rm -rq tui/ 2>/dev/null || true
+# v0.4.1 sync leaked ``.claude/scheduled_tasks.lock`` (an
+# IDE-side artifact written by Claude Code when scheduling
+# background work) into the public main commit. The directory is
+# ephemeral local state — it must not appear on the public repo.
+# Listed here both as a safety net and to clean up any prior leak
+# already on main.
+git rm -rq .claude/ 2>/dev/null || true
 
 # Stage everything
 git add -A
