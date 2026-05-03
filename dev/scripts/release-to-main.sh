@@ -42,21 +42,33 @@ fi
 # main-side checkout sees the new version. Auto-pushes dev when a
 # regen lands so origin/dev tracks reality before main is updated.
 echo "Regenerating release header..."
+RELEASE_VERSION="$(python -c "import tomllib; \
+print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])" 2>/dev/null \
+    || echo unknown)"
 if [ -x dev/scripts/update-header.py ]; then
     if ! python dev/scripts/update-header.py; then
         echo "ERROR: header regeneration failed. Fix update-header.py first."
         exit 1
     fi
-    if ! git diff --quiet docs/assets/header.svg docs/assets/header.png 2>/dev/null; then
-        VERSION_FOR_MSG="$(python -c "import tomllib; \
-print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])" 2>/dev/null \
-            || echo unknown)"
-        git add docs/assets/header.svg docs/assets/header.png
-        git commit -m "release: regenerate header for v${VERSION_FOR_MSG}"
+    # Bump the README's cache-buster query string to match the new
+    # version. README uses ``header.png?v=X.Y.Z`` so browsers and
+    # GitHub's image proxy treat each release's image as a fresh
+    # URL — without this, viewers see the previous release's PNG
+    # cached in their browser even after the new commit lands.
+    if [ "$RELEASE_VERSION" != "unknown" ] && [ -f README.md ]; then
+        sed -i \
+            "s|header\.png?v=[0-9.]*|header.png?v=${RELEASE_VERSION}|g; \
+             s|header\.png\"|header.png?v=${RELEASE_VERSION}\"|g" \
+            README.md
+    fi
+    # Commit any header artifact OR README cache-buster change.
+    if ! git diff --quiet docs/assets/header.svg docs/assets/header.png README.md 2>/dev/null; then
+        git add docs/assets/header.svg docs/assets/header.png README.md
+        git commit -m "release: regenerate header + bump README cache-buster for v${RELEASE_VERSION}"
         git push origin dev
-        echo "  header regenerated + pushed to origin/dev"
+        echo "  header + README cache-buster updated + pushed to origin/dev"
     else
-        echo "  header already current — no commit needed"
+        echo "  header + cache-buster already current — no commit needed"
     fi
 else
     echo "  skipped (dev/scripts/update-header.py not executable)"
