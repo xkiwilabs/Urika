@@ -108,34 +108,12 @@ cost stays under budget set in v0.4.1.
 
 ---
 
-## v0.6.0 — OpenAI adapter + project templates (target: ~1.5 weeks, week 3)
+## v0.6.0 — GitHub auto-backup (target: ~1.2 weeks, week 3)
 
-**Focus:** Two unrelated capabilities that are each small enough to
-share a release.
-
-**Ships:**
-
-1. **OpenAI Agents SDK adapter** — second working agent backend on
-   top of v0.4's thin abstraction. Validates the `urika.runners`
-   entry-point boundary. End-to-end: a project configured with the
-   OpenAI runner runs the full experiment loop (planner → task →
-   evaluator → advisor) and produces the same artifacts as the
-   Anthropic runner. ~6 days.
-2. **Project templates** — `urika new --template
-   behavioral|timeseries|imaging|nlp|ml-baseline` with seeded
-   criteria, recommended tools, sample knowledge entries, and a
-   `data-description.md` skeleton. ~3 days.
-
-**Cut criterion:** A complete experiment runs on the OpenAI
-adapter end-to-end (behavioural-data fixture). All 5 templates
-produce valid project trees with `urika new --template <name>`.
-The OpenAI adapter passes the same `tests/test_agents/` battery
-as the Anthropic adapter for behaviours that aren't
-Anthropic-specific.
-
----
-
-## v0.7.0 — GitHub auto-backup (target: ~1.2 weeks, week 4.2)
+**Reordered 2026-05-04:** swapped with the original v0.7.0 to ship
+GitHub backup before the multi-provider work. Discrete, smaller
+surface, immediately useful — landing it sooner gives users the
+"my work is safe" payoff while the bigger multi-provider work cooks.
 
 **Focus:** Each project becomes a git repo automatically backed up
 to a user-configured remote. Scope is **backup**, not
@@ -217,6 +195,48 @@ the open / hybrid / private project shapes.
 
 ---
 
+## v0.7.0 — multi-provider model adapters (target: ~2 weeks, week 5)
+
+**Reordered + scope-expanded 2026-05-04:** swapped with the original
+v0.6 OpenAI work (now lands later because GitHub backup ships first),
+and **added a Google Gen AI / Gemini adapter alongside OpenAI** so
+v0.7 ships with three working backends instead of two. Project
+templates were originally bundled here; moved to v0.9 as UX polish.
+
+**Focus:** Ship two new agent-runtime backends on top of v0.4's thin
+abstraction. After this release, the same Urika project can run
+experiments against Anthropic, OpenAI, OR Google models — and users
+can mix providers per agent role (e.g., Opus for the planner, GPT-4
+for task work, Gemini for the advisor). Validates the
+`urika.runners` entry-point boundary against two independent SDKs
+before v1.0 freezes the public API.
+
+**Ships:**
+
+1. **OpenAI Agents SDK adapter** — second working agent backend.
+   End-to-end: a project configured with the OpenAI runner runs the
+   full experiment loop (planner → task → evaluator → advisor) and
+   produces the same artifacts as the Anthropic runner. Passes the
+   same `tests/test_agents/` battery for behaviours that aren't
+   Anthropic-specific. ~6 days.
+2. **Google Gen AI SDK adapter** — third working agent backend.
+   Same end-to-end requirement as OpenAI. ~6 days.
+3. **Per-agent cross-provider routing** — `urika config` and the
+   dashboard Models tab gain provider-aware dropdowns so users can
+   pick a different backend per agent role (e.g., planner=Anthropic
+   Opus, task=OpenAI GPT-4, advisor=Google Gemini). The runtime
+   already supports per-agent endpoints; this just makes the
+   provider dimension explicit in the UI. ~2 days.
+
+**Cut criterion:** A complete experiment runs end-to-end on each of
+the three backends (Anthropic, OpenAI, Google) against the same
+behavioural-data fixture, producing equivalent artifact sets. A
+mixed-provider project (e.g., planner=Anthropic, task=OpenAI,
+advisor=Google) runs a 5-turn experiment without errors and
+records correct usage / cost per backend.
+
+---
+
 ## v0.8.0 — output polish (target: ~1.5 weeks, week 5.5)
 
 **Focus:** Make Urika's outputs publication-ready. v0.4–0.7 prove
@@ -247,26 +267,35 @@ test project.
 
 ---
 
-## v0.9.0 — accessibility + i18n stubs (target: ~3 days, week 6.5)
+## v0.9.0 — UX polish (target: ~5 days, week 6.5)
 
-**Focus:** Last release before feature freeze. The system is
-desktop-finished; mobile responsiveness is *not* a 1.0 goal (the
-mobile use case is "check on a long-running run while away from
-my desk", which is already covered by Slack/Telegram
-notifications shipped in v0.3).
+**Reordered + scope-changed 2026-05-04:** project templates moved
+here from v0.6 (they're UX polish, not blocking new use cases);
+i18n string-extraction stubs cut entirely (no demand surfaced;
+defer to v1.x if a translation contributor appears). Last release
+before feature freeze. The system is desktop-finished; mobile
+responsiveness is *not* a 1.0 goal (the mobile use case is "check
+on a long-running run while away from my desk", which is already
+covered by Slack/Telegram notifications shipped in v0.3).
 
 **Ships:**
 
-1. **Accessibility pass** — keyboard navigation through every
+1. **Project templates** — `urika new --template
+   behavioral|timeseries|imaging|nlp|ml-baseline` with seeded
+   criteria, recommended tools, sample knowledge entries, and a
+   `data-description.md` skeleton. Skips the interactive wizard
+   for common research shapes — instead of asking the user 10
+   questions, the template applies sensible defaults for that
+   domain (e.g., behavioural defaults to ANOVA + post-hoc + effect
+   sizes; timeseries defaults to RMSE on a held-out future window).
+   ~3 days.
+2. **Accessibility pass** — keyboard navigation through every
    form, focus states, ARIA labels on icon-only buttons,
    colour-contrast audit of light + dark themes. ~2 days.
-2. **i18n string-extraction stubs** — extract user-facing strings
-   into `urika/i18n/en.toml` so future translations are
-   mechanical. No actual translations shipped. ~1 day.
 
-**Cut criterion:** axe-core / WAVE accessibility audit returns
-zero P0/P1 issues. Every user-facing CLI + dashboard string is in
-`en.toml`.
+**Cut criterion:** All 5 templates produce valid project trees
+that pass `urika status` and `urika inspect` without warnings.
+axe-core / WAVE accessibility audit returns zero P0/P1 issues.
 
 **Explicitly NOT in v1.0:** mobile-responsive dashboard. The phone
 use case is the notification (Slack/Telegram inline-keyboard
