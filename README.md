@@ -216,6 +216,14 @@ See [Models and Privacy](docs/13a-models-and-privacy.md) for configuration detai
 | [Notifications — Remote](docs/19b-notifications-remote.md) | Remote `/commands`, what gets notified, troubleshooting, caveats |
 | [Security Model](docs/20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
 
+## Reporting bugs and requesting features
+
+Found a bug? Got an idea for a feature? Open an issue at
+[github.com/xkiwilabs/Urika/issues](https://github.com/xkiwilabs/Urika/issues).
+Pick the **🐛 Bug report** or **✨ Feature request** template — it
+asks for the version, OS, and a few other details that make the
+issue much faster to act on.
+
 ## Coming soon
 
 Planned features on the road to **v1.0.0**, in order. Bug-fix

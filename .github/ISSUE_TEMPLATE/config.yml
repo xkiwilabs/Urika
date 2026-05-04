@@ -1,0 +1,14 @@
+# Force users to pick a template instead of opening a blank issue.
+# Without this, "New issue" shows a "Don't see your issue here? Open a
+# blank one" link that lets users skip the templates entirely — and
+# they tend to, then you have to ask for the version + OS + log
+# manually. Setting blank_issues_enabled to false hides that escape
+# hatch and routes everyone through one of the structured templates.
+blank_issues_enabled: false
+
+# Optional contact links surfaced above the template list. Useful for
+# steering "is this a question?" traffic somewhere other than Issues
+# (e.g. Discussions if enabled). Leave empty for now — Discussions
+# isn't enabled on this repo and we don't want to scatter feedback
+# across channels until it is.
+contact_links: []
