@@ -64,10 +64,6 @@ from urika.cli.data import (  # noqa: F401
     venv_status,
 )
 
-# TUI command
-import urika.cli.tui  # noqa: F401
-from urika.cli.tui import tui  # noqa: F401
-
 # Shell completion (bash / zsh / fish)
 import urika.cli.completion  # noqa: F401
 
