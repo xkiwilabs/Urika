@@ -37,6 +37,9 @@ class _UrikaSuggester(Suggester):
         "build-tool", "tools", "inspect", "criteria", "logs",
         "knowledge", "dashboard", "usage", "update", "stop", "pause",
         "new-session", "resume-session", "quit",
+        # v0.4.2 H8 / C7 — TUI parity for CLI-only features.
+        "setup", "summarize", "sessions", "memory", "venv",
+        "experiment-create", "delete-experiment", "copy",
     ]
 
     def __init__(self, session: ReplSession) -> None:

@@ -31,6 +31,11 @@ _WORKER_COMMANDS = frozenset(
         "run", "finalize", "evaluate", "plan", "advisor",
         "present", "report", "build-tool", "resume",
         "new", "config", "notifications", "setup",
+        # v0.4.2 H8: ``/summarize`` is an agent call (long-running);
+        # the rest of the new H8 slashes (/sessions, /memory, /venv,
+        # /experiment-create) are fast read/write operations and
+        # run inline.
+        "summarize",
     }
 )
 
