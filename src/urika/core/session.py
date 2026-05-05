@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from urika.core.atomic_write import write_json_atomic
 from urika.core.models import SessionState
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ def load_session(project_dir: Path, experiment_id: str) -> SessionState | None:
 def save_session(project_dir: Path, experiment_id: str, state: SessionState) -> None:
     """Persist session state to session.json."""
     path = _session_path(project_dir, experiment_id)
-    path.write_text(json.dumps(state.to_dict(), indent=2) + "\n", encoding="utf-8")
+    write_json_atomic(path, state.to_dict())
 
 
 def acquire_lock(project_dir: Path, experiment_id: str) -> bool:
@@ -162,7 +163,7 @@ def resume_session(project_dir: Path, experiment_id: str) -> SessionState:
         state.status = "running"
         save_session(project_dir, experiment_id, state)
         return state
-    except:
+    except Exception:
         release_lock(project_dir, experiment_id)
         raise
 

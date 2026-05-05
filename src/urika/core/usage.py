@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from urika.core.atomic_write import write_json_atomic
 from urika.core.filelock import locked_json_update
 
 
@@ -64,7 +65,7 @@ def record_session(
         totals["total_experiments"] += experiments_run
         data["totals"] = totals
 
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        write_json_atomic(path, data)
 
 
 def get_last_session(project_dir: Path) -> dict[str, Any] | None:

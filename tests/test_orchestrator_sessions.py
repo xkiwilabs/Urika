@@ -29,10 +29,37 @@ class TestCreateNewSession:
 
     def test_session_id_has_timestamp_format(self) -> None:
         session = create_new_session()
-        # Format: YYYY-MM-DDTHH-MM-SS
-        assert len(session.session_id) == 19
+        # Format: YYYY-MM-DDTHH-MM-SS-XXXX (4 hex chars suffix added in
+        # v0.4.2 to break sub-second collisions — see C10).
+        assert len(session.session_id) == 24
         assert session.session_id[4] == "-"
         assert session.session_id[10] == "T"
+        assert session.session_id[19] == "-"
+        # Suffix is 4 hex chars.
+        suffix = session.session_id[20:]
+        assert len(suffix) == 4
+        assert all(c in "0123456789abcdef" for c in suffix)
+
+    def test_session_ids_unique_when_timestamp_collides(self, monkeypatch) -> None:
+        # Pre-v0.4.2 used second-resolution timestamps with no suffix,
+        # so two sessions started in the same second produced the same
+        # ``session_id`` and the second save_session overwrote the first.
+        # The C10 fix appends a random suffix; force the timestamp half
+        # to be identical and prove the suffix half still differs.
+        from urika.core import orchestrator_sessions as os_mod
+
+        fixed_stamp = "2026-01-01T00-00-01"
+        monkeypatch.setattr(
+            os_mod, "_timestamp_id",
+            lambda: fixed_stamp + "-" + os_mod.secrets.token_hex(2),
+        )
+        ids = {create_new_session().session_id for _ in range(20)}
+        # All ids share the timestamp prefix...
+        assert all(i.startswith(fixed_stamp) for i in ids)
+        # ...but at least 18 of 20 are unique (4 hex chars = 65k space,
+        # collision probability over 20 draws is ~0.3%; 18/20 floor is
+        # safely above any realistic flake threshold).
+        assert len(ids) >= 18
 
 
 class TestSaveAndLoad:

@@ -301,3 +301,46 @@ class TestProjectAutoDiscovery:
         (proj / ".urika" / "secrets.env").write_text("PROJ_KEY=hello\n")
         vault = _new_vault(SecretsVault, tmp_path, project_path=proj)
         assert vault.get("PROJ_KEY") == "hello"
+
+
+class TestEmptyStringSecretIsNotUnset:
+    """Pre-v0.4.2 ``vault.get`` used truthy checks, conflating "" with
+    unset. An empty-string secret value is rare but legitimate (e.g.
+    sentinel for "no auth header"), and must round-trip through every
+    tier without becoming None.
+    """
+
+    def test_global_empty_string_returns_empty_string_not_none(
+        self, monkeypatch, tmp_path, SecretsVault
+    ) -> None:
+        monkeypatch.delenv("EMPTY_KEY", raising=False)
+        vault = _new_vault(SecretsVault, tmp_path)
+        vault._global_backend.set("EMPTY_KEY", "")
+        monkeypatch.delenv("EMPTY_KEY", raising=False)
+        assert vault.get("EMPTY_KEY") == ""
+
+    def test_project_empty_string_returns_empty_string_not_none(
+        self, monkeypatch, tmp_path, SecretsVault
+    ) -> None:
+        monkeypatch.delenv("EMPTY_KEY", raising=False)
+        proj = tmp_path / "proj"
+        (proj / ".urika").mkdir(parents=True)
+        (proj / ".urika" / "secrets.env").write_text("EMPTY_KEY=\n")
+        vault = _new_vault(SecretsVault, tmp_path, project_path=proj)
+        assert vault.get("EMPTY_KEY") == ""
+
+    def test_process_env_empty_string_returns_empty_string_not_none(
+        self, monkeypatch, tmp_path, SecretsVault
+    ) -> None:
+        monkeypatch.setenv("EMPTY_KEY", "")
+        vault = _new_vault(SecretsVault, tmp_path)
+        # Tier 3 set so we can prove tier 1's empty string still wins.
+        vault._global_backend.set("EMPTY_KEY", "global-fallback")
+        assert vault.get("EMPTY_KEY") == ""
+
+    def test_truly_unset_still_returns_none(
+        self, monkeypatch, tmp_path, SecretsVault
+    ) -> None:
+        monkeypatch.delenv("MISSING_KEY", raising=False)
+        vault = _new_vault(SecretsVault, tmp_path)
+        assert vault.get("MISSING_KEY") is None
