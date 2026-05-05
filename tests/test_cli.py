@@ -1290,7 +1290,11 @@ class TestLogsCommand:
         )
         append_run(project_dir, exp_id, run)
 
-        result = runner.invoke(cli, ["logs", "test-proj"], env=urika_env)
+        # v0.4.2 C6: ``urika logs`` default switched from
+        # progress.json summary to ``run.log`` tail; the legacy
+        # summary view is preserved under --summary for users that
+        # scripted against the old output.
+        result = runner.invoke(cli, ["logs", "test-proj", "--summary"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "run-001" in result.output
         assert "linear_regression" in result.output
@@ -1315,13 +1319,17 @@ class TestLogsCommand:
     def test_logs_empty_runs(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
+        # v0.4.2 C6: ``--summary`` preserves the pre-v0.4.2 default
+        # progress-summary view ("No runs recorded yet."). The new
+        # default tails run.log, which doesn't exist for an
+        # experiment that's never been run.
         _create_project(runner, urika_env)
         runner.invoke(
             cli,
             ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H1"],
             env=urika_env,
         )
-        result = runner.invoke(cli, ["logs", "test-proj"], env=urika_env)
+        result = runner.invoke(cli, ["logs", "test-proj", "--summary"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "No runs recorded" in result.output
 

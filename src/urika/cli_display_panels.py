@@ -26,10 +26,10 @@ from urika.cli_display import (
     _AGENT_COLORS,
     _AGENT_LABELS,
     _C,
-    _IS_TTY,
     _SPINNER,
     _TOOL_VERBS,
     _format_duration,
+    _is_tty,
     format_model_source,
 )
 
@@ -70,7 +70,7 @@ class ThinkingPanel:
         Call BEFORE any print() output. Becomes a no-op if terminal is
         too small (< 10 rows) or not a TTY.
         """
-        if not _IS_TTY:
+        if not _is_tty():
             return
         try:
             size = os.get_terminal_size()
@@ -334,7 +334,7 @@ class Spinner:
             self._cost = float(session_info.get("cost", 0.0) or 0.0)
 
     def __enter__(self) -> Spinner:
-        if not _IS_TTY:
+        if not _is_tty():
             print(f"  {self.message}")
             return self
         self._active = True
@@ -347,7 +347,7 @@ class Spinner:
         self._active = False
         if self._thread is not None:
             self._thread.join(timeout=1)
-        if _IS_TTY:
+        if _is_tty():
             try:
                 sys.stdout.write("\r\033[K\033[0m")
                 sys.stdout.flush()
@@ -389,7 +389,7 @@ class Spinner:
 
     def print_above(self, text: str) -> None:
         """Print a line above the spinner, keeping the spinner on the last line."""
-        if not _IS_TTY:
+        if not _is_tty():
             print(text)
             return
 

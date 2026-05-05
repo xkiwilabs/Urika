@@ -148,9 +148,32 @@ def tools(category: str | None, project: str | None, json_output: bool) -> None:
 @click.option(
     "--experiment", "experiment_id", default=None, help="Specific experiment."
 )
+@click.option(
+    "--summary",
+    is_flag=True,
+    default=False,
+    help=(
+        "Show progress.json run summary instead of the raw log. Pre-v0.4.2 "
+        "this was the only behaviour and the docstring lied: 'urika logs' "
+        "never opened run.log. The dashboard's log view always tailed the "
+        "real log; the CLI now matches."
+    ),
+)
+@click.option(
+    "--tail",
+    type=int,
+    default=50,
+    help="Lines of run.log to print (default: 50). Ignored under --summary.",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def logs(project: str, experiment_id: str | None, json_output: bool) -> None:
-    """Show experiment run log."""
+def logs(
+    project: str,
+    experiment_id: str | None,
+    summary: bool,
+    tail: int,
+    json_output: bool,
+) -> None:
+    """Tail an experiment's run.log (or print the run summary with --summary)."""
     from urika.core.session import load_session
 
     project = _ensure_project(project)
@@ -193,42 +216,85 @@ def logs(project: str, experiment_id: str | None, json_output: bool) -> None:
 
     progress = load_progress(project_path, experiment_id)
     session = load_session(project_path, experiment_id)
+    log_path = (
+        project_path / "experiments" / experiment_id / "run.log"
+    )
 
     if json_output:
         from urika.cli_helpers import output_json
 
         runs = progress.get("runs", [])
-        data = {
+        data: dict[str, object] = {
             "experiment_id": experiment_id,
             "runs": runs,
         }
         if session is not None:
             data["status"] = session.status
             data["turns"] = session.current_turn
+        # Include the requested tail of run.log under the new "log_lines"
+        # key so JSON consumers get the actual log without parsing the
+        # progress summary. Empty list when the log doesn't exist.
+        data["log_path"] = str(log_path)
+        if log_path.exists():
+            try:
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                data["log_lines"] = lines[-tail:] if tail > 0 else lines
+            except OSError as exc:
+                data["log_lines"] = []
+                data["log_error"] = str(exc)
+        else:
+            data["log_lines"] = []
         output_json(data)
         return
 
-    click.echo(f"Experiment: {experiment_id}")
-    if session is not None:
-        click.echo(f"Status: {session.status}")
-        click.echo(f"Turns: {session.current_turn}")
-    click.echo("")
+    if summary:
+        # Legacy behaviour — progress.json summary, kept for users who
+        # scripted against pre-v0.4.2 output. New default is the log tail.
+        click.echo(f"Experiment: {experiment_id}")
+        if session is not None:
+            click.echo(f"Status: {session.status}")
+            click.echo(f"Turns: {session.current_turn}")
+        click.echo("")
 
-    runs = progress.get("runs", [])
-    if not runs:
-        click.echo("No runs recorded yet.")
+        runs = progress.get("runs", [])
+        if not runs:
+            click.echo("No runs recorded yet.")
+            return
+
+        for run in runs:
+            metrics_str = ", ".join(
+                f"{k}={v}" for k, v in run.get("metrics", {}).items()
+            )
+            click.echo(f"  {run['run_id']}  {run['method']}  {metrics_str}")
+            if run.get("hypothesis"):
+                click.echo(f"    Hypothesis: {run['hypothesis']}")
+            if run.get("observation"):
+                click.echo(f"    Observation: {run['observation']}")
+            if run.get("next_step"):
+                click.echo(f"    Next step: {run['next_step']}")
+            click.echo("")
         return
 
-    for run in runs:
-        metrics_str = ", ".join(f"{k}={v}" for k, v in run.get("metrics", {}).items())
-        click.echo(f"  {run['run_id']}  {run['method']}  {metrics_str}")
-        if run.get("hypothesis"):
-            click.echo(f"    Hypothesis: {run['hypothesis']}")
-        if run.get("observation"):
-            click.echo(f"    Observation: {run['observation']}")
-        if run.get("next_step"):
-            click.echo(f"    Next step: {run['next_step']}")
-        click.echo("")
+    # Default: tail run.log (the file the dashboard's log view shows).
+    if not log_path.exists():
+        click.echo(
+            f"No run.log yet at {log_path}. "
+            f"Run the experiment first or pass --summary for the progress view.",
+            err=True,
+        )
+        # Exit zero so scripts can pipe without trapping; absence is a
+        # legitimate state on a never-run experiment.
+        return
+
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        click.echo(f"Failed to read {log_path}: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    selected = lines[-tail:] if tail > 0 else lines
+    for line in selected:
+        click.echo(line)
 
 
 @cli.group()
