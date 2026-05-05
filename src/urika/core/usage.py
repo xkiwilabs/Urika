@@ -81,10 +81,30 @@ def get_totals(project_dir: Path) -> dict[str, Any]:
     return data.get("totals", _empty_totals())
 
 
-def estimate_cost(tokens_in: int, tokens_out: int, model: str = "") -> float:
+def estimate_cost(
+    tokens_in: int,
+    tokens_out: int,
+    model: str = "",
+    *,
+    cache_creation_in: int = 0,
+    cache_read_in: int = 0,
+) -> float:
     """Estimate cost at API rates from token counts.
 
     Uses Claude Sonnet pricing as default. Returns USD.
+
+    When ``cache_creation_in`` and/or ``cache_read_in`` are supplied,
+    the cache discount is applied: cache-creation is priced at 1.25× of
+    fresh-input rates, cache-read at 0.1× (per Anthropic's pricing).
+    Pre-v0.4.2 callers passed only ``tokens_in`` (the rolled-up total)
+    so cache-read tokens were billed at full input rates — overstating
+    cost for cache-heavy workloads by up to 10×.
+
+    The aggregate ``tokens_in`` is treated as ``input_tokens_only +
+    cache_creation_in + cache_read_in`` when any of the broken-out
+    fields are nonzero; the ``input_tokens_only`` portion is derived
+    by subtraction so existing callers passing the aggregate get the
+    discount automatically.
     """
     # Claude Sonnet 4 pricing (as of 2026)
     if "opus" in model.lower():
@@ -98,7 +118,16 @@ def estimate_cost(tokens_in: int, tokens_out: int, model: str = "") -> float:
         price_in = 3.0 / 1_000_000
         price_out = 15.0 / 1_000_000
 
-    return tokens_in * price_in + tokens_out * price_out
+    if cache_creation_in == 0 and cache_read_in == 0:
+        # Legacy path — no cache breakdown known, bill everything at
+        # fresh input rates.
+        return tokens_in * price_in + tokens_out * price_out
+
+    input_only = max(tokens_in - cache_creation_in - cache_read_in, 0)
+    fresh_cost = input_only * price_in
+    create_cost = cache_creation_in * price_in * 1.25
+    read_cost = cache_read_in * price_in * 0.10
+    return fresh_cost + create_cost + read_cost + tokens_out * price_out
 
 
 def format_usage(

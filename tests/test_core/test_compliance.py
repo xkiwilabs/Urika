@@ -150,3 +150,40 @@ class TestScrubOauthEnv:
         out = scrub_oauth_env(None)
         assert out["CLAUDE_CODE_OAUTH_TOKEN"] == ""
         assert out["ANTHROPIC_AUTH_TOKEN"] == ""
+
+    def test_blanks_oauth_refresh_token(self):
+        """Regression for v0.4.2 H15: pre-fix scrubbed only the access
+        token, leaving ``CLAUDE_CODE_OAUTH_REFRESH_TOKEN`` live so the
+        bundled CLI could re-mint a fresh access token.
+        """
+        from urika.core.compliance import scrub_oauth_env
+
+        out = scrub_oauth_env(
+            {"CLAUDE_CODE_OAUTH_REFRESH_TOKEN": "rt-leaked-from-parent"}
+        )
+        assert out["CLAUDE_CODE_OAUTH_REFRESH_TOKEN"] == ""
+
+    def test_blanks_full_oauth_token_set(self):
+        """Every name in the canonical OAuth-token list must be blanked.
+        Previously these were defined in ``_OAUTH_TOKEN_VARS`` but the
+        function hardcoded only two of them inline — the constant was
+        defined-but-unused.
+        """
+        from urika.core.compliance import _OAUTH_TOKEN_VARS, scrub_oauth_env
+
+        leaky_env = {var: f"leaked-{var}" for var in _OAUTH_TOKEN_VARS}
+        out = scrub_oauth_env(leaky_env)
+        for var in _OAUTH_TOKEN_VARS:
+            assert out[var] == "", f"{var} was not blanked"
+
+    def test_blanks_session_identity_markers(self):
+        """Newer Claude Code versions ship CLAUDE_CODE_SESSION_* markers
+        that double as nested-launch tripwires. The scrub list now
+        includes them.
+        """
+        from urika.core.compliance import _NESTED_SESSION_VARS, scrub_oauth_env
+
+        leaky_env = {var: "set-by-parent" for var in _NESTED_SESSION_VARS}
+        out = scrub_oauth_env(leaky_env)
+        for var in _NESTED_SESSION_VARS:
+            assert out[var] == "", f"{var} was not blanked"

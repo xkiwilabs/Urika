@@ -97,6 +97,52 @@ class TestEstimateCost:
         opus = estimate_cost(1000, 1000, model="opus")
         assert opus > sonnet
 
+    def test_legacy_call_no_breakdown_unchanged(self) -> None:
+        """When callers pass only the rolled-up tokens_in (the v0.4.1
+        and earlier signature), the cost matches the pre-discount
+        calculation."""
+        # 1M tokens at sonnet input rate ($3/1M) + 1k output at $15/1M
+        # = 3.0 + 0.015 = 3.015
+        cost = estimate_cost(1_000_000, 1_000)
+        assert abs(cost - 3.015) < 1e-9
+
+    def test_cache_read_gets_10pct_discount(self) -> None:
+        """Regression for v0.4.2 H6: cache-read tokens are priced at
+        ~10% of fresh-input rates per Anthropic. Pre-fix, the
+        rolled-up ``tokens_in`` was billed at full input rates,
+        overstating cost for cache-heavy workloads."""
+        # 1M cache-read tokens, no output, sonnet.
+        # Fresh-input price: $3.00. Cache-read price: $0.30.
+        full_price = estimate_cost(1_000_000, 0)
+        cached_price = estimate_cost(
+            1_000_000, 0, cache_creation_in=0, cache_read_in=1_000_000
+        )
+        # Cached should be ~10% of full.
+        assert cached_price < full_price * 0.15
+        assert abs(cached_price - 0.30) < 1e-9
+
+    def test_cache_creation_25pct_premium(self) -> None:
+        """Cache-creation is priced at 1.25× fresh input."""
+        full_input = estimate_cost(1_000_000, 0)  # 1M fresh × $3 = $3.00
+        cache_creation = estimate_cost(
+            1_000_000, 0, cache_creation_in=1_000_000, cache_read_in=0
+        )
+        assert abs(cache_creation - 3.75) < 1e-9
+        assert cache_creation > full_input
+
+    def test_mixed_breakdown_sums_correctly(self) -> None:
+        """A real run mixes fresh + creation + read tokens."""
+        # 100k fresh + 50k creation + 850k read = 1M aggregate
+        # Cost: 100k×$3/1M + 50k×$3.75/1M + 850k×$0.30/1M
+        #     = 0.30 + 0.1875 + 0.255 = 0.7425
+        cost = estimate_cost(
+            tokens_in=1_000_000,
+            tokens_out=0,
+            cache_creation_in=50_000,
+            cache_read_in=850_000,
+        )
+        assert abs(cost - 0.7425) < 1e-9
+
 
 class TestFormatUsage:
     def test_formats_with_session(self) -> None:

@@ -51,6 +51,22 @@ class TestPrivacyCheck:
         assert ok is True
         assert requires_private_endpoint(tmp_path) is False
 
+    def test_corrupt_toml_fails_closed(self, tmp_path):
+        # Pre-v0.4.2 a corrupt urika.toml was caught by a bare
+        # ``except Exception: return True, ""`` and silently treated
+        # as open mode — defeating the privacy guard.
+        (tmp_path / "urika.toml").write_text("not = valid = toml = at all\n")
+        ok, msg = check_private_endpoint(tmp_path)
+        assert ok is False
+        assert "corrupt" in msg.lower() or "cannot read" in msg.lower()
+
+    def test_corrupt_toml_requires_private(self, tmp_path):
+        # Companion to above: the dual-purpose check that decides
+        # whether the project NEEDS a private endpoint must also
+        # fail closed on parse error.
+        (tmp_path / "urika.toml").write_text("[[[broken")
+        assert requires_private_endpoint(tmp_path) is True
+
     def test_hybrid_sends_bearer_token_when_api_key_env_set(
         self, tmp_path, monkeypatch
     ):

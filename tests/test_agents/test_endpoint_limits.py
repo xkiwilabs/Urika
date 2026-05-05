@@ -70,6 +70,28 @@ class TestResolveEndpointLimits:
         assert cw == 128_000
         assert mo == 8_000  # auto-default for non-anthropic URL
 
+    def test_lookalike_anthropic_host_does_not_get_cloud_defaults(self) -> None:
+        """Regression for v0.4.2 H5: pre-fix used ``"anthropic.com" in url``
+        substring match, so ``http://anthropic.com.evil.com`` matched
+        and got the cloud's 200K window. Now we hostname-check.
+        """
+        ep = EndpointConfig(base_url="http://anthropic.com.evil.com/v1")
+        cw, mo = resolve_endpoint_limits(ep)
+        assert cw == 32_768
+        assert mo == 8_000
+
+    def test_real_anthropic_subdomain_still_matches(self) -> None:
+        ep = EndpointConfig(base_url="https://api.anthropic.com/v1")
+        cw, mo = resolve_endpoint_limits(ep)
+        assert cw == 200_000
+        assert mo == 32_000
+
+    def test_path_containing_anthropic_does_not_match(self) -> None:
+        ep = EndpointConfig(base_url="http://example.com/anthropic.com/v1")
+        cw, mo = resolve_endpoint_limits(ep)
+        assert cw == 32_768
+        assert mo == 8_000
+
 
 class TestBuildAgentEnvForEndpoint:
     """End-to-end: TOML → AgentConfig env should carry the

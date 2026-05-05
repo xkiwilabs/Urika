@@ -191,7 +191,15 @@ def resolve_endpoint_limits(endpoint: EndpointConfig) -> tuple[int, int]:
     The two values are independent so a user can declare one and
     let the other auto-resolve.
     """
-    is_anthropic = "anthropic.com" in (endpoint.base_url or "").lower()
+    # Hostname-based check, not substring. Pre-v0.4.2 used
+    # ``"anthropic.com" in url`` which matched
+    # ``http://anthropic.com.evil.com`` and granted it the cloud's
+    # 200K context window. Now we extract the hostname and require
+    # an exact match or a true subdomain.
+    from urllib.parse import urlparse
+
+    host = (urlparse(endpoint.base_url or "").hostname or "").lower()
+    is_anthropic = host == "anthropic.com" or host.endswith(".anthropic.com")
     cw = endpoint.context_window or (200000 if is_anthropic else 32768)
     mo = endpoint.max_output_tokens or (32000 if is_anthropic else 8000)
     return cw, mo
@@ -272,9 +280,24 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
     toml_path = project_dir / "urika.toml"
     if not toml_path.exists():
         return RuntimeConfig()
+
+    # Fail loud on parse errors. Pre-v0.4.2 a corrupt urika.toml was
+    # caught by the broad except below and silently fell back to
+    # RuntimeConfig() with privacy_mode="open" — which routed a
+    # private project's traffic to the cloud without any indication.
+    # We now raise on TOML decode failure so the caller can surface
+    # the real error and the user can fix the file rather than
+    # silently leak.
     try:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as exc:
+        raise RuntimeError(
+            f"urika.toml is corrupt — refusing to default to open privacy "
+            f"mode. Fix the file or restore from backup. Parse error: {exc}"
+        ) from exc
+
+    try:
         runtime = data.get("runtime", {})
         privacy = data.get("privacy", {})
 
@@ -344,7 +367,12 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
             privacy_mode=project_mode,
             endpoints=endpoints,
         )
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError) as exc:
+        # Structural errors after a successful TOML parse (missing
+        # required field, wrong type) — log and fall back to defaults.
+        # The privacy-violation case (corrupt TOML) is handled above
+        # with a hard raise; reaching this branch means the file
+        # parsed but didn't have the shape we expected.
         import logging
         logging.getLogger(__name__).warning(
             "Failed to load runtime config from %s: %s — using defaults", toml_path, exc
