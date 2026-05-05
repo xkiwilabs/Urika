@@ -658,32 +658,61 @@ def _apply_structured_settings(project_path, form) -> None:
                     ),
                 )
 
+        # v0.4.2 C9: parse optional context_window / max_output_tokens
+        # so per-project endpoint overrides can declare them just like
+        # the global Settings page. Pre-fix the per-project route built
+        # endpoints inline with only base_url + api_key_env, silently
+        # dropping the v0.4.1 fields when a user typed them in the form.
+        def _parse_int_field(value: str) -> int:
+            try:
+                return max(int(value or 0), 0)
+            except (TypeError, ValueError):
+                return 0
+
         new_privacy: dict = {"mode": new_mode}
         if new_mode == "private":
             url_val = (form.get("project_privacy_private_url") or "").strip()
             key_val = (form.get("project_privacy_private_key_env") or "").strip()
+            ctx_val = _parse_int_field(
+                form.get("project_privacy_private_context_window") or ""
+            )
+            mo_val = _parse_int_field(
+                form.get("project_privacy_private_max_output_tokens") or ""
+            )
             # Blank URL + globals available → skip the endpoint write so
             # the runtime loader inherits the global endpoint (commit 1).
             # Stops the silent-stub-write that left projects "saved"
             # but unrunnable. The save-time gate above already refused
             # blank+no-globals.
             if url_val:
-                new_privacy["endpoints"] = {
-                    "private": {
-                        "base_url": url_val,
-                        "api_key_env": key_val,
-                    }
+                ep_dict: dict = {
+                    "base_url": url_val,
+                    "api_key_env": key_val,
                 }
+                if ctx_val:
+                    ep_dict["context_window"] = ctx_val
+                if mo_val:
+                    ep_dict["max_output_tokens"] = mo_val
+                new_privacy["endpoints"] = {"private": ep_dict}
         elif new_mode == "hybrid":
             url_val = (form.get("project_privacy_hybrid_private_url") or "").strip()
             key_val = (form.get("project_privacy_hybrid_private_key_env") or "").strip()
+            ctx_val = _parse_int_field(
+                form.get("project_privacy_hybrid_private_context_window") or ""
+            )
+            mo_val = _parse_int_field(
+                form.get("project_privacy_hybrid_private_max_output_tokens") or ""
+            )
             if url_val:
-                new_privacy["endpoints"] = {
-                    "private": {
-                        "base_url": url_val,
-                        "api_key_env": key_val,
-                    }
+                ep_dict = {
+                    "base_url": url_val,
+                    "api_key_env": key_val,
                 }
+                if ctx_val:
+                    ep_dict["context_window"] = ctx_val
+                if mo_val:
+                    ep_dict["max_output_tokens"] = mo_val
+                new_privacy["endpoints"] = {"private": ep_dict}
         # 'open' has no endpoint metadata — mode alone is the override.
 
         if new_privacy != old_privacy:
@@ -2665,7 +2694,9 @@ _EXPERIMENT_LOG_TYPES: dict[str, tuple[str, str]] = {
 
 
 @router.get("/projects/{name}/runs/{exp_id}/stream")
-async def api_run_stream(name: str, exp_id: str, type: str = "run"):
+async def api_run_stream(
+    name: str, exp_id: str, request: Request, type: str = "run"
+):
     """Server-sent-events tail of an experiment's per-agent log file.
 
     Emits each existing log line as ``data: <line>\\n\\n``, then polls
@@ -2704,8 +2735,14 @@ async def api_run_stream(name: str, exp_id: str, type: str = "run"):
                     yield _format_log_line(line.rstrip())
                 position = f.tell()
 
-        # Poll for new lines until the lockfile disappears.
+        # Poll for new lines until the lockfile disappears OR the
+        # browser disconnects (v0.4.2 H3). Pre-fix, closing the tab
+        # left the generator polling disk every 0.5s indefinitely
+        # until the run naturally finished — coroutine slot leak
+        # under heavy use.
         while lock_path.exists() or log_path.exists():
+            if await request.is_disconnected():
+                return
             new_data = ""
             if log_path.exists():
                 with open(log_path, "r", encoding="utf-8", errors="replace") as f:
@@ -2828,11 +2865,14 @@ async def api_project_finalize(name: str, request: Request):
 
 
 @router.get("/projects/{name}/finalize/stream")
-async def api_finalize_stream(name: str):
+async def api_finalize_stream(name: str, request: Request):
     """Server-sent-events tail of ``projectbook/finalize.log``.
 
     Same shape as ``/runs/<exp>/stream`` but reads from the project
-    book and watches ``.finalize.lock`` for completion.
+    book and watches ``.finalize.lock`` for completion. v0.4.2 H3:
+    polls ``request.is_disconnected()`` so a closed browser tab
+    stops draining log data immediately instead of running until
+    the spawn naturally finishes.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -2850,6 +2890,8 @@ async def api_finalize_stream(name: str):
                 position = f.tell()
 
         while lock_path.exists() or log_path.exists():
+            if await request.is_disconnected():
+                return
             new_data = ""
             if log_path.exists():
                 with open(log_path, "r", encoding="utf-8", errors="replace") as f:
@@ -2911,12 +2953,12 @@ async def api_project_summarize(name: str, request: Request):
 
 
 @router.get("/projects/{name}/summarize/stream")
-async def api_summarize_stream(name: str):
+async def api_summarize_stream(name: str, request: Request):
     """Server-sent-events tail of ``projectbook/summarize.log``.
 
     Same shape as :func:`api_finalize_stream` but reads from
     ``projectbook/summarize.log`` and watches ``.summarize.lock`` for
-    completion.
+    completion. v0.4.2 H3 disconnect-aware.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -2934,6 +2976,8 @@ async def api_summarize_stream(name: str):
                 position = f.tell()
 
         while lock_path.exists() or log_path.exists():
+            if await request.is_disconnected():
+                return
             new_data = ""
             if log_path.exists():
                 with open(log_path, "r", encoding="utf-8", errors="replace") as f:
@@ -2998,11 +3042,12 @@ async def api_project_build_tool(name: str, request: Request):
 
 
 @router.get("/projects/{name}/tools/build/stream")
-async def api_build_tool_stream(name: str):
+async def api_build_tool_stream(name: str, request: Request):
     """Server-sent-events tail of ``tools/build.log``.
 
     Same shape as :func:`api_finalize_stream` but reads from
     ``tools/build.log`` and watches ``tools/.build.lock`` for completion.
+    v0.4.2 H3 disconnect-aware.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -3020,6 +3065,8 @@ async def api_build_tool_stream(name: str):
                 position = f.tell()
 
         while lock_path.exists() or log_path.exists():
+            if await request.is_disconnected():
+                return
             new_data = ""
             if log_path.exists():
                 with open(log_path, "r", encoding="utf-8", errors="replace") as f:
@@ -3296,12 +3343,12 @@ async def api_project_advisor(name: str, request: Request):
 
 
 @router.get("/projects/{name}/advisor/stream")
-async def api_advisor_stream(name: str):
+async def api_advisor_stream(name: str, request: Request):
     """Server-sent-events tail of ``projectbook/advisor.log``.
 
     Same shape as :func:`api_summarize_stream` but reads from
     ``projectbook/advisor.log`` and watches ``.advisor.lock`` for
-    completion.
+    completion. v0.4.2 H3 disconnect-aware.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -3319,6 +3366,8 @@ async def api_advisor_stream(name: str):
                 position = f.tell()
 
         while lock_path.exists() or log_path.exists():
+            if await request.is_disconnected():
+                return
             new_data = ""
             if log_path.exists():
                 with open(log_path, "r", encoding="utf-8", errors="replace") as f:

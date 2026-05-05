@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+
 from urika.core.orchestrator_sessions import (
     OrchestratorSession,
     create_new_session,
@@ -15,6 +17,31 @@ from urika.core.orchestrator_sessions import (
     prune_old_sessions,
     save_session,
 )
+
+
+@pytest.fixture
+def monotonic_session_ids(monkeypatch):
+    """Replace ``_timestamp_id`` with a monotonically-increasing counter.
+
+    v0.4.2 H13: pre-fix this suite paid ~6.6s of ``time.sleep(1.1)``
+    per run just so the second-resolution timestamp prefix advanced
+    between saves. The fixture injects a counter so ordering is
+    deterministic, the suite is fast, and behaviour under clock skew
+    or load lag becomes irrelevant.
+    """
+    from urika.core import orchestrator_sessions as os_mod
+
+    counter = {"n": 0}
+
+    def _gen() -> str:
+        counter["n"] += 1
+        # Match the production format ``YYYY-MM-DDTHH-MM-SS-XXXX`` so
+        # length-checking tests still pass; encode the counter into the
+        # seconds + suffix portions so lex order matches insert order.
+        return f"2026-01-01T00-00-{counter['n']:02d}-{counter['n']:04x}"
+
+    monkeypatch.setattr(os_mod, "_timestamp_id", _gen)
+    yield counter
 
 
 class TestCreateNewSession:
@@ -104,13 +131,18 @@ class TestListSessions:
     def test_list_empty(self, tmp_path: Path) -> None:
         assert list_sessions(tmp_path) == []
 
-    def test_list_ordering_most_recent_first(self, tmp_path: Path) -> None:
+    def test_list_ordering_most_recent_first(
+        self, tmp_path: Path, monotonic_session_ids
+    ) -> None:
+        # v0.4.2 H13: pre-fix this test had 2.2s of ``time.sleep(1.1)``
+        # between saves so the second-resolution timestamp prefix
+        # advanced. The ``monotonic_session_ids`` fixture replaces the
+        # timestamp generator with a counter so ordering is
+        # deterministic and the sleeps are gone.
         s1 = create_new_session()
         save_session(tmp_path, s1)
-        time.sleep(1.1)
         s2 = create_new_session()
         save_session(tmp_path, s2)
-        time.sleep(1.1)
         s3 = create_new_session()
         save_session(tmp_path, s3)
 
@@ -121,10 +153,11 @@ class TestListSessions:
         assert result[1]["session_id"] == s2.session_id
         assert result[2]["session_id"] == s1.session_id
 
-    def test_list_honors_limit(self, tmp_path: Path) -> None:
+    def test_list_honors_limit(
+        self, tmp_path: Path, monotonic_session_ids
+    ) -> None:
         for _ in range(3):
             save_session(tmp_path, create_new_session())
-            time.sleep(1.1)
 
         result = list_sessions(tmp_path, limit=2)
         assert len(result) == 2
@@ -154,10 +187,11 @@ class TestGetMostRecent:
     def test_most_recent_empty(self, tmp_path: Path) -> None:
         assert get_most_recent(tmp_path) is None
 
-    def test_most_recent_returns_latest(self, tmp_path: Path) -> None:
+    def test_most_recent_returns_latest(
+        self, tmp_path: Path, monotonic_session_ids
+    ) -> None:
         s1 = create_new_session()
         save_session(tmp_path, s1)
-        time.sleep(1.1)
         s2 = create_new_session()
         save_session(tmp_path, s2)
 
@@ -211,22 +245,24 @@ def test_save_auto_prunes_when_over_keep_limit(tmp_path):
 
 
 class TestPruneOldSessions:
-    def test_prune_nothing_when_under_limit(self, tmp_path: Path) -> None:
+    def test_prune_nothing_when_under_limit(
+        self, tmp_path: Path, monotonic_session_ids
+    ) -> None:
         for _ in range(3):
             save_session(tmp_path, create_new_session())
-            time.sleep(1.1)
 
         deleted = prune_old_sessions(tmp_path, keep=5)
         assert deleted == 0
         assert len(list_sessions(tmp_path)) == 3
 
-    def test_prune_removes_oldest(self, tmp_path: Path) -> None:
+    def test_prune_removes_oldest(
+        self, tmp_path: Path, monotonic_session_ids
+    ) -> None:
         ids = []
         for _ in range(5):
             s = create_new_session()
             save_session(tmp_path, s)
             ids.append(s.session_id)
-            time.sleep(1.1)
 
         deleted = prune_old_sessions(tmp_path, keep=3)
         assert deleted == 2

@@ -220,7 +220,10 @@ def test_finalize_stream_404_unknown_project(finalize_stream_completed):
     assert r.status_code == 404
 
 
+@pytest.mark.slow
 def test_finalize_stream_includes_new_lines_then_completes(finalize_stream_running):
+    # v0.4.2 M15: writer-thread timing requires ~1.2s — marked slow so
+    # default fast-loop runs skip it.
     client, proj = finalize_stream_running
     log_path = proj / "projectbook" / "finalize.log"
     lock_path = proj / "projectbook" / ".finalize.lock"

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import sys
 
+import pytest
+
 from urika.dashboard.runs import _build_env, _python_cmd
 
 
@@ -268,11 +270,16 @@ def test_spawn_detached_uses_start_new_session_and_no_pipe(monkeypatch, tmp_path
         assert kw.get("start_new_session") is True
 
 
+@pytest.mark.slow
 def test_spawn_writes_lock_with_pid(monkeypatch, tmp_path):
     """After spawn, the lock file should contain the child's PID.
 
     Used by ``_is_active_run_lock`` and the active-ops banner to
     detect running operations across dashboard restarts.
+
+    v0.4.2 M15: marked slow because the FakeProc deliberately
+    sleeps 0.5s in ``wait()`` so the test can race the reaper
+    thread against the lock-existence assertion.
     """
     import subprocess
 

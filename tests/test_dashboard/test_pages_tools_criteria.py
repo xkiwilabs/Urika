@@ -126,14 +126,19 @@ def test_sidebar_includes_tools_link(tools_client):
     assert "/projects/alpha/tools" in body
 
 
-def test_sidebar_omits_criteria_and_run_links(tools_client):
-    """Criteria and Run links were removed — Run is a button on
-    /experiments and Criteria is reachable from project settings."""
+def test_sidebar_omits_run_link(tools_client):
+    """Run was removed — it's a button on /experiments now.
+
+    v0.4.2 H2: Criteria was put BACK in the sidebar — pre-fix it was
+    reachable only via deeplink. The earlier "criteria omitted" check
+    has been inverted.
+    """
     r = tools_client.get("/projects/alpha")
     body = r.text
-    # The sidebar no longer renders direct links to /criteria or /run.
-    assert 'href="/projects/alpha/criteria"' not in body
+    # /run still has no sidebar link — that's by design.
     assert 'href="/projects/alpha/run"' not in body
+    # /criteria DOES now have a sidebar link (H2).
+    assert 'href="/projects/alpha/criteria"' in body
 
 
 # ── Build-tool button + log page ──────────────────────────────────────────

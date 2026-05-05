@@ -83,13 +83,23 @@ PAGES_TO_AUDIT = [
 ]
 
 
+# v0.4.2 M20: pre-fix the parametrize loop swallowed 404 responses
+# via ``pytest.skip(f"{path} 404 in this fixture")``. That meant a real
+# regression — a future commit accidentally breaking one of these
+# pages — would silently pass instead of failing. The skip is now
+# gone: every audit-listed path must respond 200, otherwise the test
+# fails. If a future contributor adds a path that genuinely needs a
+# different fixture state, they should split it into its own
+# parametrize set rather than reintroducing a generic skip.
+
+
 @pytest.mark.parametrize("path", PAGES_TO_AUDIT)
 def test_no_api_href_in_rendered_page(client_with_runs, path):
-    # Some routes need different fixtures; skip 404s.
     r = client_with_runs.get(path)
-    if r.status_code == 404:
-        pytest.skip(f"{path} 404 in this fixture")
-    assert r.status_code == 200
+    assert r.status_code == 200, (
+        f"{path} returned {r.status_code} — pre-v0.4.2 this would have "
+        f"silently skipped, now it fails so the regression surfaces."
+    )
     # Find all <a href="..."> values and assert none start with /api/
     import re
 

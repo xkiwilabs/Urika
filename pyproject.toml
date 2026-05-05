@@ -100,6 +100,15 @@ packages = ["src/urika"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# v0.4.2 M15: register markers so future ``-m "not slow"`` invocations
+# don't get the "unknown marker" warning. Slow = wall-clock > ~1s
+# (subprocess spawn, real SSE polling). Integration = end-to-end
+# scenarios that need external resources (the dev/scripts/smoke-*.sh
+# E2E harness, promoted as @pytest.mark.integration tests in M16).
+markers = [
+    "slow: tests that take more than ~1s wall-clock",
+    "integration: end-to-end tests requiring external resources",
+]
 
 [tool.ruff]
 target-version = "py311"

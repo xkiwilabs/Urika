@@ -4,7 +4,8 @@
 {% block heading %}Usage{% endblock %}
 
 {% block extra_head %}
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  {# v0.4.2 H1: vendored Chart.js so the Usage page renders offline. #}
+  <script src="/static/vendor/chart-4.4.1.min.js"></script>
 {% endblock %}
 
 {% block breadcrumb %}

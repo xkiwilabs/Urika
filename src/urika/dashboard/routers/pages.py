@@ -1443,6 +1443,19 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
                 if project_privacy_mode == "private"
                 else ""
             ),
+            # v0.4.2 C9: per-endpoint context_window / max_output_tokens
+            # surfaced in the per-project Privacy tab so users can
+            # declare them without round-tripping through global Settings.
+            "project_privacy_private_context_window": (
+                project_privacy_private_ep.get("context_window", 0)
+                if project_privacy_mode == "private"
+                else 0
+            ),
+            "project_privacy_private_max_output_tokens": (
+                project_privacy_private_ep.get("max_output_tokens", 0)
+                if project_privacy_mode == "private"
+                else 0
+            ),
             "project_privacy_hybrid_cloud_model": (
                 runtime_section.get("model", "")
                 if project_privacy_mode == "hybrid"
@@ -1459,6 +1472,16 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
                 else ""
             ),
             "project_privacy_hybrid_private_model": hybrid_data_agent.get("model", ""),
+            "project_privacy_hybrid_private_context_window": (
+                project_privacy_private_ep.get("context_window", 0)
+                if project_privacy_mode == "hybrid"
+                else 0
+            ),
+            "project_privacy_hybrid_private_max_output_tokens": (
+                project_privacy_private_ep.get("max_output_tokens", 0)
+                if project_privacy_mode == "hybrid"
+                else 0
+            ),
             "cloud_models": cloud_models,
             "known_cloud_models": KNOWN_CLOUD_MODELS,
             "private_endpoint_options": private_endpoint_options,

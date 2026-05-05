@@ -105,9 +105,12 @@ def test_usage_page_renders_chart_canvases(usage_client):
     body = r.text
     assert 'id="chart-tokens"' in body
     assert 'id="chart-cost"' in body
-    # Pinned Chart.js version, NOT @latest.
-    assert "chart.js@4.4.1" in body
+    # v0.4.2 H1: Chart.js is now vendored under /static/vendor/ instead
+    # of loaded from cdn.jsdelivr.net so the dashboard works offline.
+    # The pinned 4.4.1 version still appears in the script-src URL.
+    assert "/static/vendor/chart-4.4.1.min.js" in body
     assert "@latest" not in body
+    assert "cdn.jsdelivr.net" not in body
     # JSON data block the chart script reads from.
     assert 'id="usage-data"' in body
 

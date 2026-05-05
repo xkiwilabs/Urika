@@ -124,7 +124,12 @@ def test_stream_survives_non_utf8_bytes_in_log(tmp_path: Path, monkeypatch):
     assert '"completed"' in body
 
 
+@pytest.mark.slow
 def test_stream_includes_new_lines_then_completes(stream_client_running):
+    # v0.4.2 M15: marked slow so the default fast-loop ``pytest`` skips
+    # the ~1.2s of writer-thread timing this test needs to verify the
+    # full backlog → midway → completion path. Run via
+    # ``pytest -m slow`` in CI.
     client, proj = stream_client_running
     log_path = proj / "experiments" / "exp-001" / "run.log"
     lock_path = proj / "experiments" / "exp-001" / ".lock"
@@ -276,6 +281,7 @@ def test_stream_type_default_still_reads_run_log(stream_client_typed):
     assert "data: from-evaluate-log" not in body
 
 
+@pytest.mark.slow
 def test_stream_type_evaluate_watches_evaluate_lock(tmp_path: Path, monkeypatch):
     """The lock file selection must follow the type too — otherwise the
     stream would terminate as soon as the run.log lock disappeared even
