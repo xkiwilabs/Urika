@@ -30,6 +30,34 @@ I ran a linear regression model. Here are the results:
 ```
 """
 
+_TASK_OUTPUT_THREE_RUNS = """\
+I ran three models in one turn:
+```json
+{
+    "run_id": "run-a",
+    "method": "linear_regression",
+    "params": {},
+    "metrics": {"r2": 0.60}
+}
+```
+```json
+{
+    "run_id": "run-b",
+    "method": "ridge",
+    "params": {"alpha": 0.1},
+    "metrics": {"r2": 0.75}
+}
+```
+```json
+{
+    "run_id": "run-c",
+    "method": "random_forest",
+    "params": {"n_estimators": 100},
+    "metrics": {"r2": 0.88}
+}
+```
+"""
+
 _EVAL_CRITERIA_MET = """\
 The model meets the success criteria.
 ```json
@@ -205,6 +233,41 @@ class TestOrchestratorLoop:
         assert len(progress["runs"]) == 1
         assert progress["runs"][0]["run_id"] == "run-001"
         assert progress["runs"][0]["method"] == "linear_regression"
+
+    @pytest.mark.asyncio
+    async def test_all_runs_in_one_turn_reach_leaderboard(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression for v0.4.2 C3: pre-fix the leaderboard update sat
+        OUTSIDE the per-run loop, so when a single turn produced
+        multiple runs only the LAST one's metrics were leaderboarded —
+        earlier runs in the same turn were silently dropped from the
+        ranking.
+        """
+        from urika.evaluation.leaderboard import load_leaderboard
+
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT_THREE_RUNS],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "advisor_agent": [_SUGGESTION],
+            }
+        )
+
+        await run_experiment(project_dir, exp_id, runner, max_turns=1)
+
+        # All three runs should have been registered AND leaderboarded.
+        progress = load_progress(project_dir, exp_id)
+        assert len(progress["runs"]) == 3
+
+        lb = load_leaderboard(project_dir)
+        methods = {entry["method"] for entry in lb["ranking"]}
+        assert methods == {"linear_regression", "ridge", "random_forest"}, (
+            f"Expected all three methods on leaderboard, got: {methods}. "
+            "Pre-v0.4.2 only the last method (random_forest) made it."
+        )
 
     @pytest.mark.asyncio
     async def test_session_state_updated(self, tmp_path: Path) -> None:

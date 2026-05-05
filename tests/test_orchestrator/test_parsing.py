@@ -96,6 +96,56 @@ Good block:
         assert len(records) == 1
         assert records[0].run_id == "run-001"
 
+    def test_single_line_json_block_now_parsed(self) -> None:
+        """Regression for v0.4.2 M9: pre-fix the regex required a
+        literal newline between the language tag and the body, so
+        single-line `` ```json {...} ``` `` blocks were silently
+        dropped. Some real Claude responses emit this form.
+        """
+        text = """Result block: ```json {"run_id": "r1", "method": "m", "params": {}, "metrics": {"r2": 0.5}} ``` end."""
+        records = parse_run_records(text)
+        assert len(records) == 1
+        assert records[0].run_id == "r1"
+
+    def test_non_dict_metrics_skipped(self) -> None:
+        """Regression for v0.4.2 M10: pre-fix only checked key
+        membership; an agent emitting ``"metrics": "great"`` (string)
+        produced a RunRecord whose downstream consumers crashed on
+        ``.values()`` / ``.items()``.
+        """
+        text = """```json
+{
+    "run_id": "bad-1",
+    "method": "broken",
+    "metrics": "great"
+}
+```
+
+```json
+{
+    "run_id": "good-1",
+    "method": "ols",
+    "metrics": {"r2": 0.8}
+}
+```
+"""
+        records = parse_run_records(text)
+        assert len(records) == 1
+        assert records[0].run_id == "good-1"
+
+    def test_non_dict_params_skipped(self) -> None:
+        text = """```json
+{
+    "run_id": "bad-2",
+    "method": "broken",
+    "params": "not-a-dict",
+    "metrics": {"r2": 0.5}
+}
+```
+"""
+        records = parse_run_records(text)
+        assert records == []
+
 
 class TestParseEvaluation:
     def test_extracts_evaluation(self) -> None:

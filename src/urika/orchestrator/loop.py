@@ -453,7 +453,12 @@ async def run_experiment(
             if runs:
                 progress("result", f"Recorded {len(runs)} run(s)")
 
-            # Register methods in project registry and update leaderboard
+            # Register methods in project registry and update leaderboard.
+            # Pre-v0.4.2 the leaderboard update sat OUTSIDE this loop
+            # (C3) — it referenced ``run`` after the for-loop ended,
+            # so only the LAST run in a multi-run turn ever made it to
+            # the leaderboard. Now register + leaderboard happen
+            # together per run.
             from urika.core.method_registry import register_method
 
             for run in runs:
@@ -467,6 +472,24 @@ async def run_experiment(
                     metrics=run.metrics,
                 )
                 progress("result", f"Registered method: {run.method}")
+
+                # Update leaderboard — determine primary metric and direction
+                if run.metrics:
+                    primary_metric, direction = _detect_primary_metric(run.metrics)
+                    if primary_metric:
+                        try:
+                            update_leaderboard(
+                                project_dir,
+                                method=run.method,
+                                metrics=run.metrics,
+                                run_id=run.run_id,
+                                params=run.params,
+                                primary_metric=primary_metric,
+                                direction=direction,
+                                experiment_id=experiment_id,
+                            )
+                        except Exception as exc:
+                            logger.warning("Leaderboard update failed: %s", exc)
 
             # Backfill experiment.name from the first registered method
             # when the dashboard pre-created the experiment with an
@@ -491,24 +514,6 @@ async def run_experiment(
                     # Non-fatal — name backfill is cosmetic. Don't
                     # break the run if we can't update it.
                     pass
-
-                # Update leaderboard — determine primary metric and direction
-                if run.metrics:
-                    primary_metric, direction = _detect_primary_metric(run.metrics)
-                    if primary_metric:
-                        try:
-                            update_leaderboard(
-                                project_dir,
-                                method=run.method,
-                                metrics=run.metrics,
-                                run_id=run.run_id,
-                                params=run.params,
-                                primary_metric=primary_metric,
-                                direction=direction,
-                                experiment_id=experiment_id,
-                            )
-                        except Exception as exc:
-                            logger.warning("Leaderboard update failed: %s", exc)
 
             # --- evaluator ---
             progress("agent", "Evaluator — scoring results")
