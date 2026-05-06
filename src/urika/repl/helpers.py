@@ -297,10 +297,21 @@ def get_experiment_ids(session: ReplSession) -> list[str]:
 
 
 def _load_run_defaults(session: ReplSession) -> dict:
-    """Load run defaults from urika.toml preferences."""
+    """Load run defaults from urika.toml preferences.
+
+    v0.4.2 Package I: ``advisor_first`` and ``review_criteria`` are
+    now read from the same preferences block so /resume can preserve
+    the choice the user made on the original /run instead of
+    silently dropping back to the hardcoded defaults.
+    """
     import tomllib
 
-    defaults = {"max_turns": 5, "auto_mode": "checkpoint"}
+    defaults = {
+        "max_turns": 5,
+        "auto_mode": "checkpoint",
+        "advisor_first": True,
+        "review_criteria": False,
+    }
     toml_path = session.project_path / "urika.toml"
     if toml_path.exists():
         try:
@@ -309,6 +320,12 @@ def _load_run_defaults(session: ReplSession) -> dict:
             prefs = data.get("preferences", {})
             defaults["max_turns"] = prefs.get("max_turns_per_experiment", 5)
             defaults["auto_mode"] = prefs.get("auto_mode", "checkpoint")
+            defaults["advisor_first"] = bool(
+                prefs.get("advisor_first", defaults["advisor_first"])
+            )
+            defaults["review_criteria"] = bool(
+                prefs.get("review_criteria", defaults["review_criteria"])
+            )
         except Exception:
             pass
     return defaults

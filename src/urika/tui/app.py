@@ -40,9 +40,13 @@ _WORKER_COMMANDS = frozenset(
 )
 
 # Escape hatches that remain usable even while an agent is running.
-# /quit must always work so the user can get out; /stop is reserved for
-# a future cancellation path (Task 8's action_cancel_agent is the stub).
-_ALWAYS_ALLOWED_COMMANDS = frozenset({"quit", "stop"})
+# /quit must always work so the user can get out; /stop is the hard
+# cancellation path; /pause writes the cooperative pause flag that
+# the orchestrator's PauseController polls between turns. Pre-v0.4.2
+# Package I, /pause was missing from this set — so the busy-guard
+# rejected it and the documented "pause mid-experiment" feature was
+# unreachable from the TUI.
+_ALWAYS_ALLOWED_COMMANDS = frozenset({"quit", "stop", "pause"})
 
 
 
@@ -519,11 +523,45 @@ class UrikaApp(App):
         With a project, it answers questions about the data, plans
         experiments, and coordinates agents.
         """
-        # Guard: if agent_running is already set (race between two
-        # rapid submissions before set_agent_running fires in the
-        # first worker), queue instead of spawning a second worker.
+        # v0.4.2 Package I: block free-text injection while an agent
+        # is running. Pre-fix the TUI queued the text and replayed it
+        # after the worker exited — but that has subtle problems:
+        #
+        #   * stale-context: the message was typed at moment A and
+        #     executed at moment B with different orchestrator state
+        #     (and possibly different project state if the user did
+        #     anything between)
+        #   * queue-vs-drain race (audit BUG#4) — drain ran inside the
+        #     finally AFTER set_agent_idle cleared agent_running, so
+        #     fast typing could spawn parallel workers
+        #   * REPL parity — the classic prompt_toolkit REPL is
+        #     blocking by design; a user gets a different mental
+        #     model in the TUI for no good reason
+        #   * silently buries input — long /run could swallow several
+        #     "what should I try?" messages and fire them all at
+        #     once when it ended
+        #
+        # Right escape hatch is "open another terminal" which gives a
+        # fresh OrchestratorChat with clean state. The remote drain
+        # path (Slack/Telegram) keeps its own queue because remote
+        # callers don't have an interactive prompt to block.
         if self.session.agent_running:
-            self.session.queue_input(text)
+            try:
+                panel = self.query_one(OutputPanel)
+                from rich.text import Text
+
+                panel.write_line("")
+                panel.write_line(
+                    Text(
+                        "  ⏳ Agent busy. Press Ctrl+C to cancel, "
+                        "/stop to halt, /pause to pause after the "
+                        "current turn — or open another terminal "
+                        "for a parallel orchestrator chat.",
+                        style="yellow",
+                    )
+                )
+            except Exception:
+                pass
             return
         self.run_worker(self._run_free_text(text), name="free_text")
 
@@ -664,15 +702,13 @@ class UrikaApp(App):
                 self.log.error(f"chat error (panel unavailable): {exc}")
         finally:
             self.session.set_agent_idle()
-            # Drain any messages queued while the orchestrator was
-            # busy. Process them as new free-text dispatches.
-            while self.session.has_queued_input:
-                queued = self.session.pop_queued_input()
-                if queued and queued.strip():
-                    self.run_worker(
-                        self._run_free_text(queued), name="free_text"
-                    )
-                    break  # one at a time — next will drain on finish
+            # v0.4.2 Package I: queue-and-drain is gone. Free-text
+            # while busy is now blocked at submission time
+            # (_dispatch_free_text rejects with a panel hint), so
+            # there's nothing to drain on idle. The remote drain
+            # path uses its own queue + 2s timer (_drain_remote_queue)
+            # for Slack/Telegram callers who don't have an
+            # interactive prompt to gate against.
 
     def action_cancel_agent(self) -> None:
         """Ctrl+C handler.
@@ -839,6 +875,22 @@ class UrikaApp(App):
                 self.session.add_message("user", text)
                 self.session.add_message("assistant", response[:500])
 
+                # v0.4.2 (Package I): parse advisor/orchestrator suggestions
+                # so a remote-issued /run picks them up via
+                # session.pending_suggestions. Package H wired this in for
+                # local free-text but missed the parallel remote-chat path
+                # — Slack/Telegram users hit the same advisor->run silent
+                # fail-to-pending bug. Same silent-store form as the local
+                # path; the user gets a confirmation chat-line too.
+                try:
+                    from urika.orchestrator.parsing import parse_suggestions
+
+                    parsed = parse_suggestions(response)
+                    if parsed and parsed.get("suggestions"):
+                        self.session.pending_suggestions = parsed["suggestions"]
+                except Exception:
+                    pass
+
                 from urika.cli_display import format_agent_output
 
                 panel.write_line("")
@@ -847,6 +899,12 @@ class UrikaApp(App):
                 # Send response back to Slack/Telegram
                 if respond and response:
                     reply = response[:4000]
+                    if self.session.pending_suggestions:
+                        n = len(self.session.pending_suggestions)
+                        reply += (
+                            f"\n\n[{n} experiment suggestion(s) captured. "
+                            f"Send /run to start.]"
+                        )
                     respond(reply)
             except Exception as exc:
                 try:

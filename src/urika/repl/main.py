@@ -101,6 +101,12 @@ class UrikaCompleter(Completer):
 AGENT_COMMANDS = {
     "run", "evaluate", "plan", "advisor", "report",
     "present", "finalize", "build-tool", "resume",
+    # v0.4.2 Package J: ``summarize`` (added in v0.4.2 H8) is also a
+    # multi-minute agent call; without it in this set the REPL ran
+    # /summarize on the main thread and blocked the prompt for the
+    # duration with no way to /stop. The TUI already lists it in
+    # ``_WORKER_COMMANDS``.
+    "summarize",
 }
 
 # Commands that use interactive prompts and need their own thread
@@ -527,6 +533,30 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
         session.add_message("user", text)
         session.add_message("assistant", response[:500])
 
+        # v0.4.2 (Package I): parse advisor/orchestrator suggestions out of
+        # the response so /run picks them up via session.pending_suggestions.
+        # Pre-fix the REPL had ``_offer_to_run_suggestions`` defined a few
+        # lines below but never called it from this path — so the REPL had
+        # the same advisor->run silent-fail-to-pending bug the TUI was
+        # found to have. We use the silent-store form (matches the TUI's
+        # behaviour from Package H) rather than the interactive offer to
+        # avoid prompting mid-stream; users still get a one-line hint
+        # to type /run.
+        try:
+            from urika.orchestrator.parsing import parse_suggestions
+
+            parsed = parse_suggestions(response)
+            if parsed and parsed.get("suggestions"):
+                session.pending_suggestions = parsed["suggestions"]
+                n = len(session.pending_suggestions)
+                click.echo(
+                    f"  ✨ {n} experiment suggestion(s) captured. "
+                    f"Type /run to start."
+                )
+        except Exception:
+            # Suggestion parsing is best-effort — never let it break chat.
+            pass
+
         # Save session
         if session.project_path:
             try:
@@ -592,18 +622,46 @@ def _offer_to_run_suggestions(session: ReplSession, advisor_output: str) -> None
 
 # ── Remote command execution ─────────────────────────────────
 
-# Map remote command names to REPL handler functions
-_REMOTE_COMMAND_MAP = {
-    "run": cmd_run,
-    "advisor": cmd_advisor,
-    "evaluate": cmd_evaluate,
-    "plan": cmd_plan,
-    "report": cmd_report,
-    "present": cmd_present,
-    "finalize": cmd_finalize,
-    "build-tool": cmd_build_tool,
-    "resume": cmd_resume,
-}
+# Hardcoded list of slash commands that are NOT routable from
+# Slack/Telegram (interactive editors, destructive admin actions, or
+# stuff that doesn't make sense remotely).
+_REMOTE_BLOCKED_COMMANDS = frozenset(
+    {
+        "quit",        # remote can't quit the local TUI process
+        "copy",        # clipboard is local-only
+        "new",         # spawns the project-builder agent loop
+        "config",      # interactive prompts beyond /config show
+        "notifications",  # interactive prompts
+        "setup",       # first-run interactive wizard
+        "memory",      # /memory add opens click.edit (no editor remotely)
+        "delete",      # destructive — gate behind explicit local action
+        "delete-experiment",  # same
+    }
+)
+
+
+def _build_remote_command_map() -> dict:
+    """Resolve the slash registry to a remote-callable handler map.
+
+    v0.4.2 Package J: pre-fix this was a hardcoded list of 9 names
+    that drifted away from the live registry — every new slash added
+    in v0.4.2 (/setup, /summarize, /sessions, /memory, /venv,
+    /experiment-create) was silently unreachable from Slack/Telegram.
+    Now we union ``GLOBAL_COMMANDS`` and ``PROJECT_COMMANDS`` and
+    drop only the explicit ``_REMOTE_BLOCKED_COMMANDS`` so new slashes
+    are remote-callable by default.
+    """
+    from urika.repl.commands_registry import (
+        GLOBAL_COMMANDS,
+        PROJECT_COMMANDS,
+    )
+
+    out: dict = {}
+    for name, entry in {**GLOBAL_COMMANDS, **PROJECT_COMMANDS}.items():
+        if name in _REMOTE_BLOCKED_COMMANDS:
+            continue
+        out[name] = entry["func"]
+    return out
 
 
 def _execute_remote_command(
@@ -618,9 +676,16 @@ def _execute_remote_command(
     prompts and run with defaults. Sends completion/error back via
     the respond callback if provided.
     """
-    handler = _REMOTE_COMMAND_MAP.get(command)
+    remote_map = _build_remote_command_map()
+    handler = remote_map.get(command)
     if handler is None:
-        msg = f"Unknown remote command: /{command}"
+        if command in _REMOTE_BLOCKED_COMMANDS:
+            msg = (
+                f"/{command} is not available remotely "
+                f"(interactive or destructive — run it locally)."
+            )
+        else:
+            msg = f"Unknown remote command: /{command}"
         click.echo(f"  {msg}")
         if respond:
             respond(msg)

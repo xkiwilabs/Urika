@@ -63,6 +63,11 @@ def cmd_resume(session: ReplSession, args: str) -> None:
 
         ctx = click.Context(cli_run)
         defaults = _load_run_defaults(session)
+        # v0.4.2 Package I: read advisor_first / review_criteria from
+        # preferences instead of hardcoding False. Pre-fix /resume
+        # silently flipped both flags off even when the original /run
+        # had them on, leading to silent UX divergence between run
+        # and resume.
         ctx.invoke(
             cli_run,
             project=session.project_name,
@@ -73,6 +78,8 @@ def cmd_resume(session: ReplSession, args: str) -> None:
             auto=(is_remote or defaults["auto_mode"] != "checkpoint"),
             instructions="",
             max_experiments=None,
+            advisor_first=defaults["advisor_first"],
+            review_criteria=defaults["review_criteria"],
         )
     finally:
         session.set_agent_idle()
