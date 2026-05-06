@@ -70,13 +70,23 @@ def cmd_advisor(session: ReplSession, args: str) -> None:
 
         result = _run_single_agent(session, "advisor_agent", exp_id, prompt)
 
+        # v0.4.2 Package K — fix for the I-7 regression. Pre-K this
+        # block did ``result.get("response", "")`` on ``result`` but
+        # ``_run_single_agent`` is annotated ``-> str`` and returns
+        # ``result.text_output.strip()`` on success or ``""`` on
+        # error. So ``str.get(...)`` raised AttributeError, which got
+        # swallowed by the wrapping ``except Exception: pass`` —
+        # silently skipping advisor_memory persistence AND suggestion
+        # parsing on every successful /advisor call. The Package I
+        # parity test only source-grepped for ``append_exchange``, so
+        # the bug shipped invisibly. Now we treat ``result`` as the
+        # string it actually is.
+        response_text = result if isinstance(result, str) else ""
+
         # Persist the exchange to advisor_memory so the next /advisor
         # call (or shell ``urika advisor``) has the same continuity.
-        if append_exchange is not None and result is not None:
+        if append_exchange is not None and response_text:
             try:
-                response_text = (
-                    result.get("response", "") or result.get("text", "") or ""
-                )
                 append_exchange(
                     session.project_path,
                     role="user",

@@ -65,13 +65,22 @@ def acquire_lock(project_dir: Path, experiment_id: str) -> bool:
                 os.kill(pid, 0)  # Check if process is alive (doesn't actually kill)
                 return False  # Process is alive — lock is valid
             else:
-                # Empty lock file (legacy) — check age
-                import time
-
-                age = time.time() - path.stat().st_mtime
-                if age < 6 * 3600:  # Less than 6 hours old
-                    return False
-                # Older than 6 hours with no PID — assume stale
+                # Empty lock file. Pre-v0.3 (commit 2fdae4b4) used
+                # ``path.touch()`` which created empty locks; current
+                # release ALWAYS writes the PID into the lock at line
+                # 89 below. So any empty lock is either:
+                #   (a) leftover from a pre-v0.3 release that crashed
+                #       before clean exit, or
+                #   (b) (theoretically) a new lock racing with a
+                #       concurrent ``acquire_lock`` between create and
+                #       write — but ``write_text`` is fast enough that
+                #       this is sub-millisecond and the caller's
+                #       protection loop would retry.
+                # Either way the safest answer is "stale" — refusing
+                # for 6 hours after an old crash (the pre-v0.4.2
+                # behaviour) caught real users with brand-new releases
+                # bouncing off ancient locks. See v0.4.2 Package K.
+                pass  # Fall through to the unlink below.
         except (ValueError, ProcessLookupError):
             # PID is dead or invalid — lock is stale, clean it up
             pass
@@ -115,7 +124,24 @@ def start_session(
 ) -> SessionState:
     """Start orchestration for an experiment. Creates session.json and lockfile."""
     if not acquire_lock(project_dir, experiment_id):
-        msg = f"Experiment {experiment_id} is already running"
+        lock_pid = ""
+        try:
+            lock_pid = (_lock_path(project_dir, experiment_id).read_text().strip())
+        except OSError:
+            pass
+        if lock_pid:
+            msg = (
+                f"Experiment {experiment_id} is already running "
+                f"(PID {lock_pid} is alive). If that PID is unrelated to "
+                f"Urika (e.g. recycled by the OS), clear the stale lock "
+                f"with: urika unlock {project_dir.name} {experiment_id}"
+            )
+        else:
+            msg = (
+                f"Experiment {experiment_id} is already running "
+                f"(lock file present but unreadable). Clear it with: "
+                f"urika unlock {project_dir.name} {experiment_id}"
+            )
         raise RuntimeError(msg)
 
     state = SessionState(

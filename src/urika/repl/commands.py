@@ -787,9 +787,26 @@ def cmd_stop(session: ReplSession, args: str) -> None:
 
 @command("pause", requires_project=True, description="Pause experiment after current subagent")
 def cmd_pause(session: ReplSession, args: str) -> None:
-    """Pause the running experiment after the current subagent finishes."""
+    """Pause the running experiment after the current subagent finishes.
+
+    v0.4.2 Package K: only writes the cooperative ``pause_requested``
+    flag when the active command is ``run`` (or ``resume``). Pre-fix
+    typing /pause during /finalize or /report wrote a flag that the
+    NEXT /run would pick up on its first turn and immediately pause —
+    surprising the user. The flag is consumed by
+    ``orchestrator.loop.read_and_clear_flag`` which is only polled
+    inside ``run_experiment``, so writing it from any other context
+    is at best a stale signal and at worst a footgun.
+    """
     if not session.agent_active:
         click.echo("  No agent is currently running.")
+        return
+
+    if session.active_command not in ("run", "resume"):
+        click.echo(
+            f"  /pause only applies to /run (current: /{session.active_command}). "
+            f"For other agents, use /stop instead."
+        )
         return
 
     if session.project_path:

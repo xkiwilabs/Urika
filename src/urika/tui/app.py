@@ -363,22 +363,50 @@ class UrikaApp(App):
         if text.startswith("/") and not self._is_path_not_command(text):
             self._dispatch_command(text)
         elif self.session.agent_running:
-            # A worker is running. If it has a stdin reader active
-            # (waiting for click.prompt / input), feed the text to
-            # it so the blocking call unblocks. Otherwise queue it.
+            # A worker is running. Three paths, in priority:
+            #
+            #   (a) A stdin reader is active — a click.prompt /
+            #       input() inside the worker is blocked waiting for
+            #       a line. Feed the text to it so the call unblocks.
+            #
+            #   (b) An /run is in progress — queue the text so
+            #       commands_run.py's _get_user_input callback can
+            #       inject it on the orchestrator's next turn (this is
+            #       how mid-run user steering works).
+            #
+            #   (c) Any other agent (/advisor, /finalize, /report,
+            #       /summarize, etc.) — reject. Pre-v0.4.2 Package K
+            #       this branch silently queued the text and the
+            #       queue was never drained, so user input vanished.
+            #       Now we surface the same panel hint as
+            #       _dispatch_free_text uses (Package I-8).
             from urika.tui.agent_worker import get_active_stdin_reader
+            from rich.text import Text
 
             reader = get_active_stdin_reader()
             if reader is not None:
                 reader.feed(text)
                 panel = self.query_one(OutputPanel)
-                from rich.text import Text
-
                 panel.write_line(Text(f"  > {text}", style="dim"))
-            else:
+            elif self.session.active_command == "run":
                 self.session.queue_input(text)
                 panel = self.query_one(OutputPanel)
-                panel.write_line(f"  [queued] {text}")
+                panel.write_line(f"  [queued for next turn] {text}")
+            else:
+                try:
+                    panel = self.query_one(OutputPanel)
+                    panel.write_line("")
+                    panel.write_line(
+                        Text(
+                            f"  ⏳ Agent /{self.session.active_command or 'unknown'} "
+                            f"busy. /stop to halt, /pause is for /run "
+                            f"only — or open another terminal for a "
+                            f"parallel orchestrator chat.",
+                            style="yellow",
+                        )
+                    )
+                except Exception:
+                    pass
         else:
             self._dispatch_free_text(text)
 

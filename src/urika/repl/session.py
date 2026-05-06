@@ -133,9 +133,52 @@ class ReplSession:
         self.active_command = ""
 
     def clear_project(self) -> None:
+        """Reset session state when no project is loaded.
+
+        v0.4.2 Package K: pre-fix this only nulled three fields
+        (``project_path``, ``project_name``, ``conversation``). It
+        left ``pending_suggestions``, ``notification_bus``,
+        ``_orch_session``, and the usage counters in place — and
+        notably the bus thread kept running and pointing at the
+        now-deleted project's path. Now we mirror what
+        ``load_project`` does: stop the bus, reset suggestions,
+        zero counters, drain the remote queue. Symmetry matters
+        because ``cmd_delete`` is the only caller and its whole
+        purpose is "this project is going away — forget it."
+
+        Note: unlike ``load_project`` we do NOT call ``save_usage``
+        here. ``cmd_delete`` (the only production caller) has
+        already moved the project directory to trash by the time
+        we run, so writing a final usage record would either fail
+        or land in trash where it'll be evicted with the rest.
+        """
         self.project_path = None
         self.project_name = None
         self.conversation = []
+        self.pending_suggestions = []
+        # Stop the project's notification bus so its dispatch thread
+        # doesn't keep referencing the deleted project's path.
+        if self.notification_bus is not None:
+            try:
+                self.notification_bus.stop()
+            except Exception:
+                pass
+            self.notification_bus = None
+        # Reset usage counters for the now-empty session.
+        self.session_start = time.monotonic()
+        self.session_start_iso = datetime.now(timezone.utc).isoformat()
+        self.total_tokens_in = 0
+        self.total_tokens_out = 0
+        self.total_cost_usd = 0.0
+        self.agent_calls = 0
+        self.experiments_run = 0
+        # Clear orchestrator-session reference so the next loaded
+        # project doesn't pick up the deleted project's session id.
+        if hasattr(self, "_orch_session"):
+            self._orch_session = None
+        # Drain the remote command queue.
+        with self._remote_lock:
+            self._remote_queue.clear()
 
     def add_message(self, role: str, text: str) -> None:
         self.conversation.append({"role": role, "text": text})
@@ -193,10 +236,21 @@ class ReplSession:
             self._processing_start = time.monotonic()
 
     def set_agent_active(self, command: str) -> None:
-        """Mark an agent command as active."""
+        """Mark an agent command as active.
+
+        v0.4.2 Package K: also starts ``_processing_start`` if it's
+        not already running. Pre-fix only ``set_agent_running``
+        initialised the clock, so REPL paths (which call
+        ``set_agent_active`` but never ``set_agent_running``) never
+        accumulated processing time — every REPL session logged
+        ``processing_ms=0`` to ``usage.json``, under-reporting time
+        in long-term cost analytics.
+        """
         with self._agent_lock:
             self.agent_active = True
             self.active_command = command
+            if self._processing_start == 0.0:
+                self._processing_start = time.monotonic()
 
     def set_agent_idle(self, error: str = "") -> None:
         """Mark the agent as finished (called from background thread)."""
