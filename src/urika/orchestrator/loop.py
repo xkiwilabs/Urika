@@ -453,6 +453,62 @@ async def run_experiment(
             if runs:
                 progress("result", f"Recorded {len(runs)} run(s)")
 
+                # v0.4.2 data-integrity check: scan the task agent's
+                # method scripts for synthetic-data substitution. The
+                # task_agent prompt now forbids fabricated data, but
+                # the runtime check is a belt-and-braces signal so a
+                # fabricated run lands a visible warning in run.log
+                # + the dashboard SSE log instead of being silently
+                # recorded as a real result.
+                try:
+                    from urika.core.data_integrity import (
+                        assess_run_data_source,
+                        format_suspect_warning,
+                    )
+
+                    experiment_dir = (
+                        project_dir / "experiments" / experiment_id
+                    )
+                    project_data_paths: list[str] = []
+                    try:
+                        import tomllib
+
+                        with open(
+                            project_dir / "urika.toml", "rb"
+                        ) as _f:
+                            _cfg = tomllib.load(_f)
+                        project_data_paths = list(
+                            (_cfg.get("project", {}) or {}).get(
+                                "data_paths", []
+                            )
+                            or []
+                        )
+                    except (OSError, tomllib.TOMLDecodeError):
+                        # Best-effort; the check still runs without
+                        # the data_paths basename hints.
+                        pass
+
+                    assessment = assess_run_data_source(
+                        experiment_dir, project_data_paths
+                    )
+                    if assessment["synthetic_only"]:
+                        warning = format_suspect_warning(assessment)
+                        progress("warning", warning)
+                        logger.warning(
+                            "Synthetic-data run flagged in %s/%s: %s",
+                            project_dir,
+                            experiment_id,
+                            assessment["synthetic_hits"],
+                        )
+                except Exception as exc:
+                    # Detection is best-effort — never break the run
+                    # loop if the scanner itself raises.
+                    logger.warning(
+                        "data_integrity scan failed: %s: %s",
+                        type(exc).__name__,
+                        exc,
+                    )
+
             # Register methods in project registry and update leaderboard.
             # Pre-v0.4.2 the leaderboard update sat OUTSIDE this loop
             # (C3) — it referenced ``run`` after the for-loop ended,

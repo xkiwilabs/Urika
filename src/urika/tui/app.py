@@ -623,6 +623,35 @@ class UrikaApp(App):
 
             self.session.add_message("user", text)
             self.session.add_message("assistant", response[:500])
+
+            # v0.4.2: parse advisor/orchestrator suggestions out of the
+            # response so /run picks them up via session.pending_suggestions
+            # instead of falling through to "resume the most recent
+            # pending experiment" — which silently re-ran an old
+            # failed/stuck experiment from a prior crash. The classic
+            # prompt_toolkit REPL has always done this (see
+            # urika.repl.main._offer_to_run_suggestions); this is the
+            # TUI-side parity fix.
+            try:
+                from urika.orchestrator.parsing import parse_suggestions
+
+                parsed = parse_suggestions(response)
+                if parsed and parsed.get("suggestions"):
+                    self.session.pending_suggestions = parsed["suggestions"]
+                    n = len(self.session.pending_suggestions)
+                    panel.write_line(
+                        Text(
+                            f"  ✦ {n} experiment suggestion(s) "
+                            f"captured. Type /run to start.",
+                            style="bold #4a9eff",
+                        )
+                    )
+                    panel.write_line("")
+            except Exception:
+                # Suggestion parsing is best-effort — never let it
+                # break chat. A malformed JSON block in the response
+                # is the expected failure mode here.
+                pass
         except Exception as exc:
             # Not a silent swallow — the error lands in the panel
             # (via query_one if still available) or the Textual log
