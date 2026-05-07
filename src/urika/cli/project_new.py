@@ -49,6 +49,16 @@ from urika.core.registry import ProjectRegistry
     ),
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    default=False,
+    help=(
+        "Overwrite an existing project of the same name (destructive). "
+        "Required in --json mode if the project directory already exists; "
+        "the interactive flow always confirms first."
+    ),
+)
 def new(
     name: str | None,
     question: str | None,
@@ -57,6 +67,7 @@ def new(
     description: str | None,
     privacy_mode_flag: str | None = None,
     json_output: bool = False,
+    overwrite: bool = False,
 ) -> None:
     """Create a new project."""
     from urika.cli_display import (
@@ -341,8 +352,19 @@ def new(
     # Check if project already exists before doing work
     project_dir = _projects_dir() / name
     if json_output:
-        # In JSON mode, overwrite silently if exists
+        # JSON mode: refuse to clobber unless --overwrite is explicit.
+        # Pre-v0.4.2 this silently rmtree'd any existing project (C4),
+        # which destroyed scripted-create users' work without warning.
         if (project_dir / "urika.toml").exists():
+            if not overwrite:
+                from urika.cli_helpers import output_json_error
+
+                output_json_error(
+                    f"Project '{name}' already exists at {project_dir}. "
+                    f"Pass --overwrite to replace it (this is destructive: "
+                    f"the existing project directory will be deleted)."
+                )
+                raise SystemExit(1)
             import shutil
 
             shutil.rmtree(project_dir)

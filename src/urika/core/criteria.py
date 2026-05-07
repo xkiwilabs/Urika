@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from urika.core.atomic_write import write_json_atomic
 from urika.core.filelock import locked_json_update
 
 logger = logging.getLogger(__name__)
@@ -108,5 +109,5 @@ def append_criteria(
         )
         versions.append(entry.to_dict())
         data["versions"] = versions
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        write_json_atomic(path, data)
     return entry

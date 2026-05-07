@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from urika.core.atomic_write import write_json_atomic, write_text_atomic
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,12 +38,32 @@ def append_exchange(
     history_path = project_dir / "projectbook" / "advisor-history.json"
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Load existing
+    # Load existing. Pre-v0.4.2 a JSONDecodeError silently reset
+    # ``entries`` to ``[]`` and rewrote the file, destroying the
+    # entire conversation history on a single corrupt write. Now
+    # the corrupt file is preserved as ``.corrupt-<ts>`` so it can
+    # be inspected or salvaged before being overwritten.
     entries: list[dict[str, Any]] = []
     if history_path.exists():
         try:
             entries = json.loads(history_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError) as exc:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            backup = history_path.with_suffix(f".corrupt-{ts}.json")
+            try:
+                history_path.rename(backup)
+                logger.warning(
+                    "Corrupt advisor history at %s (%s); preserved as %s",
+                    history_path,
+                    exc,
+                    backup,
+                )
+            except OSError:
+                logger.warning(
+                    "Corrupt advisor history at %s (%s); could not preserve backup",
+                    history_path,
+                    exc,
+                )
             entries = []
 
     entry: dict[str, Any] = {
@@ -54,9 +76,7 @@ def append_exchange(
         entry["suggestions"] = suggestions
 
     entries.append(entry)
-    history_path.write_text(
-        json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    write_json_atomic(history_path, entries)
 
 
 def load_history(project_dir: Path, last_n: int | None = None) -> list[dict]:
@@ -92,8 +112,7 @@ def load_context_summary(project_dir: Path) -> str:
 def save_context_summary(project_dir: Path, summary: str) -> None:
     """Save the rolling advisor context summary."""
     summary_path = project_dir / "projectbook" / "advisor-context.md"
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(summary.strip() + "\n", encoding="utf-8")
+    write_text_atomic(summary_path, summary.strip() + "\n")
 
 
 def format_recent_history(entries: list[dict], max_entries: int = 6) -> str:

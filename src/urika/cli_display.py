@@ -64,7 +64,33 @@ class _C:
             setattr(cls, attr, "")
 
 
-_IS_TTY = sys.stdout.isatty()
+# Pre-v0.4.2 ``_IS_TTY`` was evaluated at import time and frozen for
+# the lifetime of the process — but Textual's TUI swaps ``sys.stdout``
+# *after* import, and capture/release in tests can flip TTY status
+# back and forth. The frozen flag turned spinners into permanent no-ops
+# in those cases. ``_is_tty()`` re-checks at call time so display
+# behaviour follows the current stdout. The module-level ``_IS_TTY``
+# constant is kept as a backwards-compat alias for callers that read
+# it directly; new code should call ``_is_tty()`` instead.
+
+
+def _is_tty() -> bool:
+    """Return True iff ``sys.stdout`` is currently a TTY.
+
+    Re-evaluates on every call. Override the result for tests by
+    patching ``sys.stdout.isatty`` (or via the standard ``capsys``
+    capture which makes isatty return False).
+    """
+    try:
+        return sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        # AttributeError: stdout has no isatty (custom redirect).
+        # ValueError: stdout closed mid-call.
+        return False
+
+
+_IS_TTY = _is_tty()  # back-compat alias; do not rely on freshness.
+
 # Colors on by default for TTYs. Disable via NO_COLOR=1.
 if not _IS_TTY or os.environ.get("NO_COLOR"):
     _C.disable()

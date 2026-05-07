@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from urika.core.atomic_write import write_json_atomic
 from urika.core.filelock import locked_json_update
 from urika.core.models import RunRecord
 
@@ -34,7 +35,7 @@ def load_progress(project_dir: Path, experiment_id: str) -> dict[str, Any]:
 
 def _save_progress(project_dir: Path, experiment_id: str, data: dict[str, Any]) -> None:
     path = _progress_path(project_dir, experiment_id)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    write_json_atomic(path, data)
 
 
 def append_run(project_dir: Path, experiment_id: str, run: RunRecord) -> None:

@@ -110,7 +110,10 @@ def cmd_run(session: ReplSession, args: str) -> None:
         max_experiments = remote_parsed.get("max_experiments")
         run_instructions = remote_parsed.get("instructions", "")
         review_criteria = False
-        advisor_first = True
+        # v0.4.2 Package I: honor --no-advisor-first / --advisor-first
+        # in remote args. None means "use default" which is True.
+        af_override = remote_parsed.get("advisor_first")
+        advisor_first = True if af_override is None else af_override
 
         # Show summary
         click.echo("\n  Run settings (remote):")
@@ -307,18 +310,26 @@ def _parse_remote_run_args(args: str) -> dict:
     """Parse remote /run arguments into a settings dict.
 
     Supported formats:
-      /run               -> defaults
-      /run 3             -> max_turns=3
-      /run --multi 5     -> max_experiments=5
-      /run --resume      -> resume=True
-      /run try trees     -> instructions="try trees"
+      /run                         -> defaults
+      /run 3                       -> max_turns=3
+      /run --multi 5               -> max_experiments=5
+      /run --resume                -> resume=True
+      /run --no-advisor-first      -> advisor_first=False
+      /run try trees               -> instructions="try trees"
       /run --multi 3 focus on features -> max_experiments=3, instructions="focus on features"
+
+    v0.4.2 Package I: ``--no-advisor-first`` and the matching positive
+    ``--advisor-first`` are accepted so remote callers can override the
+    flag (pre-fix it was hardcoded ``True`` in the worker, leaving
+    Slack/Telegram users unable to skip advisor-first even when their
+    prior chat already established a direction).
     """
     result: dict = {
         "max_turns": None,
         "max_experiments": None,
         "resume": False,
         "instructions": "",
+        "advisor_first": None,  # None = use default (True)
     }
 
     args_stripped = args.strip()
@@ -326,6 +337,20 @@ def _parse_remote_run_args(args: str) -> dict:
         return result
 
     parts = args_stripped.split()
+    # Strip advisor-first overrides wherever they appear so positional
+    # parsing below doesn't get confused by them.
+    pruned: list[str] = []
+    for p in parts:
+        if p == "--no-advisor-first":
+            result["advisor_first"] = False
+        elif p == "--advisor-first":
+            result["advisor_first"] = True
+        else:
+            pruned.append(p)
+    parts = pruned
+    if not parts:
+        return result
+
     if parts[0] == "--resume":
         result["resume"] = True
     elif parts[0] == "--multi" and len(parts) > 1:
@@ -334,13 +359,13 @@ def _parse_remote_run_args(args: str) -> dict:
             if len(parts) > 2:
                 result["instructions"] = " ".join(parts[2:])
         except ValueError:
-            result["instructions"] = args_stripped
+            result["instructions"] = " ".join(parts)
     else:
         try:
             result["max_turns"] = int(parts[0])
             if len(parts) > 1:
                 result["instructions"] = " ".join(parts[1:])
         except ValueError:
-            result["instructions"] = args_stripped
+            result["instructions"] = " ".join(parts)
 
     return result

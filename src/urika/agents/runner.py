@@ -30,7 +30,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentResult:
-    """What an agent run produced."""
+    """What an agent run produced.
+
+    Token accounting (v0.4.2+): ``tokens_in`` is the rolled-up total
+    (fresh input + cache-creation + cache-read) for backward-compat
+    with consumers that just want one number. The broken-out fields
+    ``input_tokens_only`` / ``cache_creation_in`` / ``cache_read_in``
+    let cost estimation apply the cache-read discount (Anthropic
+    prices cache-read at ~10% of fresh-input rates). Adapters that
+    don't track cache stats leave the broken-out fields at 0; the
+    aggregate ``tokens_in`` then equals ``input_tokens_only``.
+    """
 
     success: bool
     messages: list[dict[str, Any]]
@@ -43,6 +53,9 @@ class AgentResult:
     error_category: str = ""  # "rate_limit"/"auth"/"billing"/"transient"/"config" or ""
     tokens_in: int = 0
     tokens_out: int = 0
+    input_tokens_only: int = 0
+    cache_creation_in: int = 0
+    cache_read_in: int = 0
     model: str = ""
 
 

@@ -491,6 +491,193 @@ def cmd_notifications(session: ReplSession, args: str) -> None:
         )
 
 
+@command("setup", description="Run the first-time setup wizard")
+def cmd_setup(session: ReplSession, args: str) -> None:
+    """Forward to the ``urika setup`` Click command.
+
+    Pre-v0.4.2 ``"setup"`` was listed in the TUI's ``_WORKER_COMMANDS``
+    set but had no slash handler — typing ``/setup`` printed
+    "Unknown command" and a new TUI user could not run setup without
+    dropping to a shell. Closes C7.
+    """
+    from urika.cli import setup_command
+
+    ctx = click.Context(setup_command)
+    ctx.invoke(setup_command)
+
+
+@command("summarize", description="Generate a project summary")
+def cmd_summarize(session: ReplSession, args: str) -> None:
+    """Forward to the ``urika summarize`` Click command. Closes H8."""
+    from urika.cli import summarize as summarize_command
+
+    project = session.project_name if session.has_project else None
+    instructions = args.strip() or None
+
+    ctx = click.Context(summarize_command)
+    ctx.invoke(
+        summarize_command,
+        project=project,
+        instructions=instructions,
+        json_output=False,
+    )
+
+
+@command("sessions", description="List or export orchestrator sessions")
+def cmd_sessions(session: ReplSession, args: str) -> None:
+    """Dispatch to ``urika sessions list|export``. Closes H8.
+
+    Usage from the TUI:
+
+        /sessions               → list sessions for the loaded project
+        /sessions list          → same as above
+        /sessions export <id>   → export a session as Markdown
+    """
+    from urika.cli import sessions as sessions_module
+
+    project = session.project_name if session.has_project else None
+    if project is None:
+        click.echo("No project loaded. Use /project <name> first.")
+        return
+
+    parts = args.strip().split()
+    sub = (parts[0] if parts else "list").lower()
+
+    if sub in ("", "list"):
+        ctx = click.Context(sessions_module.sessions_list)
+        ctx.invoke(sessions_module.sessions_list, project=project, json_output=False)
+        return
+
+    if sub == "export":
+        if len(parts) < 2:
+            click.echo("Usage: /sessions export <session-id>")
+            return
+        session_id = parts[1]
+        ctx = click.Context(sessions_module.sessions_export)
+        ctx.invoke(
+            sessions_module.sessions_export,
+            project=project,
+            session_id=session_id,
+            fmt="md",
+            output=None,
+        )
+        return
+
+    click.echo(f"Unknown sessions subcommand: {sub!r}. Try /sessions list or /sessions export <id>.")
+
+
+@command("memory", description="Project memory: list, show, add, delete")
+def cmd_memory(session: ReplSession, args: str) -> None:
+    """Dispatch to the ``urika memory`` group. Closes H8.
+
+    Usage from the TUI:
+
+        /memory                  → list entries
+        /memory list             → same
+        /memory show <topic>     → print one entry
+        /memory delete <file>    → trash an entry (with confirm)
+
+    ``/memory add`` is intentionally NOT exposed here because the
+    underlying CLI variant opens an editor (``click.edit``) which
+    won't reach the TUI bridge. Use ``urika memory add`` from a
+    shell for now.
+    """
+    from urika.cli.memory import memory_list, memory_show, memory_delete
+
+    project = session.project_name if session.has_project else None
+    if project is None:
+        click.echo("No project loaded. Use /project <name> first.")
+        return
+
+    parts = args.strip().split()
+    sub = (parts[0] if parts else "list").lower()
+
+    if sub in ("", "list"):
+        ctx = click.Context(memory_list)
+        ctx.invoke(memory_list, project=project, json_output=False)
+        return
+
+    if sub == "show":
+        if len(parts) < 2:
+            click.echo("Usage: /memory show <topic>")
+            return
+        ctx = click.Context(memory_show)
+        ctx.invoke(memory_show, project=project, topic=parts[1])
+        return
+
+    if sub == "delete":
+        if len(parts) < 2:
+            click.echo("Usage: /memory delete <filename>")
+            return
+        ctx = click.Context(memory_delete)
+        ctx.invoke(memory_delete, project=project, filename=parts[1], force=False)
+        return
+
+    click.echo(
+        f"Unknown memory subcommand: {sub!r}. "
+        f"Try /memory list, /memory show <topic>, or /memory delete <file>."
+    )
+
+
+@command("venv", description="Project venv: create or status")
+def cmd_venv(session: ReplSession, args: str) -> None:
+    """Dispatch to ``urika venv create|status``. Closes H8."""
+    from urika.cli import venv_create, venv_status
+
+    project = session.project_name if session.has_project else None
+    if project is None:
+        click.echo("No project loaded. Use /project <name> first.")
+        return
+
+    parts = args.strip().split()
+    sub = (parts[0] if parts else "status").lower()
+
+    if sub == "create":
+        ctx = click.Context(venv_create)
+        ctx.invoke(venv_create, project=project)
+        return
+    if sub in ("", "status"):
+        ctx = click.Context(venv_status)
+        ctx.invoke(venv_status, project=project)
+        return
+
+    click.echo(f"Unknown venv subcommand: {sub!r}. Try /venv create or /venv status.")
+
+
+@command(
+    "experiment-create",
+    description="Create a new experiment in the loaded project",
+    requires_project=True,
+)
+def cmd_experiment_create(session: ReplSession, args: str) -> None:
+    """Create a new experiment. Closes H8.
+
+    Usage:
+
+        /experiment-create <name> [hypothesis...]
+
+    If no hypothesis is supplied the experiment is created with an
+    empty hypothesis (the planning agent will fill it in on the
+    first ``/run``).
+    """
+    from urika.cli import experiment_create
+
+    parts = args.strip().split(maxsplit=1)
+    if not parts:
+        click.echo("Usage: /experiment-create <name> [hypothesis...]")
+        return
+    exp_name = parts[0]
+    hypothesis = parts[1] if len(parts) > 1 else ""
+
+    ctx = click.Context(experiment_create)
+    ctx.invoke(
+        experiment_create,
+        project=session.project_name,
+        name=exp_name,
+        hypothesis=hypothesis,
+    )
+
+
 @command("usage", description="Show usage stats")
 def cmd_usage(session: ReplSession, args: str) -> None:
     from urika.cli_display import _format_duration
@@ -600,9 +787,26 @@ def cmd_stop(session: ReplSession, args: str) -> None:
 
 @command("pause", requires_project=True, description="Pause experiment after current subagent")
 def cmd_pause(session: ReplSession, args: str) -> None:
-    """Pause the running experiment after the current subagent finishes."""
+    """Pause the running experiment after the current subagent finishes.
+
+    v0.4.2 Package K: only writes the cooperative ``pause_requested``
+    flag when the active command is ``run`` (or ``resume``). Pre-fix
+    typing /pause during /finalize or /report wrote a flag that the
+    NEXT /run would pick up on its first turn and immediately pause —
+    surprising the user. The flag is consumed by
+    ``orchestrator.loop.read_and_clear_flag`` which is only polled
+    inside ``run_experiment``, so writing it from any other context
+    is at best a stale signal and at worst a footgun.
+    """
     if not session.agent_active:
         click.echo("  No agent is currently running.")
+        return
+
+    if session.active_command not in ("run", "resume"):
+        click.echo(
+            f"  /pause only applies to /run (current: /{session.active_command}). "
+            f"For other agents, use /stop instead."
+        )
         return
 
     if session.project_path:

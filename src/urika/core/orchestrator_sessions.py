@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import secrets
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from urika.core.atomic_write import write_json_atomic
 
 
 @dataclass
@@ -43,13 +46,18 @@ def _now_iso() -> str:
 
 
 def _timestamp_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    # Append a 4-hex-char suffix so two sessions started in the same
+    # wall-clock second get distinct ids — at second resolution the
+    # collision rate was high enough that prune-by-name was unstable
+    # (see C10 in the v0.4.2 hardening plan).
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    return f"{stamp}-{secrets.token_hex(2)}"
 
 
 def save_session(project_dir: Path, session: OrchestratorSession) -> None:
     session.updated = _now_iso()
     path = _sessions_dir(project_dir) / f"{session.session_id}.json"
-    path.write_text(json.dumps(session.to_dict(), indent=2), encoding="utf-8")
+    write_json_atomic(path, session.to_dict())
     # Cap session retention at 20 per project. The helper sorts by filename
     # (which is timestamp-prefixed via _timestamp_id), so the file we just
     # wrote is the freshest and won't be pruned. Failure here must not

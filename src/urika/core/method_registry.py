@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from urika.core.atomic_write import write_json_atomic
 from urika.core.filelock import locked_json_update
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ def load_methods(project_dir: Path) -> list[dict[str, Any]]:
 
 def _save_methods(project_dir: Path, methods: list[dict[str, Any]]) -> None:
     path = _methods_path(project_dir)
-    path.write_text(json.dumps({"methods": methods}, indent=2) + "\n", encoding="utf-8")
+    write_json_atomic(path, {"methods": methods})
 
 
 def register_method(

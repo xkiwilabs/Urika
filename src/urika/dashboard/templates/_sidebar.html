@@ -29,6 +29,12 @@
         <a class="sidebar-link"
            :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/experiments') }"
            href="/projects/{{ project.name }}/experiments">Experiments</a>
+        {# v0.4.2 H2: ``/compare`` and ``/criteria`` pages exist and
+           render correctly but pre-fix had no nav links — they were
+           reachable only via deeplink. Surface both here. #}
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname === '/projects/{{ project.name }}/compare' }"
+           href="/projects/{{ project.name }}/compare">Compare</a>
         <a class="sidebar-link"
            :class="{ 'sidebar-link--active': window.location.pathname === '/projects/{{ project.name }}/advisor' }"
            href="/projects/{{ project.name }}/advisor">Advisor</a>
@@ -41,6 +47,9 @@
         <a class="sidebar-link"
            :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/methods') }"
            href="/projects/{{ project.name }}/methods">Methods</a>
+        <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname === '/projects/{{ project.name }}/criteria' }"
+           href="/projects/{{ project.name }}/criteria">Criteria</a>
         <a class="sidebar-link"
            :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/tools') }"
            href="/projects/{{ project.name }}/tools">Tools</a>

@@ -285,31 +285,6 @@ urika tools [--category CATEGORY] [--project NAME]
 
 ---
 
-### `urika tui`
-
-Explicitly launch the interactive Urika TUI. Equivalent to running bare `urika` with no subcommand, but discoverable via `urika --help` and easy to invoke from scripts.
-
-```
-urika tui [PROJECT]
-```
-
-**Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `PROJECT` | Optional project name to auto-load on launch. If omitted, the TUI starts without a project loaded. |
-
-**Examples:**
-
-```bash
-urika tui                 # launch the TUI (no project loaded)
-urika tui my-study        # launch and auto-load my-study
-```
-
-The TUI binary is searched in the following order: the `URIKA_TUI_BIN` environment variable, the system `PATH` (`urika-tui`), the local dev build (`packages/urika-tui/dist/urika-tui`), or run via `bun` from `packages/urika-tui/src/index.ts` if available. See [Interactive TUI](17-interactive-tui.md) for usage.
-
----
-
 ### `urika memory`
 
 Read or edit the project memory directory at `<project>/memory/`. Project memory is structured markdown — a curated `MEMORY.md` index plus per-topic entry files (`feedback_*.md`, `instruction_*.md`, `decision_*.md`, …) — that gets injected into the planner's and advisor's system prompts on every run, so the agents stay aware of past decisions, user preferences, and constraints across experiments. Auto-capture from `<memory type="...">...</memory>` markers in agent output is on by default; manual edits live under this command group.
@@ -430,7 +405,6 @@ urika --version
 |----------|-------------|
 | `URIKA_PROJECTS_DIR` | Override the default projects directory (default: `~/urika-projects`) |
 | `URIKA_HOME` | Override the global config directory (default: `~/.urika`). Also relocates `~/.urika/secrets.env` and the project registry. |
-| `URIKA_TUI_BIN` | Explicit path to the TypeScript TUI binary launched by `urika tui` (overrides PATH search). |
 | `URIKA_NO_BUILDER_AGENT` | Set to `1` to skip the project-builder agent loop in `urika new` (for scripted use). The agent loop is also auto-skipped under non-TTY stdin. |
 | `URIKA_DASHBOARD_AUTH_TOKEN` | Bearer-token gate for `urika dashboard` (matches the `--auth-token` flag). |
 | `ANTHROPIC_API_KEY` | API key for Anthropic-routed agent calls. Required for any cloud-bound run; see [Security → Provider compliance](20-security.md#provider-compliance). |

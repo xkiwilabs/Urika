@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "urika"
-version = "0.4.1"
+version = "0.4.2"
 description = "Multi-agent scientific analysis platform"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -53,6 +53,8 @@ dependencies = [
     "fastapi>=0.110,<1.0",
     "uvicorn[standard]>=0.27,<1.0",
     "jinja2>=3.1",
+    # PEP 440-aware version comparison (used by core.updates).
+    "packaging>=21.0",
 ]
 
 [project.optional-dependencies]
@@ -98,6 +100,15 @@ packages = ["src/urika"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# v0.4.2 M15: register markers so future ``-m "not slow"`` invocations
+# don't get the "unknown marker" warning. Slow = wall-clock > ~1s
+# (subprocess spawn, real SSE polling). Integration = end-to-end
+# scenarios that need external resources (the dev/scripts/smoke-*.sh
+# E2E harness, promoted as @pytest.mark.integration tests in M16).
+markers = [
+    "slow: tests that take more than ~1s wall-clock",
+    "integration: end-to-end tests requiring external resources",
+]
 
 [tool.ruff]
 target-version = "py311"

@@ -31,7 +31,29 @@ import os
 from typing import Mapping
 
 
-_OAUTH_TOKEN_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN")
+# OAuth-class env vars: anything that can authenticate the spawned
+# ``claude`` subprocess against api.anthropic.com via a Pro/Max
+# subscription. ANY of these leaking into the spawned env would let the
+# subprocess re-mint an access token (refresh tokens) or pick up a
+# parent-shell access token directly. Urika must not let cloud calls
+# auth via Pro/Max OAuth (Anthropic Consumer Terms §3.7).
+#
+# Pre-v0.4.2 this constant was defined but never referenced — only
+# ``CLAUDE_CODE_OAUTH_TOKEN`` and ``ANTHROPIC_AUTH_TOKEN`` were
+# blanked, hardcoded inline in ``scrub_oauth_env``. The refresh
+# token in particular survived, defeating the access-token blank.
+_OAUTH_TOKEN_VARS = (
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+    "CLAUDE_CODE_OAUTH_CLIENT_ID",
+    "CLAUDE_CODE_SESSION_ACCESS_TOKEN",
+    "CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH",
+    "CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR",
+    "ANTHROPIC_IDENTITY_TOKEN",
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    # ANTHROPIC_AUTH_TOKEN is treated specially — see scrub_oauth_env.
+)
 
 # Set by Claude Code itself (CLI / VS Code extension / IDE integration)
 # in any terminal it owns. The bundled `claude` CLI that the Agent SDK
@@ -44,6 +66,17 @@ _NESTED_SESSION_VARS = (
     "CLAUDE_CODE_SSE_PORT",
     "CLAUDE_CODE_ENTRYPOINT",
     "CLAUDE_CODE_EXECPATH",
+    # Session-identity markers added in newer Claude Code versions —
+    # also nested-launch tripwires.
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_KIND",
+    "CLAUDE_CODE_SESSION_NAME",
+    "CLAUDE_CODE_SESSION_LOG",
+    "CLAUDE_CODE_REMOTE_SESSION_ID",
+    "CLAUDE_CODE_RESUME_FROM_SESSION",
+    "CLAUDE_CODE_TMUX_SESSION",
+    "CLAUDE_CODE_AGENT",
+    "CLAUDE_CODE_ACTION",
 )
 
 
@@ -146,12 +179,13 @@ def scrub_oauth_env(agent_env: Mapping[str, str] | None) -> dict[str, str]:
     returned.
     """
     out = dict(agent_env or {})
-    # CLAUDE_CODE_OAUTH_TOKEN has no legitimate use in a Urika-spawned
-    # subprocess — always zero it. ANTHROPIC_AUTH_TOKEN is the standard
-    # Bearer-auth header for OpenAI-compatible private endpoints and
-    # MUST be preserved when deliberately set; only blank it when
-    # absent (to block parent-shell leakage).
-    out["CLAUDE_CODE_OAUTH_TOKEN"] = ""
+    # OAuth/identity tokens have no legitimate use in a Urika-spawned
+    # subprocess — always zero them. ANTHROPIC_AUTH_TOKEN is the
+    # standard Bearer-auth header for OpenAI-compatible private
+    # endpoints and MUST be preserved when deliberately set; only
+    # blank it when absent (to block parent-shell leakage).
+    for var in _OAUTH_TOKEN_VARS:
+        out[var] = ""
     out.setdefault("ANTHROPIC_AUTH_TOKEN", "")
     for var in _NESTED_SESSION_VARS:
         out[var] = ""

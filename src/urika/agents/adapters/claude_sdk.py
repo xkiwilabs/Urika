@@ -369,6 +369,9 @@ class ClaudeSDKRunner(AgentRunner):
                     cost_usd=cost_usd,
                     tokens_in=tokens_in,
                     tokens_out=tokens_out,
+                    input_tokens_only=input_tokens_only,
+                    cache_creation_in=cache_creation_in,
+                    cache_read_in=cache_read_in,
                     model=model_name,
                 )
             # Extract stderr for better diagnostics — the SDK's generic
@@ -407,6 +410,9 @@ class ClaudeSDKRunner(AgentRunner):
                 error_category=category,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
+                input_tokens_only=input_tokens_only,
+                cache_creation_in=cache_creation_in,
+                cache_read_in=cache_read_in,
                 model=model_name,
             )
 
@@ -464,6 +470,9 @@ class ClaudeSDKRunner(AgentRunner):
                     cost_usd=cost_usd,
                     tokens_in=tokens_in,
                     tokens_out=tokens_out,
+                    input_tokens_only=input_tokens_only,
+                    cache_creation_in=cache_creation_in,
+                    cache_read_in=cache_read_in,
                     model=model_name,
                 )
 
@@ -485,6 +494,9 @@ class ClaudeSDKRunner(AgentRunner):
                 error_category=category,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
+                input_tokens_only=input_tokens_only,
+                cache_creation_in=cache_creation_in,
+                cache_read_in=cache_read_in,
                 model=model_name,
             )
 
@@ -520,6 +532,9 @@ class ClaudeSDKRunner(AgentRunner):
             error=error_msg,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            input_tokens_only=input_tokens_only,
+            cache_creation_in=cache_creation_in,
+            cache_read_in=cache_read_in,
             model=model_name,
         )
 

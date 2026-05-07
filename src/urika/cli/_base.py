@@ -62,8 +62,13 @@ class _UrikaCLI(click.Group):
         except SystemExit:
             raise  # Let clean exits through
         except Exception as exc:
-            # Catch UserCancelled from any command — exit cleanly
-            if type(exc).__name__ == "UserCancelled":
+            # Catch UserCancelled from any command — exit cleanly. Pre-
+            # v0.4.2 used ``type(exc).__name__ == "UserCancelled"``
+            # which would match any class anywhere named UserCancelled
+            # and brittlely bypassed isinstance for no benefit.
+            from urika.cli_helpers import UserCancelled
+
+            if isinstance(exc, UserCancelled):
                 raise SystemExit(0)
             # UrikaError — render message + hint without traceback
             from urika.core.errors import UrikaError
@@ -144,9 +149,14 @@ def cli(ctx, classic: bool) -> None:
         )
 
     # Check for updates on every CLI invocation (cached, non-blocking).
-    # Skip when stdout isn't a TTY \u2014 this catches CI runs, the test
-    # suite, and any consumer piping `urika ... --json` output. The
-    # banner would otherwise corrupt JSON output and clutter logs.
+    # Skip when stdout isn't a TTY (catches CI runs, piped consumers,
+    # the test suite) AND when the user passed --json explicitly: a
+    # user running ``urika list --json`` interactively (TTY attached)
+    # otherwise gets a banner prepended to the JSON document, breaking
+    # any downstream parser. The argv check is a string sweep rather
+    # than a Click introspection because at this point the subcommand
+    # hasn't been dispatched yet \u2014 we don't yet know which command's
+    # ``--json`` flag is in play.
     try:
         import sys as _sys
         from urika.core.updates import (
@@ -154,7 +164,8 @@ def cli(ctx, classic: bool) -> None:
             format_update_message,
         )
 
-        if _sys.stdout.isatty():
+        json_mode = "--json" in _sys.argv
+        if _sys.stdout.isatty() and not json_mode:
             update_info = check_for_updates()
             if update_info:
                 from urika.cli_display import _C

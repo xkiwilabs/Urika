@@ -14,6 +14,13 @@ def check_private_endpoint(project_dir: Path) -> tuple[bool, str]:
     Returns (reachable, message).
     For open mode, always returns (True, "").
     For hybrid/private, pings the endpoint.
+
+    Pre-v0.4.2 a corrupt ``urika.toml`` was caught by a bare
+    ``except Exception: return True, ""`` and silently treated as
+    open mode — defeating the privacy guard for any project whose
+    config file got truncated, mis-encoded, or partially written. We
+    now distinguish "no config" (legitimately open) from "config is
+    corrupt" (fail-closed: refuse the run rather than silently leak).
     """
     import tomllib
 
@@ -24,8 +31,10 @@ def check_private_endpoint(project_dir: Path) -> tuple[bool, str]:
     try:
         with open(toml_path, "rb") as f:
             config = tomllib.load(f)
-    except Exception:
-        return True, ""
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+        return False, f"Cannot read project config (corrupt TOML): {exc}"
+    except OSError as exc:
+        return False, f"Cannot read project config: {exc}"
 
     privacy = config.get("privacy", {})
     mode = privacy.get("mode", "open")
@@ -86,7 +95,13 @@ def check_private_endpoint(project_dir: Path) -> tuple[bool, str]:
 
 
 def requires_private_endpoint(project_dir: Path) -> bool:
-    """Check if this project requires a private endpoint (hybrid or private mode)."""
+    """Check if this project requires a private endpoint (hybrid or private mode).
+
+    Fails closed on parse errors: a corrupt ``urika.toml`` returns
+    ``True`` so the caller treats the project as needing a private
+    endpoint and surfaces the unreachable / "no endpoint configured"
+    error rather than silently downgrading to open mode.
+    """
     import tomllib
 
     toml_path = project_dir / "urika.toml"
@@ -97,5 +112,6 @@ def requires_private_endpoint(project_dir: Path) -> bool:
             config = tomllib.load(f)
         mode = config.get("privacy", {}).get("mode", "open")
         return mode in ("hybrid", "private")
-    except Exception:
-        return False
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError):
+        # Fail closed: corrupt config → require private endpoint.
+        return True

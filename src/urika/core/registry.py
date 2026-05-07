@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 
+from urika.core.atomic_write import write_json_atomic
+
 
 def _urika_home() -> Path:
     """Return the Urika home directory, respecting URIKA_HOME env var."""
@@ -37,7 +39,7 @@ class ProjectRegistry:
         return {}
 
     def _save(self) -> None:
-        self._path.write_text(json.dumps(self._data, indent=2) + "\n", encoding="utf-8")
+        write_json_atomic(self._path, self._data)
 
     def register(self, name: str, path: Path) -> None:
         """Register a project by name and path."""

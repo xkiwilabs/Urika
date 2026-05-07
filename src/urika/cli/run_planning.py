@@ -147,13 +147,35 @@ def _determine_next_experiment(
             if mlist:
                 methods_summary = f"{len(mlist)} methods tried. Best: "
 
+                from urika.core.labbook import _LOWER_IS_BETTER
+
                 def _best_metric_val(m: dict) -> float:
-                    nums = [
-                        v
-                        for v in m.get("metrics", {}).values()
+                    """Score a method for "best so far" ranking.
+
+                    Pre-v0.4.2 took ``max(nums)`` over all numeric metric
+                    values regardless of metric name (H11). For RMSE /
+                    MAE / loss / error metrics, lower is better — the
+                    naive ``max`` picked the WORST method as "best" and
+                    blended scales (mixing ``r2=0.8`` with ``rmse=12.3``
+                    ranked by the larger number). The fix prefers a
+                    higher-is-better metric when present and inverts
+                    when only lower-is-better metrics are available.
+                    """
+                    metrics = m.get("metrics", {})
+                    nums = {
+                        k: v
+                        for k, v in metrics.items()
                         if isinstance(v, (int, float))
-                    ]
-                    return max(nums) if nums else 0
+                    }
+                    if not nums:
+                        return float("-inf")
+                    higher = {k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER}
+                    if higher:
+                        return max(higher.values())
+                    # All available metrics are lower-is-better — invert
+                    # so ``max`` over the inverted values still picks
+                    # the smallest (and therefore best) raw value.
+                    return -min(nums.values())
 
                 best = max(
                     (m for m in mlist if m.get("metrics")),
@@ -424,13 +446,35 @@ def _run_advisor_first_for_experiment_impl(
             if mlist:
                 methods_summary = f"{len(mlist)} methods tried. Best: "
 
+                from urika.core.labbook import _LOWER_IS_BETTER
+
                 def _best_metric_val(m: dict) -> float:
-                    nums = [
-                        v
-                        for v in m.get("metrics", {}).values()
+                    """Score a method for "best so far" ranking.
+
+                    Pre-v0.4.2 took ``max(nums)`` over all numeric metric
+                    values regardless of metric name (H11). For RMSE /
+                    MAE / loss / error metrics, lower is better — the
+                    naive ``max`` picked the WORST method as "best" and
+                    blended scales (mixing ``r2=0.8`` with ``rmse=12.3``
+                    ranked by the larger number). The fix prefers a
+                    higher-is-better metric when present and inverts
+                    when only lower-is-better metrics are available.
+                    """
+                    metrics = m.get("metrics", {})
+                    nums = {
+                        k: v
+                        for k, v in metrics.items()
                         if isinstance(v, (int, float))
-                    ]
-                    return max(nums) if nums else 0
+                    }
+                    if not nums:
+                        return float("-inf")
+                    higher = {k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER}
+                    if higher:
+                        return max(higher.values())
+                    # All available metrics are lower-is-better — invert
+                    # so ``max`` over the inverted values still picks
+                    # the smallest (and therefore best) raw value.
+                    return -min(nums.values())
 
                 best = max(
                     (m for m in mlist if m.get("metrics")),

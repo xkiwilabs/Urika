@@ -31,6 +31,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Protocol
 
+from urika.core.atomic_write import write_text_atomic
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -95,25 +97,24 @@ def _read_env_file(path: Path) -> dict[str, str]:
 
 
 def _write_env_file(path: Path, values: dict[str, str]) -> None:
-    """Atomically write a KEY=VALUE file with mode 0o600."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Atomically write a KEY=VALUE file with mode 0o600.
+
+    The 0o600 permission is enforced at file-creation time via
+    ``os.open(O_CREAT|O_EXCL, 0o600)`` — closing the write-then-chmod
+    race that pre-v0.4.2 left open between create and chmod.
+    """
     lines = [f"{k}={v}" for k, v in values.items()]
     body = "\n".join(lines)
     if body:
         body += "\n"
-    path.write_text(body)
-    try:
-        path.chmod(0o600)
-    except Exception:
-        # On Windows / unusual filesystems chmod may fail — tolerate.
-        pass
+    write_text_atomic(path, body, mode=0o600)
 
 
 def _upsert_env_file(path: Path, key: str, value: str) -> None:
     """Set or update a single key in a KEY=VALUE file, preserving order
-    and any comments. Creates the file if missing. chmods to 0o600.
+    and any comments. Creates the file if missing. Mode 0o600 is set at
+    file-creation time (atomic create + replace).
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
     new_lines: list[str] = []
     found = False
     if path.exists():
@@ -128,11 +129,7 @@ def _upsert_env_file(path: Path, key: str, value: str) -> None:
             new_lines.append(line)
     if not found:
         new_lines.append(f"{key}={value}")
-    path.write_text("\n".join(new_lines) + "\n")
-    try:
-        path.chmod(0o600)
-    except Exception:
-        pass
+    write_text_atomic(path, "\n".join(new_lines) + "\n", mode=0o600)
 
 
 def _remove_env_key(path: Path, key: str) -> bool:
@@ -232,8 +229,7 @@ def _read_meta(path: Path) -> dict[str, dict]:
 
 
 def _write_meta(path: Path, meta: dict[str, dict]) -> None:
-    """Write sidecar metadata TOML. chmods to 0o600."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Write sidecar metadata TOML atomically with mode 0o600."""
     chunks: list[str] = []
     for name, fields in meta.items():
         chunks.append(_toml_table_header(name))
@@ -241,11 +237,7 @@ def _write_meta(path: Path, meta: dict[str, dict]) -> None:
             chunks.append(f"{_toml_key(k)} = {_format_toml_value(v)}")
         chunks.append("")  # trailing blank line per table
     body = "\n".join(chunks).rstrip() + "\n" if chunks else ""
-    path.write_text(body)
-    try:
-        path.chmod(0o600)
-    except Exception:
-        pass
+    write_text_atomic(path, body, mode=0o600)
 
 
 # ---------------------------------------------------------------------------
@@ -438,21 +430,27 @@ class SecretsVault:
     # ----- resolution -------------------------------------------------------
 
     def get(self, name: str) -> Optional[str]:
-        """Resolve a secret by name. Returns None if unset in all tiers."""
-        # Tier 1: process env (always wins).
+        """Resolve a secret by name. Returns None if unset in all tiers.
+
+        Empty-string values are legitimate secrets (rare but valid — some
+        endpoints accept ``Authorization: Bearer `` as a sentinel for
+        "no auth"). Pre-v0.4.2 this method conflated empty-string with
+        unset by using truthy checks; now ``None`` means unset and ``""``
+        means deliberately stored empty.
+        """
+        # Tier 1: process env (always wins when set, including "").
         val = os.environ.get(name)
-        if val:
+        if val is not None:
             return val
         # Tier 2: project (if project path configured + file exists).
         if self.project_path is not None:
             proj_path = self.project_path / ".urika" / "secrets.env"
             if proj_path.exists():
                 pval = _read_env_file(proj_path).get(name)
-                if pval:
+                if pval is not None:
                     return pval
         # Tier 3: global.
-        gval = self._global_backend.get(name)
-        return gval if gval else None
+        return self._global_backend.get(name)
 
     # ----- listing ----------------------------------------------------------
 

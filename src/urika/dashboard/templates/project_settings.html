@@ -497,6 +497,36 @@
                  value="{{ project_privacy_private_model }}"
                  placeholder="qwen3:14b">
         </div>
+        {# v0.4.2 C9: per-endpoint context_window + max_output_tokens
+           — added to global_settings in v0.4.1 but the per-project
+           Private/Hybrid blocks were missing the same fields, so a
+           project-level override silently dropped them. Mirror the
+           global form's row shape so the API parser can lift the
+           values directly. #}
+        <div class="form-row">
+          <label for="project_privacy_private_context_window">Context window (tokens, optional)</label>
+          <input type="number" id="project_privacy_private_context_window"
+                 name="project_privacy_private_context_window"
+                 value="{{ project_privacy_private_context_window or '' }}"
+                 placeholder="auto: 32768 for local, 200000 for anthropic.com"
+                 min="0">
+          <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+            Total context window of this endpoint's model. Blank or 0 =
+            use auto-default for the URL.
+          </span>
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_private_max_output_tokens">Max output tokens (optional)</label>
+          <input type="number" id="project_privacy_private_max_output_tokens"
+                 name="project_privacy_private_max_output_tokens"
+                 value="{{ project_privacy_private_max_output_tokens or '' }}"
+                 placeholder="auto: 8000 for local, 32000 for anthropic.com"
+                 min="0">
+          <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+            Per-request output cap. Set conservatively for local/private
+            models so the request fits inside the context window.
+          </span>
+        </div>
         {# Test endpoint button — Alpine state is shared with the inputs above.
            Uses .endpoint-test (centered, natural-width) instead of .form-row
            (which would stretch the button to full width). #}
@@ -596,6 +626,32 @@
                  name="project_privacy_hybrid_private_model"
                  value="{{ project_privacy_hybrid_private_model }}"
                  placeholder="qwen3:14b">
+        </div>
+        {# v0.4.2 C9: per-endpoint context_window + max_output_tokens
+           for the hybrid private side, mirroring the private block. #}
+        <div class="form-row">
+          <label for="project_privacy_hybrid_private_context_window">Context window (tokens, optional)</label>
+          <input type="number" id="project_privacy_hybrid_private_context_window"
+                 name="project_privacy_hybrid_private_context_window"
+                 value="{{ project_privacy_hybrid_private_context_window or '' }}"
+                 placeholder="auto: 32768 for local, 200000 for anthropic.com"
+                 min="0">
+          <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+            Total context window of this endpoint's model. Blank or 0 =
+            use auto-default for the URL.
+          </span>
+        </div>
+        <div class="form-row">
+          <label for="project_privacy_hybrid_private_max_output_tokens">Max output tokens (optional)</label>
+          <input type="number" id="project_privacy_hybrid_private_max_output_tokens"
+                 name="project_privacy_hybrid_private_max_output_tokens"
+                 value="{{ project_privacy_hybrid_private_max_output_tokens or '' }}"
+                 placeholder="auto: 8000 for local, 32000 for anthropic.com"
+                 min="0">
+          <span class="form-help text-muted" style="font-size: var(--fs-xs);">
+            Per-request output cap. Set conservatively for local/private
+            models so the request fits inside the context window.
+          </span>
         </div>
         {# Test endpoint button — probes the private URL the user typed.
            Uses .endpoint-test wrapper (centered, natural width). #}

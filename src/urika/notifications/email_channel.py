@@ -53,10 +53,18 @@ class EmailChannel(NotificationChannel):
             self._pending = []
 
     def health_check(self) -> tuple[bool, str]:
-        """Probe SMTP connectivity, STARTTLS, login, and NOOP.
+        """Probe SMTP connectivity, STARTTLS, login, and capability to send.
 
         Uses a short timeout (5s) so the probe doesn't hang the bus startup.
         Returns ``(True, "")`` on success, ``(False, error_message)`` otherwise.
+
+        Pre-v0.4.2 this returned ``(True, "")`` after a bare NOOP whenever
+        no password env was configured — but most public SMTP relays
+        accept NOOP without credentials and only require auth for
+        ``MAIL FROM``. That meant a misconfigured channel (password env
+        unset, but server requires auth) reported "healthy" and silently
+        failed at send time. We now require either a successful login
+        OR a successful ``MAIL FROM`` to claim health.
         """
         if not self._to or not self._server:
             return (False, "missing required config (to/smtp_server)")
@@ -71,6 +79,21 @@ class EmailChannel(NotificationChannel):
                 )
                 if password:
                     smtp.login(self._username, password)
+                else:
+                    # No password configured — verify the server actually
+                    # accepts unauthenticated ``MAIL FROM`` rather than
+                    # just NOOP. This catches the common misconfiguration
+                    # where the server requires auth but no password env
+                    # is set.
+                    try:
+                        smtp.mail(self._from or self._username or "noreply@localhost")
+                        smtp.rset()  # cancel the transaction
+                    except smtplib.SMTPException as exc:
+                        return (
+                            False,
+                            f"unauthenticated send rejected by server "
+                            f"(set password_env or check credentials): {exc}",
+                        )
                 smtp.noop()
             return (True, "")
         except Exception as exc:

@@ -148,9 +148,32 @@ def tools(category: str | None, project: str | None, json_output: bool) -> None:
 @click.option(
     "--experiment", "experiment_id", default=None, help="Specific experiment."
 )
+@click.option(
+    "--summary",
+    is_flag=True,
+    default=False,
+    help=(
+        "Show progress.json run summary instead of the raw log. Pre-v0.4.2 "
+        "this was the only behaviour and the docstring lied: 'urika logs' "
+        "never opened run.log. The dashboard's log view always tailed the "
+        "real log; the CLI now matches."
+    ),
+)
+@click.option(
+    "--tail",
+    type=int,
+    default=50,
+    help="Lines of run.log to print (default: 50). Ignored under --summary.",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
-def logs(project: str, experiment_id: str | None, json_output: bool) -> None:
-    """Show experiment run log."""
+def logs(
+    project: str,
+    experiment_id: str | None,
+    summary: bool,
+    tail: int,
+    json_output: bool,
+) -> None:
+    """Tail an experiment's run.log (or print the run summary with --summary)."""
     from urika.core.session import load_session
 
     project = _ensure_project(project)
@@ -193,42 +216,85 @@ def logs(project: str, experiment_id: str | None, json_output: bool) -> None:
 
     progress = load_progress(project_path, experiment_id)
     session = load_session(project_path, experiment_id)
+    log_path = (
+        project_path / "experiments" / experiment_id / "run.log"
+    )
 
     if json_output:
         from urika.cli_helpers import output_json
 
         runs = progress.get("runs", [])
-        data = {
+        data: dict[str, object] = {
             "experiment_id": experiment_id,
             "runs": runs,
         }
         if session is not None:
             data["status"] = session.status
             data["turns"] = session.current_turn
+        # Include the requested tail of run.log under the new "log_lines"
+        # key so JSON consumers get the actual log without parsing the
+        # progress summary. Empty list when the log doesn't exist.
+        data["log_path"] = str(log_path)
+        if log_path.exists():
+            try:
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                data["log_lines"] = lines[-tail:] if tail > 0 else lines
+            except OSError as exc:
+                data["log_lines"] = []
+                data["log_error"] = str(exc)
+        else:
+            data["log_lines"] = []
         output_json(data)
         return
 
-    click.echo(f"Experiment: {experiment_id}")
-    if session is not None:
-        click.echo(f"Status: {session.status}")
-        click.echo(f"Turns: {session.current_turn}")
-    click.echo("")
+    if summary:
+        # Legacy behaviour — progress.json summary, kept for users who
+        # scripted against pre-v0.4.2 output. New default is the log tail.
+        click.echo(f"Experiment: {experiment_id}")
+        if session is not None:
+            click.echo(f"Status: {session.status}")
+            click.echo(f"Turns: {session.current_turn}")
+        click.echo("")
 
-    runs = progress.get("runs", [])
-    if not runs:
-        click.echo("No runs recorded yet.")
+        runs = progress.get("runs", [])
+        if not runs:
+            click.echo("No runs recorded yet.")
+            return
+
+        for run in runs:
+            metrics_str = ", ".join(
+                f"{k}={v}" for k, v in run.get("metrics", {}).items()
+            )
+            click.echo(f"  {run['run_id']}  {run['method']}  {metrics_str}")
+            if run.get("hypothesis"):
+                click.echo(f"    Hypothesis: {run['hypothesis']}")
+            if run.get("observation"):
+                click.echo(f"    Observation: {run['observation']}")
+            if run.get("next_step"):
+                click.echo(f"    Next step: {run['next_step']}")
+            click.echo("")
         return
 
-    for run in runs:
-        metrics_str = ", ".join(f"{k}={v}" for k, v in run.get("metrics", {}).items())
-        click.echo(f"  {run['run_id']}  {run['method']}  {metrics_str}")
-        if run.get("hypothesis"):
-            click.echo(f"    Hypothesis: {run['hypothesis']}")
-        if run.get("observation"):
-            click.echo(f"    Observation: {run['observation']}")
-        if run.get("next_step"):
-            click.echo(f"    Next step: {run['next_step']}")
-        click.echo("")
+    # Default: tail run.log (the file the dashboard's log view shows).
+    if not log_path.exists():
+        click.echo(
+            f"No run.log yet at {log_path}. "
+            f"Run the experiment first or pass --summary for the progress view.",
+            err=True,
+        )
+        # Exit zero so scripts can pipe without trapping; absence is a
+        # legitimate state on a never-run experiment.
+        return
+
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        click.echo(f"Failed to read {log_path}: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    selected = lines[-tail:] if tail > 0 else lines
+    for line in selected:
+        click.echo(line)
 
 
 @cli.group()
@@ -485,6 +551,134 @@ def experiment_delete(
         return
 
     click.echo(f"Moved '{exp_id}' to {result.trash_path}")
+
+
+# ── Unlock command ──────────────────────────────────────────
+#
+# v0.4.2 Package K: provides a recovery path when an experiment's
+# ``.lock`` file refers to a PID that's been recycled by the OS to an
+# unrelated process. Pre-K the only ways to recover were (a) wait for
+# the PID to die, or (b) manually delete the lock file. ``urika
+# unlock`` is the documented, audit-friendly action.
+
+
+@cli.command("unlock")
+@click.argument("project", required=False, default=None)
+@click.argument("experiment_id", required=False, default=None)
+@click.option(
+    "-f",
+    "--force",
+    is_flag=True,
+    help="Skip the safety check and unlock even if the lock looks valid.",
+)
+def unlock(
+    project: str | None,
+    experiment_id: str | None,
+    force: bool,
+) -> None:
+    """Clear a stale experiment lock so a fresh run can start.
+
+    Safe by default: refuses to unlock if the PID in the lock file is
+    alive AND its process name suggests it's a real Urika run. Use
+    ``--force`` to override (e.g. for PID-recycle false positives the
+    OS handed your old PID to a different program).
+    """
+    import os
+    import re
+
+    from urika.core.experiment import list_experiments
+    from urika.core.session import _lock_path
+
+    project = _ensure_project(project)
+    project_path, _config = _resolve_project(project)
+
+    if experiment_id is None:
+        experiments = list_experiments(project_path)
+        locked = [
+            e
+            for e in experiments
+            if _lock_path(project_path, e.experiment_id).exists()
+        ]
+        if not locked:
+            click.echo(f"  No locked experiments in {project}.")
+            return
+        if len(locked) == 1:
+            experiment_id = locked[0].experiment_id
+            click.echo(f"  Unlocking {experiment_id}...")
+        else:
+            options = [e.experiment_id for e in locked]
+            choice = _prompt_numbered(
+                "\n  Select experiment to unlock:", options, default=1
+            )
+            experiment_id = choice
+
+    lock_path = _lock_path(project_path, experiment_id)
+    if not lock_path.exists():
+        click.echo(f"  No lock file at {lock_path}.")
+        return
+
+    pid_str = ""
+    try:
+        pid_str = lock_path.read_text().strip()
+    except OSError as exc:
+        click.echo(f"  Could not read lock file: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    pid_alive = False
+    proc_name = ""
+    if pid_str:
+        try:
+            pid = int(pid_str)
+            os.kill(pid, 0)
+            pid_alive = True
+            # Read /proc/<pid>/comm on Linux to surface what the PID
+            # actually IS — helps the user decide whether it's a real
+            # Urika run vs a recycled-PID false positive.
+            comm_path = f"/proc/{pid}/comm"
+            try:
+                with open(comm_path) as f:
+                    proc_name = f.read().strip()
+            except OSError:
+                pass
+        except (ValueError, ProcessLookupError):
+            pass
+        except PermissionError:
+            pid_alive = True
+
+    if pid_alive and not force:
+        looks_like_urika = bool(re.search(r"urika|python", proc_name, re.I))
+        click.echo(
+            f"  Lock owner PID {pid_str} is ALIVE"
+            + (f" (process: {proc_name})" if proc_name else "")
+            + ".",
+            err=True,
+        )
+        if looks_like_urika:
+            click.echo(
+                "  This looks like a real running Urika process.",
+                err=True,
+            )
+            click.echo(
+                f"  Refusing to unlock without --force. If you're sure "
+                f"the PID is unrelated, run: urika unlock {project} "
+                f"{experiment_id} --force",
+                err=True,
+            )
+            raise SystemExit(1)
+        else:
+            click.echo(
+                f"  The PID does NOT look like Urika — likely a "
+                f"recycled PID. Pass --force to unlock anyway.",
+                err=True,
+            )
+            raise SystemExit(1)
+
+    try:
+        lock_path.unlink()
+        click.echo(f"  Unlocked {experiment_id}.")
+    except OSError as exc:
+        click.echo(f"  Failed to remove lock: {exc}", err=True)
+        raise SystemExit(1) from exc
 
 
 # ── Venv subgroup ───────────────────────────────────────────

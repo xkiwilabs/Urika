@@ -29,6 +29,63 @@ if TYPE_CHECKING:
 CommandHandler = Callable[["ReplSession", str], None]
 
 
+def _install_getpass_bridge() -> None:
+    """Patch Click's ``hidden_prompt_func`` so password prompts work
+    inside the TUI — closes v0.4.2 C8.
+
+    Pre-v0.4.2 ``click.prompt(hide_input=True)`` (used by
+    ``urika config api-key`` and the SMTP password prompt in
+    ``urika notifications``) called Click's default
+    ``hidden_prompt_func``, which delegates to ``getpass.getpass``.
+    On POSIX, ``getpass.getpass`` opens ``/dev/tty`` directly,
+    bypassing both ``sys.stdin`` and the TUI's stdin bridge — so
+    the prompt blocked indefinitely waiting for input that never
+    arrived. The user saw a frozen TUI with no way to recover
+    short of killing the process.
+
+    The patch checks whether the *current* ``sys.stdin`` exposes our
+    ``_tui_bridge`` marker; when it does, we read the line via the
+    bridge instead of the controlling tty. When the marker is
+    absent (CLI / bare REPL / scripted use) we fall through to the
+    original ``hidden_prompt_func`` so plain shell users still see
+    real password masking.
+
+    Idempotent: re-importing the module is a no-op once the patch
+    is in place.
+    """
+    try:
+        import click.termui as _termui
+    except Exception:
+        return
+    if getattr(_termui, "_urika_getpass_patched", False):
+        return
+    _original = _termui.hidden_prompt_func
+
+    def _bridged_hidden_prompt(prompt: str) -> str:
+        active = sys.stdin
+        if getattr(active, "_tui_bridge", False):
+            # Bridge is active — write the prompt to the captured
+            # stdout so the user sees it in the OutputPanel, then
+            # block on the bridge's readline.
+            try:
+                sys.stdout.write(prompt)
+                sys.stdout.flush()
+            except Exception:
+                pass
+            line = active.readline()
+            return line.rstrip("\r\n")
+        return _original(prompt)
+
+    _termui.hidden_prompt_func = _bridged_hidden_prompt
+    _termui._urika_getpass_patched = True  # type: ignore[attr-defined]
+
+
+# Install the patch at module-import time so any TUI worker that
+# triggers a hide_input prompt is covered without each command
+# remembering to opt in.
+_install_getpass_bridge()
+
+
 class _TuiStdinReader:
     """A file-like stdin replacement for worker threads.
 

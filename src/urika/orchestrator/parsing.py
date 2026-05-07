@@ -13,8 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
-    """Find all ```json fenced blocks in text, parse them, skip malformed."""
-    pattern = re.compile(r"```(?:json|JSON)\s*\n(.*?)```", re.DOTALL)
+    """Find all ```json fenced blocks in text, parse them, skip malformed.
+
+    Pre-v0.4.2 the regex required a literal ``\\n`` between the
+    language tag and the body, so single-line code blocks like
+    `` ```json {"foo": 1} ``` `` (which some Claude responses
+    actually emit) were silently dropped. The relaxed pattern
+    accepts the language tag followed by any whitespace, including
+    none.
+    """
+    pattern = re.compile(r"```(?:json|JSON)\s*(.*?)```", re.DOTALL)
     results: list[dict[str, Any]] = []
     for match in pattern.finditer(text):
         raw = match.group(1).strip()
@@ -41,23 +49,48 @@ def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
 
 
 def parse_run_records(text: str) -> list[RunRecord]:
-    """Extract RunRecords from JSON blocks that have run_id, method, and metrics."""
+    """Extract RunRecords from JSON blocks that have run_id, method, and metrics.
+
+    Pre-v0.4.2 the only check was membership-of-key; an agent that
+    emitted ``"metrics": "great"`` (string instead of dict) created
+    a RunRecord with a non-dict ``metrics`` field that crashed
+    downstream consumers (``metrics.values()`` / ``metrics.items()``).
+    Now we type-check ``metrics`` and ``params`` and skip the record
+    with a debug log if either is wrong.
+    """
     blocks = _extract_json_blocks(text)
     records: list[RunRecord] = []
     for block in blocks:
-        if "run_id" in block and "method" in block and "metrics" in block:
-            records.append(
-                RunRecord(
-                    run_id=block["run_id"],
-                    method=block["method"],
-                    params=block.get("params", {}),
-                    metrics=block["metrics"],
-                    hypothesis=block.get("hypothesis", ""),
-                    observation=block.get("observation", ""),
-                    next_step=block.get("next_step", ""),
-                    artifacts=block.get("artifacts", []),
-                )
+        if not all(k in block for k in ("run_id", "method", "metrics")):
+            continue
+        metrics = block["metrics"]
+        if not isinstance(metrics, dict):
+            logger.debug(
+                "Skipping run record with non-dict metrics (%s): run_id=%r",
+                type(metrics).__name__,
+                block.get("run_id"),
             )
+            continue
+        params = block.get("params", {})
+        if not isinstance(params, dict):
+            logger.debug(
+                "Skipping run record with non-dict params (%s): run_id=%r",
+                type(params).__name__,
+                block.get("run_id"),
+            )
+            continue
+        records.append(
+            RunRecord(
+                run_id=block["run_id"],
+                method=block["method"],
+                params=params,
+                metrics=metrics,
+                hypothesis=block.get("hypothesis", ""),
+                observation=block.get("observation", ""),
+                next_step=block.get("next_step", ""),
+                artifacts=block.get("artifacts", []),
+            )
+        )
     return records
 
 

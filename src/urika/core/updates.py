@@ -23,16 +23,35 @@ def _installed_version() -> str:
         return "0.0.0"
 
 
-def _parse_version(v: str) -> tuple[int, ...]:
-    """Parse a version string like '0.2.1' into a tuple."""
+def _parse_version(v: str) -> "Version":
+    """Parse a version string like '0.2.1' or 'v0.4.0rc1' into a comparable
+    :class:`packaging.version.Version`.
+
+    Pre-v0.4.2 used a hand-rolled tuple parser that ``break``ed on the
+    first non-int token: ``"0.4.0rc1".split(".")`` → ``["0","4","0rc1"]``,
+    ``int("0rc1")`` raised, and the parser returned ``(0, 4)`` — so
+    ``"0.4.0rc1"`` was treated as *less than* ``"0.4.0"``, defeating
+    pre-release ordering. ``packaging.version.Version`` understands
+    PEP 440 (alpha/beta/rc/dev) so the comparison is correct.
+
+    Returns the lowest comparable Version (``0.0.0``) for inputs that
+    even ``packaging`` can't parse, preserving the prior contract that
+    update checks never crash the CLI on a malformed tag.
+    """
+    from packaging.version import InvalidVersion, Version
+
     v = v.lstrip("v").strip()
-    parts = []
-    for p in v.split("."):
-        try:
-            parts.append(int(p))
-        except ValueError:
-            break
-    return tuple(parts) if parts else (0,)
+    if not v:
+        return Version("0.0.0")
+    try:
+        return Version(v)
+    except InvalidVersion:
+        return Version("0.0.0")
+
+
+# Re-export so the type hint above resolves without an import-time
+# circular dependency.
+from packaging.version import Version  # noqa: E402
 
 
 def _load_cache() -> dict:
