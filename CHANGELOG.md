@@ -5,6 +5,263 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-05-07
+
+Hardening release driven by a comprehensive 6-surface code audit
+(CLI, TUI, Dashboard, Core, Code health, Tests) plus two beta-user
+bug reports (advisor→/run silent failure, agent simulating data on
+first experiments). Eleven internal "packages" of fixes, 2844 tests
+passing (+161 new), zero regressions.
+
+### Security
+
+- **OAuth scrub completeness** — `core/compliance.py::_OAUTH_TOKEN_VARS`
+  was defined but never used; only two of nine OAuth/identity tokens
+  were blanked when spawning the bundled `claude` CLI subprocess.
+  Critically, `CLAUDE_CODE_OAUTH_REFRESH_TOKEN` was left live, so
+  the access-token blank could be re-minted by the subprocess. Now
+  the constant is iterated and includes all 9 OAuth tokens (refresh,
+  identity, websocket-auth, file-descriptor variants) + 9 nested-
+  session markers (CLAUDE_CODE_SESSION_ID/KIND/NAME/LOG, REMOTE,
+  TMUX, AGENT, ACTION, RESUME).
+- **Privacy fail-closed on corrupt config** — `core/privacy.py` and
+  `agents/config.py` no longer silently default to "open mode" when
+  `urika.toml` fails to parse. `FileNotFoundError` → open
+  (legitimate), `TOMLDecodeError` → fail-closed with a clear error.
+- **Endpoint hostname check** — `agents/config.py:194` URL match
+  changed from substring (`"anthropic.com" in url`) to
+  `urlparse().hostname` + suffix match. Closes
+  `http://anthropic.com.evil.com` getting cloud's larger context-
+  window allocation.
+- **Vault file race closed** — `vault.py` `FileBackend` now creates
+  files via `os.open(O_CREAT|O_EXCL, 0o600)` instead of write-then-
+  chmod. No window between file creation and mode set during which
+  another local user could read.
+- **`urika new --json` requires `--overwrite`** — pre-fix the
+  flag-less `--json` path silently `shutil.rmtree`'d any existing
+  project of the same name (data loss for scripted-create users).
+
+### Added
+
+- **Atomic JSON state writes** — new `core/atomic_write.py`
+  (`write_text_atomic`, `write_json_atomic`) using temp-file +
+  `os.replace` + parent-dir fsync. Migrated 9 sites: `registry.py`,
+  `orchestrator_sessions.py`, `session.py`, `advisor_memory.py`,
+  `progress.py`, `criteria.py`, `method_registry.py`, `usage.py`,
+  three sites in `vault.py`. SIGTERM mid-write no longer corrupts
+  state files. Advisor history corrupt-file is preserved as
+  `.corrupt-<ts>.json` instead of silently zeroed.
+- **Real-data-only enforcement** — `task_agent_system.md` and
+  `data_agent_system.md` now have explicit "Critical: Real Data
+  Only" sections forbidding data simulation, fabrication, or
+  substitution. Lists canonical forbidden patterns
+  (`np.random.normal` for inputs, `sklearn.datasets.make_*`,
+  hardcoded `pd.DataFrame({...})` literals, `simulate_*` /
+  `fake_*` / `dummy_*` helpers, "simulating because too long"
+  comments) with explicit allowed-uses-of-randomness carve-out for
+  legitimate train/test shuffling, bootstrap resampling FROM real
+  data, model init, CV seeds. STOP-and-report instead of substitute
+  when data genuinely cannot be loaded.
+- **Runtime data-integrity scanner** — new `core/data_integrity.py`
+  scans each turn's method scripts for real-data signals
+  (`pd.read_*`, `np.load`, project `data_paths` basenames, urika
+  tool imports) and synthetic-data signals (`make_*`, `simulate_`
+  helpers, "synthetic data" comments). Emits a SUSPECT warning to
+  the live log + dashboard SSE when a turn produces synthetic-only
+  runs, so the suspicion lands in `run.log` rather than being
+  silently recorded as a real result.
+- **`urika unlock <project> [exp_id]`** — new CLI command for
+  clearing stale lockfiles. Safe by default: refuses to unlock if
+  the lock's PID is alive AND its process name (via
+  `/proc/<pid>/comm`) looks like Urika. `--force` overrides for
+  PID-recycle false positives. Closes the user-reported "stops
+  with lockfile message on a project from an older release" flow.
+- **`/setup` slash registered in TUI/REPL** — pre-fix `"setup"`
+  was listed in `tui/app.py::_WORKER_COMMANDS` but had no handler;
+  typing `/setup` printed "Unknown command".
+- **Five missing slash commands wired** — `/summarize`,
+  `/sessions [list|export]`, `/memory [list|show|delete]`,
+  `/venv [create|status]`, `/experiment-create` now reachable from
+  the TUI/REPL with the same effect as the equivalent shell
+  commands.
+- **getpass bridge for the TUI** —
+  `tui/agent_worker._install_getpass_bridge` patches
+  `click.termui.hidden_prompt_func` once at import. Pre-fix
+  `click.prompt(hide_input=True)` (4 sites in `cli/config.py` for
+  API-key entry plus `cli/config_notifications.py` for SMTP
+  password) called `getpass.getpass`, which on POSIX opens
+  `/dev/tty` directly, bypassing both `sys.stdin` and the TUI's
+  stdin bridge — the prompt blocked indefinitely.
+- **Vendored htmx, alpine, chart.js** under
+  `dashboard/static/vendor/`. Dashboard now works offline / air-
+  gapped. Pre-fix these loaded from unpkg.com / cdn.jsdelivr.net.
+- **Sidebar links for Compare + Criteria** — both pages rendered
+  correctly but were reachable only via deeplink.
+- **SSE disconnect detection** — all 5 SSE endpoints
+  (`/runs/<id>/stream`, `/finalize/stream`, `/summarize/stream`,
+  `/tools/build/stream`, `/advisor/stream`) now poll
+  `request.is_disconnected()`. Pre-fix a closed browser tab left
+  the generator polling disk every 0.5s until the lockfile
+  disappeared, leaking coroutine slots under load.
+- **Per-project `context_window` + `max_output_tokens`** form
+  fields on the dashboard's project Settings → Privacy tab. The
+  v0.4.1 fields were on global Settings only; the per-project API
+  parser silently dropped them when typed in the per-project form.
+- **`pytest` markers `slow` and `integration`** registered in
+  `pyproject.toml`. Long-running SSE tests + the pytest-wrapped
+  smoke harness (`tests/test_smoke/test_smoke_open.py`) marked
+  appropriately. Default `pytest` is now ~1 minute (down from ~7).
+- **`urika logs` actually tails `run.log`** — pre-fix the
+  docstring claimed "Show experiment run log" but the body only
+  printed `progress.json` runs/metrics; `run.log` was never
+  opened. `--summary` preserves the legacy progress-summary view;
+  `--tail N` controls trailing line count.
+
+### Changed
+
+- **Empty legacy lockfiles treated as stale unconditionally** —
+  pre-v0.3 (commit 2fdae4b4) `acquire_lock` used `path.touch()`
+  which created EMPTY lock files. Current release ALWAYS writes
+  the PID. Pre-fix the acquire-lock code refused for 6 hours
+  after an empty lock's mtime — catching brand-new releases
+  bouncing off ancient locks left over from pre-v0.3 crashes.
+  Now: any empty lock = pre-v0.3 leftover = stale, clean it up
+  immediately. Better error message in `start_session` points the
+  user at the new `urika unlock` recovery command.
+- **`/advisor` invokes the actual `advisor_agent` role** — pre-fix
+  `cmd_advisor` delegated to `_handle_free_text` which runs
+  `OrchestratorChat` (a different agent with a different system
+  prompt and no access to `advisor_memory`). The shell `urika
+  advisor` always invoked the real role; the slash now matches.
+  Persists exchanges via `advisor_memory.append_exchange`,
+  parses suggestions on the response.
+- **TUI free-text injection blocked while busy** — pre-fix the
+  TUI queued the text and replayed it after the worker exited,
+  with stale-context, drain-race, and silent-bury problems plus
+  inconsistency with the REPL's blocking-prompt model. Now: a
+  one-line panel hint pointing the user at /stop, /pause, or
+  "open another terminal for a parallel chat." Slash dispatcher
+  also rejects free-text during non-/run agents (where queued
+  text was previously dead-stored). Reader-feed and queue-during-
+  /run paths preserved (legitimate uses for click.prompt
+  injection inside the orchestrator loop).
+- **/pause cooperative flag only written during /run or /resume**
+  — pre-fix typing `/pause` during `/finalize` or `/report` wrote
+  a `pause_requested` flag that the next /run picked up and
+  immediately paused on. Now `cmd_pause` checks
+  `active_command in ("run", "resume")`.
+- **/resume preserves `advisor_first` + `review_criteria`** — pre-
+  fix /resume silently dropped both flags to False even when the
+  original /run had them on. Now read from `[preferences]` in
+  `urika.toml` and forwarded through `ctx.invoke(cli_run, ...)`.
+- **Remote `/run` accepts `--no-advisor-first` / `--advisor-first`**
+  — pre-fix the worker hardcoded `advisor_first=True` for remote
+  callers, leaving Slack/Telegram users unable to opt out.
+- **Remote command map driven by the live registry** — pre-fix
+  `_REMOTE_COMMAND_MAP` was a hardcoded list of 9 names that
+  drifted away from the registry; new v0.4.2 slashes were silently
+  unreachable from Slack/Telegram. Now built from `GLOBAL_COMMANDS
+  ∪ PROJECT_COMMANDS` minus an explicit `_REMOTE_BLOCKED_COMMANDS`
+  block-list (interactive editors, destructive admin actions).
+- **REPL `/summarize` runs as an agent command** — pre-fix it ran
+  on the main thread and blocked the prompt for the duration of a
+  multi-minute agent call.
+- **REPL parses advisor suggestions on free-text reply** — pre-fix
+  `_handle_free_text` defined `_offer_to_run_suggestions` a few
+  lines below but never called it; the REPL had the same advisor→
+  /run silent-fail-to-pending bug as the TUI. Now both UIs are
+  parity-locked on the suggestion path.
+- **Update banner suppressed under `--json`** — pre-fix a user
+  running `urika list --json` from an interactive TTY got a banner
+  prepended to the JSON document, breaking parsers.
+- **`cli/run_planning.py::_best_metric_val` honors
+  `_LOWER_IS_BETTER`** — pre-fix `max(nums)` ranked RMSE=12.3
+  above RMSE=0.42 (worst-as-best for error metrics). Now prefers
+  a higher-is-better metric when present and inverts when only
+  lower-is-better metrics are available.
+- **`packaging.version.Version` for update comparison** — pre-fix
+  `_parse_version` truncated at first non-int (`0.4.0rc1` → `(0,4)`
+  → equal to `0.4.0` → wrong pre-release ordering).
+- **Token accounting separates fresh / cache-create / cache-read**
+  — `AgentResult` gained `input_tokens_only`, `cache_creation_in`,
+  `cache_read_in` fields. `core/usage.py::estimate_cost` applies
+  Anthropic's 1.25× cache-creation premium and 0.10× cache-read
+  discount when the breakdown is supplied. Pre-fix everything was
+  billed at fresh-input rates, overstating cost for cache-heavy
+  workloads.
+- **TUI `/pause` reachable while busy** — pre-fix
+  `_ALWAYS_ALLOWED_COMMANDS = {"quit", "stop"}` rejected `/pause`,
+  making the documented "pause mid-experiment" feature
+  structurally unreachable from the TUI.
+- **TUI remote chat parses suggestions** — Slack/Telegram users
+  hit the same advisor→/run silent fail bug that Package H fixed
+  for the local InputBar path; the parallel `_run_remote_chat`
+  worker is now updated too.
+- **`set_agent_active` initialises the processing clock** — pre-
+  fix only `set_agent_running` set `_processing_start`, so REPL
+  paths (which only call `set_agent_active`) accumulated zero
+  processing time. Every REPL session logged `processing_ms=0` to
+  `usage.json`.
+- **`clear_project` mirrors `load_project`** — pre-fix it only
+  nulled three fields, leaking notification-bus thread, pending
+  suggestions, and usage counters across project deletions.
+- **REPL `cmd_advisor` correctly handles `_run_single_agent`'s
+  `str` return type** — caught the I-7 regression where the
+  `result.get(...)` call swallowed an AttributeError and silently
+  no-opped both `append_exchange` and `parse_suggestions`.
+
+### Fixed
+
+- **Orchestrator leaderboard inside the per-run loop** — pre-fix
+  the leaderboard update sat OUTSIDE the inner `for run in runs:`
+  loop, referencing the loop variable after iteration ended. On
+  any turn that produced multiple runs (multi-method exploration,
+  ensemble experiments) only the LAST run's metrics ever reached
+  the leaderboard.
+- **JSON-fence regex accepts single-line code blocks** — pre-fix
+  the regex required a literal newline between the language tag
+  and body, silently dropping ` ```json {...} ``` `.
+- **`parse_run_records` validates metrics is a dict** — pre-fix
+  an agent emitting `"metrics": "great"` (string) created a
+  RunRecord whose downstream consumers crashed on `.values()`.
+- **Email channel health check** — pre-fix returned `(True, "")`
+  for any relay that accepted NOOP without auth even when
+  `MAIL FROM` would be rejected at send time. Now probes
+  `MAIL FROM` when no password env is configured.
+- **`UserCancelled` detected by `isinstance` not string compare**
+  — pre-fix `type(exc).__name__ == "UserCancelled"` would match
+  any class anywhere named UserCancelled.
+- **`cli_display._is_tty()` re-evaluates per call** — pre-fix
+  `_IS_TTY` was frozen at import; Textual swaps `sys.stdout` after
+  import, turning spinners into permanent no-ops in the TUI.
+- **Orchestrator session ID collision at second resolution** —
+  pre-fix `_timestamp_id` returned `%S` precision; two sessions
+  in the same wall-clock second collided. Now appends a 4-hex
+  random suffix.
+- **Empty-string secrets distinguishable from unset** — vault
+  `get` uses `is not None` checks at all 3 tiers.
+- **Bare `except:` in `core/session.py:165`** narrowed to
+  `except Exception:` so `KeyboardInterrupt` propagates cleanly.
+
+### Removed
+
+- **TypeScript TUI launcher (`urika tui` CLI command)** — the TS
+  TUI was archived to `dev/archive/typescript-tui/` and gitignored
+  from main, but the launcher in `src/urika/cli/tui.py` shipped on
+  main as a discoverable command pointing at vaporware. The
+  Python Textual TUI (`urika` no-args, the documented default) is
+  unchanged.
+
+### Internal
+
+- 161 new tests across 12 new test files plus updates to existing
+  tests for the new contracts. Suite now 2844 total (1 skipped),
+  runs in ~65 seconds (down from ~7 minutes after the slow-marker
+  hardening + sleep removals).
+- 5 of 45 audit findings refuted by direct code reading rather
+  than agent reports — caught two false-positive "fixes for fixes"
+  before they shipped.
+
 ## [0.4.1] - 2026-05-03
 
 Hardening release. No new feature surface — closes the v0.4.x bug
