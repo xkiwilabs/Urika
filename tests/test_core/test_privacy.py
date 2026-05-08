@@ -13,7 +13,12 @@ class TestPrivacyCheck:
         ok, msg = check_private_endpoint(tmp_path)
         assert ok is True
 
-    def test_hybrid_no_endpoint_fails(self, tmp_path):
+    def test_hybrid_no_endpoint_fails(self, tmp_path, monkeypatch):
+        # Hermetic: point URIKA_HOME at an empty dir so the global
+        # settings.toml is absent and ``get_named_endpoints()`` returns
+        # []. Otherwise this test would pass-or-fail based on the
+        # developer's real ~/.urika/settings.toml contents.
+        monkeypatch.setenv("URIKA_HOME", str(tmp_path / "empty-home"))
         (tmp_path / "urika.toml").write_text(
             '[project]\nname = "test"\nquestion = "q"\nmode = "exploratory"\n\n'
             '[privacy]\nmode = "hybrid"\n'
@@ -21,6 +26,148 @@ class TestPrivacyCheck:
         ok, msg = check_private_endpoint(tmp_path)
         assert ok is False
         assert "No private endpoint" in msg
+
+    def test_hybrid_inherits_global_endpoint_when_project_has_none(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression: if the project's ``urika.toml`` declares
+        ``mode = "hybrid"`` but no ``[privacy.endpoints.private]`` block,
+        ``check_private_endpoint`` must fall back to globals — matching
+        the runtime loader at ``agents/config.py:340-349``.
+
+        Pre-fix: project_builder.py's "skip duplicate write when URL
+        matches global" optimization left the project's TOML without
+        an endpoint block. The runtime loader inherited from globals,
+        but this preflight did not — so every hybrid run failed turn 1
+        with "No private endpoint configured for hybrid mode" even
+        though the global endpoint was reachable.
+        """
+        from unittest.mock import patch, MagicMock
+        import urllib.request
+
+        # Set up a global ~/.urika/settings.toml under URIKA_HOME with
+        # a private endpoint defined — but no project-level endpoint.
+        global_home = tmp_path / "global-home"
+        global_home.mkdir()
+        (global_home / "settings.toml").write_text(
+            '[privacy.endpoints.private]\n'
+            'base_url = "http://localhost:11434"\n'
+            'api_key_env = "OLLAMA_KEY"\n'
+        )
+        monkeypatch.setenv("URIKA_HOME", str(global_home))
+
+        # Project declares hybrid mode but no endpoint block.
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "urika.toml").write_text(
+            '[project]\nname = "test"\nquestion = "q"\nmode = "exploratory"\n\n'
+            '[privacy]\nmode = "hybrid"\n'
+        )
+
+        captured: dict = {}
+        original_request = urllib.request.Request
+
+        def capturing_request(*args, **kwargs):
+            req = original_request(*args, **kwargs)
+            captured["url"] = req.full_url
+            return req
+
+        with patch("urllib.request.Request", side_effect=capturing_request), \
+             patch("urllib.request.urlopen", return_value=MagicMock()):
+            ok, msg = check_private_endpoint(proj)
+
+        assert ok is True, f"Expected global fallback to succeed, got: {msg!r}"
+        # The pinged URL should be derived from the global base_url.
+        assert "localhost:11434" in captured.get("url", ""), (
+            f"Expected to ping globally-configured endpoint, "
+            f"got: {captured.get('url')!r}"
+        )
+
+    def test_hybrid_inherits_global_api_key_env_too(
+        self, tmp_path, monkeypatch
+    ):
+        """When falling back to globals, the api_key_env from the global
+        endpoint must also flow through so auth-protected globals get
+        their bearer token sent."""
+        from unittest.mock import patch, MagicMock
+        import urllib.request
+
+        global_home = tmp_path / "global-home"
+        global_home.mkdir()
+        (global_home / "settings.toml").write_text(
+            '[privacy.endpoints.private]\n'
+            'base_url = "http://localhost:4200"\n'
+            'api_key_env = "GLOBAL_VLLM_KEY"\n'
+        )
+        monkeypatch.setenv("URIKA_HOME", str(global_home))
+        monkeypatch.setenv("GLOBAL_VLLM_KEY", "sk-global-token")
+        monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "urika.toml").write_text(
+            '[project]\nname = "test"\nquestion = "q"\nmode = "exploratory"\n\n'
+            '[privacy]\nmode = "private"\n'
+        )
+
+        captured: dict = {}
+        original_request = urllib.request.Request
+
+        def capturing_request(*args, **kwargs):
+            req = original_request(*args, **kwargs)
+            captured["headers"] = dict(req.header_items())
+            return req
+
+        with patch("urllib.request.Request", side_effect=capturing_request), \
+             patch("urllib.request.urlopen", return_value=MagicMock()):
+            ok, msg = check_private_endpoint(proj)
+
+        assert ok is True
+        auth = captured["headers"].get("Authorization", "")
+        assert auth == "Bearer sk-global-token", (
+            f"global api_key_env didn't flow through; got Authorization={auth!r}"
+        )
+
+    def test_project_endpoint_overrides_global(self, tmp_path, monkeypatch):
+        """When BOTH project-level and global endpoints exist, the
+        project's endpoint wins (consistent with agents/config.py:342
+        ``if ep_name in endpoints: continue``).
+        """
+        from unittest.mock import patch, MagicMock
+        import urllib.request
+
+        global_home = tmp_path / "global-home"
+        global_home.mkdir()
+        (global_home / "settings.toml").write_text(
+            '[privacy.endpoints.private]\n'
+            'base_url = "http://global.example:9999"\n'
+        )
+        monkeypatch.setenv("URIKA_HOME", str(global_home))
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "urika.toml").write_text(
+            '[project]\nname = "test"\nquestion = "q"\nmode = "exploratory"\n\n'
+            '[privacy]\nmode = "hybrid"\n\n'
+            '[privacy.endpoints.private]\n'
+            'base_url = "http://project.example:1111"\n'
+        )
+
+        captured: dict = {}
+        original_request = urllib.request.Request
+
+        def capturing_request(*args, **kwargs):
+            req = original_request(*args, **kwargs)
+            captured["url"] = req.full_url
+            return req
+
+        with patch("urllib.request.Request", side_effect=capturing_request), \
+             patch("urllib.request.urlopen", return_value=MagicMock()):
+            ok, msg = check_private_endpoint(proj)
+
+        assert ok is True
+        assert "project.example:1111" in captured["url"]
+        assert "global.example" not in captured["url"]
 
     def test_hybrid_unreachable_fails(self, tmp_path):
         (tmp_path / "urika.toml").write_text(

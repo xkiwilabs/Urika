@@ -42,10 +42,38 @@ def check_private_endpoint(project_dir: Path) -> tuple[bool, str]:
     if mode == "open":
         return True, ""
 
-    # Find the private endpoint URL
+    # Find the private endpoint URL.
+    #
+    # Live-inherit from globals when the project hasn't defined its own
+    # endpoint. Mirrors ``agents/config.py:331-349`` so the runtime and
+    # this preflight agree on which endpoint will actually be used. Pre-
+    # this fix the project_builder + dashboard PATCH deliberately skipped
+    # writing ``[privacy.endpoints.private]`` into the project's
+    # ``urika.toml`` whenever the URL matched the global default — but
+    # the per-turn privacy check only read the project's TOML, so any
+    # hybrid/private project relying on the global endpoint hit
+    # "No private endpoint configured for {mode} mode" on turn 1.
     endpoints = privacy.get("endpoints", {})
-    private_ep = endpoints.get("private", {})
-    base_url = private_ep.get("base_url", "")
+    private_ep = endpoints.get("private", {}) or {}
+    base_url = (private_ep.get("base_url") or "").strip()
+    api_key_env = (private_ep.get("api_key_env") or "").strip()
+
+    if not base_url:
+        try:
+            from urika.core.settings import get_named_endpoints
+
+            for ep in get_named_endpoints():
+                if ep.get("name") != "private":
+                    continue
+                base_url = (ep.get("base_url") or "").strip()
+                if not api_key_env:
+                    api_key_env = (ep.get("api_key_env") or "").strip()
+                break
+        except Exception as exc:
+            logger.warning(
+                "Could not load global named endpoints during privacy preflight: %s",
+                exc,
+            )
 
     if not base_url:
         return False, f"No private endpoint configured for {mode} mode"
@@ -71,7 +99,6 @@ def check_private_endpoint(project_dir: Path) -> tuple[bool, str]:
         # added via ``urika config secret`` since process start is
         # visible.
         headers: dict[str, str] = {}
-        api_key_env = (private_ep.get("api_key_env") or "").strip()
         if api_key_env:
             try:
                 from urika.core.secrets import load_secrets
