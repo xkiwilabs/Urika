@@ -1,0 +1,6 @@
+[project]
+name = "v03x-corrupt-progress"
+question = "What clusters exist in the data?"
+mode = "exploratory"
+description = "Legacy fixture: progress.json was half-written when the parent process died. v0.4.2 should not crash when reading."
+data_paths = ["data/sample.csv"]

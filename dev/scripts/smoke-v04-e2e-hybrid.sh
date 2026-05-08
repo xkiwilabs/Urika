@@ -42,6 +42,8 @@ echo "  data:       $DATASET"
 echo "  proj dir:   $PROJ_DIR"
 echo "  log dir:    $URIKA_E2E_LOG_DIR"
 echo "  cleanup:    ${CLEANUP:-no}"
+echo "  config:     ${URIKA_SMOKE_MODE_LABEL}"
+echo "  max-turns:  ${URIKA_SMOKE_MAX_TURNS_HYBRID}"
 echo "======================================================================"
 
 # === Pre-flight ======================================================
@@ -83,6 +85,12 @@ if run_step_with_timeout "urika new" 180 \
   verify_artifact_contains "data_hashes recorded" "$PROJ_DIR/urika.toml" "data_hashes"
   verify_artifact "criteria.json" "$PROJ_DIR/criteria.json"
   verify_artifact "data dir" "$PROJ_DIR/data"
+
+  # v0.4.3 Track 2d: cheap-config model overrides (no-op when
+  # URIKA_SMOKE_REAL=1). Note that hybrid mode's data agent is
+  # already on the private endpoint via global settings; this
+  # only retunes the cloud-bound agents to sonnet for cost.
+  inject_cheap_models "$PROJ_DIR"
 fi
 
 # === 2. status / inspect =============================================
@@ -116,9 +124,9 @@ fi
 # hybrid runs as failures (the v0.4.1 #3 fix means the
 # `keeping completed status` branch is the right outcome when this
 # does fire).
-step "6. urika run --max-turns 5"
+step "6. urika run --max-turns ${URIKA_SMOKE_MAX_TURNS_HYBRID}"
 if run_step_with_timeout "run experiment 1" 5400 \
-     urika run "$PROJ" --max-turns 5 --auto -q
+     urika run "$PROJ" --max-turns ${URIKA_SMOKE_MAX_TURNS_HYBRID} --auto -q
 then
   verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
 fi
@@ -126,7 +134,7 @@ fi
 # === 7. autonomous mode ==============================================
 step "7. urika run --max-experiments 2 --budget 3.00"
 run_step_with_timeout "autonomous 2 experiments" 5400 \
-  urika run "$PROJ" --max-experiments 2 --max-turns 5 --budget 3.00 --auto -q
+  urika run "$PROJ" --max-experiments 2 --max-turns ${URIKA_SMOKE_MAX_TURNS_HYBRID} --budget 3.00 --auto -q
 
 # === 8. evaluate =====================================================
 step "8. urika evaluate (latest experiment)"

@@ -1,0 +1,6 @@
+[project]
+name = "v030-empty-lockfile"
+question = "Does X predict Y?"
+mode = "exploratory"
+description = "Legacy fixture: simulates a project from a pre-v0.3 release that crashed before clean shutdown, leaving an empty .lock file behind. v0.4.2 Package K should treat this as stale."
+data_paths = ["data/sample.csv"]

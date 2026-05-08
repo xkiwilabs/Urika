@@ -32,6 +32,81 @@ PASS=0
 FAIL=0
 RESULTS=()
 
+# v0.4.3 Track 2d: cheap-config smoke variant.
+#
+# By default the smoke uses a smaller / cheaper model split
+# (sonnet for reasoning, haiku for execution) and a reduced
+# max-turns so dev iteration on the harness itself is fast and
+# inexpensive (~$0.50, ~10 min). This catches plumbing bugs
+# (orchestrator loop, parsing, atomic writes, prompt assembly,
+# advisor handoff) without burning opus per iteration.
+#
+# Pre-release validation flips back to the canonical opus + 5-turn
+# config: ``URIKA_SMOKE_REAL=1 bash dev/scripts/smoke-v04-e2e-open.sh``.
+# The release-to-main.sh canonical flow doesn't auto-set this — the
+# user invokes the smoke explicitly before tagging.
+if [[ "${URIKA_SMOKE_REAL:-0}" == "1" ]]; then
+    URIKA_SMOKE_MAX_TURNS_OPEN=5
+    URIKA_SMOKE_MAX_TURNS_HYBRID=5
+    URIKA_SMOKE_MODE_LABEL="REAL (opus + 5 turns)"
+    URIKA_SMOKE_INJECT_CHEAP_MODELS=0
+else
+    URIKA_SMOKE_MAX_TURNS_OPEN=3
+    URIKA_SMOKE_MAX_TURNS_HYBRID=2
+    URIKA_SMOKE_MODE_LABEL="CHEAP (sonnet + haiku, reduced turns)"
+    URIKA_SMOKE_INJECT_CHEAP_MODELS=1
+fi
+export URIKA_SMOKE_MAX_TURNS_OPEN URIKA_SMOKE_MAX_TURNS_HYBRID URIKA_SMOKE_MODE_LABEL URIKA_SMOKE_INJECT_CHEAP_MODELS
+
+# Helper: write per-agent model overrides into a freshly-created
+# project's urika.toml so the cheap-config smoke uses sonnet for
+# reasoning and haiku for execution. Project-level overrides win
+# over the global ``[runtime.modes.<mode>].models`` settings, so
+# this is fully scoped to the smoke project — the user's global
+# config is unchanged.
+#
+# No-op when URIKA_SMOKE_INJECT_CHEAP_MODELS=0 (real mode).
+inject_cheap_models() {
+    local proj_dir="$1"
+    if [[ "${URIKA_SMOKE_INJECT_CHEAP_MODELS:-0}" != "1" ]]; then
+        return 0
+    fi
+    if [[ ! -f "$proj_dir/urika.toml" ]]; then
+        log "⚠ inject_cheap_models: $proj_dir/urika.toml not found, skipping"
+        return 0
+    fi
+    log "▸ Injecting cheap-config models (sonnet + haiku) into project urika.toml"
+    cat >> "$proj_dir/urika.toml" <<'EOF'
+
+# v0.4.3 Track 2d cheap-smoke override: pin reasoning agents to
+# sonnet and execution agents to haiku for this project only.
+# Set URIKA_SMOKE_REAL=1 in the environment to skip this block.
+[runtime.models.planning_agent]
+model = "claude-sonnet-4-5"
+
+[runtime.models.advisor_agent]
+model = "claude-sonnet-4-5"
+
+[runtime.models.evaluator]
+model = "claude-sonnet-4-5"
+
+[runtime.models.finalizer]
+model = "claude-sonnet-4-5"
+
+[runtime.models.report_agent]
+model = "claude-sonnet-4-5"
+
+[runtime.models.presentation_agent]
+model = "claude-sonnet-4-5"
+
+[runtime.models.task_agent]
+model = "claude-haiku-4-5"
+
+[runtime.models.tool_builder]
+model = "claude-haiku-4-5"
+EOF
+}
+
 log() { echo "  $*" | tee -a "$URIKA_E2E_LOG_DIR/run.log"; }
 step() {
   echo

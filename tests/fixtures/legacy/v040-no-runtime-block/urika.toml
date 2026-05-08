@@ -1,0 +1,9 @@
+[project]
+name = "v040-no-runtime-block"
+question = "Bug check: does the loader handle older urika.toml shapes?"
+mode = "exploratory"
+description = "Legacy fixture: older urika.toml shape without [runtime] or [privacy] blocks. The loader should fall back to defaults."
+data_paths = ["data/sample.csv"]
+
+[preferences]
+audience = "standard"

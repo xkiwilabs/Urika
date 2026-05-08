@@ -37,6 +37,8 @@ echo "  data:       $DATASET"
 echo "  proj dir:   $PROJ_DIR"
 echo "  log dir:    $URIKA_E2E_LOG_DIR"
 echo "  cleanup:    ${CLEANUP:-no}"
+echo "  config:     ${URIKA_SMOKE_MODE_LABEL}"
+echo "  max-turns:  ${URIKA_SMOKE_MAX_TURNS_OPEN}"
 echo "======================================================================"
 
 # === Pre-flight: API key present =====================================
@@ -60,6 +62,11 @@ if run_step_with_timeout "urika new" 180 \
   verify_artifact "criteria.json" "$PROJ_DIR/criteria.json"
   verify_artifact "data dir" "$PROJ_DIR/data"
   verify_artifact "projectbook dir" "$PROJ_DIR/projectbook"
+
+  # v0.4.3 Track 2d: pin per-agent models cheaply for default smoke
+  # runs. No-op when URIKA_SMOKE_REAL=1 (pre-release validation
+  # uses the global config — typically opus + sonnet).
+  inject_cheap_models "$PROJ_DIR"
 fi
 
 # === 2. urika status & inspect (read-only sanity) ====================
@@ -92,9 +99,9 @@ fi
 # orchestrator's post-criteria finalize sequence (which runs both
 # experiment-level AND project-level narrative agents — the project
 # narrative routinely takes 10-15 min on cloud models).
-step "6. urika run --max-turns 5 (single experiment)"
+step "6. urika run --max-turns ${URIKA_SMOKE_MAX_TURNS_OPEN} (single experiment)"
 if run_step_with_timeout "run experiment 1" 2700 \
-     urika run "$PROJ" --max-turns 5 --auto -q
+     urika run "$PROJ" --max-turns ${URIKA_SMOKE_MAX_TURNS_OPEN} --auto -q
 then
   verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
   verify_artifact "leaderboard.json" "$PROJ_DIR/leaderboard.json"
@@ -111,7 +118,7 @@ log "First experiment: ${FIRST_EXP:-<none>}"
 # Anthropic open mode; for slower endpoints this gives headroom.
 step "7. urika run --max-experiments 2 --budget 2.00"
 run_step_with_timeout "autonomous 2 experiments" 4800 \
-  urika run "$PROJ" --max-experiments 2 --max-turns 5 --budget 2.00 --auto -q
+  urika run "$PROJ" --max-experiments 2 --max-turns ${URIKA_SMOKE_MAX_TURNS_OPEN} --budget 2.00 --auto -q
 
 # === 8. urika evaluate ===============================================
 step "8. urika evaluate (latest experiment)"
