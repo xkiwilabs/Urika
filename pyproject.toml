@@ -55,6 +55,10 @@ dependencies = [
     "jinja2>=3.1",
     # PEP 440-aware version comparison (used by core.updates).
     "packaging>=21.0",
+    # Cross-platform PID-alive check for experiment lockfiles. os.kill(pid, 0)
+    # raises OSError(WinError 87) on Windows for dead PIDs (not ProcessLookupError),
+    # which the lockfile self-heal logic was misclassifying as "lock still valid".
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]

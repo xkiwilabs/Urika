@@ -595,3 +595,135 @@ class TestStaleLockDetection:
         lock.parent.mkdir(parents=True, exist_ok=True)
         assert acquire_lock(tmp_path, "exp-001") is True
         assert lock.read_text().strip() == str(os.getpid())
+
+
+class TestCrossPlatformPidCheck:
+    """Regression: pre-fix the lockfile self-heal logic used
+    ``os.kill(pid, 0)`` and only treated ``ProcessLookupError`` as
+    "dead PID". On Windows ``os.kill(dead_pid, 0)`` raises
+    ``OSError(WinError 87)``, which the catch-all ``except OSError:
+    return False`` (= "lock is valid") misclassified as "process is
+    alive". Result: every Windows experiment failure left a stale
+    lock that never self-healed. Reported by a beta tester whose
+    project became unusable after the first failed run.
+
+    These tests simulate the Windows-specific exception types via
+    monkeypatch to confirm psutil-based detection works regardless
+    of which OSError subtype the platform raises.
+    """
+
+    def test_dead_pid_self_heals_on_windows_simulated(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Simulate the Windows os.kill behavior: dead PID raises
+        ``OSError(WinError 87)`` instead of ``ProcessLookupError``.
+        Pre-fix this fell into ``except OSError: return False`` and
+        treated the lock as valid forever. With psutil, the dead PID
+        is correctly detected and the lock is unlinked."""
+        import os
+        from urika.core import session as session_mod
+
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("99999998")
+
+        def fake_kill(pid, sig):
+            if pid == 99999998:
+                raise OSError(87, "The parameter is incorrect")
+            return None
+
+        # Force the os.kill fallback path AND the Windows-style raise.
+        def fake_psutil_pid_exists(pid):
+            return False
+
+        # Patch both paths: psutil.pid_exists handles modern Linux/Win,
+        # the os.kill fallback is only hit if psutil import fails.
+        import psutil
+        monkeypatch.setattr(psutil, "pid_exists", fake_psutil_pid_exists)
+        monkeypatch.setattr(os, "kill", fake_kill)
+
+        # Acquire should detect the dead PID and unlink the stale lock.
+        assert acquire_lock(tmp_path, "exp-001") is True
+        # The new lock should now contain OUR PID, not the stale one.
+        assert lock.read_text().strip() == str(os.getpid())
+
+    def test_alive_pid_blocks_via_psutil(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """When psutil reports the lock owner is alive, acquire_lock
+        refuses (correctly). Tests that we trust psutil's verdict."""
+        import psutil
+
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("99999998")
+
+        monkeypatch.setattr(psutil, "pid_exists", lambda pid: True)
+        assert acquire_lock(tmp_path, "exp-001") is False
+
+    def test_psutil_failure_falls_back_to_os_kill(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """If psutil raises (corrupt /proc, niche platform), fall back
+        to os.kill. On Linux/macOS that path is correct; on Windows it
+        regresses, but at least Linux/macOS users always self-heal.
+        Documents the fallback contract."""
+        import os
+        import psutil
+
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("99999998")
+
+        def boom(pid):
+            raise RuntimeError("simulated psutil failure")
+
+        monkeypatch.setattr(psutil, "pid_exists", boom)
+        # On Linux, os.kill(dead_pid, 0) raises ProcessLookupError —
+        # our fallback catches it and returns False (= dead).
+        assert acquire_lock(tmp_path, "exp-001") is True
+
+    def test_pid_alive_helper_zero_pid(self) -> None:
+        """PID 0 / negative PIDs are never alive (defense-in-depth
+        against malformed lock files)."""
+        from urika.core.session import _pid_is_alive
+
+        assert _pid_is_alive(0) is False
+        assert _pid_is_alive(-1) is False
+
+    def test_garbage_in_lock_treated_as_stale(self, tmp_path: Path) -> None:
+        """A lock file containing non-numeric garbage (corrupted write,
+        manual tampering) should be treated as stale and unlinked."""
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("not-a-pid-at-all")
+        assert acquire_lock(tmp_path, "exp-001") is True
+
+
+class TestProcessNameLookup:
+    """``urika unlock`` reads the process name to surface what the PID
+    actually IS (real urika run vs recycled-PID false positive). Pre-
+    fix it read /proc/<pid>/comm directly which is Linux-only — on
+    Windows + macOS the name was always blank and the user got a
+    less-helpful "Lock owner PID is ALIVE" message with no context."""
+
+    def test_get_process_name_for_self(self) -> None:
+        """We can always read our own process name."""
+        import os
+        from urika.core.session import _get_process_name
+
+        name = _get_process_name(os.getpid())
+        # Should be non-empty (likely "python" or "pytest").
+        assert name != ""
+
+    def test_get_process_name_for_dead_pid_returns_empty(self) -> None:
+        from urika.core.session import _get_process_name
+
+        # PID very unlikely to be a real process.
+        assert _get_process_name(99999998) == ""
+
+    def test_get_process_name_invalid_input(self) -> None:
+        from urika.core.session import _get_process_name
+
+        assert _get_process_name(0) == ""
+        assert _get_process_name(-1) == ""

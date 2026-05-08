@@ -583,11 +583,14 @@ def unlock(
     ``--force`` to override (e.g. for PID-recycle false positives the
     OS handed your old PID to a different program).
     """
-    import os
     import re
 
     from urika.core.experiment import list_experiments
-    from urika.core.session import _lock_path
+    from urika.core.session import (
+        _get_process_name,
+        _lock_path,
+        _pid_is_alive,
+    )
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -629,21 +632,16 @@ def unlock(
     if pid_str:
         try:
             pid = int(pid_str)
-            os.kill(pid, 0)
-            pid_alive = True
-            # Read /proc/<pid>/comm on Linux to surface what the PID
-            # actually IS — helps the user decide whether it's a real
-            # Urika run vs a recycled-PID false positive.
-            comm_path = f"/proc/{pid}/comm"
-            try:
-                with open(comm_path) as f:
-                    proc_name = f.read().strip()
-            except OSError:
-                pass
-        except (ValueError, ProcessLookupError):
-            pass
-        except PermissionError:
-            pid_alive = True
+        except ValueError:
+            pid = -1
+        if pid > 0:
+            pid_alive = _pid_is_alive(pid)
+            if pid_alive:
+                # Surface what the PID actually IS so the user can
+                # decide whether it's a real Urika run vs a recycled-
+                # PID false positive. Cross-platform via psutil; pre-
+                # fix this read /proc/<pid>/comm and was Linux-only.
+                proc_name = _get_process_name(pid)
 
     if pid_alive and not force:
         looks_like_urika = bool(re.search(r"urika|python", proc_name, re.I))
