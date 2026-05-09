@@ -42,29 +42,57 @@ def urika_env(tmp_path: Path) -> dict[str, str]:
 # ---- Startup warning ------------------------------------------------------
 
 
-def test_warning_prints_when_api_key_missing(
-    runner: CliRunner, urika_env: dict[str, str], monkeypatch
-) -> None:
-    """When ANTHROPIC_API_KEY is unset, the CLI banner mentions it.
+def test_warning_prints_when_api_key_missing(monkeypatch) -> None:
+    """When ANTHROPIC_API_KEY is unset AND we're in an interactive
+    terminal, the CLI banner mentions it.
 
-    Note: the warning is suppressed in ``--json`` mode (see _base.py)
-    so JSON pipelines stay clean; this test runs without ``--json``
-    so the gate is open.
+    This tests the helper directly rather than through CliRunner —
+    CliRunner replaces ``sys.stderr`` with a StringIO whose
+    ``isatty()`` returns False, so the helper's TTY gate suppresses
+    the warning during CliRunner-based tests (which is correct
+    behaviour: every ``--json`` test on a machine without
+    ANTHROPIC_API_KEY would otherwise fail with a JSON parse error
+    from the warning text leaking into result.output).
+
+    The "warning silenced" tests below use CliRunner (verifying the
+    real wiring); this "warning prints" test calls the helper
+    directly with a fake interactive stream.
     """
-    # CliRunner's ``env=`` *adds* to os.environ; it does not unset
-    # already-present vars. Use monkeypatch to clear the developer's
-    # real key + force load_secrets() to be a no-op.
+    import io
+
+    from urika.cli._base import _print_api_key_warning_if_needed
+
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("URIKA_ACK_API_KEY_REQUIRED", raising=False)
-    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
 
-    result = runner.invoke(cli, ["list"], env=urika_env)
-    assert result.exit_code == 0
-    assert "ANTHROPIC_API_KEY not set" in result.output
+    buf = io.StringIO()
+    _print_api_key_warning_if_needed(buf, is_interactive=True)
+    output = buf.getvalue()
+
+    assert "ANTHROPIC_API_KEY not set" in output
     # Banner cites the Anthropic policy; the literal string crosses a
     # line break so check tokens individually.
-    assert "Consumer" in result.output
-    assert "Agent SDK" in result.output
+    assert "Consumer" in output
+    assert "Agent SDK" in output
+
+
+def test_warning_silenced_when_not_interactive(monkeypatch) -> None:
+    """Even with no API key + no ack flag, suppress the warning when
+    we're not on a TTY (CI, piped output, CliRunner, log scrapers).
+    Pre-this-fix this gate was missing and every ``--json`` CI test
+    failed with JSON parse errors from the warning leaking into
+    captured stdout.
+    """
+    import io
+
+    from urika.cli._base import _print_api_key_warning_if_needed
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("URIKA_ACK_API_KEY_REQUIRED", raising=False)
+
+    buf = io.StringIO()
+    _print_api_key_warning_if_needed(buf, is_interactive=False)
+    assert buf.getvalue() == ""
 
 
 def test_warning_silenced_when_api_key_set(

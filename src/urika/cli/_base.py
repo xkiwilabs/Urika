@@ -47,6 +47,64 @@ def _ensure_utf8_streams() -> None:
 _ensure_utf8_streams()
 
 
+def _is_interactive_stderr() -> bool:
+    """Whether the CLI is running attached to a real terminal.
+
+    Returns False under pytest's ``CliRunner`` (which replaces
+    ``sys.stderr`` with a ``StringIO`` whose ``isatty()`` returns
+    False) and when stderr is piped or redirected. Returns True only
+    in real interactive shells.
+
+    Used by the API-key warning gate. Extracted as a top-level helper
+    so tests can monkey-patch it cleanly without poking at sys.stderr.
+    """
+    return bool(getattr(sys.stderr, "isatty", lambda: False)())
+
+
+def _print_api_key_warning_if_needed(stream, is_interactive: bool) -> None:
+    """Print the Anthropic Consumer Terms §3.7 reminder if needed.
+
+    Conditions for printing:
+      - ``ANTHROPIC_API_KEY`` is unset, AND
+      - ``URIKA_ACK_API_KEY_REQUIRED`` is unset (user hasn't ack'd), AND
+      - ``is_interactive`` is True (real TTY — the warning is for humans
+        to see, not for log scrapers / JSON parsers / CliRunner.output).
+
+    Suppressing in non-interactive contexts is critical: ``CliRunner``
+    mixes stderr into ``result.output`` by default, so without this
+    gate every ``--json`` test on a machine without ``ANTHROPIC_API_KEY``
+    set fails with a JSON parse error. CI hit this on every push because
+    runners don't inherit our keyring; the local dev machine had the
+    key set so the breakage was invisible.
+    """
+    import os
+
+    if (
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("URIKA_ACK_API_KEY_REQUIRED")
+        or not is_interactive
+    ):
+        return
+
+    stream.write(
+        "\n"
+        "  \033[33m⚠ ANTHROPIC_API_KEY not set\033[0m\n"
+        "\n"
+        "  Urika requires an Anthropic API key. Per Anthropic's Consumer\n"
+        "  Terms (§3.7) and the April 2026 Agent SDK clarification, a\n"
+        "  Claude Pro/Max subscription cannot be used to authenticate the\n"
+        "  Claude Agent SDK that Urika depends on.\n"
+        "\n"
+        "  Get a key:  https://console.anthropic.com (Settings → API Keys)\n"
+        "  Save it:    urika config api-key   (interactive)\n"
+        "              # or: export ANTHROPIC_API_KEY=sk-ant-...\n"
+        "\n"
+        "  To silence this warning permanently after acknowledging:\n"
+        "    export URIKA_ACK_API_KEY_REQUIRED=1\n"
+        "\n"
+    )
+
+
 class _UrikaCLI(click.Group):
     """Custom CLI group that catches UserCancelled + UrikaError globally.
 
@@ -124,47 +182,15 @@ def cli(ctx, classic: bool) -> None:
     # only or have already acknowledged the requirement — but we surface
     # the missing key on every invocation until ack'd.
     #
-    # Suppress in --json mode: pre-fix the warning leaked into
-    # ``CliRunner.result.output`` (which mixes stderr into stdout by
-    # default), polluting every ``--json`` test on any machine without
-    # ``ANTHROPIC_API_KEY`` set. CI hit this on every push because
-    # runners don't inherit our keyring; the local dev machine had the
-    # key set so the breakage was invisible.
-    #
-    # We deliberately do NOT gate on ``stderr.isatty()`` even though
-    # the update banner does: a real interactive shell that pipes
-    # ``urika status | grep …`` keeps stderr on the terminal so the
-    # warning is still visible without polluting the pipe. CliRunner-
-    # based tests that want to assert the warning prints don't have
-    # a TTY they can simulate cleanly (the runner replaces sys.stderr
-    # with a StringIO whose isatty() can't be monkey-patched), so
-    # the simpler gate keeps those tests honest.
-    import os as _os
+    # Pre-fix the warning leaked into ``CliRunner.result.output``
+    # (which mixes stderr into stdout by default), polluting every
+    # ``--json`` test on any machine without ``ANTHROPIC_API_KEY``
+    # set. CI hit this on every push because runners don't inherit
+    # our keyring; the local dev machine had the key set so the
+    # breakage was invisible.
     import sys as _sys
 
-    _json_mode_argv = "--json" in _sys.argv
-    if (
-        not _os.environ.get("ANTHROPIC_API_KEY")
-        and not _os.environ.get("URIKA_ACK_API_KEY_REQUIRED")
-        and not _json_mode_argv
-    ):
-        _sys.stderr.write(
-            "\n"
-            "  \033[33m⚠ ANTHROPIC_API_KEY not set\033[0m\n"
-            "\n"
-            "  Urika requires an Anthropic API key. Per Anthropic's Consumer\n"
-            "  Terms (§3.7) and the April 2026 Agent SDK clarification, a\n"
-            "  Claude Pro/Max subscription cannot be used to authenticate the\n"
-            "  Claude Agent SDK that Urika depends on.\n"
-            "\n"
-            "  Get a key:  https://console.anthropic.com (Settings → API Keys)\n"
-            "  Save it:    urika config api-key   (interactive)\n"
-            "              # or: export ANTHROPIC_API_KEY=sk-ant-...\n"
-            "\n"
-            "  To silence this warning permanently after acknowledging:\n"
-            "    export URIKA_ACK_API_KEY_REQUIRED=1\n"
-            "\n"
-        )
+    _print_api_key_warning_if_needed(_sys.stderr, _is_interactive_stderr())
 
     # Check for updates on every CLI invocation (cached, non-blocking).
     # Skip when stdout isn't a TTY (catches CI runs, piped consumers,
