@@ -123,13 +123,24 @@ def cli(ctx, classic: bool) -> None:
     # depends on. We don't block — users may be running in private mode
     # only or have already acknowledged the requirement — but we surface
     # the missing key on every invocation until ack'd.
+    #
+    # Suppress in non-interactive contexts (no TTY, --json mode) for the
+    # same reason the update banner does: pre-fix the warning leaked
+    # into ``CliRunner.result.output`` (which mixes stderr into stdout
+    # by default), polluting every ``--json`` test on any machine
+    # without ``ANTHROPIC_API_KEY`` set. CI hit this on every push
+    # because runners don't inherit our keyring; the local dev machine
+    # had the key set so the breakage was invisible.
     import os as _os
+    import sys as _sys
 
-    if not _os.environ.get("ANTHROPIC_API_KEY") and not _os.environ.get(
-        "URIKA_ACK_API_KEY_REQUIRED"
+    _json_mode_argv = "--json" in _sys.argv
+    if (
+        not _os.environ.get("ANTHROPIC_API_KEY")
+        and not _os.environ.get("URIKA_ACK_API_KEY_REQUIRED")
+        and _sys.stderr.isatty()
+        and not _json_mode_argv
     ):
-        import sys as _sys
-
         _sys.stderr.write(
             "\n"
             "  \033[33m⚠ ANTHROPIC_API_KEY not set\033[0m\n"
