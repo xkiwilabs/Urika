@@ -19,11 +19,14 @@ concurrency:
 
 jobs:
   test:
-    name: Test ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Test ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
+      # Don't cancel the rest of the matrix on a single OS failure —
+      # we want to see whether the bug is platform-specific.
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12"]
 
     steps:
@@ -40,9 +43,16 @@ jobs:
         # The `dev` extra pulls in `all` -> `dl` (torch, transformers).
         # Skip the heavy DL extras in CI — no tests need them and they
         # roughly double install time.
+        # ``pexpect`` is Linux/macOS-only (Windows raises ImportError on
+        # import). The smoke-REPL tests already gate themselves with
+        # ``pytest.mark.skipif(pexpect is None, ...)`` so the Windows
+        # job will skip them rather than fail.
         run: pip install -e . pytest pytest-asyncio pyperclip ruff
 
+      # Lint only needs to run once — ubuntu+py3.12 is the canonical
+      # gate. Skipping on the other 5 jobs saves ~5 seconds each.
       - name: Ruff check
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: ruff check src/ tests/
 
       - name: Pytest
