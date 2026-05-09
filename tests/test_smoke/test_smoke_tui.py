@@ -29,8 +29,6 @@ than unit tests (3-5 seconds per test for the App lifecycle).
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest

@@ -19,7 +19,6 @@ import pytest
 from urika.core.session import (
     _lock_path,
     acquire_lock,
-    release_lock,
     start_session,
 )
 

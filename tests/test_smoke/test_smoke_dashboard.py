@@ -27,12 +27,9 @@ so the whole file runs in <15s.
 
 from __future__ import annotations
 
-import json
-import os
 import socket
 import threading
 import time
-from pathlib import Path
 
 import pytest
 

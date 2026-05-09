@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from urika.core.data_integrity import (
     assess_run_data_source,
@@ -157,7 +156,7 @@ class TestEdgeCases:
         """If a method file can't be read, scanner skips it instead of
         raising — the orchestrator should never be brought down by a
         permissions or encoding glitch."""
-        path = _seed_method(tmp_path, "ok.py", "import pandas as pd\npd.read_csv('x')\n")
+        _seed_method(tmp_path, "ok.py", "import pandas as pd\npd.read_csv('x')\n")
         # Simulate read failure by patching read_text to raise OSError.
         original_read = Path.read_text
 

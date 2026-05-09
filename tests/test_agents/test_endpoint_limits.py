@@ -11,10 +11,8 @@ them to the CLI via ``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` /
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import pytest
 
 from urika.agents.config import (
     EndpointConfig,

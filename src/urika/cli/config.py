@@ -1036,7 +1036,7 @@ def _config_secret_interactive() -> None:
     )
     click.echo()
     click.echo(
-        f"  Reference it in the dashboard's Privacy tab by entering"
+        "  Reference it in the dashboard's Privacy tab by entering"
     )
     click.echo(
         f"  {name} in the 'API key env var' field — NOT the value itself."

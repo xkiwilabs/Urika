@@ -11,13 +11,10 @@ M13 — pre-fix UserCancelled was detected via
 
 from __future__ import annotations
 
-import json
 import sys
 
-import click
 from click.testing import CliRunner
 
-from urika.cli import cli
 from urika.cli_helpers import UserCancelled
 
 

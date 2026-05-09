@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -91,8 +92,6 @@ def test_static_log_footer_js_served():
 # footer model + agent fields therefore stayed at "—" forever
 # during a running experiment, even though the rest of the run-log
 # panel was rendering the headers correctly.
-
-import re
 
 
 # JS:  /^─── ([\w ]+?)(?: Agent)? ─/

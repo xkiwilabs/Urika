@@ -621,7 +621,6 @@ class TestCrossPlatformPidCheck:
         treated the lock as valid forever. With psutil, the dead PID
         is correctly detected and the lock is unlinked."""
         import os
-        from urika.core import session as session_mod
 
         lock = _lock_path(tmp_path, "exp-001")
         lock.parent.mkdir(parents=True, exist_ok=True)
@@ -668,7 +667,6 @@ class TestCrossPlatformPidCheck:
         to os.kill. On Linux/macOS that path is correct; on Windows it
         regresses, but at least Linux/macOS users always self-heal.
         Documents the fallback contract."""
-        import os
         import psutil
 
         lock = _lock_path(tmp_path, "exp-001")
