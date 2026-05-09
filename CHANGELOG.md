@@ -5,6 +5,54 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2.1] - 2026-05-09
+
+Hotfix release for two beta-user-blocking bugs reported on Windows
++ hybrid mode. Both issues caused projects to become unusable
+after the first failed run; this release restores self-healing
+behaviour for all platforms.
+
+### Fixed
+
+- **Privacy preflight inherits global endpoints (all platforms).**
+  Hybrid/private projects whose URL matched a globally-configured
+  `[privacy.endpoints.private]` were left without a project-level
+  endpoint block in `urika.toml` (the project_builder's
+  "skip duplicate write" optimisation). The runtime loader at
+  `agents/config.py:340-349` already inherited from globals, but
+  the per-turn privacy preflight in `core/privacy.py` did not —
+  so every hybrid run failed turn 1 with "No private endpoint
+  configured for hybrid mode" even when the global endpoint was
+  reachable. `check_private_endpoint` now mirrors the inheritance
+  pattern; project-level values still win on collision. Self-heals
+  existing affected projects without requiring a re-save.
+- **Cross-platform stale-lock self-heal (fixes Windows blocker).**
+  Pre-fix `acquire_lock` used `os.kill(pid, 0)` and only treated
+  `ProcessLookupError` (Linux ESRCH) as a dead PID. Windows
+  `os.kill(dead_pid, 0)` raises `OSError(WinError 87, "The
+  parameter is incorrect")`, which the catch-all
+  `except OSError: return False` misclassified as "process is
+  alive". Result: after any experiment failure on Windows, the
+  `.lock` file never self-healed and every subsequent run hit
+  "Experiment is already running (PID X is alive)" until the user
+  manually ran `urika unlock`. Linux self-healed; Windows did not.
+  Routed PID-alive checks through `psutil.pid_exists` (now an
+  explicit dependency, was already a transitive dep on most
+  installs), with an `os.kill` fallback for the rare case where
+  psutil itself fails to import. Also fixes `urika unlock`'s
+  process-name surfacing — pre-fix it read `/proc/<pid>/comm`
+  directly which was Linux-only, leaving Windows + macOS users
+  with a less-informative safety prompt.
+
+### Internal
+
+- 12 new regression tests (4 privacy, 8 session) including a
+  Windows-simulated dead-PID test that monkeypatches `os.kill` to
+  raise `WinError 87` — verifies the fix without needing Windows
+  in CI. The pre-existing `test_hybrid_no_endpoint_fails` was made
+  hermetic via `URIKA_HOME` monkeypatch (was implicitly relying on
+  the developer's `~/.urika/settings.toml` being empty).
+
 ## [0.4.2] - 2026-05-07
 
 Hardening release driven by a comprehensive 6-surface code audit

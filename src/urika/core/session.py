@@ -22,6 +22,65 @@ def _lock_path(project_dir: Path, experiment_id: str) -> Path:
     return project_dir / "experiments" / experiment_id / ".lock"
 
 
+def _pid_is_alive(pid: int) -> bool:
+    """Return True iff a process with this PID is currently alive.
+
+    Cross-platform via psutil. Pre-this-fix the lockfile logic used
+    ``os.kill(pid, 0)`` and only treated ``ProcessLookupError`` as
+    "dead PID" — but on Windows ``os.kill(dead_pid, 0)`` raises
+    ``OSError(WinError 87)``, not ``ProcessLookupError``. The catch-all
+    ``except OSError: return False`` (where False meant "lock is valid")
+    therefore concluded EVERY dead PID was alive on Windows, leaving
+    locks effectively permanent. Reported by a Windows beta tester
+    whose project became unusable after the first failed run.
+
+    psutil.pid_exists handles the platform-specific WinError codes
+    (87 = invalid PID, 5 = access-denied = process exists, 6 = invalid
+    handle, etc.) and returns the right answer everywhere.
+    """
+    if pid <= 0:
+        return False
+    try:
+        import psutil
+
+        return psutil.pid_exists(pid)
+    except Exception as exc:
+        # If psutil itself errors (uninstallable on a niche platform,
+        # corrupt /proc, etc.), fall back to the os.kill check that
+        # works correctly on Linux/macOS. Windows users who hit this
+        # branch get the original buggy behavior — but at least Linux
+        # users always self-heal.
+        logger.warning(
+            "psutil.pid_exists failed (%s: %s); falling back to os.kill",
+            type(exc).__name__,
+            exc,
+        )
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, ValueError):
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return True
+
+
+def _get_process_name(pid: int) -> str:
+    """Best-effort process-name lookup for the unlock command's safety
+    check. Returns empty string if unavailable on this platform / for
+    this PID. Cross-platform via psutil; pre-fix this used a Linux-only
+    /proc/<pid>/comm read."""
+    if pid <= 0:
+        return ""
+    try:
+        import psutil
+
+        return psutil.Process(pid).name()
+    except Exception:
+        return ""
+
+
 def load_session(project_dir: Path, experiment_id: str) -> SessionState | None:
     """Load session state, or None if no session.json exists."""
     path = _session_path(project_dir, experiment_id)
@@ -56,39 +115,34 @@ def acquire_lock(project_dir: Path, experiment_id: str) -> bool:
         # Check if the lock is stale (owning process is dead)
         try:
             pid_str = path.read_text().strip()
-            if pid_str:
+        except OSError:
+            return False
+        if pid_str:
+            try:
                 pid = int(pid_str)
+            except ValueError:
+                # Garbage in the lock file — treat as stale.
+                pid = -1
+            if pid > 0:
                 if pid == os.getpid():
                     # Same process (e.g. dashboard wrote the lock with
                     # our PID before we started). Already ours — done.
                     return True
-                os.kill(pid, 0)  # Check if process is alive (doesn't actually kill)
-                return False  # Process is alive — lock is valid
-            else:
-                # Empty lock file. Pre-v0.3 (commit 2fdae4b4) used
-                # ``path.touch()`` which created empty locks; current
-                # release ALWAYS writes the PID into the lock at line
-                # 89 below. So any empty lock is either:
-                #   (a) leftover from a pre-v0.3 release that crashed
-                #       before clean exit, or
-                #   (b) (theoretically) a new lock racing with a
-                #       concurrent ``acquire_lock`` between create and
-                #       write — but ``write_text`` is fast enough that
-                #       this is sub-millisecond and the caller's
-                #       protection loop would retry.
-                # Either way the safest answer is "stale" — refusing
-                # for 6 hours after an old crash (the pre-v0.4.2
-                # behaviour) caught real users with brand-new releases
-                # bouncing off ancient locks. See v0.4.2 Package K.
-                pass  # Fall through to the unlink below.
-        except (ValueError, ProcessLookupError):
-            # PID is dead or invalid — lock is stale, clean it up
-            pass
-        except PermissionError:
-            return False  # Process exists but we can't signal it
-        except OSError:
-            return False  # Other OS error — be conservative
-        # If we get here, the lock is stale — remove it
+                if _pid_is_alive(pid):
+                    return False  # Process is alive — lock is valid
+                # PID is dead — fall through to unlink below.
+        # Empty lock file: pre-v0.3 (commit 2fdae4b4) used
+        # ``path.touch()`` which created empty locks; current release
+        # ALWAYS writes the PID into the lock below. So any empty lock
+        # is either (a) leftover from a pre-v0.3 release that crashed
+        # before clean exit, or (b) (theoretically) a new lock racing
+        # with a concurrent ``acquire_lock`` between create and write
+        # — but ``write_text`` is fast enough that this is sub-
+        # millisecond and the caller's protection loop would retry.
+        # Either way the safest answer is "stale" — refusing for 6
+        # hours after an old crash (the pre-v0.4.2 behaviour) caught
+        # real users with brand-new releases bouncing off ancient
+        # locks. See v0.4.2 Package K.
         try:
             path.unlink()
         except OSError:
