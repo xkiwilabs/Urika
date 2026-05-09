@@ -56,4 +56,10 @@ jobs:
         run: ruff check src/ tests/
 
       - name: Pytest
-        run: pytest -q
+        # ``-m "not integration"`` excludes the smoke harnesses
+        # (test_smoke_open: real LLM calls; test_smoke_dashboard:
+        # needs Playwright + chromium; test_smoke_repl: needs pexpect)
+        # — these are designed for manual / dedicated runs, not the
+        # per-PR gate. The rest of the suite (~2870 tests) covers
+        # the actual code paths and runs in <30s per OS.
+        run: pytest -q -m "not integration"

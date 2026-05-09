@@ -124,13 +124,21 @@ def cli(ctx, classic: bool) -> None:
     # only or have already acknowledged the requirement — but we surface
     # the missing key on every invocation until ack'd.
     #
-    # Suppress in non-interactive contexts (no TTY, --json mode) for the
-    # same reason the update banner does: pre-fix the warning leaked
-    # into ``CliRunner.result.output`` (which mixes stderr into stdout
-    # by default), polluting every ``--json`` test on any machine
-    # without ``ANTHROPIC_API_KEY`` set. CI hit this on every push
-    # because runners don't inherit our keyring; the local dev machine
-    # had the key set so the breakage was invisible.
+    # Suppress in --json mode: pre-fix the warning leaked into
+    # ``CliRunner.result.output`` (which mixes stderr into stdout by
+    # default), polluting every ``--json`` test on any machine without
+    # ``ANTHROPIC_API_KEY`` set. CI hit this on every push because
+    # runners don't inherit our keyring; the local dev machine had the
+    # key set so the breakage was invisible.
+    #
+    # We deliberately do NOT gate on ``stderr.isatty()`` even though
+    # the update banner does: a real interactive shell that pipes
+    # ``urika status | grep …`` keeps stderr on the terminal so the
+    # warning is still visible without polluting the pipe. CliRunner-
+    # based tests that want to assert the warning prints don't have
+    # a TTY they can simulate cleanly (the runner replaces sys.stderr
+    # with a StringIO whose isatty() can't be monkey-patched), so
+    # the simpler gate keeps those tests honest.
     import os as _os
     import sys as _sys
 
@@ -138,7 +146,6 @@ def cli(ctx, classic: bool) -> None:
     if (
         not _os.environ.get("ANTHROPIC_API_KEY")
         and not _os.environ.get("URIKA_ACK_API_KEY_REQUIRED")
-        and _sys.stderr.isatty()
         and not _json_mode_argv
     ):
         _sys.stderr.write(

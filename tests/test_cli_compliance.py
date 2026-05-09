@@ -45,7 +45,12 @@ def urika_env(tmp_path: Path) -> dict[str, str]:
 def test_warning_prints_when_api_key_missing(
     runner: CliRunner, urika_env: dict[str, str], monkeypatch
 ) -> None:
-    """When ANTHROPIC_API_KEY is unset, the CLI banner mentions it."""
+    """When ANTHROPIC_API_KEY is unset, the CLI banner mentions it.
+
+    Note: the warning is suppressed in ``--json`` mode (see _base.py)
+    so JSON pipelines stay clean; this test runs without ``--json``
+    so the gate is open.
+    """
     # CliRunner's ``env=`` *adds* to os.environ; it does not unset
     # already-present vars. Use monkeypatch to clear the developer's
     # real key + force load_secrets() to be a no-op.
