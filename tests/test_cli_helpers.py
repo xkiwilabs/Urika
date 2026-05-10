@@ -26,15 +26,21 @@ def test_output_json_pretty_prints(capsys):
 
 
 def test_output_json_handles_non_serializable(capsys):
-    """default=str should handle dates, paths, etc."""
+    """default=str should handle dates, paths, etc.
+
+    Path-string serialisation is platform-specific (``str(Path('/tmp/x'))``
+    is ``'/tmp/x'`` on POSIX but ``'\\tmp\\x'`` on Windows). Build the
+    expectation from the same Path instance instead of hard-coding a
+    Unix path string."""
     from pathlib import Path
 
     from urika.cli_helpers import output_json
 
-    output_json({"path": Path("/tmp/test")})
+    p = Path("/tmp/test")
+    output_json({"path": p})
     captured = capsys.readouterr()
     data = json.loads(captured.out)
-    assert data == {"path": "/tmp/test"}
+    assert data == {"path": str(p)}
 
 
 def test_output_json_error_to_stderr(capsys):

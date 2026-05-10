@@ -24,12 +24,28 @@ def test_agent_run_start_returns_int_ms_and_iso_string() -> None:
 
 def test_agent_run_start_ms_is_monotonic() -> None:
     """start_ms is monotonic ms since process start — each call should be later
-    than the previous, so elapsed-ms math works."""
+    than the previous, so elapsed-ms math works.
+
+    Windows ``time.monotonic()`` has ~15.6ms resolution by default
+    (the Windows timer tick). A short ``time.sleep(0.01)`` can return
+    BEFORE the underlying tick advances, so two ``_agent_run_start()``
+    calls bracketing it can return identical ms values. Poll until we
+    see an increment instead of relying on a fixed sleep — robust on
+    every platform without making the Linux/macOS path slower.
+    """
     first, _ = _agent_run_start()
-    time.sleep(0.01)
-    second, _ = _agent_run_start()
-    assert second > first
-    assert second - first >= 5  # at least 5ms elapsed
+    deadline = time.monotonic() + 1.0
+    second = first
+    while time.monotonic() < deadline:
+        second, _ = _agent_run_start()
+        if second > first:
+            break
+        time.sleep(0.005)
+    assert second > first, (
+        f"_agent_run_start() did not advance after polling for ~1s — "
+        f"underlying monotonic clock is broken or _agent_run_start "
+        f"is not actually time-derived"
+    )
 
 
 # ---- _test_endpoint reachability behaviour ----
