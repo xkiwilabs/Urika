@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from scipy.stats import kurtosis, skew
-
 from urika.data.models import DatasetView
 from urika.tools.base import ITool, ToolResult
 
@@ -28,6 +26,9 @@ class DescriptiveStatsMethod(ITool):
         return {"columns": None}
 
     def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
+        # Lazy scipy import — see mann_whitney_u.py for rationale.
+        from scipy.stats import kurtosis, skew
+
         columns = params.get("columns")
         df = data.data
 

@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
+from urika.agents.audience import format_audience_context
 from urika.agents.registry import AgentRegistry
 from urika.agents.runner import AgentRunner
 
@@ -73,7 +74,7 @@ async def finalize_project(
         prompt += f"\n\nUser instructions: {instructions}"
     result = await runner.run(
         config,
-        prompt,
+        format_audience_context(audience) + prompt,
         on_message=on_message,
     )
 
@@ -104,7 +105,7 @@ async def finalize_project(
             )
         report_result = await runner.run(
             report_config,
-            report_prompt,
+            format_audience_context(audience) + report_prompt,
             on_message=on_message,
         )
         if report_result.success and report_result.text_output:
@@ -147,7 +148,7 @@ async def finalize_project(
             )
         pres_result = await runner.run(
             pres_config,
-            pres_prompt,
+            format_audience_context(audience) + pres_prompt,
             on_message=on_message,
         )
         if pres_result.success:

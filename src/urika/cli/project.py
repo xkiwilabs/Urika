@@ -11,6 +11,8 @@ The re-exports at the bottom of this file keep
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
 from urika.cli._base import cli
@@ -151,10 +153,9 @@ def status(name: str | None, json_output: bool) -> None:
             )
 
 
-def _detect_data_drift(project_path: "Path") -> list[dict[str, str]]:
+def _detect_data_drift(project_path: Path) -> list[dict[str, str]]:
     """Compare recorded data hashes against current files."""
     import tomllib
-    from pathlib import Path
 
     from urika.data.data_hash import detect_drift
 

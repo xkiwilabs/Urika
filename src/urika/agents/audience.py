@@ -69,3 +69,29 @@ def get_audience_instruction(audience: str | None) -> str:
     if not audience:
         return AUDIENCE_INSTRUCTIONS[_DEFAULT]
     return AUDIENCE_INSTRUCTIONS.get(audience, AUDIENCE_INSTRUCTIONS[_DEFAULT])
+
+
+def format_audience_context(audience: str | None) -> str:
+    """Build the per-turn user-message prefix carrying audience guidance.
+
+    Returns a "Audience Style Guidance" block ready to prepend to the
+    prompt sent to report/presentation/finalizer agents.
+
+    Pre-this-helper the audience block was substituted directly into
+    each system prompt at ``{audience_instructions}``. Three audience
+    modes (novice / standard / expert) produced three different system
+    prompts per role — a project that generated a report for one
+    audience and then another paid full cache-creation cost on the
+    second. With the audience block in the user message, the system
+    prompt stays byte-stable across audiences and the cached prefix
+    covers ~95-98% of the per-role base prompt.
+    """
+    block = get_audience_instruction(audience)
+    return (
+        "## Audience Style Guidance\n\n"
+        f"{block}\n\n"
+        "(Apply this audience style throughout the output. The system "
+        "prompt may also reference \"audience guidance\" — that refers "
+        "to this block.)\n\n"
+        "---\n\n"
+    )

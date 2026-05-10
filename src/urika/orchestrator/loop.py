@@ -283,8 +283,21 @@ async def run_experiment(
                 plan_config = plan_role.build_config(
                     project_dir=project_dir, experiment_id=experiment_id
                 )
+                # v0.4.3 cache-reuse fix: project memory + advisor context
+                # summary now flow via the per-turn user message instead
+                # of being prepended to the system prompt, so the system
+                # prompt stays byte-stable across sessions and the cached
+                # prefix covers the full ~6KB base prompt. See
+                # ``format_planning_context`` for the rationale.
+                from urika.agents.roles.planning_agent import (
+                    format_planning_context,
+                )
+
+                plan_user_input = (
+                    format_planning_context(project_dir) + task_prompt
+                )
                 plan_result = await runner.run(
-                    plan_config, task_prompt, on_message=on_message
+                    plan_config, plan_user_input, on_message=on_message
                 )
                 _total_tokens_in += plan_result.tokens_in
                 _total_tokens_out += plan_result.tokens_out

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from scipy.stats import f_oneway
-
 from urika.data.models import DatasetView
 from urika.tools.base import ITool, ToolResult
 
@@ -26,6 +24,11 @@ class OneWayAnovaMethod(ITool):
         return {"group_column": "", "value_column": ""}
 
     def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
+        # Lazy scipy import — see mann_whitney_u.py for rationale
+        # (scipy 1.17.1 Windows packaging bug shouldn't crash
+        # ``urika tools`` metadata listing).
+        from scipy.stats import f_oneway
+
         group_column = params.get("group_column", "")
         value_column = params.get("value_column", "")
         df = data.data

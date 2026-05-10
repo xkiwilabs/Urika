@@ -3501,17 +3501,15 @@ def api_run_stop(name: str, exp_id: str) -> dict:
     except (OSError, ValueError):
         return {"status": "not_running"}
 
-    # Probe whether the PID is still alive by sending signal 0
-    # (existence check; raises ProcessLookupError if the process is gone).
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return {"status": "not_running"}
-    except PermissionError:
-        # Process exists but we can't signal it — treat as "running"
-        # and fall through to the signal attempt below.
-        pass
-    except OSError:
+    # Probe whether the PID is still alive. Cross-platform via
+    # ``session._pid_is_alive`` (psutil-backed). The previous
+    # ``os.kill(pid, 0)`` probe was POSIX-only and *destructive* on
+    # Windows: ``os.kill(pid, sig)`` for non-CTRL signals there calls
+    # ``TerminateProcess(pid, sig)``, so the "harmless probe" was
+    # actually killing the subprocess before SIGTERM ever ran.
+    from urika.core.session import _pid_is_alive
+
+    if not _pid_is_alive(pid):
         return {"status": "not_running"}
 
     # Step 1: graceful stop request via flag file. The orchestrator
@@ -3572,13 +3570,12 @@ def _stop_op_by_lock(lock_path: Path) -> dict:
     except (OSError, ValueError):
         return {"status": "not_running"}
 
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return {"status": "not_running"}
-    except PermissionError:
-        pass
-    except OSError:
+    # Same Windows-safe probe as ``api_run_stop`` above — see the
+    # comment there for why ``os.kill(pid, 0)`` is destructive on
+    # Windows.
+    from urika.core.session import _pid_is_alive
+
+    if not _pid_is_alive(pid):
         return {"status": "not_running"}
 
     try:

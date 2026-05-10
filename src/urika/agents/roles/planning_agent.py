@@ -25,23 +25,56 @@ def get_role() -> AgentRole:
     )
 
 
+def format_planning_context(project_dir: Path) -> str:
+    """Build the per-turn user-message prefix for planning_agent.
+
+    Returns project memory (MEMORY.md) + the rolling advisor context
+    summary, formatted as a "Project Memory & Prior Context" block,
+    or empty string if neither exists.
+
+    Pre-this-helper the planning_agent's ``build_config`` *prepended*
+    these to the system prompt — which meant any change to either
+    (a new memory entry, an advisor session producing a fresh
+    summary) busted the cache for the entire 5.9KB base system
+    prompt. Anthropic's ephemeral cache keys on the longest common
+    prefix; with variable content at the top, the prefix was
+    effectively zero. Moving these to the per-turn user message
+    keeps the system prompt byte-stable across sessions, restoring
+    cache reuse for the bulk of the prompt while still ensuring the
+    planner sees the same authoritative context (it just arrives
+    via the user message instead of the system role).
+    """
+    from urika.core.advisor_memory import load_context_summary
+    from urika.core.project_memory import load_project_memory
+
+    project_memory = load_project_memory(project_dir)
+    context_summary = load_context_summary(project_dir) or ""
+
+    parts: list[str] = []
+    if project_memory:
+        parts.append(project_memory.rstrip())
+    if context_summary:
+        parts.append(f"## Prior conversation summary\n\n{context_summary}")
+
+    if not parts:
+        return ""
+    return (
+        "## Project Memory & Prior Context\n\n"
+        "(The following context comes from your project memory and the "
+        "rolling advisor conversation summary. Treat it as authoritative "
+        "user preferences and prior decisions when designing the next "
+        "method.)\n\n"
+        + "\n\n---\n\n".join(parts)
+        + "\n\n---\n\n"
+    )
+
+
 def build_config(
     project_dir: Path, *, experiment_id: str = "", **kwargs: object
 ) -> AgentConfig:
     runtime_config = load_runtime_config(project_dir)
     experiment_dir = project_dir / "experiments" / experiment_id
 
-    # v0.4 Track 2: inject (a) project memory ``MEMORY.md`` block and
-    # (b) the rolling context summary into the planner's system
-    # prompt. Memory persists across sessions; context summary is
-    # in-loop. Both prefix the base prompt — the planner sees user
-    # preferences first, then prior conversation, then its own
-    # role instructions.
-    from urika.core.advisor_memory import load_context_summary
-    from urika.core.project_memory import load_project_memory
-
-    project_memory = load_project_memory(project_dir)
-    context_summary = load_context_summary(project_dir) or ""
     base_prompt = load_prompt(
         _PROMPTS_DIR / "planning_agent_system.md",
         variables={
@@ -50,21 +83,10 @@ def build_config(
             "experiment_dir": str(experiment_dir),
         },
     )
-    prefix_parts = []
-    if project_memory:
-        prefix_parts.append(project_memory.rstrip())
-    if context_summary:
-        prefix_parts.append(
-            f"## Prior conversation summary\n\n{context_summary}"
-        )
-    if prefix_parts:
-        system_prompt = "\n\n---\n\n".join(prefix_parts) + "\n\n---\n\n" + base_prompt
-    else:
-        system_prompt = base_prompt
 
     return AgentConfig(
         name="planning_agent",
-        system_prompt=system_prompt,
+        system_prompt=base_prompt,
         allowed_tools=["Read", "Glob", "Grep"],
         disallowed_tools=[],
         security=SecurityPolicy(

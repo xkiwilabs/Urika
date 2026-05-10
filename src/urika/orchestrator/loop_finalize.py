@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
+from urika.agents.audience import format_audience_context
 from urika.agents.registry import AgentRegistry
 from urika.agents.runner import AgentRunner
 from urika.core.progress import load_progress
@@ -102,7 +103,8 @@ async def _generate_reports(
                 )
                 result = await runner.run(
                     config,
-                    f"Write a detailed narrative report for experiment {experiment_id}.",
+                    format_audience_context(audience)
+                    + f"Write a detailed narrative report for experiment {experiment_id}.",
                     on_message=on_message,
                 )
                 _track(result)
@@ -204,7 +206,7 @@ async def _generate_presentation(
         prompt = f"User instructions: {instructions}\n\n{prompt}"
     result = await runner.run(
         config,
-        prompt,
+        format_audience_context(audience) + prompt,
         on_message=on_message,
     )
     _pres_usage: dict[str, int | float] = {
@@ -339,7 +341,12 @@ async def _async_generate_summary(
     )
     config.max_turns = 3  # Keep it short
 
-    result = await runner.run(config, prompt, on_message=on_message)
+    # README summary doesn't take an audience param — default to
+    # ``standard`` so the audience-context block is non-empty and the
+    # system prompt stays byte-stable across calls.
+    result = await runner.run(
+        config, format_audience_context("standard") + prompt, on_message=on_message
+    )
     _result_usage: dict[str, int | float] = {
         "tokens_in": result.tokens_in,
         "tokens_out": result.tokens_out,

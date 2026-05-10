@@ -665,8 +665,8 @@ def unlock(
             raise SystemExit(1)
         else:
             click.echo(
-                f"  The PID does NOT look like Urika — likely a "
-                f"recycled PID. Pass --force to unlock anyway.",
+                "  The PID does NOT look like Urika — likely a "
+                "recycled PID. Pass --force to unlock anyway.",
                 err=True,
             )
             raise SystemExit(1)

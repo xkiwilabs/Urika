@@ -30,15 +30,6 @@ from urika.cli_display import (
 )
 from urika.repl.commands import (
     PROJECT_COMMANDS,
-    cmd_advisor,
-    cmd_build_tool,
-    cmd_evaluate,
-    cmd_finalize,
-    cmd_plan,
-    cmd_present,
-    cmd_report,
-    cmd_resume,
-    cmd_run,
     get_all_commands,
     get_command_names,
     get_experiment_ids,

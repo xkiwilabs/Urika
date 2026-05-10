@@ -94,6 +94,25 @@ def _run_single_agent(
             audience=audience,
         )
 
+        # v0.4.3 cache-reuse fixes: variable per-turn content flows
+        # via the user message instead of being baked into the system
+        # prompt. planning_agent gets project-memory + advisor context
+        # summary; report/presentation/finalizer get the audience
+        # style block. Other roles get the prompt as-is.
+        agent_user_input = prompt
+        if agent_name == "planning_agent":
+            from urika.agents.roles.planning_agent import (
+                format_planning_context,
+            )
+
+            agent_user_input = (
+                format_planning_context(session.project_path) + prompt
+            )
+        elif agent_name in ("report_agent", "presentation_agent", "finalizer"):
+            from urika.agents.audience import format_audience_context
+
+            agent_user_input = format_audience_context(audience) + prompt
+
         session_info = {
             "project": session.project_name or "",
             "model": session.model or "",
@@ -109,7 +128,7 @@ def _run_single_agent(
                     sp.update_session(model=model)
 
             result = asyncio.run(
-                runner.run(config, prompt, on_message=_on_msg_with_footer)
+                runner.run(config, agent_user_input, on_message=_on_msg_with_footer)
             )
 
         # Track usage

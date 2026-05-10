@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from urika.agents.audience import get_audience_instruction
 from urika.agents.config import (
     AgentConfig,
     AgentRole,
@@ -29,8 +28,8 @@ def get_role() -> AgentRole:
 def build_config(
     project_dir: Path,
     *,
-    experiment_id: str = "",
-    audience: str = "standard",
+    experiment_id: str = "",  # noqa: ARG001 — kept for API compat with other roles
+    audience: str = "standard",  # noqa: ARG001 — kept for API compat; audience now flows via the per-turn user message via ``audience.format_audience_context``
     **kwargs: object,
 ) -> AgentConfig:
     runtime_config = load_runtime_config(project_dir)
@@ -40,7 +39,6 @@ def build_config(
             _PROMPTS_DIR / "finalizer_system.md",
             variables={
                 "project_dir": str(project_dir),
-                "audience_instructions": get_audience_instruction(audience),
             },
         ),
         allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],

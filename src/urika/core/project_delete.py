@@ -9,7 +9,6 @@ project) block the operation.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -51,16 +50,17 @@ def _deletion_log() -> Path:
 
 
 def _pid_is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # Signal blocked but the PID exists — treat as alive.
-        return True
-    except OSError:
-        return False
-    return True
+    # Delegate to the cross-platform helper in session.py. The previous
+    # ``os.kill(pid, 0)`` implementation was POSIX-only and dangerous on
+    # Windows: ``os.kill`` there calls ``TerminateProcess(pid, 0)``, so
+    # probing your own PID — which the experiment-delete tests do —
+    # silently terminated the test runner mid-suite, surfacing as a
+    # ``KeyboardInterrupt`` in pathlib during the next test's setup and
+    # wedging the Windows CI job. session._pid_is_alive uses
+    # ``psutil.pid_exists`` which is non-destructive on every platform.
+    from urika.core.session import _pid_is_alive as _session_pid_is_alive
+
+    return _session_pid_is_alive(pid)
 
 
 def _is_active_run_lock(lock: Path) -> bool:
