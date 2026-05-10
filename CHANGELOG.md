@@ -5,6 +5,137 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-05-10
+
+Prompt cache-reuse + cross-platform CI release. Three structural
+changes to how agent prompts are assembled cut Anthropic input-token
+costs by roughly 10× on autonomous-mode runs (validated end-to-end
+against the real API at 90.9% cache-hit ratio). Plus a full GitHub
+Actions matrix across Linux + macOS + Windows × Python 3.11 + 3.12,
+27 new tests across the prompt-cache and E2E coverage tracks, and a
+real-API validation harness anyone can re-run to verify the fix on
+their own setup.
+
+### Added
+
+- **Cross-platform CI matrix.** GitHub Actions now runs the full
+  test suite on `ubuntu-latest`, `macos-latest`, and `windows-latest`
+  × Python 3.11 and 3.12 (6 jobs per push). Lint runs once on the
+  Ubuntu+3.12 canonical job. Catches platform-specific regressions
+  the previous Linux-only matrix missed (the v0.4.2.1 Windows lock
+  bug is the canonical case study).
+- **Real-API cache validation harness.** `dev/scripts/validate-cache-reuse.sh`
+  + `parse-cache-trace.py` run a minimal autonomous experiment with
+  `URIKA_PROMPT_TRACE_FILE` set, then report per-agent cache hit
+  ratios. ~$0.20, ~10 min wall-clock. Re-runnable on any setup with
+  `ANTHROPIC_API_KEY` configured.
+- **End-to-end test coverage gaps closed (Track 2).** 25 new
+  integration tests across 4 files:
+  - REPL via `pexpect` (4 state-based tests).
+  - TUI via Textual `Pilot` + stub agents (3 tests).
+  - Dashboard via headless `playwright` (9 tests against a real
+    uvicorn-served app).
+  - Backwards-compatibility fixtures: 3 legacy project shapes
+    (empty-lockfile, corrupt-progress, no-runtime-block) + 9
+    execution tests pinning the v0.4.2 self-heal behaviour.
+  - Cheap-config smoke variant (`URIKA_SMOKE_REAL=0` env-var) that
+    runs the full e2e harness against sonnet+haiku at reduced
+    max-turns instead of opus, dropping per-iteration cost ~10×.
+
+### Changed
+
+- **Tier-1 prompt cache reorder (7 role prompts).** `task_agent`,
+  `evaluator`, `advisor_agent`, `planning_agent`, `report_agent`,
+  `presentation_agent`, and `orchestrator` all moved
+  `{experiment_id}` and `{experiment_dir}` from the prompt header
+  into a trailing **Experiment Context** appendix. Mid-body
+  references reworded from `{experiment_dir}/methods/` to
+  descriptive language ("the `methods/` subdirectory of the
+  experiment workspace"). Net: 95-98% of each role's system
+  prompt is byte-stable across consecutive experiments in the
+  same project; the cached prefix carries through the 5-min TTL
+  window. Autonomous-mode runs (`urika run --max-experiments N`)
+  benefit most.
+- **Planning agent memory moved to per-turn user message.**
+  `planning_agent.build_config` previously prepended project
+  memory + advisor context summary to the system prompt — any
+  change to either invalidated the entire 5.9KB base prompt's
+  cache. New `format_planning_context(project_dir)` helper
+  carries the same content via the per-turn user message instead;
+  the system prompt is now byte-stable across sessions even when
+  memory entries are added.
+- **Audience block moved to per-turn user message.** The 3
+  narrative agents (report, presentation, finalizer) previously
+  substituted `{audience_instructions}` directly into their
+  system prompt body — three audience modes
+  (novice/standard/expert) produced three different system
+  prompts per role. New `format_audience_context(audience)` helper
+  keeps the system prompt byte-stable across audiences; switching
+  modes within the cache TTL now hits cache.
+
+### Fixed
+
+- **Cross-platform PID-alive check in `project_delete.py`.**
+  Pre-fix this module had its own `os.kill(pid, 0)` probe that, on
+  Windows, calls `TerminateProcess(pid, 0)` rather than the benign
+  existence check it returns on POSIX. The dashboard's
+  delete-project flow self-terminated whenever the locked PID
+  matched the test process. Routed through the cross-platform
+  `core/session.py::_pid_is_alive` helper that already uses
+  `psutil.pid_exists`. (The same hazard had already been fixed in
+  `session.py` for v0.4.2.1; the duplicate site here was missed.)
+- **Lazy scipy imports in 4 statistical tools** (`mann_whitney_u`,
+  `one_way_anova`, `paired_t_test`, `descriptive_stats`). scipy
+  1.17.1 ships a Windows packaging bug where any
+  `from scipy.stats import …` triggers a broken
+  `scipy.signal._signal_api` import and raises `NameError` at
+  module load. Affected every `urika tools` listing call on
+  Windows. Imports moved inside the tools' `run()` methods so
+  metadata listing doesn't load scipy at all.
+- **API-key warning suppressed in `--json` mode.** The startup
+  warning when `ANTHROPIC_API_KEY` is unset previously leaked into
+  every `--json`-mode CLI test on machines without the key set
+  (CliRunner mixes stderr into stdout by default), failing every
+  JSON-parsing test in CI. Extracted to a testable helper that
+  gates on `is_interactive_stderr()`; the warning still prints in
+  real interactive shells.
+
+### Internal
+
+- **27 new prompt cache regression tests.** `tests/test_agents/test_prompt_cache_stability.py`:
+  - 7 per-role tests asserting >=90% common-prefix between
+    different `experiment_id` values (catches Tier-1 regressions
+    where a per-experiment placeholder leaks back into the body).
+  - 1 byte-identity-within-experiment test (catches
+    non-determinism — timestamps, PIDs — sneaking into the
+    builder).
+  - 1 planning_agent-stable-across-memory-changes test (catches
+    rec #2 regressions).
+  - 3 audience-stable-across-modes tests (catches rec #3
+    regressions).
+  - 2 helper-content tests proving the moved blocks still surface
+    via the user-message context (proves the refactor moved
+    content rather than dropping it).
+- **Tests marked `@pytest.mark.integration`** for real-LLM and
+  external-tool tests so the per-PR CI gate's `-m "not integration"`
+  filter excludes them. Affected: `TestReportCommand` (3 tests),
+  `TestRunCommand::test_run_no_experiments`, the smoke harnesses.
+- **Cross-platform test fixes** (incidental work surfaced by the
+  new Windows CI):
+  - `test_output_json_handles_non_serializable` no longer hardcodes
+    `'/tmp/test'` as the expected path string.
+  - `test_agent_run_start_ms_is_monotonic` polls until the clock
+    increments instead of relying on a fixed 10ms sleep (Windows
+    monotonic clock has 15.6ms resolution).
+  - 4 CliRunner+uvicorn tests skipped on Windows (CliRunner+Click
+    signal-handler interaction; real `urika dashboard` /
+    `urika advisor` work fine on Windows in interactive use).
+- **`pexpect` and `playwright` added to the `[dev]` extras** for
+  the new smoke harnesses.
+- **`pytest-timeout` added to the CI install line** with
+  `--timeout=300` per-test ceiling. Catches hung tests cleanly
+  instead of stalling the whole run via runner-level kill.
+
 ## [0.4.2.1] - 2026-05-09
 
 Hotfix release for two beta-user-blocking bugs reported on Windows
