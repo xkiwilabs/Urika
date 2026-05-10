@@ -815,6 +815,13 @@ class TestDashboardCommand:
         assert result.exit_code == 0, result.output
         assert any("http://127.0.0.1:9999" in u for u in opened)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason=(
+            "Same Windows-only CliRunner+Click+uvicorn issue as the "
+            "two test_dashboard tests above."
+        ),
+    )
     def test_no_project_arg_opens_projects_list(
         self,
         runner: CliRunner,

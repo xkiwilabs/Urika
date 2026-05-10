@@ -148,6 +148,14 @@ class _AgentMockContext:
 
 
 class TestAdvisorCommand:
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason=(
+            "Same Windows-only CliRunner+Click+Spinner+_agent_mocks "
+            "interaction as test_advisor_success_plain. Real `urika "
+            "advisor` on Windows works in interactive use."
+        ),
+    )
     def test_advisor_success_json(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
