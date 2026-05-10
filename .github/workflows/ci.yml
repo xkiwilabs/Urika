@@ -63,10 +63,11 @@ jobs:
         # per-PR gate. The rest of the suite (~2870 tests) covers
         # the actual code paths and runs in <30s per OS.
         #
-        # ``--timeout=60`` (via pytest-timeout, already in [dev])
-        # kills any single test that hangs >60s instead of stalling
-        # the whole run. Critical on Windows where occasional SSL or
-        # threading cleanup hangs would otherwise interrupt the
-        # entire pytest process via KeyboardInterrupt mid-suite, even
-        # though only one test was actually stuck.
-        run: pytest -q -m "not integration" --timeout=60
+        # ``--timeout=300`` (via pytest-timeout) kills any single
+        # test that hangs >5min instead of stalling the whole run.
+        # Most tests are sub-second; the high ceiling exists for the
+        # few notification / SMTP tests that legitimately take ~60s
+        # on macOS (slow DNS / connection refused retry) — earlier
+        # ``--timeout=60`` killed those mid-flight even though they
+        # were making honest progress.
+        run: pytest -q -m "not integration" --timeout=300
