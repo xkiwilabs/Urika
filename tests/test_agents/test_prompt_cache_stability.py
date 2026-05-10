@@ -189,6 +189,75 @@ def test_full_byte_identity_within_one_experiment(project_with_two_experiments) 
         )
 
 
+def test_planning_agent_system_prompt_byte_stable_across_memory_changes(
+    project_with_two_experiments, monkeypatch
+) -> None:
+    """Regression: planning_agent's system prompt must be byte-
+    identical across builds even when project memory + advisor
+    context summary change between calls.
+
+    Pre-this-fix planning_agent.py:53-63 *prepended* both blocks to
+    the system prompt. Any change — adding a memory entry, the
+    advisor producing a new summary — busted the cached prefix for
+    the entire 5.9KB base prompt. After v0.4.3 audit rec #2, both
+    flow via the per-turn user message instead, leaving the system
+    prompt cacheable across sessions.
+
+    The test seeds a project memory file, builds the planning_agent
+    config, then ADDS another memory entry and rebuilds. The two
+    system prompts must be byte-identical. (User-message context
+    is a separate concern; this test only covers the system-prompt
+    invariant the cache hinges on.)
+    """
+    from urika.core.project_memory import save_entry
+
+    proj, exp1, _ = project_with_two_experiments
+
+    # First build with no memory entries.
+    p_before = _render("planning_agent", proj, exp1)
+
+    # Add a memory entry and rebuild.
+    save_entry(
+        proj,
+        mem_type="user",
+        body="The user prefers tree-based models for tabular data.",
+        description="prefers tree-based models",
+    )
+    p_after = _render("planning_agent", proj, exp1)
+
+    assert p_before == p_after, (
+        "planning_agent system prompt changed when project memory was "
+        "added — memory must flow via the user message, not the system "
+        "prompt, so the cache prefix stays stable across sessions"
+    )
+
+
+def test_planning_context_helper_includes_memory(
+    project_with_two_experiments,
+) -> None:
+    """The complement of the test above: ``format_planning_context``
+    DOES surface memory + summary content. Together these prove the
+    refactor moved the content rather than dropping it."""
+    from urika.agents.roles.planning_agent import format_planning_context
+    from urika.core.project_memory import save_entry
+
+    proj, _, _ = project_with_two_experiments
+
+    # Empty before any memory.
+    assert format_planning_context(proj) == ""
+
+    # After adding memory, it shows up in the context block.
+    save_entry(
+        proj,
+        mem_type="user",
+        body="Use only methods that produce diagnostic plots.",
+        description="diagnostic plots required",
+    )
+    ctx = format_planning_context(proj)
+    assert "Project Memory & Prior Context" in ctx
+    assert "diagnostic plots" in ctx
+
+
 def test_prefix_ratios_summary(project_with_two_experiments, capsys) -> None:
     """Print a summary table of cache-prefix ratios for visibility.
 

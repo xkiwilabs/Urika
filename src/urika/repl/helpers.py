@@ -94,6 +94,20 @@ def _run_single_agent(
             audience=audience,
         )
 
+        # v0.4.3 cache-reuse fix: planning_agent's project-memory +
+        # advisor context summary now flow via the per-turn user
+        # message instead of being prepended to the system prompt.
+        # Other roles get the prompt as-is.
+        agent_user_input = prompt
+        if agent_name == "planning_agent":
+            from urika.agents.roles.planning_agent import (
+                format_planning_context,
+            )
+
+            agent_user_input = (
+                format_planning_context(session.project_path) + prompt
+            )
+
         session_info = {
             "project": session.project_name or "",
             "model": session.model or "",
@@ -109,7 +123,7 @@ def _run_single_agent(
                     sp.update_session(model=model)
 
             result = asyncio.run(
-                runner.run(config, prompt, on_message=_on_msg_with_footer)
+                runner.run(config, agent_user_input, on_message=_on_msg_with_footer)
             )
 
         # Track usage
