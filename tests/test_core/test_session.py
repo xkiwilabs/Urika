@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -660,6 +661,15 @@ class TestCrossPlatformPidCheck:
         monkeypatch.setattr(psutil, "pid_exists", lambda pid: True)
         assert acquire_lock(tmp_path, "exp-001") is False
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason=(
+            "Documents the POSIX fallback contract. The fallback "
+            "regresses on Windows by design (see docstring) — "
+            "psutil is the only correct path there, and we accept "
+            "the regression iff psutil itself is unavailable."
+        ),
+    )
     def test_psutil_failure_falls_back_to_os_kill(
         self, tmp_path: Path, monkeypatch
     ) -> None:

@@ -1925,7 +1925,11 @@ def test_round_trip_project_email_to_save_round_trips(
         'smtp_server = "smtp.example.com"\n',
         encoding="utf-8",
     )
+    # ``Path.home()`` uses ``$HOME`` on POSIX but ``$USERPROFILE`` on
+    # Windows. Set both so the loader picks up the temp settings.toml
+    # regardless of platform.
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
 
     merged = _load_notification_config(proj_path)
     # alice was added to the global recipients — exactly what users
@@ -1973,7 +1977,9 @@ def test_round_trip_project_telegram_chat_id_save_round_trips(
         'bot_token_env = "TG_TOKEN"\n',
         encoding="utf-8",
     )
+    # See email round-trip test above for the HOME/USERPROFILE story.
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
 
     merged = _load_notification_config(proj_path)
     assert merged["telegram"]["chat_id"] == "999"

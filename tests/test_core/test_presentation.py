@@ -53,7 +53,7 @@ class TestRenderPresentation:
             "slides": [{"type": "bullets", "title": "Results", "bullets": ["Good"]}],
         }
         output = render_presentation(slide_data, tmp_path / "pres", theme="light")
-        html = (output / "index.html").read_text()
+        html = (output / "index.html").read_text(encoding="utf-8")
         assert "My Research" in html
 
     def test_notes_plugin_is_registered_and_files_copied(
@@ -78,7 +78,7 @@ class TestRenderPresentation:
             "popup is opened at this relative URL by the plugin."
         )
 
-        html = (output / "index.html").read_text()
+        html = (output / "index.html").read_text(encoding="utf-8")
         assert '<script src="notes.js"></script>' in html
         assert "plugins: [RevealNotes]" in html
 
@@ -92,7 +92,7 @@ class TestRenderPresentation:
             "slides": [{"type": "bullets", "title": "B", "bullets": ["x"]}],
         }
         output = render_presentation(slide_data, tmp_path / "pres", theme="light")
-        html = (output / "index.html").read_text()
+        html = (output / "index.html").read_text(encoding="utf-8")
         # CSS rule + the markup both mention the class, but only the
         # markup uses an <aside> tag — there should be exactly one.
         assert html.count('<aside class="urika-keys-hint">') == 1
@@ -121,7 +121,7 @@ class TestRenderPresentation:
             ],
         }
         output = render_presentation(slide_data, tmp_path / "pres", theme="light")
-        html = (output / "index.html").read_text()
+        html = (output / "index.html").read_text(encoding="utf-8")
         assert "99.34%" in html
         assert "Accuracy" in html
 
@@ -158,7 +158,7 @@ class TestRenderPresentation:
             "slides": [{"type": "bullets", "title": "X", "bullets": ["Y"]}],
         }
         output = render_presentation(slide_data, tmp_path / "pres", theme="dark")
-        html = (output / "index.html").read_text()
+        html = (output / "index.html").read_text(encoding="utf-8")
         assert "theme-dark" in html
 
 
@@ -184,7 +184,7 @@ class TestSpeakerNotes:
             ],
         }
         out = render_presentation(data, tmp_path)
-        html = (out / "index.html").read_text()
+        html = (out / "index.html").read_text(encoding="utf-8")
         assert '<aside class="notes">Hello notes.</aside>' in html
         assert '<aside class="notes">Stat notes.</aside>' in html
 
@@ -202,7 +202,7 @@ class TestSpeakerNotes:
             ],
         }
         out = render_presentation(data, tmp_path)
-        html = (out / "index.html").read_text()
+        html = (out / "index.html").read_text(encoding="utf-8")
         # The notes content must be escaped, so the raw <script> tag does not
         # appear inside any notes aside. Other parts of the template may
         # legitimately have unrelated <script> tags for reveal.js itself, so
@@ -229,7 +229,7 @@ class TestMissingFigurePlaceholder:
             ],
         }
         out = render_presentation(data, tmp_path, experiment_dir=tmp_path / "nowhere")
-        html = (out / "index.html").read_text()
+        html = (out / "index.html").read_text(encoding="utf-8")
         # Placeholder must be visible (not a broken image tag).
         assert "figure-missing" in html
         # The referenced path should be shown so the user can see what went wrong.
@@ -253,7 +253,7 @@ class TestMissingFigurePlaceholder:
             ],
         }
         out = render_presentation(data, tmp_path, experiment_dir=tmp_path / "nowhere")
-        html = (out / "index.html").read_text()
+        html = (out / "index.html").read_text(encoding="utf-8")
         assert "figure-missing" in html
         assert "nope.png" in html
 
@@ -276,7 +276,7 @@ class TestMissingFigurePlaceholder:
             ],
         }
         out = render_presentation(data, tmp_path / "out", experiment_dir=experiment_dir)
-        html = (out / "index.html").read_text()
+        html = (out / "index.html").read_text(encoding="utf-8")
         assert '<img src="figures/real.png"' in html
         assert "figure-missing" not in html
 
@@ -297,7 +297,7 @@ class TestExplainerSlide:
             ],
         }
         out = render_presentation(data, tmp_path)
-        html = (out / "index.html").read_text()
+        html = (out / "index.html").read_text(encoding="utf-8")
         assert "Leave-one-session-out" in html
         assert "training on the others" in html
         assert '<aside class="notes">Explainer notes.</aside>' in html
@@ -347,7 +347,7 @@ class TestEndToEndDeck:
             ],
         }
         out = render_presentation(data, tmp_path / "deck", experiment_dir=experiment_dir)
-        html = (out / "index.html").read_text()
+        html = (out / "index.html").read_text(encoding="utf-8")
 
         # Every slide's notes appeared as a speaker-notes aside.
         for note in (

@@ -63,14 +63,19 @@ class TestEmptyLockIsAlwaysStale:
 class TestLiveLockStillRefused:
     def test_live_pid_lock_refused(self, tmp_path: Path) -> None:
         """The fix mustn't accidentally also remove valid locks from
-        running processes. PID 1 (init) is always alive on POSIX."""
+        running processes. The parent PID is reliably alive on every
+        platform — and crucially is *not* ``os.getpid()``, so
+        ``acquire_lock`` won't take the "already ours" fast path that
+        would return True for our own PID. Pre-fix this used PID 1
+        (init/launchd) which doesn't exist on Windows."""
         project_dir, exp_id = _exp_dir(tmp_path)
         lock = _lock_path(project_dir, exp_id)
-        lock.write_text("1")  # init/launchd
+        live_pid = str(os.getppid())
+        lock.write_text(live_pid)
 
         assert acquire_lock(project_dir, exp_id) is False
         # Lock untouched.
-        assert lock.read_text() == "1"
+        assert lock.read_text() == live_pid
 
     def test_dead_pid_lock_treated_as_stale(self, tmp_path: Path) -> None:
         project_dir, exp_id = _exp_dir(tmp_path)
@@ -89,7 +94,8 @@ class TestStartSessionErrorMessage:
         points at ``urika unlock``."""
         project_dir, exp_id = _exp_dir(tmp_path)
         lock = _lock_path(project_dir, exp_id)
-        lock.write_text("1")  # init — always alive
+        # Test runner's PID is reliably alive on every platform.
+        lock.write_text(str(os.getppid()))
 
         with pytest.raises(RuntimeError) as exc_info:
             start_session(project_dir, exp_id)
@@ -165,14 +171,16 @@ class TestUrikaUnlockCommand:
         exp = create_experiment(project_dir, name="baseline", hypothesis="h")
 
         lock = _lock_path(project_dir, exp.experiment_id)
-        lock.write_text("1")  # init/launchd
+        # Test runner's own PID — reliably alive cross-platform and
+        # not Urika-named, so the safety check refuses without --force.
+        lock.write_text(str(os.getppid()))
 
         runner = CliRunner()
         result = runner.invoke(
             cli, ["unlock", "myproj", exp.experiment_id]
         )
-        # /proc/1/comm on Linux is "systemd" or similar — not Urika —
-        # so the command should refuse but instructively.
+        # The current process isn't named "urika*" (it's pytest), so
+        # the command should refuse but instructively.
         assert result.exit_code != 0
         assert lock.exists()
         # The output should explain the situation.
@@ -202,7 +210,9 @@ class TestUrikaUnlockCommand:
         exp = create_experiment(project_dir, name="baseline", hypothesis="h")
 
         lock = _lock_path(project_dir, exp.experiment_id)
-        lock.write_text("1")
+        # See test_unlock_refuses_live_pid_without_force above for why
+        # we use the test runner's PID instead of the legacy PID 1.
+        lock.write_text(str(os.getppid()))
 
         runner = CliRunner()
         result = runner.invoke(

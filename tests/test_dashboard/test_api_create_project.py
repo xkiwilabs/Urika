@@ -34,8 +34,12 @@ def create_client(tmp_path: Path, monkeypatch) -> tuple[TestClient, Path]:
     projects_root.mkdir()
 
     settings_path = home / "settings.toml"
+    # TOML literal strings (single quotes) skip escape processing —
+    # essential on Windows where ``\U``, ``\t`` etc. inside the path
+    # would otherwise be parsed as escape sequences and either fail
+    # to load or give a corrupt projects_root.
     settings_path.write_text(
-        f'projects_root = "{projects_root}"\n', encoding="utf-8"
+        f"projects_root = '{projects_root}'\n", encoding="utf-8"
     )
 
     app = create_app(project_root=tmp_path)
@@ -212,8 +216,10 @@ def test_create_project_seeds_auto_enabled_channels(tmp_path: Path, monkeypatch)
     projects_root.mkdir()
 
     settings_toml = home / "settings.toml"
+    # See create_client fixture above for why projects_root uses a TOML
+    # literal string (single quotes).
     settings_toml.write_text(
-        f'projects_root = "{projects_root}"\n\n'
+        f"projects_root = '{projects_root}'\n\n"
         "[notifications.email]\n"
         'from_addr = "x@y.com"\n'
         "auto_enable = true\n\n"
@@ -343,8 +349,9 @@ def test_create_project_privacy_mode_private_with_endpoint_succeeds(
     projects_root = tmp_path / "projects"
     projects_root.mkdir()
     settings_path = home / "settings.toml"
+    # See create_client fixture for the TOML literal-string rationale.
     settings_path.write_text(
-        f'projects_root = "{projects_root}"\n'
+        f"projects_root = '{projects_root}'\n"
         "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n',
         encoding="utf-8",
@@ -418,7 +425,7 @@ def test_create_project_privacy_mode_endpoint_with_blank_url_does_not_pass(
     projects_root.mkdir()
     settings_path = home / "settings.toml"
     settings_path.write_text(
-        f'projects_root = "{projects_root}"\n'
+        f"projects_root = '{projects_root}'\n"
         "[privacy.endpoints.private]\n"
         'base_url = ""\n',
         encoding="utf-8",

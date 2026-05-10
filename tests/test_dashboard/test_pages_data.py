@@ -29,7 +29,12 @@ def _make_project(
     proj.mkdir(parents=True)
     dp_lines = ""
     if data_paths is not None:
-        rendered = ", ".join(f'"{p}"' for p in data_paths)
+        # TOML literal strings (single quotes) skip escape processing —
+        # essential on Windows where ``\U``, ``\t``, ``\a`` etc. inside
+        # ``C:\Users\...`` paths would otherwise be parsed as escape
+        # sequences and trip ``Invalid hex value``. Literal strings
+        # cannot contain a single quote; tmp_path never produces one.
+        rendered = ", ".join(f"'{p}'" for p in data_paths)
         dp_lines = f"data_paths = [{rendered}]\n"
     (proj / "urika.toml").write_text(
         f'[project]\nname = "{name}"\nquestion = "q"\n'

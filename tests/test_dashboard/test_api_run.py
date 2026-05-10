@@ -9,6 +9,7 @@ the right args, and (c) JSON vs HTMX response shaping behaves.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,18 @@ from fastapi.testclient import TestClient
 
 from urika.dashboard import runs as runs_module
 from urika.dashboard.app import create_app
+
+# os.killpg / os.getpgid are POSIX-only — the Windows code path falls
+# back to a bare os.kill (api.py: ``if hasattr(os, "killpg") ...``).
+# These tests assert the POSIX branch was taken; pytest's monkeypatch
+# can't ``setattr`` an attribute that doesn't exist on the target, so
+# they fail at fixture time on Windows. The Windows fallback path is
+# functionally distinct (no process group) and would need its own
+# parametrization — out of scope for this Windows-CI cleanup.
+_skip_on_windows_no_killpg = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-only: os.killpg / os.getpgid don't exist on Windows.",
+)
 
 
 def _make_project(tmp_path: Path, name: str = "alpha") -> Path:
@@ -308,6 +321,7 @@ def test_new_experiment_form_no_longer_requires_name_or_hypothesis(run_client):
     assert len(spawn_calls) == 1
 
 
+@_skip_on_windows_no_killpg
 def test_run_stop_writes_flag_and_signals_process_group(run_client, monkeypatch):
     """Stop is graceful-then-forceful.
 
@@ -353,9 +367,10 @@ def test_run_stop_writes_flag_and_signals_process_group(run_client, monkeypatch)
     assert body["status"] == "stop_signaled"
     assert body["pid"] == os.getpid()
 
-    # Probe (signal 0) goes via os.kill on the leader.
-    assert (os.getpid(), 0) in kill_calls
-    # SIGTERM goes to the process group, not the bare leader.
+    # SIGTERM goes to the process group, not the bare leader. The
+    # liveness probe used to be ``os.kill(pid, 0)`` but now goes
+    # through ``session._pid_is_alive`` (psutil-backed), so we no
+    # longer assert on a probe call here.
     assert (os.getpid(), signal.SIGTERM) in killpg_calls
     assert (os.getpid(), signal.SIGTERM) not in kill_calls
 
@@ -876,6 +891,7 @@ def _patch_kill(monkeypatch, calls, killpg_calls):
         ("/api/projects/alpha/build-tool/stop", "tools/.build.lock"),
     ],
 )
+@_skip_on_windows_no_killpg
 def test_op_stop_signals_process_group(
     run_client, monkeypatch, endpoint, lock_relpath
 ):
@@ -893,7 +909,8 @@ def test_op_stop_signals_process_group(
     r = client.post(endpoint)
     assert r.status_code == 200
     assert r.json()["status"] == "stop_signaled"
-    assert (os.getpid(), 0) in kill_calls  # probe
+    # Probe is now psutil-backed (see api_run_stop comment), so we
+    # only assert the SIGTERM dispatch.
     assert (os.getpid(), signal.SIGTERM) in killpg_calls
     assert (os.getpid(), signal.SIGTERM) not in kill_calls
 
@@ -915,6 +932,7 @@ def test_op_stop_returns_not_running_when_no_lock(run_client, endpoint):
     assert r.json() == {"status": "not_running"}
 
 
+@_skip_on_windows_no_killpg
 def test_present_stop_signals_process_group(run_client, monkeypatch):
     """Present is scoped to an experiment; lock lives in the exp dir."""
     import os

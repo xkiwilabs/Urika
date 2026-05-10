@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 from urika.core.venv import create_project_venv, get_venv_env, is_venv_enabled
+
+# Python's stdlib ``venv`` module names the executables directory
+# ``Scripts`` on Windows and ``bin`` on POSIX. Hard-coding ``bin`` in
+# the assertions made the venv tests Windows-incompatible. ``sysconfig``
+# returns the right name automatically (it's ``EnvBuilder.context.bin_name``
+# under the hood) but this single conditional is clearer and matches
+# what every other tool in the ecosystem does.
+_VENV_BIN = "Scripts" if sys.platform == "win32" else "bin"
 
 
 class TestCreateProjectVenv:
@@ -14,7 +23,7 @@ class TestCreateProjectVenv:
         venv_path = create_project_venv(tmp_path)
         assert venv_path == tmp_path / ".venv"
         assert venv_path.exists()
-        assert (venv_path / "bin").exists()
+        assert (venv_path / _VENV_BIN).exists()
 
     def test_returns_existing_venv_without_recreating(self, tmp_path: Path) -> None:
         venv_dir = tmp_path / ".venv"
@@ -58,7 +67,7 @@ class TestGetVenvEnv:
     def test_returns_env_dict_when_venv_exists(self, tmp_path: Path) -> None:
         self._write_toml(tmp_path, venv_enabled=True)
         venv_dir = tmp_path / ".venv"
-        venv_bin = venv_dir / "bin"
+        venv_bin = venv_dir / _VENV_BIN
         venv_bin.mkdir(parents=True)
 
         env = get_venv_env(tmp_path)
@@ -71,7 +80,7 @@ class TestGetVenvEnv:
     def test_removes_pythonhome(self, tmp_path: Path) -> None:
         self._write_toml(tmp_path, venv_enabled=True)
         venv_dir = tmp_path / ".venv"
-        (venv_dir / "bin").mkdir(parents=True)
+        (venv_dir / _VENV_BIN).mkdir(parents=True)
 
         with patch.dict(os.environ, {"PYTHONHOME": "/some/path"}):
             env = get_venv_env(tmp_path)

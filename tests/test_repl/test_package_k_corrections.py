@@ -208,10 +208,17 @@ class TestSetAgentActiveStartsProcessingClock:
 
     def test_processing_ms_accumulates_across_idle(self) -> None:
         """End-to-end: set_agent_active → sleep → set_agent_idle →
-        ``total_processing_ms`` should be > 0."""
+        ``total_processing_ms`` should be > 0.
+
+        Windows ``time.monotonic`` has a ~15.6ms timer-tick resolution,
+        so a ``sleep(0.05)`` paired with an ``assert >= 50`` flakes
+        (sleep returns just before the next tick). Sleep ~150ms and
+        assert against a comfortably lower threshold so the test
+        validates accumulation without being timing-coupled.
+        """
         session = ReplSession()
         session.set_agent_active("advisor")
-        time.sleep(0.05)
+        time.sleep(0.15)
         session.set_agent_idle()
         assert session.total_processing_ms >= 50
 

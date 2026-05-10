@@ -8,6 +8,7 @@ registry, and file permissions.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,15 @@ class TestKeyringBackendSelection:
 
 
 class TestPermissions:
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason=(
+            "Windows ignores POSIX chmod bits — file ACLs are the "
+            "Windows analogue. The vault's secret-on-disk protection "
+            "is POSIX-only by design (Windows users get the OS "
+            "keyring backend by default)."
+        ),
+    )
     def test_file_backend_chmods_to_0600(self, tmp_path, FileBackend) -> None:
         path = tmp_path / "global.env"
         backend = FileBackend(path=path)
