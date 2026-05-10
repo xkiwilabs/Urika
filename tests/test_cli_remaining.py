@@ -794,6 +794,13 @@ class TestDashboardCommand:
         # Browser opened to the project page
         assert any("/projects/test-proj" in u for u in opened)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason=(
+            "Same Windows-only CliRunner+Click+uvicorn issue as "
+            "test_resolves_project_and_starts_server above."
+        ),
+    )
     def test_custom_port(
         self,
         runner: CliRunner,

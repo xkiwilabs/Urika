@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from scipy.stats import ttest_rel
-
 from urika.data.models import DatasetView
 from urika.tools.base import ITool, ToolResult
 
@@ -26,6 +24,9 @@ class PairedTTestMethod(ITool):
         return {"column_a": "", "column_b": ""}
 
     def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
+        # Lazy scipy import — see mann_whitney_u.py for rationale.
+        from scipy.stats import ttest_rel
+
         col_a = params.get("column_a", "")
         col_b = params.get("column_b", "")
         df = data.data

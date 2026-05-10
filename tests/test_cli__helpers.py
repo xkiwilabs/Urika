@@ -42,9 +42,9 @@ def test_agent_run_start_ms_is_monotonic() -> None:
             break
         time.sleep(0.005)
     assert second > first, (
-        f"_agent_run_start() did not advance after polling for ~1s — "
-        f"underlying monotonic clock is broken or _agent_run_start "
-        f"is not actually time-derived"
+        "_agent_run_start() did not advance after polling for ~1s — "
+        "underlying monotonic clock is broken or _agent_run_start "
+        "is not actually time-derived"
     )
 
 

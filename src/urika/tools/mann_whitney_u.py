@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from scipy.stats import mannwhitneyu
-
 from urika.data.models import DatasetView
 from urika.tools.base import ITool, ToolResult
 
@@ -26,6 +24,14 @@ class MannWhitneyUMethod(ITool):
         return {"column_a": "", "column_b": ""}
 
     def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
+        # Lazy scipy import: makes ``urika tools`` (which only reads
+        # tool metadata via the registry) survive scipy load failures.
+        # scipy 1.17.1 on Windows has a broken
+        # ``scipy.signal._signal_api`` import that fires from any
+        # ``from scipy.stats import …`` — the tool list shouldn't
+        # crash because of a downstream dep's packaging bug.
+        from scipy.stats import mannwhitneyu
+
         col_a = params.get("column_a", "")
         col_b = params.get("column_b", "")
         df = data.data
