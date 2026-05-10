@@ -232,6 +232,69 @@ def test_planning_agent_system_prompt_byte_stable_across_memory_changes(
     )
 
 
+@pytest.mark.parametrize("role_name", ["report_agent", "presentation_agent", "finalizer"])
+def test_audience_block_no_longer_in_system_prompt(
+    role_name, project_with_two_experiments
+) -> None:
+    """v0.4.3 audit rec #3: the three narrative agents must produce
+    a byte-identical system prompt regardless of audience setting,
+    so all three audience modes (novice/standard/expert) share the
+    cached prefix.
+
+    Pre-fix the audience block (600-1000 bytes per mode) was
+    substituted into each system prompt at ``{audience_instructions}``
+    — three different bodies, three non-shared prefixes. After the
+    refactor, audience flows via the per-turn user message via
+    ``format_audience_context`` and the system prompt no longer
+    varies.
+    """
+    proj, exp1, _ = project_with_two_experiments
+
+    registry = AgentRegistry()
+    registry.discover()
+    role = registry.get(role_name)
+    assert role is not None
+
+    p_novice = role.build_config(
+        project_dir=proj, experiment_id=exp1, audience="novice"
+    ).system_prompt
+    p_standard = role.build_config(
+        project_dir=proj, experiment_id=exp1, audience="standard"
+    ).system_prompt
+    p_expert = role.build_config(
+        project_dir=proj, experiment_id=exp1, audience="expert"
+    ).system_prompt
+
+    assert p_novice == p_standard == p_expert, (
+        f"{role_name}: system prompt differs across audiences — the "
+        f"audience block must flow via the user message, not the "
+        f"system prompt"
+    )
+
+
+def test_format_audience_context_differs_per_audience() -> None:
+    """Complement: format_audience_context returns DIFFERENT content
+    for different audience modes (proves the refactor moved content
+    rather than dropping it)."""
+    from urika.agents.audience import format_audience_context
+
+    novice = format_audience_context("novice")
+    standard = format_audience_context("standard")
+    expert = format_audience_context("expert")
+
+    # All three are non-empty.
+    assert novice and standard and expert
+
+    # All three are distinct.
+    assert novice != standard
+    assert standard != expert
+    assert novice != expert
+
+    # Sanity: the header is the same across all three (cache could
+    # share that prefix within the user message too).
+    assert novice.startswith("## Audience Style Guidance")
+
+
 def test_planning_context_helper_includes_memory(
     project_with_two_experiments,
 ) -> None:

@@ -70,7 +70,10 @@ What remains to be done.
 
 ## Audience
 
-{audience_instructions}
+The user message begins with an "Audience Style Guidance" block that
+specifies the prose style, depth, and assumed background for THIS
+output. Apply that style throughout — it is authoritative and
+overrides any default voice you might assume.
 
 ## Rules
 

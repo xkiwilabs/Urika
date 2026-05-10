@@ -94,10 +94,11 @@ def _run_single_agent(
             audience=audience,
         )
 
-        # v0.4.3 cache-reuse fix: planning_agent's project-memory +
-        # advisor context summary now flow via the per-turn user
-        # message instead of being prepended to the system prompt.
-        # Other roles get the prompt as-is.
+        # v0.4.3 cache-reuse fixes: variable per-turn content flows
+        # via the user message instead of being baked into the system
+        # prompt. planning_agent gets project-memory + advisor context
+        # summary; report/presentation/finalizer get the audience
+        # style block. Other roles get the prompt as-is.
         agent_user_input = prompt
         if agent_name == "planning_agent":
             from urika.agents.roles.planning_agent import (
@@ -107,6 +108,10 @@ def _run_single_agent(
             agent_user_input = (
                 format_planning_context(session.project_path) + prompt
             )
+        elif agent_name in ("report_agent", "presentation_agent", "finalizer"):
+            from urika.agents.audience import format_audience_context
+
+            agent_user_input = format_audience_context(audience) + prompt
 
         session_info = {
             "project": session.project_name or "",

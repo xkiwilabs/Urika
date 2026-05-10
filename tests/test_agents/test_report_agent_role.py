@@ -63,24 +63,29 @@ class TestReportAgentRole:
         assert config.cwd == tmp_path
 
     def test_novice_audience_includes_plain_language(self, tmp_path: Path) -> None:
-        role = get_role()
-        config = role.build_config(tmp_path, experiment_id="exp-001", audience="novice")
-        assert "plain language" in config.system_prompt
+        # v0.4.3 audit rec #3: the audience block now flows via the
+        # per-turn user message via ``format_audience_context``, not
+        # the system prompt. Check the helper, not the prompt.
+        from urika.agents.audience import format_audience_context
+
+        ctx = format_audience_context("novice")
+        assert "plain language" in ctx or "everyday experience" in ctx
 
     def test_expert_audience_targets_phd_reader(self, tmp_path: Path) -> None:
-        role = get_role()
-        config = role.build_config(tmp_path, experiment_id="exp-001", audience="expert")
-        assert "PhD-level" in config.system_prompt
+        from urika.agents.audience import format_audience_context
+
+        ctx = format_audience_context("expert")
+        assert "PhD-level" in ctx
 
     def test_default_audience_is_standard(self, tmp_path: Path) -> None:
-        role = get_role()
-        config = role.build_config(tmp_path, experiment_id="exp-001")
-        # 'standard' audience (the default) targets a senior undergrad /
-        # early Masters reader — speaker notes carry the substance,
-        # methods are explained in depth. Contrast against 'expert'
-        # which targets PhD-level readers.
-        assert "senior undergraduate" in config.system_prompt
-        assert "PhD-level" not in config.system_prompt
+        # 'standard' audience targets a senior undergrad / early Masters
+        # reader; 'expert' targets PhD-level readers. The audience block
+        # lives in the user-message context now, not the system prompt.
+        from urika.agents.audience import format_audience_context
+
+        standard = format_audience_context(None)  # None defaults to standard
+        assert "senior undergraduate" in standard
+        assert "PhD-level" not in standard
 
     def test_discoverable_by_registry(self) -> None:
         registry = AgentRegistry()

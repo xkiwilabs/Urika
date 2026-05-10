@@ -51,6 +51,13 @@ def _run_report_agent(
         if instructions:
             prompt = f"User instructions: {instructions}\n\n{prompt}"
 
+        # v0.4.3 cache-reuse fix: audience block flows via per-turn
+        # user message instead of being substituted into the system
+        # prompt. Keeps the system prompt byte-stable across audiences.
+        from urika.agents.audience import format_audience_context
+
+        prompt = format_audience_context(audience) + prompt
+
         with Spinner("Writing narrative"):
             result = asyncio.run(
                 runner.run(config, prompt, on_message=_make_on_message())
