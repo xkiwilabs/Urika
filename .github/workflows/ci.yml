@@ -55,7 +55,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: ruff check src/ tests/
 
-      - name: Pytest
+      - name: Pytest (Linux / macOS)
+        if: matrix.os != 'windows-latest'
         # ``-m "not integration"`` excludes the smoke harnesses
         # (test_smoke_open: real LLM calls; test_smoke_dashboard:
         # needs Playwright + chromium; test_smoke_repl: needs pexpect)
@@ -71,3 +72,18 @@ jobs:
         # ``--timeout=60`` killed those mid-flight even though they
         # were making honest progress.
         run: pytest -q -m "not integration" --timeout=300
+
+      - name: Pytest (Windows — diagnostic verbose mode)
+        if: matrix.os == 'windows-latest'
+        # DIAGNOSTIC RUN — temporary. The Windows job has been
+        # hanging for several CI cycles: ~330 tests pass in 13s,
+        # then test #331 starts a non-daemon thread that won't
+        # terminate, and the run wedges for 5min until pytest-
+        # timeout fires. With ``-q`` we can't see which test is
+        # #331, so this run uses ``-v`` (test names), ``-x`` (stop
+        # at first failure / interrupt), and ``--timeout=30`` to
+        # fail-fast. Once we have the test name from the logs,
+        # revert this block and replace the current ``-q``/``-x``
+        # combo with the same line as Linux/macOS plus a single
+        # targeted fix at the offending test.
+        run: pytest -v -x -m "not integration" --timeout=30
