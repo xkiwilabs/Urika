@@ -121,13 +121,13 @@ def main() -> int:
     # --- Conclusions ---
     if overall_ratio >= 0.50:
         print(f"  ✓ Overall cache hit ratio is {overall_ratio:.1%} (>=50%).")
-        print(f"    The Tier 1 reorder + rec #2 + rec #3 fixes are delivering")
-        print(f"    real cache reuse on the wire.")
+        print("    The Tier 1 reorder + rec #2 + rec #3 fixes are delivering")
+        print("    real cache reuse on the wire.")
     else:
         print(f"  ⚠ Overall cache hit ratio is only {overall_ratio:.1%}.")
-        print(f"    Either the cache TTL is expiring between calls, the")
-        print(f"    bundled CLI isn't applying cache_control, or a recent")
-        print(f"    change re-busted the prefix. Investigate.")
+        print("    Either the cache TTL is expiring between calls, the")
+        print("    bundled CLI isn't applying cache_control, or a recent")
+        print("    change re-busted the prefix. Investigate.")
     return 0
 
 
