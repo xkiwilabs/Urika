@@ -179,6 +179,70 @@ class TestPauseFlagWrite:
         assert flag.read_text() == "pause"
 
 
+# ── Ctrl+Y copy-last-response (community contribution) ─────────
+
+
+class TestCopyLastResponse:
+    """Ctrl+Y copies the last orchestrator response to the clipboard.
+
+    Submitted by a beta user (cf. ``ctrl_y_clipboard.md``). The TUI
+    stores the most recent assistant response on
+    ``session.last_assistant_response`` after each free-text turn;
+    Ctrl+Y triggers ``action_copy_last_response`` which calls
+    ``pyperclip.copy`` and notifies via toast.
+    """
+
+    @pytest.mark.asyncio
+    async def test_copy_action_calls_pyperclip_with_last_response(
+        self, project_session
+    ) -> None:
+        """Set up a fake last-response, fire the action, verify
+        pyperclip.copy was called with the full text."""
+        copied: list[str] = []
+
+        def fake_copy(text: str) -> None:
+            copied.append(text)
+
+        with patch("pyperclip.copy", side_effect=fake_copy):
+            app = UrikaApp(session=project_session)
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                # Pretend a free-text turn just produced a response.
+                project_session.last_assistant_response = (
+                    "Try a paired t-test on RT differences."
+                )
+                # Fire the action directly (Pilot key-press for ctrl+y
+                # via ``await pilot.press("ctrl+y")`` works too but
+                # invoking the action is more direct + decoupled
+                # from input-routing).
+                app.action_copy_last_response()
+                await pilot.pause()
+
+        assert copied == ["Try a paired t-test on RT differences."], (
+            "pyperclip.copy should receive the full untruncated last "
+            "response text"
+        )
+
+    @pytest.mark.asyncio
+    async def test_copy_action_when_no_response_yet_warns(
+        self, project_session
+    ) -> None:
+        """Hitting Ctrl+Y before any response exists should warn the
+        user, not crash and not call pyperclip."""
+        copied: list[str] = []
+
+        with patch("pyperclip.copy", side_effect=copied.append):
+            app = UrikaApp(session=project_session)
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                # last_assistant_response defaults to "".
+                assert project_session.last_assistant_response == ""
+                app.action_copy_last_response()
+                await pilot.pause()
+
+        assert copied == [], "pyperclip.copy must NOT be called when there's no response yet"
+
+
 # ── Free-text rejected while busy (Package I-8) ──────────────────
 #
 # Tested at source-grep level in tests/test_tui/test_advisor_run_pickup.py

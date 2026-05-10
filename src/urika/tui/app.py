@@ -72,6 +72,7 @@ class UrikaApp(App):
         ("ctrl+q", "quit_app", "Quit"),
         ("ctrl+c", "cancel_agent", "Cancel / Quit"),
         ("ctrl+d", "quit_app", "Quit"),
+        ("ctrl+y", "copy_last_response", "Copy last response"),
     ]
 
     def __init__(self, session: ReplSession | None = None, **kwargs: object) -> None:
@@ -687,6 +688,7 @@ class UrikaApp(App):
             panel.write_line(format_agent_output(response))
             panel.write_line("")
 
+            self.session.last_assistant_response = response
             self.session.add_message("user", text)
             self.session.add_message("assistant", response[:500])
 
@@ -755,6 +757,27 @@ class UrikaApp(App):
             return
 
         self._cancel_active_worker()
+
+    def action_copy_last_response(self) -> None:
+        """Ctrl+Y: copy the most recent assistant response to the clipboard."""
+        response = self.session.last_assistant_response
+        if not response:
+            self.notify("No response to copy yet.", severity="warning", timeout=3)
+            return
+        try:
+            import pyperclip
+
+            pyperclip.copy(response)
+            preview = response[:60].replace("\n", " ")
+            if len(response) > 60:
+                preview += "…"
+            self.notify(
+                f'Copied {len(response)} chars: “{preview}”',
+                title="Copied to clipboard",
+                timeout=3,
+            )
+        except Exception as exc:
+            self.notify(f"Clipboard copy failed: {exc}", severity="error", timeout=5)
 
     # ── Remote command drain (Slack / Telegram) ────────────
 
@@ -900,6 +923,7 @@ class UrikaApp(App):
 
                 # Save conversation history so follow-up questions
                 # from the same remote user have context.
+                self.session.last_assistant_response = response
                 self.session.add_message("user", text)
                 self.session.add_message("assistant", response[:500])
 
