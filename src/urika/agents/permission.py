@@ -239,6 +239,28 @@ def make_can_use_tool(
 _READABLE_TOOLS = {"Read", "Glob", "Grep"}
 _WRITABLE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 
+# Tools that let an agent step *outside* this callback's reach and so
+# must never be permitted, regardless of ``allowed_tools``:
+#
+# - ``Task`` / ``Agent``: spawn a sub-agent that runs with its own
+#   (un-sandboxed) tool config — the sub-agent's tool calls do NOT
+#   come back through this ``can_use_tool``. An agent that can't write
+#   project-root ``methods.json`` directly could otherwise delegate
+#   the write to a sub-agent. Observed in the wild (v0.4.3): a
+#   task_agent spawned an ``Agent`` that overwrote ``methods.json``
+#   with a record missing ``name``, crashing ``register_method``.
+# - ``ToolSearch``: loads arbitrary deferred tool schemas (incl. MCP
+#   tools) on demand. The loaded tool calls still hit this callback,
+#   but allowing dynamic expansion of the toolset under a security
+#   policy is a footgun — deny it; agents that need a tool should
+#   have it in ``allowed_tools`` up front.
+#
+# These are also added to ``disallowed_tools`` at the SDK layer
+# (see ``ClaudeSDKRunner._build_options``); this denylist is the
+# belt to that suspenders — it holds even if a CLI version ignores
+# ``disallowed_tools`` for built-ins.
+_SANDBOX_ESCAPING_TOOLS = frozenset({"Task", "Agent", "ToolSearch"})
+
 
 def _decide(
     tool_name: str,
@@ -247,6 +269,13 @@ def _decide(
     project_root: Path | None,
 ) -> tuple[bool, str]:
     """Pure-function decision splitter — exposed for unit tests."""
+    if tool_name in _SANDBOX_ESCAPING_TOOLS:
+        return False, (
+            f"{tool_name} is not permitted under a security policy "
+            "(it would run outside the sandbox) — do the work directly "
+            "with the tools you already have"
+        )
+
     if tool_name == "Bash":
         cmd = tool_input.get("command", "")
         return _bash_decision(cmd, policy)

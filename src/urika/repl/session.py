@@ -76,6 +76,11 @@ class ReplSession:
     recent_output_lines: list[str] = field(default_factory=list)
     _recent_output_cap: int = 1000
 
+    # Full text of the most recent assistant response (untruncated).
+    # Updated by the TUI after each orchestrator chat turn so Ctrl+Y
+    # can copy it to the clipboard without truncation.
+    last_assistant_response: str = ""
+
     @property
     def has_project(self) -> bool:
         return self.project_path is not None

@@ -5,6 +5,66 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3.1] - 2026-05-11
+
+Hotfix release. Closes a SecurityPolicy enforcement hole, hardens the
+project method registry against malformed records, fixes the
+dashboard's New Project flow so it actually runs the project builder,
+and lands a community-contributed TUI keybinding.
+
+### Security
+
+- **Sub-agent sandbox escape blocked.** A `task_agent` could spawn an
+  `Agent` / `Task` sub-agent that runs with its own un-sandboxed tool
+  config and never returns through `can_use_tool` — a hole in the
+  SecurityPolicy enforcement added in v0.4.1. `permission.py` now
+  denies `Task` / `Agent` / `ToolSearch` outright (new
+  `_SANDBOX_ESCAPING_TOOLS`), and `claude_sdk.py` appends them to
+  `disallowed_tools` so the model never sees them. On a real
+  autonomous run a spawned sub-agent overwrote project-root
+  `methods.json` with a record missing `name`, which crashed the next
+  turn's `register_method` with `KeyError: 'name'`.
+
+### Fixed
+
+- **Method registry hardened.** `register_method` /
+  `update_method_status` use `m.get("name")` instead of `m["name"]`;
+  `load_methods` validates the file shape (top-level dict, `methods`
+  list, each entry a dict with a str `name`) and drops malformed
+  entries, self-healing the file on the next write. The
+  `KeyError: 'name'` crash can't recur even if something writes a bad
+  record. `task_agent_system.md` also gained an explicit "Files you
+  must NEVER write to" section (`methods.json`, `criteria.json`,
+  `leaderboard.json`, `advisor-history.json`, `.urika/`, `urika.toml`)
+  — the v0.4.3 cache-reuse prompt reorder had softened the original
+  "only write inside `{experiment_dir}/`" instruction.
+- **Dashboard New Project now runs the builder.** `POST /api/projects`
+  previously only laid down a bare workspace skeleton and stashed the
+  form's `instructions` field for a never-shipped future phase.
+  Dashboard-created projects ended up missing the `[data]` block, drift
+  hashes, runtime defaults, seeded criteria, README narrative, and
+  knowledge ingestion that `urika new` provides automatically. New
+  `project_builder.enrich_workspace()` runs the non-interactive subset
+  of the builder (scan → profile sample → `[data]` block + data
+  hashes → runtime defaults → docs/papers ingestion → seed criteria →
+  regenerate README) right after workspace creation. Best-effort
+  throughout — non-existent paths are skipped silently, so the
+  existing bare-skeleton contract for callers POSTing fake paths still
+  holds. The interactive scoping agent loop stays out of the HTTP
+  handler; the stashed instructions are reserved for a future async
+  background-builder pass.
+
+### Added
+
+- **Ctrl+Y copies the last response (community contribution).** New
+  Ctrl+Y keybinding in the TUI copies the most recent
+  orchestrator/free-text response to the system clipboard via
+  `pyperclip`, with a toast confirming the copy and showing a 60-char
+  preview. Covers both the primary free-text path and the remote-drain
+  branch (incoming Slack/Telegram). Falls through gracefully — empty
+  response → warning toast, `pyperclip` failure (no `xclip`/`xsel` on
+  headless Linux) → error toast, never a crash. Thanks to Chris Lam.
+
 ## [0.4.3] - 2026-05-10
 
 Prompt cache-reuse + cross-platform CI release. Three structural
