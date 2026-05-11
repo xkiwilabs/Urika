@@ -494,6 +494,81 @@ def test_create_project_no_instructions_no_file(create_client, tmp_path):
     assert not instr_path.exists()
 
 
+# ---- Non-interactive builder enrichment -----------------------------------
+
+
+def test_create_project_runs_builder_enrichment_when_data_exists(
+    create_client, tmp_path
+):
+    """When data_paths point at a real file on disk, the create flow
+    runs the non-interactive subset of the project builder: scans the
+    source, appends a ``[data]`` block, seeds initial criteria, and
+    regenerates README.md. Without this, dashboard-created projects
+    used to ship as bare skeletons missing everything ``urika new``
+    provides automatically."""
+    client, projects_root = create_client
+
+    real_data = tmp_path / "real.csv"
+    real_data.write_text("a,b,c\n1,2,3\n4,5,6\n", encoding="utf-8")
+
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "enriched-proj",
+            "question": "Does X predict Y?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": str(real_data),
+        },
+    )
+    assert r.status_code == 201, r.text
+
+    project_dir = projects_root / "enriched-proj"
+    proj_toml = tomllib.loads(
+        (project_dir / "urika.toml").read_text(encoding="utf-8")
+    )
+
+    assert proj_toml["data"]["source"] == str(real_data)
+    assert proj_toml["data"]["format"] == "csv"
+    assert proj_toml["data"]["pattern"] == "**/*.csv"
+
+    assert "data_hashes" in proj_toml["project"]
+    assert str(real_data) in proj_toml["project"]["data_hashes"]
+
+    criteria_path = project_dir / "criteria.json"
+    assert criteria_path.exists(), "Initial criteria must be seeded"
+    versions = json.loads(criteria_path.read_text())["versions"]
+    assert versions[0]["set_by"] == "project_builder"
+
+    readme_path = project_dir / "README.md"
+    assert readme_path.exists(), "README.md must be regenerated"
+
+
+def test_create_project_with_nonexistent_paths_still_succeeds(
+    create_client, tmp_path
+):
+    """Enrichment must be a no-op when data_paths don't exist on disk.
+    The bare-skeleton create flow that existing tests rely on
+    (POSTing /path/to/data.csv) must keep working."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "fake-paths",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "/this/path/does/not/exist.csv",
+        },
+    )
+    assert r.status_code == 201
+    proj_toml = tomllib.loads(
+        (projects_root / "fake-paths" / "urika.toml").read_text(encoding="utf-8")
+    )
+    # No [data] block when source path didn't exist
+    assert "data" not in proj_toml or "source" not in proj_toml.get("data", {})
+
+
 def test_create_project_duplicate_name_returns_409(create_client):
     """A second create with the same name fails after the registry sees it."""
     client, _ = create_client

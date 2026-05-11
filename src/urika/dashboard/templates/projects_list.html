@@ -163,8 +163,9 @@
         <textarea id="np-instructions" name="instructions" rows="3"
                   placeholder="Steer the project_builder agent — e.g. 'focus on time-series methods'"></textarea>
         <span class="form-help">
-          Captured for future builder-agent invocation. Not currently
-          consumed by the dashboard's POST /api/projects flow.
+          Captured for a future asynchronous builder-agent pass.
+          The synchronous create flow does scan + profile + knowledge
+          ingestion non-interactively and skips the agent scoping loop.
         </span>
       </div>
 

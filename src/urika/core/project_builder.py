@@ -275,6 +275,159 @@ class ProjectBuilder:
         return "**/*{" + ",".join(sorted_exts) + "}"
 
 
+def enrich_workspace(
+    project_dir: Path,
+    data_paths: list[str],
+    *,
+    privacy_mode: str = "open",
+) -> dict[str, Any]:
+    """Run non-interactive scan + profile + knowledge ingestion on an
+    already-created project workspace.
+
+    Mirrors the subset of :meth:`ProjectBuilder.write_project` that
+    doesn't require an interactive agent loop: appends the ``[data]``
+    block, ``[project].data_hashes`` (drift detection), ``[runtime]``
+    defaults, seeds initial criteria, regenerates README.md, and
+    ingests any docs/papers found alongside the data into the
+    knowledge store.
+
+    Best-effort throughout — non-existent paths are skipped silently,
+    per-file ingest errors don't abort the rest, and missing optional
+    dependencies (e.g. scipy) won't crash the call. Used by the
+    dashboard's POST /api/projects so dashboard-created projects
+    don't end up as bare skeletons.
+    """
+    import tomllib
+
+    from urika.core.source_scanner import scan_source_path
+
+    summary: dict[str, Any] = {
+        "scanned_path": None,
+        "data_files": 0,
+        "profiled": False,
+        "knowledge_ingested": 0,
+    }
+
+    source_path: Path | None = None
+    for raw in data_paths:
+        candidate = Path(raw).expanduser()
+        if candidate.exists():
+            source_path = candidate
+            break
+
+    scan_result: ScanResult | None = None
+    if source_path is not None:
+        try:
+            scan_result = scan_source_path(source_path)
+            summary["scanned_path"] = str(source_path)
+            summary["data_files"] = len(scan_result.data_files)
+        except Exception:
+            scan_result = None
+
+    toml_path = project_dir / "urika.toml"
+    with open(toml_path, "rb") as f:
+        existing = tomllib.load(f)
+
+    if scan_result is not None and scan_result.data_files:
+        exts = {f.suffix.lower() for f in scan_result.data_files}
+        if len(scan_result.data_files) > 1:
+            data_format = "csv_directory" if ".csv" in exts else "mixed_directory"
+        else:
+            data_format = scan_result.data_files[0].suffix.lstrip(".").lower()
+        if len(exts) == 1:
+            pattern = f"**/*{next(iter(exts))}"
+        else:
+            pattern = "**/*{" + ",".join(sorted(exts)) + "}"
+        existing["data"] = {
+            "source": str(source_path),
+            "format": data_format,
+            "pattern": pattern,
+        }
+
+        try:
+            from urika.data.data_hash import hash_data_files
+
+            real_paths = [
+                p for p in data_paths if Path(p).expanduser().exists()
+            ]
+            hashes = hash_data_files(real_paths)
+            if hashes:
+                existing.setdefault("project", {})["data_hashes"] = hashes
+        except Exception:
+            pass
+
+        try:
+            import pandas as pd
+
+            from urika.data.profiler import profile_dataset
+
+            frames: list[pd.DataFrame] = []
+            for f in scan_result.data_files[:5]:
+                try:
+                    frames.append(_read_data_file(f))
+                except Exception:
+                    continue
+            if frames:
+                profile_dataset(pd.concat(frames, ignore_index=True))
+                summary["profiled"] = True
+        except Exception:
+            pass
+
+    try:
+        from urika.core.settings import get_default_runtime
+
+        runtime_defaults = get_default_runtime(privacy_mode)
+        if runtime_defaults.get("model"):
+            existing.setdefault("runtime", {}).setdefault(
+                "model", runtime_defaults["model"]
+            )
+    except Exception:
+        pass
+
+    _write_toml(toml_path, existing)
+
+    if scan_result is not None and (scan_result.docs or scan_result.papers):
+        try:
+            from urika.knowledge import KnowledgeStore
+
+            store = KnowledgeStore(project_dir)
+            for f in scan_result.docs + scan_result.papers:
+                try:
+                    store.ingest(str(f))
+                    summary["knowledge_ingested"] += 1
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    try:
+        from urika.core.criteria import append_criteria, load_criteria_history
+
+        if not load_criteria_history(project_dir):
+            append_criteria(
+                project_dir,
+                {
+                    "type": "exploratory",
+                    "quality": {"min_approaches": 2},
+                    "completeness": ["establish baselines"],
+                },
+                set_by="project_builder",
+                turn=0,
+                rationale="Initial project criteria",
+            )
+    except Exception:
+        pass
+
+    try:
+        from urika.core.readme_generator import write_readme
+
+        write_readme(project_dir)
+    except Exception:
+        pass
+
+    return summary
+
+
 def _read_data_file(f: Path) -> pd.DataFrame:
     """Read a data file using the appropriate pandas reader based on extension."""
     import pandas as pd

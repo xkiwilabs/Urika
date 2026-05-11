@@ -87,15 +87,18 @@ _PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 async def api_create_project(request: Request):
     """Synchronously materialize a new project workspace.
 
-    Builds a :class:`ProjectConfig` from the form, calls
-    :func:`create_project_workspace` to lay down the directory tree
-    + ``urika.toml`` on disk, and registers the project in the
-    central :class:`ProjectRegistry`.
+    Builds a :class:`ProjectConfig` from the form, lays down the
+    directory tree + ``urika.toml`` via :func:`create_project_workspace`,
+    then runs :func:`enrich_workspace` to perform the non-interactive
+    subset of the project builder: scan the data path(s), profile a
+    sample, ingest any docs/papers into the knowledge store, append
+    the ``[data]`` block + drift hashes, apply runtime defaults, seed
+    initial criteria, and regenerate README.md.
 
-    Builder-agent invocation (data profiling, source scanning,
-    knowledge ingestion) is intentionally deferred to a future phase
-    — for now the user goes straight to the project home and runs
-    experiments from there.
+    The interactive scoping agent loop that ``urika new`` runs in a
+    TTY is deliberately skipped — there's no stdin in an HTTP handler.
+    Free-text builder instructions are stashed to disk for a future
+    background-builder integration.
     """
     body = await request.form()
     name = (body.get("name") or "").strip()
@@ -176,15 +179,23 @@ async def api_create_project(request: Request):
         audience=audience,
     )
 
+    from urika.core.project_builder import enrich_workspace
     from urika.core.workspace import create_project_workspace
 
     create_project_workspace(project_dir, cfg)
 
+    # Non-interactive builder pass: scan data path(s), profile a
+    # sample, ingest docs/papers, append [data] block + drift hashes,
+    # seed initial criteria, regenerate README. No-op for fake/missing
+    # paths (matches the existing test contract that POSTs paths like
+    # ``/path/to/data.csv``). The interactive scoping agent loop that
+    # ``urika new`` runs in a TTY is intentionally skipped here.
+    enrich_workspace(project_dir, data_paths, privacy_mode=privacy_mode)
+
     # Persist any free-text builder instructions the user supplied. The
-    # dashboard's create-project flow doesn't currently invoke the
-    # project_builder agent, so we stash the instructions on disk so a
-    # future builder-agent integration (Phase 13B+) can pick them up
-    # rather than dropping the input on the floor.
+    # non-interactive enrichment pass above doesn't consult them — they
+    # are stashed for a future background builder-agent integration
+    # that can run the full interactive scoping loop asynchronously.
     instructions = (body.get("instructions") or "").strip()
     if instructions:
         urika_dir = project_dir / ".urika"
