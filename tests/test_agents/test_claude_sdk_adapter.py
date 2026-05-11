@@ -58,7 +58,10 @@ class TestClaudeSDKRunnerBuildOptions:
         options = runner._build_options(read_only_config)
         assert options.system_prompt == "You are a test agent."
         assert options.allowed_tools == ["Read", "Glob"]
-        assert options.disallowed_tools == ["Bash"]
+        # config's own "Bash" is preserved; the sandbox-escaping tools
+        # (Task/Agent/ToolSearch) are appended unconditionally.
+        assert options.disallowed_tools[0] == "Bash"
+        assert {"Task", "Agent", "ToolSearch"} <= set(options.disallowed_tools)
         assert options.max_turns == 5
         # v0.4: SecurityPolicy enforcement runs via the SDK's
         # ``can_use_tool`` callback, which only fires when

@@ -320,6 +320,40 @@ class TestDefaultAllow:
         assert ok
 
 
+# ── Sandbox-escaping tools always denied ──────────────────────────────
+
+
+class TestSandboxEscapingTools:
+    """``Task`` / ``Agent`` / ``ToolSearch`` must be denied no matter
+    what an agent's policy says — a spawned sub-agent runs with its own
+    tool config and never comes back through this callback, so it's a
+    sandbox escape. Regression for the v0.4.3 incident where a
+    task_agent spawned an ``Agent`` that overwrote ``methods.json``.
+    """
+
+    @pytest.mark.parametrize("tool_name", ["Task", "Agent", "ToolSearch"])
+    def test_denied_even_with_permissive_policy(self, tmp_path: Path, tool_name: str):
+        from urika.agents.permission import _decide
+
+        ok, reason = _decide(
+            tool_name,
+            {"description": "spawn helper", "prompt": "do stuff"},
+            _policy(
+                writable=[tmp_path],
+                readable=[tmp_path],
+                allowed_bash=["python", "pip"],
+            ),
+            tmp_path,
+        )
+        assert not ok
+        assert reason
+
+    def test_set_membership_is_explicit(self):
+        from urika.agents.permission import _SANDBOX_ESCAPING_TOOLS
+
+        assert {"Task", "Agent", "ToolSearch"} <= set(_SANDBOX_ESCAPING_TOOLS)
+
+
 # ── Factory + SDK shape ───────────────────────────────────────────────
 
 

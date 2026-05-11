@@ -555,7 +555,7 @@ class ClaudeSDKRunner(AgentRunner):
         # was ``"bypassPermissions"`` so the SDK never asked us. The
         # mode change is required — ``can_use_tool`` does NOT fire
         # under bypass.
-        from urika.agents.permission import make_can_use_tool
+        from urika.agents.permission import _SANDBOX_ESCAPING_TOOLS, make_can_use_tool
 
         # Capture stderr from the `claude` CLI so its diagnostic output
         # lands in our logs when the SDK raises the generic "Command
@@ -568,10 +568,18 @@ class ClaudeSDKRunner(AgentRunner):
             except Exception:
                 pass
 
+        # Always block sub-agent spawning + dynamic tool loading, no
+        # matter what an agent role declares. ``can_use_tool`` also
+        # denies these (permission._SANDBOX_ESCAPING_TOOLS) — listing
+        # them here means the model never even sees the tools, which is
+        # cleaner; the callback is the fallback for CLI builds that
+        # ignore ``disallowed_tools`` for built-ins.
+        disallowed = list(dict.fromkeys([*config.disallowed_tools, *_SANDBOX_ESCAPING_TOOLS]))
+
         kwargs: dict[str, object] = {
             "system_prompt": config.system_prompt,
             "allowed_tools": config.allowed_tools,
-            "disallowed_tools": config.disallowed_tools,
+            "disallowed_tools": disallowed,
             "max_turns": config.max_turns,
             "model": config.model,
             "cwd": str(config.cwd) if config.cwd else None,

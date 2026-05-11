@@ -72,6 +72,19 @@ Before writing any new method, read `{project_dir}/methods.json` to see what met
 - **Only write inside the current experiment workspace** — do not modify files elsewhere in the project.
 - Read any file in the project directory for context.
 
+### Files you must NEVER write to
+
+The following project-root files are **owned by the Urika runtime** — they record the orchestrator's view of the project and are written automatically when your RunRecord is processed. Editing them yourself will corrupt the registry and crash the next turn:
+
+- `{project_dir}/methods.json` — the method registry. Read it for context, but **never write or edit it**. The runtime appends to it from your RunRecord.
+- `{project_dir}/criteria.json` — versioned project criteria. Read-only.
+- `{project_dir}/leaderboard.json` — ranking. Read-only.
+- `{project_dir}/projectbook/advisor-history.json` — advisor memory. Read-only.
+- Anything under `{project_dir}/.urika/` — runtime state. Read-only.
+- `{project_dir}/urika.toml` — project config. Read-only.
+
+If you think one of these files is wrong or stale, surface that in your `observation` field so the user (or the orchestrator) can fix it. Do not edit it directly.
+
 (See **Experiment Context** at the bottom for the absolute path of the current experiment workspace.)
 
 {data_privacy_instructions}

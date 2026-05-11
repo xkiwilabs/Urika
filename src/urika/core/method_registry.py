@@ -18,7 +18,14 @@ def _methods_path(project_dir: Path) -> Path:
 
 
 def load_methods(project_dir: Path) -> list[dict[str, Any]]:
-    """Load all registered methods."""
+    """Load all registered methods.
+
+    Defensive against external writers (e.g. an agent that edited
+    methods.json directly): the file's top level may not be a dict,
+    "methods" may not be a list, and individual entries may be missing
+    "name". Drop anything that doesn't look like a registered method
+    rather than letting downstream readers KeyError.
+    """
     path = _methods_path(project_dir)
     if not path.exists():
         return []
@@ -27,7 +34,20 @@ def load_methods(project_dir: Path) -> list[dict[str, Any]]:
     except (json.JSONDecodeError, KeyError) as exc:
         logger.warning("Corrupt JSON in %s: %s", path, exc)
         return []
-    return data.get("methods", [])
+    if not isinstance(data, dict):
+        logger.warning("methods.json top-level is not a dict (%s); ignoring", type(data).__name__)
+        return []
+    raw = data.get("methods", [])
+    if not isinstance(raw, list):
+        logger.warning("methods.json 'methods' is not a list (%s); ignoring", type(raw).__name__)
+        return []
+    clean: list[dict[str, Any]] = []
+    for m in raw:
+        if isinstance(m, dict) and isinstance(m.get("name"), str):
+            clean.append(m)
+        else:
+            logger.warning("Dropping malformed methods.json entry: %r", m)
+    return clean
 
 
 def _save_methods(project_dir: Path, methods: list[dict[str, Any]]) -> None:
@@ -51,9 +71,11 @@ def register_method(
     with locked_json_update(path):
         methods = load_methods(project_dir)
 
-        # Update existing method if same name
+        # load_methods already filters malformed entries, so plain
+        # m["name"] would be safe — but use .get() defensively in case
+        # something writes between the load and the iteration.
         for m in methods:
-            if m["name"] == name:
+            if m.get("name") == name:
                 m["description"] = description
                 m["script"] = script
                 m["experiment"] = experiment
@@ -103,7 +125,7 @@ def update_method_status(
     with locked_json_update(path):
         methods = load_methods(project_dir)
         for m in methods:
-            if m["name"] == name:
+            if m.get("name") == name:
                 m["status"] = status
                 if superseded_by is not None:
                     m["superseded_by"] = superseded_by
