@@ -32,12 +32,14 @@ def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
             # Pre-v0.4 this silently `continue`d. A malformed
             # evaluator/advisor JSON block is the single most common
             # reason ``criteria_met`` is silently missed and the loop
-            # runs to max_turns wondering why criteria never matched.
-            # Emit at debug so verbose runs can grep for the cause
-            # without spamming normal logs.
+            # runs to max_turns wondering why criteria never matched —
+            # or the advisor's only suggestion is dropped and the
+            # meta-loop bails with "no further experiments to suggest".
+            # v0.4.4: promoted debug -> warning so it lands in run.log /
+            # the dashboard SSE feed / the e2e smoke logs by default.
             preview = raw[:120].replace("\n", "\\n")
-            logger.debug(
-                "Skipping malformed JSON block: %s: %s; raw[:120]=%r",
+            logger.warning(
+                "Skipping malformed JSON block in agent output: %s: %s; raw[:120]=%r",
                 type(exc).__name__,
                 exc,
                 preview,
@@ -65,7 +67,7 @@ def parse_run_records(text: str) -> list[RunRecord]:
             continue
         metrics = block["metrics"]
         if not isinstance(metrics, dict):
-            logger.debug(
+            logger.warning(
                 "Skipping run record with non-dict metrics (%s): run_id=%r",
                 type(metrics).__name__,
                 block.get("run_id"),
@@ -73,7 +75,7 @@ def parse_run_records(text: str) -> list[RunRecord]:
             continue
         params = block.get("params", {})
         if not isinstance(params, dict):
-            logger.debug(
+            logger.warning(
                 "Skipping run record with non-dict params (%s): run_id=%r",
                 type(params).__name__,
                 block.get("run_id"),

@@ -5,6 +5,102 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-05-13
+
+Robustness release. Closes a family of "the experiment exited looking
+fine but did nothing" failure modes, makes every failure visible
+instead of silent, and — most importantly — gives the end-to-end smoke
+real teeth so a green e2e run actually implies the agents, files, and
+process steps all completed and produced real results. The unit suite
+also never makes a real API call, so a companion set of tests guards
+the prompt↔parser contract and the loop's "messy LLM output" paths,
+which the mocked tests could never exercise.
+
+### Fixed
+
+- **A flaky agent error no longer kills the experiment.** A failed
+  agent turn now *pauses* the session (resumable via `urika run
+  --resume`) instead of hard-failing it — except for genuinely
+  unrecoverable `auth` errors. Pre-fix, any error the SDK adapter
+  couldn't categorise ("unknown" — a momentary connect blip, an
+  SDK-internal decode hiccup, a bare "Command failed with exit code N")
+  hard-failed the experiment, frequently on turn 1 since the planning
+  agent is the first SDK call every turn. A bare CLI exit-N with no
+  diagnostic is now classified as `transient` (→ pause-and-resume).
+- **`urika run --max-experiments N` no longer exits with 0
+  experiments** when the advisor's first reply has no parseable
+  `suggestions` block. On a brand-new project it now retries once with
+  an explicit nudge and, failing that, seeds a deterministic baseline
+  experiment so the orchestrator still does real work. A mid-project
+  advisor *call failure* is now distinguished from "the advisor chose
+  not to suggest anything" and surfaced as such.
+- **An experiment that ran every turn but recorded zero runs is now
+  `failed`** (with a clear message and a resume hint), not silently
+  `completed` with an empty `progress.json` and no `methods.json`.
+  Each turn that produces no parseable run record now emits a `warning`
+  progress event; so do an evaluator response with no `criteria_met`
+  block and a planning agent that produces no parseable method plan.
+  These previously failed completely silently.
+- **Stale lock self-heal: a recycled PID no longer wedges resume.** A
+  `.lock` left behind by a crashed run whose PID the OS has recycled to
+  an unrelated (non-python/urika) process is now treated as stale and
+  cleared, so `urika run --resume` works without a manual `urika
+  unlock`.
+- **Dashboard: the New Project modal's `private_endpoint_name` is
+  honoured** — the chosen endpoint is pinned under the new project's
+  `[privacy.endpoints.private]` (422 on an unknown name). Previously
+  the field was posted but silently ignored.
+- **Dashboard: a run that failed to launch no longer shows "completed".**
+  The run-log SSE stream reports `failed` when `run.log` carries a
+  `URIKA-LAUNCH-FAILED:` marker.
+- **Dashboard: `POST /run` self-heals a pre-v0.4.3.1 bare project** by
+  running the idempotent `enrich_workspace` (scan → profile → criteria
+  → README) when `criteria.json` is missing, so older dashboard-created
+  projects become usable on their next run.
+- **Sandbox tool denials and malformed-JSON-block drops now log at
+  WARNING** (were INFO/DEBUG), so a run drowning in `permission_check
+  denied` or an agent emitting unparseable JSON is diagnosable from
+  `run.log` / the dashboard SSE feed.
+- **Dashboard: invalid `pattern` regex on the project-name input.**
+  `pattern="[a-z0-9][a-z0-9-]*"` is rejected by modern Chromium's
+  `/v`-mode pattern parsing (`Uncaught SyntaxError`), so client-side
+  name validation silently didn't run. Hyphen escaped:
+  `[a-z0-9][a-z0-9\-]*`.
+
+### Added
+
+- **`task_agent` prompt: a "Bash sandbox restrictions" section** — no
+  shell pipes / redirection / `&&` / `;` / heredocs; write a script
+  file and run it, capture output from inside Python. (The agent was
+  burning turns fighting the sandbox.)
+- **The end-to-end smoke (`dev/scripts/smoke-v04-e2e-*.sh`) now asserts
+  the agents did real work, not just that commands exited 0**: `>=1`
+  run with a non-empty metrics dict; `methods.json` ↔ `progress.json`
+  ↔ `leaderboard.json` mutually consistent; `>=1` diagnostic figure;
+  every experiment dir recorded `>=1` run; `findings.json` carries an
+  `answer` and `>=1` final method; `requirements.txt` lists real
+  packages; `reproduce.sh` has a shebang, references `requirements.txt`,
+  and runs a `methods/final_*.py`; `>=1` syntactically-valid standalone
+  `final_*.py`; and (under `URIKA_SMOKE_REAL=1`) `requirements.txt`
+  actually installs in a clean venv. Plus `verify_no_early_exit_markers`
+  now also flags a turn-1 pause.
+- **A nightly CI workflow (`.github/workflows/e2e-smoke.yml`)** that
+  runs the cheap-config open-mode e2e smoke (sonnet + haiku, ~$0.50,
+  ~10–15 min) on a schedule and on demand. Skipped on the public
+  mirror.
+- **Test coverage for the failure modes above**: a prompt↔parser
+  contract test (extracts the `json` example from each role prompt and
+  asserts the matching parser accepts it); messy-LLM-output loop tests
+  (no fence / truncated / empty / error string → `warning` + `failed`,
+  not silent `completed`); finalize-sequence content tests
+  (`final-report.md` written iff substantial, presentation rendered,
+  README embeds the findings answer); `methods.json` self-heal tests
+  (malformed records don't crash `register_method`); `urika run`
+  outcome-surfacing tests (a `failed` / `paused` run is visibly
+  reported — which the TUI/REPL inherit); and a real-browser dashboard
+  test driving the "+ New project" modal and asserting the created
+  project is enriched, not a bare skeleton.
+
 ## [0.4.3.1] - 2026-05-11
 
 Hotfix release. Closes a SecurityPolicy enforcement hole, hardens the

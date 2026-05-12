@@ -31,23 +31,46 @@ from urika.core.session import fail_session, pause_session
 
 logger = logging.getLogger(__name__)
 
-# Categories that should pause instead of fail — the experiment can
-# be resumed once the transient issue resolves.
+# Categories with a *user-friendly* pause message already supplied by
+# the SDK adapter's ``_friendly_error``. Used only to decide whether
+# ``_check_result`` should append a generic "resume with …" hint —
+# NOT to decide pause-vs-fail (see ``_is_recoverable_failure``).
 _PAUSABLE_ERRORS = frozenset(
     {
         "rate_limit",
         "billing",
         # Transient network/server errors (5xx, connection_reset,
-        # timeout). Pre-v0.3.2 these fell into "unknown" and silently
-        # failed the experiment on a single network blip mid-loop.
+        # timeout, bare CLI exit codes with no diagnostic).
         "transient",
         # Configuration errors (MissingPrivateEndpointError,
         # APIKeyRequiredError) — runtime is misconfigured but the
-        # experiment state is recoverable; pause so the user can
-        # fix config from the dashboard and resume.
+        # experiment state is recoverable.
         "config",
     }
 )
+
+# Error categories that genuinely cannot be recovered by resuming —
+# the credentials/session themselves are bad, so re-running the same
+# turn will hit the same wall. Everything *else* (rate_limit, billing,
+# transient, config, and the catch-all "unknown" — which covers
+# timeouts, JSON-decode errors inside the SDK, bare "Command failed
+# with exit code N", 400s without an auth/billing keyword, etc.) is
+# treated as recoverable: the loop **pauses** so ``urika run --resume``
+# can retry the turn, instead of hard-failing the whole experiment.
+#
+# Pre-v0.4.4 only the explicit pausable set above paused; anything
+# that fell into "unknown" hard-failed the experiment — frequently on
+# turn 1, since the planning agent is the first SDK call every turn.
+# A single odd error (a momentary connect blip, an SDK-internal
+# decode hiccup) therefore killed multi-hour autonomous runs and left
+# brand-new dashboard projects looking broken after one failed run.
+_FATAL_ERROR_CATEGORIES = frozenset({"auth"})
+
+
+def _is_recoverable_failure(category: str | None) -> bool:
+    """Return True iff a failed agent result should *pause* (resumable)
+    rather than *fail* the session. See ``_FATAL_ERROR_CATEGORIES``."""
+    return (category or "") not in _FATAL_ERROR_CATEGORIES
 
 # Metrics where lower values are better (errors, losses, p-values).
 # Shared with loop_display._print_run_summary so the "best" calculation
@@ -68,9 +91,11 @@ def _check_result(
 ) -> str | None:
     """Check an agent result. Returns None if OK, or an error string.
 
-    On rate-limit or billing errors the session is **paused** (not
-    failed) so it can be resumed later. On auth errors or unknown
-    failures the session is failed. The progress callback receives a
+    Recoverable failures (everything except ``auth`` —
+    see ``_FATAL_ERROR_CATEGORIES``) **pause** the session so a
+    ``urika run --resume`` re-runs the turn. Only genuinely
+    unrecoverable failures (bad credentials / expired session) **fail**
+    the session outright. The progress callback receives a
     human-readable message in all cases.
     """
     if result.success:
@@ -79,9 +104,17 @@ def _check_result(
     error_msg = result.error or f"{agent_label} failed"
     category = getattr(result, "error_category", "") or ""
 
-    if category in _PAUSABLE_ERRORS:
-        # Pause instead of fail — experiment can be resumed.
-        progress("result", error_msg)
+    if _is_recoverable_failure(category):
+        # Pause instead of fail — experiment state is intact.
+        msg = error_msg
+        if category not in _PAUSABLE_ERRORS:
+            # Catch-all "unknown" failure — no friendly resume hint was
+            # baked in by the adapter, so add one.
+            msg = (
+                f"{error_msg}\n  The experiment has been paused — "
+                "resume with: urika run --resume"
+            )
+        progress("result", msg)
         try:
             pause_session(project_dir, experiment_id)
         except Exception as exc:
@@ -96,7 +129,7 @@ def _check_result(
             )
         return error_msg
 
-    # Auth or unknown errors — fail the session.
+    # Unrecoverable (auth) — fail the session.
     progress("result", error_msg)
     try:
         fail_session(project_dir, experiment_id, error=error_msg)

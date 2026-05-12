@@ -129,8 +129,31 @@ def acquire_lock(project_dir: Path, experiment_id: str) -> bool:
                     # our PID before we started). Already ours — done.
                     return True
                 if _pid_is_alive(pid):
-                    return False  # Process is alive — lock is valid
-                # PID is dead — fall through to unlink below.
+                    # The PID is alive — but is it *us*? The OS recycles
+                    # PIDs; a lock left behind by a crashed run can point
+                    # at an unrelated process that happens to now own
+                    # that PID. Pre-v0.4.4 that made the lock effectively
+                    # permanent — ``urika run --resume`` failed after 0
+                    # turns with a misleading "already running (PID N is
+                    # alive)" until the user manually ran ``urika
+                    # unlock``. If the live process clearly isn't a
+                    # Python / urika process, treat the lock as stale.
+                    proc_name = _get_process_name(pid).lower()
+                    if proc_name and not (
+                        "python" in proc_name or "urika" in proc_name
+                    ):
+                        logger.info(
+                            "Lock for %s points at live PID %d (%s) which is "
+                            "not a python/urika process — treating as stale.",
+                            experiment_id,
+                            pid,
+                            proc_name,
+                        )
+                        # fall through to unlink below
+                    else:
+                        return False  # Looks like a real urika run — valid
+                # PID is dead (or recycled to a non-urika process) —
+                # fall through to unlink below.
         # Empty lock file: pre-v0.3 (commit 2fdae4b4) used
         # ``path.touch()`` which created empty locks; current release
         # ALWAYS writes the PID into the lock below. So any empty lock

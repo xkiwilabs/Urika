@@ -390,14 +390,26 @@ class ClaudeSDKRunner(AgentRunner):
             exit_code = getattr(exc, "exit_code", None)
             if stderr_clean:
                 raw_detail = stderr_clean
+                category = _classify_error(raw_detail)
             elif exit_code is not None:
                 raw_detail = (
                     f"{type(exc).__name__}: exit code {exit_code} "
                     f"(no stderr captured by SDK transport)"
                 )
+                # No diagnostic at all: the claude CLI subprocess exited
+                # non-zero before / while producing output. Genuine API
+                # errors (auth, billing, rate-limit, 5xx) carry a message
+                # the SDK relays — a bare exit code with nothing else is
+                # almost always a transient subprocess / connect blip.
+                # Classify as ``transient`` so the orchestrator
+                # pauses-and-resumes instead of hard-failing the
+                # experiment (frequently on turn 1, since the planning
+                # agent is the first SDK call each turn). v0.4.4
+                # robustness pass.
+                category = "transient"
             else:
                 raw_detail = f"{type(exc).__name__}: {exc}"
-            category = _classify_error(raw_detail)
+                category = _classify_error(raw_detail)
             error_detail = _friendly_error(category, raw_detail)
             logger.exception("Agent SDK ProcessError [%s]", category)
             _emit_trace(False)
@@ -482,6 +494,12 @@ class ClaudeSDKRunner(AgentRunner):
             # invisible in v0.3.0/0.3.1.
             raw_detail = f"{type(exc).__name__}: {exc}"
             category = _classify_error(raw_detail)
+            if category == "unknown" and "Command failed with exit code" in str(exc):
+                # Subprocess exited non-zero with no streamed content and
+                # no recognisable error text — the same "transient
+                # subprocess blip" case as the ProcessError branch above.
+                # Pause-and-resume beats hard-failing the experiment.
+                category = "transient"
             error_detail = _friendly_error(category, raw_detail)
             logger.exception("Agent SDK error [%s]", category)
             _emit_trace(False)

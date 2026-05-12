@@ -89,15 +89,70 @@ async def run_project(
                 except Exception:
                     pass
 
+            advisor_text = ""
+            advisor_failed = False
             if next_exp is None:
                 # No pending suggestions — ask advisor
                 progress("agent", "Advisor agent — proposing next experiment")
-                next_exp, advisor_text = await _determine_next(
+                next_exp, advisor_text, advisor_failed = await _determine_next(
                     project_dir, runner, instructions, on_message
                 )
 
+                # Fresh-project safety net. If the very first advisor
+                # call produces nothing usable — a transient error, or a
+                # response whose ``suggestions`` JSON block didn't parse
+                # (a trailing comma, a stray prefix) — don't end the
+                # project having done nothing. Retry once with an
+                # explicit nudge, then fall back to a deterministic seed
+                # experiment so the orchestrator still does *some* real
+                # work. Pre-v0.4.4, ``urika run --max-experiments N``
+                # could exit here after 0 experiments.
+                if (
+                    next_exp is None
+                    and not results
+                    and not list_experiments(project_dir)
+                ):
+                    if advisor_failed:
+                        progress(
+                            "result",
+                            f"Advisor call failed on the first turn: {advisor_text}",
+                        )
+                    nudge = (
+                        (instructions + "\n\n" if instructions else "")
+                        + "You MUST propose at least one concrete first "
+                        "experiment — this is a brand-new project with no "
+                        "results yet. Respond with a `suggestions` JSON block."
+                    )
+                    next_exp, advisor_text, advisor_failed = await _determine_next(
+                        project_dir, runner, nudge, on_message
+                    )
+                    if next_exp is None:
+                        progress(
+                            "phase",
+                            "Advisor produced no usable first experiment — "
+                            "seeding a baseline exploratory experiment.",
+                        )
+                        next_exp = {
+                            "name": "baseline",
+                            "method": (
+                                "Initial exploratory analysis: profile the "
+                                "dataset and fit a simple baseline model "
+                                "appropriate to the research question."
+                            ),
+                        }
+
             if next_exp is None:
-                print_step("Advisor: no further experiments to suggest.")
+                # Not a fresh project — the advisor genuinely thinks
+                # there's nothing left worth trying (or a mid-project
+                # advisor call failed; either way the run stops here and
+                # is resumable).
+                if advisor_failed:
+                    progress("result", f"Advisor call failed: {advisor_text}")
+                    print_step(
+                        f"Advisor agent failed — stopping. {advisor_text}"
+                    )
+                else:
+                    print_step("Advisor: no further experiments to suggest.")
                 if advisor_text:
                     preview = advisor_text[:500].strip()
                     if len(advisor_text) > 500:
@@ -192,8 +247,14 @@ async def _determine_next(
     runner: AgentRunner,
     instructions: str,
     on_message: Callable[..., Any] | None,
-) -> tuple[dict[str, Any] | None, str]:
-    """Call advisor to propose next experiment."""
+) -> tuple[dict[str, Any] | None, str, bool]:
+    """Call advisor to propose next experiment.
+
+    Returns ``(next_experiment, advisor_text, call_failed)``. The third
+    element distinguishes "the advisor *call* failed" (transient/SDK
+    error — the caller should not pretend the project is finished) from
+    "the advisor ran fine and chose not to suggest anything".
+    """
     from urika.agents.registry import AgentRegistry
     from urika.orchestrator.parsing import parse_suggestions
 
@@ -201,7 +262,7 @@ async def _determine_next(
     registry.discover()
     advisor = registry.get("advisor_agent")
     if advisor is None:
-        return None, ""
+        return None, "advisor_agent role is not registered", True
 
     import json as _json
     import tomllib
@@ -291,7 +352,7 @@ async def _determine_next(
     result = await runner.run(config, context, on_message=on_message)
 
     if not result.success:
-        return None, result.error or ""
+        return None, result.error or "advisor agent call failed", True
 
     parsed = parse_suggestions(result.text_output)
 
@@ -314,8 +375,8 @@ async def _determine_next(
         pass
 
     if parsed and parsed.get("suggestions"):
-        return parsed["suggestions"][0], result.text_output or ""
-    return None, result.text_output or ""
+        return parsed["suggestions"][0], result.text_output or "", False
+    return None, result.text_output or "", False
 
 
 def _criteria_fully_met(project_dir: Path) -> bool:
