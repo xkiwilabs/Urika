@@ -9,7 +9,9 @@ import pytest
 
 from urika.agents.config import AgentConfig
 from urika.agents.runner import AgentResult, AgentRunner
-from urika.orchestrator.meta import _criteria_fully_met, _determine_next
+from urika.core.models import ProjectConfig
+from urika.core.workspace import create_project_workspace
+from urika.orchestrator.meta import _criteria_fully_met, _determine_next, run_project
 
 
 class TestCriteriaFullyMet:
@@ -258,28 +260,30 @@ class TestDetermineNext:
         )
         runner = _FakeRunner(text=advisor_text)
 
-        next_exp, text = await _determine_next(
+        next_exp, text, failed = await _determine_next(
             tmp_path, runner, instructions="", on_message=None
         )
 
         assert next_exp is not None
         assert next_exp["name"] == "rf-baseline"
         assert runner.call_count == 1
+        assert failed is False
         # Text is the advisor's raw output
         assert "random forest" in text
 
     @pytest.mark.asyncio
     async def test_returns_none_when_runner_fails(self, tmp_path: Path) -> None:
-        """If the advisor run fails, _determine_next returns (None, error)."""
+        """If the advisor run fails, _determine_next returns (None, error, True)."""
         _write_toml(tmp_path)
         runner = _FakeRunner(success=False, error="boom")
 
-        next_exp, text = await _determine_next(
+        next_exp, text, failed = await _determine_next(
             tmp_path, runner, instructions="", on_message=None
         )
 
         assert next_exp is None
         assert text == "boom"
+        assert failed is True
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_suggestions_in_output(
@@ -291,11 +295,12 @@ class TestDetermineNext:
             text="I think we've covered all the promising directions."
         )
 
-        next_exp, text = await _determine_next(
+        next_exp, text, failed = await _determine_next(
             tmp_path, runner, instructions="", on_message=None
         )
 
         assert next_exp is None
+        assert failed is False
         # The text is still returned for display to the user
         assert "promising" in text
 
@@ -317,3 +322,93 @@ class TestDetermineNext:
         assert "tree-based models only" in runner.last_prompt
         # The project question should also appear in context
         assert "Q?" in runner.last_prompt
+
+
+class TestRunProjectFreshSafetyNet:
+    """A brand-new project must not exit having done zero experiments
+    just because the advisor's first response had no parseable
+    ``suggestions`` block (the v0.4.4 HIGH-3 fix)."""
+
+    @pytest.mark.asyncio
+    async def test_seeds_baseline_when_advisor_gives_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project_dir = tmp_path / "fresh-proj"
+        create_project_workspace(
+            project_dir,
+            ProjectConfig(
+                name="fresh-proj",
+                question="Does X predict Y?",
+                mode="exploratory",
+                data_paths=[],
+            ),
+        )
+
+        # Advisor always replies with prose — no suggestions block,
+        # ever (so the retry-with-nudge also yields nothing).
+        runner = _FakeRunner(text="I have no particular recommendation.")
+
+        ran_experiments: list[str] = []
+
+        async def _fake_run_experiment(pdir, exp_id, rnr, **kw):  # noqa: ANN001
+            ran_experiments.append(exp_id)
+            return {"status": "completed", "turns": 1}
+
+        async def _fake_finalize(*a, **k):  # noqa: ANN002, ANN003
+            return None
+
+        monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
+        monkeypatch.setattr(
+            "urika.orchestrator.finalize.finalize_project", _fake_finalize
+        )
+
+        result = await run_project(
+            project_dir, runner, mode="capped", max_experiments=1, max_turns=1
+        )
+
+        # The orchestrator seeded a deterministic baseline experiment
+        # and ran it, rather than bailing with 0 experiments.
+        assert result["experiments_run"] == 1
+        assert len(ran_experiments) == 1
+        exps = sorted((project_dir / "experiments").iterdir())
+        assert len(exps) == 1
+        assert "baseline" in exps[0].name
+
+    @pytest.mark.asyncio
+    async def test_no_seed_when_advisor_suggests_normally(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Guard against the safety net firing on the happy path.
+        project_dir = tmp_path / "ok-proj"
+        create_project_workspace(
+            project_dir,
+            ProjectConfig(
+                name="ok-proj",
+                question="Q?",
+                mode="exploratory",
+                data_paths=[],
+            ),
+        )
+        runner = _FakeRunner(
+            text='```json\n{"suggestions": [{"name": "rf", "method": "random forest"}]}\n```'
+        )
+
+        async def _fake_run_experiment(pdir, exp_id, rnr, **kw):  # noqa: ANN001
+            return {"status": "completed", "turns": 1}
+
+        async def _fake_finalize(*a, **k):  # noqa: ANN002, ANN003
+            return None
+
+        monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
+        monkeypatch.setattr(
+            "urika.orchestrator.finalize.finalize_project", _fake_finalize
+        )
+
+        await run_project(
+            project_dir, runner, mode="capped", max_experiments=1, max_turns=1
+        )
+        # Advisor was called exactly once (no retry-with-nudge).
+        assert runner.call_count == 1
+        exps = sorted((project_dir / "experiments").iterdir())
+        assert len(exps) == 1
+        assert "rf" in exps[0].name

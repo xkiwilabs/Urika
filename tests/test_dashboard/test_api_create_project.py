@@ -383,6 +383,91 @@ def test_create_project_privacy_mode_private_with_endpoint_succeeds(
     assert proj_toml["privacy"]["mode"] == "private"
 
 
+def test_create_project_pins_chosen_private_endpoint(tmp_path: Path, monkeypatch):
+    """When the New Project modal posts ``private_endpoint_name``, the
+    new project's urika.toml pins that endpoint under
+    ``[privacy.endpoints.private]`` so the runtime uses the user's
+    choice, not whatever the global ``private`` endpoint is. (Pre-v0.4.4
+    the field was posted but silently ignored.)"""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text("{}")
+    projects_root = tmp_path / "projects"
+    projects_root.mkdir()
+    (home / "settings.toml").write_text(
+        f"projects_root = '{projects_root}'\n"
+        "[privacy.endpoints.private]\n"
+        'base_url = "http://localhost:11434"\n'
+        "[privacy.endpoints.vllm-big]\n"
+        'base_url = "http://gpu-box:8000/v1"\n'
+        'api_key_env = "VLLM_KEY"\n',
+        encoding="utf-8",
+    )
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "priv-pinned",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "private",
+            "private_endpoint_name": "vllm-big",
+        },
+    )
+    assert r.status_code == 201, r.text
+    proj_toml = tomllib.loads(
+        (projects_root / "priv-pinned" / "urika.toml").read_text(encoding="utf-8")
+    )
+    assert proj_toml["privacy"]["mode"] == "private"
+    assert proj_toml["privacy"]["endpoints"]["private"]["base_url"] == (
+        "http://gpu-box:8000/v1"
+    )
+    assert proj_toml["privacy"]["endpoints"]["private"]["api_key_env"] == "VLLM_KEY"
+
+
+def test_create_project_unknown_private_endpoint_name_returns_422(
+    tmp_path: Path, monkeypatch
+):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text("{}")
+    projects_root = tmp_path / "projects"
+    projects_root.mkdir()
+    (home / "settings.toml").write_text(
+        f"projects_root = '{projects_root}'\n"
+        "[privacy.endpoints.private]\n"
+        'base_url = "http://localhost:11434"\n',
+        encoding="utf-8",
+    )
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "priv-bad",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "private",
+            "private_endpoint_name": "does-not-exist",
+        },
+    )
+    assert r.status_code == 422
+    assert "does-not-exist" in r.text
+    # The project must NOT have been created.
+    assert not (projects_root / "priv-bad").exists()
+
+
 def test_create_project_privacy_mode_open_default_does_not_gate(create_client):
     """When privacy_mode is omitted or set to ``open``, the endpoint
     check is skipped (cloud is always available)."""

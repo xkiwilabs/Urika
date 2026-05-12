@@ -202,7 +202,13 @@ def make_can_use_tool(
             # Surface the reason to the agent so it can adapt its next
             # action ("use Write tool instead of `python -c`", "split
             # into two Bash calls"). Pre-v0.4 the agent saw nothing.
-            logger.info(
+            # v0.4.4: promoted info -> warning. A run that's drowning in
+            # sandbox denials (e.g. a task agent leaning on shell pipes /
+            # heredocs the sandbox rejects) otherwise looks like a slow
+            # agent; surfacing the denials in run.log / the SSE feed
+            # makes "burned every turn fighting the sandbox, recorded
+            # 0 runs" diagnosable.
+            logger.warning(
                 "permission_check denied %s: %s (input=%r)",
                 tool_name,
                 reason,

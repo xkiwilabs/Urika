@@ -105,6 +105,10 @@ if run_step_with_timeout "run experiment 1" 2700 \
 then
   verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
   verify_artifact "leaderboard.json" "$PROJ_DIR/leaderboard.json"
+  verify_run_did_work "run experiment 1 recorded >=1 run + non-empty leaderboard" "$PROJ_DIR"
+  verify_turns_ran "run experiment 1 ran >=1 loop turn" "$PROJ_DIR" 1
+  verify_no_early_exit_markers "run experiment 1 — no early-exit markers in log" \
+    "$URIKA_E2E_LOG_DIR/run_experiment_1.log"
 fi
 
 # Capture first experiment ID for later evaluate / present steps.
@@ -117,8 +121,17 @@ log "First experiment: ${FIRST_EXP:-<none>}"
 # overhead. Budget gate (2.00 USD) will pause the run earlier on
 # Anthropic open mode; for slower endpoints this gives headroom.
 step "7. urika run --max-experiments 2 --budget 2.00"
-run_step_with_timeout "autonomous 2 experiments" 4800 \
-  urika run "$PROJ" --max-experiments 2 --max-turns ${URIKA_SMOKE_MAX_TURNS_OPEN} --budget 2.00 --auto -q
+if run_step_with_timeout "autonomous 2 experiments" 4800 \
+     urika run "$PROJ" --max-experiments 2 --max-turns ${URIKA_SMOKE_MAX_TURNS_OPEN} --budget 2.00 --auto -q
+then
+  # The budget gate (2.00 USD) may legitimately pause before the 2nd
+  # experiment finishes — but the meta loop must at least *start* a
+  # second experiment. "0 or 1 experiment dirs after --max-experiments 2"
+  # is the advisor-parse-miss bail (HIGH-3), not a budget pause.
+  verify_min_experiments "autonomous run started >=2 experiments" "$PROJ_DIR" 2
+  verify_no_early_exit_markers "autonomous run — no 'no further experiments to suggest'" \
+    "$URIKA_E2E_LOG_DIR/autonomous_2_experiments.log"
+fi
 
 # === 8. urika evaluate ===============================================
 step "8. urika evaluate (latest experiment)"
@@ -174,6 +187,7 @@ fi
 step "11. urika finalize"
 if run_step_with_timeout "finalize" 1500 urika finalize "$PROJ"; then
   verify_artifact "projectbook/findings.json"  "$PROJ_DIR/projectbook/findings.json"
+  verify_findings_nonempty "findings.json selected >=1 method" "$PROJ_DIR/projectbook/findings.json"
   verify_artifact "requirements.txt"           "$PROJ_DIR/requirements.txt"
   verify_artifact "reproduce.sh"               "$PROJ_DIR/reproduce.sh"
   verify_artifact "README.md"                  "$PROJ_DIR/README.md"

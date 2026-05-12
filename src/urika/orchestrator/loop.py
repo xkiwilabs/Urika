@@ -42,6 +42,7 @@ from urika.orchestrator.loop_criteria import (
     _PAUSABLE_ERRORS,  # noqa: F401 — re-exported
     _check_result,
     _detect_primary_metric,  # noqa: F401 — re-exported
+    _is_recoverable_failure,
     _noop_callback,
 )
 from urika.orchestrator.loop_display import _print_run_summary
@@ -314,7 +315,7 @@ async def run_experiment(
                 if _err:
                     _status = (
                         "paused"
-                        if plan_result.error_category in _PAUSABLE_ERRORS
+                        if _is_recoverable_failure(plan_result.error_category)
                         else "failed"
                     )
                     if _status == "paused":
@@ -450,7 +451,7 @@ async def run_experiment(
             if _err:
                 _status = (
                     "paused"
-                    if task_result.error_category in _PAUSABLE_ERRORS
+                    if _is_recoverable_failure(task_result.error_category)
                     else "failed"
                 )
                 if _status == "paused":
@@ -461,6 +462,20 @@ async def run_experiment(
 
             # Parse and record runs
             runs = parse_run_records(task_result.text_output)
+            if not runs:
+                # The task agent ran but emitted no parseable
+                # ``{"run_id","method","metrics"}`` JSON block — so this
+                # turn produced nothing: no run recorded, no method
+                # registered, no leaderboard update. Pre-v0.4.4 this was
+                # completely silent; an experiment could burn every turn
+                # this way and still exit "completed" with an empty
+                # progress.json. Surface it so it lands in run.log / the
+                # dashboard SSE feed / the e2e smoke logs.
+                progress(
+                    "warning",
+                    f"Turn {turn}: task agent produced no parseable run "
+                    "records — nothing recorded for this turn.",
+                )
             for run in runs:
                 append_run(project_dir, experiment_id, run)
             if runs:
@@ -620,7 +635,7 @@ async def run_experiment(
             if _err:
                 _status = (
                     "paused"
-                    if eval_result.error_category in _PAUSABLE_ERRORS
+                    if _is_recoverable_failure(eval_result.error_category)
                     else "failed"
                 )
                 if _status == "paused":
@@ -817,7 +832,7 @@ async def run_experiment(
             if _err:
                 _status = (
                     "paused"
-                    if suggest_result.error_category in _PAUSABLE_ERRORS
+                    if _is_recoverable_failure(suggest_result.error_category)
                     else "failed"
                 )
                 if _status == "paused":
@@ -893,7 +908,32 @@ async def run_experiment(
                 "failed", turn, error=f"{type(exc).__name__}: {exc}"
             )
 
-    # Reached max_turns without criteria being met
+    # Reached max_turns without criteria being met.
+    #
+    # If the experiment ran every turn but recorded *zero* runs, the
+    # task agent never did its job — it never emitted a parseable
+    # ``{"run_id","method","metrics"}`` JSON block (sandbox-denied Bash,
+    # truncated output, or just forgot the fence). Pre-v0.4.4 this
+    # returned ``"completed"`` with an empty ``progress.json`` and no
+    # ``methods.json`` — to the dashboard it looked done; to the user
+    # the run "exited without doing real work". Treat it as a failure
+    # so it's visible and resumable, and skip report generation (there
+    # is nothing to report on).
+    final_runs = load_progress(project_dir, experiment_id).get("runs", [])
+    if not final_runs:
+        empty_msg = (
+            f"Experiment ran all {max_turns} turn(s) but recorded 0 runs — "
+            "the task agent never produced a parseable run-record JSON block. "
+            "Check the run log; resume with: urika run --resume"
+        )
+        progress("warning", empty_msg)
+        try:
+            fail_session(project_dir, experiment_id, error=empty_msg)
+        except Exception as exc:
+            logger.warning("fail_session failed for empty experiment: %s", exc)
+        progress("phase", "Experiment failed: produced no runs")
+        return _usage_dict("failed", max_turns, error=empty_msg)
+
     complete_session(project_dir, experiment_id)
     report_usage = await _generate_reports(
         project_dir,

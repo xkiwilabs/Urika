@@ -61,7 +61,7 @@ class TestEmptyLockIsAlwaysStale:
 
 
 class TestLiveLockStillRefused:
-    def test_live_pid_lock_refused(self, tmp_path: Path) -> None:
+    def test_live_pid_lock_refused(self, tmp_path: Path, monkeypatch) -> None:
         """The fix mustn't accidentally also remove valid locks from
         running processes. The parent PID is reliably alive on every
         platform — and crucially is *not* ``os.getpid()``, so
@@ -73,6 +73,13 @@ class TestLiveLockStillRefused:
         live_pid = str(os.getppid())
         lock.write_text(live_pid)
 
+        # The parent process (a shell, under the test runner) doesn't
+        # look like a urika run; pin the process-name probe so this
+        # exercises the "real urika run holds the lock" case rather than
+        # the recycled-PID-is-stale path (v0.4.4 MED-6).
+        monkeypatch.setattr(
+            "urika.core.session._get_process_name", lambda pid: "python3"
+        )
         assert acquire_lock(project_dir, exp_id) is False
         # Lock untouched.
         assert lock.read_text() == live_pid
@@ -88,7 +95,7 @@ class TestLiveLockStillRefused:
 
 
 class TestStartSessionErrorMessage:
-    def test_message_mentions_unlock_command(self, tmp_path: Path) -> None:
+    def test_message_mentions_unlock_command(self, tmp_path: Path, monkeypatch) -> None:
         """Pre-K the message was just 'Experiment X is already
         running' — users had no recovery path. The new message
         points at ``urika unlock``."""
@@ -96,6 +103,9 @@ class TestStartSessionErrorMessage:
         lock = _lock_path(project_dir, exp_id)
         # Test runner's PID is reliably alive on every platform.
         lock.write_text(str(os.getppid()))
+        monkeypatch.setattr(
+            "urika.core.session._get_process_name", lambda pid: "python3"
+        )
 
         with pytest.raises(RuntimeError) as exc_info:
             start_session(project_dir, exp_id)

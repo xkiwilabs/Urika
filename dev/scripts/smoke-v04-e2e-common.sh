@@ -198,6 +198,151 @@ verify_artifact_any() {
   fail "artifact missing: $desc (none of: $*)"
 }
 
+# --- "did real work" assertions ------------------------------------
+#
+# The existence checks above only prove a command didn't crash and
+# laid down a skeleton — they pass even when `urika run` exits early
+# having recorded zero runs (the loop creates experiments/ and an
+# empty leaderboard.json before any agent runs). These helpers look
+# at the *content* the agents are supposed to have produced.
+
+# Resolve the most-recently-created experiment dir for a project,
+# or empty string if there are none. Sorted lexically — experiment
+# IDs are timestamp-prefixed so the last one is the newest.
+_latest_experiment_dir() {
+  local proj_dir="$1"
+  local exp_root="$proj_dir/experiments"
+  [[ -d "$exp_root" ]] || return 0
+  local d=""
+  for d in "$exp_root"/*/; do :; done
+  [[ -d "$d" ]] && echo "${d%/}"
+}
+
+# Run a python one-liner that exits 0/1; pass the step on exit 0.
+# Args: <desc> <python-source>. The source gets PROJ_DIR / EXP_DIR
+# from the environment (callers export them).
+_verify_py() {
+  local desc="$1"; local src="$2"
+  if python3 -c "$src" 2>>"$URIKA_E2E_LOG_DIR/run.log"; then
+    ok "$desc"
+  else
+    fail "$desc"
+  fi
+}
+
+# After `urika run` for a single experiment: the latest experiment
+# must have recorded >=1 run in progress.json AND leaderboard.json
+# must be a non-empty JSON array. A run that exits early — for any
+# of the reasons in the v0.4.* audit (uncategorised first-turn
+# error, sandbox-denied Bash, advisor parse miss, empty agent
+# output) — fails here instead of sailing through on exit 0.
+verify_run_did_work() {
+  local desc="$1"; local proj_dir="$2"
+  local exp_dir; exp_dir="$(_latest_experiment_dir "$proj_dir")"
+  if [[ -z "$exp_dir" ]]; then
+    fail "$desc — no experiment directory under $proj_dir/experiments"
+    return 1
+  fi
+  PROJ_DIR="$proj_dir" EXP_DIR="$exp_dir" _verify_py "$desc" '
+import json, os, sys
+exp = os.environ["EXP_DIR"]
+proj = os.environ["PROJ_DIR"]
+prog = json.load(open(os.path.join(exp, "progress.json")))
+runs = prog.get("runs", [])
+if len(runs) < 1:
+    print(f"  progress.json has {len(runs)} runs (expected >=1) in {exp}", file=sys.stderr)
+    sys.exit(1)
+lb_path = os.path.join(proj, "leaderboard.json")
+lb = json.load(open(lb_path)) if os.path.exists(lb_path) else []
+# leaderboard may be a list of entries or a dict keyed by something.
+entries = lb if isinstance(lb, list) else (lb.get("entries") or lb.get("runs") or list(lb.values()) if isinstance(lb, dict) else [])
+if not entries:
+    print(f"  leaderboard.json is empty: {lb_path}", file=sys.stderr)
+    sys.exit(1)
+'
+}
+
+# session.json for the latest experiment must show >=1 completed
+# turn (the loop only persists current_turn after a turn finishes,
+# so >=1 means the loop body ran at least once — not "started then
+# died before doing anything").
+verify_turns_ran() {
+  local desc="$1"; local proj_dir="$2"; local min_turns="${3:-1}"
+  local exp_dir; exp_dir="$(_latest_experiment_dir "$proj_dir")"
+  if [[ -z "$exp_dir" ]]; then
+    fail "$desc — no experiment directory"
+    return 1
+  fi
+  PROJ_DIR="$proj_dir" EXP_DIR="$exp_dir" MIN_TURNS="$min_turns" _verify_py "$desc" '
+import json, os, sys
+exp = os.environ["EXP_DIR"]
+n = int(os.environ["MIN_TURNS"])
+s = json.load(open(os.path.join(exp, "session.json")))
+ct = s.get("current_turn", 0)
+if ct < n:
+    sys.stderr.write("  session.json current_turn=%s (expected >=%s) status=%r in %s\n" % (ct, n, s.get("status"), exp))
+    sys.exit(1)
+'
+}
+
+# After `urika run --max-experiments N`: there must be >=N experiment
+# directories. Catches the meta-loop bailing with 0 (or 1) experiments
+# when the advisor's suggestions block doesn't parse.
+verify_min_experiments() {
+  local desc="$1"; local proj_dir="$2"; local n="$3"
+  PROJ_DIR="$proj_dir" N="$n" _verify_py "$desc" '
+import os, sys
+root = os.path.join(os.environ["PROJ_DIR"], "experiments")
+n = int(os.environ["N"])
+dirs = [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))] if os.path.isdir(root) else []
+if len(dirs) < n:
+    print(f"  found {len(dirs)} experiment dirs (expected >={n}): {sorted(dirs)}", file=sys.stderr)
+    sys.exit(1)
+'
+}
+
+# findings.json must parse as JSON and be non-empty (the finalizer
+# selected at least one method). We do not pin the schema — just
+# that the file isn'\''t an empty skeleton.
+verify_findings_nonempty() {
+  local desc="$1"; local path="$2"
+  PATH_IN="$path" _verify_py "$desc" '
+import json, os, sys
+p = os.environ["PATH_IN"]
+d = json.load(open(p))
+if not d:
+    print(f"  findings.json is empty: {p}", file=sys.stderr)
+    sys.exit(1)
+# If it carries an explicit methods/selected list, require it non-empty.
+for key in ("methods", "selected_methods", "best_methods", "final_methods"):
+    if key in d and not d[key]:
+        print(f"  findings.json[{key!r}] is empty: {p}", file=sys.stderr)
+        sys.exit(1)
+'
+}
+
+# run.log for a step must NOT contain the *fatal* early-exit
+# tell-tales: an experiment that failed on turn 1, the meta loop
+# bailing with no advisor suggestion, or an experiment that ran every
+# turn but recorded zero runs. (A per-turn "produced no parseable run
+# records" *warning* is fine — that's the warning system working; the
+# run-content checks above catch the case where it actually mattered.)
+# Args: <desc> <logfile>.
+verify_no_early_exit_markers() {
+  local desc="$1"; local logfile="$2"
+  if [[ ! -f "$logfile" ]]; then
+    fail "$desc — log file missing: $logfile"
+    return 1
+  fi
+  local hit
+  hit="$(grep -m1 -iE 'failed after 1 turn|no further experiments to suggest|but recorded 0 runs' "$logfile" || true)"
+  if [[ -n "$hit" ]]; then
+    fail "$desc" "early-exit marker in log: $hit"
+  else
+    ok "$desc"
+  fi
+}
+
 print_summary() {
   echo
   echo "============================================================"

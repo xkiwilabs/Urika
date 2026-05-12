@@ -76,6 +76,31 @@ def test_stream_emits_existing_log_then_completes(stream_client_completed):
     assert '"completed"' in body
 
 
+def test_stream_reports_failed_on_launch_failed_marker(tmp_path: Path, monkeypatch):
+    """When ``runs._spawn_detached`` couldn't Popen the subprocess it
+    writes a ``URIKA-LAUNCH-FAILED:`` marker into run.log and never
+    creates the lock. The SSE stream must then emit ``"failed"`` — not
+    the legacy ``"completed"`` lie that made a run which never launched
+    look finished. (v0.4.4 fix.)"""
+    _make_project_with_log(
+        tmp_path,
+        "alpha",
+        "exp-001",
+        "URIKA-LAUNCH-FAILED: OSError: [Errno 8] Exec format error\n",
+        lock=False,
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
+    client = TestClient(create_app(project_root=tmp_path))
+    with client.stream("GET", "/api/projects/alpha/runs/exp-001/stream") as r:
+        body = b"".join(r.iter_bytes()).decode("utf-8")
+    assert "event: status" in body
+    assert '"failed"' in body
+    assert '"completed"' not in body
+
+
 def test_stream_404_unknown_project(stream_client_completed):
     r = stream_client_completed.get("/api/projects/nonexistent/runs/exp-001/stream")
     assert r.status_code == 404

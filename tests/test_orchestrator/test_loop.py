@@ -133,10 +133,16 @@ class FakeRunner(AgentRunner):
 
 
 class FailingRunner(AgentRunner):
-    """Runner that returns success=False for a specific role."""
+    """Runner that returns success=False for a specific role.
 
-    def __init__(self, fail_role: str):
+    ``error_category`` controls whether the loop pauses (recoverable —
+    the default, mirroring an uncategorised "unknown" SDK failure) or
+    hard-fails the session ("auth").
+    """
+
+    def __init__(self, fail_role: str, error_category: str = ""):
         self._fail_role = fail_role
+        self._error_category = error_category
 
     async def run(
         self, config: AgentConfig, prompt: str, *, on_message: object = None
@@ -150,6 +156,7 @@ class FailingRunner(AgentRunner):
                 num_turns=0,
                 duration_ms=0,
                 error=f"{config.name} encountered an error",
+                error_category=self._error_category,
             )
         return AgentResult(
             success=True,
@@ -288,9 +295,35 @@ class TestOrchestratorLoop:
         assert session.status == "completed"
 
     @pytest.mark.asyncio
-    async def test_handles_runner_error(self, tmp_path: Path) -> None:
+    async def test_uncategorised_runner_error_pauses_not_fails(
+        self, tmp_path: Path
+    ) -> None:
+        """An agent failure with no recognised error category is treated
+        as recoverable: the session **pauses** (so ``urika run --resume``
+        re-runs the turn) rather than hard-failing the experiment.
+
+        Pre-v0.4.4 this hard-failed after 1 turn — a single odd error
+        (a momentary connect blip, an SDK-internal decode hiccup) killed
+        multi-hour autonomous runs."""
         project_dir, exp_id = _setup_project(tmp_path)
-        runner = FailingRunner(fail_role="task_agent")
+        runner = FailingRunner(fail_role="task_agent")  # error_category=""
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "paused"
+        assert "error" in result
+
+        session = load_session(project_dir, exp_id)
+        assert session is not None
+        assert session.status == "paused"
+
+    @pytest.mark.asyncio
+    async def test_auth_error_fails_session(self, tmp_path: Path) -> None:
+        """An ``auth`` failure is genuinely unrecoverable (expired
+        session / bad key) — re-running the turn hits the same wall — so
+        the session is failed, not paused."""
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FailingRunner(fail_role="task_agent", error_category="auth")
 
         result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
 

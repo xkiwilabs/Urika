@@ -455,6 +455,9 @@ def run(
                         panel.update(agent=agent_key, activity=detail)
                     elif event == "result":
                         print_success(detail)
+                    elif event == "warning":
+                        print_warning(detail)
+                        panel.update(activity=detail)
                     elif event == "phase":
                         print_step(detail)
                         panel.update(activity=detail)
@@ -846,6 +849,9 @@ def run(
                     panel.update(agent=agent_key, activity=detail)
                 elif event == "result":
                     print_success(detail)
+                elif event == "warning":
+                    print_warning(detail)
+                    panel.update(activity=detail)
                 elif event == "phase":
                     print_step(detail)
                     panel.update(activity=detail)

@@ -144,12 +144,21 @@ if run_step_with_timeout "run experiment 1" 3600 \
      urika run "$PROJ" --max-turns 5 --auto -q
 then
   verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
+  verify_run_did_work "run experiment 1 recorded >=1 run + non-empty leaderboard" "$PROJ_DIR"
+  verify_turns_ran "run experiment 1 ran >=1 loop turn" "$PROJ_DIR" 1
+  verify_no_early_exit_markers "run experiment 1 — no early-exit markers in log" \
+    "$URIKA_E2E_LOG_DIR/run_experiment_1.log"
 fi
 
 # === 7. autonomous mode ==============================================
 step "7. urika run --max-experiments 2 (no $ budget cap on private)"
-run_step_with_timeout "autonomous 2 experiments" 7200 \
-  urika run "$PROJ" --max-experiments 2 --max-turns 5 --auto -q
+if run_step_with_timeout "autonomous 2 experiments" 7200 \
+     urika run "$PROJ" --max-experiments 2 --max-turns 5 --auto -q
+then
+  verify_min_experiments "autonomous run started >=2 experiments" "$PROJ_DIR" 2
+  verify_no_early_exit_markers "autonomous run — no 'no further experiments to suggest'" \
+    "$URIKA_E2E_LOG_DIR/autonomous_2_experiments.log"
+fi
 
 # === 8. evaluate =====================================================
 step "8. urika evaluate (latest experiment)"
@@ -186,6 +195,7 @@ fi
 step "11. urika finalize"
 if run_step_with_timeout "finalize" 2400 urika finalize "$PROJ"; then
   verify_artifact "projectbook/findings.json"  "$PROJ_DIR/projectbook/findings.json"
+  verify_findings_nonempty "findings.json selected >=1 method" "$PROJ_DIR/projectbook/findings.json"
   verify_artifact "requirements.txt"           "$PROJ_DIR/requirements.txt"
   verify_artifact "reproduce.sh"               "$PROJ_DIR/reproduce.sh"
   verify_artifact "README.md"                  "$PROJ_DIR/README.md"

@@ -181,6 +181,19 @@ Runs that only report numeric metrics without any figures are **incomplete**.
 - Only run `python` or `pip` commands via Bash.
 - Do not run destructive commands (`rm -rf`, `git push`, `git reset`).
 
+### Bash sandbox restrictions — read this carefully
+
+Your Bash commands run in a restricted sandbox. The following are **rejected before they run** — using them wastes a turn:
+
+- **No shell operators**: no pipes (`|`), no redirection (`>`, `>>`, `2>`, `<`), no command chaining (`;`, `&&`, `||`), no backgrounding (`&`), no command substitution (`` `...` ``, `$(...)`), and **no heredocs** (`python - <<'EOF' ... EOF`).
+- **One simple command per call**: e.g. `python methods/my_model.py`, `pip install xgboost`. Nothing fancier.
+
+So, instead of relying on the shell:
+
+- **To run code**: write a real `.py` file into the experiment workspace's `methods/` directory and run it with `python methods/your_script.py` — never inline a heredoc.
+- **To capture output / logs**: do it *inside Python* — `print(...)` (its stdout is captured), or `logging` to a file, or `open(...).write(...)`, or save artifacts with `matplotlib.pyplot.savefig(...)` / `df.to_csv(...)`. Do **not** use shell `>` redirection.
+- **To set variables / change directory**: do it inside Python (`os.chdir`, `os.environ`), not with shell `cd X && ...`.
+
 ## Output
 
 End your work with a summary of methods tried, best metrics achieved, and any recommendations for next steps.

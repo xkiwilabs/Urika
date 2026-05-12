@@ -203,6 +203,15 @@ class TestLocking:
         else:
             other_pid = ppid
 
+        # The picked live PID (the test runner's parent) may not look
+        # like a python/urika process, which would trigger the
+        # recycled-PID-is-stale path (covered in TestStaleLockDetection).
+        # Pin the process-name probe so this exercises the intended
+        # "a real urika run holds the lock" case.
+        monkeypatch.setattr(
+            "urika.core.session._get_process_name", lambda pid: "python3"
+        )
+
         _lock_path(project_dir, experiment_id).write_text(str(other_pid))
         assert acquire_lock(project_dir, experiment_id) is False
 
@@ -273,6 +282,15 @@ class TestStartSession:
             other_pid = 99999998
         else:
             other_pid = ppid
+
+        # The picked live PID (the test runner's parent) may not look
+        # like a python/urika process, which would trigger the
+        # recycled-PID-is-stale path (covered in TestStaleLockDetection).
+        # Pin the process-name probe so this exercises the intended
+        # "a real urika run holds the lock" case.
+        monkeypatch.setattr(
+            "urika.core.session._get_process_name", lambda pid: "python3"
+        )
 
         _lock_path(project_dir, experiment_id).parent.mkdir(
             parents=True, exist_ok=True
@@ -350,6 +368,15 @@ class TestResumeSession:
             other_pid = 99999998
         else:
             other_pid = ppid
+
+        # The picked live PID (the test runner's parent) may not look
+        # like a python/urika process, which would trigger the
+        # recycled-PID-is-stale path (covered in TestStaleLockDetection).
+        # Pin the process-name probe so this exercises the intended
+        # "a real urika run holds the lock" case.
+        monkeypatch.setattr(
+            "urika.core.session._get_process_name", lambda pid: "python3"
+        )
 
         _lock_path(project_dir, experiment_id).write_text(str(other_pid))
         with pytest.raises(RuntimeError, match="already running"):
@@ -572,9 +599,59 @@ class TestStaleLockDetection:
         else:
             other_pid = ppid
 
+        # The picked live PID (the test runner's parent) may not look
+        # like a python/urika process, which would trigger the
+        # recycled-PID-is-stale path (covered in TestStaleLockDetection).
+        # Pin the process-name probe so this exercises the intended
+        # "a real urika run holds the lock" case.
+        monkeypatch.setattr(
+            "urika.core.session._get_process_name", lambda pid: "python3"
+        )
+
         lock = _lock_path(tmp_path, "exp-001")
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text(str(other_pid))
+        assert acquire_lock(tmp_path, "exp-001") is False
+
+    def test_live_lock_from_recycled_pid_is_stale(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A lock whose PID is alive but belongs to an unrelated
+        (non-python/urika) process — the OS recycled the PID after a
+        crashed run — is treated as stale and cleared, so
+        ``urika run --resume`` works without a manual ``urika unlock``.
+        (v0.4.4 MED-6 fix.)"""
+        import os
+
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(str(os.getppid()))  # a real, live PID
+
+        # Pretend that PID now belongs to a shell, not a urika run.
+        monkeypatch.setattr(
+            "urika.core.session._get_process_name", lambda pid: "bash"
+        )
+        assert acquire_lock(tmp_path, "exp-001") is True
+        # And the lock now records *our* PID.
+        assert lock.read_text().strip() == str(os.getpid())
+
+    def test_live_lock_with_unknown_process_name_still_blocks(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """If the process-name probe returns nothing (psutil unavailable
+        / access denied) we can't tell — stay conservative and respect
+        the lock."""
+        import os
+
+        lock = _lock_path(tmp_path, "exp-001")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(str(os.getppid()))
+        monkeypatch.setattr(
+            "urika.core.session._get_process_name", lambda pid: ""
+        )
+        monkeypatch.setattr(
+            "urika.core.session._pid_is_alive", lambda pid: True
+        )
         assert acquire_lock(tmp_path, "exp-001") is False
 
     def test_live_lock_with_own_pid_is_idempotent(self, tmp_path: Path) -> None:

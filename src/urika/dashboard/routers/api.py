@@ -139,10 +139,18 @@ async def api_create_project(request: Request):
     # MissingPrivateEndpointError on the first agent invocation, so we
     # may as well refuse the project creation up front with a fix
     # instruction the user can act on.
+    # The New Project modal lets the user pick *which* named endpoint a
+    # private/hybrid project should use. Pre-v0.4.4 the field was posted
+    # (``private_endpoint_name``) but the handler ignored it entirely —
+    # the project got only ``[privacy].mode`` and then inherited
+    # whatever the global ``private`` endpoint happened to be, which on
+    # a multi-endpoint setup is not necessarily the one the user chose.
+    chosen_endpoint: dict | None = None
     if privacy_mode in ("private", "hybrid"):
         from urika.core.settings import get_named_endpoints
 
-        if not any((ep.get("base_url") or "").strip() for ep in get_named_endpoints()):
+        named = get_named_endpoints()
+        if not any((ep.get("base_url") or "").strip() for ep in named):
             raise HTTPException(
                 status_code=422,
                 detail=(
@@ -153,6 +161,21 @@ async def api_create_project(request: Request):
                     f"mode."
                 ),
             )
+        endpoint_name = (body.get("private_endpoint_name") or "").strip()
+        if endpoint_name:
+            chosen_endpoint = next(
+                (ep for ep in named if ep.get("name") == endpoint_name), None
+            )
+            if chosen_endpoint is None or not (
+                (chosen_endpoint.get("base_url") or "").strip()
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"private_endpoint_name {endpoint_name!r} is not a "
+                        "configured endpoint with a non-empty base_url"
+                    ),
+                )
 
     registry = ProjectRegistry()
     if name in registry.list_all():
@@ -212,7 +235,21 @@ async def api_create_project(request: Request):
         toml_path = project_dir / "urika.toml"
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
-        data.setdefault("privacy", {})["mode"] = privacy_mode
+        privacy_block = data.setdefault("privacy", {})
+        privacy_block["mode"] = privacy_mode
+        if chosen_endpoint is not None:
+            # Pin the user's chosen endpoint for this project by writing
+            # it as the project-local ``private`` endpoint. The runtime
+            # resolves the ``private`` endpoint by default in
+            # private/hybrid mode (see ``load_runtime_config``), so this
+            # makes the project use the picked endpoint rather than the
+            # global ``private`` one. Mirrors ``ProjectBuilder.write_project``.
+            ep_block = privacy_block.setdefault("endpoints", {}).setdefault(
+                "private", {}
+            )
+            ep_block["base_url"] = chosen_endpoint["base_url"]
+            if chosen_endpoint.get("api_key_env"):
+                ep_block["api_key_env"] = chosen_endpoint["api_key_env"]
         _write_toml(toml_path, data)
 
     # Seed the new project's [notifications].channels list from the
@@ -2497,6 +2534,34 @@ async def api_project_run_post(name: str, request: Request):
     # so a stale .lock isn't left behind.
     _validate_privacy_endpoint(summary.path)
 
+    # Self-heal pre-v0.4.3.1 bare projects. The dashboard's
+    # POST /api/projects used to lay down only a skeleton workspace (no
+    # [data] block, no criteria, no README); running an orchestrator
+    # against one gives the agents nothing to work with — the exact
+    # "experiment not set up correctly" symptom. ``enrich_workspace`` is
+    # idempotent (criteria only seeded if history is empty, [data] only
+    # written if a scan finds files), so it's safe to run here when the
+    # marker file is missing.
+    if not (summary.path / "criteria.json").exists():
+        try:
+            from urika.core.project_builder import enrich_workspace
+
+            data_paths = []
+            try:
+                with open(summary.path / "urika.toml", "rb") as f:
+                    _t = tomllib.load(f)
+                data_paths = _t.get("project", {}).get("data_paths", []) or []
+                pm = _t.get("privacy", {}).get("mode", "open")
+            except Exception:
+                pm = "open"
+            enrich_workspace(summary.path, data_paths, privacy_mode=pm)
+        except Exception as exc:  # best-effort — never block a run on this
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "enrich_workspace self-heal failed for %s: %s", name, exc
+            )
+
     # ``create_experiment`` still takes name + hypothesis as kwargs;
     # both are empty here. When ``advisor_first`` is set, the spawned
     # ``urika run`` calls the advisor first and writes the suggested
@@ -2740,9 +2805,12 @@ async def api_run_stream(
     async def event_stream():
         # Initial backlog — drain whatever's already on disk.
         position = 0
+        saw_launch_failed = False
         if log_path.exists():
             with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
+                    if "URIKA-LAUNCH-FAILED:" in line:
+                        saw_launch_failed = True
                     yield _format_log_line(line.rstrip())
                 position = f.tell()
 
@@ -2762,6 +2830,8 @@ async def api_run_stream(
                     position = f.tell()
             if new_data:
                 for line in new_data.splitlines():
+                    if "URIKA-LAUNCH-FAILED:" in line:
+                        saw_launch_failed = True
                     yield _format_log_line(line)
             if not lock_path.exists():
                 # Lock gone — run has finished. Read the actual
@@ -2773,7 +2843,16 @@ async def api_run_stream(
                 # don't have a separate terminal-state file; for
                 # those we emit the legacy "completed" sentinel.
                 terminal_status = "completed"
-                if type == "run":
+                if saw_launch_failed:
+                    # ``runs._spawn_detached`` writes a
+                    # ``URIKA-LAUNCH-FAILED:`` marker into run.log and
+                    # never creates the lock when the subprocess fails to
+                    # Popen (ENOEXEC, missing python, env too large).
+                    # progress.json is still "pending" in that case —
+                    # pre-v0.4.4 the SSE stream then emitted "completed",
+                    # lying that a run which never launched had finished.
+                    terminal_status = "failed"
+                elif type == "run":
                     progress_path = (
                         summary.path / "experiments" / exp_id / "progress.json"
                     )
