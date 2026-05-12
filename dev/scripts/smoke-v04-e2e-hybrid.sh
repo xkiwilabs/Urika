@@ -130,6 +130,9 @@ if run_step_with_timeout "run experiment 1" 5400 \
 then
   verify_artifact "experiments/ dir" "$PROJ_DIR/experiments"
   verify_run_did_work "run experiment 1 recorded >=1 run + non-empty leaderboard" "$PROJ_DIR"
+  verify_run_metrics_nonempty "run experiment 1 — >=1 run has non-empty metrics" "$PROJ_DIR"
+  verify_methods_consistent "methods.json <-> progress.json <-> leaderboard consistent" "$PROJ_DIR"
+  verify_figures_produced "run experiment 1 produced >=1 diagnostic figure" "$PROJ_DIR"
   verify_turns_ran "run experiment 1 ran >=1 loop turn" "$PROJ_DIR" 1
   verify_no_early_exit_markers "run experiment 1 — no early-exit markers in log" \
     "$URIKA_E2E_LOG_DIR/run_experiment_1.log"
@@ -141,6 +144,8 @@ if run_step_with_timeout "autonomous 2 experiments" 5400 \
      urika run "$PROJ" --max-experiments 2 --max-turns ${URIKA_SMOKE_MAX_TURNS_HYBRID} --budget 3.00 --auto -q
 then
   verify_min_experiments "autonomous run started >=2 experiments" "$PROJ_DIR" 2
+  verify_each_experiment_did_work "every experiment recorded >=1 run" "$PROJ_DIR"
+  verify_methods_consistent "methods/leaderboard still consistent after 2 experiments" "$PROJ_DIR"
   verify_no_early_exit_markers "autonomous run — no 'no further experiments to suggest'" \
     "$URIKA_E2E_LOG_DIR/autonomous_2_experiments.log"
 fi
@@ -183,7 +188,8 @@ fi
 step "11. urika finalize"
 if run_step_with_timeout "finalize" 1500 urika finalize "$PROJ"; then
   verify_artifact "projectbook/findings.json"  "$PROJ_DIR/projectbook/findings.json"
-  verify_findings_nonempty "findings.json selected >=1 method" "$PROJ_DIR/projectbook/findings.json"
+  verify_findings_nonempty "findings.json has an answer + >=1 final method" "$PROJ_DIR/projectbook/findings.json"
+  verify_finalize_artifacts_real "finalize reproducibility artifacts" "$PROJ_DIR"
   verify_artifact "requirements.txt"           "$PROJ_DIR/requirements.txt"
   verify_artifact "reproduce.sh"               "$PROJ_DIR/reproduce.sh"
   verify_artifact "README.md"                  "$PROJ_DIR/README.md"

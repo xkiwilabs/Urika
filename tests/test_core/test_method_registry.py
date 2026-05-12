@@ -205,3 +205,65 @@ class TestUpdateMethodStatus:
         update_method_status(tmp_path, "nonexistent", "failed")
         methods = load_methods(tmp_path)
         assert methods[0]["status"] == "active"
+
+
+class TestMalformedMethodsJson:
+    """A sub-agent (or a hand-edit) writing a bad methods.json must not
+    crash the orchestrator on the next turn — ``load_methods`` self-heals
+    and ``register_method`` rewrites a clean file. This is the exact
+    crash the v0.4.3 sub-agent-escape regression caused (a record missing
+    ``name`` → ``KeyError`` in ``register_method``)."""
+
+    def _write_raw(self, tmp_path: Path, payload: object) -> None:
+        import json
+
+        (tmp_path / "methods.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_load_drops_entry_missing_name(self, tmp_path: Path) -> None:
+        self._write_raw(
+            tmp_path,
+            {
+                "methods": [
+                    {"name": "ok", "metrics": {"r2": 0.8}},
+                    {"description": "no name here", "metrics": {}},
+                    "not even a dict",
+                    {"name": 123, "metrics": {}},  # name not a str
+                ]
+            },
+        )
+        methods = load_methods(tmp_path)
+        assert [m["name"] for m in methods] == ["ok"]
+
+    def test_load_handles_non_dict_toplevel(self, tmp_path: Path) -> None:
+        self._write_raw(tmp_path, [1, 2, 3])
+        assert load_methods(tmp_path) == []
+
+    def test_load_handles_methods_not_a_list(self, tmp_path: Path) -> None:
+        self._write_raw(tmp_path, {"methods": "oops"})
+        assert load_methods(tmp_path) == []
+
+    def test_register_after_malformed_write_self_heals(self, tmp_path: Path) -> None:
+        self._write_raw(tmp_path, {"methods": [{"oops": True}, "garbage"]})
+        # Must not raise — pre-v0.4.3.1 this KeyError'd on m["name"].
+        register_method(
+            tmp_path,
+            name="recovered",
+            description="d",
+            script="s.py",
+            experiment="exp-001",
+            turn=1,
+            metrics={"r2": 0.5},
+        )
+        methods = load_methods(tmp_path)
+        assert [m["name"] for m in methods] == ["recovered"]
+
+    def test_update_status_ignores_malformed_entries(self, tmp_path: Path) -> None:
+        self._write_raw(
+            tmp_path, {"methods": [{"description": "no name"}, {"name": "real"}]}
+        )
+        # Must not raise.
+        update_method_status(tmp_path, "real", "failed")
+        methods = load_methods(tmp_path)
+        assert methods == [{"name": "real", "status": "failed"}] or any(
+            m["name"] == "real" and m.get("status") == "failed" for m in methods
+        )

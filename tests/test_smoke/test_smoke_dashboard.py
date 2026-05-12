@@ -343,3 +343,81 @@ class TestDocsPage:
         assert "yourorg" not in body, (
             "Docs page still has the old yourorg/urika placeholder"
         )
+
+
+# ── 4. End-to-end create-project flow through the real browser ────
+#
+# The "dashboard creates a project but doesn't set it up" report that
+# kicked off v0.4.3.1 was a *server-side* bug, but the trustworthy
+# check is "drive the actual New Project modal and confirm the project
+# the browser created has its data block + criteria + README, not just
+# a bare skeleton". That's the enrich_workspace pass, exercised here
+# through real Alpine/HTMX in a real chromium.
+
+
+class TestCreateProjectFlow:
+    def test_new_project_modal_creates_an_enriched_project(
+        self, dashboard_server, page, tmp_path
+    ) -> None:
+        import os
+
+        base_url, project_root = dashboard_server
+
+        # POST /api/projects writes the new project under
+        # ``load_settings()["projects_root"]`` — pin that to the test's
+        # project_root so the project doesn't land in the real
+        # ~/urika-projects/. (load_settings reads the file per request,
+        # so writing it after server start is fine.)
+        with open(os.path.join(os.environ["URIKA_HOME"], "settings.toml"), "w") as _f:
+            _f.write(f"projects_root = '{project_root}'\n")
+
+        # A tiny real dataset so the non-interactive builder pass has
+        # something to scan / profile / hash.
+        data_csv = tmp_path / "mini.csv"
+        data_csv.write_text("x,y\n1,2\n3,4\n5,6\n7,8\n", encoding="utf-8")
+
+        page.goto(f"{base_url}/projects", wait_until="networkidle")
+        page.locator("button:has-text('New project')").first.click()
+        # Modal fields.
+        page.fill("#np-name", "browser-made")
+        page.fill("#np-question", "Does x predict y?")
+        page.fill("#np-data-paths", str(data_csv))
+        page.locator("button:has-text('Create project')").click()
+
+        # Wait for the project directory + the enrichment artifacts to
+        # appear on disk (the POST handler runs create_project_workspace
+        # then enrich_workspace synchronously).
+        proj = project_root / "browser-made"
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            if (proj / "criteria.json").exists() and (proj / "README.md").exists():
+                break
+            time.sleep(0.2)
+        else:
+            pytest.fail(
+                f"project {proj} not enriched within 15s "
+                f"(exists={proj.exists()}, "
+                f"files={[p.name for p in proj.iterdir()] if proj.exists() else None})"
+            )
+
+        # urika.toml carries the [data] block (scan found the CSV) and a
+        # data-hash record — i.e. it's a real project, not a skeleton.
+        import tomllib
+
+        tdata = tomllib.loads((proj / "urika.toml").read_text(encoding="utf-8"))
+        assert tdata.get("data", {}).get("source"), (
+            "urika.toml has no [data].source — enrich_workspace didn't scan"
+        )
+        assert "data_hashes" in tdata.get("project", {}), (
+            "urika.toml has no [project].data_hashes — drift baseline missing"
+        )
+        # criteria.json has an initial version with a non-empty criteria dict.
+        import json as _json
+
+        crit = _json.loads((proj / "criteria.json").read_text(encoding="utf-8"))
+        versions = crit.get("versions", [])
+        assert versions, "criteria.json has no versions"
+        assert versions[0].get("criteria"), "initial criteria version is empty"
+
+        # No JS errors during the whole flow.
+        assert page.console_errors == [], page.console_errors

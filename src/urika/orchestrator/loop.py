@@ -325,6 +325,17 @@ async def run_experiment(
                     return _usage_dict(_status, turn, error=_err)
 
                 method_plan = parse_method_plan(plan_result.text_output)
+                if method_plan is None:
+                    # The planning agent ran but emitted no parseable
+                    # ``method_name``+``steps`` block — the loop falls
+                    # back to passing its raw prose to the task agent.
+                    # Surface it so a planner that's drifted from the
+                    # contract is visible (v0.4.4).
+                    progress(
+                        "warning",
+                        f"Turn {turn}: planning agent produced no parseable "
+                        "method plan — passing its raw output to the task agent.",
+                    )
 
                 # Handle planning agent's tool/literature requests
                 if method_plan and method_plan.get("needs_tool"):
@@ -645,6 +656,17 @@ async def run_experiment(
                 return _usage_dict(_status, turn, error=_err)
 
             evaluation = parse_evaluation(eval_result.text_output)
+            if evaluation is None:
+                # The evaluator ran but emitted no parseable
+                # ``criteria_met`` JSON block — so this turn's success
+                # check is silently treated as "not met" and the loop
+                # runs to max_turns wondering why criteria never matched.
+                # Surface it (v0.4.4).
+                progress(
+                    "warning",
+                    f"Turn {turn}: evaluator produced no parseable "
+                    "criteria assessment — criteria treated as not met.",
+                )
             if evaluation and evaluation.get("criteria_met"):
                 progress("result", "Criteria met!")
 

@@ -301,33 +301,201 @@ if len(dirs) < n:
 '
 }
 
-# findings.json must parse as JSON and be non-empty (the finalizer
-# selected at least one method). We do not pin the schema — just
-# that the file isn'\''t an empty skeleton.
+# findings.json (written by the *finalizer agent* via its Write tool —
+# nothing in Python produces it, so this is the only guard) must parse,
+# carry a non-empty plain-text ``answer``, and list >=1 final method
+# with a ``script`` path. A run that recorded real work but whose
+# finalizer produced an empty skeleton fails here.
 verify_findings_nonempty() {
   local desc="$1"; local path="$2"
   PATH_IN="$path" _verify_py "$desc" '
 import json, os, sys
 p = os.environ["PATH_IN"]
 d = json.load(open(p))
-if not d:
-    print(f"  findings.json is empty: {p}", file=sys.stderr)
+if not isinstance(d, dict) or not d:
+    print(f"  findings.json is empty/not a dict: {p}", file=sys.stderr); sys.exit(1)
+ans = d.get("answer") or d.get("summary")
+if not (isinstance(ans, str) and ans.strip()):
+    print(f"  findings.json has no non-empty answer/summary: {p}", file=sys.stderr); sys.exit(1)
+methods = d.get("final_methods") or d.get("methods") or d.get("selected_methods") or d.get("best_methods")
+if not (isinstance(methods, list) and methods):
+    print(f"  findings.json lists no final methods: {p}", file=sys.stderr); sys.exit(1)
+'
+}
+
+# >=1 recorded run in the latest experiment must carry a NON-EMPTY
+# metrics dict. (A RunRecord may legitimately have ``metrics: {}`` when
+# the task agent reports a data-loading error in the record, so we
+# don't require *all* runs to have metrics — but if none do, the
+# experiment produced no real result.)
+verify_run_metrics_nonempty() {
+  local desc="$1"; local proj_dir="$2"
+  local exp_dir; exp_dir="$(_latest_experiment_dir "$proj_dir")"
+  if [[ -z "$exp_dir" ]]; then fail "$desc — no experiment directory"; return 1; fi
+  EXP_DIR="$exp_dir" _verify_py "$desc" '
+import json, os, sys
+exp = os.environ["EXP_DIR"]
+prog = json.load(open(os.path.join(exp, "progress.json")))
+runs = prog.get("runs", [])
+ok = [r for r in runs if isinstance(r.get("metrics"), dict) and r["metrics"]]
+if not ok:
+    print(f"  no run in {exp} has a non-empty metrics dict (runs={len(runs)})", file=sys.stderr)
     sys.exit(1)
-# If it carries an explicit methods/selected list, require it non-empty.
-for key in ("methods", "selected_methods", "best_methods", "final_methods"):
-    if key in d and not d[key]:
-        print(f"  findings.json[{key!r}] is empty: {p}", file=sys.stderr)
-        sys.exit(1)
+'
+}
+
+# methods.json must exist with >=1 well-formed entry, and the
+# project-level bookkeeping must be mutually consistent: every
+# leaderboard entry'\''s method is in methods.json, and every method in
+# methods.json appears as a run in some experiment. Catches the
+# sub-agent-overwrote-methods.json class and registry/leaderboard drift.
+verify_methods_consistent() {
+  local desc="$1"; local proj_dir="$2"
+  PROJ_DIR="$proj_dir" _verify_py "$desc" '
+import json, os, sys
+proj = os.environ["PROJ_DIR"]
+mpath = os.path.join(proj, "methods.json")
+if not os.path.exists(mpath):
+    print(f"  methods.json missing: {mpath}", file=sys.stderr); sys.exit(1)
+md = json.load(open(mpath))
+methods = md.get("methods", []) if isinstance(md, dict) else []
+names = [m.get("name") for m in methods if isinstance(m, dict)]
+if not names or not all(isinstance(n, str) and n for n in names):
+    print(f"  methods.json has no well-formed entries: {names!r}", file=sys.stderr); sys.exit(1)
+nameset = set(names)
+# leaderboard.json -> ranking entries reference known methods
+lbpath = os.path.join(proj, "leaderboard.json")
+if os.path.exists(lbpath):
+    lb = json.load(open(lbpath))
+    rank = lb.get("ranking") if isinstance(lb, dict) else (lb if isinstance(lb, list) else [])
+    for e in rank or []:
+        m = e.get("method") if isinstance(e, dict) else None
+        if m is not None and m not in nameset:
+            print(f"  leaderboard references method {m!r} not in methods.json {nameset}", file=sys.stderr); sys.exit(1)
+# every method appears as a run somewhere
+run_methods = set()
+expdir = os.path.join(proj, "experiments")
+for d in (os.listdir(expdir) if os.path.isdir(expdir) else []):
+    pj = os.path.join(expdir, d, "progress.json")
+    if os.path.exists(pj):
+        try:
+            for r in json.load(open(pj)).get("runs", []):
+                if isinstance(r, dict) and r.get("method"):
+                    run_methods.add(r["method"])
+        except Exception:
+            pass
+orphan = nameset - run_methods
+if orphan:
+    print(f"  methods.json entries with no matching run: {orphan}", file=sys.stderr); sys.exit(1)
+'
+}
+
+# The finalizer'\''s reproducibility artifacts must be REAL, not empty
+# stubs (they are all agent-written via the Write tool):
+#   - requirements.txt: >=1 non-comment, non-blank line that looks like
+#     a pip requirement.
+#   - reproduce.sh: non-empty, has a shebang on line 1, references
+#     requirements.txt, and runs at least one ``methods/final_*.py``.
+#   - >=1 standalone ``methods/final_*.py`` exists and is syntactically
+#     valid Python.
+# With URIKA_SMOKE_REAL=1: additionally create a throwaway venv and
+# ``pip install -r requirements.txt`` into it (proves the deps the
+# finalizer listed are actually installable).
+verify_finalize_artifacts_real() {
+  local desc="$1"; local proj_dir="$2"
+  PROJ_DIR="$proj_dir" _verify_py "${desc} — files have real content" '
+import os, re, sys, glob, ast
+proj = os.environ["PROJ_DIR"]
+# requirements.txt
+req = os.path.join(proj, "requirements.txt")
+lines = [ln.strip() for ln in open(req).read().splitlines()] if os.path.exists(req) else []
+pkgs = [ln for ln in lines if ln and not ln.startswith("#")]
+if not pkgs or not any(re.match(r"^[A-Za-z0-9_.\-]+", p) for p in pkgs):
+    print(f"  requirements.txt has no real package lines: {req}", file=sys.stderr); sys.exit(1)
+# reproduce.sh
+rep = os.path.join(proj, "reproduce.sh")
+txt = open(rep).read() if os.path.exists(rep) else ""
+if not txt.strip():
+    print(f"  reproduce.sh missing/empty: {rep}", file=sys.stderr); sys.exit(1)
+if not txt.splitlines()[0].startswith("#!"):
+    print(f"  reproduce.sh has no shebang: {rep}", file=sys.stderr); sys.exit(1)
+if "requirements.txt" not in txt:
+    print(f"  reproduce.sh does not reference requirements.txt", file=sys.stderr); sys.exit(1)
+if "methods/final_" not in txt:
+    print(f"  reproduce.sh does not run any methods/final_*.py", file=sys.stderr); sys.exit(1)
+# standalone method scripts
+finals = glob.glob(os.path.join(proj, "methods", "final_*.py"))
+if not finals:
+    print(f"  no methods/final_*.py written by the finalizer", file=sys.stderr); sys.exit(1)
+for f in finals:
+    try:
+        ast.parse(open(f).read())
+    except SyntaxError as e:
+        print(f"  standalone method {f} is not valid Python: {e}", file=sys.stderr); sys.exit(1)
+'
+  # Optional, expensive: prove the requirements actually install.
+  if [[ "${URIKA_SMOKE_REAL:-0}" == "1" ]]; then
+    local venv="$URIKA_E2E_LOG_DIR/repro-venv"
+    if python3 -m venv "$venv" >>"$URIKA_E2E_LOG_DIR/run.log" 2>&1 \
+       && "$venv/bin/pip" install -q -r "$proj_dir/requirements.txt" >>"$URIKA_E2E_LOG_DIR/run.log" 2>&1; then
+      ok "${desc} — requirements.txt installs in a clean venv"
+    else
+      fail "${desc} — pip install -r requirements.txt failed in a clean venv"
+    fi
+  fi
+}
+
+# Diagnostic figures must have been produced by the task agent. A run
+# that reports metrics but never draws a plot is "incomplete" per the
+# task_agent prompt — surface that.
+verify_figures_produced() {
+  local desc="$1"; local proj_dir="$2"
+  PROJ_DIR="$proj_dir" _verify_py "$desc" '
+import os, sys, glob
+proj = os.environ["PROJ_DIR"]
+figs = []
+for pat in ("*.png", "*.svg", "*.jpg", "*.jpeg", "*.pdf"):
+    figs += glob.glob(os.path.join(proj, "experiments", "*", "artifacts", "**", pat), recursive=True)
+    figs += glob.glob(os.path.join(proj, "experiments", "*", "artifacts", pat))
+if not figs:
+    print(f"  no figures under any experiments/*/artifacts/ in {proj}", file=sys.stderr)
+    sys.exit(1)
+'
+}
+
+# Every experiment directory (not just the latest) must have recorded
+# >=1 run. Use after `urika run --max-experiments N` so the meta-loop
+# can'\''t pad the count with an experiment that was created then died
+# on turn 1.
+verify_each_experiment_did_work() {
+  local desc="$1"; local proj_dir="$2"
+  PROJ_DIR="$proj_dir" _verify_py "$desc" '
+import json, os, sys
+proj = os.environ["PROJ_DIR"]
+expdir = os.path.join(proj, "experiments")
+dirs = sorted(d for d in (os.listdir(expdir) if os.path.isdir(expdir) else []) if os.path.isdir(os.path.join(expdir, d)))
+if not dirs:
+    print(f"  no experiment directories in {proj}", file=sys.stderr); sys.exit(1)
+bad = []
+for d in dirs:
+    pj = os.path.join(expdir, d, "progress.json")
+    runs = json.load(open(pj)).get("runs", []) if os.path.exists(pj) else []
+    if len(runs) < 1:
+        bad.append(d)
+if bad:
+    print(f"  experiment dirs with 0 recorded runs: {bad}", file=sys.stderr); sys.exit(1)
 '
 }
 
 # run.log for a step must NOT contain the *fatal* early-exit
-# tell-tales: an experiment that failed on turn 1, the meta loop
-# bailing with no advisor suggestion, or an experiment that ran every
-# turn but recorded zero runs. (A per-turn "produced no parseable run
-# records" *warning* is fine — that's the warning system working; the
-# run-content checks above catch the case where it actually mattered.)
-# Args: <desc> <logfile>.
+# tell-tales: an experiment that failed on turn 1, that paused on
+# turn 1 (a transient/unknown error before any progress — resumable,
+# but the run did not advance), any "Experiment failed:" line, or the
+# meta loop bailing with no advisor suggestion, or an experiment that
+# ran every turn but recorded zero runs. (A per-turn "produced no
+# parseable run records / criteria assessment / method plan" *warning*
+# is fine — that's the warning system working; the run-content checks
+# above catch the case where it actually mattered.) Args: <desc> <logfile>.
 verify_no_early_exit_markers() {
   local desc="$1"; local logfile="$2"
   if [[ ! -f "$logfile" ]]; then
@@ -335,7 +503,7 @@ verify_no_early_exit_markers() {
     return 1
   fi
   local hit
-  hit="$(grep -m1 -iE 'failed after 1 turn|no further experiments to suggest|but recorded 0 runs' "$logfile" || true)"
+  hit="$(grep -m1 -iE 'failed after 1 turn|paused after turn 1\b|Experiment failed:|no further experiments to suggest|but recorded 0 runs' "$logfile" || true)"
   if [[ -n "$hit" ]]; then
     fail "$desc" "early-exit marker in log: $hit"
   else

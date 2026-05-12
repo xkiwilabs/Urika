@@ -186,3 +186,57 @@ def test_launcher_skipped_when_auto_flag_present(
 
     assert "Run settings for alpha" not in body
     assert "Autonomous: no" not in body
+
+
+# --- run-outcome surfacing (v0.4.4) --------------------------------------
+#
+# A failed / paused run must be *visibly* surfaced by `urika run` (and
+# therefore by the TUI / REPL, which both invoke this same command).
+# Pre-v0.4.4 a flaky agent error on turn 1 hard-failed the experiment;
+# now it pauses-and-resumes. Either way the user must be told what
+# happened — not see a bare "done".
+
+def _patch_run_experiment(monkeypatch, return_value: dict) -> None:
+    async def _fake(*args, **kwargs):
+        base = {"turns": 0, "tokens_in": 0, "tokens_out": 0,
+                "cost_usd": 0.0, "agent_calls": 0}
+        base.update(return_value)
+        return base
+
+    monkeypatch.setattr("urika.orchestrator.run_experiment", _fake)
+
+
+def test_run_surfaces_failed_status(
+    project_with_one_experiment, monkeypatch
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    _patch_run_experiment(
+        monkeypatch, {"status": "failed", "error": "kaboom: the dataset vanished", "turns": 2}
+    )
+    result = CliRunner().invoke(cli, ["run", "alpha", "--auto"])
+    # Must not crash, must report the failure and the error text.
+    assert "fail" in result.output.lower()
+    assert "kaboom" in result.output
+    # And it must NOT claim success.
+    assert "completed after" not in result.output.lower()
+
+
+def test_run_surfaces_paused_status_with_resume_hint(
+    project_with_one_experiment, monkeypatch
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    _patch_run_experiment(monkeypatch, {"status": "paused", "turns": 1})
+    result = CliRunner().invoke(cli, ["run", "alpha", "--auto"])
+    assert "pause" in result.output.lower()
+    assert "--resume" in result.output
+
+
+def test_run_surfaces_unknown_status_gracefully(
+    project_with_one_experiment, monkeypatch
+) -> None:
+    """A status the CLI doesn't recognise (e.g. a future 'completed_empty')
+    must still be printed, not swallowed."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    _patch_run_experiment(monkeypatch, {"status": "completed_empty", "turns": 3})
+    result = CliRunner().invoke(cli, ["run", "alpha", "--auto"])
+    assert "completed_empty" in result.output
