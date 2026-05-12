@@ -86,3 +86,31 @@ class TestProfileDataset:
         assert result.n_columns == 0
         assert result.columns == []
         assert result.numeric_stats == {}
+
+
+class TestProfileDatasetNonStringColumns:
+    """Column *names* must come out as ``str`` even when pandas hands
+    back non-string labels — a MultiIndex (tuples), integer headers, or
+    list-valued labels from odd readers. Several consumers do
+    ``", ".join(columns)``; pre-v0.4.4 a non-str label crashed the
+    interactive project builder with ``TypeError: sequence item N:
+    expected str instance, <type> found``."""
+
+    def test_multiindex_columns_become_strings(self) -> None:
+        df = pd.DataFrame(
+            [[1, 2], [3, 4]],
+            columns=pd.MultiIndex.from_tuples([("a", "x"), ("b", "y")]),
+        )
+        result = profile_dataset(df)
+        assert all(isinstance(c, str) for c in result.columns)
+        assert all(isinstance(k, str) for k in result.dtypes)
+        assert all(isinstance(k, str) for k in result.missing_counts)
+        # Must not crash a downstream join.
+        ", ".join(result.columns)
+
+    def test_integer_columns_become_strings(self) -> None:
+        df = pd.DataFrame({0: [1, 2], 1: [3.0, 4.0]})
+        result = profile_dataset(df)
+        assert all(isinstance(c, str) for c in result.columns)
+        # The numeric column's stats are keyed by the stringified name.
+        assert "1" in result.numeric_stats

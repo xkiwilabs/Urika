@@ -442,6 +442,19 @@ def thinking_phrase() -> str:
     return random.choice(_THINKING_PHRASES)
 
 
+def _stringify(value: object) -> str:
+    """Best-effort flatten of an agent-supplied JSON value to a display
+    string. Lists/tuples are comma-joined element-wise; everything else
+    goes through ``str``; falsy values become ``""``. Used so a list
+    where prose was expected (the planning_agent prompt's ``"metrics":
+    ["metric_name"]`` example) doesn't blow up a ``str.join``."""
+    if not value:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(_stringify(v) for v in value if v not in ("", None))
+    return str(value)
+
+
 def format_agent_output(text: str) -> str:
     """Format agent output for terminal display.
 
@@ -509,15 +522,27 @@ def format_agent_output(text: str) -> str:
             evaluation = data.get("evaluation", {})
             if evaluation:
                 if isinstance(evaluation, dict):
-                    strategy = evaluation.get("strategy", "")
+                    # ``metrics`` is a list in the planning_agent prompt's
+                    # own JSON example (``"metrics": ["metric_name"]``), so
+                    # this MUST tolerate a list / tuple — pre-v0.4.4 it
+                    # didn't and ``" — ".join([strategy, [...]])`` crashed
+                    # the interactive project builder with "sequence
+                    # item 1: expected str instance, list found".
+                    strategy = _stringify(evaluation.get("strategy", ""))
                     metrics = evaluation.get("metrics", "")
-                    if strategy or metrics:
-                        parts = [p for p in [strategy, metrics] if p]
+                    if isinstance(metrics, (list, tuple)):
+                        metrics = ", ".join(_stringify(m) for m in metrics)
+                    else:
+                        metrics = _stringify(metrics)
+                    parts = [p for p in [strategy, metrics] if p]
+                    if parts:
                         lines.append(
                             f"  {_C.BOLD}Evaluation:{_C.RESET} {' — '.join(parts)}"
                         )
-                elif isinstance(evaluation, str):
-                    lines.append(f"  {_C.BOLD}Evaluation:{_C.RESET} {evaluation}")
+                elif isinstance(evaluation, (str, list, tuple)):
+                    lines.append(
+                        f"  {_C.BOLD}Evaluation:{_C.RESET} {_stringify(evaluation)}"
+                    )
             return "\n".join(lines)
 
         # -- Evaluation result --
