@@ -6,6 +6,7 @@ this module registers the @cli.command decorator for ``new``.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from urika.cli._helpers import (
 )
 from urika.core.experiment import create_experiment
 from urika.core.registry import ProjectRegistry
+
+logger = logging.getLogger(__name__)
 
 
 @cli.command()
@@ -778,9 +781,29 @@ def _run_builder_agent_loop(
         parse_suggestions,
     )
 
+    import time as _time
+
     runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
+
+    # Usage accumulation for the whole builder loop — pre-v0.4.4 the
+    # project_builder / advisor / planning agent calls here were never
+    # counted, so ``urika usage`` understated the cost of ``urika new``.
+    _builder_usage = {"tin": 0, "tout": 0, "cost": 0.0, "calls": 0}
+    _builder_t0 = _time.monotonic()
+    from datetime import datetime as _dt, timezone as _tz
+
+    _builder_started_iso = _dt.now(_tz.utc).isoformat()
+
+    def _run_agent(cfg: object, prompt: str) -> object:
+        """Run a builder-loop agent and accumulate its usage."""
+        r = asyncio.run(runner.run(cfg, prompt, on_message=_on_builder_msg))
+        _builder_usage["tin"] += getattr(r, "tokens_in", 0) or 0
+        _builder_usage["tout"] += getattr(r, "tokens_out", 0) or 0
+        _builder_usage["cost"] += getattr(r, "cost_usd", 0.0) or 0.0
+        _builder_usage["calls"] += 1
+        return r
 
     # --- Phase 1: Clarifying questions ---
     builder_role = registry.get("project_builder")
@@ -796,6 +819,27 @@ def _run_builder_agent_loop(
     project_dir = getattr(
         builder, "projects_dir", Path.home() / "urika-projects"
     ) / getattr(builder, "name", "")
+
+    def _record_builder_usage() -> None:
+        """Persist the builder loop's usage to <project>/.urika/usage.json."""
+        if _builder_usage["calls"] == 0:
+            return
+        try:
+            from urika.core.usage import record_session
+
+            record_session(
+                project_dir,
+                started=_builder_started_iso,
+                ended=_dt.now(_tz.utc).isoformat(),
+                duration_ms=int((_time.monotonic() - _builder_t0) * 1000),
+                tokens_in=_builder_usage["tin"],
+                tokens_out=_builder_usage["tout"],
+                cost_usd=_builder_usage["cost"],
+                agent_calls=_builder_usage["calls"],
+                experiments_run=0,
+            )
+        except Exception as exc:  # never let usage bookkeeping break setup
+            logger.warning("Builder usage record failed: %s", exc)
 
     # Create persistent footer panel for the entire builder loop
     panel = ThinkingPanel()
@@ -848,7 +892,7 @@ def _run_builder_agent_loop(
             config = builder_role.build_config(project_dir=project_dir)
 
             panel.update(agent="project_builder", activity=thinking_phrase())
-            result = asyncio.run(runner.run(config, prompt, on_message=_on_builder_msg))
+            result = _run_agent(config, prompt)
 
             if not result.success:
                 print_error(f"Agent error: {result.error}")
@@ -899,9 +943,7 @@ def _run_builder_agent_loop(
             agent="advisor_agent",
             activity=_AGENT_ACTIVITY.get("advisor_agent", thinking_phrase()),
         )
-        suggest_result = asyncio.run(
-            runner.run(suggest_config, suggest_prompt, on_message=_on_builder_msg)
-        )
+        suggest_result = _run_agent(suggest_config, suggest_prompt)
 
         if not suggest_result.success:
             print_error(f"Advisor agent error: {suggest_result.error}")
@@ -928,9 +970,7 @@ def _run_builder_agent_loop(
             agent="planning_agent",
             activity=_AGENT_ACTIVITY.get("planning_agent", thinking_phrase()),
         )
-        plan_result = asyncio.run(
-            runner.run(plan_config, plan_prompt, on_message=_on_builder_msg)
-        )
+        plan_result = _run_agent(plan_config, plan_prompt)
 
         if not plan_result.success:
             print_error(f"Planning agent error: {plan_result.error}")
@@ -962,9 +1002,7 @@ def _run_builder_agent_loop(
         print_agent("advisor_agent")
         refined_prompt = suggest_prompt + f"\n\n## User Refinement\n{refinement}"
         with Spinner(_AGENT_ACTIVITY.get("advisor_agent", thinking_phrase())):
-            suggest_result = asyncio.run(
-                runner.run(suggest_config, refined_prompt, on_message=_on_builder_msg)
-            )
+            suggest_result = _run_agent(suggest_config, refined_prompt)
         if suggest_result.success:
             suggestions = parse_suggestions(suggest_result.text_output)
             print_agent("planning_agent")
@@ -972,15 +1010,16 @@ def _run_builder_agent_loop(
                 suggestions or {}, description, data_summary
             )
             with Spinner(_AGENT_ACTIVITY.get("planning_agent", thinking_phrase())):
-                plan_result = asyncio.run(
-                    runner.run(plan_config, plan_prompt, on_message=_on_builder_msg)
-                )
+                plan_result = _run_agent(plan_config, plan_prompt)
             if plan_result.success:
                 click.echo(format_agent_output(plan_result.text_output))
 
     # Store final suggestions
     if suggestions:
         builder.set_initial_suggestions(suggestions)
+
+    # Persist the builder loop's token/cost usage.
+    _record_builder_usage()
 
 
 def _ingest_knowledge(

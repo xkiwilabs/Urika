@@ -334,6 +334,51 @@ class TestOrchestratorLoop:
         assert session is not None
         assert session.status == "failed"
 
+    def _hybrid_project(self, tmp_path: Path, monkeypatch) -> tuple[Path, str]:
+        project_dir, exp_id = _setup_project(tmp_path)
+        toml_path = project_dir / "urika.toml"
+        toml_path.write_text(
+            toml_path.read_text() + '\n[privacy]\nmode = "hybrid"\n', encoding="utf-8"
+        )
+        # Skip the live-endpoint preflight (it would hard-fail first on
+        # "no endpoint configured" — a separate path); this test is
+        # about the *data agent* failure.
+        monkeypatch.setattr(
+            "urika.core.privacy.requires_private_endpoint", lambda *_a, **_k: False
+        )
+        return project_dir, exp_id
+
+    @pytest.mark.asyncio
+    async def test_data_agent_transient_failure_pauses_in_hybrid_mode(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """In hybrid/private mode a *transient* data-agent failure (a
+        flaky local endpoint, an SDK message-relay hiccup) pauses the
+        session so ``urika run --resume`` re-runs the turn — it does
+        NOT hard-fail and discard the work done on earlier turns.
+        Pre-v0.4.4 every data-agent failure hard-failed."""
+        project_dir, exp_id = self._hybrid_project(tmp_path, monkeypatch)
+        runner = FailingRunner(fail_role="data_agent", error_category="transient")
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "paused"
+        session = load_session(project_dir, exp_id)
+        assert session is not None and session.status == "paused"
+
+    @pytest.mark.asyncio
+    async def test_data_agent_auth_failure_fails_in_hybrid_mode(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        project_dir, exp_id = self._hybrid_project(tmp_path, monkeypatch)
+        runner = FailingRunner(fail_role="data_agent", error_category="auth")
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "failed"
+        session = load_session(project_dir, exp_id)
+        assert session is not None and session.status == "failed"
+
     @pytest.mark.asyncio
     async def test_calls_agents_in_order(self, tmp_path: Path) -> None:
         project_dir, exp_id = _setup_project(tmp_path)

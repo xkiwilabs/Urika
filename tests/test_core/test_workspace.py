@@ -161,3 +161,47 @@ class TestWriteTomlInheritanceComment:
             parsed = tomllib.load(f)
         assert parsed["project"]["name"] == "p"
         assert parsed["privacy"]["mode"] == "private"
+
+
+class TestSpecialCharsRoundTrip:
+    """A research question / description pasted with quotes, backslashes,
+    or control characters (a Windows ``\\r\\n``, a tab) must produce
+    *valid* TOML so the project is loadable. Pre-v0.4.4 the encoder
+    only escaped ``\\``, ``"`` and ``\\n`` — a stray ``\\r`` made
+    ``urika.toml`` unparseable. (Plausible cause of "the dashboard
+    create button doesn't work when I type a real question".)"""
+
+    @pytest.mark.parametrize(
+        "question, description",
+        [
+            ('Does "affect" predict mood over time?', "Has, commas. And periods."),
+            ("Windows pasted\r\nmulti-line question", "tab\there too"),
+            ("path-like c:\\users\\x\\data", "weird \x01 control char"),
+            ("emoji ✓ and accents é à", "ünïcödé"),
+        ],
+    )
+    def test_create_and_reload_with_special_chars(
+        self, tmp_path: Path, question: str, description: str
+    ) -> None:
+        project_dir = tmp_path / "p"
+        config = ProjectConfig(
+            name="p", question=question, mode="exploratory", description=description
+        )
+        create_project_workspace(project_dir, config)
+        # The file must be valid TOML (this is what broke pre-fix).
+        import tomllib
+
+        with open(project_dir / "urika.toml", "rb") as f:
+            tomllib.load(f)
+        # And it must round-trip.
+        loaded = load_project_config(project_dir)
+        assert loaded.question == question
+        assert loaded.description == description
+
+    def test_toml_basic_string_round_trips(self) -> None:
+        import tomllib
+
+        from urika.core.workspace import _toml_basic_string
+
+        for s in ['x"y\\z', "a\r\nb", "t\tt", "\x07", "plain", "é✓", ""]:
+            assert tomllib.loads("v = " + _toml_basic_string(s))["v"] == s

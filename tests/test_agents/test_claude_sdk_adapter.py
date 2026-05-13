@@ -244,6 +244,20 @@ class TestClassifyError:
 
         assert _classify_error("request timed out after 60s") == "transient"
 
+    def test_transient_sdk_error_result_relay_quirk(self) -> None:
+        # The SDK transport surfaces a ResultMessage flagged is_error
+        # with a bogus message as ``Exception("Claude Code returned an
+        # error in error result: success")`` — seen against local
+        # endpoints. Treated as transient (pause-and-resume), not a hard
+        # fail. (v0.4.4)
+        from urika.agents.adapters.claude_sdk import _classify_error
+
+        assert (
+            _classify_error("Claude Code returned an error in error result: success")
+            == "transient"
+        )
+        assert _classify_error("Fatal error in message reader") == "transient"
+
     def test_config_missing_private_endpoint(self) -> None:
         from urika.agents.adapters.claude_sdk import _classify_error
 
