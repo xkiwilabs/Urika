@@ -132,6 +132,12 @@ _TRANSIENT_PATTERNS = [
     re.compile(r"service.{0,3}unavailable", re.IGNORECASE),
     re.compile(r"bad.?gateway", re.IGNORECASE),
     re.compile(r"gateway.{0,3}timeout", re.IGNORECASE),
+    # SDK message-relay weirdness seen against local endpoints: the
+    # transport surfaces ``Exception("Claude Code returned an error in
+    # error result: success")`` — a ResultMessage flagged is_error with
+    # a bogus error string. Not a real API error; pause-and-resume.
+    re.compile(r"returned an error in error result", re.IGNORECASE),
+    re.compile(r"fatal error in message reader", re.IGNORECASE),
 ]
 # Configuration errors that need user action to fix but shouldn't
 # look like generic failures in the dashboard. Treated as a separate

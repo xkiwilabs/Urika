@@ -114,13 +114,46 @@ def _write_toml(path: Path, data: dict) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+_TOML_STRING_ESCAPES = {
+    "\\": "\\\\",
+    '"': '\\"',
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
+
+
+def _toml_basic_string(val: str) -> str:
+    """Encode ``val`` as a TOML *basic string* (double-quoted).
+
+    TOML basic strings forbid raw control characters (U+0000–U+001F
+    except those with a named escape, plus U+007F). Pre-v0.4.4 the
+    encoder only escaped ``\\``, ``"`` and ``\\n`` — so a research
+    question / description pasted with a ``\\r`` (Windows line ending),
+    a ``\\t``, or any other control char produced *invalid TOML*, which
+    then broke ``tomllib.load`` everywhere downstream. Escape the named
+    ones and ``\\uXXXX``-escape the rest.
+    """
+    out = []
+    for ch in val:
+        esc = _TOML_STRING_ESCAPES.get(ch)
+        if esc is not None:
+            out.append(esc)
+        elif ch < "\x20" or ch == "\x7f":
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
 def _toml_value(val: object) -> str:
     """Format a Python value as a TOML literal."""
     if val is None:
         return '""'
     if isinstance(val, str):
-        escaped = val.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-        return f'"{escaped}"'
+        return _toml_basic_string(val)
     if isinstance(val, bool):
         return "true" if val else "false"
     if isinstance(val, (int, float)):
@@ -141,8 +174,7 @@ def _toml_value(val: object) -> str:
         def _fmt_key(k: str) -> str:
             if isinstance(k, str) and bare_key.match(k):
                 return k
-            escaped = str(k).replace("\\", "\\\\").replace('"', '\\"')
-            return f'"{escaped}"'
+            return _toml_basic_string(str(k))
 
         items = ", ".join(
             f"{_fmt_key(k)} = {_toml_value(v)}" for k, v in val.items()

@@ -11,10 +11,21 @@ from urika.data.models import DataSummary
 
 
 def profile_dataset(df: pd.DataFrame) -> DataSummary:
-    """Generate profiling stats from a DataFrame."""
-    columns = list(df.columns)
-    dtypes = {col: str(df[col].dtype) for col in columns}
-    missing_counts = {col: int(df[col].isna().sum()) for col in columns}
+    """Generate profiling stats from a DataFrame.
+
+    Column *names* are coerced to ``str`` here. ``DataSummary.columns``
+    is typed ``list[str]`` and several downstream consumers do
+    ``", ".join(columns)`` — but pandas hands back non-string column
+    labels for some inputs (a ``MultiIndex`` after an Excel sheet with
+    a multi-row header → tuples; integer headers; list-valued labels
+    from JSON-ish readers). Those crashed the interactive project
+    builder with ``TypeError: sequence item N: expected str instance,
+    <type> found``. Stringify at the source so the contract holds.
+    """
+    orig_columns = list(df.columns)
+    columns = [str(c) for c in orig_columns]
+    dtypes = {str(col): str(df[col].dtype) for col in orig_columns}
+    missing_counts = {str(col): int(df[col].isna().sum()) for col in orig_columns}
 
     numeric_cols = df.select_dtypes(include="number").columns
     numeric_stats: dict[str, dict[str, float]] = {}
@@ -22,7 +33,7 @@ def profile_dataset(df: pd.DataFrame) -> DataSummary:
         series = df[col].dropna()
         if len(series) == 0:
             continue
-        numeric_stats[col] = {
+        numeric_stats[str(col)] = {
             "mean": float(series.mean()),
             "std": float(series.std()),
             "min": float(series.min()),

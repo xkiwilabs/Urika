@@ -44,7 +44,7 @@ def build_scoping_prompt(
                 "## Data Profile (sample)",
                 f"Rows: {data_summary.n_rows}",
                 f"Columns: {data_summary.n_columns}",
-                f"Column names: {', '.join(data_summary.columns)}",
+                f"Column names: {', '.join(str(c) for c in data_summary.columns)}",
                 f"Data types: {data_summary.dtypes}",
                 f"Missing values: {data_summary.missing_counts}",
                 "",
@@ -101,7 +101,7 @@ def build_suggestion_prompt(
             [
                 "## Data",
                 f"Rows: {data_summary.n_rows}, Columns: {data_summary.n_columns}",
-                f"Columns: {', '.join(data_summary.columns)}",
+                f"Columns: {', '.join(str(c) for c in data_summary.columns)}",
                 "",
             ]
         )
@@ -141,7 +141,7 @@ def build_planning_prompt(
             [
                 "## Data",
                 f"Rows: {data_summary.n_rows}, Columns: {data_summary.n_columns}",
-                f"Columns: {', '.join(data_summary.columns)}",
+                f"Columns: {', '.join(str(c) for c in data_summary.columns)}",
                 "",
             ]
         )

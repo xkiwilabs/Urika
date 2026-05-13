@@ -411,15 +411,36 @@ async def run_experiment(
                 _total_agent_calls += 1
 
                 if not data_result.success:
-                    # Data agent failure in private/hybrid mode is
-                    # always a hard fail — not rate-limit related.
+                    # The cloud agents can't run in hybrid/private mode
+                    # until the data agent has profiled the raw data
+                    # locally — so this turn cannot proceed. But whether
+                    # we *fail* or *pause* depends on the error: a
+                    # transient blip on the local endpoint (a flaky vLLM,
+                    # an SDK message-relay hiccup) should pause so
+                    # ``urika run --resume`` re-runs the turn — not
+                    # discard the work done on earlier turns. Only a
+                    # genuinely unrecoverable error (`auth`) hard-fails.
+                    # Pre-v0.4.4 every data-agent failure hard-failed,
+                    # so one bad turn-N call threw away N-1 turns of work.
+                    _cat = data_result.error_category or ""
+                    _detail = data_result.error or "Data Agent failed"
                     _data_error = (
                         "Data Agent failed — cannot proceed in "
                         f"{runtime_config.privacy_mode} mode. "
-                        "Raw data must be profiled locally before "
-                        "cloud agents can run. "
-                        "Start your local model or switch to open mode."
+                        "Raw data must be profiled locally before cloud "
+                        "agents can run. Start your local model or switch "
+                        f"to open mode. (Detail: {_detail})"
                     )
+                    if _is_recoverable_failure(_cat):
+                        progress("result", _data_error)
+                        try:
+                            pause_session(project_dir, experiment_id)
+                        except Exception as exc:
+                            logger.warning(
+                                "pause_session failed after data-agent failure: %s", exc
+                            )
+                        progress("phase", f"Experiment paused after turn {turn}")
+                        return _usage_dict("paused", turn, error=_data_error)
                     fail_session(project_dir, experiment_id, error=_data_error)
                     progress("phase", f"Experiment failed: {_data_error}")
                     return _usage_dict("failed", turn, error=_data_error)
