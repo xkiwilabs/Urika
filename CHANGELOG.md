@@ -5,6 +5,26 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4.2] - 2026-05-13
+
+Tiny follow-up release. One production-code fix; the rest of the work
+since v0.4.4.1 is test infrastructure that doesn't ship to the public
+repo.
+
+### Fixed
+
+- **`urika run` on a brand-new project no longer silently bails when
+  the advisor produces nothing usable.** The non-`--auto`
+  single-experiment path (`cli/run_planning._determine_next_experiment`)
+  had the same flaw the v0.4.4 fix closed for `--auto`/`--max-experiments`
+  in `orchestrator/meta.run_project`: if the advisor's call failed or
+  its reply had no parseable `suggestions` block, the function returned
+  `None` and the run exited "nothing to do" — leaving the user with a
+  freshly-created project that never ran. It now seeds a deterministic
+  `baseline` experiment in that case (only on a fresh project — no
+  change when there are completed experiments and "no suggestion"
+  legitimately means "done").
+
 ## [0.4.4.1] - 2026-05-13
 
 Hotfix release. Closes four beta-user-reported bugs that v0.4.4 didn't
