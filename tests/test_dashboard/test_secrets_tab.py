@@ -34,10 +34,7 @@ def test_secrets_tab_shows_backend_label(settings_client):
     # Fallback wording when keyring isn't available; either label is fine
     # (the test box may or may not have keyring), but at least one of the
     # two known strings should render.
-    assert (
-        "file fallback (chmod 0600)" in body
-        or "OS keyring" in body
-    )
+    assert "file fallback (chmod 0600)" in body or "OS keyring" in body
 
 
 def test_secrets_tab_has_add_button(settings_client):
@@ -108,7 +105,9 @@ def test_post_secret_creates_with_metadata(settings_client, tmp_path, monkeypatc
     assert "***" in body["masked_preview"]
 
 
-def test_post_secret_rejects_invalid_name_format(settings_client, tmp_path, monkeypatch):
+def test_post_secret_rejects_invalid_name_format(
+    settings_client, tmp_path, monkeypatch
+):
     """Name must be uppercase letters / digits / underscores only."""
     monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
@@ -306,9 +305,7 @@ def test_post_secret_refuses_unavailable_provider_name(
     assert "v0.5" in body_text
 
 
-def test_used_by_config_row_shows_annotation(
-    settings_client, monkeypatch, tmp_path
-):
+def test_used_by_config_row_shows_annotation(settings_client, monkeypatch, tmp_path):
     """A referenced env-var carries a referenced_by annotation in the
     JSON payload that the template surfaces as ``↳ used by ...``."""
     test_env_name = "URIKA_TEST_REF_KEY_88"

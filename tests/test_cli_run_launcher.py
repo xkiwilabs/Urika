@@ -65,8 +65,14 @@ def stub_run_experiment(monkeypatch) -> dict:
     async def _fake_run_experiment(*args, **kwargs):
         captured["args"] = args
         captured["kwargs"] = kwargs
-        return {"status": "completed", "turns": 0, "tokens_in": 0,
-                "tokens_out": 0, "cost_usd": 0.0, "agent_calls": 0}
+        return {
+            "status": "completed",
+            "turns": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cost_usd": 0.0,
+            "agent_calls": 0,
+        }
 
     # cli/run.py imports ``run_experiment`` and ``run_project`` lazily
     # inside the run() function via
@@ -77,12 +83,8 @@ def stub_run_experiment(monkeypatch) -> dict:
         captured["meta_kwargs"] = kwargs
         return {"experiments": [], "status": "completed"}
 
-    monkeypatch.setattr(
-        "urika.orchestrator.run_experiment", _fake_run_experiment
-    )
-    monkeypatch.setattr(
-        "urika.orchestrator.run_project", _fake_run_project
-    )
+    monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
+    monkeypatch.setattr("urika.orchestrator.run_project", _fake_run_project)
     return captured
 
 
@@ -96,6 +98,7 @@ def test_launcher_header_surfaces_autonomous_default(
     # ``urika.cli.__init__``), not the submodule — go through sys.modules
     # to reach the actual module object.
     import sys as _sys
+
     _run_module = _sys.modules["urika.cli.run"]
     monkeypatch.setattr(_run_module, "_stdin_is_interactive", lambda: True)
 
@@ -123,6 +126,7 @@ def test_launcher_option_2_runs_autonomously(
     # ``urika.cli.__init__``), not the submodule — go through sys.modules
     # to reach the actual module object.
     import sys as _sys
+
     _run_module = _sys.modules["urika.cli.run"]
     monkeypatch.setattr(_run_module, "_stdin_is_interactive", lambda: True)
 
@@ -153,6 +157,7 @@ def test_launcher_option_3_runs_multiple_experiments(
     # ``urika.cli.__init__``), not the submodule — go through sys.modules
     # to reach the actual module object.
     import sys as _sys
+
     _run_module = _sys.modules["urika.cli.run"]
     monkeypatch.setattr(_run_module, "_stdin_is_interactive", lambda: True)
 
@@ -177,6 +182,7 @@ def test_launcher_skipped_when_auto_flag_present(
     # ``urika.cli.__init__``), not the submodule — go through sys.modules
     # to reach the actual module object.
     import sys as _sys
+
     _run_module = _sys.modules["urika.cli.run"]
     monkeypatch.setattr(_run_module, "_stdin_is_interactive", lambda: True)
 
@@ -196,22 +202,27 @@ def test_launcher_skipped_when_auto_flag_present(
 # now it pauses-and-resumes. Either way the user must be told what
 # happened — not see a bare "done".
 
+
 def _patch_run_experiment(monkeypatch, return_value: dict) -> None:
     async def _fake(*args, **kwargs):
-        base = {"turns": 0, "tokens_in": 0, "tokens_out": 0,
-                "cost_usd": 0.0, "agent_calls": 0}
+        base = {
+            "turns": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cost_usd": 0.0,
+            "agent_calls": 0,
+        }
         base.update(return_value)
         return base
 
     monkeypatch.setattr("urika.orchestrator.run_experiment", _fake)
 
 
-def test_run_surfaces_failed_status(
-    project_with_one_experiment, monkeypatch
-) -> None:
+def test_run_surfaces_failed_status(project_with_one_experiment, monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     _patch_run_experiment(
-        monkeypatch, {"status": "failed", "error": "kaboom: the dataset vanished", "turns": 2}
+        monkeypatch,
+        {"status": "failed", "error": "kaboom: the dataset vanished", "turns": 2},
     )
     result = CliRunner().invoke(cli, ["run", "alpha", "--auto"])
     # Must not crash, must report the failure and the error text.

@@ -88,12 +88,8 @@ class TestTelegramHealthCheck:
         # asyncio.run creates and manages a loop, mimicking FastAPI's context.
         ok, msg = asyncio.run(run_in_loop())
         # No event-loop conflict error allowed:
-        assert "another loop" not in msg.lower(), (
-            f"unexpected event-loop error: {msg}"
-        )
-        assert "while another" not in msg.lower(), (
-            f"unexpected event-loop error: {msg}"
-        )
+        assert "another loop" not in msg.lower(), f"unexpected event-loop error: {msg}"
+        assert "while another" not in msg.lower(), f"unexpected event-loop error: {msg}"
         # With empty token, expect the "no bot token configured" failure cleanly:
         assert ok is False
         assert "no bot token" in msg.lower()
@@ -106,15 +102,15 @@ class TestEmailHealthCheck:
         ch = EmailChannel({"from_addr": "x@x.com"})  # no to, no smtp_server
         ok, msg = ch.health_check()
         assert ok is False
-        assert (
-            "missing" in msg.lower() or "to" in msg.lower() or "smtp" in msg.lower()
-        )
+        assert "missing" in msg.lower() or "to" in msg.lower() or "smtp" in msg.lower()
 
     def test_returns_false_when_smtp_server_missing(self):
         """Even with `to`, missing smtp_server should fail closed."""
         from urika.notifications.email_channel import EmailChannel
 
-        ch = EmailChannel({"to": ["x@x.com"], "from_addr": "x@x.com", "smtp_server": ""})
+        ch = EmailChannel(
+            {"to": ["x@x.com"], "from_addr": "x@x.com", "smtp_server": ""}
+        )
         ok, msg = ch.health_check()
         assert ok is False
 
@@ -155,9 +151,7 @@ class TestEmailHealthCheck:
             def __exit__(self, *exc):
                 return False
 
-        monkeypatch.setattr(
-            "urika.notifications.email_channel.smtplib.SMTP", FakeSMTP
-        )
+        monkeypatch.setattr("urika.notifications.email_channel.smtplib.SMTP", FakeSMTP)
 
         ok, msg = ch.health_check()
         assert ok is False

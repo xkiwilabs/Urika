@@ -58,7 +58,11 @@ def project_with_sessions(tmp_path: Path, monkeypatch):
             started="2026-04-30T00:05:00Z",
             updated="2026-04-30T00:05:00Z",
             recent_messages=[
-                {"role": "user", "content": "second session", "ts": "2026-04-30T00:05:00Z"},
+                {
+                    "role": "user",
+                    "content": "second session",
+                    "ts": "2026-04-30T00:05:00Z",
+                },
             ],
             preview="second session",
         ),
@@ -141,8 +145,6 @@ def test_sessions_export_unknown_id_errors(project_with_sessions):
     from urika.cli import cli
 
     runner = CliRunner()
-    result = runner.invoke(
-        cli, ["sessions", "export", "alpha", "does-not-exist"]
-    )
+    result = runner.invoke(cli, ["sessions", "export", "alpha", "does-not-exist"])
     assert result.exit_code != 0
     assert "not found" in result.output.lower()

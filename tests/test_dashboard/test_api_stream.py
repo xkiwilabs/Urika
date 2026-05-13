@@ -140,9 +140,7 @@ def test_stream_reports_stopped_from_progress_json(tmp_path: Path, monkeypatch):
     orchestrator wrote ``status="stopped"``, but SSE emitted
     ``"completed"``. The api.py:2855-2866 branch must propagate
     ``stopped``."""
-    body = _stream_body_with_progress(
-        tmp_path, monkeypatch, progress_status="stopped"
-    )
+    body = _stream_body_with_progress(tmp_path, monkeypatch, progress_status="stopped")
     assert "event: status" in body
     assert '"stopped"' in body
     assert '"completed"' not in body
@@ -153,9 +151,7 @@ def test_stream_reports_failed_from_progress_json(tmp_path: Path, monkeypatch):
     no LAUNCH-FAILED marker) — SSE must surface ``failed``, not
     ``completed`` (the only path tested previously was the
     LAUNCH-FAILED marker)."""
-    body = _stream_body_with_progress(
-        tmp_path, monkeypatch, progress_status="failed"
-    )
+    body = _stream_body_with_progress(tmp_path, monkeypatch, progress_status="failed")
     assert "event: status" in body
     assert '"failed"' in body
     assert '"completed"' not in body
@@ -167,9 +163,7 @@ def test_stream_falls_back_to_completed_when_progress_status_unknown(
     """progress.json with a status the route doesn't recognise (pending
     / running / blank / typo) — defensive fallback is ``completed``
     (lock is gone, so the run must have ended somehow)."""
-    body = _stream_body_with_progress(
-        tmp_path, monkeypatch, progress_status="pending"
-    )
+    body = _stream_body_with_progress(tmp_path, monkeypatch, progress_status="pending")
     assert "event: status" in body
     # Either completed (legacy fallback) is acceptable; failed would
     # also be acceptable if the route gets stricter — but NOT a 500.
@@ -209,9 +203,7 @@ def test_stream_survives_non_utf8_bytes_in_log(tmp_path: Path, monkeypatch):
     app = create_app(project_root=tmp_path)
     client = TestClient(app)
 
-    with client.stream(
-        "GET", "/api/projects/alpha/runs/exp-001/stream"
-    ) as r:
+    with client.stream("GET", "/api/projects/alpha/runs/exp-001/stream") as r:
         assert r.status_code == 200
         body = b"".join(r.iter_bytes()).decode("utf-8")
 

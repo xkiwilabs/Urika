@@ -242,9 +242,7 @@ def cmd_project(session: ReplSession, args: str) -> None:
                 preview_short = preview[:60]
                 if len(preview) > 60:
                     preview_short = preview_short.rsplit(" ", 1)[0] + "…"
-                click.echo(
-                    f'  Previous session from {relative}: "{preview_short}"'
-                )
+                click.echo(f'  Previous session from {relative}: "{preview_short}"')
                 click.echo("  Type /resume-session to continue.")
             else:
                 click.echo(
@@ -374,7 +372,9 @@ def cmd_copy(session: ReplSession, args: str) -> None:
         try:
             n = int(arg)
         except ValueError:
-            print_error("Usage: /copy [N]  — copies the last N output lines (default 40).")
+            print_error(
+                "Usage: /copy [N]  — copies the last N output lines (default 40)."
+            )
             return
         if n <= 0:
             print_error("N must be a positive integer.")
@@ -405,7 +405,9 @@ def cmd_copy(session: ReplSession, args: str) -> None:
         print_error(f"Clipboard copy failed: {exc}")
         return
 
-    print_success(f"Copied last {len(lines)} output lines ({len(text)} chars) to clipboard.")
+    print_success(
+        f"Copied last {len(lines)} output lines ({len(text)} chars) to clipboard."
+    )
 
 
 @command("config", description="Configure privacy mode and models")
@@ -563,7 +565,9 @@ def cmd_sessions(session: ReplSession, args: str) -> None:
         )
         return
 
-    click.echo(f"Unknown sessions subcommand: {sub!r}. Try /sessions list or /sessions export <id>.")
+    click.echo(
+        f"Unknown sessions subcommand: {sub!r}. Try /sessions list or /sessions export <id>."
+    )
 
 
 @command("memory", description="Project memory: list, show, add, delete")
@@ -785,7 +789,11 @@ def cmd_stop(session: ReplSession, args: str) -> None:
     click.echo(f"  Stopped /{active}.")
 
 
-@command("pause", requires_project=True, description="Pause experiment after current subagent")
+@command(
+    "pause",
+    requires_project=True,
+    description="Pause experiment after current subagent",
+)
 def cmd_pause(session: ReplSession, args: str) -> None:
     """Pause the running experiment after the current subagent finishes.
 
@@ -828,7 +836,6 @@ def cmd_status(session: ReplSession, args: str) -> None:
     # Call the existing status function
     ctx = click.Context(cli_status)
     ctx.invoke(cli_status, name=session.project_name)
-
 
 
 @command("experiments", requires_project=True, description="List experiments")
@@ -878,9 +885,7 @@ def cmd_delete_experiment(session: ReplSession, args: str) -> None:
         return
 
     try:
-        result = trash_experiment(
-            session.project_path, session.project_name, exp_id
-        )
+        result = trash_experiment(session.project_path, session.project_name, exp_id)
     except ExperimentNotFoundError:
         click.echo(f"  Experiment '{exp_id}' not found.")
         return
@@ -959,7 +964,6 @@ def cmd_results(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-
 @command("criteria", requires_project=True, description="Show current criteria")
 def cmd_criteria(session: ReplSession, args: str) -> None:
     from urika.core.criteria import load_criteria
@@ -979,16 +983,32 @@ def cmd_criteria(session: ReplSession, args: str) -> None:
     click.echo()
 
 
-
-
 # Register imported agent commands
-command("advisor", requires_project=True, description="Ask the advisor agent a question")(cmd_advisor)
-command("evaluate", requires_project=True, description="Run evaluator on an experiment")(cmd_evaluate)
-command("plan", requires_project=True, description="Run planning agent to design a method")(cmd_plan)
+command(
+    "advisor", requires_project=True, description="Ask the advisor agent a question"
+)(cmd_advisor)
+command(
+    "evaluate", requires_project=True, description="Run evaluator on an experiment"
+)(cmd_evaluate)
+command(
+    "plan", requires_project=True, description="Run planning agent to design a method"
+)(cmd_plan)
 command("report", requires_project=True, description="Generate reports")(cmd_report)
-command("present", requires_project=True, description="Generate presentation for an experiment")(cmd_present)
-command("finalize", requires_project=True, description="Finalize project \u2014 methods, report, presentation")(cmd_finalize)
-command("build-tool", requires_project=True, description="Build a custom tool for the project")(cmd_build_tool)
+command(
+    "present",
+    requires_project=True,
+    description="Generate presentation for an experiment",
+)(cmd_present)
+command(
+    "finalize",
+    requires_project=True,
+    description="Finalize project \u2014 methods, report, presentation",
+)(cmd_finalize)
+command(
+    "build-tool",
+    requires_project=True,
+    description="Build a custom tool for the project",
+)(cmd_build_tool)
 
 
 @command("inspect", requires_project=True, description="Inspect dataset")

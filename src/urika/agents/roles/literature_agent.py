@@ -44,8 +44,7 @@ def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
     knowledge_dir = project_dir / "knowledge"
     # Web search requires cloud access — disable for private projects
     web_search_enabled = (
-        _is_web_search_enabled(project_dir)
-        and runtime_config.privacy_mode != "private"
+        _is_web_search_enabled(project_dir) and runtime_config.privacy_mode != "private"
     )
 
     allowed_tools = ["Read", "Write", "Bash", "Glob", "Grep"]

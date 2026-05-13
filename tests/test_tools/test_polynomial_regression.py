@@ -73,11 +73,21 @@ class TestPolynomialRegressionMethod:
 
         result_full = method.run(
             view,
-            {"target": "y", "features": ["a", "b", "c"], "degree": 2, "interaction_only": False},
+            {
+                "target": "y",
+                "features": ["a", "b", "c"],
+                "degree": 2,
+                "interaction_only": False,
+            },
         )
         result_interact = method.run(
             view,
-            {"target": "y", "features": ["a", "b", "c"], "degree": 2, "interaction_only": True},
+            {
+                "target": "y",
+                "features": ["a", "b", "c"],
+                "degree": 2,
+                "interaction_only": True,
+            },
         )
 
         assert result_full.valid is True

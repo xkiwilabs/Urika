@@ -35,8 +35,9 @@ def _seed_global_settings(home: Path, payload: str) -> None:
     (home / "settings.toml").write_text(payload, encoding="utf-8")
 
 
-def _seed_project(home: Path, projects_dir: Path, name: str, *,
-                  channels: list[str] | None = None) -> Path:
+def _seed_project(
+    home: Path, projects_dir: Path, name: str, *, channels: list[str] | None = None
+) -> Path:
     proj = projects_dir / name
     proj.mkdir()
     body = (
@@ -44,11 +45,9 @@ def _seed_project(home: Path, projects_dir: Path, name: str, *,
         f'description = ""\n\n[preferences]\naudience = "expert"\n'
     )
     if channels:
-        body += f'\n[notifications]\nchannels = {json.dumps(channels)}\n'
+        body += f"\n[notifications]\nchannels = {json.dumps(channels)}\n"
     (proj / "urika.toml").write_text(body, encoding="utf-8")
-    (home / "projects.json").write_text(
-        json.dumps({name: str(proj)}), encoding="utf-8"
-    )
+    (home / "projects.json").write_text(json.dumps({name: str(proj)}), encoding="utf-8")
     return proj
 
 
@@ -159,7 +158,8 @@ def test_test_send_with_no_channels_reports_nothing_to_send(
 def test_project_unknown_name_raises_clickexception(urika_env) -> None:
     _seed_global_settings(Path(urika_env["URIKA_HOME"]), "")
     r = CliRunner().invoke(
-        cli, ["notifications", "--show", "--project", "does-not-exist"],
+        cli,
+        ["notifications", "--show", "--project", "does-not-exist"],
         env=urika_env,
     )
     assert r.exit_code != 0
@@ -173,8 +173,6 @@ def test_interactive_no_tty_cancels_gracefully(urika_env) -> None:
     CliRunner (no TTY) it should catch UserCancelled / EOF and exit
     cleanly with a "Cancelled" message, not hang or 5xx."""
     _seed_global_settings(Path(urika_env["URIKA_HOME"]), "")
-    r = CliRunner().invoke(
-        cli, ["notifications"], env=urika_env, input="\n"
-    )
+    r = CliRunner().invoke(cli, ["notifications"], env=urika_env, input="\n")
     # Exit cleanly (0 or 1); must not hang.
     assert r.exit_code in (0, 1), r.output

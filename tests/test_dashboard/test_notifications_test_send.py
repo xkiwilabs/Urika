@@ -151,9 +151,7 @@ def test_test_send_refreshes_secrets_env(settings_client, tmp_path, monkeypatch)
     # Point the secrets file at a temp location and write a fresh secret
     secrets_path = tmp_path / "secrets.env"
     secrets_path.write_text("FRESH_TOKEN=xoxb-just-added\n")
-    monkeypatch.setattr(
-        "urika.core.secrets._SECRETS_PATH", secrets_path
-    )
+    monkeypatch.setattr("urika.core.secrets._SECRETS_PATH", secrets_path)
     # Ensure the variable is NOT already in os.environ
     monkeypatch.delenv("FRESH_TOKEN", raising=False)
     assert "FRESH_TOKEN" not in os.environ

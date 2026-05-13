@@ -56,9 +56,7 @@ class TestRenderPresentation:
         html = (output / "index.html").read_text(encoding="utf-8")
         assert "My Research" in html
 
-    def test_notes_plugin_is_registered_and_files_copied(
-        self, tmp_path: Path
-    ) -> None:
+    def test_notes_plugin_is_registered_and_files_copied(self, tmp_path: Path) -> None:
         """The RevealNotes plugin (S-key speaker view) needs notes.js +
         notes.html copied next to the deck and registered in
         Reveal.initialize. Without both, S does nothing."""
@@ -207,9 +205,7 @@ class TestSpeakerNotes:
         # appear inside any notes aside. Other parts of the template may
         # legitimately have unrelated <script> tags for reveal.js itself, so
         # assert on the escaped form.
-        assert (
-            '<aside class="notes">&lt;script&gt;x&lt;/script&gt;</aside>' in html
-        )
+        assert '<aside class="notes">&lt;script&gt;x&lt;/script&gt;</aside>' in html
 
 
 class TestMissingFigurePlaceholder:
@@ -237,7 +233,9 @@ class TestMissingFigurePlaceholder:
         # No <img> tag pointing at the missing figure.
         assert '<img src="figures/does_not_exist.png"' not in html
 
-    def test_missing_figure_in_two_col_renders_placeholder(self, tmp_path: Path) -> None:
+    def test_missing_figure_in_two_col_renders_placeholder(
+        self, tmp_path: Path
+    ) -> None:
         data = {
             "title": "T",
             "subtitle": "",
@@ -346,7 +344,9 @@ class TestEndToEndDeck:
                 },
             ],
         }
-        out = render_presentation(data, tmp_path / "deck", experiment_dir=experiment_dir)
+        out = render_presentation(
+            data, tmp_path / "deck", experiment_dir=experiment_dir
+        )
         html = (out / "index.html").read_text(encoding="utf-8")
 
         # Every slide's notes appeared as a speaker-notes aside.

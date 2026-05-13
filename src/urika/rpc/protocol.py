@@ -1,4 +1,5 @@
 """JSON-RPC 2.0 protocol handler."""
+
 from __future__ import annotations
 
 import inspect
@@ -67,8 +68,10 @@ def handle_request(
 
 def _error_response(req_id: int | None, code: int, message: str) -> str:
     """Build a JSON-RPC 2.0 error response."""
-    return json.dumps({
-        "jsonrpc": "2.0",
-        "id": req_id,
-        "error": {"code": code, "message": message},
-    })
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": code, "message": message},
+        }
+    )

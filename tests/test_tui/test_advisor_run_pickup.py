@@ -53,8 +53,13 @@ def test_tui_run_free_text_calls_parse_suggestions(tmp_path) -> None:
     import inspect
     from urika.tui import app as tui_app
 
-    src = inspect.getsource(tui_app._run_free_text  # type: ignore[attr-defined]
-                            ) if hasattr(tui_app, "_run_free_text") else ""
+    src = (
+        inspect.getsource(
+            tui_app._run_free_text  # type: ignore[attr-defined]
+        )
+        if hasattr(tui_app, "_run_free_text")
+        else ""
+    )
     if not src:
         # _run_free_text is a method on UrikaApp.
         src = inspect.getsource(tui_app.UrikaApp._run_free_text)

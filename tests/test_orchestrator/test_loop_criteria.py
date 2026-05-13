@@ -76,8 +76,14 @@ def _setup(tmp_path: Path) -> tuple[Path, str]:
 
 def test_check_result_success_returns_none(tmp_path) -> None:
     proj, exp = _setup(tmp_path)
-    r = AgentResult(success=True, messages=[], text_output="ok",
-                    session_id="s", num_turns=1, duration_ms=1)
+    r = AgentResult(
+        success=True,
+        messages=[],
+        text_output="ok",
+        session_id="s",
+        num_turns=1,
+        duration_ms=1,
+    )
     assert _check_result(r, "task_agent", proj, exp, _noop_callback) is None
 
 
@@ -88,9 +94,16 @@ def test_check_result_recoverable_pauses(tmp_path) -> None:
     def progress(e, d=""):
         events.append((e, d))
 
-    r = AgentResult(success=False, messages=[], text_output="",
-                    session_id="s", num_turns=0, duration_ms=0,
-                    error="rate-limit hit", error_category="rate_limit")
+    r = AgentResult(
+        success=False,
+        messages=[],
+        text_output="",
+        session_id="s",
+        num_turns=0,
+        duration_ms=0,
+        error="rate-limit hit",
+        error_category="rate_limit",
+    )
     err = _check_result(r, "task_agent", proj, exp, progress)
     assert err == "rate-limit hit"
     state = load_session(proj, exp)
@@ -102,11 +115,17 @@ def test_check_result_unknown_category_pauses_with_hint(tmp_path) -> None:
     to the progress message (the SDK adapter didn't supply one)."""
     proj, exp = _setup(tmp_path)
     events: list = []
-    r = AgentResult(success=False, messages=[], text_output="",
-                    session_id="s", num_turns=0, duration_ms=0,
-                    error="something weird", error_category="")
-    _check_result(r, "task_agent", proj, exp,
-                  lambda e, d="": events.append((e, d)))
+    r = AgentResult(
+        success=False,
+        messages=[],
+        text_output="",
+        session_id="s",
+        num_turns=0,
+        duration_ms=0,
+        error="something weird",
+        error_category="",
+    )
+    _check_result(r, "task_agent", proj, exp, lambda e, d="": events.append((e, d)))
     # The "result" event includes the resume hint.
     result_msgs = [d for e, d in events if e == "result"]
     assert result_msgs
@@ -115,9 +134,16 @@ def test_check_result_unknown_category_pauses_with_hint(tmp_path) -> None:
 
 def test_check_result_auth_fails_session(tmp_path) -> None:
     proj, exp = _setup(tmp_path)
-    r = AgentResult(success=False, messages=[], text_output="",
-                    session_id="s", num_turns=0, duration_ms=0,
-                    error="bad key", error_category="auth")
+    r = AgentResult(
+        success=False,
+        messages=[],
+        text_output="",
+        session_id="s",
+        num_turns=0,
+        duration_ms=0,
+        error="bad key",
+        error_category="auth",
+    )
     err = _check_result(r, "task_agent", proj, exp, _noop_callback)
     assert err == "bad key"
     state = load_session(proj, exp)
@@ -135,8 +161,11 @@ def test_check_result_auth_fails_session(tmp_path) -> None:
         ({"rmse": 1.2}, "rmse", "lower_is_better"),
         ({"mae": 0.5, "r2": 0.8}, "r2", "higher_is_better"),  # r2 preferred first
         ({"f1": 0.7}, "f1", "higher_is_better"),
-        ({"loss": 0.01}, "mse" if "mse" in _LOWER_IS_BETTER else "loss",
-         "lower_is_better"),
+        (
+            {"loss": 0.01},
+            "mse" if "mse" in _LOWER_IS_BETTER else "loss",
+            "lower_is_better",
+        ),
     ],
 )
 def test_detect_primary_metric_preferred(metrics, expected_name, expected_direction):

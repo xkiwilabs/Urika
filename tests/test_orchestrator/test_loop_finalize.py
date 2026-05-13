@@ -43,12 +43,14 @@ def project_dir(tmp_path: Path) -> Path:
     exp_dir = proj / "experiments" / "exp-001"
     exp_dir.mkdir(parents=True)
     (exp_dir / "experiment.json").write_text(
-        json.dumps({
-            "experiment_id": "exp-001",
-            "name": "exp",
-            "hypothesis": "test hypothesis",
-            "status": "completed",
-        })
+        json.dumps(
+            {
+                "experiment_id": "exp-001",
+                "name": "exp",
+                "hypothesis": "test hypothesis",
+                "status": "completed",
+            }
+        )
     )
     (exp_dir / "progress.json").write_text(
         json.dumps({"experiment_id": "exp-001", "runs": []})
@@ -102,8 +104,7 @@ async def test_generate_reports_does_not_write_project_narrative(
 
     # And no progress event mentions the project-level narrative.
     project_narrative_events = [
-        d for e, d in progress_calls
-        if "project narrative" in (d or "").lower()
+        d for e, d in progress_calls if "project narrative" in (d or "").lower()
     ]
     assert project_narrative_events == [], (
         "loop_finalize should no longer announce project-narrative "
@@ -163,9 +164,7 @@ async def test_generate_reports_writes_experiment_narrative_and_calls_presentati
     )
 
     # Experiment-level narrative IS written.
-    exp_narrative = (
-        project_dir / "experiments" / "exp-001" / "labbook" / "narrative.md"
-    )
+    exp_narrative = project_dir / "experiments" / "exp-001" / "labbook" / "narrative.md"
     assert exp_narrative.exists(), (
         "loop_finalize must still auto-write the per-experiment "
         "narrative — only the project-level one was removed"
@@ -195,8 +194,12 @@ async def test_generate_reports_no_runner_writes_only_templates(
         progress_calls.append((event, detail))
 
     await _generate_reports(
-        project_dir, "exp-001", progress,
-        runner=None, on_message=None, audience="expert",
+        project_dir,
+        "exp-001",
+        progress,
+        runner=None,
+        on_message=None,
+        audience="expert",
     )
 
     # Templates always run.

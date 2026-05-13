@@ -242,9 +242,7 @@ class TestOrchestratorLoop:
         assert progress["runs"][0]["method"] == "linear_regression"
 
     @pytest.mark.asyncio
-    async def test_all_runs_in_one_turn_reach_leaderboard(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_all_runs_in_one_turn_reach_leaderboard(self, tmp_path: Path) -> None:
         """Regression for v0.4.2 C3: pre-fix the leaderboard update sat
         OUTSIDE the per-run loop, so when a single turn produced
         multiple runs only the LAST one's metrics were leaderboarded —
@@ -868,9 +866,7 @@ class TestCriteriaUpdateFromSuggestions:
 
 class TestGetUserInputCallback:
     @pytest.mark.asyncio
-    async def test_user_input_prepended_to_advisor_prompt(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_user_input_prepended_to_advisor_prompt(self, tmp_path: Path) -> None:
         """When get_user_input returns text, it is prepended to the advisor prompt."""
         project_dir, exp_id = _setup_project(tmp_path)
 
@@ -919,7 +915,9 @@ class TestGetUserInputCallback:
         assert result["status"] == "completed"
         assert call_count >= 1
         assert len(advisor_prompts) >= 1
-        assert advisor_prompts[0].startswith("User instruction: Focus on tree-based methods")
+        assert advisor_prompts[0].startswith(
+            "User instruction: Focus on tree-based methods"
+        )
 
     @pytest.mark.asyncio
     async def test_no_user_input_leaves_advisor_prompt_unchanged(
@@ -1069,9 +1067,7 @@ class TestAdvisorContextSummaryInjection:
         assert "Research Context" not in advisor_prompts[0]
 
     @pytest.mark.asyncio
-    async def test_callback_exception_is_swallowed(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_callback_exception_is_swallowed(self, tmp_path: Path) -> None:
         """If get_user_input raises, the error is swallowed and the loop continues."""
         project_dir, exp_id = _setup_project(tmp_path)
 
@@ -1098,9 +1094,7 @@ class TestAdvisorContextSummaryInjection:
         assert result["status"] == "completed"
 
     @pytest.mark.asyncio
-    async def test_none_callback_is_default(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_none_callback_is_default(self, tmp_path: Path) -> None:
         """When get_user_input is None (default), the loop works normally."""
         project_dir, exp_id = _setup_project(tmp_path)
 

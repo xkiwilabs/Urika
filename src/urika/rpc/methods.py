@@ -114,16 +114,19 @@ def _project_summarize(params: dict[str, Any]) -> dict[str, Any]:
                 cur = best_metrics.get(k)
                 if cur is None or v > cur:
                     best_metrics[k] = v
-        exp_summaries.append({
-            "id": exp.experiment_id,
-            "name": exp.name,
-            "status": status,
-            "runs": len(runs),
-            "best_metrics": best_metrics,
-        })
+        exp_summaries.append(
+            {
+                "id": exp.experiment_id,
+                "name": exp.name,
+                "status": status,
+                "runs": len(runs),
+                "best_metrics": best_metrics,
+            }
+        )
 
     # Methods summary — top 5 by first metric
     methods = load_methods(project_dir)
+
     def _best_numeric(m: dict) -> float:
         vals = [v for v in m.get("metrics", {}).values() if isinstance(v, (int, float))]
         return max(vals) if vals else 0.0
@@ -144,8 +147,7 @@ def _project_summarize(params: dict[str, Any]) -> dict[str, Any]:
         ),
         "experiments": exp_summaries[:10],  # first 10 only
         "top_methods": [
-            {"name": m.get("name"), "metrics": m.get("metrics")}
-            for m in top_methods
+            {"name": m.get("name"), "metrics": m.get("metrics")} for m in top_methods
         ],
         "criteria": criteria_summary,
         "total_methods": len(methods),
@@ -192,10 +194,12 @@ def _experiment_run(
 
     # Wrap PauseController to also check the flag file
     _orig_is_pause = pause_ctrl.is_pause_requested
+
     def _check_pause() -> bool:
         if pause_flag.exists():
             return True
         return _orig_is_pause()
+
     pause_ctrl.is_pause_requested = _check_pause  # type: ignore[assignment]
 
     # Wire progress + message callbacks to notify
@@ -259,7 +263,10 @@ def _experiment_pause(params: dict[str, Any]) -> dict[str, Any]:
     pause_flag = project_dir / ".urika" / "pause_requested"
     pause_flag.parent.mkdir(parents=True, exist_ok=True)
     pause_flag.write_text("pause", encoding="utf-8")
-    return {"ok": True, "message": "Pause requested — will pause after current subagent finishes."}
+    return {
+        "ok": True,
+        "message": "Pause requested — will pause after current subagent finishes.",
+    }
 
 
 def _agent_run(
@@ -310,7 +317,9 @@ def _agent_run(
     # Notify progress
     if notify:
         try:
-            notify("agent.started", {"agent": agent_name, "prompt_preview": prompt[:100]})
+            notify(
+                "agent.started", {"agent": agent_name, "prompt_preview": prompt[:100]}
+            )
         except Exception:
             pass
 
@@ -338,13 +347,16 @@ def _agent_run(
 
     if notify:
         try:
-            notify("agent.completed", {
-                "agent": agent_name,
-                "success": result.success,
-                "tokens_in": result.tokens_in,
-                "tokens_out": result.tokens_out,
-                "cost_usd": result.cost_usd,
-            })
+            notify(
+                "agent.completed",
+                {
+                    "agent": agent_name,
+                    "success": result.success,
+                    "tokens_in": result.tokens_in,
+                    "tokens_out": result.tokens_out,
+                    "cost_usd": result.cost_usd,
+                },
+            )
         except Exception:
             pass
 

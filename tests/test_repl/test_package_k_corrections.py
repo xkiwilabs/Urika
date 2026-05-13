@@ -93,9 +93,7 @@ class TestCmdAdvisorHandlesStringReturn:
         (project_dir / "projectbook").mkdir(parents=True)
         (project_dir / "experiments").mkdir()
 
-        with patch(
-            "urika.repl.cmd_agents._run_single_agent", return_value=""
-        ):
+        with patch("urika.repl.cmd_agents._run_single_agent", return_value=""):
             session = ReplSession()
             session.project_path = project_dir
             session.project_name = "proj"
@@ -136,9 +134,7 @@ class TestPauseFlagOnlyForRun:
         assert flag.exists()
         assert flag.read_text() == "pause"
 
-    def test_pause_during_finalize_does_not_write_flag(
-        self, tmp_path: Path
-    ) -> None:
+    def test_pause_during_finalize_does_not_write_flag(self, tmp_path: Path) -> None:
         from urika.repl.commands import cmd_pause
 
         project_dir = tmp_path / "proj"

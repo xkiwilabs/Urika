@@ -152,7 +152,11 @@ async def _generate_reports(
     if runner is not None:
         try:
             pres_usage = await _generate_presentation(
-                project_dir, experiment_id, runner, progress, on_message,
+                project_dir,
+                experiment_id,
+                runner,
+                progress,
+                on_message,
                 audience=audience,
             )
             _usage["tokens_in"] += pres_usage.get("tokens_in", 0)
@@ -270,7 +274,9 @@ async def _generate_presentation(
                             ".svg",
                             ".gif",
                         ):
-                            shutil.copy2(fig, pres_figures / f"{exp_dir.name}_{fig.name}")
+                            shutil.copy2(
+                                fig, pres_figures / f"{exp_dir.name}_{fig.name}"
+                            )
 
     progress("result", f"Presentation saved to {output_dir}/index.html")
     return _pres_usage

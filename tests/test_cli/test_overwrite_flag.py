@@ -38,8 +38,10 @@ class TestJsonOverwriteRefusal:
             [
                 "new",
                 "myproj",
-                "-q", "new question",
-                "-m", "exploratory",
+                "-q",
+                "new question",
+                "-m",
+                "exploratory",
                 "--json",
             ],
         )
@@ -80,8 +82,10 @@ class TestJsonOverwriteRefusal:
             [
                 "new",
                 "myproj",
-                "-q", "new question",
-                "-m", "exploratory",
+                "-q",
+                "new question",
+                "-m",
+                "exploratory",
                 "--json",
                 "--overwrite",
             ],

@@ -1,4 +1,5 @@
 """Tests for the stdio JSON-RPC server."""
+
 import json
 import subprocess
 import sys
@@ -6,10 +7,14 @@ import sys
 
 def test_server_responds_to_request():
     """Server reads JSON-RPC from stdin, writes response to stdout."""
-    req = json.dumps({
-        "jsonrpc": "2.0", "id": 1,
-        "method": "tools.list", "params": {},
-    })
+    req = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools.list",
+            "params": {},
+        }
+    )
     proc = subprocess.run(
         [sys.executable, "-m", "urika.rpc"],
         input=req + "\n",
@@ -25,10 +30,19 @@ def test_server_responds_to_request():
 
 def test_server_handles_multiple_requests():
     """Server processes multiple newline-delimited requests."""
-    reqs = "\n".join([
-        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools.list", "params": {}}),
-        json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools.list", "params": {}}),
-    ]) + "\n"
+    reqs = (
+        "\n".join(
+            [
+                json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools.list", "params": {}}
+                ),
+                json.dumps(
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools.list", "params": {}}
+                ),
+            ]
+        )
+        + "\n"
+    )
     proc = subprocess.run(
         [sys.executable, "-m", "urika.rpc"],
         input=reqs,
@@ -45,10 +59,14 @@ def test_server_handles_multiple_requests():
 
 def test_server_handles_error_request():
     """Server returns error for unknown method."""
-    req = json.dumps({
-        "jsonrpc": "2.0", "id": 1,
-        "method": "nonexistent", "params": {},
-    })
+    req = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "nonexistent",
+            "params": {},
+        }
+    )
     proc = subprocess.run(
         [sys.executable, "-m", "urika.rpc"],
         input=req + "\n",

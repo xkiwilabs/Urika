@@ -35,6 +35,7 @@ import pytest
 
 try:
     from playwright.sync_api import sync_playwright
+
     _PLAYWRIGHT_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PLAYWRIGHT_AVAILABLE = False
@@ -85,7 +86,10 @@ def dashboard_server(tmp_path, monkeypatch):
     base_url = f"http://127.0.0.1:{port}"
 
     config = uvicorn.Config(
-        app, host="127.0.0.1", port=port, log_level="warning",
+        app,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
         access_log=False,
     )
     server = uvicorn.Server(config)
@@ -124,8 +128,10 @@ def project_with_data(dashboard_server, tmp_path):
 
     proj = project_root / "alpha"
     config = ProjectConfig(
-        name="alpha", question="Does X predict Y?",
-        mode="exploratory", data_paths=[],
+        name="alpha",
+        question="Does X predict Y?",
+        mode="exploratory",
+        data_paths=[],
     )
     create_project_workspace(proj, config)
     ProjectRegistry().register("alpha", proj)
@@ -155,8 +161,9 @@ def page(browser):
     # Capture browser-side console errors so tests can assert no
     # JS exceptions fired.
     errors: list[str] = []
-    page.on("console", lambda msg: errors.append(msg.text)
-            if msg.type == "error" else None)
+    page.on(
+        "console", lambda msg: errors.append(msg.text) if msg.type == "error" else None
+    )
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.console_errors = errors  # type: ignore[attr-defined]
     try:
@@ -181,9 +188,7 @@ class TestProjectsIndex:
             f"Browser console errors on /projects: {page.console_errors}"
         )
 
-    def test_clicking_project_navigates_to_home(
-        self, project_with_data, page
-    ) -> None:
+    def test_clicking_project_navigates_to_home(self, project_with_data, page) -> None:
         base_url, name, _ = project_with_data
         page.goto(f"{base_url}/projects", wait_until="networkidle")
         # Click the project link.
@@ -197,9 +202,7 @@ class TestProjectsIndex:
 
 
 class TestSidebarLinks:
-    def test_compare_link_present_and_clickable(
-        self, project_with_data, page
-    ) -> None:
+    def test_compare_link_present_and_clickable(self, project_with_data, page) -> None:
         """v0.4.2 H2 fix: both pages used to be reachable only via
         deeplink. Sidebar must surface them as real, clickable nav."""
         base_url, name, _ = project_with_data
@@ -210,9 +213,7 @@ class TestSidebarLinks:
         link.first.click()
         page.wait_for_url(f"**/projects/{name}/compare")
 
-    def test_criteria_link_present_and_clickable(
-        self, project_with_data, page
-    ) -> None:
+    def test_criteria_link_present_and_clickable(self, project_with_data, page) -> None:
         base_url, name, _ = project_with_data
         page.goto(f"{base_url}/projects/{name}", wait_until="networkidle")
         link = page.locator(f"a[href='/projects/{name}/criteria']")
@@ -286,20 +287,23 @@ class TestProjectSettingsEndpointFields:
         base_url, project_root = dashboard_server
         proj = project_root / "with-private"
         config = ProjectConfig(
-            name="with-private", question="q",
-            mode="exploratory", data_paths=[],
+            name="with-private",
+            question="q",
+            mode="exploratory",
+            data_paths=[],
         )
         create_project_workspace(proj, config)
         # Switch the project's privacy mode + endpoint.
         toml_path = proj / "urika.toml"
         toml_path.write_text(
-            toml_path.read_text() + (
+            toml_path.read_text()
+            + (
                 '\n[privacy]\nmode = "private"\n\n'
-                '[privacy.endpoints.private]\n'
+                "[privacy.endpoints.private]\n"
                 'base_url = "http://localhost:11434"\n'
                 'api_key_env = "OLLAMA_KEY"\n'
-                'context_window = 65536\n'
-                'max_output_tokens = 12000\n'
+                "context_window = 65536\n"
+                "max_output_tokens = 12000\n"
             )
         )
         ProjectRegistry().register("with-private", proj)
@@ -470,8 +474,13 @@ class TestCreateProjectFlow:
 # (not `completed`) for a run that failed to launch.
 
 
-def _stub_spawn(monkeypatch, *, terminal_status: str = "completed",
-                launch_failed: bool = False, log_line: str = "Doing the work…"):
+def _stub_spawn(
+    monkeypatch,
+    *,
+    terminal_status: str = "completed",
+    launch_failed: bool = False,
+    log_line: str = "Doing the work…",
+):
     import json as _json
 
     def _fake_spawn(project_name, project_path, experiment_id, **_kw):  # noqa: ANN001
@@ -483,9 +492,14 @@ def _stub_spawn(monkeypatch, *, terminal_status: str = "completed",
             # progress.json stays at the create_experiment default (pending)
         else:
             (exp_dir / "progress.json").write_text(
-                _json.dumps({"status": terminal_status, "runs": [
-                    {"run_id": "r1", "method": "lr", "metrics": {"r2": 0.8}}
-                ]})
+                _json.dumps(
+                    {
+                        "status": terminal_status,
+                        "runs": [
+                            {"run_id": "r1", "method": "lr", "metrics": {"r2": 0.8}}
+                        ],
+                    }
+                )
             )
         (exp_dir / "run.log").write_text("\n".join(lines) + "\n")
         # No .lock — the SSE loop sees lock-gone immediately and reads

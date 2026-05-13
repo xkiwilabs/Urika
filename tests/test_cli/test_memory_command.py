@@ -85,9 +85,7 @@ class TestMemoryShow:
         # save_entry produces ``<type>_<slug>.md``; show accepts either
         # the full filename or a slug-prefix glob — we exercise both.
         runner = CliRunner()
-        result = runner.invoke(
-            cli, ["memory", "show", "memproj", Path(path).stem]
-        )
+        result = runner.invoke(cli, ["memory", "show", "memproj", Path(path).stem])
         assert result.exit_code == 0, result.output
         assert "always use cross-validation" in result.output
 
@@ -132,10 +130,16 @@ class TestMemoryAdd:
         result = runner.invoke(
             cli,
             [
-                "memory", "add", "memproj", "gpu_constraint",
-                "--type", "decision",
-                "--from-file", str(body_file),
-                "--description", "GPU memory limits",
+                "memory",
+                "add",
+                "memproj",
+                "gpu_constraint",
+                "--type",
+                "decision",
+                "--from-file",
+                str(body_file),
+                "--description",
+                "GPU memory limits",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -152,10 +156,15 @@ class TestMemoryAdd:
         result = runner.invoke(
             cli,
             [
-                "memory", "add", "memproj", "from_stdin_topic",
-                "--type", "instruction",
+                "memory",
+                "add",
+                "memproj",
+                "from_stdin_topic",
+                "--type",
+                "instruction",
                 "--stdin",
-                "--description", "from stdin",
+                "--description",
+                "from stdin",
             ],
             input="content fed via stdin\n",
         )
@@ -171,8 +180,12 @@ class TestMemoryAdd:
         result = runner.invoke(
             cli,
             [
-                "memory", "add", "memproj", "topic",
-                "--from-file", str(body_file),
+                "memory",
+                "add",
+                "memproj",
+                "topic",
+                "--from-file",
+                str(body_file),
                 "--stdin",
             ],
         )

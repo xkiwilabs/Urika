@@ -23,7 +23,12 @@ from pathlib import Path
 import pytest
 
 PROMPTS_DIR = (
-    Path(__file__).parent.parent.parent / "src" / "urika" / "agents" / "roles" / "prompts"
+    Path(__file__).parent.parent.parent
+    / "src"
+    / "urika"
+    / "agents"
+    / "roles"
+    / "prompts"
 )
 
 HYGIENE_AGENTS = [

@@ -143,7 +143,6 @@ def dashboard(
     click.echo("  Dashboard stopped.")
 
 
-
 @cli.command("config")
 @click.argument("project", required=False, default=None)
 @click.option("--show", is_flag=True, help="Show current settings.")
@@ -285,7 +284,8 @@ def config_command(
             save_settings(settings)
             modes = settings.get("runtime", {}).get("modes", {})
             split_modes = [
-                m for m in ("open", "private", "hybrid")
+                m
+                for m in ("open", "private", "hybrid")
                 if isinstance(modes.get(m), dict)
                 and split_applies(modes[m].get("model", ""))
             ]
@@ -440,8 +440,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         [runtime.models.<agent>]."""
         row = {"model": model_name, "endpoint": endpoint}
         if is_project:
-            (settings.setdefault("runtime", {})
-                .setdefault("models", {}))[agent] = row
+            (settings.setdefault("runtime", {}).setdefault("models", {}))[agent] = row
         else:
             runtime = settings.setdefault("runtime", {})
             modes_section = runtime.setdefault("modes", {})
@@ -477,9 +476,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         for agent in _REASONING_AGENTS:
             set_per_agent_fn(agent, chosen_default, cloud_endpoint)
         for agent in _EXECUTION_AGENTS:
-            set_per_agent_fn(
-                agent, _EXECUTION_AGENT_DEFAULT_MODEL, cloud_endpoint
-            )
+            set_per_agent_fn(agent, _EXECUTION_AGENT_DEFAULT_MODEL, cloud_endpoint)
         return True
 
     # ── Open mode: pick cloud model ──
@@ -519,8 +516,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         from urika.core.settings import get_named_endpoints
 
         _has_global_ep = any(
-            (ep.get("base_url") or "").strip()
-            for ep in get_named_endpoints()
+            (ep.get("base_url") or "").strip() for ep in get_named_endpoints()
         )
         _url_required = not (is_project and _has_global_ep)
 
@@ -598,15 +594,14 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         ) or global_settings.get("runtime", {}).get("model", "")
 
         model_name = interactive_prompt(
-            "  Model name" + (f" [{global_model}]" if global_model else " (e.g. qwen3:14b)"),
+            "  Model name"
+            + (f" [{global_model}]" if global_model else " (e.g. qwen3:14b)"),
             default=global_model if global_model else "",
             required=True,
         )
         _set_default_model(model_name)
         _ep_label = ep_url if ep_url else "(inherits from globals)"
-        print_success(
-            f"Mode: private · Endpoint: {_ep_label} · Model: {model_name}"
-        )
+        print_success(f"Mode: private · Endpoint: {_ep_label} · Model: {model_name}")
 
     # ── Hybrid mode: cloud model + private endpoint for data agents ──
     elif mode == "hybrid":
@@ -633,8 +628,7 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         from urika.core.settings import get_named_endpoints
 
         _has_global_ep = any(
-            (ep.get("base_url") or "").strip()
-            for ep in get_named_endpoints()
+            (ep.get("base_url") or "").strip() for ep in get_named_endpoints()
         )
         _url_required = not (is_project and _has_global_ep)
 
@@ -762,9 +756,6 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
     click.echo()
 
 
-
-
-
 def _config_api_key_interactive() -> None:
     """Interactive Anthropic API key setup.
 
@@ -782,19 +773,11 @@ def _config_api_key_interactive() -> None:
     click.echo()
     print_step("Anthropic API key setup")
     click.echo()
-    click.echo(
-        "  Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK"
-    )
-    click.echo(
-        "  clarification, Urika cannot use a Claude Pro/Max subscription to"
-    )
-    click.echo(
-        "  authenticate the Agent SDK. An API key is required."
-    )
+    click.echo("  Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK")
+    click.echo("  clarification, Urika cannot use a Claude Pro/Max subscription to")
+    click.echo("  authenticate the Agent SDK. An API key is required.")
     click.echo()
-    click.echo(
-        "  Get a key at https://console.anthropic.com (Settings → API Keys)."
-    )
+    click.echo("  Get a key at https://console.anthropic.com (Settings → API Keys).")
     click.echo()
 
     try:
@@ -829,8 +812,7 @@ def _config_api_key_interactive() -> None:
 
     save_secret("ANTHROPIC_API_KEY", value)
     print_success(
-        "Saved to ~/.urika/secrets.env (chmod 600). "
-        "Active in this and future sessions."
+        "Saved to ~/.urika/secrets.env (chmod 600). Active in this and future sessions."
     )
 
     # Offer to verify the key end-to-end against api.anthropic.com.
@@ -865,12 +847,8 @@ def _config_api_key_interactive() -> None:
         return
     if want_limit:
         click.echo()
-        click.echo(
-            "  Visit https://console.anthropic.com → Settings → Billing →"
-        )
-        click.echo(
-            "  Spend limits, and pick a monthly cap (e.g. $20). Urika does"
-        )
+        click.echo("  Visit https://console.anthropic.com → Settings → Billing →")
+        click.echo("  Spend limits, and pick a monthly cap (e.g. $20). Urika does")
         click.echo("  not set the limit programmatically.")
         click.echo()
 
@@ -904,20 +882,14 @@ def _print_api_key_test_result(key: str) -> bool:
             "  Cost: this test consumed ~8 input + up to 5 output tokens (~$0.0001)."
         )
         click.echo()
-        click.echo(
-            "  Urika will use this key for all commands. Your Pro/Max"
-        )
-        click.echo(
-            "  subscription is not used by Urika (per Anthropic's"
-        )
+        click.echo("  Urika will use this key for all commands. Your Pro/Max")
+        click.echo("  subscription is not used by Urika (per Anthropic's")
         click.echo("  Consumer Terms §3.7).")
         return True
 
     print_error(f"API key test failed: {message}")
     click.echo()
-    click.echo(
-        "  Fix: regenerate at https://console.anthropic.com -> Settings ->"
-    )
+    click.echo("  Fix: regenerate at https://console.anthropic.com -> Settings ->")
     click.echo("  API Keys, then re-run: urika config api-key")
     return False
 
@@ -943,22 +915,12 @@ def _config_secret_interactive() -> None:
     click.echo()
     print_step("Set a named secret")
     click.echo()
-    click.echo(
-        "  Use this to store credentials by name — e.g. an API key for a"
-    )
-    click.echo(
-        "  private vLLM endpoint, a HuggingFace token, or any other secret"
-    )
-    click.echo(
-        "  a tool / agent reads via ``os.environ.get(NAME)``."
-    )
+    click.echo("  Use this to store credentials by name — e.g. an API key for a")
+    click.echo("  private vLLM endpoint, a HuggingFace token, or any other secret")
+    click.echo("  a tool / agent reads via ``os.environ.get(NAME)``.")
     click.echo()
-    click.echo(
-        "  Convention: uppercase letters, digits, and underscores"
-    )
-    click.echo(
-        "  (e.g. LLM_INFERENCE_KEY, HUGGINGFACE_HUB_TOKEN, WANDB_API_KEY)."
-    )
+    click.echo("  Convention: uppercase letters, digits, and underscores")
+    click.echo("  (e.g. LLM_INFERENCE_KEY, HUGGINGFACE_HUB_TOKEN, WANDB_API_KEY).")
     click.echo()
 
     try:
@@ -990,9 +952,7 @@ def _config_secret_interactive() -> None:
         click.echo(
             "  like LLM_INFERENCE_KEY — uppercase letters / digits / underscores."
         )
-        click.echo(
-            "  The value (sk-..., hf_..., etc.) gets entered next, masked."
-        )
+        click.echo("  The value (sk-..., hf_..., etc.) gets entered next, masked.")
         try:
             keep = click.confirm("  Continue with that name anyway?", default=False)
         except (click.Abort, EOFError, KeyboardInterrupt):
@@ -1035,12 +995,8 @@ def _config_secret_interactive() -> None:
         f"Saved {name} (chmod 0600). Active in this shell and future Urika commands."
     )
     click.echo()
-    click.echo(
-        "  Reference it in the dashboard's Privacy tab by entering"
-    )
-    click.echo(
-        f"  {name} in the 'API key env var' field — NOT the value itself."
-    )
+    click.echo("  Reference it in the dashboard's Privacy tab by entering")
+    click.echo(f"  {name} in the 'API key env var' field — NOT the value itself.")
     click.echo()
 
 
@@ -1065,12 +1021,8 @@ def _config_api_key_test() -> None:
     if not key:
         print_error("ANTHROPIC_API_KEY is not set.")
         click.echo()
-        click.echo(
-            "  Set one with:  urika config api-key"
-        )
-        click.echo(
-            "  Or export it:  export ANTHROPIC_API_KEY=sk-ant-..."
-        )
+        click.echo("  Set one with:  urika config api-key")
+        click.echo("  Or export it:  export ANTHROPIC_API_KEY=sk-ant-...")
         raise click.exceptions.Exit(1)
 
     click.echo(f"  Configured key: {_mask_api_key(key)}")

@@ -21,13 +21,13 @@ def client_with_project(tmp_path: Path, monkeypatch) -> TestClient:
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "alpha"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[preferences]\n'
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
     )
     home = tmp_path / "home"

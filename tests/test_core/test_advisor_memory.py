@@ -1,4 +1,3 @@
-
 from urika.core.advisor_memory import (
     append_exchange,
     format_recent_history,

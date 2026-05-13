@@ -20,30 +20,39 @@ def _make_project(root: Path, name: str, *, with_experiment: bool = False) -> Pa
     proj = root / name
     proj.mkdir(parents=True)
     (proj / "urika.toml").write_text(
-        f'[project]\n'
+        f"[project]\n"
         f'name = "{name}"\n'
         f'question = "test q"\n'
         f'mode = "exploratory"\n'
         f'description = ""\n'
-        f'\n'
-        f'[preferences]\n'
+        f"\n"
+        f"[preferences]\n"
         f'audience = "expert"\n'
     )
     if with_experiment:
         exp_dir = proj / "experiments" / "exp-001"
         exp_dir.mkdir(parents=True)
         import json
-        (exp_dir / "experiment.json").write_text(json.dumps({
-            "experiment_id": "exp-001",
-            "name": "baseline",
-            "hypothesis": "test",
-            "created": "2026-04-25T00:00:00Z",
-        }))
-        (exp_dir / "progress.json").write_text(json.dumps({
-            "experiment_id": "exp-001",
-            "status": "completed",
-            "runs": [{"method": "ols", "metrics": {"r2": 0.5}}],
-        }))
+
+        (exp_dir / "experiment.json").write_text(
+            json.dumps(
+                {
+                    "experiment_id": "exp-001",
+                    "name": "baseline",
+                    "hypothesis": "test",
+                    "created": "2026-04-25T00:00:00Z",
+                }
+            )
+        )
+        (exp_dir / "progress.json").write_text(
+            json.dumps(
+                {
+                    "experiment_id": "exp-001",
+                    "status": "completed",
+                    "runs": [{"method": "ols", "metrics": {"r2": 0.5}}],
+                }
+            )
+        )
     return proj
 
 

@@ -68,8 +68,9 @@ def _setup(tmp_path: Path) -> tuple[Path, str]:
     project_dir = tmp_path / "proj"
     create_project_workspace(
         project_dir,
-        ProjectConfig(name="proj", question="Does X predict Y?", mode="exploratory",
-                      data_paths=[]),
+        ProjectConfig(
+            name="proj", question="Does X predict Y?", mode="exploratory", data_paths=[]
+        ),
     )
     exp = create_experiment(project_dir, name="baseline", hypothesis="linear suffices")
     return project_dir, exp.experiment_id
@@ -156,4 +157,6 @@ def test_golden_task_transcripts_yield_run_records(fname, expected_run_ids) -> N
     for r in records:
         assert r.method and isinstance(r.metrics, dict) and r.metrics
         assert isinstance(r.params, dict)
-        assert isinstance(r.artifacts, list) and r.artifacts  # the prose includes figure paths
+        assert (
+            isinstance(r.artifacts, list) and r.artifacts
+        )  # the prose includes figure paths

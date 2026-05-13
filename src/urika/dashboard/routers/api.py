@@ -1113,6 +1113,7 @@ def _parse_endpoints_form(
                 detail=f"endpoint name '{name}' appears more than once",
             )
         seen_names.add(name)
+
         # v0.4.1: parse optional context_window / max_output_tokens.
         # Treat blank or non-integer input as "use auto-default" (= 0).
         # Reject negatives so a typo doesn't silently disable the
@@ -1145,9 +1146,7 @@ def _parse_endpoints_form(
                 "api_key_env": (
                     form.get(f"endpoints[{idx}][api_key_env]") or ""
                 ).strip(),
-                "api_key_value": (
-                    form.get(f"endpoints[{idx}][api_key_value]") or ""
-                ),
+                "api_key_value": (form.get(f"endpoints[{idx}][api_key_value]") or ""),
                 "default_model": (
                     form.get(f"endpoints[{idx}][default_model]") or ""
                 ).strip(),
@@ -1562,17 +1561,13 @@ async def api_global_settings_put(request: Request):
     # with rendered HTML; only the persisted TOML key changes.
     slack_section: dict[str, object] = {
         "channel": (form.get("notifications_slack_channel") or "").strip(),
-        "bot_token_env": (
-            form.get("notifications_slack_token_env") or ""
-        ).strip(),
+        "bot_token_env": (form.get("notifications_slack_token_env") or "").strip(),
         "auto_enable": slack_auto_enable,
     }
     # Inbound Socket Mode (optional). Empty fields are NOT written so the
     # TOML stays tidy — empty allow-lists in particular would be misleading
     # (the channel treats None as "no restriction").
-    slack_app_token_env = (
-        form.get("notifications_slack_app_token_env") or ""
-    ).strip()
+    slack_app_token_env = (form.get("notifications_slack_app_token_env") or "").strip()
     if slack_app_token_env:
         slack_section["app_token_env"] = slack_app_token_env
     slack_allowed_channels_raw = (
@@ -1580,18 +1575,14 @@ async def api_global_settings_put(request: Request):
     ).strip()
     if slack_allowed_channels_raw:
         slack_section["allowed_channels"] = [
-            s.strip()
-            for s in slack_allowed_channels_raw.split(",")
-            if s.strip()
+            s.strip() for s in slack_allowed_channels_raw.split(",") if s.strip()
         ]
     slack_allowed_users_raw = (
         form.get("notifications_slack_allowed_users") or ""
     ).strip()
     if slack_allowed_users_raw:
         slack_section["allowed_users"] = [
-            s.strip()
-            for s in slack_allowed_users_raw.split(",")
-            if s.strip()
+            s.strip() for s in slack_allowed_users_raw.split(",") if s.strip()
         ]
     has_slack_data = any(v for k, v in slack_section.items() if k != "auto_enable")
     if has_slack_data or slack_auto_enable:
@@ -1718,6 +1709,7 @@ async def api_notifications_test_send(request: Request) -> JSONResponse:
     # load_secrets only sets vars that aren't already in os.environ, so
     # pre-existing exports take precedence.
     from urika.core.secrets import load_secrets
+
     load_secrets()
 
     bus = NotificationBus(project_name="test")
@@ -1730,9 +1722,7 @@ async def api_notifications_test_send(request: Request) -> JSONResponse:
         try:
             from urika.notifications.email_channel import EmailChannel
 
-            smtp_port_raw = (
-                form.get("notifications_email_smtp_port") or ""
-            ).strip()
+            smtp_port_raw = (form.get("notifications_email_smtp_port") or "").strip()
             try:
                 smtp_port = int(smtp_port_raw) if smtp_port_raw else 587
             except ValueError:
@@ -1769,14 +1759,12 @@ async def api_notifications_test_send(request: Request) -> JSONResponse:
             allowed_users_raw = (
                 form.get("notifications_slack_allowed_users") or ""
             ).strip()
-            allowed_channels: list[str] | None = (
-                [s.strip() for s in allowed_channels_raw.split(",") if s.strip()]
-                or None
-            )
-            allowed_users: list[str] | None = (
-                [s.strip() for s in allowed_users_raw.split(",") if s.strip()]
-                or None
-            )
+            allowed_channels: list[str] | None = [
+                s.strip() for s in allowed_channels_raw.split(",") if s.strip()
+            ] or None
+            allowed_users: list[str] | None = [
+                s.strip() for s in allowed_users_raw.split(",") if s.strip()
+            ] or None
             cfg = {
                 "channel": slack_channel,
                 "bot_token_env": (
@@ -1796,9 +1784,7 @@ async def api_notifications_test_send(request: Request) -> JSONResponse:
 
     # ---- Telegram -----------------------------------------------------
     tg_chat_id = (form.get("notifications_telegram_chat_id") or "").strip()
-    tg_bot_token_env = (
-        form.get("notifications_telegram_bot_token_env") or ""
-    ).strip()
+    tg_bot_token_env = (form.get("notifications_telegram_bot_token_env") or "").strip()
     if tg_chat_id and tg_bot_token_env:
         try:
             from urika.notifications.telegram_channel import TelegramChannel
@@ -1818,9 +1804,7 @@ async def api_notifications_test_send(request: Request) -> JSONResponse:
             )
 
     results = send_test_through_bus(bus)
-    channels_list = [
-        {"name": k, **v} for k, v in results.items()
-    ] + construction_errors
+    channels_list = [{"name": k, **v} for k, v in results.items()] + construction_errors
     return JSONResponse({"channels": channels_list})
 
 
@@ -1845,9 +1829,7 @@ async def api_test_anthropic_key() -> JSONResponse:
     load_secrets()
     key = _os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key:
-        return JSONResponse(
-            {"ok": False, "message": "ANTHROPIC_API_KEY is not set."}
-        )
+        return JSONResponse({"ok": False, "message": "ANTHROPIC_API_KEY is not set."})
     ok, message = verify_anthropic_api_key(key)
     return JSONResponse({"ok": ok, "message": message})
 
@@ -2171,7 +2153,7 @@ async def api_set_secret(request: Request) -> JSONResponse:
 
     form = await request.form()
     name = (form.get("name") or "").strip()
-    value = (form.get("value") or "")
+    value = form.get("value") or ""
     description = (form.get("description") or "").strip()
 
     if not name:
@@ -2327,7 +2309,7 @@ async def api_set_project_secret(name: str, request: Request) -> JSONResponse:
 
     form = await request.form()
     secret_name = (form.get("name") or "").strip()
-    value = (form.get("value") or "")
+    value = form.get("value") or ""
     description = (form.get("description") or "").strip()
 
     if not secret_name:
@@ -2370,7 +2352,9 @@ async def api_set_project_secret(name: str, request: Request) -> JSONResponse:
             ),
         )
 
-    vault.set_project(secret_name, value, project_path=summary.path, description=description)
+    vault.set_project(
+        secret_name, value, project_path=summary.path, description=description
+    )
 
     from urika.core.vault import mask_value
 
@@ -2770,9 +2754,7 @@ _EXPERIMENT_LOG_TYPES: dict[str, tuple[str, str]] = {
 
 
 @router.get("/projects/{name}/runs/{exp_id}/stream")
-async def api_run_stream(
-    name: str, exp_id: str, request: Request, type: str = "run"
-):
+async def api_run_stream(name: str, exp_id: str, request: Request, type: str = "run"):
     """Server-sent-events tail of an experiment's per-agent log file.
 
     Emits each existing log line as ``data: <line>\\n\\n``, then polls
@@ -3640,6 +3622,7 @@ def api_run_stop(name: str, exp_id: str) -> dict:
 # adds parallel ``/stop`` endpoints for those operations using the
 # same SIGTERM-to-process-group pattern as ``api_run_stop``.
 
+
 def _stop_op_by_lock(lock_path: Path) -> dict:
     """Send SIGTERM to the process group recorded in *lock_path*.
 
@@ -3735,9 +3718,7 @@ def api_present_stop(name: str, exp_id: str) -> dict:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    return _stop_op_by_lock(
-        summary.path / "experiments" / exp_id / ".present.lock"
-    )
+    return _stop_op_by_lock(summary.path / "experiments" / exp_id / ".present.lock")
 
 
 @router.post("/projects/{name}/runs/{exp_id}/pause")
@@ -3797,9 +3778,9 @@ def api_global_models_reset() -> dict:
 
     modes = settings.get("runtime", {}).get("modes", {}) or {}
     split_modes = [
-        m for m in ("open", "private", "hybrid")
-        if isinstance(modes.get(m), dict)
-        and split_applies(modes[m].get("model", ""))
+        m
+        for m in ("open", "private", "hybrid")
+        if isinstance(modes.get(m), dict) and split_applies(modes[m].get("model", ""))
     ]
     return {"ok": True, "split_applied_to": split_modes}
 

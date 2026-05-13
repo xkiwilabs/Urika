@@ -109,8 +109,12 @@ def test_seed_project_from_data_subdir_only(tmp_path: Path) -> None:
     project_dir = tmp_path / "stroop-dataonly"
     create_project_workspace(
         project_dir,
-        ProjectConfig(name="stroop-dataonly", question="Q?", mode="exploratory",
-                      data_paths=[str(ds / "data")]),
+        ProjectConfig(
+            name="stroop-dataonly",
+            question="Q?",
+            mode="exploratory",
+            data_paths=[str(ds / "data")],
+        ),
     )
     summary = enrich_workspace(project_dir, [str(ds / "data")])
     assert summary["data_files"] >= 1

@@ -22,8 +22,8 @@ from typing import Iterable
 
 
 _CHUNK_SIZE = 65536  # 64 KiB — small enough to handle multi-GB files
-                     # without memory pressure, big enough to keep
-                     # syscall overhead negligible.
+# without memory pressure, big enough to keep
+# syscall overhead negligible.
 
 
 def hash_data_file(path: Path) -> str:

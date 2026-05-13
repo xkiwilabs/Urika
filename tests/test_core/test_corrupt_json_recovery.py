@@ -46,9 +46,7 @@ class TestProjectRegistryCorruptJson:
         # it must not crash.
         assert isinstance(r.list_all(), dict)
 
-    def test_register_after_corrupt_persists_clean(
-        self, tmp_path, monkeypatch
-    ):
+    def test_register_after_corrupt_persists_clean(self, tmp_path, monkeypatch):
         r = self._build(tmp_path, monkeypatch, "garbage{{{")
         # Must not raise — pre-fix this KeyError'd on _projects.
         r.register("alpha", tmp_path / "alpha")
@@ -100,9 +98,7 @@ class TestProgressCorruptJson:
         append_run(
             proj,
             exp,
-            RunRecord(
-                run_id="r1", method="m", params={}, metrics={"r2": 0.5}
-            ),
+            RunRecord(run_id="r1", method="m", params={}, metrics={"r2": 0.5}),
         )
         data = load_progress(proj, exp)
         assert len(data["runs"]) == 1
@@ -171,9 +167,7 @@ class TestExperimentLoaderCorruptJson:
         # One good, one corrupt.
         (proj / "experiments" / "exp-001").mkdir()
         (proj / "experiments" / "exp-001" / "experiment.json").write_text(
-            json.dumps(
-                {"experiment_id": "exp-001", "name": "ok", "hypothesis": "h"}
-            ),
+            json.dumps({"experiment_id": "exp-001", "name": "ok", "hypothesis": "h"}),
             encoding="utf-8",
         )
         (proj / "experiments" / "exp-002").mkdir()
@@ -187,9 +181,7 @@ class TestExperimentLoaderCorruptJson:
         assert "exp-001" in ids
         assert "exp-002" not in ids
 
-    def test_progress_with_non_dict_run_records_loads_cleanly(
-        self, tmp_path
-    ) -> None:
+    def test_progress_with_non_dict_run_records_loads_cleanly(self, tmp_path) -> None:
         """A non-dict entry in progress.json's ``runs`` list (a
         sub-agent corruption, an external editor) — load_progress
         must return the file without crashing. Downstream consumers
@@ -218,9 +210,7 @@ class TestExperimentLoaderCorruptJson:
         assert isinstance(data, dict)
         assert isinstance(data.get("runs"), list)
 
-    def test_criteria_corrupt_json_via_load_criteria_history(
-        self, tmp_path
-    ) -> None:
+    def test_criteria_corrupt_json_via_load_criteria_history(self, tmp_path) -> None:
         """criteria.py has the same try/except boundary —
         load_criteria_history must return an empty list on corrupt JSON
         rather than crashing the orchestrator."""
@@ -252,9 +242,7 @@ class TestExperimentLoaderCorruptJson:
         # Contract: must not raise.
         assert isinstance(hist, list)
 
-    def test_load_experiment_with_corrupt_raises_filenotfound(
-        self, tmp_path
-    ):
+    def test_load_experiment_with_corrupt_raises_filenotfound(self, tmp_path):
         """``load_experiment`` for an individual experiment with corrupt
         JSON converts to FileNotFoundError (same surface as a missing
         config). Caller-side is expected to catch FileNotFoundError to

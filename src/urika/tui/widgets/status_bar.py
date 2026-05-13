@@ -122,13 +122,13 @@ class StatusBar(Static):
             return cache[key]
         try:
             from urika.agents.config import load_runtime_config
+
             rc = load_runtime_config(self.session.project_path)
             mode = rc.privacy_mode
             broken = False
             if mode in ("private", "hybrid"):
                 broken = not any(
-                    (ep.base_url or "").strip()
-                    for ep in rc.endpoints.values()
+                    (ep.base_url or "").strip() for ep in rc.endpoints.values()
                 )
             cache[key] = (mode, broken)
         except Exception:

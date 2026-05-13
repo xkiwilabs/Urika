@@ -15,7 +15,6 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-import pytest
 
 from urika.core.workspace import _write_toml
 
@@ -102,9 +101,7 @@ def test_full_config_round_trips(tmp_path: Path) -> None:
     assert loaded["privacy"]["endpoints"]["private"]["context_window"] == 32768
 
     assert loaded["runtime"]["model"] == "claude-opus-4-6"
-    assert (
-        loaded["runtime"]["models"]["task_agent"]["model"] == "claude-haiku-4-5"
-    )
+    assert loaded["runtime"]["models"]["task_agent"]["model"] == "claude-haiku-4-5"
     assert loaded["runtime"]["models"]["task_agent"]["endpoint"] == "open"
 
     assert loaded["environment"]["venv"] is True
@@ -155,7 +152,7 @@ def test_control_chars_in_strings_round_trip(tmp_path: Path) -> None:
             "description": "\ttab and \x01 control",
         },
         "preferences": {
-            "audience": "with \"quotes\" and \\backslashes",
+            "audience": 'with "quotes" and \\backslashes',
         },
     }
     path = tmp_path / "u.toml"

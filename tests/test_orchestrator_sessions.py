@@ -77,7 +77,8 @@ class TestCreateNewSession:
 
         fixed_stamp = "2026-01-01T00-00-01"
         monkeypatch.setattr(
-            os_mod, "_timestamp_id",
+            os_mod,
+            "_timestamp_id",
             lambda: fixed_stamp + "-" + os_mod.secrets.token_hex(2),
         )
         ids = {create_new_session().session_id for _ in range(20)}
@@ -153,9 +154,7 @@ class TestListSessions:
         assert result[1]["session_id"] == s2.session_id
         assert result[2]["session_id"] == s1.session_id
 
-    def test_list_honors_limit(
-        self, tmp_path: Path, monotonic_session_ids
-    ) -> None:
+    def test_list_honors_limit(self, tmp_path: Path, monotonic_session_ids) -> None:
         for _ in range(3):
             save_session(tmp_path, create_new_session())
 
@@ -255,9 +254,7 @@ class TestPruneOldSessions:
         assert deleted == 0
         assert len(list_sessions(tmp_path)) == 3
 
-    def test_prune_removes_oldest(
-        self, tmp_path: Path, monotonic_session_ids
-    ) -> None:
+    def test_prune_removes_oldest(self, tmp_path: Path, monotonic_session_ids) -> None:
         ids = []
         for _ in range(5):
             s = create_new_session()

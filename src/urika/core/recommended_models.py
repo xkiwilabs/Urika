@@ -139,7 +139,8 @@ def reset_project_models(settings: dict, *, default_model: str | None = None) ->
             private_overrides = None
 
     overrides = build_split_overrides(
-        default_model, cloud_endpoint="open",
+        default_model,
+        cloud_endpoint="open",
         private_overrides=private_overrides,
     )
     if overrides:
@@ -181,7 +182,8 @@ def reset_global_models(settings: dict) -> dict:
                 private_overrides = None
 
         overrides = build_split_overrides(
-            default_model, cloud_endpoint="open",
+            default_model,
+            cloud_endpoint="open",
             private_overrides=private_overrides,
         )
         if overrides:

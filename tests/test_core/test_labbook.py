@@ -150,9 +150,7 @@ class TestInlineFigureLinking:
         self, project_dir: Path, experiment_with_runs: str
     ) -> None:
         """Figures whose stem matches the method name get inlined in notes.md."""
-        artifacts = (
-            project_dir / "experiments" / experiment_with_runs / "artifacts"
-        )
+        artifacts = project_dir / "experiments" / experiment_with_runs / "artifacts"
         # Create two PNG artifacts whose names overlap with the run method names
         (artifacts / "linear_regression.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (artifacts / "ridge_regression_plot.png").write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -160,27 +158,20 @@ class TestInlineFigureLinking:
         update_experiment_notes(project_dir, experiment_with_runs)
 
         notes = (
-            project_dir
-            / "experiments"
-            / experiment_with_runs
-            / "labbook"
-            / "notes.md"
+            project_dir / "experiments" / experiment_with_runs / "labbook" / "notes.md"
         ).read_text()
 
         # Both figures inline with the expected relative path (../artifacts/)
         assert "![Linear regression](../artifacts/linear_regression.png)" in notes
         assert (
-            "![Ridge regression plot](../artifacts/ridge_regression_plot.png)"
-            in notes
+            "![Ridge regression plot](../artifacts/ridge_regression_plot.png)" in notes
         )
 
     def test_summary_embeds_figures_section(
         self, project_dir: Path, experiment_with_runs: str
     ) -> None:
         """generate_experiment_summary collects figures into a Figures section."""
-        artifacts = (
-            project_dir / "experiments" / experiment_with_runs / "artifacts"
-        )
+        artifacts = project_dir / "experiments" / experiment_with_runs / "artifacts"
         (artifacts / "residuals.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
         generate_experiment_summary(project_dir, experiment_with_runs)
@@ -204,9 +195,7 @@ class TestMissingExperimentHandling:
         with pytest.raises(FileNotFoundError):
             update_experiment_notes(project_dir, "exp-999-does-not-exist")
 
-    def test_results_summary_handles_empty_project(
-        self, project_dir: Path
-    ) -> None:
+    def test_results_summary_handles_empty_project(self, project_dir: Path) -> None:
         """Projects with no experiments still produce a valid results-summary.md."""
         generate_results_summary(project_dir)
         path = project_dir / "projectbook" / "results-summary.md"
@@ -216,13 +205,9 @@ class TestMissingExperimentHandling:
 
 
 class TestBestRunLogic:
-    def test_best_run_respects_lower_is_better_metrics(
-        self, project_dir: Path
-    ) -> None:
+    def test_best_run_respects_lower_is_better_metrics(self, project_dir: Path) -> None:
         """When the first metric is rmse, the lowest-rmse run is picked as best."""
-        exp = create_experiment(
-            project_dir, name="direction-test", hypothesis="test"
-        )
+        exp = create_experiment(project_dir, name="direction-test", hypothesis="test")
         eid = exp.experiment_id
 
         # Order metrics dicts so rmse is first — that's the metric that

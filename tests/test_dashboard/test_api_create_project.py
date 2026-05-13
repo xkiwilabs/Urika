@@ -38,9 +38,7 @@ def create_client(tmp_path: Path, monkeypatch) -> tuple[TestClient, Path]:
     # essential on Windows where ``\U``, ``\t`` etc. inside the path
     # would otherwise be parsed as escape sequences and either fail
     # to load or give a corrupt projects_root.
-    settings_path.write_text(
-        f"projects_root = '{projects_root}'\n", encoding="utf-8"
-    )
+    settings_path.write_text(f"projects_root = '{projects_root}'\n", encoding="utf-8")
 
     app = create_app(project_root=tmp_path)
     return TestClient(app), projects_root
@@ -469,7 +467,9 @@ def test_create_project_hybrid_mode_pins_endpoint_too(tmp_path: Path, monkeypatc
         (projects_root / "hybrid-pinned" / "urika.toml").read_text("utf-8")
     )
     assert proj_toml["privacy"]["mode"] == "hybrid"
-    assert proj_toml["privacy"]["endpoints"]["private"]["base_url"] == "http://alt:8000/v1"
+    assert (
+        proj_toml["privacy"]["endpoints"]["private"]["base_url"] == "http://alt:8000/v1"
+    )
 
 
 def test_create_project_no_private_endpoint_name_inherits_global(
@@ -572,13 +572,9 @@ def test_create_project_privacy_mode_open_default_does_not_gate(create_client):
 
     # No [privacy] block written for open mode.
     proj_toml = tomllib.loads(
-        (projects_root / "open-default" / "urika.toml").read_text(
-            encoding="utf-8"
-        )
+        (projects_root / "open-default" / "urika.toml").read_text(encoding="utf-8")
     )
-    assert "privacy" not in proj_toml or "mode" not in proj_toml.get(
-        "privacy", {}
-    )
+    assert "privacy" not in proj_toml or "mode" not in proj_toml.get("privacy", {})
 
 
 def test_create_project_privacy_mode_endpoint_with_blank_url_does_not_pass(
@@ -695,9 +691,7 @@ def test_create_project_runs_builder_enrichment_when_data_exists(
     assert r.status_code == 201, r.text
 
     project_dir = projects_root / "enriched-proj"
-    proj_toml = tomllib.loads(
-        (project_dir / "urika.toml").read_text(encoding="utf-8")
-    )
+    proj_toml = tomllib.loads((project_dir / "urika.toml").read_text(encoding="utf-8"))
 
     assert proj_toml["data"]["source"] == str(real_data)
     assert proj_toml["data"]["format"] == "csv"
@@ -715,9 +709,7 @@ def test_create_project_runs_builder_enrichment_when_data_exists(
     assert readme_path.exists(), "README.md must be regenerated"
 
 
-def test_create_project_with_nonexistent_paths_still_succeeds(
-    create_client, tmp_path
-):
+def test_create_project_with_nonexistent_paths_still_succeeds(create_client, tmp_path):
     """Enrichment must be a no-op when data_paths don't exist on disk.
     The bare-skeleton create flow that existing tests rely on
     (POSTing /path/to/data.csv) must keep working."""
@@ -740,9 +732,7 @@ def test_create_project_with_nonexistent_paths_still_succeeds(
     assert "data" not in proj_toml or "source" not in proj_toml.get("data", {})
 
 
-def test_create_project_with_empty_data_paths_still_enriches(
-    create_client, tmp_path
-):
+def test_create_project_with_empty_data_paths_still_enriches(create_client, tmp_path):
     """POSTing with the data_paths field blank (the user submits the
     modal without filling it) must still produce a USABLE project —
     no [data] block (nothing to scan), but criteria.json must be

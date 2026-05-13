@@ -36,9 +36,7 @@ def _scorer():
 
     def _best_metric_val(m: dict) -> float:
         metrics = m.get("metrics", {})
-        nums = {
-            k: v for k, v in metrics.items() if isinstance(v, (int, float))
-        }
+        nums = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
         if not nums:
             return float("-inf")
         higher = {k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER}

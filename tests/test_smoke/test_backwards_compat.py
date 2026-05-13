@@ -81,9 +81,7 @@ class TestV030EmptyLockfile:
         # ``urika status --json`` returns ``{"project": "<name>", ...}``.
         assert data["project"] == "v030-empty-lockfile"
 
-    def test_unlock_clears_empty_lock(
-        self, tmp_path, isolated_urika_home
-    ) -> None:
+    def test_unlock_clears_empty_lock(self, tmp_path, isolated_urika_home) -> None:
         """The new ``urika unlock`` command (v0.4.2 Package K) should
         clear an empty lock without ``--force`` because the empty file
         has no PID for the safety check to interpret as alive."""
@@ -157,9 +155,7 @@ class TestV03xCorruptProgress:
         ProjectRegistry().register("v03x-corrupt-progress", proj)
 
         runner = CliRunner()
-        result = runner.invoke(
-            cli, ["results", "v03x-corrupt-progress", "--json"]
-        )
+        result = runner.invoke(cli, ["results", "v03x-corrupt-progress", "--json"])
 
         # Either succeeds with empty results, OR exits with a
         # readable error message (NOT a Python traceback).
@@ -228,9 +224,7 @@ def test_fixtures_are_read_only(tmp_path, isolated_urika_home) -> None:
     the original. If a future test forgets to copy first, this
     would catch the leak by comparing fixture sizes before/after."""
     before_sizes = {
-        f.name: f.stat().st_size
-        for f in FIXTURES_DIR.iterdir()
-        if f.is_dir()
+        f.name: f.stat().st_size for f in FIXTURES_DIR.iterdir() if f.is_dir()
     }
 
     # Copy every fixture into tmp_path.
@@ -238,9 +232,7 @@ def test_fixtures_are_read_only(tmp_path, isolated_urika_home) -> None:
         _copy_fixture(name, tmp_path)
 
     after_sizes = {
-        f.name: f.stat().st_size
-        for f in FIXTURES_DIR.iterdir()
-        if f.is_dir()
+        f.name: f.stat().st_size for f in FIXTURES_DIR.iterdir() if f.is_dir()
     }
 
     assert before_sizes == after_sizes

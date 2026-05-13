@@ -162,9 +162,7 @@ class TestCommandDispatch:
             assert calls == ["hello"]
 
     @pytest.mark.asyncio
-    async def test_free_text_while_agent_running_queues(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_free_text_while_agent_running_queues(self, tmp_path: Path) -> None:
         """While a real worker is running, non-slash text gets queued.
         The worker must be real (not a synthetic agent_running flag)
         because _on_command now self-heals stale flags — a fake flag

@@ -69,7 +69,11 @@ class AgentRunner(ABC):
 
     @abstractmethod
     async def run(
-        self, config: AgentConfig, prompt: str, *, on_message: Callable[..., Any] | None = None
+        self,
+        config: AgentConfig,
+        prompt: str,
+        *,
+        on_message: Callable[..., Any] | None = None,
     ) -> AgentResult:
         """Execute an agent with the given config and prompt.
 

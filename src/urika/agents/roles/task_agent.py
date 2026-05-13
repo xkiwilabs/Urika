@@ -71,9 +71,7 @@ def build_config(
     runtime_config = load_runtime_config(project_dir)
     experiment_dir = project_dir / "experiments" / experiment_id
 
-    data_privacy = _build_data_privacy_block(
-        project_dir, runtime_config.privacy_mode
-    )
+    data_privacy = _build_data_privacy_block(project_dir, runtime_config.privacy_mode)
 
     return AgentConfig(
         name="task_agent",

@@ -38,9 +38,7 @@ class TestCliOfferToRunAdvisorSuggestions:
             ),
         ):
             # Should not call run or create_experiment
-            _offer_to_run_advisor_suggestions(
-                advisor_output, "proj", tmp_path
-            )
+            _offer_to_run_advisor_suggestions(advisor_output, "proj", tmp_path)
 
     def test_accept_creates_experiment_and_runs(self, tmp_path: Path) -> None:
         from urika.cli import _offer_to_run_advisor_suggestions
@@ -73,9 +71,7 @@ class TestCliOfferToRunAdvisorSuggestions:
             mock_ctx.invoke = fake_invoke
             mock_ctx_cls.return_value = mock_ctx
 
-            _offer_to_run_advisor_suggestions(
-                advisor_output, "my-project", tmp_path
-            )
+            _offer_to_run_advisor_suggestions(advisor_output, "my-project", tmp_path)
 
         mock_create.assert_called_once()
         assert invoked_kwargs["experiment_id"] == "exp-007"
@@ -84,17 +80,13 @@ class TestCliOfferToRunAdvisorSuggestions:
     def test_cancel_does_not_crash(self, tmp_path: Path) -> None:
         from urika.cli import _offer_to_run_advisor_suggestions
 
-        advisor_output = (
-            '```json\n{"suggestions": [{"name": "exp-1"}]}\n```'
-        )
+        advisor_output = '```json\n{"suggestions": [{"name": "exp-1"}]}\n```'
         with (
             patch("urika.cli.run_advisor.sys.stdin.isatty", return_value=True),
             patch("urika.cli.run_advisor._prompt_numbered", side_effect=click.Abort),
         ):
             # Should not raise
-            _offer_to_run_advisor_suggestions(
-                advisor_output, "proj", tmp_path
-            )
+            _offer_to_run_advisor_suggestions(advisor_output, "proj", tmp_path)
 
     def test_non_tty_does_not_prompt_or_run(self, tmp_path: Path) -> None:
         """Regression: dashboard spawns ``urika advisor`` with stdin=DEVNULL.
@@ -119,9 +111,7 @@ class TestCliOfferToRunAdvisorSuggestions:
                 "urika.core.experiment.create_experiment",
             ) as mock_create,
         ):
-            _offer_to_run_advisor_suggestions(
-                advisor_output, "my-project", tmp_path
-            )
+            _offer_to_run_advisor_suggestions(advisor_output, "my-project", tmp_path)
 
         mock_prompt.assert_not_called()
         mock_create.assert_not_called()
@@ -137,9 +127,7 @@ class TestPendingSuggestions:
         session = ReplSession()
         assert session.pending_suggestions == []
 
-    def test_pending_suggestions_cleared_on_load_project(
-        self, tmp_path: Path
-    ) -> None:
+    def test_pending_suggestions_cleared_on_load_project(self, tmp_path: Path) -> None:
         session = ReplSession()
         session.pending_suggestions = [{"name": "exp-007"}]
         session.load_project(tmp_path, "new-project")
@@ -201,9 +189,7 @@ class TestOfferToRunSuggestions:
         session.load_project(Path("/tmp/test"), "test-project")
         advisor_output = '```json\n{"suggestions": [{"name": "exp-1"}]}\n```'
 
-        with patch(
-            "urika.repl_commands._prompt_numbered", side_effect=click.Abort
-        ):
+        with patch("urika.repl_commands._prompt_numbered", side_effect=click.Abort):
             # Should not raise
             _offer_to_run_suggestions(session, advisor_output)
 
@@ -215,7 +201,9 @@ class TestOfferToRunSuggestions:
 
         session = ReplSession()
         session.load_project(Path("/tmp/test"), "test-project")
-        advisor_output = '```json\n{"suggestions": [{"name": "exp-1", "method": "test"}]}\n```'
+        advisor_output = (
+            '```json\n{"suggestions": [{"name": "exp-1", "method": "test"}]}\n```'
+        )
 
         with (
             patch(
@@ -254,11 +242,17 @@ class TestCmdRunWithPendingSuggestions:
             invoked_kwargs.update(kwargs)
 
         with (
-            patch("urika.repl.commands_run._prompt_numbered", return_value="Run with defaults"),
-            patch("urika.repl.commands_run._load_run_defaults", return_value={
-                "max_turns": 5, "auto_mode": "checkpoint"
-            }),
-            patch("urika.core.experiment.create_experiment", return_value=mock_exp) as mock_create,
+            patch(
+                "urika.repl.commands_run._prompt_numbered",
+                return_value="Run with defaults",
+            ),
+            patch(
+                "urika.repl.commands_run._load_run_defaults",
+                return_value={"max_turns": 5, "auto_mode": "checkpoint"},
+            ),
+            patch(
+                "urika.core.experiment.create_experiment", return_value=mock_exp
+            ) as mock_create,
             patch("urika.repl.commands_run.click.Context") as mock_ctx_cls,
             patch("urika.core.experiment.list_experiments", return_value=[]),
         ):
@@ -299,10 +293,14 @@ class TestCmdRunWithPendingSuggestions:
             invoked_kwargs.update(kwargs)
 
         with (
-            patch("urika.repl.commands_run._prompt_numbered", return_value="Run with defaults"),
-            patch("urika.repl.commands_run._load_run_defaults", return_value={
-                "max_turns": 5, "auto_mode": "checkpoint"
-            }),
+            patch(
+                "urika.repl.commands_run._prompt_numbered",
+                return_value="Run with defaults",
+            ),
+            patch(
+                "urika.repl.commands_run._load_run_defaults",
+                return_value={"max_turns": 5, "auto_mode": "checkpoint"},
+            ),
             patch("urika.repl.commands_run.click.Context") as mock_ctx_cls,
             patch("urika.core.experiment.list_experiments", return_value=[]),
         ):

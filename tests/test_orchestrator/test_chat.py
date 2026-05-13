@@ -33,18 +33,32 @@ class _Recorder:
 
 def _ok(text: str = "Sure, here's what I can tell you.") -> AgentResult:
     return AgentResult(
-        success=True, messages=[], text_output=text, session_id="s",
-        num_turns=1, duration_ms=1, tokens_in=10, tokens_out=20, cost_usd=0.001,
+        success=True,
+        messages=[],
+        text_output=text,
+        session_id="s",
+        num_turns=1,
+        duration_ms=1,
+        tokens_in=10,
+        tokens_out=20,
+        cost_usd=0.001,
         model="claude-test",
     )
 
 
-def _fail(error: str, category: str = "unknown",
-          partial: str = "") -> AgentResult:
+def _fail(error: str, category: str = "unknown", partial: str = "") -> AgentResult:
     return AgentResult(
-        success=False, messages=[], text_output=partial, session_id="s",
-        num_turns=0, duration_ms=1, tokens_in=0, tokens_out=0, error=error,
-        error_category=category, model="claude-test",
+        success=False,
+        messages=[],
+        text_output=partial,
+        session_id="s",
+        num_turns=0,
+        duration_ms=1,
+        tokens_in=0,
+        tokens_out=0,
+        error=error,
+        error_category=category,
+        model="claude-test",
     )
 
 
@@ -72,8 +86,10 @@ def _make_chat(tmp_path: Path, monkeypatch, runner: _Recorder, *, with_project=T
 
 def test_set_project_resets_messages(tmp_path: Path, monkeypatch) -> None:
     chat, _ = _make_chat(tmp_path, monkeypatch, _Recorder(_ok()))
-    chat.messages = [{"role": "user", "content": "old"},
-                     {"role": "assistant", "content": "older"}]
+    chat.messages = [
+        {"role": "user", "content": "old"},
+        {"role": "assistant", "content": "older"},
+    ]
     other = tmp_path / "other"
     other.mkdir()
     chat.set_project(other)
@@ -189,9 +205,7 @@ def test_build_config_does_not_allow_sandbox_escape_tools(
     )
 
 
-def test_build_config_with_no_project_has_no_bash(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_build_config_with_no_project_has_no_bash(tmp_path: Path, monkeypatch) -> None:
     chat, _ = _make_chat(tmp_path, monkeypatch, _Recorder(_ok()), with_project=False)
     cfg = chat._build_config()
     # Pre-project: chat-only, no Bash, no shell access at all.
@@ -256,9 +270,7 @@ def test_build_config_scrubs_oauth_and_session_markers(
 # ── history truncation ─────────────────────────────────────────
 
 
-def test_build_prompt_keeps_last_40_messages(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_build_prompt_keeps_last_40_messages(tmp_path: Path, monkeypatch) -> None:
     chat, _ = _make_chat(tmp_path, monkeypatch, _Recorder(_ok()))
     # Seed 60 historic messages, alternating roles.
     chat.messages = [
@@ -314,9 +326,7 @@ async def test_chat_passes_on_message_callback_to_runner(
 
 
 @pytest.mark.asyncio
-async def test_chat_notify_callback_invoked(
-    tmp_path: Path, monkeypatch
-) -> None:
+async def test_chat_notify_callback_invoked(tmp_path: Path, monkeypatch) -> None:
     runner = _Recorder(_ok())
     chat, _ = _make_chat(tmp_path, monkeypatch, runner)
     events: list[tuple[str, dict]] = []

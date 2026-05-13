@@ -192,9 +192,7 @@ def _empty_totals() -> dict[str, Any]:
     }
 
 
-def per_session_cost_distribution(
-    project_dir: Path, *, last_n: int = 7
-) -> list[float]:
+def per_session_cost_distribution(project_dir: Path, *, last_n: int = 7) -> list[float]:
     """Return the cost (USD) of the last *last_n* sessions, oldest-first.
 
     Used by ``urika run --dry-run`` (v0.4 Track 4) to give the user a

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from urika.repl.session import ReplSession
 
@@ -33,9 +32,15 @@ def _setup(tmp_path: Path) -> ReplSession:
 
 
 class _StubOrchestrator:
-    def __init__(self, response: str, *, tokens_in: int = 50,
-                 tokens_out: int = 100, cost_usd: float = 0.001,
-                 model: str = "claude-test") -> None:
+    def __init__(
+        self,
+        response: str,
+        *,
+        tokens_in: int = 50,
+        tokens_out: int = 100,
+        cost_usd: float = 0.001,
+        model: str = "claude-test",
+    ) -> None:
         self._response = response
         self._tokens_in = tokens_in
         self._tokens_out = tokens_out
@@ -161,4 +166,7 @@ def test_handle_free_text_short_circuits_when_endpoint_unreachable(
     )
     _handle_free_text(session, "hi")
     assert not called, "orchestrator was called despite endpoint being down"
-    assert "unreachable" in capsys.readouterr().out.lower() or "disabled" in capsys.readouterr().out.lower()
+    assert (
+        "unreachable" in capsys.readouterr().out.lower()
+        or "disabled" in capsys.readouterr().out.lower()
+    )

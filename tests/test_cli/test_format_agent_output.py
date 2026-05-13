@@ -106,7 +106,7 @@ def test_malformed_nested_json_inside_a_fence_is_dropped_silently() -> None:
     AttributeError, no 5xx."""
     out = format_agent_output(
         "Prefix.\n"
-        "```json\n{\"x\": {\"y\": [1, 2, ]}}\n```\n"  # trailing comma
+        '```json\n{"x": {"y": [1, 2, ]}}\n```\n'  # trailing comma
         "Suffix."
     )
     assert "Prefix." in out
@@ -155,9 +155,7 @@ def test_method_plan_steps_with_dict_action_descriptions() -> None:
 def test_method_plan_steps_with_long_string_truncated() -> None:
     """Step description >100 chars gets truncated with ellipsis."""
     long_step = "x" * 200
-    out = format_agent_output(
-        _block({"method_name": "m", "steps": [long_step]})
-    )
+    out = format_agent_output(_block({"method_name": "m", "steps": [long_step]}))
     # 100-char window + "…" indicator (per the existing 100-char truncation in
     # cli_display.format_agent_output).
     assert "x" * 100 in out
@@ -215,8 +213,7 @@ def test_mixed_valid_and_invalid_fences_render_the_valid_one() -> None:
     block must still render the valid block."""
     out = format_agent_output(
         "Here:\n```json\n{this is broken}\n```\n"
-        "And another:\n"
-        + _block({"suggestions": [{"name": "ok", "method": "linear"}]})
+        "And another:\n" + _block({"suggestions": [{"name": "ok", "method": "linear"}]})
     )
     assert "ok" in out
     # The broken fence text doesn't crash and isn't echoed verbatim.

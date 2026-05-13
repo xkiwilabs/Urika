@@ -66,8 +66,10 @@ def _spawn_dashboard(tmp_path: Path, port: int, *extra_args: str) -> subprocess.
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32",
-                    reason="POSIX-only subprocess signaling — Windows uses a different model")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-only subprocess signaling — Windows uses a different model",
+)
 def test_dashboard_starts_and_serves_healthz(tmp_path: Path) -> None:
     port = _find_free_port()
     proc = _spawn_dashboard(tmp_path, port)

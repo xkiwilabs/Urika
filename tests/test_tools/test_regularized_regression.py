@@ -160,9 +160,7 @@ class TestRegularizedRegressionMethod:
     def test_result_type(self) -> None:
         rng = np.random.default_rng(42)
         n = 50
-        df = pd.DataFrame(
-            {"x": rng.standard_normal(n), "y": rng.standard_normal(n)}
-        )
+        df = pd.DataFrame({"x": rng.standard_normal(n), "y": rng.standard_normal(n)})
         view = _make_view(df)
         method = RegularizedRegressionMethod()
         result = method.run(view, {"target": "y", "features": ["x"]})

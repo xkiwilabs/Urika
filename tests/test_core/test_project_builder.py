@@ -181,9 +181,7 @@ class TestProjectBuilderEndpointInheritance:
     the user picks the same URL — the runtime loader inherits from
     globals (commit 1) so a project-local copy only invites drift."""
 
-    def _make_builder(
-        self, tmp_path: Path, *, mode: str, url: str
-    ) -> ProjectBuilder:
+    def _make_builder(self, tmp_path: Path, *, mode: str, url: str) -> ProjectBuilder:
         source = tmp_path / "data"
         source.mkdir()
         (source / "test.csv").write_text("x,y\n1,2\n")
@@ -209,8 +207,7 @@ class TestProjectBuilderEndpointInheritance:
         urika_home.mkdir()
         monkeypatch.setenv("URIKA_HOME", str(urika_home))
         (urika_home / "settings.toml").write_text(
-            '[privacy.endpoints.private]\n'
-            'base_url = "http://localhost:11434"\n',
+            '[privacy.endpoints.private]\nbase_url = "http://localhost:11434"\n',
             encoding="utf-8",
         )
 
@@ -236,8 +233,7 @@ class TestProjectBuilderEndpointInheritance:
         urika_home.mkdir()
         monkeypatch.setenv("URIKA_HOME", str(urika_home))
         (urika_home / "settings.toml").write_text(
-            '[privacy.endpoints.private]\n'
-            'base_url = "http://localhost:11434"\n',
+            '[privacy.endpoints.private]\nbase_url = "http://localhost:11434"\n',
             encoding="utf-8",
         )
 

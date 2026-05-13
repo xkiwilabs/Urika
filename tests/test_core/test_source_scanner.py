@@ -113,9 +113,7 @@ class TestSpecializedClassifications:
         result = scan_source_path(tmp_path)
         assert any(p.name == "scan.nii" for p in result.images)
 
-    def test_nifti_gz_compound_extension_dual_classified(
-        self, tmp_path: Path
-    ) -> None:
+    def test_nifti_gz_compound_extension_dual_classified(self, tmp_path: Path) -> None:
         """``.nii.gz`` is a neuroimaging-specific compound suffix; the
         scanner branch at source_scanner.py:164 must classify it as
         BOTH data_files and images."""
@@ -148,9 +146,7 @@ class TestSpecializedClassifications:
         result = scan_source_path(tmp_path)
         assert len(result.spatial) >= 4
 
-    def test_domain_data_extensions_classified_as_data(
-        self, tmp_path: Path
-    ) -> None:
+    def test_domain_data_extensions_classified_as_data(self, tmp_path: Path) -> None:
         """SPSS/Stata/Feather/Arrow/RData are domain-data — must land
         in ``data_files`` even though they don't have a specialized
         sub-bucket. (Used by `enrich_workspace` to pattern the [data]

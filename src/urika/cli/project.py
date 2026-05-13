@@ -134,9 +134,7 @@ def status(name: str | None, json_output: bool) -> None:
             new_state = (
                 "missing on disk" if not d["new_hash"] else f"now {d['new_hash'][:12]}…"
             )
-            click.echo(
-                f"    {d['path']}: was {d['old_hash'][:12]}… → {new_state}"
-            )
+            click.echo(f"    {d['path']}: was {d['old_hash'][:12]}… → {new_state}")
         click.echo(
             "  (data file changed since project was created — runs after "
             "this point may not reproduce earlier results)"

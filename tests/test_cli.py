@@ -69,9 +69,7 @@ class TestNewCommand:
             env=urika_env,
         )
         assert result.exit_code == 0, result.output
-        assert live_calls == [], (
-            "live agent was invoked despite non-TTY stdin"
-        )
+        assert live_calls == [], "live agent was invoked despite non-TTY stdin"
 
     def test_no_agent_spawn_with_env_opt_out(
         self, runner: CliRunner, urika_env: dict[str, str], monkeypatch

@@ -366,10 +366,16 @@ def test_config_api_key_save_then_test_yes_runs_verification(
     # key + "y" to test prompt + "n" to spend-limit prompt
     stdin = f"{fake_key}\ny\nn\n"
 
-    with patch("urika.core.secrets.save_secret"), patch(
-        "urika.core.anthropic_check.verify_anthropic_api_key",
-        return_value=(True, "key authenticated; model=claude-haiku-4-5; reply='ok'"),
-    ) as test_mock:
+    with (
+        patch("urika.core.secrets.save_secret"),
+        patch(
+            "urika.core.anthropic_check.verify_anthropic_api_key",
+            return_value=(
+                True,
+                "key authenticated; model=claude-haiku-4-5; reply='ok'",
+            ),
+        ) as test_mock,
+    ):
         result = runner.invoke(cli, ["config", "api-key"], input=stdin, env=env)
 
     assert result.exit_code == 0, result.output

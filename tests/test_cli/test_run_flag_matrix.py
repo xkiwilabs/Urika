@@ -57,14 +57,25 @@ def captured(monkeypatch) -> dict:
 
     async def _fake_run_experiment(*args, **kwargs):
         rec["single"] = {"args": args, "kwargs": kwargs}
-        return {"status": "completed", "turns": 0, "tokens_in": 0,
-                "tokens_out": 0, "cost_usd": 0.0, "agent_calls": 0}
+        return {
+            "status": "completed",
+            "turns": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cost_usd": 0.0,
+            "agent_calls": 0,
+        }
 
     async def _fake_run_project(*args, **kwargs):
         rec["meta"] = {"args": args, "kwargs": kwargs}
-        return {"experiments": [], "status": "completed",
-                "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0,
-                "agent_calls": 0}
+        return {
+            "experiments": [],
+            "status": "completed",
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cost_usd": 0.0,
+            "agent_calls": 0,
+        }
 
     monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
     monkeypatch.setattr("urika.orchestrator.run_project", _fake_run_project)
@@ -134,9 +145,7 @@ def test_resume_flag_forwarded_as_kwarg(project, captured, monkeypatch) -> None:
 
 
 def test_max_experiments_dispatches_to_run_project(project, captured) -> None:
-    r = _invoke(
-        ["run", "alpha", "--max-experiments", "3", "--auto", "-q"], project
-    )
+    r = _invoke(["run", "alpha", "--max-experiments", "3", "--auto", "-q"], project)
     assert r.exit_code == 0, r.output
     assert "meta" in captured, (
         "--max-experiments must dispatch to run_project, not run_experiment"
@@ -155,8 +164,16 @@ def test_max_turns_forwarded_to_meta_loop(project, captured) -> None:
 
 def test_meta_loop_instructions_forwarded(project, captured) -> None:
     r = _invoke(
-        ["run", "alpha", "--max-experiments", "2", "--instructions", "try x",
-         "--auto", "-q"],
+        [
+            "run",
+            "alpha",
+            "--max-experiments",
+            "2",
+            "--instructions",
+            "try x",
+            "--auto",
+            "-q",
+        ],
         project,
     )
     assert r.exit_code == 0, r.output
@@ -166,9 +183,7 @@ def test_meta_loop_instructions_forwarded(project, captured) -> None:
 def test_advisor_first_propagates(project, captured) -> None:
     """--advisor-first forwards through to the single-experiment run
     (the meta loop handles its own advisor calls)."""
-    r = _invoke(
-        ["run", "alpha", "--advisor-first", "--auto", "-q"], project
-    )
+    r = _invoke(["run", "alpha", "--advisor-first", "--auto", "-q"], project)
     assert r.exit_code == 0, r.output
     # The flag may land as ``advisor_first`` or as a CLI-side
     # behavior change; either way the test for "no crash on the flag"

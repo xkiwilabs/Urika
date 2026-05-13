@@ -115,28 +115,21 @@ def _normalise(line: str) -> str:
     [
         # cli_display.print_agent for each role — note the two-space
         # prefix that broke the original regex.
-        ("  ─── Planning Agent ─────────────────────────────────────",
-         "planning"),
-        ("  ─── Task Agent ─────────────────────────────────────",
-         "task"),
-        ("  ─── Evaluator ─────────────────────────────────────",
-         "evaluator"),
-        ("  ─── Advisor Agent ─────────────────────────────────────",
-         "advisor"),
-        ("  ─── Tool Builder ─────────────────────────────────────",
-         "tool builder"),
-        ("  ─── Literature Agent ─────────────────────────────────────",
-         "literature"),
-        ("  ─── Report Agent ─────────────────────────────────────",
-         "report"),
-        ("  ─── Presentation Agent ─────────────────────────────────────",
-         "presentation"),
-        ("  ─── Finalizer ─────────────────────────────────────",
-         "finalizer"),
+        ("  ─── Planning Agent ─────────────────────────────────────", "planning"),
+        ("  ─── Task Agent ─────────────────────────────────────", "task"),
+        ("  ─── Evaluator ─────────────────────────────────────", "evaluator"),
+        ("  ─── Advisor Agent ─────────────────────────────────────", "advisor"),
+        ("  ─── Tool Builder ─────────────────────────────────────", "tool builder"),
+        ("  ─── Literature Agent ─────────────────────────────────────", "literature"),
+        ("  ─── Report Agent ─────────────────────────────────────", "report"),
+        (
+            "  ─── Presentation Agent ─────────────────────────────────────",
+            "presentation",
+        ),
+        ("  ─── Finalizer ─────────────────────────────────────", "finalizer"),
         # ANSI-coloured form (older urika builds; still arrives this
         # way when stdout was a TTY at orchestrator-spawn time).
-        ("  \x1b[36m─── Planning Agent \x1b[0m─────────────────",
-         "planning"),
+        ("  \x1b[36m─── Planning Agent \x1b[0m─────────────────", "planning"),
     ],
 )
 def test_agent_regex_extracts_role_from_realistic_log_lines(
@@ -153,13 +146,15 @@ def test_agent_regex_extracts_role_from_realistic_log_lines(
     [
         # SDK init JSON line — the bundled CLI emits this once per
         # session, contains the model name as a quoted string.
-        ('{"type":"system","subtype":"init","model":"claude-opus-4-6"}',
-         "claude-opus-4-6"),
+        (
+            '{"type":"system","subtype":"init","model":"claude-opus-4-6"}',
+            "claude-opus-4-6",
+        ),
         # Status-bar / debug print formats.
-        ("  model: claude-sonnet-4-5",  "claude-sonnet-4-5"),
-        ("  model: claude-haiku-4-5",   "claude-haiku-4-5"),
+        ("  model: claude-sonnet-4-5", "claude-sonnet-4-5"),
+        ("  model: claude-haiku-4-5", "claude-haiku-4-5"),
         # Local / private endpoint model names.
-        ("  loaded model qwen2.5:14b on private",  "qwen2.5:14b"),
+        ("  loaded model qwen2.5:14b on private", "qwen2.5:14b"),
         ("  loaded model llama-3.2:8b on private", "llama-3.2:8b"),
     ],
 )
@@ -196,7 +191,10 @@ def test_static_js_uses_the_pinned_regexes():
     """
     static = (
         Path(__file__).parent.parent.parent
-        / "src" / "urika" / "dashboard" / "static"
+        / "src"
+        / "urika"
+        / "dashboard"
+        / "static"
         / "urika-log-footer.js"
     )
     js = static.read_text(encoding="utf-8")

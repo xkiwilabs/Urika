@@ -84,9 +84,7 @@ class TestCriteriaFullyMet:
         (tmp_path / "criteria.json").write_text(json.dumps(criteria_data))
         assert _criteria_fully_met(tmp_path) is False
 
-    def test_returns_true_when_a_run_passes_threshold(
-        self, tmp_path: Path
-    ) -> None:
+    def test_returns_true_when_a_run_passes_threshold(self, tmp_path: Path) -> None:
         """A run whose metrics satisfy min/max thresholds -> criteria met."""
         criteria_data = {
             "versions": [
@@ -124,9 +122,7 @@ class TestCriteriaFullyMet:
 
         assert _criteria_fully_met(tmp_path) is True
 
-    def test_returns_false_when_all_runs_fail_threshold(
-        self, tmp_path: Path
-    ) -> None:
+    def test_returns_false_when_all_runs_fail_threshold(self, tmp_path: Path) -> None:
         """If no run reaches the threshold, return False."""
         criteria_data = {
             "versions": [
@@ -236,8 +232,12 @@ class _FakeRunner(AgentRunner):
         )
 
 
-def _write_toml(project_dir: Path, name: str = "proj", mode: str = "exploratory",
-                question: str = "Q?") -> None:
+def _write_toml(
+    project_dir: Path,
+    name: str = "proj",
+    mode: str = "exploratory",
+    question: str = "Q?",
+) -> None:
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / "urika.toml").write_text(
         f'[project]\nname = "{name}"\nmode = "{mode}"\nquestion = "{question}"\n',
@@ -291,9 +291,7 @@ class TestDetermineNext:
     ) -> None:
         """Plain prose without a suggestions JSON block -> no next experiment."""
         _write_toml(tmp_path)
-        runner = _FakeRunner(
-            text="I think we've covered all the promising directions."
-        )
+        runner = _FakeRunner(text="I think we've covered all the promising directions.")
 
         next_exp, text, failed = await _determine_next(
             tmp_path, runner, instructions="", on_message=None
@@ -305,9 +303,7 @@ class TestDetermineNext:
         assert "promising" in text
 
     @pytest.mark.asyncio
-    async def test_user_instructions_reach_advisor_prompt(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_user_instructions_reach_advisor_prompt(self, tmp_path: Path) -> None:
         """User instructions are injected into the advisor's context."""
         _write_toml(tmp_path)
         runner = _FakeRunner(text="no suggestions here")

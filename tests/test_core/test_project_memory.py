@@ -72,7 +72,7 @@ def test_parse_marker_persists_and_strips(tmp_path):
     proj = _empty_project(tmp_path)
     text = (
         "Here's my analysis.\n"
-        "<memory type=\"feedback\">User prefers XGBoost over neural nets</memory>\n"
+        '<memory type="feedback">User prefers XGBoost over neural nets</memory>\n'
         "Now let's plan the next experiment."
     )
     stripped, written = parse_and_persist_memory_markers(proj, text)

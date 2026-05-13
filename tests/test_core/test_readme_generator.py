@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from urika.core.readme_generator import (
     _format_metrics,
@@ -146,12 +145,20 @@ def test_get_key_finding_falls_back_to_method_when_no_observation() -> None:
 
 
 def test_get_best_metric_higher_picks_max() -> None:
-    methods = [{"metrics": {"r2": 0.3}}, {"metrics": {"r2": 0.8}}, {"metrics": {"r2": 0.5}}]
+    methods = [
+        {"metrics": {"r2": 0.3}},
+        {"metrics": {"r2": 0.8}},
+        {"metrics": {"r2": 0.5}},
+    ]
     assert _get_best_metric(methods, "r2", "higher") == 0.8
 
 
 def test_get_best_metric_lower_picks_min() -> None:
-    methods = [{"metrics": {"rmse": 1.0}}, {"metrics": {"rmse": 0.5}}, {"metrics": {"rmse": 1.5}}]
+    methods = [
+        {"metrics": {"rmse": 1.0}},
+        {"metrics": {"rmse": 0.5}},
+        {"metrics": {"rmse": 1.5}},
+    ]
     assert _get_best_metric(methods, "rmse", "lower") == 0.5
 
 

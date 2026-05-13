@@ -105,9 +105,7 @@ def _run_single_agent(
                 format_planning_context,
             )
 
-            agent_user_input = (
-                format_planning_context(session.project_path) + prompt
-            )
+            agent_user_input = format_planning_context(session.project_path) + prompt
         elif agent_name in ("report_agent", "presentation_agent", "finalizer"):
             from urika.agents.audience import format_audience_context
 

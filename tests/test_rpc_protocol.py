@@ -1,4 +1,5 @@
 """Tests for JSON-RPC 2.0 protocol handler."""
+
 import json
 from urika.rpc.protocol import handle_request, RPCError
 
@@ -31,8 +32,10 @@ def test_invalid_json():
 
 def test_method_exception_returns_error():
     """If the handler raises, return -32000 internal error."""
+
     def bad(params):
         raise ValueError("boom")
+
     registry = {"bad": bad}
     req = {"jsonrpc": "2.0", "id": 1, "method": "bad", "params": {}}
     resp = handle_request(json.dumps(req), registry)

@@ -555,10 +555,8 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
         if toml_path.exists():
             with open(toml_path, "rb") as f:
                 proj_data = tomllib.load(f)
-            default_max_turns = (
-                proj_data.get("preferences", {}).get(
-                    "max_turns_per_experiment", default_max_turns
-                )
+            default_max_turns = proj_data.get("preferences", {}).get(
+                "max_turns_per_experiment", default_max_turns
             )
     except Exception:
         pass
@@ -577,9 +575,7 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
 
 
 @router.get("/projects/{name}/compare", response_class=HTMLResponse)
-def project_compare(
-    request: Request, name: str, experiments: str = ""
-) -> HTMLResponse:
+def project_compare(request: Request, name: str, experiments: str = "") -> HTMLResponse:
     """Side-by-side metric comparison across N experiments.
 
     Query string ``?experiments=exp-001,exp-002`` selects which
@@ -598,12 +594,8 @@ def project_compare(
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
 
-    requested = [
-        e.strip() for e in experiments.split(",") if e.strip()
-    ]
-    available = {
-        e.experiment_id: e for e in list_experiments(summary.path)
-    }
+    requested = [e.strip() for e in experiments.split(",") if e.strip()]
+    available = {e.experiment_id: e for e in list_experiments(summary.path)}
     selected_ids = [eid for eid in requested if eid in available]
     if not selected_ids:
         # Fallback: show every completed experiment so the page
@@ -655,16 +647,13 @@ def project_compare(
         "project": summary,
         "selected_ids": selected_ids,
         "available": [
-            {"experiment_id": eid, "name": available[eid].name}
-            for eid in available
+            {"experiment_id": eid, "name": available[eid].name} for eid in available
         ],
         "per_exp": per_exp,
         "metric_rows": metric_rows,
     }
     ctx.update(_project_template_context(name, summary))
-    return templates.TemplateResponse(
-        request, "experiment_compare.html", ctx
-    )
+    return templates.TemplateResponse(request, "experiment_compare.html", ctx)
 
 
 def _tools_to_rows(tool_registry) -> list[dict]:
@@ -1160,6 +1149,7 @@ def global_settings(request: Request) -> HTMLResponse:
     import os as _os
 
     from urika.core.secrets import load_secrets
+
     load_secrets()
     api_key_configured = bool(_os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -1167,6 +1157,7 @@ def global_settings(request: Request) -> HTMLResponse:
     # keyring). The dashboard write path always goes through FileBackend
     # so the label is informational, not load-bearing.
     from urika.core.vault import _keyring_available
+
     if _keyring_available():
         secrets_backend_label = "OS keyring (managed via `urika config secret`)"
     else:
@@ -1197,9 +1188,7 @@ def global_settings(request: Request) -> HTMLResponse:
     notif_slack_app_token_set = bool(
         _slack_app_env and _notif_backend.get(_slack_app_env)
     )
-    notif_telegram_bot_token_set = bool(
-        _tg_bot_env and _notif_backend.get(_tg_bot_env)
-    )
+    notif_telegram_bot_token_set = bool(_tg_bot_env and _notif_backend.get(_tg_bot_env))
 
     return templates.TemplateResponse(
         request,

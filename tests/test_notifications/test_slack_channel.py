@@ -66,9 +66,7 @@ def test_is_authorized_blocks_non_allowlisted_user():
 
 
 def test_is_authorized_allows_matching_channel_and_user():
-    channel = _make_channel(
-        allowed_channels=["CALLOWED"], allowed_users=["UALLOWED"]
-    )
+    channel = _make_channel(allowed_channels=["CALLOWED"], allowed_users=["UALLOWED"])
     assert (
         channel._is_authorized(
             {"channel": {"id": "CALLOWED"}, "user": {"id": "UALLOWED"}}
@@ -80,9 +78,7 @@ def test_is_authorized_allows_matching_channel_and_user():
 def test_is_authorized_allows_only_channel_match_when_users_none():
     channel = _make_channel(allowed_channels=["CALLOWED"])
     assert (
-        channel._is_authorized(
-            {"channel": {"id": "CALLOWED"}, "user": {"id": "UANY"}}
-        )
+        channel._is_authorized({"channel": {"id": "CALLOWED"}, "user": {"id": "UANY"}})
         is True
     )
 
@@ -90,9 +86,7 @@ def test_is_authorized_allows_only_channel_match_when_users_none():
 def test_is_authorized_allows_only_user_match_when_channels_none():
     channel = _make_channel(allowed_users=["UALLOWED"])
     assert (
-        channel._is_authorized(
-            {"channel": {"id": "CANY"}, "user": {"id": "UALLOWED"}}
-        )
+        channel._is_authorized({"channel": {"id": "CANY"}, "user": {"id": "UALLOWED"}})
         is True
     )
 
@@ -113,30 +107,21 @@ def test_is_authorized_extracts_channel_from_event_fallback():
     channel = _make_channel(allowed_channels=["CALLOWED"])
     # Message-event shape: channel id lives at payload["event"]["channel"]
     assert (
-        channel._is_authorized(
-            {"event": {"channel": "CALLOWED", "user": "U1"}}
-        )
-        is True
+        channel._is_authorized({"event": {"channel": "CALLOWED", "user": "U1"}}) is True
     )
 
 
 def test_is_authorized_extracts_user_from_event_fallback():
     channel = _make_channel(allowed_users=["UALLOWED"])
     assert (
-        channel._is_authorized(
-            {"event": {"channel": "C1", "user": "UALLOWED"}}
-        )
-        is True
+        channel._is_authorized({"event": {"channel": "C1", "user": "UALLOWED"}}) is True
     )
 
 
 def test_is_authorized_event_fallback_blocks_non_allowlisted():
     channel = _make_channel(allowed_channels=["CALLOWED"])
     assert (
-        channel._is_authorized(
-            {"event": {"channel": "COTHER", "user": "U1"}}
-        )
-        is False
+        channel._is_authorized({"event": {"channel": "COTHER", "user": "U1"}}) is False
     )
 
 
@@ -149,25 +134,20 @@ def test_warning_logged_when_no_allowlist_set(caplog):
     caplog.set_level(logging.WARNING, logger="urika.notifications.slack_channel")
     _make_channel()
     assert any(
-        "without allowed_channels or allowed_users" in r.message
-        for r in caplog.records
+        "without allowed_channels or allowed_users" in r.message for r in caplog.records
     )
 
 
 def test_no_warning_when_allowed_channels_set(caplog):
     caplog.set_level(logging.WARNING, logger="urika.notifications.slack_channel")
     _make_channel(allowed_channels=["C1"])
-    assert not any(
-        "without allowed_channels" in r.message for r in caplog.records
-    )
+    assert not any("without allowed_channels" in r.message for r in caplog.records)
 
 
 def test_no_warning_when_allowed_users_set(caplog):
     caplog.set_level(logging.WARNING, logger="urika.notifications.slack_channel")
     _make_channel(allowed_users=["U1"])
-    assert not any(
-        "without allowed_channels" in r.message for r in caplog.records
-    )
+    assert not any("without allowed_channels" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -182,9 +162,7 @@ def test_default_allowlists_are_none():
 
 
 def test_allowlists_stored_as_attrs():
-    channel = _make_channel(
-        allowed_channels=["C1", "C2"], allowed_users=["U1"]
-    )
+    channel = _make_channel(allowed_channels=["C1", "C2"], allowed_users=["U1"])
     assert channel._allowed_channels == ["C1", "C2"]
     assert channel._allowed_users == ["U1"]
 
@@ -196,9 +174,7 @@ def test_allowlists_stored_as_attrs():
 
 def test_is_authorized_realistic_button_click_payload_allowed():
     """Block Kit button-click payloads have channel.id + user.id at top level."""
-    channel = _make_channel(
-        allowed_channels=["CALLOWED"], allowed_users=["UALLOWED"]
-    )
+    channel = _make_channel(allowed_channels=["CALLOWED"], allowed_users=["UALLOWED"])
     button_payload = {
         "type": "block_actions",
         "user": {"id": "UALLOWED", "name": "alice"},
@@ -221,9 +197,7 @@ def test_is_authorized_realistic_button_click_payload_blocked():
 
 def test_is_authorized_realistic_message_event_payload_allowed():
     """Event-API message payloads nest channel/user as string ids under event."""
-    channel = _make_channel(
-        allowed_channels=["CALLOWED"], allowed_users=["UALLOWED"]
-    )
+    channel = _make_channel(allowed_channels=["CALLOWED"], allowed_users=["UALLOWED"])
     event_payload = {
         "type": "event_callback",
         "event": {

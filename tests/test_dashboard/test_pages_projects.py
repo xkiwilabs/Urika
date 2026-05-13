@@ -42,13 +42,22 @@ def test_projects_list_has_new_project_button_and_modal(
     # Top-right action button
     assert "+ New project" in body
     assert "open-modal" in body
-    assert "'id': 'new-project'" in body or '"id": "new-project"' in body or (
-        "id: 'new-project'" in body
+    assert (
+        "'id': 'new-project'" in body
+        or '"id": "new-project"' in body
+        or ("id: 'new-project'" in body)
     )
     # Modal posts to the create endpoint via HTMX
     assert 'hx-post="/api/projects"' in body
     # Required form fields
-    for field_name in ("name", "question", "description", "data_paths", "mode", "audience"):
+    for field_name in (
+        "name",
+        "question",
+        "description",
+        "data_paths",
+        "mode",
+        "audience",
+    ):
         assert f'name="{field_name}"' in body, f"missing form field: {field_name}"
     # Mode and audience dropdowns are populated from valid_modes / valid_audiences
     assert ">exploratory<" in body
@@ -65,6 +74,7 @@ def test_projects_list_renders_search_and_sort(client_with_projects: TestClient)
 
 def test_project_summary_has_last_activity(tmp_path: Path):
     from urika.dashboard.projects import list_project_summaries
+
     proj = tmp_path / "alpha"
     proj.mkdir()
     (proj / "urika.toml").write_text(

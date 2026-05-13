@@ -40,9 +40,7 @@ class TestLogsActuallyTailsRunLog:
         project_dir, exp_id = _make_project(tmp_path, monkeypatch)
         log_path = project_dir / "experiments" / exp_id / "run.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text(
-            "line1\nline2\nline3\nline4\nline5\n", encoding="utf-8"
-        )
+        log_path.write_text("line1\nline2\nline3\nline4\nline5\n", encoding="utf-8")
 
         runner = CliRunner()
         result = runner.invoke(cli, ["logs", "myproj", "--tail", "3"])

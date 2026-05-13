@@ -159,7 +159,9 @@ class TestReplLifecycle:
         child.expect(pexpect.EOF, timeout=COMMAND_TIMEOUT)
         # No traceback in the captured output — the REPL cleanly
         # processed /quit.
-        out = (child.before or "") + ((child.buffer or "") if hasattr(child, "buffer") else "")
+        out = (child.before or "") + (
+            (child.buffer or "") if hasattr(child, "buffer") else ""
+        )
         assert "Traceback" not in out
 
 
@@ -178,7 +180,9 @@ class TestProjectScopedCommands:
 
         proj_path = projects / "beta"
         config = ProjectConfig(
-            name="beta", question="What clusters exist?", mode="exploratory",
+            name="beta",
+            question="What clusters exist?",
+            mode="exploratory",
             data_paths=[],
         )
         os.environ["URIKA_HOME"] = str(home)

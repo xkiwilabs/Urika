@@ -14,6 +14,7 @@ def test_api_projects_returns_json_list(client_with_projects):
 def test_api_projects_empty_when_no_registry(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from urika.dashboard.app import create_app
+
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))

@@ -95,7 +95,7 @@ def _run(monkeypatch, projects_dir: Path, runner: _ScriptedRunner) -> _Builder:
         builder,
         ScanResult(root=projects_dir / "myproj"),
         None,  # data_summary
-        "a description with \"quotes\" and a tab\there",  # exercise display of odd text
+        'a description with "quotes" and a tab\there',  # exercise display of odd text
         "Q?",
         extra_profiles=None,
     )
@@ -156,9 +156,7 @@ def test_builder_loop_records_usage_and_scopes_project(
     assert s["tokens_in"] == 10 * s["agent_calls"]
 
 
-def test_builder_loop_handles_clarifying_questions(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_builder_loop_handles_clarifying_questions(tmp_path: Path, monkeypatch) -> None:
     """A non-trivial question loop: builder asks one question, the user
     answers, then the builder signals ready — and the answer reaches
     the suggestion prompt."""
@@ -186,9 +184,15 @@ def test_builder_loop_handles_clarifying_questions(
             else:
                 text = ""
             return AgentResult(
-                success=True, messages=[], text_output=text,
-                session_id="s", num_turns=1, duration_ms=1,
-                tokens_in=1, tokens_out=1, cost_usd=0.0,
+                success=True,
+                messages=[],
+                text_output=text,
+                session_id="s",
+                num_turns=1,
+                duration_ms=1,
+                tokens_in=1,
+                tokens_out=1,
+                cost_usd=0.0,
             )
 
     runner = _QRunner()

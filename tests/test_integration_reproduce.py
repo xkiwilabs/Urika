@@ -31,7 +31,12 @@ pytestmark = pytest.mark.integration
 
 _FINALIZER_PROMPT = (
     Path(__file__).resolve().parent.parent
-    / "src" / "urika" / "agents" / "roles" / "prompts" / "finalizer_system.md"
+    / "src"
+    / "urika"
+    / "agents"
+    / "roles"
+    / "prompts"
+    / "finalizer_system.md"
 )
 
 # A self-contained final method: loads the CSV, computes a trivial
@@ -71,7 +76,9 @@ def _reproduce_sh_template_body() -> str:
     # "Write `{project_dir}/reproduce.sh`" line.
     after = text.split("reproduce.sh`", 1)[1]
     m = re.search(r"```bash\s*(.*?)```", after, re.DOTALL)
-    assert m is not None, "couldn't find the reproduce.sh ```bash block in the finalizer prompt"
+    assert m is not None, (
+        "couldn't find the reproduce.sh ```bash block in the finalizer prompt"
+    )
     return m.group(1)
 
 
@@ -105,8 +112,12 @@ def test_finalizer_reproduce_sh_template_runs(tmp_path: Path) -> None:
     # creates is inside tmp_path so it's cleaned up with the fixture.)
     env = {**os.environ}
     result = subprocess.run(
-        ["bash", "reproduce.sh"], cwd=proj, capture_output=True, text=True,
-        env=env, timeout=300,
+        ["bash", "reproduce.sh"],
+        cwd=proj,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=300,
     )
     assert result.returncode == 0, (
         f"reproduce.sh failed (exit {result.returncode}).\n"

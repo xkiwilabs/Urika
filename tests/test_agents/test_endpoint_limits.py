@@ -96,22 +96,27 @@ class TestBuildAgentEnvForEndpoint:
     CLAUDE_CODE_MAX_* env vars when a private endpoint is configured."""
 
     def _make_project(
-        self, root: Path, mode: str, base_url: str, *,
-        context_window: int = 0, max_output_tokens: int = 0,
+        self,
+        root: Path,
+        mode: str,
+        base_url: str,
+        *,
+        context_window: int = 0,
+        max_output_tokens: int = 0,
     ) -> Path:
         proj = root / "alpha"
         proj.mkdir(parents=True)
         toml_lines = [
-            '[project]',
+            "[project]",
             'name = "alpha"',
             'question = "?"',
             f'mode = "{mode}"',
             'description = ""',
-            '',
-            '[privacy]',
+            "",
+            "[privacy]",
             f'mode = "{mode}"',
-            '',
-            '[privacy.endpoints.private]',
+            "",
+            "[privacy.endpoints.private]",
             f'base_url = "{base_url}"',
             'api_key_env = "TEST_KEY"',
         ]
@@ -152,8 +157,11 @@ class TestBuildAgentEnvForEndpoint:
         (tmp_path / "home").mkdir()
         monkeypatch.setenv("TEST_KEY", "x")
         proj = self._make_project(
-            tmp_path, "private", "http://localhost:8000",
-            context_window=128_000, max_output_tokens=16_000,
+            tmp_path,
+            "private",
+            "http://localhost:8000",
+            context_window=128_000,
+            max_output_tokens=16_000,
         )
 
         env = build_agent_env_for_endpoint(proj, "task_agent")
@@ -161,9 +169,7 @@ class TestBuildAgentEnvForEndpoint:
         assert env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == "128000"
         assert env.get("CLAUDE_CODE_MAX_OUTPUT_TOKENS") == "16000"
 
-    def test_open_mode_does_not_inject_caps(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_open_mode_does_not_inject_caps(self, tmp_path: Path, monkeypatch) -> None:
         """Cloud (open mode) callers must see no behaviour change.
         The bundled CLI's own defaults remain authoritative for
         api.anthropic.com requests; we only inject when a non-open
@@ -196,9 +202,7 @@ class TestBuildAgentEnvForEndpoint:
         monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
         (tmp_path / "home").mkdir()
         monkeypatch.setenv("TEST_KEY", "x")
-        proj = self._make_project(
-            tmp_path, "private", "https://api.anthropic.com"
-        )
+        proj = self._make_project(tmp_path, "private", "https://api.anthropic.com")
 
         env = build_agent_env_for_endpoint(proj, "task_agent")
         assert env is not None

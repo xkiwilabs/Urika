@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from urika.core.experiment import create_experiment
 from urika.core.models import ProjectConfig, RunRecord
@@ -79,9 +78,11 @@ def _setup_with_runs(tmp_path: Path, runs: list[dict]) -> tuple[Path, str]:
     exp = create_experiment(proj, name="b", hypothesis="h")
     for r in runs:
         append_run(
-            proj, exp.experiment_id,
+            proj,
+            exp.experiment_id,
             RunRecord(
-                run_id=r["run_id"], method=r["method"],
+                run_id=r["run_id"],
+                method=r["method"],
                 params=r.get("params", {}),
                 metrics=r.get("metrics", {}),
                 observation=r.get("observation", ""),

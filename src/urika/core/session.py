@@ -203,7 +203,7 @@ def start_session(
     if not acquire_lock(project_dir, experiment_id):
         lock_pid = ""
         try:
-            lock_pid = (_lock_path(project_dir, experiment_id).read_text().strip())
+            lock_pid = _lock_path(project_dir, experiment_id).read_text().strip()
         except OSError:
             pass
         if lock_pid:

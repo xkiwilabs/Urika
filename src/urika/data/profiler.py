@@ -75,7 +75,9 @@ def profile_images(paths: list[Path]) -> dict:
         del info["sizes"]
     except ImportError:
         info["formats"] = sorted({p.suffix.upper().lstrip(".") for p in paths})
-        info["note"] = "PIL not installed -- install Pillow for detailed image profiling"
+        info["note"] = (
+            "PIL not installed -- install Pillow for detailed image profiling"
+        )
         del info["sizes"]
     return info
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from urika.core.models import ProjectConfig
 from urika.core.workspace import create_project_workspace
@@ -56,9 +55,7 @@ class TestDataAgentRoleConfig:
         assert str(proj / "experiments" / "exp-001") in writable2
         assert str(proj / "data") in writable2
 
-    def test_bash_allowlist_restricted_to_python_pip(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bash_allowlist_restricted_to_python_pip(self, tmp_path: Path) -> None:
         from urika.agents.roles.data_agent import build_config
 
         cfg = build_config(_project(tmp_path))

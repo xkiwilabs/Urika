@@ -323,9 +323,7 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
                     base_url=ep_cfg.get("base_url", ""),
                     api_key_env=ep_cfg.get("api_key_env", ""),
                     context_window=int(ep_cfg.get("context_window", 0) or 0),
-                    max_output_tokens=int(
-                        ep_cfg.get("max_output_tokens", 0) or 0
-                    ),
+                    max_output_tokens=int(ep_cfg.get("max_output_tokens", 0) or 0),
                 )
 
         # ── Live-inherit endpoint definitions from globals ────────────
@@ -374,11 +372,11 @@ def load_runtime_config(project_dir: Path) -> RuntimeConfig:
         # with a hard raise; reaching this branch means the file
         # parsed but didn't have the shape we expected.
         import logging
+
         logging.getLogger(__name__).warning(
             "Failed to load runtime config from %s: %s — using defaults", toml_path, exc
         )
         return RuntimeConfig()
-
 
 
 def build_agent_env_for_endpoint(
@@ -425,11 +423,7 @@ def build_agent_env_for_endpoint(
             # would violate the privacy contract.  The user must
             # configure the endpoint before running privacy-sensitive
             # work.
-            reason = (
-                "is missing"
-                if endpoint is None
-                else "has no base_url"
-            )
+            reason = "is missing" if endpoint is None else "has no base_url"
             raise MissingPrivateEndpointError(
                 f"Privacy mode '{runtime_config.privacy_mode}' "
                 f"requires the '{endpoint_name}' endpoint to be "
@@ -494,11 +488,7 @@ def _is_local_endpoint(url: str) -> bool:
     """Check if a URL points to a local server (Ollama, LM Studio, etc.)."""
     if not url:
         return False
-    return (
-        "localhost" in url
-        or "127.0.0.1" in url
-        or "0.0.0.0" in url
-    )
+    return "localhost" in url or "127.0.0.1" in url or "0.0.0.0" in url
 
 
 def get_agent_model(agent_name: str, runtime_config: RuntimeConfig) -> str | None:

@@ -237,11 +237,7 @@ async def run_experiment(
         # raising the budget. Pre-v0.4 the only safety net was
         # Anthropic's spend cap, which only fires after the cost
         # has already accrued.
-        if (
-            budget_usd is not None
-            and budget_usd > 0
-            and _total_cost_usd >= budget_usd
-        ):
+        if budget_usd is not None and budget_usd > 0 and _total_cost_usd >= budget_usd:
             _budget_msg = (
                 f"Budget ${budget_usd:.2f} reached after "
                 f"${_total_cost_usd:.2f} spent in {turn - 1} turn(s). "
@@ -294,9 +290,7 @@ async def run_experiment(
                     format_planning_context,
                 )
 
-                plan_user_input = (
-                    format_planning_context(project_dir) + task_prompt
-                )
+                plan_user_input = format_planning_context(project_dir) + task_prompt
                 plan_result = await runner.run(
                     plan_config, plan_user_input, on_message=on_message
                 )
@@ -526,22 +520,15 @@ async def run_experiment(
                         format_suspect_warning,
                     )
 
-                    experiment_dir = (
-                        project_dir / "experiments" / experiment_id
-                    )
+                    experiment_dir = project_dir / "experiments" / experiment_id
                     project_data_paths: list[str] = []
                     try:
                         import tomllib
 
-                        with open(
-                            project_dir / "urika.toml", "rb"
-                        ) as _f:
+                        with open(project_dir / "urika.toml", "rb") as _f:
                             _cfg = tomllib.load(_f)
                         project_data_paths = list(
-                            (_cfg.get("project", {}) or {}).get(
-                                "data_paths", []
-                            )
-                            or []
+                            (_cfg.get("project", {}) or {}).get("data_paths", []) or []
                         )
                     except (OSError, tomllib.TOMLDecodeError):
                         # Best-effort; the check still runs without
@@ -614,7 +601,9 @@ async def run_experiment(
             # _determine_next_experiment). Don't touch the experiment
             # ID — only the displayed name.
             if runs:
-                exp_json = project_dir / "experiments" / experiment_id / "experiment.json"
+                exp_json = (
+                    project_dir / "experiments" / experiment_id / "experiment.json"
+                )
                 try:
                     if exp_json.exists():
                         meta = json.loads(exp_json.read_text(encoding="utf-8"))
@@ -735,9 +724,7 @@ async def run_experiment(
                         # the criteria-review advisor sees what's been
                         # discussed before deciding whether to raise the
                         # bar — same context the other advisor paths get.
-                        review_input = (
-                            f"{eval_result.text_output}\n\n{review_prompt}"
-                        )
+                        review_input = f"{eval_result.text_output}\n\n{review_prompt}"
                         try:
                             from urika.core.advisor_memory import (
                                 load_context_summary,
@@ -947,9 +934,7 @@ async def run_experiment(
                 except Exception:
                     pass
             progress("phase", f"Experiment failed: {type(exc).__name__}: {exc}")
-            return _usage_dict(
-                "failed", turn, error=f"{type(exc).__name__}: {exc}"
-            )
+            return _usage_dict("failed", turn, error=f"{type(exc).__name__}: {exc}")
 
     # Reached max_turns without criteria being met.
     #

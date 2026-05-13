@@ -89,9 +89,7 @@ def _render(role_name: str, project_dir: Path, experiment_id: str) -> str:
     registry.discover()
     role = registry.get(role_name)
     assert role is not None, f"Role {role_name!r} not found in registry"
-    config = role.build_config(
-        project_dir=project_dir, experiment_id=experiment_id
-    )
+    config = role.build_config(project_dir=project_dir, experiment_id=experiment_id)
     return config.system_prompt
 
 
@@ -143,7 +141,11 @@ def test_orchestrator_prefix_also_stable(project_with_two_experiments) -> None:
 
     prompts_dir = (
         Path(__file__).parent.parent.parent
-        / "src" / "urika" / "agents" / "roles" / "prompts"
+        / "src"
+        / "urika"
+        / "agents"
+        / "roles"
+        / "prompts"
     )
     template = prompts_dir / "orchestrator_system.md"
 
@@ -232,7 +234,9 @@ def test_planning_agent_system_prompt_byte_stable_across_memory_changes(
     )
 
 
-@pytest.mark.parametrize("role_name", ["report_agent", "presentation_agent", "finalizer"])
+@pytest.mark.parametrize(
+    "role_name", ["report_agent", "presentation_agent", "finalizer"]
+)
 def test_audience_block_no_longer_in_system_prompt(
     role_name, project_with_two_experiments
 ) -> None:

@@ -53,6 +53,7 @@ def test_delete_unknown_returns_404(tmp_path: Path, monkeypatch):
 
 def test_delete_with_active_lock_returns_422(home_with_alpha):
     import os
+
     client, proj, _home = home_with_alpha
     exp_dir = proj / "experiments" / "exp-001"
     exp_dir.mkdir(parents=True)

@@ -116,7 +116,7 @@ def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
     if end < 0:
         return {}, text
     head = rest[:end]
-    body = rest[end + len("\n---\n"):]
+    body = rest[end + len("\n---\n") :]
     meta: dict[str, str] = {}
     for line in head.splitlines():
         if ":" not in line:
@@ -148,9 +148,7 @@ def load_project_memory(project_dir: Path) -> str:
         try:
             text = d.read_text(encoding="utf-8")
         except OSError as exc:
-            logger.warning(
-                "Could not read memory file %s: %s", d, exc
-            )
+            logger.warning("Could not read memory file %s: %s", d, exc)
             continue
         _meta, body = _split_frontmatter(text)
         parts.append(f"### {e['type']}: {e['name']}")
@@ -168,7 +166,7 @@ def load_project_memory(project_dir: Path) -> str:
             _SOFT_CAP_BYTES,
         )
     if len(blob) > _HARD_CAP_BYTES:
-        truncated = blob[: _HARD_CAP_BYTES]
+        truncated = blob[:_HARD_CAP_BYTES]
         return (
             truncated
             + "\n\n[memory truncated at hard cap — run `urika memory list` to prune]\n"
@@ -276,16 +274,12 @@ def parse_and_persist_memory_markers(
         mem_type = match.group("type").strip().lower()
         body = match.group("body").strip()
         if mem_type not in _TYPES:
-            logger.debug(
-                "Skipping memory marker with unknown type %r", mem_type
-            )
+            logger.debug("Skipping memory marker with unknown type %r", mem_type)
             return ""
         if not body:
             return ""
         try:
-            path = save_entry(
-                project_dir, mem_type=mem_type, body=body
-            )
+            path = save_entry(project_dir, mem_type=mem_type, body=body)
             written.append(path)
         except Exception as exc:
             logger.warning(

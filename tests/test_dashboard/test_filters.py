@@ -1,4 +1,5 @@
 """Jinja humanize + tag_status filters."""
+
 from pathlib import Path
 import json
 
@@ -82,9 +83,7 @@ def client_with_runs(tmp_path: Path, monkeypatch) -> TestClient:
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("URIKA_HOME", str(home))
-    (home / "projects.json").write_text(
-        json.dumps({"alpha": str(proj)})
-    )
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
     app = create_app(project_root=tmp_path)
     return TestClient(app)
 

@@ -29,22 +29,22 @@ def project_with_private_endpoint(
     proj = tmp_path / "myproj"
     proj.mkdir()
     (proj / "urika.toml").write_text(
-        '[project]\n'
+        "[project]\n"
         'name = "myproj"\n'
         'question = "q"\n'
         'mode = "exploratory"\n'
         'description = ""\n'
-        '\n'
-        '[privacy]\n'
+        "\n"
+        "[privacy]\n"
         'mode = "private"\n'
-        '\n'
-        '[privacy.endpoints.private]\n'
+        "\n"
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = "OLLAMA_KEY"\n'
-        'context_window = 65536\n'
-        'max_output_tokens = 12000\n'
-        '\n'
-        '[preferences]\n'
+        "context_window = 65536\n"
+        "max_output_tokens = 12000\n"
+        "\n"
+        "[preferences]\n"
         'audience = "expert"\n'
     )
 
@@ -127,9 +127,7 @@ class TestProjectSettingsApiPersistsFields:
         assert ep["context_window"] == 131072
         assert ep["max_output_tokens"] == 16000
 
-    def test_blank_fields_are_not_written(
-        self, project_with_private_endpoint
-    ) -> None:
+    def test_blank_fields_are_not_written(self, project_with_private_endpoint) -> None:
         """Blank or 0 means "use auto-default" — the parser must not
         write a 0 entry that overrides the URL-based default."""
         client, proj = project_with_private_endpoint

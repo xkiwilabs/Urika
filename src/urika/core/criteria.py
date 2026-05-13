@@ -95,9 +95,7 @@ def load_criteria_history(project_dir: Path) -> list[CriteriaVersion]:
         try:
             out.append(CriteriaVersion.from_dict(v))
         except (KeyError, TypeError) as exc:
-            logger.warning(
-                "Dropping criteria entry missing required keys: %s", exc
-            )
+            logger.warning("Dropping criteria entry missing required keys: %s", exc)
     return out
 
 

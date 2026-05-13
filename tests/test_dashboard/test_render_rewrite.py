@@ -15,10 +15,7 @@ def test_rewrite_bare_filename_prefixed_with_base_url():
         "![](fig.png)",
         base_url="/projects/alpha/experiments/exp-001/artifacts",
     )
-    assert (
-        'src="/projects/alpha/experiments/exp-001/artifacts/fig.png"'
-        in html
-    )
+    assert 'src="/projects/alpha/experiments/exp-001/artifacts/fig.png"' in html
 
 
 def test_rewrite_artifacts_prefix_folded():
@@ -27,10 +24,7 @@ def test_rewrite_artifacts_prefix_folded():
         "![](artifacts/fig.png)",
         base_url="/projects/alpha/experiments/exp-001/artifacts",
     )
-    assert (
-        'src="/projects/alpha/experiments/exp-001/artifacts/fig.png"'
-        in html
-    )
+    assert 'src="/projects/alpha/experiments/exp-001/artifacts/fig.png"' in html
     # The unrewritten artifacts/ form must NOT survive.
     assert 'src="artifacts/fig.png"' not in html
 
@@ -66,7 +60,4 @@ def test_rewrite_also_applies_to_anchor_hrefs():
         "[link](report.txt)",
         base_url="/projects/alpha/experiments/exp-001/artifacts",
     )
-    assert (
-        'href="/projects/alpha/experiments/exp-001/artifacts/report.txt"'
-        in html
-    )
+    assert 'href="/projects/alpha/experiments/exp-001/artifacts/report.txt"' in html

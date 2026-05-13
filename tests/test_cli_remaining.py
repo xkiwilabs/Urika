@@ -73,9 +73,7 @@ def _seed_usage(project_dir: Path) -> None:
 
 
 class TestUsageCommand:
-    def test_no_usage_data(
-        self, runner: CliRunner, urika_env: dict[str, str]
-    ) -> None:
+    def test_no_usage_data(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         _create_project(runner, urika_env)
         result = runner.invoke(cli, ["usage", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
@@ -86,9 +84,7 @@ class TestUsageCommand:
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
         _create_project(runner, urika_env)
-        result = runner.invoke(
-            cli, ["usage", "test-proj", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["usage", "test-proj", "--json"], env=urika_env)
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert "session" in data
@@ -110,9 +106,7 @@ class TestUsageCommand:
     ) -> None:
         _create_project(runner, urika_env)
         _seed_usage(_project_dir(urika_env))
-        result = runner.invoke(
-            cli, ["usage", "test-proj", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["usage", "test-proj", "--json"], env=urika_env)
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["session"]["tokens_in"] == 1000
@@ -171,9 +165,7 @@ class TestUsageCommand:
             agent_calls=5,
             experiments_run=2,
         )
-        result = runner.invoke(
-            cli, ["usage", "test-proj", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["usage", "test-proj", "--json"], env=urika_env)
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["total"]["sessions"] == 2
@@ -189,9 +181,7 @@ class TestConfigCommand:
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
         _create_project(runner, urika_env)
-        result = runner.invoke(
-            cli, ["config", "test-proj", "--show"], env=urika_env
-        )
+        result = runner.invoke(cli, ["config", "test-proj", "--show"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "test-proj" in result.output
 
@@ -211,9 +201,7 @@ class TestConfigCommand:
     def test_show_global_config_json(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
-        result = runner.invoke(
-            cli, ["config", "--show", "--json"], env=urika_env
-        )
+        result = runner.invoke(cli, ["config", "--show", "--json"], env=urika_env)
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert isinstance(data, dict)
@@ -254,10 +242,12 @@ class TestConfigPrivateEndpointRequired:
         # Mode picker → "private". Endpoint type picker → "Custom server URL".
         # Numbered prompts are answered by the displayed string so we map
         # the call sequence to the right choice text.
-        numbered_calls = iter([
-            "private — all agents use local/server models (nothing leaves your network)",
-            "Custom server URL",
-        ])
+        numbered_calls = iter(
+            [
+                "private — all agents use local/server models (nothing leaves your network)",
+                "Custom server URL",
+            ]
+        )
 
         def fake_numbered(prompt, options, *, default=1, **_):
             return next(numbered_calls)
@@ -272,12 +262,8 @@ class TestConfigPrivateEndpointRequired:
                 raise UserCancelled()
             return default
 
-        monkeypatch.setattr(
-            "urika.cli_helpers.interactive_numbered", fake_numbered
-        )
-        monkeypatch.setattr(
-            "urika.cli_helpers.interactive_prompt", fake_prompt
-        )
+        monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
+        monkeypatch.setattr("urika.cli_helpers.interactive_prompt", fake_prompt)
 
         with pytest.raises(UserCancelled):
             _config_interactive(
@@ -316,10 +302,12 @@ class TestConfigPrivateEndpointRequired:
         for k, v in urika_env.items():
             monkeypatch.setenv(k, v)
 
-        numbered_calls = iter([
-            "private — all agents use local/server models (nothing leaves your network)",
-            "Custom server URL",
-        ])
+        numbered_calls = iter(
+            [
+                "private — all agents use local/server models (nothing leaves your network)",
+                "Custom server URL",
+            ]
+        )
 
         def fake_numbered(prompt, options, *, default=1, **_):
             return next(numbered_calls)
@@ -329,12 +317,8 @@ class TestConfigPrivateEndpointRequired:
             # without re-prompting — default is empty here.
             return ""
 
-        monkeypatch.setattr(
-            "urika.cli_helpers.interactive_numbered", fake_numbered
-        )
-        monkeypatch.setattr(
-            "urika.cli_helpers.interactive_prompt", fake_prompt
-        )
+        monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
+        monkeypatch.setattr("urika.cli_helpers.interactive_prompt", fake_prompt)
 
         with pytest.raises(UserCancelled):
             _config_interactive(
@@ -359,8 +343,7 @@ class TestConfigPrivateEndpointRequired:
         # Pre-seed a global private endpoint.
         urika_home = Path(urika_env["URIKA_HOME"])
         (urika_home / "settings.toml").write_text(
-            '[privacy.endpoints.private]\n'
-            'base_url = "http://localhost:11434"\n',
+            '[privacy.endpoints.private]\nbase_url = "http://localhost:11434"\n',
             encoding="utf-8",
         )
 
@@ -370,10 +353,12 @@ class TestConfigPrivateEndpointRequired:
             '[project]\nname = "proj-with-globals"\n', encoding="utf-8"
         )
 
-        numbered_calls = iter([
-            "private — all agents use local/server models (nothing leaves your network)",
-            "Custom server URL",
-        ])
+        numbered_calls = iter(
+            [
+                "private — all agents use local/server models (nothing leaves your network)",
+                "Custom server URL",
+            ]
+        )
 
         def fake_numbered(prompt, options, *, default=1, **_):
             return next(numbered_calls)
@@ -389,12 +374,8 @@ class TestConfigPrivateEndpointRequired:
                 return "qwen3:14b"
             return default
 
-        monkeypatch.setattr(
-            "urika.cli_helpers.interactive_numbered", fake_numbered
-        )
-        monkeypatch.setattr(
-            "urika.cli_helpers.interactive_prompt", fake_prompt
-        )
+        monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
+        monkeypatch.setattr("urika.cli_helpers.interactive_prompt", fake_prompt)
 
         session: dict = {"privacy": {}}
         # Should NOT raise — globals supply the endpoint.
@@ -406,9 +387,7 @@ class TestConfigPrivateEndpointRequired:
         )
 
         # The URL prompt must have been called with required=False.
-        url_calls = [
-            (m, r) for m, r in prompt_calls if "Server URL" in m
-        ]
+        url_calls = [(m, r) for m, r in prompt_calls if "Server URL" in m]
         assert url_calls, "URL prompt was not invoked"
         assert all(not r for _m, r in url_calls), (
             f"URL prompt should be required=False when globals supply an "
@@ -418,8 +397,7 @@ class TestConfigPrivateEndpointRequired:
         # And the project session must NOT have written
         # [privacy.endpoints.private] — inheritance handles it.
         assert "endpoints" not in session.get("privacy", {}), (
-            f"Project should not duplicate global endpoint, got "
-            f"{session['privacy']}"
+            f"Project should not duplicate global endpoint, got {session['privacy']}"
         )
 
     def test_project_blank_url_without_global_endpoint_cancels(
@@ -441,10 +419,12 @@ class TestConfigPrivateEndpointRequired:
             '[project]\nname = "proj-no-globals"\n', encoding="utf-8"
         )
 
-        numbered_calls = iter([
-            "private — all agents use local/server models (nothing leaves your network)",
-            "Custom server URL",
-        ])
+        numbered_calls = iter(
+            [
+                "private — all agents use local/server models (nothing leaves your network)",
+                "Custom server URL",
+            ]
+        )
 
         def fake_numbered(prompt, options, *, default=1, **_):
             return next(numbered_calls)
@@ -455,12 +435,8 @@ class TestConfigPrivateEndpointRequired:
                 return ""
             return default
 
-        monkeypatch.setattr(
-            "urika.cli_helpers.interactive_numbered", fake_numbered
-        )
-        monkeypatch.setattr(
-            "urika.cli_helpers.interactive_prompt", fake_prompt
-        )
+        monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
+        monkeypatch.setattr("urika.cli_helpers.interactive_prompt", fake_prompt)
 
         with pytest.raises(UserCancelled):
             _config_interactive(
@@ -526,9 +502,7 @@ class TestUpdateCommand:
         assert data["field"] == "description"
         assert data["new_value"] == "A new description"
 
-    def test_update_mode(
-        self, runner: CliRunner, urika_env: dict[str, str]
-    ) -> None:
+    def test_update_mode(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         _create_project(runner, urika_env)
         result = runner.invoke(
             cli,
@@ -633,9 +607,7 @@ class TestUpdateCommand:
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
         _create_project(runner, urika_env)
-        result = runner.invoke(
-            cli, ["update", "test-proj", "--history"], env=urika_env
-        )
+        result = runner.invoke(cli, ["update", "test-proj", "--history"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "No revisions" in result.output
 
@@ -657,9 +629,7 @@ class TestUpdateCommand:
             ],
             env=urika_env,
         )
-        result = runner.invoke(
-            cli, ["update", "test-proj", "--history"], env=urika_env
-        )
+        result = runner.invoke(cli, ["update", "test-proj", "--history"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "question" in result.output
         assert "#1" in result.output
@@ -853,9 +823,7 @@ class TestVenvCreateCommand:
         pdir = _project_dir(urika_env)
         # Mock subprocess to avoid actually creating a venv
         with patch("urika.core.venv.subprocess.run") as mock_run:
-            result = runner.invoke(
-                cli, ["venv", "create", "test-proj"], env=urika_env
-            )
+            result = runner.invoke(cli, ["venv", "create", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "Created .venv" in result.output
         mock_run.assert_called_once()
@@ -881,9 +849,7 @@ class TestVenvCreateCommand:
         pdir = _project_dir(urika_env)
         # Pre-create the .venv directory so create_project_venv returns early
         (pdir / ".venv").mkdir()
-        result = runner.invoke(
-            cli, ["venv", "create", "test-proj"], env=urika_env
-        )
+        result = runner.invoke(cli, ["venv", "create", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "Created .venv" in result.output
 
@@ -892,13 +858,9 @@ class TestVenvCreateCommand:
 
 
 class TestVenvStatusCommand:
-    def test_not_enabled(
-        self, runner: CliRunner, urika_env: dict[str, str]
-    ) -> None:
+    def test_not_enabled(self, runner: CliRunner, urika_env: dict[str, str]) -> None:
         _create_project(runner, urika_env)
-        result = runner.invoke(
-            cli, ["venv", "status", "test-proj"], env=urika_env
-        )
+        result = runner.invoke(cli, ["venv", "status", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "not enabled" in result.output
 
@@ -916,9 +878,7 @@ class TestVenvStatusCommand:
         # since subprocess was mocked. Create the directory for realism.
         (pdir / ".venv").mkdir(exist_ok=True)
 
-        result = runner.invoke(
-            cli, ["venv", "status", "test-proj"], env=urika_env
-        )
+        result = runner.invoke(cli, ["venv", "status", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "enabled" in result.output
         assert "exists" in result.output
@@ -938,9 +898,7 @@ class TestVenvStatusCommand:
 
         _write_toml(toml_path, data)
 
-        result = runner.invoke(
-            cli, ["venv", "status", "test-proj"], env=urika_env
-        )
+        result = runner.invoke(cli, ["venv", "status", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "enabled" in result.output
         assert "NOT FOUND" in result.output

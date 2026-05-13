@@ -19,7 +19,9 @@ def _make_view(df: pd.DataFrame) -> DatasetView:
     )
 
 
-def _make_lmm_data(n_subjects: int = 10, n_obs: int = 5, seed: int = 42) -> pd.DataFrame:
+def _make_lmm_data(
+    n_subjects: int = 10, n_obs: int = 5, seed: int = 42
+) -> pd.DataFrame:
     """Create synthetic repeated-measures data with known group structure."""
     rng = np.random.default_rng(seed)
     rows = []

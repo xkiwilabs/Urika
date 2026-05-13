@@ -39,7 +39,9 @@ class TestFeatureScalerTool:
         assert params["columns"] is None
 
     def test_standard_scaling(self) -> None:
-        df = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": [10.0, 20.0, 30.0, 40.0, 50.0]})
+        df = pd.DataFrame(
+            {"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": [10.0, 20.0, 30.0, 40.0, 50.0]}
+        )
         view = _make_view(df)
         tool = FeatureScalerTool()
         result = tool.run(view, {"method": "standard"})
@@ -89,7 +91,9 @@ class TestFeatureScalerTool:
         assert "No numeric columns" in result.error
 
     def test_specific_columns(self) -> None:
-        df = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": [4.0, 5.0, 6.0], "c": [7.0, 8.0, 9.0]})
+        df = pd.DataFrame(
+            {"a": [1.0, 2.0, 3.0], "b": [4.0, 5.0, 6.0], "c": [7.0, 8.0, 9.0]}
+        )
         view = _make_view(df)
         tool = FeatureScalerTool()
         result = tool.run(view, {"method": "standard", "columns": ["a", "c"]})

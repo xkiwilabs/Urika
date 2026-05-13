@@ -216,9 +216,7 @@ def logs(
 
     progress = load_progress(project_path, experiment_id)
     session = load_session(project_path, experiment_id)
-    log_path = (
-        project_path / "experiments" / experiment_id / "run.log"
-    )
+    log_path = project_path / "experiments" / experiment_id / "run.log"
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -237,7 +235,9 @@ def logs(
         data["log_path"] = str(log_path)
         if log_path.exists():
             try:
-                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                lines = log_path.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
                 data["log_lines"] = lines[-tail:] if tail > 0 else lines
             except OSError as exc:
                 data["log_lines"] = []
@@ -598,9 +598,7 @@ def unlock(
     if experiment_id is None:
         experiments = list_experiments(project_path)
         locked = [
-            e
-            for e in experiments
-            if _lock_path(project_path, e.experiment_id).exists()
+            e for e in experiments if _lock_path(project_path, e.experiment_id).exists()
         ]
         if not locked:
             click.echo(f"  No locked experiments in {project}.")

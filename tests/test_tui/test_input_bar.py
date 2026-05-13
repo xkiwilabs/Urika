@@ -220,21 +220,13 @@ class TestInputBar:
                 bar = app.query_one("InputBar")
 
                 # Empty argument after /resume-session — no suggestion.
-                assert (
-                    await bar.suggester.get_suggestion("/resume-session ")
-                    is None
-                )
+                assert await bar.suggester.get_suggestion("/resume-session ") is None
                 # Partial argument — still no suggestion (must not
                 # match any project name).
-                assert (
-                    await bar.suggester.get_suggestion("/resume-session a")
-                    is None
-                )
+                assert await bar.suggester.get_suggestion("/resume-session a") is None
 
     @pytest.mark.asyncio
-    async def test_suggester_completes_project_argument(
-        self, tmp_path
-    ) -> None:
+    async def test_suggester_completes_project_argument(self, tmp_path) -> None:
         """After ``/project <space>``, the suggester switches modes
         and returns project names sorted by most recently modified.
 
@@ -267,7 +259,6 @@ class TestInputBar:
             "urika.core.registry.ProjectRegistry.list_all",
             return_value=fake_registry,
         ):
-
             app = UrikaApp()
             async with app.run_test() as pilot:
                 await pilot.pause()
@@ -284,7 +275,4 @@ class TestInputBar:
                     == "/project beta-study"
                 )
                 # No match → None.
-                assert (
-                    await bar.suggester.get_suggestion("/project zzz")
-                    is None
-                )
+                assert await bar.suggester.get_suggestion("/project zzz") is None

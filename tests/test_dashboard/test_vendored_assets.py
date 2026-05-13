@@ -30,16 +30,19 @@ def client(tmp_path: Path, monkeypatch) -> TestClient:
 class TestVendoredFilesShipped:
     def test_htmx_file_exists(self) -> None:
         from urika.dashboard import __file__ as dashboard_init
+
         vendor_dir = Path(dashboard_init).parent / "static" / "vendor"
         assert (vendor_dir / "htmx-1.9.10.min.js").exists()
 
     def test_alpine_file_exists(self) -> None:
         from urika.dashboard import __file__ as dashboard_init
+
         vendor_dir = Path(dashboard_init).parent / "static" / "vendor"
         assert (vendor_dir / "alpine-3.13.5.min.js").exists()
 
     def test_chart_file_exists(self) -> None:
         from urika.dashboard import __file__ as dashboard_init
+
         vendor_dir = Path(dashboard_init).parent / "static" / "vendor"
         assert (vendor_dir / "chart-4.4.1.min.js").exists()
 

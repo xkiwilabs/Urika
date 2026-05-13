@@ -292,9 +292,7 @@ class TestStartSession:
             "urika.core.session._get_process_name", lambda pid: "python3"
         )
 
-        _lock_path(project_dir, experiment_id).parent.mkdir(
-            parents=True, exist_ok=True
-        )
+        _lock_path(project_dir, experiment_id).parent.mkdir(parents=True, exist_ok=True)
         _lock_path(project_dir, experiment_id).write_text(str(other_pid))
         with pytest.raises(RuntimeError, match="already running"):
             start_session(project_dir, experiment_id)
@@ -464,18 +462,14 @@ class TestStopSession:
         start_session(project_dir, experiment_id)
         complete_session(project_dir, experiment_id)
         # Now SIGTERM arrives during _generate_reports.
-        state = stop_session(
-            project_dir, experiment_id, reason="Stopped by user"
-        )
+        state = stop_session(project_dir, experiment_id, reason="Stopped by user")
         assert state.status == "completed", (
             "stop_session must NOT downgrade an already-completed session"
         )
         # The reason gets recorded as a side note so dashboards can
         # distinguish a clean finish from a stopped-during-narrative
         # run when they want to.
-        assert (
-            state.checkpoint.get("post_terminal_stop_reason") == "Stopped by user"
-        )
+        assert state.checkpoint.get("post_terminal_stop_reason") == "Stopped by user"
         # Lock is released either way so future runs aren't blocked.
         assert is_locked(project_dir, experiment_id) is False
 
@@ -628,9 +622,7 @@ class TestStaleLockDetection:
         lock.write_text(str(os.getppid()))  # a real, live PID
 
         # Pretend that PID now belongs to a shell, not a urika run.
-        monkeypatch.setattr(
-            "urika.core.session._get_process_name", lambda pid: "bash"
-        )
+        monkeypatch.setattr("urika.core.session._get_process_name", lambda pid: "bash")
         assert acquire_lock(tmp_path, "exp-001") is True
         # And the lock now records *our* PID.
         assert lock.read_text().strip() == str(os.getpid())
@@ -646,12 +638,8 @@ class TestStaleLockDetection:
         lock = _lock_path(tmp_path, "exp-001")
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text(str(os.getppid()))
-        monkeypatch.setattr(
-            "urika.core.session._get_process_name", lambda pid: ""
-        )
-        monkeypatch.setattr(
-            "urika.core.session._pid_is_alive", lambda pid: True
-        )
+        monkeypatch.setattr("urika.core.session._get_process_name", lambda pid: "")
+        monkeypatch.setattr("urika.core.session._pid_is_alive", lambda pid: True)
         assert acquire_lock(tmp_path, "exp-001") is False
 
     def test_live_lock_with_own_pid_is_idempotent(self, tmp_path: Path) -> None:
@@ -716,6 +704,7 @@ class TestCrossPlatformPidCheck:
         # Patch both paths: psutil.pid_exists handles modern Linux/Win,
         # the os.kill fallback is only hit if psutil import fails.
         import psutil
+
         monkeypatch.setattr(psutil, "pid_exists", fake_psutil_pid_exists)
         monkeypatch.setattr(os, "kill", fake_kill)
 
@@ -724,9 +713,7 @@ class TestCrossPlatformPidCheck:
         # The new lock should now contain OUR PID, not the stale one.
         assert lock.read_text().strip() == str(os.getpid())
 
-    def test_alive_pid_blocks_via_psutil(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_alive_pid_blocks_via_psutil(self, tmp_path: Path, monkeypatch) -> None:
         """When psutil reports the lock owner is alive, acquire_lock
         refuses (correctly). Tests that we trust psutil's verdict."""
         import psutil

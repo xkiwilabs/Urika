@@ -57,9 +57,13 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
         # Also check run artifacts list
         for art in run.get("artifacts", []):
             art_path = Path(art)
-            if art_path.suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".gif") and art_path.name.lower() not in [
-                m.name.lower() for m in matched
-            ]:
+            if art_path.suffix.lower() in (
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".svg",
+                ".gif",
+            ) and art_path.name.lower() not in [m.name.lower() for m in matched]:
                 if (project_dir / "experiments" / experiment_id / art).exists():
                     matched.append(project_dir / "experiments" / experiment_id / art)
         for fig in matched[:3]:  # Max 3 figures per run

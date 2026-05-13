@@ -39,9 +39,7 @@ def test_global_open_writes_per_mode_default_model(urika_home, monkeypatch):
     def fake_numbered(*args, **kwargs):
         return next(seq)
 
-    monkeypatch.setattr(
-        "urika.cli_helpers.interactive_numbered", fake_numbered
-    )
+    monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
 
     settings: dict = {}
     _config_interactive(
@@ -79,12 +77,8 @@ def test_global_hybrid_writes_per_mode_per_agent(urika_home, monkeypatch):
     def fake_prompt(*args, **kwargs):
         return next(prompts)
 
-    monkeypatch.setattr(
-        "urika.cli_helpers.interactive_numbered", fake_numbered
-    )
-    monkeypatch.setattr(
-        "urika.cli_helpers.interactive_prompt", fake_prompt
-    )
+    monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
+    monkeypatch.setattr("urika.cli_helpers.interactive_prompt", fake_prompt)
 
     settings: dict = {}
     _config_interactive(
@@ -122,9 +116,7 @@ def test_global_open_opus_applies_reasoning_execution_split(urika_home, monkeypa
     def fake_numbered(*args, **kwargs):
         return next(seq)
 
-    monkeypatch.setattr(
-        "urika.cli_helpers.interactive_numbered", fake_numbered
-    )
+    monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
 
     settings: dict = {}
     _config_interactive(
@@ -145,8 +137,14 @@ def test_global_open_opus_applies_reasoning_execution_split(urika_home, monkeypa
         assert open_mode["models"][agent]["endpoint"] == "open"
     # Execution agents got the cheaper tier.
     for agent in (
-        "task_agent", "evaluator", "report_agent", "presentation_agent",
-        "tool_builder", "literature_agent", "data_agent", "project_summarizer",
+        "task_agent",
+        "evaluator",
+        "report_agent",
+        "presentation_agent",
+        "tool_builder",
+        "literature_agent",
+        "data_agent",
+        "project_summarizer",
     ):
         assert open_mode["models"][agent]["model"] == _EXECUTION_AGENT_DEFAULT_MODEL
         assert open_mode["models"][agent]["endpoint"] == "open"
@@ -170,9 +168,7 @@ def test_global_open_sonnet_skips_split(urika_home, monkeypatch):
     def fake_numbered(*args, **kwargs):
         return next(seq)
 
-    monkeypatch.setattr(
-        "urika.cli_helpers.interactive_numbered", fake_numbered
-    )
+    monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
 
     settings: dict = {}
     _config_interactive(
@@ -190,9 +186,7 @@ def test_global_open_sonnet_skips_split(urika_home, monkeypatch):
     assert "models" not in open_mode
 
 
-def test_project_scoped_config_still_uses_flat_keys(
-    urika_home, monkeypatch, tmp_path
-):
+def test_project_scoped_config_still_uses_flat_keys(urika_home, monkeypatch, tmp_path):
     """Project-scoped `urika config <project>` keeps writing flat
     [privacy].mode + [runtime].model — a project lives in one mode."""
     from urika.cli.config import _config_interactive
@@ -215,9 +209,7 @@ def test_project_scoped_config_still_uses_flat_keys(
     def fake_numbered(*args, **kwargs):
         return next(seq)
 
-    monkeypatch.setattr(
-        "urika.cli_helpers.interactive_numbered", fake_numbered
-    )
+    monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
 
     settings: dict = {"project": {"name": "proj"}}
     _config_interactive(
@@ -243,9 +235,7 @@ def test_prompt_for_endpoint_key_value_writes_to_vault(urika_home, monkeypatch):
     """A non-empty value passes through to ``vault.set_global``."""
     from urika.cli.config import _prompt_for_endpoint_key_value
 
-    monkeypatch.setattr(
-        "click.prompt", lambda *a, **kw: "sk-test-12345-padding-ok"
-    )
+    monkeypatch.setattr("click.prompt", lambda *a, **kw: "sk-test-12345-padding-ok")
 
     _prompt_for_endpoint_key_value("TEST_PRIVATE_KEY")
 
@@ -315,12 +305,8 @@ def test_global_hybrid_prompts_for_endpoint_key_value(urika_home, monkeypatch):
 
     # The masked value prompt goes through click.prompt directly.
     monkeypatch.setattr("click.prompt", lambda *a, **kw: "sk-private-value-padding")
-    monkeypatch.setattr(
-        "urika.cli_helpers.interactive_numbered", fake_numbered
-    )
-    monkeypatch.setattr(
-        "urika.cli_helpers.interactive_prompt", fake_prompt
-    )
+    monkeypatch.setattr("urika.cli_helpers.interactive_numbered", fake_numbered)
+    monkeypatch.setattr("urika.cli_helpers.interactive_prompt", fake_prompt)
 
     settings: dict = {}
     _config_interactive(
@@ -386,9 +372,16 @@ endpoint = "open"
         assert open_mode["models"][agent]["model"] == "claude-opus-4-6"
         assert open_mode["models"][agent]["endpoint"] == "open"
     # Execution agents pinned to the cheaper tier.
-    for agent in ("task_agent", "evaluator", "report_agent", "presentation_agent",
-                  "tool_builder", "literature_agent", "data_agent",
-                  "project_summarizer"):
+    for agent in (
+        "task_agent",
+        "evaluator",
+        "report_agent",
+        "presentation_agent",
+        "tool_builder",
+        "literature_agent",
+        "data_agent",
+        "project_summarizer",
+    ):
         assert open_mode["models"][agent]["model"] == "claude-sonnet-4-5"
         assert open_mode["models"][agent]["endpoint"] == "open"
 

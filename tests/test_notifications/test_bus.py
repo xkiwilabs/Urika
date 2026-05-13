@@ -149,15 +149,16 @@ class TestNotificationBus:
         finally:
             bus.stop()
 
-    @pytest.mark.parametrize("phase_text,expected_event_type", [
-        ("Experiment completed", "experiment_completed"),
-        ("Experiment failed: timed out", "experiment_failed"),
-        ("Experiment paused after turn 3", "experiment_paused"),
-        ("Experiment stopped after turn 5", "experiment_stopped"),
-    ])
-    def test_map_progress_event_emits_run_status(
-        self, phase_text, expected_event_type
-    ):
+    @pytest.mark.parametrize(
+        "phase_text,expected_event_type",
+        [
+            ("Experiment completed", "experiment_completed"),
+            ("Experiment failed: timed out", "experiment_failed"),
+            ("Experiment paused after turn 3", "experiment_paused"),
+            ("Experiment stopped after turn 5", "experiment_stopped"),
+        ],
+    )
+    def test_map_progress_event_emits_run_status(self, phase_text, expected_event_type):
         """Run-status phase events map to the canonical event types."""
         bus = NotificationBus(project_name="p")
         notif = bus._map_progress_event("phase", phase_text)

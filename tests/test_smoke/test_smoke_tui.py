@@ -72,9 +72,7 @@ def project_session(tmp_path):
 
 class TestAppLifecycle:
     @pytest.mark.asyncio
-    async def test_app_launches_with_project_session(
-        self, project_session
-    ) -> None:
+    async def test_app_launches_with_project_session(self, project_session) -> None:
         app = UrikaApp(session=project_session)
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -148,9 +146,7 @@ class TestPauseFlagWrite:
     that the orchestrator's per-turn loop polls."""
 
     @pytest.mark.asyncio
-    async def test_pause_during_run_writes_flag_to_disk(
-        self, project_session
-    ) -> None:
+    async def test_pause_during_run_writes_flag_to_disk(self, project_session) -> None:
         app = UrikaApp(session=project_session)
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -219,8 +215,7 @@ class TestCopyLastResponse:
                 await pilot.pause()
 
         assert copied == ["Try a paired t-test on RT differences."], (
-            "pyperclip.copy should receive the full untruncated last "
-            "response text"
+            "pyperclip.copy should receive the full untruncated last response text"
         )
 
     @pytest.mark.asyncio
@@ -240,7 +235,9 @@ class TestCopyLastResponse:
                 app.action_copy_last_response()
                 await pilot.pause()
 
-        assert copied == [], "pyperclip.copy must NOT be called when there's no response yet"
+        assert copied == [], (
+            "pyperclip.copy must NOT be called when there's no response yet"
+        )
 
 
 # ── Free-text rejected while busy (Package I-8) ──────────────────

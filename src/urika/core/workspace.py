@@ -90,9 +90,7 @@ def _write_toml(path: Path, data: dict) -> None:
     lines: list[str] = []
 
     privacy = data.get("privacy", {}) if isinstance(data, dict) else {}
-    privacy_mode = (
-        privacy.get("mode") if isinstance(privacy, dict) else None
-    )
+    privacy_mode = privacy.get("mode") if isinstance(privacy, dict) else None
     if privacy_mode in ("private", "hybrid"):
         lines.extend(
             [
@@ -176,8 +174,6 @@ def _toml_value(val: object) -> str:
                 return k
             return _toml_basic_string(str(k))
 
-        items = ", ".join(
-            f"{_fmt_key(k)} = {_toml_value(v)}" for k, v in val.items()
-        )
+        items = ", ".join(f"{_fmt_key(k)} = {_toml_value(v)}" for k, v in val.items())
         return "{" + items + "}"
     return repr(val)

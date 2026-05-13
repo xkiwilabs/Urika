@@ -186,6 +186,4 @@ def test_clear_stale_endpoint_button_renders_in_banner(client):
 
     body = api.get("/projects/alpha").text
     assert "Clear stale" in body
-    assert (
-        'hx-post="/api/projects/alpha/active-ops/clear-stale"' in body
-    )
+    assert 'hx-post="/api/projects/alpha/active-ops/clear-stale"' in body

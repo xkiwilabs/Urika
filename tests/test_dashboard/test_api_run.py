@@ -892,9 +892,7 @@ def _patch_kill(monkeypatch, calls, killpg_calls):
     ],
 )
 @_skip_on_windows_no_killpg
-def test_op_stop_signals_process_group(
-    run_client, monkeypatch, endpoint, lock_relpath
-):
+def test_op_stop_signals_process_group(run_client, monkeypatch, endpoint, lock_relpath):
     """Each non-run stop endpoint reads its lock file's PID and signals
     the process group via os.killpg, mirroring api_run_stop."""
     import os
@@ -941,9 +939,7 @@ def test_present_stop_signals_process_group(run_client, monkeypatch):
     client, _, proj = run_client
     exp_dir = proj / "experiments" / "exp-001"
     exp_dir.mkdir(parents=True, exist_ok=True)
-    (exp_dir / ".present.lock").write_text(
-        str(os.getpid()), encoding="utf-8"
-    )
+    (exp_dir / ".present.lock").write_text(str(os.getpid()), encoding="utf-8")
     kill_calls: list[tuple[int, int]] = []
     killpg_calls: list[tuple[int, int]] = []
     _patch_kill(monkeypatch, kill_calls, killpg_calls)

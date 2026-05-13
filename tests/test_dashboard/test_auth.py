@@ -24,13 +24,13 @@ def authed_client(tmp_path: Path, monkeypatch) -> TestClient:
         proj = tmp_path / name
         proj.mkdir()
         (proj / "urika.toml").write_text(
-            f'[project]\n'
+            f"[project]\n"
             f'name = "{name}"\n'
             f'question = "q for {name}"\n'
             f'mode = "exploratory"\n'
             f'description = ""\n'
-            f'\n'
-            f'[preferences]\n'
+            f"\n"
+            f"[preferences]\n"
             f'audience = "expert"\n'
         )
 

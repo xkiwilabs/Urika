@@ -186,9 +186,7 @@ def test_advisor_page_with_session_id_renders_prior_session_messages(
     )
     save_session(project_path, s)
 
-    r = client_with_projects.get(
-        "/projects/alpha/advisor?session_id=20260428-140000"
-    )
+    r = client_with_projects.get("/projects/alpha/advisor?session_id=20260428-140000")
     assert r.status_code == 200
     body = r.text
     assert "Prior session" in body
@@ -200,9 +198,7 @@ def test_advisor_page_with_session_id_renders_prior_session_messages(
 def test_advisor_page_with_unknown_session_id_renders_not_found_notice(
     client_with_projects, tmp_path
 ):
-    r = client_with_projects.get(
-        "/projects/alpha/advisor?session_id=does-not-exist"
-    )
+    r = client_with_projects.get("/projects/alpha/advisor?session_id=does-not-exist")
     assert r.status_code == 200
     body = r.text
     assert "not found" in body.lower() or "session" in body.lower()
@@ -225,8 +221,6 @@ def test_advisor_page_with_empty_session_renders_no_messages_notice(
     )
     save_session(project_path, s)
 
-    r = client_with_projects.get(
-        "/projects/alpha/advisor?session_id=20260428-150000"
-    )
+    r = client_with_projects.get("/projects/alpha/advisor?session_id=20260428-150000")
     assert r.status_code == 200
     assert "no messages" in r.text.lower()

@@ -36,9 +36,7 @@ def _setup(tmp_path: Path) -> ReplSession:
         json.dumps(
             {
                 "status": "completed",
-                "runs": [
-                    {"run_id": "r1", "method": "lr", "metrics": {"r2": 0.5}}
-                ],
+                "runs": [{"run_id": "r1", "method": "lr", "metrics": {"r2": 0.5}}],
             }
         )
     )
@@ -53,8 +51,13 @@ def recorder(monkeypatch) -> list:
 
     def _fake(session, role_name, exp_id, prompt, *, audience=None, **kw):  # noqa: ANN001
         calls.append(
-            {"role": role_name, "exp_id": exp_id, "prompt": prompt,
-             "audience": audience, "kwargs": kw}
+            {
+                "role": role_name,
+                "exp_id": exp_id,
+                "prompt": prompt,
+                "audience": audience,
+                "kwargs": kw,
+            }
         )
         return "# Stub report\n\nSome content.\n"
 
@@ -108,9 +111,7 @@ def test_cmd_report_per_experiment_dispatches_report_agent(
     assert any(c["role"] == "report_agent" for c in recorder)
 
 
-def test_cmd_present_dispatches_presentation_agent(
-    tmp_path, recorder
-) -> None:
+def test_cmd_present_dispatches_presentation_agent(tmp_path, recorder) -> None:
     from urika.repl.cmd_agents import cmd_present
 
     cmd_present(_setup(tmp_path), "exp-001-baseline")
@@ -132,9 +133,7 @@ def test_cmd_finalize_dispatches_finalizer(tmp_path, recorder, monkeypatch) -> N
     async def _fake_finalize(*a, **k):  # noqa: ANN002, ANN003
         finalize_called.append(True)
 
-    monkeypatch.setattr(
-        "urika.orchestrator.finalize.finalize_project", _fake_finalize
-    )
+    monkeypatch.setattr("urika.orchestrator.finalize.finalize_project", _fake_finalize)
     from urika.repl.cmd_agents import cmd_finalize
 
     try:

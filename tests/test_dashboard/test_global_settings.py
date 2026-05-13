@@ -41,7 +41,7 @@ def test_global_settings_privacy_tab_multi_endpoint_editor(settings_client, tmp_
     """
     # Pre-seed one endpoint so the page renders with a row pre-filled.
     (tmp_path / "home" / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n',
         encoding="utf-8",
@@ -94,7 +94,7 @@ def test_global_settings_models_tab_has_per_mode_grids(settings_client, tmp_path
     # grid actually renders the per-agent rows (it shows an empty-state
     # otherwise).
     (tmp_path / "home" / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n',
@@ -128,9 +128,7 @@ def test_global_settings_models_tab_has_per_mode_grids(settings_client, tmp_path
     # Private mode: each row sends an endpoint + (Alpine-derived) model.
     for agent in agents:
         assert f'name="runtime_modes_private_models[{agent}][model]"' in body
-        assert (
-            f'name="runtime_modes_private_models[{agent}][endpoint]"' in body
-        )
+        assert f'name="runtime_modes_private_models[{agent}][endpoint]"' in body
     # Hybrid mode: each row sends both endpoint and model.
     for agent in agents:
         assert f'name="runtime_modes_hybrid_models[{agent}][model]"' in body
@@ -146,7 +144,7 @@ def _seed_private_endpoint(tmp_path, *, with_default_model: bool = True):
     its per-agent rows (the grid shows an empty-state otherwise).
     """
     body = (
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
     )
@@ -175,16 +173,14 @@ def test_global_settings_models_tab_hybrid_data_agent_locked_private(
     # Scope to the hybrid grid (open + private grids share the DOM
     # under x-show, but each row's hidden [endpoint] input bears the
     # right name regardless of which grid is active).
-    grid_match = re.search(
-        r'<h4>Hybrid mode</h4>.*?</table>', body, flags=re.DOTALL
-    )
+    grid_match = re.search(r"<h4>Hybrid mode</h4>.*?</table>", body, flags=re.DOTALL)
     assert grid_match is not None
     grid = grid_match.group(0)
 
     # Locate the data_agent row.
     m = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td><code>data_agent</code></td>'
-        r'.*?'
+        r"<tr[^>]*x-data=[^>]*>\s*<td><code>data_agent</code></td>"
+        r".*?"
         r'name="runtime_modes_hybrid_models\[data_agent\]\[endpoint\]"',
         grid,
         flags=re.DOTALL,
@@ -205,8 +201,8 @@ def test_global_settings_models_tab_hybrid_data_agent_locked_private(
 
     # tool_builder row: NOT locked. Visible select has both open + private.
     m = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td><code>tool_builder</code></td>'
-        r'.*?'
+        r"<tr[^>]*x-data=[^>]*>\s*<td><code>tool_builder</code></td>"
+        r".*?"
         r'name="runtime_modes_hybrid_models\[tool_builder\]\[endpoint\]"',
         grid,
         flags=re.DOTALL,
@@ -239,17 +235,15 @@ def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
     # Scope to the private-mode grid (all three grids share the DOM,
     # toggled via x-show). The grid is delimited by its <h4> header
     # and the closing </table>.
-    grid_match = re.search(
-        r'<h4>Private mode</h4>.*?</table>', body, flags=re.DOTALL
-    )
+    grid_match = re.search(r"<h4>Private mode</h4>.*?</table>", body, flags=re.DOTALL)
     assert grid_match is not None
     grid = grid_match.group(0)
     for agent in ("task_agent", "evaluator", "advisor_agent"):
         # Each row contains: <code>agent</code> ... a visible <select>
         # ... two hidden inputs (one for [endpoint], one for [model]).
         m = re.search(
-            r'<td><code>' + agent + r'</code></td>'
-            r'.*?'
+            r"<td><code>" + agent + r"</code></td>"
+            r".*?"
             r'name="runtime_modes_private_models\[' + agent + r'\]\[model\]"',
             grid,
             flags=re.DOTALL,
@@ -260,11 +254,7 @@ def test_global_settings_models_tab_private_mode_hides_open_for_all_agents(
         assert 'value="private"' in block
         assert 'value="open"' not in block
         # The hidden [endpoint] input is :value-bound to ``ep``.
-        assert (
-            'name="runtime_modes_private_models['
-            + agent
-            + '][endpoint]"' in block
-        )
+        assert 'name="runtime_modes_private_models[' + agent + '][endpoint]"' in block
 
 
 def test_global_settings_models_open_default_model_is_select(settings_client):
@@ -366,7 +356,7 @@ def test_global_settings_models_private_mode_endpoint_cell_is_text(
     import re
 
     (tmp_path / "home" / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n',
@@ -377,8 +367,8 @@ def test_global_settings_models_private_mode_endpoint_cell_is_text(
     # Locate the task_agent row and assert its options carry the
     # "<default_model> (<endpoint_name>)" labels.
     m = re.search(
-        r'<td><code>task_agent</code></td>'
-        r'.*?'
+        r"<td><code>task_agent</code></td>"
+        r".*?"
         r'name="runtime_modes_private_models\[task_agent\]\[model\]"',
         body,
         flags=re.DOTALL,
@@ -389,12 +379,8 @@ def test_global_settings_models_private_mode_endpoint_cell_is_text(
     assert "qwen3:14b (private)" in block
     # Both hidden inputs are present: [endpoint] (Alpine :value="ep")
     # and [model] (Alpine :value=opts.find(...).default_model).
-    assert (
-        'name="runtime_modes_private_models[task_agent][endpoint]"' in block
-    )
-    assert (
-        'name="runtime_modes_private_models[task_agent][model]"' in block
-    )
+    assert 'name="runtime_modes_private_models[task_agent][endpoint]"' in block
+    assert 'name="runtime_modes_private_models[task_agent][model]"' in block
     # The Endpoint cell renders the literal text "private".
     # The row's <td><span>private</span></td> sits between the agent
     # <code> and the Model <select>.
@@ -414,9 +400,7 @@ def test_global_settings_models_private_mode_empty_state_when_no_endpoints(
     assert "Add one on the Privacy tab" in body
 
 
-def test_global_settings_models_hybrid_row_has_alpine_state(
-    settings_client, tmp_path
-):
+def test_global_settings_models_hybrid_row_has_alpine_state(settings_client, tmp_path):
     """Hybrid rows carry an Alpine ``x-data`` block whose ``cat`` field
     drives the Endpoint category (open / private) and the conditional
     Model widget (cloud-models <select> vs named-private-endpoint
@@ -427,18 +411,14 @@ def test_global_settings_models_hybrid_row_has_alpine_state(
     body = settings_client.get("/settings").text
     # Alpine state declared per row — task_agent is non-forced.
     m = re.search(
-        r'<tr[^>]*x-data=\'{ cat:[^\']*\'[^>]*>\s*<td><code>task_agent</code></td>',
+        r"<tr[^>]*x-data=\'{ cat:[^\']*\'[^>]*>\s*<td><code>task_agent</code></td>",
         body,
     )
     assert m is not None
     # The hybrid row carries hidden inputs for both [endpoint] and
     # [model] — Alpine :value bindings resolve them based on ``cat``.
-    assert (
-        'name="runtime_modes_hybrid_models[task_agent][model]"' in body
-    )
-    assert (
-        'name="runtime_modes_hybrid_models[task_agent][endpoint]"' in body
-    )
+    assert 'name="runtime_modes_hybrid_models[task_agent][model]"' in body
+    assert 'name="runtime_modes_hybrid_models[task_agent][endpoint]"' in body
 
 
 def test_global_settings_models_private_default_is_endpoint_select(
@@ -481,8 +461,8 @@ def test_global_settings_models_tab_hybrid_mode_offers_both_endpoints(
     body = settings_client.get("/settings").text
     # Locate the task_agent row block.
     m = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td><code>task_agent</code></td>'
-        r'.*?'
+        r"<tr[^>]*x-data=[^>]*>\s*<td><code>task_agent</code></td>"
+        r".*?"
         r'name="runtime_modes_hybrid_models\[task_agent\]\[endpoint\]"',
         body,
         flags=re.DOTALL,
@@ -504,12 +484,12 @@ def test_global_settings_models_tab_hybrid_mode_lists_all_named_endpoints(
     import re
 
     (tmp_path / "home" / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n'
-        '\n'
-        '[privacy.endpoints.ollama]\n'
+        "\n"
+        "[privacy.endpoints.ollama]\n"
         'base_url = "http://localhost:11435"\n'
         'api_key_env = ""\n'
         'default_model = "llama3:8b"\n',
@@ -520,8 +500,8 @@ def test_global_settings_models_tab_hybrid_mode_lists_all_named_endpoints(
     # its hidden [model] input) carries every named endpoint as a
     # private-variant model option, plus the cloud category option.
     m = re.search(
-        r'<td><code>task_agent</code></td>'
-        r'.*?'
+        r"<td><code>task_agent</code></td>"
+        r".*?"
         r'name="runtime_modes_hybrid_models\[task_agent\]\[model\]"',
         body,
         flags=re.DOTALL,
@@ -547,12 +527,12 @@ def test_global_settings_models_tab_private_mode_lists_all_named_endpoints(
     import re
 
     (tmp_path / "home" / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
         'default_model = "qwen3:14b"\n'
-        '\n'
-        '[privacy.endpoints.ollama]\n'
+        "\n"
+        "[privacy.endpoints.ollama]\n"
         'base_url = "http://localhost:11435"\n'
         'api_key_env = ""\n'
         'default_model = "llama3:8b"\n',
@@ -560,15 +540,13 @@ def test_global_settings_models_tab_private_mode_lists_all_named_endpoints(
     )
     body = settings_client.get("/settings").text
     # Scope to the private-mode grid.
-    grid_match = re.search(
-        r'<h4>Private mode</h4>.*?</table>', body, flags=re.DOTALL
-    )
+    grid_match = re.search(r"<h4>Private mode</h4>.*?</table>", body, flags=re.DOTALL)
     assert grid_match is not None
     grid = grid_match.group(0)
     # task_agent row block (agent <code> through hidden [model] input).
     m = re.search(
-        r'<td><code>task_agent</code></td>'
-        r'.*?'
+        r"<td><code>task_agent</code></td>"
+        r".*?"
         r'name="runtime_modes_private_models\[task_agent\]\[model\]"',
         grid,
         flags=re.DOTALL,
@@ -597,7 +575,7 @@ def test_global_settings_models_open_mode_three_column_table(
     body = settings_client.get("/settings").text
     # Locate the open grid (its h4 anchors it).
     m = re.search(
-        r'<h4>Open mode</h4>.*?</table>',
+        r"<h4>Open mode</h4>.*?</table>",
         body,
         flags=re.DOTALL,
     )
@@ -609,17 +587,18 @@ def test_global_settings_models_open_mode_three_column_table(
     assert "<th>Model</th>" in grid
     # Each row has the literal "open" span and a hidden [endpoint]=open.
     assert "<span>open</span>" in grid
-    assert (
-        'name="runtime_modes_open_models[task_agent][endpoint]"' in grid
-    )
+    assert 'name="runtime_modes_open_models[task_agent][endpoint]"' in grid
     # Hidden input carries value="open" for the task_agent row.
-    assert re.search(
-        r'<input[^>]*type="hidden"[^>]*'
-        r'name="runtime_modes_open_models\[task_agent\]\[endpoint\]"'
-        r'[^>]*value="open"',
-        grid,
-        flags=re.DOTALL,
-    ) is not None
+    assert (
+        re.search(
+            r'<input[^>]*type="hidden"[^>]*'
+            r'name="runtime_modes_open_models\[task_agent\]\[endpoint\]"'
+            r'[^>]*value="open"',
+            grid,
+            flags=re.DOTALL,
+        )
+        is not None
+    )
     # Model select carries cloud models.
     m_sel = re.search(
         r'<select[^>]*name="runtime_modes_open_models\[task_agent\]\[model\]"[^>]*>(.*?)</select>',
@@ -641,7 +620,7 @@ def test_global_settings_models_private_mode_three_column_table(
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     m = re.search(
-        r'<h4>Private mode</h4>.*?</table>',
+        r"<h4>Private mode</h4>.*?</table>",
         body,
         flags=re.DOTALL,
     )
@@ -654,12 +633,8 @@ def test_global_settings_models_private_mode_three_column_table(
     # Endpoint cell renders the literal "private" text.
     assert "<span>private</span>" in grid
     # Two hidden inputs per row carry [endpoint] and [model].
-    assert (
-        'name="runtime_modes_private_models[task_agent][endpoint]"' in grid
-    )
-    assert (
-        'name="runtime_modes_private_models[task_agent][model]"' in grid
-    )
+    assert 'name="runtime_modes_private_models[task_agent][endpoint]"' in grid
+    assert 'name="runtime_modes_private_models[task_agent][model]"' in grid
 
 
 def test_global_settings_models_hybrid_mode_three_column_table(
@@ -673,7 +648,7 @@ def test_global_settings_models_hybrid_mode_three_column_table(
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     m = re.search(
-        r'<h4>Hybrid mode</h4>.*?</table>',
+        r"<h4>Hybrid mode</h4>.*?</table>",
         body,
         flags=re.DOTALL,
     )
@@ -688,8 +663,8 @@ def test_global_settings_models_hybrid_mode_three_column_table(
     # options (open / private) — the visible select has no name= and
     # is x-modeled to the local ``cat`` variable.
     m_row = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td><code>task_agent</code></td>'
-        r'.*?'
+        r"<tr[^>]*x-data=[^>]*>\s*<td><code>task_agent</code></td>"
+        r".*?"
         r'name="runtime_modes_hybrid_models\[task_agent\]\[endpoint\]"',
         grid,
         flags=re.DOTALL,
@@ -711,15 +686,13 @@ def test_global_settings_models_hybrid_data_agent_locked_only_private(
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     # Scope to the hybrid grid first.
-    grid_match = re.search(
-        r'<h4>Hybrid mode</h4>.*?</table>', body, flags=re.DOTALL
-    )
+    grid_match = re.search(r"<h4>Hybrid mode</h4>.*?</table>", body, flags=re.DOTALL)
     assert grid_match is not None
     grid = grid_match.group(0)
     # Locate data_agent's row block.
     m = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td><code>data_agent</code></td>'
-        r'.*?</tr>',
+        r"<tr[^>]*x-data=[^>]*>\s*<td><code>data_agent</code></td>"
+        r".*?</tr>",
         grid,
         flags=re.DOTALL,
     )
@@ -748,14 +721,12 @@ def test_global_settings_models_hybrid_tool_builder_defaults_private(
     _seed_private_endpoint(tmp_path)
     body = settings_client.get("/settings").text
     # Scope to the hybrid grid first.
-    grid_match = re.search(
-        r'<h4>Hybrid mode</h4>.*?</table>', body, flags=re.DOTALL
-    )
+    grid_match = re.search(r"<h4>Hybrid mode</h4>.*?</table>", body, flags=re.DOTALL)
     assert grid_match is not None
     grid = grid_match.group(0)
     m = re.search(
-        r'<tr[^>]*x-data=[^>]*>\s*<td><code>tool_builder</code></td>'
-        r'.*?</tr>',
+        r"<tr[^>]*x-data=[^>]*>\s*<td><code>tool_builder</code></td>"
+        r".*?</tr>",
         grid,
         flags=re.DOTALL,
     )
@@ -887,15 +858,11 @@ def test_global_settings_auto_enable_checkbox_reflects_saved_value(
     import re
 
     (tmp_path / "home" / "settings.toml").write_text(
-        "[notifications.email]\n"
-        'from_addr = "x@y.com"\n'
-        "auto_enable = true\n",
+        '[notifications.email]\nfrom_addr = "x@y.com"\nauto_enable = true\n',
         encoding="utf-8",
     )
     body = settings_client.get("/settings").text
-    m = re.search(
-        r'<input[^>]*name="notifications_email_auto_enable"[^>]*>', body
-    )
+    m = re.search(r'<input[^>]*name="notifications_email_auto_enable"[^>]*>', body)
     assert m is not None, "email auto_enable checkbox not found"
     assert "checked" in m.group(0)
 
@@ -910,9 +877,7 @@ def test_global_settings_auto_enable_checkbox_reflects_saved_value(
 # ---- Privacy tab round-trips -----------------------------------------------
 
 
-def test_global_settings_put_single_endpoint_writes_section(
-    settings_client, tmp_path
-):
+def test_global_settings_put_single_endpoint_writes_section(settings_client, tmp_path):
     """Submitting a single named endpoint via the multi-endpoint form
     writes ``[privacy.endpoints.<name>]``. No mode is written to globals."""
     r = settings_client.put(
@@ -928,17 +893,12 @@ def test_global_settings_put_single_endpoint_writes_section(
     )
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert (
-        s["privacy"]["endpoints"]["private"]["base_url"]
-        == "http://localhost:11434"
-    )
+    assert s["privacy"]["endpoints"]["private"]["base_url"] == "http://localhost:11434"
     # No system-wide default mode is persisted any more.
     assert "mode" not in s.get("privacy", {})
 
 
-def test_global_settings_put_multiple_endpoints_writes_each(
-    settings_client, tmp_path
-):
+def test_global_settings_put_multiple_endpoints_writes_each(settings_client, tmp_path):
     """Submitting two endpoints (private + ollama) writes both blocks
     under ``[privacy.endpoints]``."""
     r = settings_client.put(
@@ -965,19 +925,17 @@ def test_global_settings_put_multiple_endpoints_writes_each(
     assert eps["ollama"]["default_model"] == "llama3:8b"
 
 
-def test_global_settings_put_omitting_endpoint_deletes_it(
-    settings_client, tmp_path
-):
+def test_global_settings_put_omitting_endpoint_deletes_it(settings_client, tmp_path):
     """An endpoint present in the previous TOML but absent from the
     new submission is REMOVED — diff-apply semantics so the user can
     delete an endpoint by simply unmounting its row."""
     # Pre-seed two endpoints.
     (tmp_path / "home" / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n'
-        '\n'
-        '[privacy.endpoints.ollama]\n'
+        "\n"
+        "[privacy.endpoints.ollama]\n"
         'base_url = "http://localhost:11435"\n'
         'api_key_env = ""\n',
         encoding="utf-8",
@@ -1167,10 +1125,7 @@ def test_global_settings_put_per_mode_per_agent_writes_models_subtable(
         s["runtime"]["modes"]["open"]["models"]["task_agent"]["model"]
         == "claude-haiku-4-5"
     )
-    assert (
-        s["runtime"]["modes"]["open"]["models"]["task_agent"]["endpoint"]
-        == "open"
-    )
+    assert s["runtime"]["modes"]["open"]["models"]["task_agent"]["endpoint"] == "open"
 
 
 def test_global_settings_put_hybrid_forces_data_agent_private(
@@ -1197,14 +1152,11 @@ def test_global_settings_put_hybrid_forces_data_agent_private(
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
     assert (
-        s["runtime"]["modes"]["hybrid"]["models"]["data_agent"]["endpoint"]
-        == "private"
+        s["runtime"]["modes"]["hybrid"]["models"]["data_agent"]["endpoint"] == "private"
     )
 
 
-def test_global_settings_put_hybrid_allows_tool_builder_open(
-    settings_client, tmp_path
-):
+def test_global_settings_put_hybrid_allows_tool_builder_open(settings_client, tmp_path):
     """tool_builder DEFAULTS to private but the user is free to flip
     it to open. Only data_agent is hard-locked private in hybrid."""
     r = settings_client.put(
@@ -1224,8 +1176,7 @@ def test_global_settings_put_hybrid_allows_tool_builder_open(
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
     assert (
-        s["runtime"]["modes"]["hybrid"]["models"]["tool_builder"]["endpoint"]
-        == "open"
+        s["runtime"]["modes"]["hybrid"]["models"]["tool_builder"]["endpoint"] == "open"
     )
 
 
@@ -1254,10 +1205,7 @@ def test_global_settings_put_per_agent_endpoint_accepts_named_endpoint(
     )
     assert r.status_code == 200
     s = tomllib.loads((tmp_path / "home" / "settings.toml").read_text())
-    assert (
-        s["runtime"]["modes"]["open"]["models"]["task_agent"]["endpoint"]
-        == "ollama"
-    )
+    assert s["runtime"]["modes"]["open"]["models"]["task_agent"]["endpoint"] == "ollama"
 
 
 def test_global_settings_put_per_agent_endpoint_strips_undefined_name(
@@ -1491,9 +1439,7 @@ def test_global_settings_put_notifications_telegram_writes_section(
     assert s["notifications"]["telegram"]["bot_token_env"] == "TG_TOKEN"
 
 
-def test_global_settings_put_email_auto_enable_writes_flag(
-    settings_client, tmp_path
-):
+def test_global_settings_put_email_auto_enable_writes_flag(settings_client, tmp_path):
     """``notifications_email_auto_enable=on`` round-trips to
     ``[notifications.email].auto_enable = true``."""
     r = settings_client.put(
@@ -1513,9 +1459,7 @@ def test_global_settings_put_email_auto_enable_writes_flag(
     assert s["notifications"]["email"]["auto_enable"] is True
 
 
-def test_global_settings_put_slack_auto_enable_writes_flag(
-    settings_client, tmp_path
-):
+def test_global_settings_put_slack_auto_enable_writes_flag(settings_client, tmp_path):
     r = settings_client.put(
         "/api/settings",
         data={
@@ -1689,9 +1633,7 @@ def test_global_settings_slack_canonical_bot_token_env_renders(
     assert "SLACK_BOT_TOKEN_CANON" in body
 
 
-def test_global_settings_put_writes_slack_inbound_config(
-    settings_client, tmp_path
-):
+def test_global_settings_put_writes_slack_inbound_config(settings_client, tmp_path):
     """Saving the form persists the three new fields under
     ``[notifications.slack]``. Comma-separated allow-lists are split
     into TOML lists (whitespace stripped, empty entries dropped)."""
@@ -1760,9 +1702,7 @@ def test_global_settings_put_drops_empty_slack_inbound_fields(
 # A single one of these would have caught all five bugs at once.
 
 
-def test_round_trip_email_save_constructs_working_channel(
-    settings_client, tmp_path
-):
+def test_round_trip_email_save_constructs_working_channel(settings_client, tmp_path):
     """Regression: dashboard SAVE must persist keys EmailChannel can read."""
     r = settings_client.put(
         "/api/settings",
@@ -1833,9 +1773,7 @@ def test_round_trip_slack_save_constructs_working_channel(
     assert ch._channel == "#urika"
 
 
-def test_round_trip_telegram_save_constructs_working_channel(
-    settings_client, tmp_path
-):
+def test_round_trip_telegram_save_constructs_working_channel(settings_client, tmp_path):
     """Regression: dashboard SAVE persists telegram bot_token_env under
     the canonical key (this side was already correct — the test pins it
     in place so a future refactor doesn't regress it)."""
@@ -1856,9 +1794,7 @@ def test_round_trip_telegram_save_constructs_working_channel(
     assert tg_cfg["bot_token_env"] == "TG_TOKEN"
 
 
-def test_round_trip_global_email_legacy_key_falls_back(
-    settings_client, tmp_path
-):
+def test_round_trip_global_email_legacy_key_falls_back(settings_client, tmp_path):
     """Existing TOML files written by the buggy SAVE handler used the
     non-canonical keys (smtp_user / smtp_password_env). The template
     GETs read the canonical key first but fall back to the legacy key
@@ -1907,9 +1843,7 @@ def test_round_trip_project_email_to_save_round_trips(
     proj_path = tmp_path / "alpha"
     proj_toml = tomllib.loads((proj_path / "urika.toml").read_text())
     # Persisted under canonical ``to`` — the loader will find it.
-    assert proj_toml["notifications"]["email"]["to"] == [
-        "alice@example.com"
-    ]
+    assert proj_toml["notifications"]["email"]["to"] == ["alice@example.com"]
 
     # End-to-end: stash a global email config and call the real loader.
     # The loader reads ``~/.urika/settings.toml`` from
@@ -1990,9 +1924,7 @@ def test_round_trip_project_telegram_chat_id_save_round_trips(
 # ---- v0.4.1: per-endpoint context_window + max_output_tokens ----------
 
 
-def test_endpoint_context_window_persisted_via_json_form(
-    settings_client, tmp_path
-):
+def test_endpoint_context_window_persisted_via_json_form(settings_client, tmp_path):
     """Regression: pre-v0.4.1 the dashboard's endpoint editor only
     captured base_url/api_key/default_model. The new context_window +
     max_output_tokens fields surface the bundled CLI's per-request

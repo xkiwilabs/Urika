@@ -79,9 +79,7 @@ class LinearMixedModelMethod(ITool):
 
         numeric_df = df.select_dtypes(include="number")
         if features is None:
-            feature_cols = [
-                c for c in numeric_df.columns if c not in (target, groups)
-            ]
+            feature_cols = [c for c in numeric_df.columns if c not in (target, groups)]
         else:
             feature_cols = [c for c in features if c in df.columns and c != target]
 
@@ -106,9 +104,7 @@ class LinearMixedModelMethod(ITool):
 
         return self._fit_model(df, formula_str, groups, re_formula)
 
-    def _run_formula(
-        self, df: "pd.DataFrame", formula: str, groups: str
-    ) -> ToolResult:
+    def _run_formula(self, df: "pd.DataFrame", formula: str, groups: str) -> ToolResult:
         """Run the model with an explicit formula string."""
         # Try to extract groups from formula or params
         if not groups or groups not in df.columns:
@@ -156,15 +152,11 @@ class LinearMixedModelMethod(ITool):
             )
 
         # Extract fixed effects
-        fixed_effects = {
-            name: float(val) for name, val in result.fe_params.items()
-        }
+        fixed_effects = {name: float(val) for name, val in result.fe_params.items()}
 
         # Extract random effects variance
         try:
-            re_var = {
-                name: float(val) for name, val in result.cov_re.unstack().items()
-            }
+            re_var = {name: float(val) for name, val in result.cov_re.unstack().items()}
         except Exception:
             re_var = {"group_var": float(result.cov_re.iloc[0, 0])}
 

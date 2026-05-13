@@ -17,7 +17,9 @@ def test_sessions_list_empty_state(client_with_projects):
     assert "No conversation sessions yet" in r.text
 
 
-def test_sessions_empty_state_credits_orchestrator_chat_not_advisor(client_with_projects):
+def test_sessions_empty_state_credits_orchestrator_chat_not_advisor(
+    client_with_projects,
+):
     """Sessions are saved from REPL/TUI orchestrator chat (and the
     advisor — both write `OrchestratorSession` entries to disk via
     different code paths). The empty-state copy must not mislead
@@ -83,9 +85,7 @@ def test_sessions_list_renders_recent_sessions_with_previews(
     assert body.index("mixed-effects") < body.index("tree count data")
 
 
-def test_session_delete_returns_204_and_removes_file(
-    client_with_projects, tmp_path
-):
+def test_session_delete_returns_204_and_removes_file(client_with_projects, tmp_path):
     project_path = tmp_path / "alpha"
     s = OrchestratorSession(
         session_id="20260428-120000",
@@ -94,34 +94,24 @@ def test_session_delete_returns_204_and_removes_file(
     )
     save_session(project_path, s)
 
-    r = client_with_projects.delete(
-        "/api/projects/alpha/sessions/20260428-120000"
-    )
+    r = client_with_projects.delete("/api/projects/alpha/sessions/20260428-120000")
     assert r.status_code == 204
 
     # File gone.
-    assert not (
-        project_path / ".urika" / "sessions" / "20260428-120000.json"
-    ).exists()
+    assert not (project_path / ".urika" / "sessions" / "20260428-120000.json").exists()
 
 
 def test_session_delete_404_unknown_session(client_with_projects):
-    r = client_with_projects.delete(
-        "/api/projects/alpha/sessions/does-not-exist"
-    )
+    r = client_with_projects.delete("/api/projects/alpha/sessions/does-not-exist")
     assert r.status_code == 404
 
 
 def test_session_delete_404_unknown_project(client_with_projects):
-    r = client_with_projects.delete(
-        "/api/projects/missing/sessions/whatever"
-    )
+    r = client_with_projects.delete("/api/projects/missing/sessions/whatever")
     assert r.status_code == 404
 
 
-def test_sessions_list_links_to_advisor_with_session_id(
-    client_with_projects, tmp_path
-):
+def test_sessions_list_links_to_advisor_with_session_id(client_with_projects, tmp_path):
     project_path = tmp_path / "alpha"
     s = OrchestratorSession(
         session_id="20260428-130000",

@@ -72,6 +72,7 @@ def create_app(
     app.state.templates.env.filters["tag_status"] = tag_status
     try:
         from importlib.metadata import version as _pkg_version
+
         _version = _pkg_version("urika")
     except Exception:
         _version = "dev"
@@ -90,6 +91,7 @@ def create_app(
         deps.append(Depends(_make_auth_dependency(auth_token)))
 
     from urika.dashboard.routers import pages, api, docs as docs_router
+
     app.include_router(pages.router, dependencies=deps)
     app.include_router(api.router, dependencies=deps)
     app.include_router(docs_router.router, dependencies=deps)

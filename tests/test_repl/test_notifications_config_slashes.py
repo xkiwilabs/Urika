@@ -6,7 +6,6 @@ file, both handlers were uninvoked by any test — registration only.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -83,8 +82,7 @@ def test_cmd_notifications_show_project_lists_channels(
     # Set up channels in the project's urika.toml.
     toml_path = session.project_path / "urika.toml"
     toml_path.write_text(
-        toml_path.read_text()
-        + '\n[notifications]\nchannels = ["email"]\n',
+        toml_path.read_text() + '\n[notifications]\nchannels = ["email"]\n',
         encoding="utf-8",
     )
     cmd_notifications(session, "show")

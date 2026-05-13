@@ -87,9 +87,7 @@ class TestUpdateBannerSuppressedUnderJson:
         should_print_banner = is_tty_simulated and not json_mode
         assert should_print_banner is True
 
-    def test_non_tty_blocks_banner_even_without_json(
-        self, monkeypatch
-    ) -> None:
+    def test_non_tty_blocks_banner_even_without_json(self, monkeypatch) -> None:
         monkeypatch.setattr(sys, "argv", ["urika", "list"])
         json_mode = "--json" in sys.argv
         is_tty_simulated = False

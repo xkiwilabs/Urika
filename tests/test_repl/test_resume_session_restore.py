@@ -12,13 +12,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from urika.repl.commands_session import cmd_resume_session
 from urika.repl.session import ReplSession
 
 
-def _setup_with_sessions(tmp_path: Path, n_sessions: int = 2) -> tuple[ReplSession, list]:
+def _setup_with_sessions(
+    tmp_path: Path, n_sessions: int = 2
+) -> tuple[ReplSession, list]:
     from urika.core.models import ProjectConfig
     from urika.core.orchestrator_sessions import save_session, OrchestratorSession
     from urika.core.workspace import create_project_workspace
@@ -103,9 +104,7 @@ def test_valid_number_restores_to_orchestrator(
     user notified."""
     session, saved = _setup_with_sessions(tmp_path, n_sessions=2)
     stub_orch = _StubOrchestrator()
-    monkeypatch.setattr(
-        "urika.repl.main._get_orchestrator", lambda _s: stub_orch
-    )
+    monkeypatch.setattr("urika.repl.main._get_orchestrator", lambda _s: stub_orch)
     cmd_resume_session(session, "1")
     # Most recent (top of the list — sessions are sorted by updated desc).
     # set_messages received SOME saved session's messages.

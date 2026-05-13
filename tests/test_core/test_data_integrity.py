@@ -54,7 +54,9 @@ class TestRealDataDetection:
             "ols.py",
             "with open('stroop.csv') as f:\n    rows = f.readlines()\n",
         )
-        result = assess_run_data_source(tmp_path, project_data_paths=["data/stroop.csv"])
+        result = assess_run_data_source(
+            tmp_path, project_data_paths=["data/stroop.csv"]
+        )
         assert result["real_data"] is True
 
 
@@ -116,9 +118,7 @@ class TestSyntheticBesideRealIsAllowed:
         assert result["real_data"] is True
         assert result["synthetic_only"] is False
 
-    def test_make_blobs_in_one_file_real_data_in_another(
-        self, tmp_path: Path
-    ) -> None:
+    def test_make_blobs_in_one_file_real_data_in_another(self, tmp_path: Path) -> None:
         """If ANY method script in the experiment touches real data,
         the experiment as a whole isn't synthetic-only."""
         _seed_method(

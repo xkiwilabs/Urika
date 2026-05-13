@@ -35,11 +35,15 @@ def load_methods(project_dir: Path) -> list[dict[str, Any]]:
         logger.warning("Corrupt JSON in %s: %s", path, exc)
         return []
     if not isinstance(data, dict):
-        logger.warning("methods.json top-level is not a dict (%s); ignoring", type(data).__name__)
+        logger.warning(
+            "methods.json top-level is not a dict (%s); ignoring", type(data).__name__
+        )
         return []
     raw = data.get("methods", [])
     if not isinstance(raw, list):
-        logger.warning("methods.json 'methods' is not a list (%s); ignoring", type(raw).__name__)
+        logger.warning(
+            "methods.json 'methods' is not a list (%s); ignoring", type(raw).__name__
+        )
         return []
     clean: list[dict[str, Any]] = []
     for m in raw:

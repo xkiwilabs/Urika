@@ -38,7 +38,7 @@ def _assert_design_system(body: str) -> None:
     assert bare == [], f"Found bare .btn buttons (no modifier): {bare}"
     # The older `.breadcrumb-sep` class has no CSS rule; standardize on
     # `.breadcrumb-separator`.
-    assert "breadcrumb-sep\"" not in body, (
+    assert 'breadcrumb-sep"' not in body, (
         "page uses the deprecated `breadcrumb-sep` class; "
         "use `breadcrumb-separator` instead"
     )
@@ -241,13 +241,13 @@ def test_theme_toggle_lives_in_sidebar_not_header(audit_client):
         r'<aside class="sidebar"[^>]*>(.*?)</aside>', body, re.DOTALL
     )
     assert sidebar_match is not None
-    assert 'theme-toggle' in sidebar_match.group(1)
+    assert "theme-toggle" in sidebar_match.group(1)
     # And NOT in the page-header
     header_match = re.search(
         r'<header class="page-header"[^>]*>(.*?)</header>', body, re.DOTALL
     )
     if header_match:
-        assert 'theme-toggle' not in header_match.group(1)
+        assert "theme-toggle" not in header_match.group(1)
 
 
 # ---- brand + sidebar link styling (Task 11A.2) ---------------------------
@@ -284,10 +284,7 @@ def test_sidebar_link_active_class_applied_on_project_home(audit_client):
     # Home: exact match
     assert "window.location.pathname === '/projects/alpha'" in body
     # Experiments: startsWith
-    assert (
-        "window.location.pathname.startsWith('/projects/alpha/experiments')"
-        in body
-    )
+    assert "window.location.pathname.startsWith('/projects/alpha/experiments')" in body
 
 
 def test_app_css_defines_sidebar_link_active_style():

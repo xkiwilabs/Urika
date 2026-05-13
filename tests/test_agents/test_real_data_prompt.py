@@ -19,7 +19,11 @@ import pytest
 
 PROMPTS_DIR = (
     Path(__file__).resolve().parents[2]
-    / "src" / "urika" / "agents" / "roles" / "prompts"
+    / "src"
+    / "urika"
+    / "agents"
+    / "roles"
+    / "prompts"
 )
 
 
@@ -41,9 +45,7 @@ class TestTaskAgentForbidsSyntheticData:
         # invites the agent to negotiate around the rule.
         assert "no exceptions" in task_agent_prompt.lower()
 
-    def test_lists_canonical_forbidden_calls(
-        self, task_agent_prompt: str
-    ) -> None:
+    def test_lists_canonical_forbidden_calls(self, task_agent_prompt: str) -> None:
         # If any of these gets dropped, the agent has more wiggle room.
         for forbidden in (
             "make_classification",

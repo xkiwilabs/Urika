@@ -1,6 +1,5 @@
 """Tests for privacy endpoint check utility."""
 
-
 from urika.core.privacy import check_private_endpoint, requires_private_endpoint
 
 
@@ -50,7 +49,7 @@ class TestPrivacyCheck:
         global_home = tmp_path / "global-home"
         global_home.mkdir()
         (global_home / "settings.toml").write_text(
-            '[privacy.endpoints.private]\n'
+            "[privacy.endpoints.private]\n"
             'base_url = "http://localhost:11434"\n'
             'api_key_env = "OLLAMA_KEY"\n'
         )
@@ -72,8 +71,10 @@ class TestPrivacyCheck:
             captured["url"] = req.full_url
             return req
 
-        with patch("urllib.request.Request", side_effect=capturing_request), \
-             patch("urllib.request.urlopen", return_value=MagicMock()):
+        with (
+            patch("urllib.request.Request", side_effect=capturing_request),
+            patch("urllib.request.urlopen", return_value=MagicMock()),
+        ):
             ok, msg = check_private_endpoint(proj)
 
         assert ok is True, f"Expected global fallback to succeed, got: {msg!r}"
@@ -83,9 +84,7 @@ class TestPrivacyCheck:
             f"got: {captured.get('url')!r}"
         )
 
-    def test_hybrid_inherits_global_api_key_env_too(
-        self, tmp_path, monkeypatch
-    ):
+    def test_hybrid_inherits_global_api_key_env_too(self, tmp_path, monkeypatch):
         """When falling back to globals, the api_key_env from the global
         endpoint must also flow through so auth-protected globals get
         their bearer token sent."""
@@ -95,7 +94,7 @@ class TestPrivacyCheck:
         global_home = tmp_path / "global-home"
         global_home.mkdir()
         (global_home / "settings.toml").write_text(
-            '[privacy.endpoints.private]\n'
+            "[privacy.endpoints.private]\n"
             'base_url = "http://localhost:4200"\n'
             'api_key_env = "GLOBAL_VLLM_KEY"\n'
         )
@@ -118,8 +117,10 @@ class TestPrivacyCheck:
             captured["headers"] = dict(req.header_items())
             return req
 
-        with patch("urllib.request.Request", side_effect=capturing_request), \
-             patch("urllib.request.urlopen", return_value=MagicMock()):
+        with (
+            patch("urllib.request.Request", side_effect=capturing_request),
+            patch("urllib.request.urlopen", return_value=MagicMock()),
+        ):
             ok, msg = check_private_endpoint(proj)
 
         assert ok is True
@@ -139,8 +140,7 @@ class TestPrivacyCheck:
         global_home = tmp_path / "global-home"
         global_home.mkdir()
         (global_home / "settings.toml").write_text(
-            '[privacy.endpoints.private]\n'
-            'base_url = "http://global.example:9999"\n'
+            '[privacy.endpoints.private]\nbase_url = "http://global.example:9999"\n'
         )
         monkeypatch.setenv("URIKA_HOME", str(global_home))
 
@@ -149,7 +149,7 @@ class TestPrivacyCheck:
         (proj / "urika.toml").write_text(
             '[project]\nname = "test"\nquestion = "q"\nmode = "exploratory"\n\n'
             '[privacy]\nmode = "hybrid"\n\n'
-            '[privacy.endpoints.private]\n'
+            "[privacy.endpoints.private]\n"
             'base_url = "http://project.example:1111"\n'
         )
 
@@ -161,8 +161,10 @@ class TestPrivacyCheck:
             captured["url"] = req.full_url
             return req
 
-        with patch("urllib.request.Request", side_effect=capturing_request), \
-             patch("urllib.request.urlopen", return_value=MagicMock()):
+        with (
+            patch("urllib.request.Request", side_effect=capturing_request),
+            patch("urllib.request.urlopen", return_value=MagicMock()),
+        ):
             ok, msg = check_private_endpoint(proj)
 
         assert ok is True
@@ -233,7 +235,7 @@ class TestPrivacyCheck:
         (tmp_path / "urika.toml").write_text(
             '[project]\nname = "test"\nquestion = "q"\nmode = "exploratory"\n\n'
             '[privacy]\nmode = "hybrid"\n\n'
-            '[privacy.endpoints.private]\n'
+            "[privacy.endpoints.private]\n"
             'base_url = "http://localhost:4200"\n'
             'api_key_env = "PRIVATE_VLLM_KEY"\n'
         )
@@ -252,8 +254,10 @@ class TestPrivacyCheck:
             captured["headers"] = dict(req.header_items())
             return req
 
-        with patch("urllib.request.Request", side_effect=capturing_request), \
-             patch("urllib.request.urlopen", return_value=MagicMock()):
+        with (
+            patch("urllib.request.Request", side_effect=capturing_request),
+            patch("urllib.request.urlopen", return_value=MagicMock()),
+        ):
             ok, msg = check_private_endpoint(tmp_path)
 
         assert ok is True
@@ -264,9 +268,7 @@ class TestPrivacyCheck:
             f"expected 'Bearer sk-test-vllm-token', got {auth!r}"
         )
 
-    def test_hybrid_no_auth_header_when_api_key_env_blank(
-        self, tmp_path, monkeypatch
-    ):
+    def test_hybrid_no_auth_header_when_api_key_env_blank(self, tmp_path, monkeypatch):
         """No api_key_env configured → no Authorization header sent.
 
         Open / unauthenticated private endpoints (Ollama with default config)
@@ -289,16 +291,16 @@ class TestPrivacyCheck:
             captured["headers"] = dict(req.header_items())
             return req
 
-        with patch("urllib.request.Request", side_effect=capturing_request), \
-             patch("urllib.request.urlopen", return_value=MagicMock()):
+        with (
+            patch("urllib.request.Request", side_effect=capturing_request),
+            patch("urllib.request.urlopen", return_value=MagicMock()),
+        ):
             ok, msg = check_private_endpoint(tmp_path)
 
         assert ok is True
         assert "Authorization" not in captured["headers"]
 
-    def test_hybrid_no_auth_header_when_env_var_unset(
-        self, tmp_path, monkeypatch
-    ):
+    def test_hybrid_no_auth_header_when_env_var_unset(self, tmp_path, monkeypatch):
         """api_key_env names a var that's not set → no Authorization header.
 
         The endpoint will return 401 anyway, but at least we don't send a
@@ -311,7 +313,7 @@ class TestPrivacyCheck:
         (tmp_path / "urika.toml").write_text(
             '[project]\nname = "test"\nquestion = "q"\nmode = "exploratory"\n\n'
             '[privacy]\nmode = "hybrid"\n\n'
-            '[privacy.endpoints.private]\n'
+            "[privacy.endpoints.private]\n"
             'base_url = "http://localhost:4200"\n'
             'api_key_env = "DEFINITELY_NOT_SET"\n'
         )
@@ -326,8 +328,10 @@ class TestPrivacyCheck:
             captured["headers"] = dict(req.header_items())
             return req
 
-        with patch("urllib.request.Request", side_effect=capturing_request), \
-             patch("urllib.request.urlopen", return_value=MagicMock()):
+        with (
+            patch("urllib.request.Request", side_effect=capturing_request),
+            patch("urllib.request.urlopen", return_value=MagicMock()),
+        ):
             ok, msg = check_private_endpoint(tmp_path)
 
         assert "Authorization" not in captured["headers"]

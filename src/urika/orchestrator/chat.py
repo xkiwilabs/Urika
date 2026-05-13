@@ -125,7 +125,10 @@ class OrchestratorChat:
                         if on_output:
                             on_output("tool", f"{tool_name}: {detail}")
                         if notify:
-                            notify("orchestrator.tool", {"tool": tool_name, "detail": detail})
+                            notify(
+                                "orchestrator.tool",
+                                {"tool": tool_name, "detail": detail},
+                            )
 
                     # Text content
                     text = getattr(block, "text", None)
@@ -145,17 +148,22 @@ class OrchestratorChat:
         if result.success:
             self.messages.append({"role": "assistant", "content": result.text_output})
         else:
-            self.messages.append({"role": "assistant", "content": f"Error: {result.error}"})
+            self.messages.append(
+                {"role": "assistant", "content": f"Error: {result.error}"}
+            )
 
         if notify:
             try:
-                notify("orchestrator.done", {
-                    "success": result.success,
-                    "tokens_in": result.tokens_in,
-                    "tokens_out": result.tokens_out,
-                    "cost_usd": result.cost_usd or 0,
-                    "model": result.model,
-                })
+                notify(
+                    "orchestrator.done",
+                    {
+                        "success": result.success,
+                        "tokens_in": result.tokens_in,
+                        "tokens_out": result.tokens_out,
+                        "cost_usd": result.cost_usd or 0,
+                        "model": result.model,
+                    },
+                )
             except Exception:
                 pass
 
@@ -175,10 +183,7 @@ class OrchestratorChat:
             # failing, show that too — gives the user a window into
             # what the agent was trying to do.
             if result.text_output:
-                response = (
-                    f"{response}\n\n--- partial output ---\n"
-                    f"{result.text_output}"
-                )
+                response = f"{response}\n\n--- partial output ---\n{result.text_output}"
 
         return {
             "response": response,
@@ -252,8 +257,7 @@ class OrchestratorChat:
             )
         except Exception:
             system_prompt = (
-                "You are the Urika Orchestrator. "
-                f"Project: {variables['project_name']}."
+                f"You are the Urika Orchestrator. Project: {variables['project_name']}."
             )
 
         env = None

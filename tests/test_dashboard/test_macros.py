@@ -11,8 +11,8 @@ def test_tabs_macro_renders_tab_buttons():
     src = (
         '{% from "_macros.html" import tabs %}'
         '{% call(active) tabs("test", [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}]) %}'
-        '<div x-show="active === \'a\'">panel-a</div>'
-        '<div x-show="active === \'b\'">panel-b</div>'
+        "<div x-show=\"active === 'a'\">panel-a</div>"
+        "<div x-show=\"active === 'b'\">panel-b</div>"
         "{% endcall %}"
     )
     tpl = env.from_string(src)
@@ -26,12 +26,13 @@ def test_tabs_macro_renders_tab_buttons():
 
 def test_modal_macro_renders(tmp_path):
     from jinja2 import Environment, FileSystemLoader
+
     env = Environment(loader=FileSystemLoader("src/urika/dashboard/templates"))
     src = (
         '{% from "_macros.html" import modal %}'
         '{% call modal("test-modal", "Test") %}'
-        '<p>body content</p>'
-        '{% endcall %}'
+        "<p>body content</p>"
+        "{% endcall %}"
     )
     out = env.from_string(src).render()
     assert "modal-backdrop" in out

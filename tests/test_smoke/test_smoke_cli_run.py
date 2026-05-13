@@ -34,27 +34,27 @@ class _DeterministicRunner(AgentRunner):
     """Returns role-appropriate text. Mirrors the structure of the
     golden transcripts (prose + JSON fence)."""
 
-    _PLAN = '''```json
+    _PLAN = """```json
 {"method_name": "ridge_baseline", "steps": [{"step": 1, "action": "fit"}],
  "evaluation": {"strategy": "80/20 holdout", "metrics": ["r2"]}}
-```'''
-    _TASK = '''```json
+```"""
+    _TASK = """```json
 {"run_id": "run-001", "method": "ridge_baseline",
  "params": {"alpha": 1.0},
  "metrics": {"r2": 0.83, "rmse": 4.21},
  "observation": "Strong baseline fit.",
  "next_step": "Try a non-linear model.",
  "artifacts": ["artifacts/predicted_vs_actual.png"]}
-```'''
-    _EVAL = '''```json
+```"""
+    _EVAL = """```json
 {"criteria_met": true,
  "assessment": {"threshold": {"primary_met": true, "primary_value": 0.83}},
  "best_metrics": {"r2": 0.83},
  "summary": "Criteria met — ridge baseline above threshold."}
-```'''
-    _SUGG = '''```json
+```"""
+    _SUGG = """```json
 {"suggestions": [{"name": "follow-up", "method": "gradient boosting"}]}
-```'''
+```"""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -94,8 +94,12 @@ def _setup_project(home: Path) -> tuple[Path, str, str]:
     proj = home / "alpha"
     create_project_workspace(
         proj,
-        ProjectConfig(name="alpha", question="Does X predict Y?",
-                      mode="exploratory", data_paths=[]),
+        ProjectConfig(
+            name="alpha",
+            question="Does X predict Y?",
+            mode="exploratory",
+            data_paths=[],
+        ),
     )
     ProjectRegistry().register("alpha", proj)
     exp = create_experiment(proj, name="baseline", hypothesis="linear suffices")
@@ -149,7 +153,11 @@ def test_urika_run_real_orchestrator_records_runs_and_completes(
     lb_path = proj / "leaderboard.json"
     assert lb_path.exists()
     lb = json.loads(lb_path.read_text("utf-8"))
-    rank = lb.get("ranking") if isinstance(lb, dict) else (lb if isinstance(lb, list) else [])
+    rank = (
+        lb.get("ranking")
+        if isinstance(lb, dict)
+        else (lb if isinstance(lb, list) else [])
+    )
     assert rank, "leaderboard empty after a real run"
 
     # CLI output mentions completion + the recorded turn count.

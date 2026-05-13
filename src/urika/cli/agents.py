@@ -54,7 +54,7 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         if not _sys.stdin.isatty() and not _tui_active:
             raise click.ClickException(
                 "Pass the question as the second positional argument: "
-                "`urika advisor <project> \"<question>\"`"
+                '`urika advisor <project> "<question>"`'
             )
         text = interactive_prompt("Question or instructions", required=True)
 
@@ -425,7 +425,7 @@ def build_tool(
         if not _sys.stdin.isatty() and not _tui_active:
             raise click.ClickException(
                 "Pass the tool description as the second positional "
-                "argument: `urika build-tool <project> \"<instructions>\"`"
+                'argument: `urika build-tool <project> "<instructions>"`'
             )
         instructions = interactive_prompt(
             "Describe the tool to build (e.g., 'create a correlation heatmap tool using seaborn')",

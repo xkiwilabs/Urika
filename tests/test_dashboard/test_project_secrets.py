@@ -259,5 +259,6 @@ def test_project_secrets_file_is_chmod_0600(
         # If chmod didn't take effect we still want the test to fail
         # noisily on the platforms where it should — Linux test boxes.
         import sys
+
         if sys.platform.startswith("linux") or sys.platform == "darwin":
             assert mode == "0o600", f"expected 0o600, got {mode}"

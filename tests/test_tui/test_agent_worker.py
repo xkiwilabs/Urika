@@ -340,17 +340,13 @@ class TestAgentWorker:
         async with app.run_test() as pilot:
             await pilot.pause()
             panel = app.query_one("OutputPanel")
-            cancel_lines_before = [
-                str(s) for s in panel.lines if "Cancel" in str(s)
-            ]
+            cancel_lines_before = [str(s) for s in panel.lines if "Cancel" in str(s)]
 
             app.action_cancel_agent()
             await pilot.pause()
 
             # No cancel notice — falls through to quit, not cancel.
-            cancel_lines_after = [
-                str(s) for s in panel.lines if "Cancel" in str(s)
-            ]
+            cancel_lines_after = [str(s) for s in panel.lines if "Cancel" in str(s)]
             assert cancel_lines_after == cancel_lines_before
             # HACK: private Textual attribute — matches the HACK
             # annotations in test_command_dispatch.py.
@@ -433,9 +429,7 @@ class TestStdinBridgeDeliversInput:
     /run."""
 
     @pytest.mark.asyncio
-    async def test_worker_input_call_receives_fed_text(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_worker_input_call_receives_fed_text(self, tmp_path: Path) -> None:
         from urika.repl.commands import PROJECT_COMMANDS
         from urika.tui.agent_worker import get_active_stdin_reader
 
@@ -522,7 +516,9 @@ class TestFailedCommandSurfacing:
                 await pilot.press("enter")
                 for _ in range(50):
                     await pilot.pause()
-                    if not session.agent_running and "Experiment failed" in _panel_text(panel):
+                    if not session.agent_running and "Experiment failed" in _panel_text(
+                        panel
+                    ):
                         break
                 text = _panel_text(panel)
                 assert "Experiment failed after 1 turn" in text
@@ -556,7 +552,10 @@ class TestFailedCommandSurfacing:
                 await pilot.press("enter")
                 for _ in range(50):
                     await pilot.pause()
-                    if not session.agent_running and "boom in the orchestrator" in _panel_text(panel):
+                    if (
+                        not session.agent_running
+                        and "boom in the orchestrator" in _panel_text(panel)
+                    ):
                         break
                 text = _panel_text(panel)
                 assert "boom in the orchestrator" in text  # not swallowed

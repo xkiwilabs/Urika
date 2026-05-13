@@ -43,8 +43,7 @@ def cmd_advisor(session: ReplSession, args: str) -> None:
 
         recent = format_recent_history(load_history(session.project_path, last_n=6))
         prompt = (
-            f"Recent advisor conversation:\n\n{recent}\n\n---\n\n"
-            f"User question: {text}"
+            f"Recent advisor conversation:\n\n{recent}\n\n---\n\nUser question: {text}"
             if recent
             else text
         )

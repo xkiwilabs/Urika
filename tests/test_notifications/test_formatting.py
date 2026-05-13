@@ -31,7 +31,9 @@ def test_label_for_every_canonical_event_uses_metadata():
 
 
 def test_label_for_non_canonical_event_titlecases():
-    event = NotificationEvent(event_type="some_new_event", project_name="p", summary="s")
+    event = NotificationEvent(
+        event_type="some_new_event", project_name="p", summary="s"
+    )
     assert format_event_label(event) == "Some New Event"
 
 

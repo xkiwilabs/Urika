@@ -65,7 +65,11 @@ def test_returns_ok_even_with_empty_content_array() -> None:
 
 
 def _http_error(code: int, body: dict | str) -> urllib.error.HTTPError:
-    raw = json.dumps(body).encode("utf-8") if isinstance(body, dict) else body.encode("utf-8")
+    raw = (
+        json.dumps(body).encode("utf-8")
+        if isinstance(body, dict)
+        else body.encode("utf-8")
+    )
     return urllib.error.HTTPError(
         url="https://api.anthropic.com/v1/messages",
         code=code,
@@ -79,9 +83,7 @@ def test_401_maps_to_invalid_or_revoked_message() -> None:
     err = _http_error(
         401, {"error": {"type": "authentication_error", "message": "invalid x-api-key"}}
     )
-    with patch(
-        "urika.core.anthropic_check.urllib.request.urlopen", side_effect=err
-    ):
+    with patch("urika.core.anthropic_check.urllib.request.urlopen", side_effect=err):
         ok, msg = verify_anthropic_api_key("sk-ant-bad")
     assert ok is False
     assert "401" in msg
@@ -92,9 +94,7 @@ def test_429_maps_to_rate_limited_message() -> None:
     err = _http_error(
         429, {"error": {"type": "rate_limit_error", "message": "rate limit exceeded"}}
     )
-    with patch(
-        "urika.core.anthropic_check.urllib.request.urlopen", side_effect=err
-    ):
+    with patch("urika.core.anthropic_check.urllib.request.urlopen", side_effect=err):
         ok, msg = verify_anthropic_api_key("sk-ant-x")
     assert ok is False
     assert "429" in msg
@@ -105,9 +105,7 @@ def test_400_passes_through_anthropic_message() -> None:
     err = _http_error(
         400, {"error": {"type": "invalid_request_error", "message": "bad model"}}
     )
-    with patch(
-        "urika.core.anthropic_check.urllib.request.urlopen", side_effect=err
-    ):
+    with patch("urika.core.anthropic_check.urllib.request.urlopen", side_effect=err):
         ok, msg = verify_anthropic_api_key("sk-ant-x")
     assert ok is False
     assert "400" in msg
@@ -116,9 +114,7 @@ def test_400_passes_through_anthropic_message() -> None:
 
 def test_other_http_codes_surface_status_and_message() -> None:
     err = _http_error(503, {"error": {"message": "service down"}})
-    with patch(
-        "urika.core.anthropic_check.urllib.request.urlopen", side_effect=err
-    ):
+    with patch("urika.core.anthropic_check.urllib.request.urlopen", side_effect=err):
         ok, msg = verify_anthropic_api_key("sk-ant-x")
     assert ok is False
     assert "503" in msg
@@ -126,9 +122,7 @@ def test_other_http_codes_surface_status_and_message() -> None:
 
 def test_http_error_with_unparseable_body_falls_back_to_str() -> None:
     err = _http_error(500, "<html>oops</html>")
-    with patch(
-        "urika.core.anthropic_check.urllib.request.urlopen", side_effect=err
-    ):
+    with patch("urika.core.anthropic_check.urllib.request.urlopen", side_effect=err):
         ok, msg = verify_anthropic_api_key("sk-ant-x")
     assert ok is False
     assert "500" in msg
@@ -139,9 +133,7 @@ def test_http_error_with_unparseable_body_falls_back_to_str() -> None:
 
 def test_network_error_is_caught() -> None:
     err = urllib.error.URLError("name resolution failed")
-    with patch(
-        "urika.core.anthropic_check.urllib.request.urlopen", side_effect=err
-    ):
+    with patch("urika.core.anthropic_check.urllib.request.urlopen", side_effect=err):
         ok, msg = verify_anthropic_api_key("sk-ant-x")
     assert ok is False
     assert "network error" in msg

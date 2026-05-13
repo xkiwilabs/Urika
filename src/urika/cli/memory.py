@@ -40,21 +40,23 @@ def memory_list(project: str | None, json_output: bool) -> None:
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"project": name, "entries": rows, "memory_dir": str(memory_dir(project_path))})
+        output_json(
+            {
+                "project": name,
+                "entries": rows,
+                "memory_dir": str(memory_dir(project_path)),
+            }
+        )
         return
 
     if not rows:
         click.echo(f"No memory entries for project {name}.")
-        click.echo(
-            f"  (memory dir: {memory_dir(project_path)})"
-        )
+        click.echo(f"  (memory dir: {memory_dir(project_path)})")
         return
 
     click.echo(f"Memory entries for {name}:")
     for r in rows:
-        click.echo(
-            f"  [{r['type']}] {r['filename']} — {r['description']}"
-        )
+        click.echo(f"  [{r['type']}] {r['filename']} — {r['description']}")
 
 
 @memory.command("show")
@@ -81,9 +83,7 @@ def memory_show(project: str | None, topic: str) -> None:
             click.echo(path.read_text(encoding="utf-8"))
             return
 
-    raise click.ClickException(
-        f"No memory entry matching {topic!r} in {d}."
-    )
+    raise click.ClickException(f"No memory entry matching {topic!r} in {d}.")
 
 
 @memory.command("add")
@@ -156,9 +156,7 @@ def memory_add(
 @click.argument("project", required=False, default=None)
 @click.argument("filename")
 @click.option("--force", is_flag=True, help="Skip confirmation.")
-def memory_delete(
-    project: str | None, filename: str, force: bool
-) -> None:
+def memory_delete(project: str | None, filename: str, force: bool) -> None:
     """Trash a memory entry by filename. Trashes to memory/.trash/."""
     name = _ensure_project(project)
     project_path, _ = _resolve_project(name)

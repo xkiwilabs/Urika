@@ -55,7 +55,7 @@ class TestKnownCloudModelsAgreement:
             "claude-opus-4-6 is the dashboard template's hardcoded "
             "fallback default. If you've removed it from "
             "KNOWN_CLOUD_MODELS, also update the four 'or "
-            "\"claude-opus-4-6\"' fallback expressions in "
+            '"claude-opus-4-6"\' fallback expressions in '
             "src/urika/dashboard/templates/global_settings.html."
         )
 

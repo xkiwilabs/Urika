@@ -264,9 +264,7 @@ class TestPrivateEndpointHardFail:
         # loader inherits [privacy.endpoints] from there.
         assert "settings.toml" in msg or "global" in msg.lower()
 
-    def test_private_mode_endpoint_with_blank_url_raises(
-        self, tmp_path: Path
-    ) -> None:
+    def test_private_mode_endpoint_with_blank_url_raises(self, tmp_path: Path) -> None:
         """An endpoint defined with an empty ``base_url`` is still
         missing — defining the section without a URL is a configuration
         error, not a silent green light."""
@@ -294,18 +292,14 @@ class TestPrivateEndpointHardFail:
         with pytest.raises(MissingPrivateEndpointError):
             build_agent_env_for_endpoint(tmp_path, "tool_builder", rc)
 
-    def test_hybrid_mode_non_private_agent_does_not_raise(
-        self, tmp_path: Path
-    ) -> None:
+    def test_hybrid_mode_non_private_agent_does_not_raise(self, tmp_path: Path) -> None:
         """Hybrid mode lets agents outside the forced-private set go to
         cloud, so a missing private endpoint must NOT raise for them."""
         rc = RuntimeConfig(privacy_mode="hybrid", endpoints={})
         # Should NOT raise — planning_agent goes to cloud in hybrid mode.
         build_agent_env_for_endpoint(tmp_path, "planning_agent", rc)
 
-    def test_open_mode_missing_endpoint_does_not_raise(
-        self, tmp_path: Path
-    ) -> None:
+    def test_open_mode_missing_endpoint_does_not_raise(self, tmp_path: Path) -> None:
         """Open mode never needs a private endpoint — cloud is always
         available."""
         rc = RuntimeConfig(privacy_mode="open", endpoints={})

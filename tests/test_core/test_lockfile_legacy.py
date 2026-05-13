@@ -45,9 +45,7 @@ class TestEmptyLockIsAlwaysStale:
         # Lock is now ours with our PID.
         assert lock.read_text().strip() == str(os.getpid())
 
-    def test_empty_lock_recent_mtime_still_acquirable(
-        self, tmp_path: Path
-    ) -> None:
+    def test_empty_lock_recent_mtime_still_acquirable(self, tmp_path: Path) -> None:
         """The 6-hour age check is gone — even a freshly-touched empty
         lock should be cleared so the user isn't blocked."""
         project_dir, exp_id = _exp_dir(tmp_path)
@@ -148,9 +146,7 @@ class TestUrikaUnlockCommand:
         lock.write_text("99999999")
 
         runner = CliRunner()
-        result = runner.invoke(
-            cli, ["unlock", "myproj", exp.experiment_id]
-        )
+        result = runner.invoke(cli, ["unlock", "myproj", exp.experiment_id])
         assert result.exit_code == 0, result.output
         assert "Unlocked" in result.output
         assert not lock.exists()
@@ -186,9 +182,7 @@ class TestUrikaUnlockCommand:
         lock.write_text(str(os.getppid()))
 
         runner = CliRunner()
-        result = runner.invoke(
-            cli, ["unlock", "myproj", exp.experiment_id]
-        )
+        result = runner.invoke(cli, ["unlock", "myproj", exp.experiment_id])
         # The current process isn't named "urika*" (it's pytest), so
         # the command should refuse but instructively.
         assert result.exit_code != 0
@@ -196,9 +190,7 @@ class TestUrikaUnlockCommand:
         # The output should explain the situation.
         assert "ALIVE" in result.output or "alive" in result.output.lower()
 
-    def test_unlock_force_overrides_live_pid(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_unlock_force_overrides_live_pid(self, tmp_path: Path, monkeypatch) -> None:
         from click.testing import CliRunner
 
         from urika.cli import cli
@@ -225,9 +217,7 @@ class TestUrikaUnlockCommand:
         lock.write_text(str(os.getppid()))
 
         runner = CliRunner()
-        result = runner.invoke(
-            cli, ["unlock", "myproj", exp.experiment_id, "--force"]
-        )
+        result = runner.invoke(cli, ["unlock", "myproj", exp.experiment_id, "--force"])
         assert result.exit_code == 0, result.output
         assert not lock.exists()
 

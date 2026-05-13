@@ -34,8 +34,13 @@ class _NoSuggestionRunner:
 class _FailingAdvisorRunner:
     async def run(self, config, prompt, *, on_message=None):  # noqa: ANN001
         return AgentResult(
-            success=False, messages=[], text_output="", session_id="s",
-            num_turns=0, duration_ms=0, error="advisor unreachable",
+            success=False,
+            messages=[],
+            text_output="",
+            session_id="s",
+            num_turns=0,
+            duration_ms=0,
+            error="advisor unreachable",
         )
 
 
@@ -79,9 +84,12 @@ def test_does_not_seed_when_advisor_suggests_normally(
     class _GoodAdvisor:
         async def run(self, config, prompt, *, on_message=None):  # noqa: ANN001
             return AgentResult(
-                success=True, messages=[],
+                success=True,
+                messages=[],
                 text_output='```json\n{"suggestions": [{"name": "rf-model", "method": "random forest"}]}\n```',
-                session_id="s", num_turns=1, duration_ms=1,
+                session_id="s",
+                num_turns=1,
+                duration_ms=1,
             )
 
     proj, name = _fresh_project(tmp_path, monkeypatch)

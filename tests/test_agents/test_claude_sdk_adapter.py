@@ -105,8 +105,10 @@ class TestClaudeSDKRunnerBuildOptions:
             allowed_tools=["Read", "Task", "Agent", "ToolSearch"],
             disallowed_tools=[],
             security=SecurityPolicy(
-                writable_dirs=[], readable_dirs=[tmp_path],
-                allowed_bash_prefixes=[], blocked_bash_patterns=[],
+                writable_dirs=[],
+                readable_dirs=[tmp_path],
+                allowed_bash_prefixes=[],
+                blocked_bash_patterns=[],
             ),
             max_turns=1,
             cwd=tmp_path,
@@ -168,9 +170,7 @@ class TestComplianceSafetyNet:
             if False:  # pragma: no cover — unreachable, satisfies async-gen typing
                 yield None
 
-        monkeypatch.setattr(
-            "urika.agents.adapters.claude_sdk.query", _empty_async_gen
-        )
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _empty_async_gen)
         runner = ClaudeSDKRunner()
         # Should not raise APIKeyRequiredError; the empty generator
         # produces no messages so the result is a benign empty success.
@@ -267,10 +267,7 @@ class TestClassifyError:
     def test_transient_connection_reset(self) -> None:
         from urika.agents.adapters.claude_sdk import _classify_error
 
-        assert (
-            _classify_error("connection reset by peer mid-stream")
-            == "transient"
-        )
+        assert _classify_error("connection reset by peer mid-stream") == "transient"
 
     def test_transient_timeout(self) -> None:
         from urika.agents.adapters.claude_sdk import _classify_error
@@ -338,8 +335,7 @@ class TestClassifyError:
         from urika.agents.adapters.claude_sdk import _classify_error
 
         assert (
-            _classify_error("MissingPrivateEndpointError: not configured")
-            == "config"
+            _classify_error("MissingPrivateEndpointError: not configured") == "config"
         )
 
     def test_config_api_key_required(self) -> None:
@@ -430,9 +426,7 @@ class TestTrailingExitTolerance:
             # *after* the ResultMessage was yielded.
             raise Exception("Command failed with exit code 1 (exit code: 1)")
 
-        monkeypatch.setattr(
-            "urika.agents.adapters.claude_sdk.query", _fake_query
-        )
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
         # The adapter checks ``isinstance(msg, AssistantMessage)`` /
         # ``isinstance(msg, ResultMessage)`` — patch those names to
         # our fakes so the type checks pass.
@@ -479,9 +473,7 @@ class TestTrailingExitTolerance:
             # and result.
             raise Exception("Command failed with exit code 1 (exit code: 1)")
 
-        monkeypatch.setattr(
-            "urika.agents.adapters.claude_sdk.query", _fake_query
-        )
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
         monkeypatch.setattr(
             "urika.agents.adapters.claude_sdk.AssistantMessage",
             _FakeAssistantMessage,
@@ -522,16 +514,17 @@ class TestTrailingExitTolerance:
                 "Your credit balance is too low to access the Anthropic API."
             )
 
-        monkeypatch.setattr(
-            "urika.agents.adapters.claude_sdk.query", _fake_query
-        )
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
 
         runner = ClaudeSDKRunner()
         result = await runner.run(read_only_config, "hello")
 
         assert result.success is False
         assert result.error_category == "billing"
-        assert "credit balance" in result.error.lower() or "billing" in result.error.lower()
+        assert (
+            "credit balance" in result.error.lower()
+            or "billing" in result.error.lower()
+        )
 
     @pytest.mark.asyncio
     async def test_trailing_exit_after_is_error_max_turns_is_tolerated(
@@ -566,9 +559,7 @@ class TestTrailingExitTolerance:
             )
             raise Exception("Command failed with exit code 1 (exit code: 1)")
 
-        monkeypatch.setattr(
-            "urika.agents.adapters.claude_sdk.query", _fake_query
-        )
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
         monkeypatch.setattr(
             "urika.agents.adapters.claude_sdk.AssistantMessage",
             _FakeAssistantMessage,

@@ -70,11 +70,7 @@ def _print_dry_run_plan(
         if costs:
             costs_sorted = sorted(costs)
             mid = costs_sorted[len(costs_sorted) // 2]
-            n_runs_planned = (
-                max_experiments
-                if max_experiments is not None
-                else 1
-            )
+            n_runs_planned = max_experiments if max_experiments is not None else 1
             est_low = min(costs_sorted) * n_runs_planned
             est_high = max(costs_sorted) * n_runs_planned
             est_mid = mid * n_runs_planned
@@ -163,13 +159,13 @@ def _determine_next_experiment(
                     """
                     metrics = m.get("metrics", {})
                     nums = {
-                        k: v
-                        for k, v in metrics.items()
-                        if isinstance(v, (int, float))
+                        k: v for k, v in metrics.items() if isinstance(v, (int, float))
                     }
                     if not nums:
                         return float("-inf")
-                    higher = {k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER}
+                    higher = {
+                        k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER
+                    }
                     if higher:
                         return max(higher.values())
                     # All available metrics are lower-is-better — invert
@@ -494,13 +490,13 @@ def _run_advisor_first_for_experiment_impl(
                     """
                     metrics = m.get("metrics", {})
                     nums = {
-                        k: v
-                        for k, v in metrics.items()
-                        if isinstance(v, (int, float))
+                        k: v for k, v in metrics.items() if isinstance(v, (int, float))
                     }
                     if not nums:
                         return float("-inf")
-                    higher = {k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER}
+                    higher = {
+                        k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER
+                    }
                     if higher:
                         return max(higher.values())
                     # All available metrics are lower-is-better — invert

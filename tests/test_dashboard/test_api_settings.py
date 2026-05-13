@@ -40,7 +40,7 @@ def settings_client(tmp_path: Path, monkeypatch) -> TestClient:
     # project-settings PUT validates per-agent endpoint names against
     # the union of globals + project-local + the implicit ``open``.
     (home / "settings.toml").write_text(
-        '[privacy.endpoints.private]\n'
+        "[privacy.endpoints.private]\n"
         'base_url = "http://localhost:11434"\n'
         'api_key_env = ""\n',
         encoding="utf-8",
@@ -416,9 +416,7 @@ def _basics(**extra) -> dict:
     return base
 
 
-def test_settings_put_privacy_inherit_no_longer_accepted(
-    settings_client, tmp_path
-):
+def test_settings_put_privacy_inherit_no_longer_accepted(settings_client, tmp_path):
     """The old 'inherit' value is rejected (422) — mode is required."""
     r = settings_client.put(
         "/api/projects/alpha/settings",
@@ -442,8 +440,7 @@ def test_settings_put_privacy_private_writes_full_block(settings_client, tmp_pat
     toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
     assert toml["privacy"]["mode"] == "private"
     assert (
-        toml["privacy"]["endpoints"]["private"]["base_url"]
-        == "http://localhost:11434"
+        toml["privacy"]["endpoints"]["private"]["base_url"] == "http://localhost:11434"
     )
     assert toml["privacy"]["endpoints"]["private"]["api_key_env"] == "MY_KEY"
 
@@ -478,8 +475,7 @@ def test_settings_put_privacy_hybrid_writes_both(settings_client, tmp_path):
     toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
     assert toml["privacy"]["mode"] == "hybrid"
     assert (
-        toml["privacy"]["endpoints"]["private"]["base_url"]
-        == "http://localhost:11434"
+        toml["privacy"]["endpoints"]["private"]["base_url"] == "http://localhost:11434"
     )
 
 
@@ -605,9 +601,7 @@ def test_settings_put_notifications_unchecked_excludes_channel(
     assert "telegram" not in notifs.get("channels", [])
 
 
-def test_settings_put_notifications_no_disabled_sentinel(
-    settings_client, tmp_path
-):
+def test_settings_put_notifications_no_disabled_sentinel(settings_client, tmp_path):
     """The legacy ``_disabled`` sentinel list is no longer written."""
     r = settings_client.put(
         "/api/projects/alpha/settings",
@@ -619,9 +613,7 @@ def test_settings_put_notifications_no_disabled_sentinel(
     assert "_disabled" not in notifs
 
 
-def test_settings_put_notifications_toggle_off_clears_block(
-    settings_client, tmp_path
-):
+def test_settings_put_notifications_toggle_off_clears_block(settings_client, tmp_path):
     """Enabling a channel then unchecking it (no overrides) drops the block."""
     settings_client.put(
         "/api/projects/alpha/settings",
@@ -758,9 +750,7 @@ def test_settings_put_models_hybrid_keeps_open_for_other_agents(
     assert pa.get("endpoint") == "open"
 
 
-def test_settings_put_models_open_mode_keeps_open_endpoint(
-    settings_client, tmp_path
-):
+def test_settings_put_models_open_mode_keeps_open_endpoint(settings_client, tmp_path):
     """In open mode, all agents may set endpoint=open (no stripping)."""
     r = settings_client.put(
         "/api/projects/alpha/settings",
@@ -905,9 +895,7 @@ def test_settings_put_private_blank_url_with_global_skips_endpoint_write(
     assert "endpoints" not in toml["privacy"]
 
 
-def test_settings_put_private_explicit_url_writes_override(
-    settings_client, tmp_path
-):
+def test_settings_put_private_explicit_url_writes_override(settings_client, tmp_path):
     """A non-blank URL becomes a project-local override that wins over
     globals (per the runtime loader's precedence rules)."""
     r = settings_client.put(
@@ -922,8 +910,7 @@ def test_settings_put_private_explicit_url_writes_override(
     toml = tomllib.loads((tmp_path / "alpha" / "urika.toml").read_text())
     assert toml["privacy"]["mode"] == "private"
     assert (
-        toml["privacy"]["endpoints"]["private"]["base_url"]
-        == "http://my-server:8080"
+        toml["privacy"]["endpoints"]["private"]["base_url"] == "http://my-server:8080"
     )
 
 

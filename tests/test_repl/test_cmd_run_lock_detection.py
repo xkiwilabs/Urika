@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pytest
 
 from urika.repl.commands_run import cmd_run
 from urika.repl.session import ReplSession
@@ -25,7 +24,7 @@ def _setup(tmp_path: Path) -> tuple[ReplSession, Path]:
     create_project_workspace(
         proj, ProjectConfig(name="alpha", question="Q?", mode="exploratory")
     )
-    exp = create_experiment(proj, name="baseline", hypothesis="h")
+    create_experiment(proj, name="baseline", hypothesis="h")
     session = ReplSession()
     session.load_project(path=proj, name="alpha")
     return session, proj
@@ -36,9 +35,7 @@ def _short_circuit_run(monkeypatch) -> None:
     we're testing the *pre-run* lock-detection paths."""
     # ctx.invoke(cli_run, ...) is the real-run dispatch; replace cli.run
     # with a no-op so we don't call out to anything.
-    monkeypatch.setattr(
-        "urika.cli.run", lambda **_kw: None, raising=True
-    )
+    monkeypatch.setattr("urika.cli.run", lambda **_kw: None, raising=True)
     # Skip the interactive run-settings menu too — _prompt_numbered
     # below picks "Yes — defaults" automatically when stubbed.
 
@@ -51,9 +48,7 @@ def test_dead_pid_lock_is_cleaned_and_run_proceeds(
     lock = proj / "experiments" / exp_id / ".lock"
     lock.write_text("99999998")  # implausibly large; ProcessLookupError
     _short_circuit_run(monkeypatch)
-    monkeypatch.setattr(
-        "urika.cli._helpers._prompt_numbered", lambda *a, **k: "Yes"
-    )
+    monkeypatch.setattr("urika.cli._helpers._prompt_numbered", lambda *a, **k: "Yes")
     monkeypatch.setattr(
         "urika.repl.helpers._load_run_defaults",
         lambda s: {"max_turns": 1, "auto_mode": "auto"},

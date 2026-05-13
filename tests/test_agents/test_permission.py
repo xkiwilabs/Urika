@@ -410,7 +410,8 @@ class TestBashTimeoutCap:
         from urika.agents.permission import make_can_use_tool
 
         cb = make_can_use_tool(
-            _policy(allowed_bash=["python"]), None,
+            _policy(allowed_bash=["python"]),
+            None,
             max_method_seconds=None,
         )
         result = await cb("Bash", {"command": "python -c 'pass'"}, None)
@@ -425,7 +426,8 @@ class TestBashTimeoutCap:
         from urika.agents.permission import make_can_use_tool
 
         cb = make_can_use_tool(
-            _policy(allowed_bash=["python"]), None,
+            _policy(allowed_bash=["python"]),
+            None,
             max_method_seconds=1800,  # 30 min default
         )
         result = await cb("Bash", {"command": "python train.py"}, None)
@@ -442,7 +444,8 @@ class TestBashTimeoutCap:
         from urika.agents.permission import make_can_use_tool
 
         cb = make_can_use_tool(
-            _policy(allowed_bash=["python"]), None,
+            _policy(allowed_bash=["python"]),
+            None,
             max_method_seconds=1800,
         )
         result = await cb(
@@ -461,7 +464,8 @@ class TestBashTimeoutCap:
         from urika.agents.permission import make_can_use_tool
 
         cb = make_can_use_tool(
-            _policy(allowed_bash=["python"]), None,
+            _policy(allowed_bash=["python"]),
+            None,
             max_method_seconds=1800,
         )
         result = await cb(
@@ -479,7 +483,8 @@ class TestBashTimeoutCap:
         from urika.agents.permission import make_can_use_tool
 
         cb = make_can_use_tool(
-            _policy(readable=[Path("/tmp")]), Path("/tmp"),
+            _policy(readable=[Path("/tmp")]),
+            Path("/tmp"),
             max_method_seconds=1800,
         )
         result = await cb("Read", {"file_path": "/tmp/x"}, None)
@@ -494,7 +499,8 @@ class TestBashTimeoutCap:
         from urika.agents.permission import make_can_use_tool
 
         cb = make_can_use_tool(
-            _policy(allowed_bash=["urika"]), None,
+            _policy(allowed_bash=["urika"]),
+            None,
             max_method_seconds=1800,
         )
         result = await cb("Bash", {"command": "rm -rf /"}, None)
@@ -509,7 +515,8 @@ class TestBashTimeoutCap:
         from urika.agents.permission import make_can_use_tool
 
         cb = make_can_use_tool(
-            _policy(allowed_bash=["python"]), None,
+            _policy(allowed_bash=["python"]),
+            None,
             max_method_seconds=600,
         )
         result = await cb(
@@ -545,9 +552,7 @@ class TestLoadMaxMethodSeconds:
         )
         assert load_max_method_seconds(proj) == 7200
 
-    def test_zero_or_negative_falls_back_to_default(
-        self, tmp_path: Path
-    ) -> None:
+    def test_zero_or_negative_falls_back_to_default(self, tmp_path: Path) -> None:
         """A user typing 0 (or a negative) gets the default — not no-cap.
         Letting 0 disable the cap silently would be a footgun for
         people who think they're "removing the cap"."""

@@ -61,9 +61,7 @@ class TestLoadConfig:
     def test_project_enables_email(self, tmp_path, monkeypatch):
         """Project channels = ["email"] -> email config from global."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
-        (tmp_path / "urika.toml").write_text(
-            '[notifications]\nchannels = ["email"]\n'
-        )
+        (tmp_path / "urika.toml").write_text('[notifications]\nchannels = ["email"]\n')
         result = _load_notification_config(tmp_path)
         assert "email" in result
         assert result["email"]["smtp_server"] == "smtp.example.com"
@@ -140,18 +138,14 @@ channel = "#project-specific"
     def test_project_no_channels(self, tmp_path, monkeypatch):
         """Empty channels list -> empty."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
-        (tmp_path / "urika.toml").write_text(
-            "[notifications]\nchannels = []\n"
-        )
+        (tmp_path / "urika.toml").write_text("[notifications]\nchannels = []\n")
         result = _load_notification_config(tmp_path)
         assert result == {}
 
     def test_legacy_enabled_true(self, tmp_path, monkeypatch):
         """Legacy enabled = true turns on all globally configured channels."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_ALL)
-        (tmp_path / "urika.toml").write_text(
-            "[notifications]\nenabled = true\n"
-        )
+        (tmp_path / "urika.toml").write_text("[notifications]\nenabled = true\n")
         result = _load_notification_config(tmp_path)
         assert "email" in result
         assert "slack" in result
@@ -165,9 +159,7 @@ channel = "#project-specific"
     def test_build_bus_with_email(self, tmp_path, monkeypatch):
         """Project enables email -> bus with 1 channel."""
         _fake_home(tmp_path, monkeypatch, _GLOBAL_EMAIL)
-        (tmp_path / "urika.toml").write_text(
-            '[notifications]\nchannels = ["email"]\n'
-        )
+        (tmp_path / "urika.toml").write_text('[notifications]\nchannels = ["email"]\n')
         bus = build_bus(tmp_path)
         assert bus is not None
         assert len(bus.channels) == 1
@@ -178,9 +170,7 @@ channel = "#project-specific"
     def test_build_bus_warns_if_not_configured(self, tmp_path, monkeypatch, caplog):
         """Email enabled but no global config -> warning, no bus."""
         _fake_home(tmp_path, monkeypatch)
-        (tmp_path / "urika.toml").write_text(
-            '[notifications]\nchannels = ["email"]\n'
-        )
+        (tmp_path / "urika.toml").write_text('[notifications]\nchannels = ["email"]\n')
         with caplog.at_level(logging.WARNING):
             bus = build_bus(tmp_path)
         assert bus is None

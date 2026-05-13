@@ -302,6 +302,7 @@ class SlackChannel(NotificationChannel):
                     msg_text = event.get("text", "").strip()
                     channel = event.get("channel", "")
                     if msg_text and self._bus is not None:
+
                         def _slack_respond(text: str) -> None:
                             try:
                                 self._client.chat_postMessage(

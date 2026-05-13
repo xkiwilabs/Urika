@@ -116,9 +116,7 @@ def is_anthropic_cloud_call(
     return True
 
 
-def require_api_key(
-    model: str | None, agent_env: Mapping[str, str] | None
-) -> None:
+def require_api_key(model: str | None, agent_env: Mapping[str, str] | None) -> None:
     """Raise :class:`APIKeyRequiredError` if a cloud-bound call has no key.
 
     Layer 2 of the safety net — called by the SDK adapter before each

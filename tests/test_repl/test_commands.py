@@ -226,9 +226,7 @@ class TestCmdDelete:
                 registry_only=False,
             )
 
-        monkeypatch.setattr(
-            "urika.core.project_delete.trash_project", fake_trash
-        )
+        monkeypatch.setattr("urika.core.project_delete.trash_project", fake_trash)
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete(session, "foo")
 
@@ -247,9 +245,7 @@ class TestCmdDelete:
         def fake_confirm(*a, **kw):
             raise click.Abort()
 
-        monkeypatch.setattr(
-            "urika.core.project_delete.trash_project", fake_trash
-        )
+        monkeypatch.setattr("urika.core.project_delete.trash_project", fake_trash)
         monkeypatch.setattr("click.confirm", fake_confirm)
         cmd_delete(session, "foo")
         assert called["hit"] is False
@@ -265,9 +261,7 @@ class TestCmdDelete:
         def fake_trash(name):
             raise ProjectNotFoundError(name)
 
-        monkeypatch.setattr(
-            "urika.core.project_delete.trash_project", fake_trash
-        )
+        monkeypatch.setattr("urika.core.project_delete.trash_project", fake_trash)
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete(session, "ghost")
         assert "not registered" in capsys.readouterr().out
@@ -282,9 +276,7 @@ class TestCmdDelete:
         def fake_trash(name):
             raise ActiveRunError(tmp_path / "exp/.lock")
 
-        monkeypatch.setattr(
-            "urika.core.project_delete.trash_project", fake_trash
-        )
+        monkeypatch.setattr("urika.core.project_delete.trash_project", fake_trash)
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete(session, "foo")
         out = capsys.readouterr().out
@@ -307,9 +299,7 @@ class TestCmdDelete:
                 registry_only=False,
             )
 
-        monkeypatch.setattr(
-            "urika.core.project_delete.trash_project", fake_trash
-        )
+        monkeypatch.setattr("urika.core.project_delete.trash_project", fake_trash)
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete(session, "foo")
         assert not session.has_project
@@ -331,9 +321,7 @@ class TestCmdDelete:
                 registry_only=True,
             )
 
-        monkeypatch.setattr(
-            "urika.core.project_delete.trash_project", fake_trash
-        )
+        monkeypatch.setattr("urika.core.project_delete.trash_project", fake_trash)
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete(session, "foo")
         out = capsys.readouterr().out
@@ -353,9 +341,7 @@ class TestCmdDeleteExperiment:
         out = capsys.readouterr().out
         assert "Usage: /delete-experiment" in out
 
-    def test_confirms_then_trashes(
-        self, tmp_path: Path, monkeypatch, capsys
-    ) -> None:
+    def test_confirms_then_trashes(self, tmp_path: Path, monkeypatch, capsys) -> None:
         from urika.repl_commands import cmd_delete_experiment
         from urika.core.experiment_delete import TrashExperimentResult
 
@@ -372,9 +358,7 @@ class TestCmdDeleteExperiment:
                 trash_path=project_path / "trash" / f"{exp_id}-x",
             )
 
-        monkeypatch.setattr(
-            "urika.core.experiment_delete.trash_experiment", fake_trash
-        )
+        monkeypatch.setattr("urika.core.experiment_delete.trash_experiment", fake_trash)
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete_experiment(session, "exp-001")
 
@@ -397,9 +381,7 @@ class TestCmdDeleteExperiment:
         def fake_confirm(*a, **kw):
             raise click.Abort()
 
-        monkeypatch.setattr(
-            "urika.core.experiment_delete.trash_experiment", fake_trash
-        )
+        monkeypatch.setattr("urika.core.experiment_delete.trash_experiment", fake_trash)
         monkeypatch.setattr("click.confirm", fake_confirm)
         cmd_delete_experiment(session, "exp-001")
         assert called["hit"] is False
@@ -417,9 +399,7 @@ class TestCmdDeleteExperiment:
         def fake_trash(project_path, project_name, exp_id):
             raise ExperimentNotFoundError(exp_id)
 
-        monkeypatch.setattr(
-            "urika.core.experiment_delete.trash_experiment", fake_trash
-        )
+        monkeypatch.setattr("urika.core.experiment_delete.trash_experiment", fake_trash)
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete_experiment(session, "exp-ghost")
         assert "not found" in capsys.readouterr().out
@@ -436,9 +416,7 @@ class TestCmdDeleteExperiment:
         def fake_trash(project_path, project_name, exp_id):
             raise ActiveExperimentError(tmp_path / "exp/.lock")
 
-        monkeypatch.setattr(
-            "urika.core.experiment_delete.trash_experiment", fake_trash
-        )
+        monkeypatch.setattr("urika.core.experiment_delete.trash_experiment", fake_trash)
         monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
         cmd_delete_experiment(session, "exp-001")
         assert ".lock" in capsys.readouterr().out
@@ -496,9 +474,7 @@ class TestCmdProjectSessionHint:
         project_path = self._make_project(tmp_path, "demo")
 
         # Persist a session whose updated time is ~2 hours ago.
-        two_hours_ago = (
-            datetime.now(timezone.utc) - timedelta(hours=2)
-        ).isoformat()
+        two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
         s = OrchestratorSession(
             session_id="20260428-160000",
             started=two_hours_ago,
@@ -523,9 +499,7 @@ class TestCmdProjectSessionHint:
             def get(self, _name: str) -> Path:
                 return project_path
 
-        monkeypatch.setattr(
-            "urika.core.registry.ProjectRegistry", FakeRegistry
-        )
+        monkeypatch.setattr("urika.core.registry.ProjectRegistry", FakeRegistry)
 
         session = ReplSession()
         cmd_project(session, "demo")
@@ -536,9 +510,7 @@ class TestCmdProjectSessionHint:
         # Relative-time fragment present (matches "2 hours ago" or close).
         assert "hour" in out or "hours" in out
 
-    def test_no_session_no_hint(
-        self, tmp_path: Path, monkeypatch, capsys
-    ) -> None:
+    def test_no_session_no_hint(self, tmp_path: Path, monkeypatch, capsys) -> None:
         """When the project has no sessions, no hint is printed."""
         from urika.repl.commands import cmd_project
 
@@ -551,9 +523,7 @@ class TestCmdProjectSessionHint:
             def get(self, _name: str) -> Path:
                 return project_path
 
-        monkeypatch.setattr(
-            "urika.core.registry.ProjectRegistry", FakeRegistry
-        )
+        monkeypatch.setattr("urika.core.registry.ProjectRegistry", FakeRegistry)
 
         session = ReplSession()
         cmd_project(session, "empty")

@@ -150,9 +150,7 @@ class _TuiWriter:
             # is unchanged on Textual versions that don't expose the
             # loop the same way (e.g. when ``_loop`` lookup fails but
             # ``_thread_id`` happens to match).
-            same_thread = (
-                getattr(self._app, "_thread_id", 0) == threading.get_ident()
-            )
+            same_thread = getattr(self._app, "_thread_id", 0) == threading.get_ident()
         loop_running = textual_loop is not None and textual_loop.is_running()
         if same_thread and loop_running:
             self._write_to_panel(line)

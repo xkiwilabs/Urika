@@ -8,7 +8,6 @@ crash on simple invocations against a real project."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -42,9 +41,21 @@ def _setup(tmp_path: Path, monkeypatch) -> ReplSession:
 @pytest.mark.parametrize(
     "slash",
     [
-        "usage", "tools", "memory", "sessions", "venv", "experiment-create",
-        "experiments", "setup", "summarize", "copy", "stop", "pause",
-        "resume-session", "new-session", "logs",
+        "usage",
+        "tools",
+        "memory",
+        "sessions",
+        "venv",
+        "experiment-create",
+        "experiments",
+        "setup",
+        "summarize",
+        "copy",
+        "stop",
+        "pause",
+        "resume-session",
+        "new-session",
+        "logs",
     ],
 )
 def test_slash_is_registered(slash: str) -> None:
@@ -119,9 +130,7 @@ def test_cmd_copy_runs_with_no_buffer(tmp_path, monkeypatch, capsys) -> None:
     # The output may be a warning; no crash is the contract.
 
 
-def test_cmd_experiment_create_dispatches(
-    tmp_path, monkeypatch, capsys
-) -> None:
+def test_cmd_experiment_create_dispatches(tmp_path, monkeypatch, capsys) -> None:
     from urika.repl.commands import cmd_experiment_create
 
     session = _setup(tmp_path, monkeypatch)

@@ -48,7 +48,7 @@ def _offer_to_run_advisor_suggestions(
     _tui_active = getattr(sys.stdin, "_tui_bridge", False)
     if not sys.stdin.isatty() and not _tui_active:
         click.echo(
-            "  To run any of these, click \"New experiment\" in the dashboard's "
+            '  To run any of these, click "New experiment" in the dashboard\'s '
             "experiment list, or run `urika run "
             f"{project_name} --experiment <name>` from a terminal."
         )

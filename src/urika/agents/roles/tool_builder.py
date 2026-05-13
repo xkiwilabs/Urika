@@ -32,9 +32,7 @@ def build_config(project_dir: Path, **kwargs: object) -> AgentConfig:
 
     from urika.agents.roles.task_agent import _build_data_privacy_block
 
-    data_privacy = _build_data_privacy_block(
-        project_dir, runtime_config.privacy_mode
-    )
+    data_privacy = _build_data_privacy_block(project_dir, runtime_config.privacy_mode)
 
     return AgentConfig(
         name="tool_builder",

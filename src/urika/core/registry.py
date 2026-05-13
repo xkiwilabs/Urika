@@ -32,6 +32,7 @@ class ProjectRegistry:
                 data = json.loads(self._path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, ValueError) as exc:
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "Corrupt JSON in %s: %s — starting fresh", self._path, exc
                 )
@@ -41,6 +42,7 @@ class ProjectRegistry:
             # else as corrupt and start fresh.
             if not isinstance(data, dict):
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "Top-level of %s is not a dict (%s) — starting fresh",
                     self._path,

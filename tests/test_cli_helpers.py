@@ -88,9 +88,7 @@ def test_interactive_prompt_required_empty_retries():
     from urika.cli_helpers import interactive_prompt
 
     # First call empty, second call has value
-    with patch(
-        "urika.cli_helpers._pt_prompt", side_effect=["", "actual"]
-    ):
+    with patch("urika.cli_helpers._pt_prompt", side_effect=["", "actual"]):
         result = interactive_prompt("Enter", required=True)
         assert result == "actual"
 
@@ -98,9 +96,7 @@ def test_interactive_prompt_required_empty_retries():
 def test_interactive_prompt_keyboard_interrupt_with_default():
     from urika.cli_helpers import interactive_prompt
 
-    with patch(
-        "urika.cli_helpers._pt_prompt", side_effect=KeyboardInterrupt
-    ):
+    with patch("urika.cli_helpers._pt_prompt", side_effect=KeyboardInterrupt):
         result = interactive_prompt("Enter", default="safe")
         assert result == "safe"
 
@@ -108,10 +104,9 @@ def test_interactive_prompt_keyboard_interrupt_with_default():
 def test_interactive_prompt_keyboard_interrupt_no_default():
     from urika.cli_helpers import interactive_prompt
 
-    with patch(
-        "urika.cli_helpers._pt_prompt", side_effect=KeyboardInterrupt
-    ):
+    with patch("urika.cli_helpers._pt_prompt", side_effect=KeyboardInterrupt):
         from urika.cli_helpers import UserCancelled
+
         with pytest.raises(UserCancelled):
             interactive_prompt("Enter")
 
@@ -148,9 +143,7 @@ def test_interactive_numbered_selects_option():
     from urika.cli_helpers import interactive_numbered
 
     with patch("urika.cli_helpers._pt_prompt", return_value="2"):
-        result = interactive_numbered(
-            "Pick one:", ["alpha", "beta", "gamma"]
-        )
+        result = interactive_numbered("Pick one:", ["alpha", "beta", "gamma"])
         assert result == "beta"
 
 
@@ -167,10 +160,6 @@ def test_interactive_numbered_default():
 def test_interactive_numbered_invalid_then_valid():
     from urika.cli_helpers import interactive_numbered
 
-    with patch(
-        "urika.cli_helpers._pt_prompt", side_effect=["99", "abc", "1"]
-    ):
-        result = interactive_numbered(
-            "Pick one:", ["alpha", "beta"]
-        )
+    with patch("urika.cli_helpers._pt_prompt", side_effect=["99", "abc", "1"]):
+        result = interactive_numbered("Pick one:", ["alpha", "beta"])
         assert result == "alpha"

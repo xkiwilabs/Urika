@@ -539,9 +539,7 @@ def test_methods_page_empty_state(client_with_projects):
     assert "No methods registered yet" in r.text or "no methods" in r.text.lower()
 
 
-@pytest.mark.parametrize(
-    "bad_metrics", [["r2"], None, "garbage", 42, [{"r2": 0.5}]]
-)
+@pytest.mark.parametrize("bad_metrics", [["r2"], None, "garbage", 42, [{"r2": 0.5}]])
 def test_methods_page_survives_malformed_metrics(
     tmp_path: Path, monkeypatch, bad_metrics
 ) -> None:
@@ -550,12 +548,24 @@ def test_methods_page_survives_malformed_metrics(
     the methods page. Mirrors the v0.4.4.1 list-metrics regression
     class on the page renderer side."""
     methods = [
-        {"name": "ok", "description": "good", "script": "x.py",
-         "experiment": "exp-001", "turn": 1,
-         "metrics": {"r2": 0.5}, "status": "active"},
-        {"name": "bad", "description": "broken", "script": "y.py",
-         "experiment": "exp-001", "turn": 2,
-         "metrics": bad_metrics, "status": "active"},
+        {
+            "name": "ok",
+            "description": "good",
+            "script": "x.py",
+            "experiment": "exp-001",
+            "turn": 1,
+            "metrics": {"r2": 0.5},
+            "status": "active",
+        },
+        {
+            "name": "bad",
+            "description": "broken",
+            "script": "y.py",
+            "experiment": "exp-001",
+            "turn": 2,
+            "metrics": bad_metrics,
+            "status": "active",
+        },
     ]
     _make_project_with_methods(tmp_path, "alpha", methods)
     home = tmp_path / "home"
@@ -1165,9 +1175,7 @@ def test_projectbook_presentation_serves_final_presentation_assets(client_with_r
     final.mkdir(parents=True, exist_ok=True)
     (final / "index.html").write_text("<html></html>")
     (final / "reveal.css").write_text("body{ color: red; }")
-    r = client_with_runs.get(
-        "/projects/alpha/projectbook/presentation/reveal.css"
-    )
+    r = client_with_runs.get("/projects/alpha/projectbook/presentation/reveal.css")
     assert r.status_code == 200
     assert "color: red" in r.text
 

@@ -135,11 +135,11 @@ class TestItem6ResumePreservesFlags:
         # advisor_first toggled off.
         toml = tmp_path / "urika.toml"
         toml.write_text(
-            '[preferences]\n'
-            'max_turns_per_experiment = 7\n'
+            "[preferences]\n"
+            "max_turns_per_experiment = 7\n"
             'auto_mode = "capped"\n'
-            'advisor_first = false\n'
-            'review_criteria = true\n'
+            "advisor_first = false\n"
+            "review_criteria = true\n"
         )
 
         class _StubSession:
@@ -254,8 +254,7 @@ class TestPackageJ_RemoteRegistry:
         cmap = _build_remote_command_map()
         for blocked in ("delete", "memory", "config", "setup", "new"):
             assert blocked not in cmap, (
-                f"/{blocked} is in the blocked list but leaked into "
-                f"the remote map."
+                f"/{blocked} is in the blocked list but leaked into the remote map."
             )
         assert "delete" in _REMOTE_BLOCKED_COMMANDS
 

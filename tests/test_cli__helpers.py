@@ -170,6 +170,5 @@ def test_probe_endpoint_bypasses_system_proxy(monkeypatch) -> None:
     _probe_endpoint("http://example.invalid:11434")
     handlers = captured.get("handlers", ())
     assert any(
-        isinstance(h, urllib.request.ProxyHandler) and h.proxies == {}
-        for h in handlers
+        isinstance(h, urllib.request.ProxyHandler) and h.proxies == {} for h in handlers
     ), f"expected a ProxyHandler({{}}) in handlers, got {handlers!r}"
