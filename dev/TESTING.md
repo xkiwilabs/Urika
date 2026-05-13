@@ -51,10 +51,14 @@ this.
 `test_loop.py` (happy path + lifecycle), `test_loop_messy_output.py`
 (no fence / truncated / empty / error-string / wrong-schema agent
 output → `warning` event + `failed`, never silent `completed`),
-`test_loop_criteria.py`, `test_meta.py` (the autonomous/meta loop +
-the fresh-project "seed a baseline" safety net), `test_finalize.py` /
-`test_loop_finalize.py` (the finalize sequence — which artifacts get
-written, under what guards). Pause-vs-fail policy
+`test_loop_golden.py` (replays the realistic `tests/fixtures/transcripts/`
+corpus through the loop — prose-around-the-JSON, exact prompt schema —
+so prompt/parser drift breaks here), `test_loop_criteria.py`,
+`test_meta.py` (the autonomous/meta loop + the fresh-project "seed a
+baseline" safety net; the `urika run` non-`--auto` mirror lives in
+`tests/test_cli/test_run_planning_seed_baseline.py`),
+`test_finalize.py` / `test_loop_finalize.py` (the finalize sequence —
+which artifacts get written, under what guards). Pause-vs-fail policy
 (`_is_recoverable_failure`) is pinned here. Any new way the loop can
 terminate, or a new "if it doesn't parse, fall back" branch, needs a
 test here.
@@ -136,22 +140,26 @@ output that triggers them, so it's a good stress test.
 
 ## Known coverage gaps (keep this list honest)
 
-- **`reproduce.sh` is never actually executed.** The e2e only
-  `pip install`s `requirements.txt` (under `URIKA_SMOKE_REAL`); nothing
-  runs the script and checks it regenerates the analysis. A
-  `@pytest.mark.integration` test that runs the `reproduce.sh`
-  *template* the finalizer is told to emit (in a scratch venv) would
-  catch the day the template breaks.
-- **`cli/run_planning.py:_determine_next_experiment`** is the
-  non-`--auto` mirror of the meta loop's "seed a baseline" fix — only
-  `orchestrator/meta.py` got the v0.4.4 fix.
-- **No "golden transcript" corpus.** The loop tests use idealised
-  hand-written `FakeRunner` strings, not captured real Claude outputs.
-  A `tests/fixtures/transcripts/` directory replayed through the loop
-  would make prompt edits + parser edits jointly verifiable against
-  reality.
+- **The agent-written content's *semantic* quality** — whether the
+  finalizer's prose actually answers the question, whether the
+  generated method code is *correct* (not just syntactically valid and
+  importable). No automated check can close this; `URIKA_SMOKE_REAL=1`
+  + eyeballing the dashboard is the process.
+- **The dashboard "can't create with a real question" report** (a beta
+  user: a substantial research question / description blocks the create
+  button; "x" in every field works). The v0.4.4.1 TOML control-char
+  fix (`workspace._toml_basic_string`) is the most likely cause and is
+  covered by tests, but it's *unconfirmed* — needs the beta user's
+  browser console + network response to be sure it isn't another layer.
 - **ui-iterate** (Playwright MCP visual-polish loop) is available for
   manual layout/hover passes over the dashboard — not wired into CI.
+
+_Recently closed:_ `reproduce.sh` execution → `tests/test_integration_reproduce.py`
+runs the finalizer's `reproduce.sh` template (venv → install → run a
+`final_*.py`) end to end. The `run_planning` "seed a baseline" mirror →
+done (`cli/run_planning._determine_next_experiment` + tests). A golden
+transcript corpus → `tests/fixtures/transcripts/` replayed by
+`tests/test_orchestrator/test_loop_golden.py`.
 
 ## Convention reminders
 
