@@ -421,3 +421,86 @@ class TestCreateProjectFlow:
 
         # No JS errors during the whole flow.
         assert page.console_errors == [], page.console_errors
+
+
+# ── 5. End-to-end run flow: modal → POST → SSE log → terminal status ──
+#
+# The dashboard's "+ New experiment" → run → live-log path was never
+# driven end to end (the HTTP-level test mocks the spawn helper and
+# stops at the kwargs). This drives it in a real browser with only the
+# agent *subprocess* mocked: clicking "Run experiment" must create the
+# experiment, navigate to its log page, and the SSE-driven log viewer
+# must render the log lines and a terminal status — and report `failed`
+# (not `completed`) for a run that failed to launch.
+
+
+def _stub_spawn(monkeypatch, *, terminal_status: str = "completed",
+                launch_failed: bool = False, log_line: str = "Doing the work…"):
+    import json as _json
+
+    def _fake_spawn(project_name, project_path, experiment_id, **_kw):  # noqa: ANN001
+        exp_dir = project_path / "experiments" / experiment_id
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        lines = [log_line, "All done."]
+        if launch_failed:
+            lines = ["URIKA-LAUNCH-FAILED: OSError: exec format error"]
+            # progress.json stays at the create_experiment default (pending)
+        else:
+            (exp_dir / "progress.json").write_text(
+                _json.dumps({"status": terminal_status, "runs": [
+                    {"run_id": "r1", "method": "lr", "metrics": {"r2": 0.8}}
+                ]})
+            )
+        (exp_dir / "run.log").write_text("\n".join(lines) + "\n")
+        # No .lock — the SSE loop sees lock-gone immediately and reads
+        # the terminal status from progress.json (or the marker).
+        return 4242
+
+    # Patch both the source module and the re-export the route uses.
+    import urika.dashboard.runs as runs_module
+
+    monkeypatch.setattr(runs_module, "spawn_experiment_run", _fake_spawn, raising=False)
+    try:
+        import urika.dashboard.routers.api as api_module
+
+        monkeypatch.setattr(api_module, "spawn_experiment_run", _fake_spawn)
+    except AttributeError:
+        pass
+
+
+class TestRunFlow:
+    def _start_run(self, page, base_url: str, name: str):
+        page.goto(f"{base_url}/projects/{name}/experiments", wait_until="networkidle")
+        page.locator("button:has-text('New experiment')").first.click()
+        page.locator("button:has-text('Run experiment')").click()
+        # The POST returns HX-Redirect to the run-log page.
+        page.wait_for_url("**/experiments/**/log", timeout=10000)
+
+    def test_run_then_log_page_shows_completed(
+        self, project_with_data, page, monkeypatch
+    ) -> None:
+        base_url, name, _ = project_with_data
+        _stub_spawn(monkeypatch, terminal_status="completed")
+        self._start_run(page, base_url, name)
+        # SSE delivers the backlog + a terminal status.
+        page.wait_for_function(
+            "document.querySelector('#log-status') && "
+            "/completed/i.test(document.querySelector('#log-status').textContent)",
+            timeout=10000,
+        )
+        assert "All done." in page.locator("#log").inner_text()
+        assert page.console_errors == [], page.console_errors
+
+    def test_run_log_page_reports_failed_on_launch_failed(
+        self, project_with_data, page, monkeypatch
+    ) -> None:
+        base_url, name, _ = project_with_data
+        _stub_spawn(monkeypatch, launch_failed=True)
+        self._start_run(page, base_url, name)
+        page.wait_for_function(
+            "document.querySelector('#log-status') && "
+            "/failed/i.test(document.querySelector('#log-status').textContent)",
+            timeout=10000,
+        )
+        # And it must NOT have claimed completion.
+        assert "completed" not in page.locator("#log-status").inner_text().lower()

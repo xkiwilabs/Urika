@@ -422,3 +422,81 @@ class TestRunWithTimeout:
         from urika.tui.agent_worker import _COMMAND_TIMEOUTS
 
         assert _COMMAND_TIMEOUTS == {}
+
+
+class TestFailedCommandSurfacing:
+    """A blocking command that *fails* — whether by printing an error
+    (the way ``urika run`` reports a ``failed`` / ``paused`` status) or
+    by raising — must surface that in the OutputPanel and still clear
+    the agent-running lifecycle flag. (Confirms the v0.4.4 outcome
+    surfacing actually reaches the TUI.)"""
+
+    @pytest.mark.asyncio
+    async def test_command_that_prints_error_shows_it_in_panel(
+        self, tmp_path: Path
+    ) -> None:
+        from urika.repl.commands import PROJECT_COMMANDS
+
+        def _failed_run(session, args):
+            from urika.cli_display import print_error
+
+            # Mirrors cli.run's ``failed`` branch.
+            print_error("Experiment failed after 1 turn: data agent unavailable")
+
+        original = PROJECT_COMMANDS.get("run")
+        PROJECT_COMMANDS["run"] = {"func": _failed_run, "description": "test"}
+        try:
+            session = ReplSession()
+            session.load_project(path=tmp_path, name="fake")
+            app = UrikaApp(session=session)
+            async with app.run_test() as pilot:
+                panel = app.query_one("OutputPanel")
+                bar = app.query_one("InputBar")
+                bar.value = "/run"
+                await pilot.press("enter")
+                for _ in range(50):
+                    await pilot.pause()
+                    if not session.agent_running and "Experiment failed" in _panel_text(panel):
+                        break
+                text = _panel_text(panel)
+                assert "Experiment failed after 1 turn" in text
+                assert "data agent unavailable" in text
+                assert session.agent_running is False
+        finally:
+            if original is not None:
+                PROJECT_COMMANDS["run"] = original
+            else:
+                PROJECT_COMMANDS.pop("run", None)
+
+    @pytest.mark.asyncio
+    async def test_command_that_raises_shows_error_and_clears_state(
+        self, tmp_path: Path
+    ) -> None:
+        from urika.repl.commands import PROJECT_COMMANDS
+
+        def _crashing_run(session, args):
+            raise RuntimeError("boom in the orchestrator")
+
+        original = PROJECT_COMMANDS.get("run")
+        PROJECT_COMMANDS["run"] = {"func": _crashing_run, "description": "test"}
+        try:
+            session = ReplSession()
+            session.load_project(path=tmp_path, name="fake")
+            app = UrikaApp(session=session)
+            async with app.run_test() as pilot:
+                panel = app.query_one("OutputPanel")
+                bar = app.query_one("InputBar")
+                bar.value = "/run"
+                await pilot.press("enter")
+                for _ in range(50):
+                    await pilot.pause()
+                    if not session.agent_running and "boom in the orchestrator" in _panel_text(panel):
+                        break
+                text = _panel_text(panel)
+                assert "boom in the orchestrator" in text  # not swallowed
+                assert session.agent_running is False  # lifecycle cleaned up
+        finally:
+            if original is not None:
+                PROJECT_COMMANDS["run"] = original
+            else:
+                PROJECT_COMMANDS.pop("run", None)
