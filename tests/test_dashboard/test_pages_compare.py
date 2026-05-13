@@ -127,3 +127,52 @@ def test_compare_silently_drops_unknown_experiment_ids(compare_client):
     # Falls back to all when nothing was matched.
     assert "exp-001" in r.text
     assert "exp-002" in r.text
+
+
+@pytest.mark.parametrize(
+    "bad_metrics",
+    [
+        ["r2", "rmse"],  # list (the v0.4.4.1 format_agent_output crash shape)
+        None,
+        "garbage",
+        42,
+        [{"r2": 0.5}],  # list-of-dicts
+    ],
+)
+def test_compare_does_not_500_on_malformed_metrics(compare_client, bad_metrics):
+    """A run record with a non-dict ``metrics`` field — a sub-agent
+    corrupting progress.json, a third-party method writer — must not
+    500 the compare page. ``pages.py:626`` did ``metrics.items()``
+    after a fallback that doesn't replace truthy-non-dict values; this
+    pins that the page renders 200 either way."""
+    client, proj = compare_client
+    # Overwrite exp-002's progress.json with the malformed metrics.
+    progress_path = proj / "experiments" / "exp-002" / "progress.json"
+    progress_path.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "runs": [{"method": "lr", "metrics": bad_metrics}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    r = client.get("/projects/alpha/compare?experiments=exp-001,exp-002")
+    assert r.status_code == 200, (
+        f"compare page 5xx'd on malformed metrics={bad_metrics!r}: "
+        f"status={r.status_code}, body[:300]={r.text[:300]!r}"
+    )
+    # The clean experiment still shows.
+    assert "exp-001" in r.text
+
+
+def test_compare_no_runs_renders_cleanly(compare_client, tmp_path):
+    """An experiment with no runs at all (progress.json runs=[]) must
+    not blow up the comparison view."""
+    client, proj = compare_client
+    progress_path = proj / "experiments" / "exp-002" / "progress.json"
+    progress_path.write_text(
+        json.dumps({"status": "pending", "runs": []}), encoding="utf-8"
+    )
+    r = client.get("/projects/alpha/compare?experiments=exp-001,exp-002")
+    assert r.status_code == 200

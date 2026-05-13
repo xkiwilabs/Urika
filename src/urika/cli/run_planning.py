@@ -201,10 +201,15 @@ def _determine_next_experiment(
         except (json.JSONDecodeError, KeyError):
             pass
 
-    # If user provided instructions, always call advisor agent to think
-    # Otherwise fall back to initial plan
+    # Call the advisor agent when there's something for it to react to:
+    # the user gave instructions, there are completed experiments to
+    # build on, or this is an autonomous run (``--auto`` — the user
+    # explicitly delegated method selection to the agent). For a fresh
+    # interactive run with no instructions, fall through to the
+    # deterministic baseline seed rather than spending API credits on a
+    # cold-start advisor call.
     next_suggestion = None
-    call_advisor_agent = bool(instructions) or bool(completed)
+    call_advisor_agent = bool(instructions) or bool(completed) or bool(auto)
 
     # Check for pending suggestions from remote advisor (Telegram/Slack)
     pending_path = project_path / "suggestions" / "pending.json"
@@ -233,8 +238,16 @@ def _determine_next_experiment(
             except (json.JSONDecodeError, KeyError):
                 pass
 
-    # Call suggestion agent to think about next steps
-    if next_suggestion is None:
+    # Call suggestion agent to think about next steps — but ONLY when
+    # we actually want to (user gave instructions, or there are
+    # completed experiments to react to). Pre-v0.4.4.2 the advisor was
+    # called unconditionally for a fresh project with no plan, even in
+    # non-interactive mode — burning API credits and (worse) hanging
+    # ``urika run test-proj`` in a non-TTY context (CliRunner, dashboard
+    # subprocess, CI) before the loop's "no experiments and no plan"
+    # message could surface. The seed-baseline branch below handles the
+    # "fresh project, advisor unwanted" path deterministically.
+    if next_suggestion is None and call_advisor_agent:
         try:
             import asyncio
 

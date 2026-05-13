@@ -623,10 +623,17 @@ def project_compare(
         # Pick the best run by primary metric if known; otherwise
         # the last one.
         best = runs[-1] if runs else {}
-        metrics = best.get("metrics", {}) or {}
+        metrics = best.get("metrics", {})
+        # A run record may carry a non-dict ``metrics`` field — a
+        # sub-agent corrupting progress.json, a third-party method
+        # writer, the same shape that crashed format_agent_output in
+        # v0.4.4.1. Coerce to {} so the page renders cleanly instead of
+        # 500-ing on ``metrics.items()``.
+        if not isinstance(metrics, dict):
+            metrics = {}
         per_exp[eid] = {
             "metrics": metrics,
-            "method": best.get("method", ""),
+            "method": best.get("method", "") if isinstance(best, dict) else "",
             "status": progress.get("status", "unknown"),
             "n_runs": len(runs),
         }
@@ -1019,7 +1026,14 @@ def project_methods(request: Request, name: str) -> HTMLResponse:
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
     methods = load_methods(summary.path)
-    # Collect the union of metric keys for the sort dropdown.
+    # Defend against malformed methods.json — a non-dict ``metrics`` on
+    # an entry would crash the template's ``m.metrics.items()`` (and
+    # this set-comprehension would iterate list items as keys). Coerce
+    # to {} per entry. Same regression class as the v0.4.4.1
+    # format_agent_output list-metrics crash.
+    for m in methods:
+        if not isinstance(m.get("metrics"), dict):
+            m["metrics"] = {}
     metric_keys = sorted({k for m in methods for k in m.get("metrics", {})})
     templates = request.app.state.templates
     ctx = {

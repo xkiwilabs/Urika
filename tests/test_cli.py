@@ -786,16 +786,16 @@ class TestRunCommand:
         assert result.exit_code == 0
         assert "failed" in result.output
 
-    @pytest.mark.integration
     def test_run_no_experiments(
         self, runner: CliRunner, urika_env: dict[str, str]
     ) -> None:
-        # Should bail fast with "No experiments" — but currently hangs
-        # at network calls during the privacy preflight even when no
-        # experiments exist. TODO: short-circuit start-up when there's
-        # nothing to run. Marked integration so CI excludes it; the
-        # hang is a pre-existing bug surfaced by the new cross-platform
-        # CI matrix, not a regression from this commit.
+        """``urika run test-proj`` on a fresh project with no completed
+        experiments + no instructions must bail fast with the
+        "no experiments and no plan" message — NOT call the advisor
+        agent. v0.4.4.2 short-circuits the advisor call when neither
+        instructions nor completed experiments are present, fixing the
+        hang that previously marked this test ``@pytest.mark.integration``.
+        """
         _create_project(runner, urika_env)
         result = runner.invoke(cli, ["run", "test-proj"], env=urika_env)
         assert result.exit_code != 0

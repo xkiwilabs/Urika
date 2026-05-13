@@ -539,6 +539,39 @@ def test_methods_page_empty_state(client_with_projects):
     assert "No methods registered yet" in r.text or "no methods" in r.text.lower()
 
 
+@pytest.mark.parametrize(
+    "bad_metrics", [["r2"], None, "garbage", 42, [{"r2": 0.5}]]
+)
+def test_methods_page_survives_malformed_metrics(
+    tmp_path: Path, monkeypatch, bad_metrics
+) -> None:
+    """methods.json with a non-dict ``metrics`` on an entry — a
+    sub-agent corruption, a third-party method writer — must not 500
+    the methods page. Mirrors the v0.4.4.1 list-metrics regression
+    class on the page renderer side."""
+    methods = [
+        {"name": "ok", "description": "good", "script": "x.py",
+         "experiment": "exp-001", "turn": 1,
+         "metrics": {"r2": 0.5}, "status": "active"},
+        {"name": "bad", "description": "broken", "script": "y.py",
+         "experiment": "exp-001", "turn": 2,
+         "metrics": bad_metrics, "status": "active"},
+    ]
+    _make_project_with_methods(tmp_path, "alpha", methods)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(tmp_path / "alpha")}))
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.get("/projects/alpha/methods")
+    assert r.status_code == 200, (
+        f"methods page 5xx'd on malformed metrics={bad_metrics!r}: "
+        f"{r.status_code} {r.text[:200]!r}"
+    )
+    # Both entries still appear (the clean one wasn't dropped).
+    assert "ok" in r.text and "bad" in r.text
+
+
 def _make_project_with_knowledge(root: Path, name: str, entries: list[dict]) -> Path:
     proj = root / name
     proj.mkdir(parents=True)

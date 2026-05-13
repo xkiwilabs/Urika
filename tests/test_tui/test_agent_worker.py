@@ -424,6 +424,72 @@ class TestRunWithTimeout:
         assert _COMMAND_TIMEOUTS == {}
 
 
+class TestStdinBridgeDeliversInput:
+    """The contract: a worker handler that calls ``input()`` (or
+    ``sys.stdin.readline()``) blocks until the InputBar feeds a line
+    in. Pre-this-class the queue side was tested (text pushed in)
+    but no test confirmed the *worker* side actually read out — the
+    bridge is the load-bearing path for interactive prompts during a
+    /run."""
+
+    @pytest.mark.asyncio
+    async def test_worker_input_call_receives_fed_text(
+        self, tmp_path: Path
+    ) -> None:
+        from urika.repl.commands import PROJECT_COMMANDS
+        from urika.tui.agent_worker import get_active_stdin_reader
+
+        ready = threading.Event()
+        received: list[str] = []
+
+        def _ask_for_input(session, args):
+            ready.set()
+            # This goes through sys.stdin (the worker swapped it to
+            # _TuiStdinReader); blocks until feed() is called.
+            line = input("answer? ")
+            received.append(line)
+
+        original = PROJECT_COMMANDS.get("run")
+        PROJECT_COMMANDS["run"] = {"func": _ask_for_input, "description": "test"}
+        try:
+            session = ReplSession()
+            session.load_project(path=tmp_path, name="fake")
+            app = UrikaApp(session=session)
+            async with app.run_test() as pilot:
+                bar = app.query_one("InputBar")
+                bar.value = "/run"
+                await pilot.press("enter")
+
+                # Wait for the handler to start and hit input().
+                for _ in range(50):
+                    await pilot.pause()
+                    if ready.is_set():
+                        break
+                assert ready.is_set(), "handler never reached input()"
+
+                # Feed the active stdin reader; this is what the
+                # InputBar does when the user types while a worker is
+                # waiting on a prompt.
+                reader = get_active_stdin_reader()
+                assert reader is not None, "no active stdin reader during /run"
+                reader.feed("the-fed-line")
+
+                # The handler unblocks and records the line.
+                for _ in range(50):
+                    await pilot.pause()
+                    if not session.agent_running:
+                        break
+                assert session.agent_running is False
+                assert received == ["the-fed-line"], (
+                    f"handler did not receive the fed line: got {received!r}"
+                )
+        finally:
+            if original is not None:
+                PROJECT_COMMANDS["run"] = original
+            else:
+                PROJECT_COMMANDS.pop("run", None)
+
+
 class TestFailedCommandSurfacing:
     """A blocking command that *fails* — whether by printing an error
     (the way ``urika run`` reports a ``failed`` / ``paused`` status) or

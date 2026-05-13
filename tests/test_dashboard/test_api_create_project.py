@@ -431,6 +431,92 @@ def test_create_project_pins_chosen_private_endpoint(tmp_path: Path, monkeypatch
     assert proj_toml["privacy"]["endpoints"]["private"]["api_key_env"] == "VLLM_KEY"
 
 
+def test_create_project_hybrid_mode_pins_endpoint_too(tmp_path: Path, monkeypatch):
+    """Hybrid mode passes through the same write-back path; pin the
+    chosen endpoint under [privacy.endpoints.private] for hybrid too."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text("{}")
+    projects_root = tmp_path / "projects"
+    projects_root.mkdir()
+    (home / "settings.toml").write_text(
+        f"projects_root = '{projects_root}'\n"
+        "[privacy.endpoints.private]\n"
+        'base_url = "http://localhost:11434"\n'
+        "[privacy.endpoints.alt]\n"
+        'base_url = "http://alt:8000/v1"\n',
+        encoding="utf-8",
+    )
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "hybrid-pinned",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "hybrid",
+            "private_endpoint_name": "alt",
+        },
+    )
+    assert r.status_code == 201, r.text
+    proj_toml = tomllib.loads(
+        (projects_root / "hybrid-pinned" / "urika.toml").read_text("utf-8")
+    )
+    assert proj_toml["privacy"]["mode"] == "hybrid"
+    assert proj_toml["privacy"]["endpoints"]["private"]["base_url"] == "http://alt:8000/v1"
+
+
+def test_create_project_no_private_endpoint_name_inherits_global(
+    tmp_path: Path, monkeypatch
+):
+    """When the modal is submitted WITHOUT a private_endpoint_name —
+    e.g. the dropdown wasn't displayed because only one endpoint is
+    configured — the project should not write an [endpoints.private]
+    block (it inherits from global at runtime). Silent-drop regression
+    class: a write here would override the global with stale values."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text("{}")
+    projects_root = tmp_path / "projects"
+    projects_root.mkdir()
+    (home / "settings.toml").write_text(
+        f"projects_root = '{projects_root}'\n"
+        "[privacy.endpoints.private]\n"
+        'base_url = "http://localhost:11434"\n',
+        encoding="utf-8",
+    )
+    from fastapi.testclient import TestClient
+
+    from urika.dashboard.app import create_app
+
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "no-pin",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "private",
+            # NO private_endpoint_name
+        },
+    )
+    assert r.status_code == 201, r.text
+    proj_toml = tomllib.loads(
+        (projects_root / "no-pin" / "urika.toml").read_text("utf-8")
+    )
+    # privacy.mode is set, but no endpoints sub-block (live-inherits global).
+    assert proj_toml["privacy"]["mode"] == "private"
+    assert "endpoints" not in proj_toml.get("privacy", {})
+
+
 def test_create_project_unknown_private_endpoint_name_returns_422(
     tmp_path: Path, monkeypatch
 ):
@@ -652,6 +738,60 @@ def test_create_project_with_nonexistent_paths_still_succeeds(
     )
     # No [data] block when source path didn't exist
     assert "data" not in proj_toml or "source" not in proj_toml.get("data", {})
+
+
+def test_create_project_with_empty_data_paths_still_enriches(
+    create_client, tmp_path
+):
+    """POSTing with the data_paths field blank (the user submits the
+    modal without filling it) must still produce a USABLE project —
+    no [data] block (nothing to scan), but criteria.json must be
+    seeded and README.md regenerated. The v0.4.3.1 fix's bare-skeleton
+    concern is regressable if the no-data-paths branch silently skips
+    every part of enrich_workspace."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "no-data-proj",
+            "question": "Just exploring",
+            "mode": "exploratory",
+            "audience": "expert",
+            # NO data_paths field at all
+        },
+    )
+    assert r.status_code == 201, r.text
+    proj = projects_root / "no-data-proj"
+    proj_toml = tomllib.loads((proj / "urika.toml").read_text(encoding="utf-8"))
+    # No [data] block (nothing was scanned), no data_hashes.
+    assert "data" not in proj_toml or "source" not in proj_toml.get("data", {})
+    assert "data_hashes" not in proj_toml.get("project", {})
+    # But the *non-data parts* of enrichment must still have happened.
+    criteria_path = proj / "criteria.json"
+    assert criteria_path.exists(), "criteria.json must be seeded even with no data"
+    versions = json.loads(criteria_path.read_text())["versions"]
+    assert versions and versions[0].get("set_by") == "project_builder"
+    assert (proj / "README.md").exists()
+
+
+def test_create_project_with_blank_data_paths_string(create_client, tmp_path):
+    """Same as above but with the field explicitly empty (most browser
+    submits send an empty string for an empty textarea)."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "blank-paths",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "data_paths": "",
+        },
+    )
+    assert r.status_code == 201, r.text
+    proj = projects_root / "blank-paths"
+    assert (proj / "criteria.json").exists()
+    assert (proj / "README.md").exists()
 
 
 def test_create_project_duplicate_name_returns_409(create_client):

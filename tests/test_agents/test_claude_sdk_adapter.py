@@ -88,6 +88,39 @@ class TestClaudeSDKRunnerBuildOptions:
         options = runner._build_options(read_only_config)
         assert options.cwd is None
 
+    def test_sandbox_escape_tools_in_allowed_are_overridden_by_disallowed(
+        self, tmp_path: Path
+    ) -> None:
+        """Belt-and-braces: if a role's ``allowed_tools`` mistakenly
+        lists Task / Agent / ToolSearch, ``_build_options`` must still
+        append them to ``disallowed_tools`` (which wins). The v0.4.3.1
+        sub-agent escape fix relies on this — the
+        ``permission._SANDBOX_ESCAPING_TOOLS`` denial is permission-side;
+        this is the SDK-options-side defense documented in
+        ``permission.py:264-267``."""
+        cfg = AgentConfig(
+            name="misconfigured",
+            system_prompt="oops",
+            # Pretend a role config drift accidentally listed escape tools.
+            allowed_tools=["Read", "Task", "Agent", "ToolSearch"],
+            disallowed_tools=[],
+            security=SecurityPolicy(
+                writable_dirs=[], readable_dirs=[tmp_path],
+                allowed_bash_prefixes=[], blocked_bash_patterns=[],
+            ),
+            max_turns=1,
+            cwd=tmp_path,
+        )
+        options = ClaudeSDKRunner()._build_options(cfg)
+        # All three escape tools land in disallowed_tools regardless.
+        for tool in ("Task", "Agent", "ToolSearch"):
+            assert tool in options.disallowed_tools, (
+                f"{tool} missing from disallowed_tools despite the override "
+                f"— v0.4.3.1 sub-agent escape defense regressed"
+            )
+        # No duplicates.
+        assert len(options.disallowed_tools) == len(set(options.disallowed_tools))
+
     def test_can_use_tool_is_set_for_security_enforcement(
         self, read_only_config: AgentConfig
     ) -> None:

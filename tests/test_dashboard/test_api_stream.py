@@ -101,6 +101,81 @@ def test_stream_reports_failed_on_launch_failed_marker(tmp_path: Path, monkeypat
     assert '"completed"' not in body
 
 
+def _stream_body_with_progress(
+    tmp_path: Path, monkeypatch, *, progress_status: str
+) -> str:
+    """Helper: build a project where the orchestrator wrote a terminal
+    status to progress.json (the run completed/stopped/failed cleanly,
+    no LAUNCH-FAILED marker), and stream the SSE log."""
+    proj = _make_project_with_log(
+        tmp_path, "alpha", "exp-001", "all done\n", lock=False
+    )
+    (proj / "experiments" / "exp-001" / "progress.json").write_text(
+        json.dumps({"status": progress_status, "runs": []})
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+    with client.stream("GET", "/api/projects/alpha/runs/exp-001/stream") as r:
+        return b"".join(r.iter_bytes()).decode("utf-8")
+
+
+def test_stream_reports_completed_when_progress_says_completed(
+    tmp_path: Path, monkeypatch
+):
+    """The orchestrator wrote ``status="completed"`` to progress.json
+    before releasing the lock — SSE must echo that, not lie with
+    something else."""
+    body = _stream_body_with_progress(
+        tmp_path, monkeypatch, progress_status="completed"
+    )
+    assert "event: status" in body
+    assert '"completed"' in body
+
+
+def test_stream_reports_stopped_from_progress_json(tmp_path: Path, monkeypatch):
+    """Pre-v0.3.2 regression class — the user clicked Stop, the
+    orchestrator wrote ``status="stopped"``, but SSE emitted
+    ``"completed"``. The api.py:2855-2866 branch must propagate
+    ``stopped``."""
+    body = _stream_body_with_progress(
+        tmp_path, monkeypatch, progress_status="stopped"
+    )
+    assert "event: status" in body
+    assert '"stopped"' in body
+    assert '"completed"' not in body
+
+
+def test_stream_reports_failed_from_progress_json(tmp_path: Path, monkeypatch):
+    """``progress.json`` status="failed" (orchestrator-written hard fail,
+    no LAUNCH-FAILED marker) — SSE must surface ``failed``, not
+    ``completed`` (the only path tested previously was the
+    LAUNCH-FAILED marker)."""
+    body = _stream_body_with_progress(
+        tmp_path, monkeypatch, progress_status="failed"
+    )
+    assert "event: status" in body
+    assert '"failed"' in body
+    assert '"completed"' not in body
+
+
+def test_stream_falls_back_to_completed_when_progress_status_unknown(
+    tmp_path: Path, monkeypatch
+):
+    """progress.json with a status the route doesn't recognise (pending
+    / running / blank / typo) — defensive fallback is ``completed``
+    (lock is gone, so the run must have ended somehow)."""
+    body = _stream_body_with_progress(
+        tmp_path, monkeypatch, progress_status="pending"
+    )
+    assert "event: status" in body
+    # Either completed (legacy fallback) is acceptable; failed would
+    # also be acceptable if the route gets stricter — but NOT a 500.
+    assert '"completed"' in body or '"failed"' in body
+
+
 def test_stream_404_unknown_project(stream_client_completed):
     r = stream_client_completed.get("/api/projects/nonexistent/runs/exp-001/stream")
     assert r.status_code == 404
