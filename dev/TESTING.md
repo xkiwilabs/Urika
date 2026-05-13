@@ -71,12 +71,13 @@ test here.
 - **Dashboard browser** — `tests/test_smoke/test_smoke_dashboard.py`
   (Playwright, `@pytest.mark.integration`, skipped if chromium absent):
   real browser + real uvicorn, agent subprocess stubbed. Covers the
-  full "+ New project → enriched project on disk" (incl. the
-  "Fill example" prefill button), "+ New experiment → run → SSE log
-  page → terminal status (incl. launch-failed → `failed`)", and the
-  page-render / vendored-asset checks. **This is the layer that catches
-  UI plumbing bugs and browser-side JS errors** (e.g. the invalid
-  `pattern` regex).
+  full "+ New project → enriched project on disk" (the modal is filled
+  via the `_fill_new_project_form` test helper / `_NEW_PROJECT_EXAMPLE`
+  — there is no "fill example" affordance in the production UI),
+  "+ New experiment → run → SSE log page → terminal status (incl.
+  launch-failed → `failed`)", and the page-render / vendored-asset
+  checks. **This is the layer that catches UI plumbing bugs and
+  browser-side JS errors** (e.g. the invalid `pattern` regex).
 - **Seed a project from a real dataset (no LLM)** —
   `tests/test_integration_seed_from_dataset.py` (`@pytest.mark.integration`,
   skipped if `dev/test-datasets/` absent): runs

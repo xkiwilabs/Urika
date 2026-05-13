@@ -206,18 +206,6 @@
 
       <div class="form-actions">
         <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
-        {# Convenience: prefill the text fields with a worked example
-           (a classic Stroop study) so a new user / a UI test sees what
-           a filled-in form looks like. Data path is left blank — point
-           it at your own CSV / data directory. #}
-        <button type="button" class="btn btn--ghost" data-testid="np-fill-example"
-                title="Prefill name / question / description with a worked example"
-                @click="
-          document.getElementById('np-name').value = 'example-stroop';
-          document.getElementById('np-question').value = 'Is there a statistically significant Stroop interference effect — slower reaction times in incongruent than congruent trials — and what is its effect size?';
-          document.getElementById('np-description').value = 'Reaction-time data from a classic Stroop colour-word interference task, within-subjects design (each participant completes congruent and incongruent trials). The goal is to quantify and statistically test the Stroop interference effect.';
-          document.getElementById('np-mode').value = 'confirmatory';
-        ">Fill example</button>
         <button type="submit" class="btn btn--primary">Create project</button>
         <span id="new-project-feedback" class="text-muted"></span>
       </div>

@@ -355,6 +355,45 @@ class TestDocsPage:
 # through real Alpine/HTMX in a real chromium.
 
 
+# A worked example for the New Project form — lives here in the test
+# helpers, NOT in the production UI. Lets a UI test (or a dev poking at
+# the dashboard via the Playwright REPL) populate the modal quickly.
+_NEW_PROJECT_EXAMPLE = {
+    "name": "example-stroop",
+    "question": (
+        "Is there a statistically significant Stroop interference effect — "
+        "slower reaction times in incongruent than congruent trials — and "
+        "what is its effect size?"
+    ),
+    "description": (
+        "Reaction-time data from a classic Stroop colour-word interference "
+        "task, within-subjects design (each participant completes congruent "
+        "and incongruent trials). Quantify and statistically test the Stroop "
+        "interference effect."
+    ),
+    "mode": "confirmatory",
+}
+
+
+def _fill_new_project_form(page, *, data_path, example=None, **overrides):
+    """Open the "+ New project" modal and fill its fields.
+
+    Defaults to ``_NEW_PROJECT_EXAMPLE``; pass ``example=`` to use a
+    different dict, or keyword overrides for individual fields. Does NOT
+    submit. ``data_path`` is required (the example deliberately has no
+    data path).
+    """
+    values = {**(example or _NEW_PROJECT_EXAMPLE), **overrides}
+    page.locator("button:has-text('New project')").first.click()
+    page.fill("#np-name", values["name"])
+    page.fill("#np-question", values["question"])
+    if values.get("description"):
+        page.fill("#np-description", values["description"])
+    if values.get("mode"):
+        page.select_option("#np-mode", values["mode"])
+    page.fill("#np-data-paths", str(data_path))
+
+
 class TestCreateProjectFlow:
     def test_new_project_modal_creates_an_enriched_project(
         self, dashboard_server, page, tmp_path
@@ -377,17 +416,13 @@ class TestCreateProjectFlow:
         data_csv.write_text("x,y\n1,2\n3,4\n5,6\n7,8\n", encoding="utf-8")
 
         page.goto(f"{base_url}/projects", wait_until="networkidle")
-        page.locator("button:has-text('New project')").first.click()
-        # Modal fields.
-        page.fill("#np-name", "browser-made")
-        page.fill("#np-question", "Does x predict y?")
-        page.fill("#np-data-paths", str(data_csv))
+        _fill_new_project_form(page, data_path=data_csv)
         page.locator("button:has-text('Create project')").click()
 
         # Wait for the project directory + the enrichment artifacts to
         # appear on disk (the POST handler runs create_project_workspace
         # then enrich_workspace synchronously).
-        proj = project_root / "browser-made"
+        proj = project_root / _NEW_PROJECT_EXAMPLE["name"]
         deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
             if (proj / "criteria.json").exists() and (proj / "README.md").exists():
@@ -411,6 +446,7 @@ class TestCreateProjectFlow:
         assert "data_hashes" in tdata.get("project", {}), (
             "urika.toml has no [project].data_hashes — drift baseline missing"
         )
+        assert "Stroop" in tdata.get("project", {}).get("question", "")
         # criteria.json has an initial version with a non-empty criteria dict.
         import json as _json
 
@@ -420,48 +456,6 @@ class TestCreateProjectFlow:
         assert versions[0].get("criteria"), "initial criteria version is empty"
 
         # No JS errors during the whole flow.
-        assert page.console_errors == [], page.console_errors
-
-    def test_fill_example_button_prefills_then_creates(
-        self, dashboard_server, page, tmp_path
-    ) -> None:
-        """The "Fill example" button populates the text fields; the user
-        then points the data path at their CSV and submits — and gets a
-        real, enriched project. Exercises the auto-fill affordance + the
-        full create path through a real browser."""
-        import os
-
-        base_url, project_root = dashboard_server
-        with open(os.path.join(os.environ["URIKA_HOME"], "settings.toml"), "w") as _f:
-            _f.write(f"projects_root = '{project_root}'\n")
-        data_csv = tmp_path / "mini.csv"
-        data_csv.write_text("x,y\n1,2\n3,4\n5,6\n7,8\n", encoding="utf-8")
-
-        page.goto(f"{base_url}/projects", wait_until="networkidle")
-        page.locator("button:has-text('New project')").first.click()
-        page.locator("[data-testid='np-fill-example']").click()
-        # The example values landed in the fields.
-        assert page.input_value("#np-name") == "example-stroop"
-        assert "Stroop" in page.input_value("#np-question")
-        assert "Stroop" in page.input_value("#np-description")
-        assert page.input_value("#np-mode") == "confirmatory"
-        # The user supplies the data path, then submits.
-        page.fill("#np-data-paths", str(data_csv))
-        page.locator("button:has-text('Create project')").click()
-
-        proj = project_root / "example-stroop"
-        deadline = time.monotonic() + 15.0
-        while time.monotonic() < deadline:
-            if (proj / "criteria.json").exists() and (proj / "README.md").exists():
-                break
-            time.sleep(0.2)
-        else:
-            pytest.fail(f"project {proj} not enriched within 15s")
-        import tomllib
-
-        tdata = tomllib.loads((proj / "urika.toml").read_text(encoding="utf-8"))
-        assert tdata.get("data", {}).get("source")
-        assert tdata.get("project", {}).get("question", "").find("Stroop") != -1
         assert page.console_errors == [], page.console_errors
 
 
