@@ -422,6 +422,48 @@ class TestCreateProjectFlow:
         # No JS errors during the whole flow.
         assert page.console_errors == [], page.console_errors
 
+    def test_fill_example_button_prefills_then_creates(
+        self, dashboard_server, page, tmp_path
+    ) -> None:
+        """The "Fill example" button populates the text fields; the user
+        then points the data path at their CSV and submits — and gets a
+        real, enriched project. Exercises the auto-fill affordance + the
+        full create path through a real browser."""
+        import os
+
+        base_url, project_root = dashboard_server
+        with open(os.path.join(os.environ["URIKA_HOME"], "settings.toml"), "w") as _f:
+            _f.write(f"projects_root = '{project_root}'\n")
+        data_csv = tmp_path / "mini.csv"
+        data_csv.write_text("x,y\n1,2\n3,4\n5,6\n7,8\n", encoding="utf-8")
+
+        page.goto(f"{base_url}/projects", wait_until="networkidle")
+        page.locator("button:has-text('New project')").first.click()
+        page.locator("[data-testid='np-fill-example']").click()
+        # The example values landed in the fields.
+        assert page.input_value("#np-name") == "example-stroop"
+        assert "Stroop" in page.input_value("#np-question")
+        assert "Stroop" in page.input_value("#np-description")
+        assert page.input_value("#np-mode") == "confirmatory"
+        # The user supplies the data path, then submits.
+        page.fill("#np-data-paths", str(data_csv))
+        page.locator("button:has-text('Create project')").click()
+
+        proj = project_root / "example-stroop"
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            if (proj / "criteria.json").exists() and (proj / "README.md").exists():
+                break
+            time.sleep(0.2)
+        else:
+            pytest.fail(f"project {proj} not enriched within 15s")
+        import tomllib
+
+        tdata = tomllib.loads((proj / "urika.toml").read_text(encoding="utf-8"))
+        assert tdata.get("data", {}).get("source")
+        assert tdata.get("project", {}).get("question", "").find("Stroop") != -1
+        assert page.console_errors == [], page.console_errors
+
 
 # ── 5. End-to-end run flow: modal → POST → SSE log → terminal status ──
 #
