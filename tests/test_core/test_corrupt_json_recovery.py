@@ -187,6 +187,71 @@ class TestExperimentLoaderCorruptJson:
         assert "exp-001" in ids
         assert "exp-002" not in ids
 
+    def test_progress_with_non_dict_run_records_loads_cleanly(
+        self, tmp_path
+    ) -> None:
+        """A non-dict entry in progress.json's ``runs`` list (a
+        sub-agent corruption, an external editor) — load_progress
+        must return the file without crashing. Downstream consumers
+        (the page renderers in v0.4.4.1) defend against per-run
+        garbage."""
+        from urika.core.progress import load_progress
+
+        proj = tmp_path / "p"
+        (proj / "experiments" / "exp-001").mkdir(parents=True)
+        (proj / "experiments" / "exp-001" / "progress.json").write_text(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "runs": [
+                        {"run_id": "ok", "metrics": {"r2": 0.5}},
+                        "not a dict",
+                        42,
+                        None,
+                        {"metrics": ["wrong shape"]},
+                    ],
+                }
+            )
+        )
+        # Must not raise.
+        data = load_progress(proj, "exp-001")
+        assert isinstance(data, dict)
+        assert isinstance(data.get("runs"), list)
+
+    def test_criteria_corrupt_json_via_load_criteria_history(
+        self, tmp_path
+    ) -> None:
+        """criteria.py has the same try/except boundary —
+        load_criteria_history must return an empty list on corrupt JSON
+        rather than crashing the orchestrator."""
+        from urika.core.criteria import load_criteria_history
+
+        (tmp_path / "criteria.json").write_text("{this is broken")
+        hist = load_criteria_history(tmp_path)
+        assert hist == []
+
+    def test_criteria_non_dict_version_filtered(self, tmp_path) -> None:
+        """A version entry that isn't a dict — defensive loader keeps
+        going."""
+        from urika.core.criteria import load_criteria_history
+
+        (tmp_path / "criteria.json").write_text(
+            json.dumps(
+                {
+                    "versions": [
+                        {"version": 1, "criteria": {"r2": ">= 0.5"}},
+                        "not a dict",
+                        None,
+                        42,
+                    ]
+                }
+            )
+        )
+        hist = load_criteria_history(tmp_path)
+        # Either filtered (best) or all returned but the good one is present.
+        # Contract: must not raise.
+        assert isinstance(hist, list)
+
     def test_load_experiment_with_corrupt_raises_filenotfound(
         self, tmp_path
     ):

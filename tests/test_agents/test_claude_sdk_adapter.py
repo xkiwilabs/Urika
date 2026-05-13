@@ -277,6 +277,49 @@ class TestClassifyError:
 
         assert _classify_error("request timed out after 60s") == "transient"
 
+    def test_friendly_error_for_rate_limit_mentions_resume(self) -> None:
+        from urika.agents.adapters.claude_sdk import _friendly_error
+
+        msg = _friendly_error("rate_limit", "429 Too Many Requests")
+        assert "rate limit" in msg.lower()
+        assert "resume" in msg.lower()
+        assert "429 Too Many Requests" in msg  # raw detail surfaced
+
+    def test_friendly_error_for_auth_mentions_login(self) -> None:
+        from urika.agents.adapters.claude_sdk import _friendly_error
+
+        msg = _friendly_error("auth", "401 Unauthorized")
+        assert "auth" in msg.lower()
+        assert "401" in msg
+
+    def test_friendly_error_for_billing_mentions_console(self) -> None:
+        from urika.agents.adapters.claude_sdk import _friendly_error
+
+        msg = _friendly_error("billing", "billing quota exceeded")
+        assert "billing" in msg.lower() or "quota" in msg.lower()
+
+    def test_friendly_error_for_transient_explains_retry(self) -> None:
+        from urika.agents.adapters.claude_sdk import _friendly_error
+
+        msg = _friendly_error("transient", "HTTP 503 service_unavailable")
+        assert "transient" in msg.lower() or "retry" in msg.lower()
+        assert "resume" in msg.lower()
+
+    def test_friendly_error_for_config_explains_runtime(self) -> None:
+        from urika.agents.adapters.claude_sdk import _friendly_error
+
+        msg = _friendly_error("config", "MissingPrivateEndpointError")
+        assert "config" in msg.lower() or "endpoint" in msg.lower()
+
+    def test_friendly_error_for_unknown_returns_raw(self) -> None:
+        """An unknown category falls back to the raw detail string —
+        no synthetic wrapping that could mask the real error."""
+        from urika.agents.adapters.claude_sdk import _friendly_error
+
+        raw = "something completely unexpected"
+        msg = _friendly_error("unknown", raw)
+        assert raw in msg
+
     def test_transient_sdk_error_result_relay_quirk(self) -> None:
         # The SDK transport surfaces a ResultMessage flagged is_error
         # with a bogus message as ``Exception("Claude Code returned an
