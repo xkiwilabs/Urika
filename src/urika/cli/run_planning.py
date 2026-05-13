@@ -309,6 +309,25 @@ def _determine_next_experiment(
         except Exception:
             pass
 
+    if next_suggestion is None and not completed:
+        # Brand-new project, but neither the initial plan, a pending
+        # remote suggestion, nor the advisor produced anything usable —
+        # don't bail with "nothing to do" and leave the user with a
+        # freshly-created project that never runs. Seed a deterministic
+        # baseline so the orchestrator does *some* real work. Mirrors
+        # the v0.4.4 fix in ``orchestrator/meta.run_project``.
+        print_step(
+            "No initial plan or advisor suggestion — seeding a baseline "
+            "exploratory experiment."
+        )
+        next_suggestion = {
+            "name": "baseline",
+            "method": (
+                "Initial exploratory analysis: profile the dataset and fit "
+                "a simple baseline model appropriate to the research question."
+            ),
+        }
+
     if next_suggestion is None:
         return None
 
