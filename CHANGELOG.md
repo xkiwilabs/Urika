@@ -5,6 +5,55 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4.1] - 2026-05-13
+
+Hotfix release. Closes four beta-user-reported bugs that v0.4.4 didn't
+touch — three of them in code paths the test suite had never exercised.
+
+### Fixed
+
+- **`urika new` crashed the interactive builder** with "Agent loop
+  unavailable (sequence item 1: expected str instance, list found).
+  Continuing with manual setup." — `cli_display.format_agent_output`
+  did `" — ".join([strategy, metrics])` where `metrics` is a **list**
+  (which is exactly the schema the planning agent's own prompt example
+  shows: `"metrics": ["metric_name"]`). The renderer now flattens
+  lists / any non-str value where prose is expected;
+  `data/profiler.profile_dataset` also coerces column *names* to `str`
+  at the source (pandas hands back tuples for a `MultiIndex`, ints for
+  integer headers — and several consumers do `", ".join(columns)`).
+- **A hybrid / private-mode experiment was thrown away after several
+  turns** when a transient blip hit the data agent — the SDK transport
+  surfaced a ResultMessage flagged is_error with a bogus message as
+  `Exception("Claude Code returned an error in error result: success")`
+  (seen against local endpoints), and the loop treated *every*
+  data-agent failure as a permanent hard fail, discarding the work done
+  on earlier turns. A recoverable data-agent failure now **pauses** the
+  session (`urika run --resume` re-runs the turn) — only an `auth`
+  failure hard-fails. `_classify_error` now tags
+  `"returned an error in error result …"` and
+  `"fatal error in message reader"` as `transient`.
+- **`urika usage` didn't count the `urika new` builder loop** — the
+  project_builder / advisor / planning agent calls there were invisible.
+  The builder loop now accumulates token / cost usage across all its
+  agent calls and records one session.
+- **A research question / description containing a `\r` (Windows line
+  ending), a tab, or any control character produced invalid
+  `urika.toml`** — the encoder only escaped `\`, `"`, `\n`, so
+  `tomllib.load` then failed everywhere downstream. (Plausible cause of
+  "the dashboard create button doesn't work when I type a real
+  question; entering 'x' in every field works".) Replaced with a proper
+  TOML basic-string encoder: named escapes for `\b \t \n \f \r`,
+  `\uXXXX` for the remaining control chars.
+
+### Added
+
+- Tests for all of the above — including `format_agent_output` (which
+  had no test coverage at all), `_classify_error` on the SDK relay
+  quirk, builder-loop usage recording, the data-agent pause-vs-fail
+  policy, and `urika.toml` round-tripping with quotes / backslashes /
+  CR-LF / tabs / control chars / unicode.
+
 ## [0.4.4] - 2026-05-13
 
 Robustness release. Closes a family of "the experiment exited looking
