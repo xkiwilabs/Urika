@@ -135,6 +135,62 @@ async def run_project(
                             ),
                         }
 
+                # Capped-mode safety net (v0.4.4.3). If the user passed
+                # ``--max-experiments N`` they expect N attempts; "advisor
+                # decided we're done after experiment 1" should not
+                # silently collapse the remaining slots. The same retry-
+                # with-nudge → seed-baseline pattern applies, but the
+                # seeded experiment here is a robustness/sensitivity
+                # follow-up rather than an exploratory baseline (project
+                # already has prior experiments).
+                #
+                # Skipped for ``mode != "capped"`` so checkpoint/unlimited
+                # behavior is unchanged — those modes legitimately stop
+                # when the advisor concludes.
+                elif (
+                    next_exp is None
+                    and mode == "capped"
+                    and exp_num < max_experiments
+                ):
+                    progress(
+                        "phase",
+                        f"Advisor returned no suggestion at slot "
+                        f"{exp_num + 1}/{max_experiments} — retrying with "
+                        "explicit nudge before seeding a follow-up.",
+                    )
+                    nudge = (
+                        (instructions + "\n\n" if instructions else "")
+                        + f"You MUST propose a concrete next experiment. "
+                        f"The user explicitly requested "
+                        f"--max-experiments {max_experiments} in autonomous "
+                        f"mode; do NOT stop early. Propose a robustness "
+                        f"check, sensitivity analysis, complementary "
+                        f"method, or follow-up exploration that builds on "
+                        f"the existing experiments. Respond with a "
+                        f"`suggestions` JSON block."
+                    )
+                    next_exp, advisor_text, advisor_failed = await _determine_next(
+                        project_dir, runner, nudge, on_message
+                    )
+                    if next_exp is None:
+                        progress(
+                            "phase",
+                            "Advisor still produced no follow-up after the "
+                            "nudge — seeding a robustness check so the "
+                            "--max-experiments slot does real work.",
+                        )
+                        next_exp = {
+                            "name": f"robustness-check-{exp_num + 1}",
+                            "method": (
+                                "Robustness / sensitivity follow-up: "
+                                "re-analyse the same data with a "
+                                "complementary method (non-parametric "
+                                "equivalent, bootstrap CI, or different "
+                                "model class) to test the durability of "
+                                "the prior experiment's primary finding."
+                            ),
+                        }
+
             if next_exp is None:
                 # Not a fresh project — the advisor genuinely thinks
                 # there's nothing left worth trying (or a mid-project

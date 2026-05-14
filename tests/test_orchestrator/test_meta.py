@@ -408,3 +408,219 @@ class TestRunProjectFreshSafetyNet:
         exps = sorted((project_dir / "experiments").iterdir())
         assert len(exps) == 1
         assert "rf" in exps[0].name
+
+
+class TestRunProjectCappedModeSafetyNet:
+    """v0.4.4.3: When the user passes ``--max-experiments N`` in capped
+    mode, the meta-orchestrator must attempt N experiments even if the
+    advisor returns "no further experiments to suggest" after the first
+    one. The pre-existing safety net only fired on fresh projects (zero
+    existing experiments); this branch covers the case where the
+    project already has experiments from a prior run but autonomous
+    mode was asked for more.
+
+    Regression caught the v0.4.4.2 smoke failure: open-mode e2e ran
+    ``urika run`` once (exp-001), then ``urika run --max-experiments 2
+    --auto``. The advisor concluded "done" after exp-001 → meta loop
+    broke → 0 NEW experiments. With this safety net, the second slot
+    seeds a robustness-check fallback so all N slots do real work.
+    """
+
+    @pytest.mark.asyncio
+    async def test_seeds_followup_when_advisor_bails_after_first_experiment(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from urika.core.experiment import create_experiment
+
+        project_dir = tmp_path / "with-prior"
+        create_project_workspace(
+            project_dir,
+            ProjectConfig(
+                name="with-prior",
+                question="Does the effect replicate?",
+                mode="exploratory",
+                data_paths=[],
+            ),
+        )
+        # Seed a completed first experiment so the project is no longer
+        # "fresh" — the fresh-project net will be skipped. Mark progress
+        # ``completed`` so the meta loop's pending-pickup branch doesn't
+        # grab it on every iteration.
+        prior = create_experiment(
+            project_dir, name="baseline", hypothesis="t-test as baseline"
+        )
+        (project_dir / "experiments" / prior.experiment_id / "progress.json").write_text(
+            json.dumps({"status": "completed", "runs": [{"metrics": {"r2": 0.9}}]}),
+            encoding="utf-8",
+        )
+
+        # Advisor always replies "I think we're done" (no suggestions
+        # block). The new safety net should kick in: nudge once, then
+        # seed a robustness-check experiment.
+        runner = _FakeRunner(
+            text="All reasonable approaches have been tried. Research complete."
+        )
+
+        ran_experiments: list[str] = []
+
+        async def _fake_run_experiment(pdir, exp_id, rnr, **kw):  # noqa: ANN001
+            ran_experiments.append(exp_id)
+            # Mark this newly-started experiment as completed so the
+            # next iteration of the meta loop doesn't pick it up as
+            # pending.
+            (pdir / "experiments" / exp_id / "progress.json").write_text(
+                json.dumps({"status": "completed", "runs": []}),
+                encoding="utf-8",
+            )
+            return {"status": "completed", "turns": 1}
+
+        async def _fake_finalize(*a, **k):  # noqa: ANN002, ANN003
+            return None
+
+        monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
+        monkeypatch.setattr(
+            "urika.orchestrator.finalize.finalize_project", _fake_finalize
+        )
+
+        result = await run_project(
+            project_dir, runner, mode="capped", max_experiments=2, max_turns=1
+        )
+
+        # The pre-existing exp-001 was already completed (skipped by the
+        # pending check). For each of the 2 capped slots the meta loop
+        # asks the advisor → gets nothing → safety net seeds a
+        # robustness-check experiment.
+        exps = sorted((project_dir / "experiments").iterdir())
+        assert len(exps) >= 2, (
+            f"Expected >=2 experiments after --max-experiments 2 with "
+            f"advisor bailing, got {len(exps)}: {[e.name for e in exps]}"
+        )
+        # The seeded experiment is named "robustness-check-*".
+        followup_names = [e.name for e in exps if "robustness-check" in e.name]
+        assert followup_names, (
+            f"Expected a robustness-check-* experiment to be seeded; "
+            f"got {[e.name for e in exps]}"
+        )
+        # And the loop ran the seeded experiment (not just created it).
+        assert any("robustness-check" in r for r in ran_experiments), (
+            f"Seeded experiment was created but not run: "
+            f"ran_experiments={ran_experiments}"
+        )
+        assert result["experiments_run"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_capped_safety_net_does_not_fire_on_happy_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When the advisor DOES propose follow-ups normally, the
+        capped-mode safety net must not fire — names should reflect the
+        advisor's suggestions, not the robustness-check fallback."""
+        from urika.core.experiment import create_experiment
+
+        project_dir = tmp_path / "with-prior-ok"
+        create_project_workspace(
+            project_dir,
+            ProjectConfig(
+                name="with-prior-ok",
+                question="Q?",
+                mode="exploratory",
+                data_paths=[],
+            ),
+        )
+        prior = create_experiment(
+            project_dir, name="baseline", hypothesis="t-test"
+        )
+        (project_dir / "experiments" / prior.experiment_id / "progress.json").write_text(
+            json.dumps({"status": "completed", "runs": [{"metrics": {"r2": 0.9}}]}),
+            encoding="utf-8",
+        )
+        runner = _FakeRunner(
+            text=(
+                '```json\n{"suggestions": [{"name": "wilcoxon", '
+                '"method": "non-parametric"}]}\n```'
+            )
+        )
+
+        async def _fake_run_experiment(pdir, exp_id, rnr, **kw):  # noqa: ANN001
+            (pdir / "experiments" / exp_id / "progress.json").write_text(
+                json.dumps({"status": "completed", "runs": []}),
+                encoding="utf-8",
+            )
+            return {"status": "completed", "turns": 1}
+
+        async def _fake_finalize(*a, **k):  # noqa: ANN002, ANN003
+            return None
+
+        monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
+        monkeypatch.setattr(
+            "urika.orchestrator.finalize.finalize_project", _fake_finalize
+        )
+
+        await run_project(
+            project_dir, runner, mode="capped", max_experiments=2, max_turns=1
+        )
+
+        exps = sorted((project_dir / "experiments").iterdir())
+        # No robustness-check-* — advisor was followed.
+        assert not any("robustness-check" in e.name for e in exps), (
+            f"Capped safety net fired on happy path: {[e.name for e in exps]}"
+        )
+        # The wilcoxon suggestion should have been used.
+        assert any("wilcoxon" in e.name for e in exps), (
+            f"Advisor's wilcoxon suggestion not used: {[e.name for e in exps]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_capped_safety_net_does_not_fire_in_checkpoint_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Checkpoint mode (default for ``urika run`` without ``--auto``)
+        must keep its "stop when advisor says done" semantics — only
+        capped mode forces the slot to be filled."""
+        from urika.core.experiment import create_experiment
+
+        project_dir = tmp_path / "with-prior-checkpoint"
+        create_project_workspace(
+            project_dir,
+            ProjectConfig(
+                name="with-prior-checkpoint",
+                question="Q?",
+                mode="exploratory",
+                data_paths=[],
+            ),
+        )
+        prior = create_experiment(
+            project_dir, name="baseline", hypothesis="t-test"
+        )
+        (project_dir / "experiments" / prior.experiment_id / "progress.json").write_text(
+            json.dumps({"status": "completed", "runs": [{"metrics": {"r2": 0.9}}]}),
+            encoding="utf-8",
+        )
+        runner = _FakeRunner(text="No further work needed.")
+
+        async def _fake_run_experiment(pdir, exp_id, rnr, **kw):  # noqa: ANN001
+            (pdir / "experiments" / exp_id / "progress.json").write_text(
+                json.dumps({"status": "completed", "runs": []}),
+                encoding="utf-8",
+            )
+            return {"status": "completed", "turns": 1}
+
+        async def _fake_finalize(*a, **k):  # noqa: ANN002, ANN003
+            return None
+
+        monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
+        monkeypatch.setattr(
+            "urika.orchestrator.finalize.finalize_project", _fake_finalize
+        )
+
+        await run_project(
+            project_dir, runner, mode="checkpoint", max_experiments=2, max_turns=1
+        )
+
+        # No robustness-check experiment was seeded — checkpoint mode
+        # respects "advisor says done."
+        exps = sorted((project_dir / "experiments").iterdir())
+        assert not any("robustness-check" in e.name for e in exps), (
+            f"Capped safety net leaked into checkpoint mode: "
+            f"{[e.name for e in exps]}"
+        )

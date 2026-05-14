@@ -47,9 +47,15 @@ def test_smoke_open_mode() -> None:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
-        # 50-minute cap matches the harness's own timeout — a real run
-        # is 10-15 min on a warm cache.
-        timeout=3000,
+        # 90-minute cap. Bumped from 3000s (50min) in v0.4.4.3 after the
+        # capped-mode safety-net fix landed: with the safety net forcing
+        # ``--max-experiments 2`` to actually start 2 experiments instead
+        # of bailing after 1 when the advisor concludes "done", the
+        # autonomous step now genuinely runs a 2nd experiment with real
+        # LLM agent calls. Cold-cache + autonomous 2-experiment runs
+        # routinely take 60-80 min; the harness's internal step timeouts
+        # already cap individual steps.
+        timeout=5400,
     )
     if result.returncode != 0:
         # Surface the harness's own log on failure rather than just
