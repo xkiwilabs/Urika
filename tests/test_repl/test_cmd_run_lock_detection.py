@@ -120,22 +120,41 @@ def test_live_foreign_pid_user_chooses_stop_calls_stop_session(
     assert "stopped" in out.lower()
 
 
-def test_empty_lockfile_is_treated_as_valid_in_interactive(
+def test_empty_lockfile_is_treated_as_stale(
     tmp_path: Path, capsys, monkeypatch
 ) -> None:
-    """A legacy/empty lock file is conservatively treated as a valid
-    running lock — prompts the user. (Pre-v0.3 lockfiles were empty
-    sentinels, so cmd_run shouldn't auto-clean them.)"""
+    """An empty lock file is treated as stale and auto-cleaned.
+
+    Originally this test pinned the *opposite* behavior — empty
+    locks were conservatively treated as valid because pre-v0.3
+    lockfiles were empty sentinels. But ``session.py:acquire_lock``
+    already treats empty locks as stale (commit 74cde602 / v0.4.2
+    Package K) so the REPL's "treat as valid" was inconsistent with
+    the underlying layer: ``cmd_run`` would prompt the user, then
+    the next ``acquire_lock`` would silently clean it anyway.
+
+    The realignment also lifts a Windows-CI regression: ``cmd_run``
+    used raw ``os.kill(pid, 0)`` + ``ProcessLookupError`` to probe
+    PID liveness, which is POSIX-only — the same bug already fixed
+    in ``session.py`` in v0.4.2.1. ``cmd_run`` now routes through
+    ``session._pid_is_alive`` (psutil-backed) and handles empty /
+    garbage / dead-PID locks the same way: auto-clean and proceed.
+    """
+    _short_circuit_run(monkeypatch)
+    monkeypatch.setattr(
+        "urika.repl.helpers._load_run_defaults",
+        lambda s: {"max_turns": 1, "auto_mode": "auto"},
+    )
     session, proj = _setup(tmp_path)
     exp_id = "exp-001-baseline"
     lock = proj / "experiments" / exp_id / ".lock"
     lock.write_text("")
-    monkeypatch.setattr(
-        "urika.repl.commands_run._prompt_numbered", lambda *a, **k: "Cancel"
-    )
-    cmd_run(session, "")
-    # Lock not removed (treated as valid).
-    assert lock.exists()
+    try:
+        cmd_run(session, "")
+    except Exception:
+        pass
+    assert not lock.exists(), "empty lock should have been cleaned as stale"
+    assert "Cleaned stale lock" in capsys.readouterr().out
 
 
 def test_invalid_pid_string_is_treated_as_stale(

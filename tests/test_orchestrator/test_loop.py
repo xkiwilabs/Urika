@@ -335,8 +335,21 @@ class TestOrchestratorLoop:
     def _hybrid_project(self, tmp_path: Path, monkeypatch) -> tuple[Path, str]:
         project_dir, exp_id = _setup_project(tmp_path)
         toml_path = project_dir / "urika.toml"
+        # Define an inline ``[privacy.endpoints.private]`` so the
+        # data_agent's ``build_config`` resolves the endpoint cleanly
+        # without depending on a global ``~/.urika/settings.toml``.
+        # Pre-fix the fixture only set ``mode = "hybrid"`` and the
+        # test silently relied on the dev's global config — passing
+        # locally but raising ``MissingPrivateEndpointError`` on every
+        # CI runner (which has no global settings).
         toml_path.write_text(
-            toml_path.read_text() + '\n[privacy]\nmode = "hybrid"\n', encoding="utf-8"
+            toml_path.read_text()
+            + "\n"
+            + '[privacy]\nmode = "hybrid"\n'
+            + "[privacy.endpoints.private]\n"
+            + 'base_url = "http://localhost:11434"\n'
+            + 'default_model = "test-model"\n',
+            encoding="utf-8",
         )
         # Skip the live-endpoint preflight (it would hard-fail first on
         # "no endpoint configured" — a separate path); this test is

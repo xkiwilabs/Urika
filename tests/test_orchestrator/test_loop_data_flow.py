@@ -61,9 +61,22 @@ def _setup_hybrid(tmp_path: Path) -> tuple[Path, str]:
         proj,
         ProjectConfig(name="p", question="Q?", mode="exploratory"),
     )
-    # Flip to hybrid mode so the data_agent runs.
+    # Flip to hybrid mode so the data_agent runs, AND define an inline
+    # ``[privacy.endpoints.private]`` so ``build_agent_env_for_endpoint``
+    # resolves cleanly without depending on a global
+    # ``~/.urika/settings.toml``. Pre-fix the fixture only set
+    # ``mode = "hybrid"`` and the test silently relied on the dev's
+    # global config — passing locally but raising
+    # ``MissingPrivateEndpointError`` on every CI runner.
     toml = proj / "urika.toml"
-    toml.write_text(toml.read_text() + '\n[privacy]\nmode = "hybrid"\n')
+    toml.write_text(
+        toml.read_text()
+        + "\n"
+        + '[privacy]\nmode = "hybrid"\n'
+        + "[privacy.endpoints.private]\n"
+        + 'base_url = "http://localhost:11434"\n'
+        + 'default_model = "test-model"\n'
+    )
     exp = create_experiment(proj, name="b", hypothesis="h")
     return proj, exp.experiment_id
 
