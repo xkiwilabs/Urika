@@ -38,24 +38,41 @@ def cmd_run(session: ReplSession, args: str) -> None:
     for exp in experiments:
         lock = session.project_path / "experiments" / exp.experiment_id / ".lock"
         if lock.exists():
-            # Check if the owning process is still alive
-            import os as _os
+            # Check if the owning process is still alive — via the
+            # cross-platform helper, NOT raw os.kill(pid, 0). Pre-fix
+            # this used the POSIX-only ``os.kill(int(pid_str), 0)`` +
+            # ``ProcessLookupError`` catch, which fails on Windows
+            # because ``os.kill(dead_pid, 0)`` raises
+            # ``OSError(WinError 87)`` rather than
+            # ``ProcessLookupError`` — exactly the bug ``session.py``'s
+            # ``acquire_lock`` already fixed in v0.4.2.1 (commit
+            # 74cde602). The same buggy pattern reappeared here in the
+            # v0.4.2 REPL split. ``session._pid_is_alive`` routes
+            # through ``psutil.pid_exists`` and handles every OS the
+            # CI matrix runs on.
+            from urika.core.session import _pid_is_alive
 
+            pid_str = ""
             try:
                 pid_str = lock.read_text().strip()
-                if pid_str:
-                    _os.kill(int(pid_str), 0)
-                    # Process alive — lock is valid
-                else:
-                    # Empty lock (legacy) — treat as valid conservatively
-                    pass
-            except (ValueError, ProcessLookupError):
-                # PID dead or invalid — stale lock, clean it up
+            except OSError:
+                pass
+            pid_value: int | None = None
+            if pid_str:
+                try:
+                    pid_value = int(pid_str)
+                except ValueError:
+                    pid_value = None
+            if pid_value is None:
+                # Garbage in / empty lock file — treat as stale.
                 click.echo(f"  Cleaned stale lock on {exp.experiment_id}")
                 lock.unlink(missing_ok=True)
                 continue
-            except PermissionError:
-                pass  # Process exists, can't signal — treat as valid
+            if not _pid_is_alive(pid_value):
+                click.echo(f"  Cleaned stale lock on {exp.experiment_id}")
+                lock.unlink(missing_ok=True)
+                continue
+            # PID is alive — lock is valid, fall through.
 
             if is_remote:
                 click.echo(
