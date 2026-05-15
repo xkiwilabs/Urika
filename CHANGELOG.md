@@ -5,6 +5,31 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4.4] - 2026-05-16
+
+Tiny follow-up release. One production-code fix; the other changes are
+test infrastructure that doesn't ship to the public repo. Surfaced by
+the first post-billing CI run after v0.4.4.3.
+
+### Fixed
+
+- **REPL `/run` now self-heals dead-PID lockfiles on Windows.** The
+  `cmd_run` lock-detection branch used POSIX-only
+  `os.kill(int(pid_str), 0)` + a `ProcessLookupError` catch to probe
+  PID liveness — the same bug `session.py:acquire_lock` already
+  fixed in v0.4.2.1 (commit 74cde602). On Windows `os.kill(dead_pid,
+  0)` raises `OSError(WinError 87)`, not `ProcessLookupError`, so
+  the catch never fired and dead-PID locks stayed forever. The v0.4.2
+  REPL split (ccbb5df7) re-introduced the buggy pattern in the
+  freshly-extracted `cmd_run`; the Actions billing block from
+  2026-05-13 to 2026-05-15 hid the resulting CI failure across four
+  intermediate dev pushes. `cmd_run` now routes through
+  `session._pid_is_alive` (psutil-backed, cross-platform) and also
+  aligns the empty-lock case with `session.py`'s "treat as stale"
+  semantic — pre-fix the REPL prompted the user for an empty lock
+  while `acquire_lock` silently cleaned it on the next call, an
+  internal inconsistency.
+
 ## [0.4.4.3] - 2026-05-15
 
 Hotfix release. Closes four bugs reported by a Windows user whose
