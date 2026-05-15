@@ -5,6 +5,76 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4.3] - 2026-05-15
+
+Hotfix release. Closes four bugs reported by a Windows user whose
+~26-hour autonomous run got stuck mid-stream, plus the capped-mode
+safety net surfaced by the v0.4.4.2 e2e smoke.
+
+### Fixed
+
+- **Orchestrator no longer hangs forever on a stalled API call.** The
+  Claude Agent SDK adapter's `async for msg in query(...)` loop had
+  no wall-clock cap, so a stream that went silent mid-experiment left
+  the process alive — animating the TUI spinner, doing nothing else
+  — with no error and no recovery path. The reporter's run sat in
+  this state for hours before the process eventually died, leaving a
+  stale lock the dashboard couldn't clear. Each `__anext__` is now
+  wrapped in `asyncio.wait_for` with a configurable cap (default
+  600s, override via `URIKA_AGENT_STREAM_TIMEOUT`). A silent stream
+  surfaces as a `transient` failure — the experiment pauses, the
+  lock is released, and `urika run --resume` (or `/resume` in the
+  TUI) picks it back up. The SDK's claude-cli subprocess is reaped
+  via `aclose()` on the timeout path so nothing leaks.
+- **`urika status` no longer says "pending" while an experiment is
+  actually running.** The status field in `progress.json` was only
+  written on terminal states (completed / failed / stopped), and
+  `urika status` reads `progress.json` — so it lied about state for
+  the entire duration of every run. `start_session` / `pause_session`
+  / `resume_session` now mirror their session status into
+  `progress.json` so the CLI and dashboard listings reflect reality
+  during the run, not just after it ends.
+- **`run.log` no longer fills with TUI spinner ANSI escapes.** The
+  ThinkingPanel writes raw cursor save/restore + scroll-region +
+  colour escape sequences via `sys.stdout.write` at ~8 frames/second.
+  The reporter's 26-hour run accumulated ~344 MB of escape codes in
+  `run.log`. Worse, the constantly-ticking mtime made monitoring
+  tools (and the user) think the run was still doing real work when
+  the agent had hung mid-stream — compounding the hang above. The
+  orchestrator's stdout tee now strips CSI / OSC / Fe / Fp escape
+  sequences before writing to disk. Terminal output is unchanged.
+- **`urika results` now explains the discrepancy with `urika status`'s
+  run count.** `status` counts every run in `progress.json`; `results`
+  (without `--experiment`) counts leaderboard entries, which are
+  best-per-method. A run that doesn't improve any method's best is
+  silently dropped from the ranking — so the reporter saw `status`
+  say "8 runs" and `results` show 7 rankings with no explanation.
+  `results` now emits a footer "Showing M of N runs (leaderboard
+  keeps best-per-method; …)" when M < N, and the `--json` output
+  adds `total_runs` + `ranked_runs` fields.
+- **`--max-experiments N --auto` now actually runs N experiments
+  even when the advisor bails after one.** Surfaced by the v0.4.4.2
+  e2e smoke: the existing fresh-project safety net only fires when
+  no experiments exist yet, so a request for 2 experiments with the
+  advisor saying "done" after #1 collapsed to 1 experiment with no
+  user-visible explanation. Adds a mode-gated safety net that fires
+  only in `capped` mode (the user explicitly asked for N) —
+  `checkpoint` and `unlimited` modes are unchanged. The net tries
+  one explicit re-prompt first, then seeds a deterministic
+  robustness-check experiment so the slot does real work.
+
+### Notes
+
+- Issue 2 from the same Windows report (stale `.lock` blocking the
+  dashboard's "running" indicator) was **already fixed** in v0.4.2.1's
+  PID-aware `acquire_lock` self-heal and the dashboard's pages
+  helper that uses `_is_active_run_lock`. The user's symptom — having
+  to manually delete the lock — was the downstream effect of the
+  API-hang above: when the orchestrator can't exit, the normal
+  pause / fail / complete paths that call `release_lock` never run.
+  With the timeout in place a hung stream becomes a `transient`
+  failure that pauses the experiment cleanly.
+
 ## [0.4.4.2] - 2026-05-13
 
 Tiny follow-up release. One production-code fix; the rest of the work
