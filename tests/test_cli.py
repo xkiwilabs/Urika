@@ -673,6 +673,164 @@ class TestResultsCommand:
         assert result.exit_code != 0
         assert "not found" in result.output
 
+    def test_footer_explains_runs_vs_ranking_mismatch(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """Issue 5 (Cathy on Windows): ``urika status`` showed 8 runs
+        but ``urika results`` listed 7 with no explanation. Root cause:
+        the leaderboard is best-per-method, so a run that doesn't
+        improve any method's best is silently dropped. The fix adds a
+        footer when runs > ranked so the user knows where the missing
+        run went.
+        """
+        from urika.core.models import RunRecord
+        from urika.core.progress import append_run
+        from urika.evaluation.leaderboard import update_leaderboard
+
+        _create_project(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H"],
+            env=urika_env,
+        )
+        exp_id = sorted((project_dir / "experiments").iterdir())[0].name
+
+        # Two real runs of the SAME method — only the better one will
+        # land on the leaderboard. So progress.json has 2 runs but the
+        # ranking has 1 entry.
+        for run_id, r2 in (("run-001", 0.85), ("run-002", 0.70)):
+            append_run(
+                project_dir,
+                exp_id,
+                RunRecord(
+                    run_id=run_id,
+                    method="linear_regression",
+                    params={"alpha": 0.1},
+                    metrics={"r2": r2},
+                    hypothesis="",
+                    observation="",
+                    next_step="",
+                ),
+            )
+
+        # Only the better run gets into the leaderboard.
+        update_leaderboard(
+            project_dir,
+            method="linear_regression",
+            metrics={"r2": 0.85},
+            run_id="run-001",
+            params={"alpha": 0.1},
+            primary_metric="r2",
+            direction="higher_is_better",
+        )
+
+        result = runner.invoke(cli, ["results", "test-proj"], env=urika_env)
+        assert result.exit_code == 0
+        # Leaderboard still shows the winner.
+        assert "linear_regression" in result.output
+        # Footer explains the discrepancy.
+        assert "Showing 1 of 2 runs" in result.output
+        # And points at how to see them all.
+        assert "--experiment" in result.output
+
+    def test_no_footer_when_runs_match_ranking(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """Negative case: the explanatory footer must NOT fire when
+        every run is on the leaderboard. Avoids cluttering normal use."""
+        from urika.core.models import RunRecord
+        from urika.core.progress import append_run
+        from urika.evaluation.leaderboard import update_leaderboard
+
+        _create_project(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H"],
+            env=urika_env,
+        )
+        exp_id = sorted((project_dir / "experiments").iterdir())[0].name
+
+        append_run(
+            project_dir,
+            exp_id,
+            RunRecord(
+                run_id="run-001",
+                method="linear_regression",
+                params={},
+                metrics={"r2": 0.9},
+                hypothesis="",
+                observation="",
+                next_step="",
+            ),
+        )
+        update_leaderboard(
+            project_dir,
+            method="linear_regression",
+            metrics={"r2": 0.9},
+            run_id="run-001",
+            params={},
+            primary_metric="r2",
+            direction="higher_is_better",
+        )
+
+        result = runner.invoke(cli, ["results", "test-proj"], env=urika_env)
+        assert result.exit_code == 0
+        assert "Showing" not in result.output
+
+    def test_json_output_includes_run_and_ranked_counts(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """JSON consumers also need both counts, not just the ranking
+        array. Without this they'd have to call ``status`` separately
+        to figure out total runs."""
+        import json
+
+        from urika.core.models import RunRecord
+        from urika.core.progress import append_run
+        from urika.evaluation.leaderboard import update_leaderboard
+
+        _create_project(runner, urika_env)
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        runner.invoke(
+            cli,
+            ["experiment", "create", "test-proj", "baseline", "--hypothesis", "H"],
+            env=urika_env,
+        )
+        exp_id = sorted((project_dir / "experiments").iterdir())[0].name
+        for run_id, r2 in (("a", 0.85), ("b", 0.70)):
+            append_run(
+                project_dir,
+                exp_id,
+                RunRecord(
+                    run_id=run_id,
+                    method="m",
+                    params={},
+                    metrics={"r2": r2},
+                    hypothesis="",
+                    observation="",
+                    next_step="",
+                ),
+            )
+        update_leaderboard(
+            project_dir,
+            method="m",
+            metrics={"r2": 0.85},
+            run_id="a",
+            params={},
+            primary_metric="r2",
+            direction="higher_is_better",
+        )
+
+        result = runner.invoke(cli, ["results", "test-proj", "--json"], env=urika_env)
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["total_runs"] == 2
+        assert data["ranked_runs"] == 1
+        assert isinstance(data["ranking"], list)
+        assert len(data["ranking"]) == 1
+
 
 class TestMethodsCommand:
     def test_no_methods_yet(self, runner: CliRunner, urika_env: dict[str, str]) -> None:

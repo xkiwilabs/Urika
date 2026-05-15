@@ -148,9 +148,7 @@ async def run_project(
                 # behavior is unchanged — those modes legitimately stop
                 # when the advisor concludes.
                 elif (
-                    next_exp is None
-                    and mode == "capped"
-                    and exp_num < max_experiments
+                    next_exp is None and mode == "capped" and exp_num < max_experiments
                 ):
                     progress(
                         "phase",

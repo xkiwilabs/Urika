@@ -449,7 +449,9 @@ class TestRunProjectCappedModeSafetyNet:
         prior = create_experiment(
             project_dir, name="baseline", hypothesis="t-test as baseline"
         )
-        (project_dir / "experiments" / prior.experiment_id / "progress.json").write_text(
+        (
+            project_dir / "experiments" / prior.experiment_id / "progress.json"
+        ).write_text(
             json.dumps({"status": "completed", "runs": [{"metrics": {"r2": 0.9}}]}),
             encoding="utf-8",
         )
@@ -527,10 +529,10 @@ class TestRunProjectCappedModeSafetyNet:
                 data_paths=[],
             ),
         )
-        prior = create_experiment(
-            project_dir, name="baseline", hypothesis="t-test"
-        )
-        (project_dir / "experiments" / prior.experiment_id / "progress.json").write_text(
+        prior = create_experiment(project_dir, name="baseline", hypothesis="t-test")
+        (
+            project_dir / "experiments" / prior.experiment_id / "progress.json"
+        ).write_text(
             json.dumps({"status": "completed", "runs": [{"metrics": {"r2": 0.9}}]}),
             encoding="utf-8",
         )
@@ -589,10 +591,10 @@ class TestRunProjectCappedModeSafetyNet:
                 data_paths=[],
             ),
         )
-        prior = create_experiment(
-            project_dir, name="baseline", hypothesis="t-test"
-        )
-        (project_dir / "experiments" / prior.experiment_id / "progress.json").write_text(
+        prior = create_experiment(project_dir, name="baseline", hypothesis="t-test")
+        (
+            project_dir / "experiments" / prior.experiment_id / "progress.json"
+        ).write_text(
             json.dumps({"status": "completed", "runs": [{"metrics": {"r2": 0.9}}]}),
             encoding="utf-8",
         )
@@ -621,6 +623,5 @@ class TestRunProjectCappedModeSafetyNet:
         # respects "advisor says done."
         exps = sorted((project_dir / "experiments").iterdir())
         assert not any("robustness-check" in e.name for e in exps), (
-            f"Capped safety net leaked into checkpoint mode: "
-            f"{[e.name for e in exps]}"
+            f"Capped safety net leaked into checkpoint mode: {[e.name for e in exps]}"
         )

@@ -6,6 +6,7 @@ to change the runtime (e.g. custom runtime, Pi SDK).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -302,8 +303,65 @@ class ClaudeSDKRunner(AgentRunner):
         else:
             prompt_arg = prompt
 
+        # Per-message stream timeout. Pre-fix the ``async for`` below
+        # had no wall-clock cap; a stalled API stream blocked the
+        # orchestrator forever with no heartbeat and no error.
+        # Reported by Cathy on Windows: orchestrator hung for ~hours
+        # mid-experiment on a Claude API call that never returned,
+        # process alive but doing nothing except animating the TUI
+        # spinner. The hung run also leaves the .lock in place since
+        # the orchestrator's normal release path never runs.
+        #
+        # Wrap each iteration in ``asyncio.wait_for`` so a stream that
+        # goes silent for > URIKA_AGENT_STREAM_TIMEOUT seconds raises
+        # ``TimeoutError`` instead of blocking. The default 600s (10
+        # min) is well above any active-thinking gap a healthy stream
+        # produces — tool execution emits intermediate messages, so a
+        # 10-min silence is the hang signature, not normal slow work.
         try:
-            async for msg in query(prompt=prompt_arg, options=options):
+            _stream_timeout = float(os.environ.get("URIKA_AGENT_STREAM_TIMEOUT", "600"))
+        except (TypeError, ValueError):
+            _stream_timeout = 600.0
+        _stream_iter = query(prompt=prompt_arg, options=options).__aiter__()
+
+        async def _aclose_stream() -> None:
+            # Best-effort close of the SDK's async iterator on any exit
+            # path (normal completion, timeout, ProcessError, generic
+            # exception). Async generators don't auto-aclose at GC time
+            # in a way we can rely on, so an early bail-out (timeout)
+            # could leave the SDK's claude-cli subprocess parked. The
+            # SDK's generator runs its own finally on aclose, which is
+            # what reaps the subprocess.
+            aclose = getattr(_stream_iter, "aclose", None)
+            if aclose is None:
+                return
+            try:
+                await aclose()
+            except Exception:
+                pass
+
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(
+                        _stream_iter.__anext__(), timeout=_stream_timeout
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError as exc:
+                    # Surface as a transient failure — the orchestrator's
+                    # transient path pauses the experiment (releasing the
+                    # lock) so /resume can pick it back up. Including
+                    # "timeout" in the message is intentional: the
+                    # existing ``_classify_error`` regex catches it and
+                    # routes to ``transient`` automatically.
+                    await _aclose_stream()
+                    raise RuntimeError(
+                        f"Agent stream timeout — no message from "
+                        f"{config.name} for >{_stream_timeout:.0f}s. "
+                        f"Suspected hung API call. Override the cap with "
+                        f"URIKA_AGENT_STREAM_TIMEOUT (seconds)."
+                    ) from exc
                 if on_message is not None:
                     try:
                         on_message(msg)

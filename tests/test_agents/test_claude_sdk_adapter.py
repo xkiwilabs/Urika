@@ -756,3 +756,107 @@ class TestPromptSizeTrace:
         result = await runner.run(read_only_config, "hello")
         assert result.success is True
         assert not bad_path.exists()
+
+
+class TestStreamTimeout:
+    """Per-message stream timeout. Pre-fix the ``async for msg in query()``
+    loop had no wall-clock cap; a stalled API stream blocked the
+    orchestrator forever. Reported by Cathy on Windows after a ~26-hour
+    run hung mid-experiment on an API call that never returned.
+
+    The fix wraps each ``__anext__`` in ``asyncio.wait_for`` so a
+    stream that goes silent for > URIKA_AGENT_STREAM_TIMEOUT seconds
+    raises a RuntimeError that the existing classifier routes to
+    ``transient`` (the orchestrator pauses, releases the lock,
+    /resume can pick it back up).
+    """
+
+    @pytest.mark.asyncio
+    async def test_idle_stream_raises_timeout_classified_as_transient(
+        self, read_only_config: AgentConfig, monkeypatch
+    ) -> None:
+        import asyncio
+
+        # Tighten the cap so the test doesn't take 10 minutes.
+        monkeypatch.setenv("URIKA_AGENT_STREAM_TIMEOUT", "0.05")
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _hanging_query(*_args, **_kwargs):
+            # Emit nothing — sleep way past the configured timeout to
+            # simulate a hung API stream. Caller's ``wait_for`` cancels
+            # us, which the async generator must handle cleanly.
+            await asyncio.sleep(5)
+            if False:  # pragma: no cover — unreachable, satisfies async-gen typing
+                yield None
+
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _hanging_query)
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+
+        assert result.success is False
+        # Classifier sees the "timeout" substring and routes the error
+        # to ``transient`` so the orchestrator pauses instead of
+        # hard-failing the run.
+        assert result.error_category == "transient", (
+            f"expected transient, got {result.error_category!r}: {result.error}"
+        )
+        assert "timeout" in (result.error or "").lower()
+        # Agent name is mentioned so the user can tell WHICH agent stalled.
+        assert "test_agent" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_stream_completes_under_cap_returns_success(
+        self, read_only_config: AgentConfig, monkeypatch
+    ) -> None:
+        # Generous cap; a fast fake-stream should never hit it. Guards
+        # against the timeout wrapper somehow short-circuiting normal
+        # streams.
+        monkeypatch.setenv("URIKA_AGENT_STREAM_TIMEOUT", "30")
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _fast_query(*_args, **_kwargs):
+            yield _FakeAssistantMessage("ok")
+            yield _FakeResultMessage(is_error=False, num_turns=1)
+
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fast_query)
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.AssistantMessage",
+            _FakeAssistantMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage", _FakeResultMessage
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.TextBlock", _FakeTextBlock
+        )
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+
+        assert result.success is True
+        assert result.text_output == "ok"
+
+    @pytest.mark.asyncio
+    async def test_invalid_env_value_falls_back_to_default(
+        self, read_only_config: AgentConfig, monkeypatch
+    ) -> None:
+        """Garbage in URIKA_AGENT_STREAM_TIMEOUT must not crash —
+        falls back to 600s default (which won't fire for a fast fake)."""
+        monkeypatch.setenv("URIKA_AGENT_STREAM_TIMEOUT", "not-a-number")
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _fast_query(*_args, **_kwargs):
+            yield _FakeResultMessage(is_error=False, num_turns=1)
+
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fast_query)
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage", _FakeResultMessage
+        )
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+        assert result.success is True

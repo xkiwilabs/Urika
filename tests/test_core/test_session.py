@@ -799,3 +799,73 @@ class TestProcessNameLookup:
 
         assert _get_process_name(0) == ""
         assert _get_process_name(-1) == ""
+
+
+class TestProgressStatusMirror:
+    """progress.json's ``status`` must mirror session.json's ``status``
+    throughout the lifecycle, not just at terminal states.
+
+    Pre-fix (reported by Cathy on Windows): start_session set
+    session.status="running" but progress.json stayed "pending" for the
+    entire ~26-hour run because only complete/fail/stop ever called
+    update_experiment_status. ``urika status`` reads progress.json, so
+    it lied about the experiment's actual state every time it was run.
+    """
+
+    def test_start_session_sets_running_in_progress_json(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        from urika.core.progress import load_progress
+
+        # Default state at experiment creation: progress.json may not
+        # exist yet, or it exists with status "pending".
+        progress_before = load_progress(project_dir, experiment_id)
+        assert progress_before.get("status") in ("pending", None)
+
+        start_session(project_dir, experiment_id)
+
+        progress_after = load_progress(project_dir, experiment_id)
+        assert progress_after["status"] == "running"
+
+    def test_pause_session_sets_paused_in_progress_json(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        from urika.core.progress import load_progress
+
+        start_session(project_dir, experiment_id)
+        pause_session(project_dir, experiment_id)
+        progress = load_progress(project_dir, experiment_id)
+        assert progress["status"] == "paused"
+
+    def test_resume_session_restores_running_in_progress_json(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        from urika.core.progress import load_progress
+
+        start_session(project_dir, experiment_id)
+        pause_session(project_dir, experiment_id)
+        resume_session(project_dir, experiment_id)
+        progress = load_progress(project_dir, experiment_id)
+        assert progress["status"] == "running"
+
+    def test_complete_session_still_sets_completed(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        """Regression guard — the existing terminal-state writes must
+        still work alongside the new lifecycle writes."""
+        from urika.core.progress import load_progress
+
+        start_session(project_dir, experiment_id)
+        complete_session(project_dir, experiment_id)
+        progress = load_progress(project_dir, experiment_id)
+        assert progress["status"] == "completed"
+
+    def test_fail_session_still_sets_failed(
+        self, project_dir: Path, experiment_id: str
+    ) -> None:
+        from urika.core.progress import load_progress
+
+        start_session(project_dir, experiment_id)
+        fail_session(project_dir, experiment_id, error="boom")
+        progress = load_progress(project_dir, experiment_id)
+        assert progress["status"] == "failed"

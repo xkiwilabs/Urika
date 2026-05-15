@@ -54,10 +54,28 @@ def results(project: str, experiment_id: str | None, json_output: bool) -> None:
     leaderboard = load_leaderboard(project_path)
     ranking = leaderboard.get("ranking", [])
 
+    # Count actual runs across all experiments so we can flag the
+    # leaderboard-vs-run-count discrepancy when it would otherwise
+    # confuse the user. The leaderboard keeps best-per-method, so a
+    # run that doesn't improve any method's best is silently
+    # dropped from the ranking. Pre-fix this surfaced as ``urika
+    # status`` reporting "8 runs" while ``urika results`` listed
+    # only 7 with no explanation — reported by Cathy on Windows.
+    total_runs = 0
+    for exp in list_experiments(project_path):
+        progress = load_progress(project_path, exp.experiment_id)
+        total_runs += len(progress.get("runs", []))
+
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"ranking": ranking})
+        output_json(
+            {
+                "ranking": ranking,
+                "total_runs": total_runs,
+                "ranked_runs": len(ranking),
+            }
+        )
         return
 
     if not ranking:
@@ -67,6 +85,17 @@ def results(project: str, experiment_id: str | None, json_output: bool) -> None:
     for entry in ranking:
         metrics_str = ", ".join(f"{k}={v}" for k, v in entry.get("metrics", {}).items())
         click.echo(f"  #{entry['rank']}  {entry['method']}  {metrics_str}")
+
+    if total_runs > len(ranking):
+        diff = total_runs - len(ranking)
+        word = "run" if diff == 1 else "runs"
+        click.echo("")
+        click.echo(
+            f"  Showing {len(ranking)} of {total_runs} runs "
+            f"(leaderboard keeps best-per-method; "
+            f"{diff} {word} below their method's best are hidden — "
+            f"use 'urika results --experiment <id>' to see all)."
+        )
 
 
 @cli.command()
