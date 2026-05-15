@@ -45,7 +45,17 @@ logger = logging.getLogger(__name__)
 # Even a command whose head matches an allowed prefix can be dangerous
 # when followed by `;` or `$(...)`.
 _SHELL_METACHARS: tuple[str, ...] = (
-    ";", "&&", "||", "|", "`", "$(", ">", ">>", "<", "&", "\n",
+    ";",
+    "&&",
+    "||",
+    "|",
+    "`",
+    "$(",
+    ">",
+    ">>",
+    "<",
+    "&",
+    "\n",
 )
 
 
@@ -195,9 +205,7 @@ def make_can_use_tool(
         tool_input: dict[str, Any],
         context,  # noqa: ANN001 — SDK-typed
     ):
-        decision, reason = _decide(
-            tool_name, tool_input, policy, project_root
-        )
+        decision, reason = _decide(tool_name, tool_input, policy, project_root)
         if not decision:
             # Surface the reason to the agent so it can adapt its next
             # action ("use Write tool instead of `python -c`", "split
@@ -300,11 +308,7 @@ def _decide(
         )
 
     if tool_name in _WRITABLE_TOOLS:
-        path = (
-            tool_input.get("file_path")
-            or tool_input.get("notebook_path")
-            or ""
-        )
+        path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         if not path:
             return True, ""
         return _path_decision(

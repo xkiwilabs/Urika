@@ -90,8 +90,15 @@ class UrikaCompleter(Completer):
 
 
 AGENT_COMMANDS = {
-    "run", "evaluate", "plan", "advisor", "report",
-    "present", "finalize", "build-tool", "resume",
+    "run",
+    "evaluate",
+    "plan",
+    "advisor",
+    "report",
+    "present",
+    "finalize",
+    "build-tool",
+    "resume",
     # v0.4.2 Package J: ``summarize`` (added in v0.4.2 H8) is also a
     # multi-minute agent call; without it in this set the REPL ran
     # /summarize on the main thread and blocked the prompt for the
@@ -103,7 +110,10 @@ AGENT_COMMANDS = {
 # Commands that use interactive prompts and need their own thread
 # (they call asyncio.run or prompt_toolkit internally)
 INTERACTIVE_COMMANDS = {
-    "config", "setup", "update", "new",
+    "config",
+    "setup",
+    "update",
+    "new",
 }
 
 
@@ -139,10 +149,10 @@ async def _async_repl_loop(
                 if cmd_name in AGENT_COMMANDS:
                     if session.agent_active:
                         click.echo(
-                            "  An agent is already running. "
-                            "Use /stop to cancel."
+                            "  An agent is already running. Use /stop to cancel."
                         )
                         continue
+
                     # Run agent command in a background thread
                     def _run_agent(cmd=user_input):
                         try:
@@ -151,18 +161,14 @@ async def _async_repl_loop(
                             session.set_agent_inactive()
 
                     session.set_agent_active(cmd_name)
-                    thread = threading.Thread(
-                        target=_run_agent, daemon=True
-                    )
+                    thread = threading.Thread(target=_run_agent, daemon=True)
                     thread.start()
                 elif cmd_name in INTERACTIVE_COMMANDS:
                     # Interactive commands need their own thread
                     def _run_interactive(cmd=user_input):
                         _handle_command(session, cmd)
 
-                    thread = threading.Thread(
-                        target=_run_interactive, daemon=True
-                    )
+                    thread = threading.Thread(target=_run_interactive, daemon=True)
                     thread.start()
                     thread.join()
                 else:
@@ -174,8 +180,7 @@ async def _async_repl_loop(
                     # Agent is running — queue input for injection
                     session.queue_input(user_input)
                     click.echo(
-                        f"  > {user_input} "
-                        f"(queued for {session.active_command})"
+                        f"  > {user_input} (queued for {session.active_command})"
                     )
                 else:
                     # Run chat in background thread so prompt stays active
@@ -186,9 +191,7 @@ async def _async_repl_loop(
                             session.set_agent_inactive()
 
                     session.set_agent_active("chat")
-                    thread = threading.Thread(
-                        target=_run_chat, daemon=True
-                    )
+                    thread = threading.Thread(target=_run_chat, daemon=True)
                     thread.start()
 
             _drain_remote_queue(session)
@@ -219,6 +222,7 @@ def run_repl() -> None:
     # Set default model from SDK so the footer shows it from startup
     try:
         from urika.agents.runner import get_runner
+
         runner = get_runner()
         session.model = getattr(runner, "default_model", "") or "claude-agent-sdk"
     except Exception:
@@ -277,8 +281,7 @@ def run_repl() -> None:
                     # rc.endpoints already merges project + globals
                     # (commit 1 of project-consistency phase).
                     has_usable = any(
-                        (ep.base_url or "").strip()
-                        for ep in rc.endpoints.values()
+                        (ep.base_url or "").strip() for ep in rc.endpoints.values()
                     )
                     broken = not has_usable
                 _privacy_cache[key] = (mode, broken)
@@ -292,8 +295,14 @@ def run_repl() -> None:
 
     # Activity verbs that rotate during agent work
     _activity_verbs = [
-        "Thinking", "Reasoning", "Analyzing", "Processing",
-        "Exploring", "Evaluating", "Considering", "Reviewing",
+        "Thinking",
+        "Reasoning",
+        "Analyzing",
+        "Processing",
+        "Exploring",
+        "Evaluating",
+        "Considering",
+        "Reviewing",
     ]
     _verb_idx = [0]
     _last_verb_time = [0.0]
@@ -304,8 +313,8 @@ def run_repl() -> None:
         except OSError:
             cols = 80
 
-        D = "\033[2m"   # dim
-        R = "\033[0m"   # reset
+        D = "\033[2m"  # dim
+        R = "\033[0m"  # reset
         sep = f"{D} \u2502 {R}"  # │ separator
 
         lines = []
@@ -350,16 +359,16 @@ def run_repl() -> None:
                 # Red + bold + warning glyph: project's mode requires a
                 # private endpoint but none is configured anywhere. Runs
                 # will hard-fail until the user sets one.
-                line2_parts.append(
-                    f"{sep}\033[31;1m{privacy} ⚠ no endpoint\033[0m"
-                )
+                line2_parts.append(f"{sep}\033[31;1m{privacy} ⚠ no endpoint\033[0m")
             else:
                 line2_parts.append(f"{sep}\033[33m{privacy}\033[0m")
 
         if session.model:
             from urika.cli_display import format_model_source
+
             model_display = format_model_source(
-                session.model, project_dir=session.project_path,
+                session.model,
+                project_dir=session.project_path,
             )
             line2_parts.append(f"{sep}\033[36m{model_display}\033[0m")
 
@@ -368,7 +377,9 @@ def run_repl() -> None:
 
         tokens = session.total_tokens_in + session.total_tokens_out
         tok_str = f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(tokens)
-        line2_parts.append(f"{sep}{D}{tok_str} tokens \u00b7 {session.agent_calls} calls{R}")
+        line2_parts.append(
+            f"{sep}{D}{tok_str} tokens \u00b7 {session.agent_calls} calls{R}"
+        )
         if session.total_cost_usd > 0:
             line2_parts.append(f"{sep}\033[32m~${session.total_cost_usd:.2f}\033[0m")
         else:
@@ -439,17 +450,22 @@ def _handle_command(session: ReplSession, text: str) -> None:
 
     # Block agent commands when private endpoint is unreachable
     _AGENT_COMMANDS = {
-        "run", "evaluate", "plan", "advisor", "report",
-        "present", "finalize", "build-tool", "resume",
+        "run",
+        "evaluate",
+        "plan",
+        "advisor",
+        "report",
+        "present",
+        "finalize",
+        "build-tool",
+        "resume",
     }
     if cmd_name in _AGENT_COMMANDS and not session._private_endpoint_ok:
         click.echo(
             "  \u2717 Agent commands disabled \u2014 local model unreachable "
             "in hybrid/private mode."
         )
-        click.echo(
-            "    Start your local model or switch to open: /config"
-        )
+        click.echo("    Start your local model or switch to open: /config")
         return
 
     handler = all_cmds[cmd_name]["func"]
@@ -541,8 +557,7 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
                 session.pending_suggestions = parsed["suggestions"]
                 n = len(session.pending_suggestions)
                 click.echo(
-                    f"  ✨ {n} experiment suggestion(s) captured. "
-                    f"Type /run to start."
+                    f"  ✨ {n} experiment suggestion(s) captured. Type /run to start."
                 )
         except Exception:
             # Suggestion parsing is best-effort — never let it break chat.
@@ -557,7 +572,10 @@ def _handle_free_text(session: ReplSession, text: str) -> None:
                 )
 
                 # Get or create session data
-                if not hasattr(session, "_orch_session") or session._orch_session is None:
+                if (
+                    not hasattr(session, "_orch_session")
+                    or session._orch_session is None
+                ):
                     session._orch_session = create_new_session()
                 orch_session = session._orch_session
                 orch_session.recent_messages = orchestrator.get_messages()
@@ -618,14 +636,14 @@ def _offer_to_run_suggestions(session: ReplSession, advisor_output: str) -> None
 # stuff that doesn't make sense remotely).
 _REMOTE_BLOCKED_COMMANDS = frozenset(
     {
-        "quit",        # remote can't quit the local TUI process
-        "copy",        # clipboard is local-only
-        "new",         # spawns the project-builder agent loop
-        "config",      # interactive prompts beyond /config show
+        "quit",  # remote can't quit the local TUI process
+        "copy",  # clipboard is local-only
+        "new",  # spawns the project-builder agent loop
+        "config",  # interactive prompts beyond /config show
         "notifications",  # interactive prompts
-        "setup",       # first-run interactive wizard
-        "memory",      # /memory add opens click.edit (no editor remotely)
-        "delete",      # destructive — gate behind explicit local action
+        "setup",  # first-run interactive wizard
+        "memory",  # /memory add opens click.edit (no editor remotely)
+        "delete",  # destructive — gate behind explicit local action
         "delete-experiment",  # same
     }
 )
@@ -721,9 +739,7 @@ def _start_remote_drain_thread(session: ReplSession) -> None:
                     if item is not None:
                         cmd, args, respond = item
                         cmd_text = f"/{cmd} {args}".strip()
-                        click.echo(
-                            f"\n  {_C.YELLOW}[Remote]{_C.RESET} {cmd_text}"
-                        )
+                        click.echo(f"\n  {_C.YELLOW}[Remote]{_C.RESET} {cmd_text}")
                         _execute_remote_command(session, cmd, args, respond)
             except Exception:
                 logger.debug("Remote drain error", exc_info=True)

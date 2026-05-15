@@ -13,9 +13,51 @@ Used by:
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import IO, Any
+
+
+# Match every ANSI escape sequence the ThinkingPanel and progress
+# spinners emit. Pre-fix, ``ThinkingPanel`` wrote raw ANSI (cursor
+# save/restore, scroll-region set, colour codes) via
+# ``sys.stdout.write`` at ~8 frames/second — every frame went
+# straight through ``_Tee`` to ``run.log``. A 26-hour Windows run
+# accumulated ~344 MB of ANSI escapes in the log, and the constantly-
+# ticking mtime made monitoring tools think the run was still doing
+# real work when in fact the agent had hung mid-stream. The terminal
+# needs the escapes; the log file does not.
+#
+# The pattern covers four ECMA-48 escape families because the
+# ThinkingPanel uses three of them:
+#   * CSI:  ESC [ <params> <final>      e.g. ESC [20;1H, ESC [36m
+#   * OSC:  ESC ] <text> BEL|ESC \\      e.g. window-title sets (defensive)
+#   * Fe :  ESC <0x40-0x5F>              e.g. ESC M, ESC D
+#   * Fp :  ESC <0x30-0x3F>              e.g. ESC 7 (DECSC), ESC 8 (DECRC)
+# Without the Fp branch, ``\x1b7`` / ``\x1b8`` slipped through and the
+# log still saw the digit bytes — that was the original miss.
+_ANSI_RE = re.compile(
+    r"\x1B"
+    r"(?:"
+    r"\[[0-?]*[ -/]*[@-~]"  # CSI
+    r"|\][^\x07\x1B]*(?:\x07|\x1B\\)"  # OSC, terminated by BEL or ESC \
+    r"|[@-Z\\-_]"  # Fe (single-byte C1 equivalents)
+    r"|[0-?]"  # Fp (private use, incl. DECSC/DECRC)
+    r")"
+)
+
+
+def _strip_ansi(data: str) -> str:
+    """Return ``data`` with all ANSI escape sequences removed.
+
+    Cheap fast-path: no escape byte → return unchanged. Most log writes
+    are plain text (agent output, click.echo lines, status banners);
+    the regex only fires for ThinkingPanel / Spinner frames.
+    """
+    if "\x1b" not in data:
+        return data
+    return _ANSI_RE.sub("", data)
 
 
 class _Tee:
@@ -28,8 +70,10 @@ class _Tee:
     def write(self, data: str) -> int:
         n = self._primary.write(data)
         try:
-            self._log.write(data)
-            self._log.flush()
+            clean = _strip_ansi(data)
+            if clean:
+                self._log.write(clean)
+                self._log.flush()
         except Exception:
             # Never break the user-facing stream because of a log-file
             # issue. Stale or read-only filesystems shouldn't kill a run.

@@ -201,9 +201,7 @@ def _start_reaper(proc: subprocess.Popen, lock_path: Path) -> threading.Thread:
     return t
 
 
-def _write_terminal_status_if_needed(
-    lock_path: Path, returncode: int | None
-) -> None:
+def _write_terminal_status_if_needed(lock_path: Path, returncode: int | None) -> None:
     """Write a ``stopped`` / ``failed`` status fallback for a stopped run.
 
     Called from :func:`_start_reaper` when an experiment lock's child

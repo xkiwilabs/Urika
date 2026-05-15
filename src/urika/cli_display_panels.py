@@ -131,9 +131,7 @@ class ThinkingPanel:
                     self._spin_slow_counter += 1
                     if self._spin_slow_counter >= 5:  # ~600ms per frame
                         self._spin_slow_counter = 0
-                        self._spin_slow_idx = (
-                            (self._spin_slow_idx + 1) % len(_SPINNER)
-                        )
+                        self._spin_slow_idx = (self._spin_slow_idx + 1) % len(_SPINNER)
                     self._render()
 
     def _render(self) -> None:

@@ -141,9 +141,7 @@ def report(
                     progress = load_progress(project_path, exp.experiment_id)
                     status = progress.get("status", "pending")
                     runs = len(progress.get("runs", []))
-                    options.append(
-                        f"{exp.experiment_id} [{status}, {runs} runs]"
-                    )
+                    options.append(f"{exp.experiment_id} [{status}, {runs} runs]")
                 options.append("All experiments (generate for each)")
                 options.append("Project level (one overarching report)")
 

@@ -270,9 +270,7 @@ def run(
         # isn't surprised by the "Proceed?" gate that ``urika run`` shows
         # after the advisor picks an experiment. Mirrors the dashboard
         # modal's ``Autonomous`` checkbox — invisible here pre-v0.4.1.
-        click.echo(
-            "    Autonomous: no — will prompt after advisor picks an experiment"
-        )
+        click.echo("    Autonomous: no — will prompt after advisor picks an experiment")
         click.echo("                (use option 2, or pass --auto)")
 
         choice = _prompt_numbered(

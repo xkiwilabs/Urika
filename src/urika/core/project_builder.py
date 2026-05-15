@@ -170,15 +170,10 @@ class ProjectBuilder:
                 _global_private_url = ""
                 for ep in get_named_endpoints():
                     if ep.get("name") == "private":
-                        _global_private_url = (
-                            ep.get("base_url") or ""
-                        ).strip()
+                        _global_private_url = (ep.get("base_url") or "").strip()
                         break
 
-                if (
-                    self.private_endpoint_url.strip()
-                    != _global_private_url
-                ):
+                if self.private_endpoint_url.strip() != _global_private_url:
                     endpoints = privacy.setdefault("endpoints", {})
                     endpoint = endpoints.setdefault("private", {})
                     endpoint["base_url"] = self.private_endpoint_url
@@ -347,9 +342,7 @@ def enrich_workspace(
         try:
             from urika.data.data_hash import hash_data_files
 
-            real_paths = [
-                p for p in data_paths if Path(p).expanduser().exists()
-            ]
+            real_paths = [p for p in data_paths if Path(p).expanduser().exists()]
             hashes = hash_data_files(real_paths)
             if hashes:
                 existing.setdefault("project", {})["data_hashes"] = hashes

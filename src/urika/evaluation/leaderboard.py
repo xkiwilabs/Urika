@@ -86,7 +86,9 @@ def update_leaderboard(
     # Sort by primary metric (respecting direction)
     reverse = direction == "higher_is_better"
     missing = float("-inf") if reverse else float("inf")
-    ranking.sort(key=lambda e: e["metrics"].get(primary_metric, missing), reverse=reverse)
+    ranking.sort(
+        key=lambda e: e["metrics"].get(primary_metric, missing), reverse=reverse
+    )
 
     # Renumber ranks 1, 2, 3...
     for i, entry in enumerate(ranking):

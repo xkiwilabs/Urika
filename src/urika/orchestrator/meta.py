@@ -49,17 +49,15 @@ async def run_project(
         from urika.core.progress import load_progress
 
         pending_experiments = [
-            e for e in list_experiments(project_dir)
-            if load_progress(project_dir, e.experiment_id).get("status")
-            in ("pending",)
+            e
+            for e in list_experiments(project_dir)
+            if load_progress(project_dir, e.experiment_id).get("status") in ("pending",)
         ]
 
         if pending_experiments:
             # Run the most recent pending experiment before asking advisor
             exp = pending_experiments[-1]
-            print_step(
-                f"Experiment {exp_num + 1}: {exp.experiment_id} (pending)"
-            )
+            print_step(f"Experiment {exp_num + 1}: {exp.experiment_id} (pending)")
         else:
             # Check for pending suggestions from advisor conversations
             next_exp = None
@@ -68,9 +66,7 @@ async def run_project(
                 try:
                     import json as _pjson
 
-                    pdata = _pjson.loads(
-                        pending_path.read_text(encoding="utf-8")
-                    )
+                    pdata = _pjson.loads(pending_path.read_text(encoding="utf-8"))
                     psuggest = pdata.get("suggestions", [])
                     if psuggest:
                         next_exp = psuggest[0]
@@ -83,9 +79,7 @@ async def run_project(
                             )
                         else:
                             pending_path.unlink(missing_ok=True)
-                        print_step(
-                            "Using suggestion from recent advisor conversation"
-                        )
+                        print_step("Using suggestion from recent advisor conversation")
                 except Exception:
                     pass
 
@@ -141,6 +135,60 @@ async def run_project(
                             ),
                         }
 
+                # Capped-mode safety net (v0.4.4.3). If the user passed
+                # ``--max-experiments N`` they expect N attempts; "advisor
+                # decided we're done after experiment 1" should not
+                # silently collapse the remaining slots. The same retry-
+                # with-nudge → seed-baseline pattern applies, but the
+                # seeded experiment here is a robustness/sensitivity
+                # follow-up rather than an exploratory baseline (project
+                # already has prior experiments).
+                #
+                # Skipped for ``mode != "capped"`` so checkpoint/unlimited
+                # behavior is unchanged — those modes legitimately stop
+                # when the advisor concludes.
+                elif (
+                    next_exp is None and mode == "capped" and exp_num < max_experiments
+                ):
+                    progress(
+                        "phase",
+                        f"Advisor returned no suggestion at slot "
+                        f"{exp_num + 1}/{max_experiments} — retrying with "
+                        "explicit nudge before seeding a follow-up.",
+                    )
+                    nudge = (
+                        (instructions + "\n\n" if instructions else "")
+                        + f"You MUST propose a concrete next experiment. "
+                        f"The user explicitly requested "
+                        f"--max-experiments {max_experiments} in autonomous "
+                        f"mode; do NOT stop early. Propose a robustness "
+                        f"check, sensitivity analysis, complementary "
+                        f"method, or follow-up exploration that builds on "
+                        f"the existing experiments. Respond with a "
+                        f"`suggestions` JSON block."
+                    )
+                    next_exp, advisor_text, advisor_failed = await _determine_next(
+                        project_dir, runner, nudge, on_message
+                    )
+                    if next_exp is None:
+                        progress(
+                            "phase",
+                            "Advisor still produced no follow-up after the "
+                            "nudge — seeding a robustness check so the "
+                            "--max-experiments slot does real work.",
+                        )
+                        next_exp = {
+                            "name": f"robustness-check-{exp_num + 1}",
+                            "method": (
+                                "Robustness / sensitivity follow-up: "
+                                "re-analyse the same data with a "
+                                "complementary method (non-parametric "
+                                "equivalent, bootstrap CI, or different "
+                                "model class) to test the durability of "
+                                "the prior experiment's primary finding."
+                            ),
+                        }
+
             if next_exp is None:
                 # Not a fresh project — the advisor genuinely thinks
                 # there's nothing left worth trying (or a mid-project
@@ -148,9 +196,7 @@ async def run_project(
                 # is resumable).
                 if advisor_failed:
                     progress("result", f"Advisor call failed: {advisor_text}")
-                    print_step(
-                        f"Advisor agent failed — stopping. {advisor_text}"
-                    )
+                    print_step(f"Advisor agent failed — stopping. {advisor_text}")
                 else:
                     print_step("Advisor: no further experiments to suggest.")
                 if advisor_text:
@@ -160,7 +206,9 @@ async def run_project(
                     click.echo(f"\n  {preview}\n")
                 break
 
-            exp_name = next_exp.get("name", f"auto-{exp_num + 1}").replace(" ", "-").lower()
+            exp_name = (
+                next_exp.get("name", f"auto-{exp_num + 1}").replace(" ", "-").lower()
+            )
             description = next_exp.get("method", next_exp.get("description", ""))
 
             # Create experiment
@@ -222,7 +270,10 @@ async def run_project(
 
             progress("phase", "Finalizing project")
             await finalize_project(
-                project_dir, runner, on_progress, on_message,
+                project_dir,
+                runner,
+                on_progress,
+                on_message,
                 audience=audience,
             )
         except Exception as exc:
@@ -366,9 +417,7 @@ async def _determine_next(
             text=result.text_output or "",
             source="meta",
             suggestions=(
-                parsed["suggestions"]
-                if parsed and parsed.get("suggestions")
-                else None
+                parsed["suggestions"] if parsed and parsed.get("suggestions") else None
             ),
         )
     except Exception:

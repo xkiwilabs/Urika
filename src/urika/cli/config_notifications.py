@@ -65,7 +65,9 @@ def notifications_command(
     # ── Disable mode (project-level only) ──
     if disable:
         if not is_project:
-            click.echo("  Disable is a project-level setting. Use: urika notifications --disable --project <name>")
+            click.echo(
+                "  Disable is a project-level setting. Use: urika notifications --disable --project <name>"
+            )
             return
         settings.setdefault("notifications", {})["channels"] = []
         _save_notification_settings(settings, is_project, project_path)
@@ -623,6 +625,3 @@ def seed_project_notifications_from_global(project_path: Path) -> list[str]:
     data.setdefault("notifications", {})["channels"] = auto_channels
     _write_toml(toml_path, data)
     return auto_channels
-
-
-

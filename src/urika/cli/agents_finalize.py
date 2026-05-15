@@ -86,6 +86,7 @@ def finalize(
 
         def _on_progress(event: str, detail: str = "") -> None:
             from urika.cli.run import _update_repl_activity
+
             _update_repl_activity(event, detail)
 
         def _on_message(msg: object) -> None:
@@ -118,6 +119,7 @@ def finalize(
 
         def _on_progress(event: str, detail: str = "") -> None:
             from urika.cli.run import _update_repl_activity
+
             _update_repl_activity(event, detail)
             if event == "agent":
                 agent_key = detail.split("—")[0].strip().lower().replace(" ", "_")
@@ -201,9 +203,7 @@ def finalize(
             print_success("Draft summary saved to projectbook/draft/")
             click.echo(f"  Findings:      {draft_dir / 'findings.json'}")
             click.echo(f"  Report:        {draft_dir / 'report.md'}")
-            click.echo(
-                f"  Presentation:  {draft_dir / 'presentation' / 'index.html'}"
-            )
+            click.echo(f"  Presentation:  {draft_dir / 'presentation' / 'index.html'}")
         else:
             print_success("Project finalized!")
             click.echo(f"  Methods:       {project_path / 'methods/'}")

@@ -53,8 +53,7 @@ def _generate_script(shell: str) -> str:
     cls = get_completion_class(shell)
     if cls is None:
         raise click.ClickException(
-            f"Unsupported shell: {shell!r}. "
-            f"Supported: {', '.join(_SUPPORTED_SHELLS)}."
+            f"Unsupported shell: {shell!r}. Supported: {', '.join(_SUPPORTED_SHELLS)}."
         )
     completion = cls(cli, {}, "urika", "_URIKA_COMPLETE")
     return completion.source()
@@ -136,8 +135,7 @@ def completion_uninstall(shell: str | None) -> None:
         for p in removed:
             click.echo(f"    {p}")
         click.echo(
-            "  Remember to remove any matching `source` lines from your "
-            "shell rc file."
+            "  Remember to remove any matching `source` lines from your shell rc file."
         )
     else:
         click.echo("  No installed completion scripts found.")

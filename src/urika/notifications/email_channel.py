@@ -73,9 +73,7 @@ class EmailChannel(NotificationChannel):
             with smtplib.SMTP(self._server, self._port, timeout=5) as smtp:
                 smtp.starttls(context=ctx)
                 password = (
-                    os.environ.get(self._password_env, "")
-                    if self._password_env
-                    else ""
+                    os.environ.get(self._password_env, "") if self._password_env else ""
                 )
                 if password:
                     smtp.login(self._username, password)
@@ -124,9 +122,7 @@ class EmailChannel(NotificationChannel):
         msg["To"] = ", ".join(self._to)
         msg.attach(MIMEText(html, "html"))
 
-        password = (
-            os.environ.get(self._password_env, "") if self._password_env else ""
-        )
+        password = os.environ.get(self._password_env, "") if self._password_env else ""
 
         ctx = ssl.create_default_context()
         with smtplib.SMTP(self._server, self._port, timeout=15) as smtp:

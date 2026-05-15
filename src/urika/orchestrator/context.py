@@ -18,9 +18,15 @@ def summarize_task_output(text: str) -> str:
 
     # Extract non-code text (observations, summaries)
     # Remove code blocks and their content
-    cleaned = re.sub(r"```(?:python|bash|sh|pip)?\s*\n.*?```", "", text, flags=re.DOTALL)
+    cleaned = re.sub(
+        r"```(?:python|bash|sh|pip)?\s*\n.*?```", "", text, flags=re.DOTALL
+    )
     # Remove long pip install output lines
-    cleaned = re.sub(r"(?:Successfully installed|Collecting|Downloading|Installing).*\n?", "", cleaned)
+    cleaned = re.sub(
+        r"(?:Successfully installed|Collecting|Downloading|Installing).*\n?",
+        "",
+        cleaned,
+    )
     # Collapse multiple newlines
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 

@@ -532,5 +532,3 @@ class NotificationBus:
                 respond("Thinking…")
             else:
                 respond(f"/{command} queued \u2014 executing shortly...")
-
-

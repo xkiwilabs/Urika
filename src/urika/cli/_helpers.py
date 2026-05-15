@@ -230,7 +230,9 @@ def _probe_endpoint(url: str) -> tuple[bool, str]:
                 last_reason = "timed out"
             elif isinstance(reason, OSError):
                 # Generic OS-level network error — strip path-like info.
-                last_reason = f"network error: {reason.strerror or type(reason).__name__}"
+                last_reason = (
+                    f"network error: {reason.strerror or type(reason).__name__}"
+                )
             elif isinstance(reason, str):
                 # urllib sometimes wraps a plain string (typically from
                 # proxy / handler chain failures). Pass it through —

@@ -91,7 +91,7 @@ def format_audience_context(audience: str | None) -> str:
         "## Audience Style Guidance\n\n"
         f"{block}\n\n"
         "(Apply this audience style throughout the output. The system "
-        "prompt may also reference \"audience guidance\" — that refers "
+        'prompt may also reference "audience guidance" — that refers '
         "to this block.)\n\n"
         "---\n\n"
     )

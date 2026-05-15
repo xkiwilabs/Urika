@@ -172,8 +172,4 @@ def format_update_message(info: dict) -> str:
     """Format a user-friendly update notification."""
     current = _strip_v_prefix(str(info.get("current", "")))
     latest = _strip_v_prefix(str(info.get("latest", "")))
-    return (
-        f"Update available: v{current} → "
-        f"v{latest}  "
-        f"(git pull or pip install -e .)"
-    )
+    return f"Update available: v{current} → v{latest}  (git pull or pip install -e .)"

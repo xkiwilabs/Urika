@@ -63,9 +63,7 @@ def format_planning_context(project_dir: Path) -> str:
         "(The following context comes from your project memory and the "
         "rolling advisor conversation summary. Treat it as authoritative "
         "user preferences and prior decisions when designing the next "
-        "method.)\n\n"
-        + "\n\n---\n\n".join(parts)
-        + "\n\n---\n\n"
+        "method.)\n\n" + "\n\n---\n\n".join(parts) + "\n\n---\n\n"
     )
 
 

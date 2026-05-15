@@ -200,10 +200,16 @@ def start_session(
     max_turns: int | None = None,
 ) -> SessionState:
     """Start orchestration for an experiment. Creates session.json and lockfile."""
+    # Local import (not top-level) because progress.update_experiment_status
+    # imports load_progress which calls into this module's `_now_iso` / etc
+    # transitively in test fixtures; the existing complete/fail/stop paths
+    # already use the same local-import pattern.
+    from urika.core.progress import update_experiment_status
+
     if not acquire_lock(project_dir, experiment_id):
         lock_pid = ""
         try:
-            lock_pid = (_lock_path(project_dir, experiment_id).read_text().strip())
+            lock_pid = _lock_path(project_dir, experiment_id).read_text().strip()
         except OSError:
             pass
         if lock_pid:
@@ -228,11 +234,25 @@ def start_session(
         max_turns=max_turns,
     )
     save_session(project_dir, experiment_id, state)
+    # Mirror "running" into progress.json so ``urika status`` and the
+    # CLI/dashboard's experiment listings stop showing "pending" for the
+    # entire active lifetime of the run. Pre-fix, progress.json's status
+    # field was only ever set on terminal states (completed / failed /
+    # stopped), so a Windows user with a long-running experiment saw
+    # "pending" for ~26 hours and had no CLI signal that work was
+    # actually happening. session.json carried the right answer but
+    # ``urika status`` reads progress.json, not session.json.
+    try:
+        update_experiment_status(project_dir, experiment_id, "running")
+    except Exception as exc:
+        logger.warning("Progress status mirror failed on start: %s", exc)
     return state
 
 
 def pause_session(project_dir: Path, experiment_id: str) -> SessionState:
     """Pause a running session. Updates status, removes lockfile."""
+    from urika.core.progress import update_experiment_status
+
     state = load_session(project_dir, experiment_id)
     if state is None:
         msg = f"No session found for experiment {experiment_id}"
@@ -242,11 +262,17 @@ def pause_session(project_dir: Path, experiment_id: str) -> SessionState:
     state.paused_at = _now_iso()
     save_session(project_dir, experiment_id, state)
     release_lock(project_dir, experiment_id)
+    try:
+        update_experiment_status(project_dir, experiment_id, "paused")
+    except Exception as exc:
+        logger.warning("Progress status mirror failed on pause: %s", exc)
     return state
 
 
 def resume_session(project_dir: Path, experiment_id: str) -> SessionState:
     """Resume a paused or failed session. Restores status to running, re-acquires lock."""
+    from urika.core.progress import update_experiment_status
+
     if not acquire_lock(project_dir, experiment_id):
         msg = f"Experiment {experiment_id} is already running (locked)"
         raise RuntimeError(msg)
@@ -265,6 +291,10 @@ def resume_session(project_dir: Path, experiment_id: str) -> SessionState:
 
         state.status = "running"
         save_session(project_dir, experiment_id, state)
+        try:
+            update_experiment_status(project_dir, experiment_id, "running")
+        except Exception as exc:
+            logger.warning("Progress status mirror failed on resume: %s", exc)
         return state
     except Exception:
         release_lock(project_dir, experiment_id)

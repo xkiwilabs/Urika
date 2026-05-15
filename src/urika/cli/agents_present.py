@@ -87,9 +87,7 @@ def present(
         else:
             valid_ids = {e.experiment_id for e in experiments}
             if experiment_id not in valid_ids:
-                raise click.ClickException(
-                    f"Unknown experiment: {experiment_id}"
-                )
+                raise click.ClickException(f"Unknown experiment: {experiment_id}")
             progress = load_progress(project_path, experiment_id)
             exp_status = progress.get("status", "pending")
             runs = len(progress.get("runs", []))

@@ -65,7 +65,14 @@ def load_criteria(project_dir: Path) -> CriteriaVersion | None:
 
 
 def load_criteria_history(project_dir: Path) -> list[CriteriaVersion]:
-    """Load all criteria versions."""
+    """Load all criteria versions.
+
+    Defensive against external writers: malformed version entries
+    (non-dict, missing required keys) are silently dropped rather than
+    crashing the loader. Mirrors ``method_registry.load_methods`` —
+    the orchestrator and dashboard render this list every turn / on
+    every page render; one bad entry would otherwise 500 the world.
+    """
     path = _criteria_path(project_dir)
     if not path.exists():
         return []
@@ -74,7 +81,22 @@ def load_criteria_history(project_dir: Path) -> list[CriteriaVersion]:
     except (json.JSONDecodeError, KeyError) as exc:
         logger.warning("Corrupt JSON in %s: %s", path, exc)
         return []
-    return [CriteriaVersion.from_dict(v) for v in data.get("versions", [])]
+    if not isinstance(data, dict):
+        logger.warning(
+            "criteria.json top-level is not a dict (%s); ignoring",
+            type(data).__name__,
+        )
+        return []
+    out: list[CriteriaVersion] = []
+    for v in data.get("versions", []) or []:
+        if not isinstance(v, dict):
+            logger.warning("Dropping malformed criteria entry: %r", v)
+            continue
+        try:
+            out.append(CriteriaVersion.from_dict(v))
+        except (KeyError, TypeError) as exc:
+            logger.warning("Dropping criteria entry missing required keys: %s", exc)
+    return out
 
 
 def append_criteria(

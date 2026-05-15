@@ -31,15 +31,47 @@ class _UrikaSuggester(Suggester):
     # Commands ordered by how often they're used, not alphabetically.
     # Most common first so /p suggests /project, not /pause or /plan.
     _COMMAND_PRIORITY = [
-        "project", "run", "new", "list", "help", "status", "results",
-        "config", "notifications", "experiments", "methods", "advisor",
-        "evaluate", "plan", "report", "present", "finalize", "resume",
-        "build-tool", "tools", "inspect", "criteria", "logs",
-        "knowledge", "dashboard", "usage", "update", "stop", "pause",
-        "new-session", "resume-session", "quit",
+        "project",
+        "run",
+        "new",
+        "list",
+        "help",
+        "status",
+        "results",
+        "config",
+        "notifications",
+        "experiments",
+        "methods",
+        "advisor",
+        "evaluate",
+        "plan",
+        "report",
+        "present",
+        "finalize",
+        "resume",
+        "build-tool",
+        "tools",
+        "inspect",
+        "criteria",
+        "logs",
+        "knowledge",
+        "dashboard",
+        "usage",
+        "update",
+        "stop",
+        "pause",
+        "new-session",
+        "resume-session",
+        "quit",
         # v0.4.2 H8 / C7 — TUI parity for CLI-only features.
-        "setup", "summarize", "sessions", "memory", "venv",
-        "experiment-create", "delete-experiment", "copy",
+        "setup",
+        "summarize",
+        "sessions",
+        "memory",
+        "venv",
+        "experiment-create",
+        "delete-experiment",
+        "copy",
     ]
 
     def __init__(self, session: ReplSession) -> None:
@@ -85,9 +117,7 @@ class _UrikaSuggester(Suggester):
             # Sort by directory mtime (most recent first)
             recent = sorted(
                 projects.items(),
-                key=lambda kv: kv[1].stat().st_mtime
-                if kv[1].exists()
-                else 0,
+                key=lambda kv: kv[1].stat().st_mtime if kv[1].exists() else 0,
                 reverse=True,
             )
             for name, _path in recent:

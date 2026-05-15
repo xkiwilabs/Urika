@@ -40,6 +40,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
         if lock.exists():
             # Check if the owning process is still alive
             import os as _os
+
             try:
                 pid_str = lock.read_text().strip()
                 if pid_str:
@@ -182,7 +183,9 @@ def cmd_run(session: ReplSession, args: str) -> None:
             }.get(auto_mode.split("—")[0].strip(), "checkpoint")
             if auto_mode == "capped":
                 try:
-                    max_experiments = int(_click.prompt("  Max experiments", default="10"))
+                    max_experiments = int(
+                        _click.prompt("  Max experiments", default="10")
+                    )
                 except ValueError:
                     max_experiments = 10
             elif auto_mode == "unlimited":

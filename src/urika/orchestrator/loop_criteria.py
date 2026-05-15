@@ -72,13 +72,26 @@ def _is_recoverable_failure(category: str | None) -> bool:
     rather than *fail* the session. See ``_FATAL_ERROR_CATEGORIES``."""
     return (category or "") not in _FATAL_ERROR_CATEGORIES
 
+
 # Metrics where lower values are better (errors, losses, p-values).
 # Shared with loop_display._print_run_summary so the "best" calculation
 # matches the primary-metric direction detection.
 _LOWER_IS_BETTER = {
-    "rmse", "mse", "mae", "mape", "loss", "error",
-    "brier_score", "log_loss", "sse", "residual",
-    "p_value", "aic", "bic", "deviance", "perplexity",
+    "rmse",
+    "mse",
+    "mae",
+    "mape",
+    "loss",
+    "error",
+    "brier_score",
+    "log_loss",
+    "sse",
+    "residual",
+    "p_value",
+    "aic",
+    "bic",
+    "deviance",
+    "perplexity",
 }
 
 

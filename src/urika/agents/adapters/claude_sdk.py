@@ -6,6 +6,7 @@ to change the runtime (e.g. custom runtime, Pi SDK).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -223,7 +224,11 @@ class ClaudeSDKRunner(AgentRunner):
     """Runs agents via Claude Agent SDK."""
 
     async def run(
-        self, config: AgentConfig, prompt: str, *, on_message: Callable[..., Any] | None = None
+        self,
+        config: AgentConfig,
+        prompt: str,
+        *,
+        on_message: Callable[..., Any] | None = None,
     ) -> AgentResult:
         """Execute an agent and return structured results."""
         # Layer 2 of the API-key safety net: refuse to spawn a Claude
@@ -298,55 +303,112 @@ class ClaudeSDKRunner(AgentRunner):
         else:
             prompt_arg = prompt
 
+        # Per-message stream timeout. Pre-fix the ``async for`` below
+        # had no wall-clock cap; a stalled API stream blocked the
+        # orchestrator forever with no heartbeat and no error.
+        # Reported by Cathy on Windows: orchestrator hung for ~hours
+        # mid-experiment on a Claude API call that never returned,
+        # process alive but doing nothing except animating the TUI
+        # spinner. The hung run also leaves the .lock in place since
+        # the orchestrator's normal release path never runs.
+        #
+        # Wrap each iteration in ``asyncio.wait_for`` so a stream that
+        # goes silent for > URIKA_AGENT_STREAM_TIMEOUT seconds raises
+        # ``TimeoutError`` instead of blocking. The default 600s (10
+        # min) is well above any active-thinking gap a healthy stream
+        # produces — tool execution emits intermediate messages, so a
+        # 10-min silence is the hang signature, not normal slow work.
         try:
-          async for msg in query(prompt=prompt_arg, options=options):
-            if on_message is not None:
-                try:
-                    on_message(msg)
-                except Exception as cb_exc:
-                    # Don't let callback errors break the agent, but
-                    # do log them — pre-v0.3.2 a UI-render bug in the
-                    # callback would silently kill progress feedback
-                    # and the user just saw "agent stalled".
-                    logger.warning(
-                        "on_message callback raised %s: %s",
-                        type(cb_exc).__name__,
-                        cb_exc,
-                        exc_info=True,
-                    )
+            _stream_timeout = float(os.environ.get("URIKA_AGENT_STREAM_TIMEOUT", "600"))
+        except (TypeError, ValueError):
+            _stream_timeout = 600.0
+        _stream_iter = query(prompt=prompt_arg, options=options).__aiter__()
 
-            messages.append(_message_to_dict(msg))
-            if isinstance(msg, AssistantMessage):
-                for block in msg.content:
-                    if isinstance(block, TextBlock):
-                        text_parts.append(block.text)
-                # Capture the model name from the latest assistant message
-                if getattr(msg, "model", None):
-                    model_name = msg.model
-            elif isinstance(msg, ResultMessage):
-                session_id = msg.session_id
-                num_turns = msg.num_turns
-                duration_ms = msg.duration_ms
-                # Accumulate cost/tokens across multi-ResultMessage
-                # streams (subagent + final). Pre-v0.3.2 these were
-                # set (not summed), so a subagent's usage was clobbered
-                # by the final ResultMessage's usage.
-                if msg.total_cost_usd is not None:
-                    cost_usd = (cost_usd or 0.0) + msg.total_cost_usd
-                is_error = msg.is_error
-                # Capture the actual error/result text
-                result_text = getattr(msg, "result", "") or ""
-                # Populate token counts from usage dict, including the
-                # cache fields newer SDKs emit separately.
-                usage = getattr(msg, "usage", None) or {}
-                _input = usage.get("input_tokens") or 0
-                _cache_create = usage.get("cache_creation_input_tokens") or 0
-                _cache_read = usage.get("cache_read_input_tokens") or 0
-                tokens_in += _input + _cache_create + _cache_read
-                input_tokens_only += _input
-                cache_creation_in += _cache_create
-                cache_read_in += _cache_read
-                tokens_out += usage.get("output_tokens") or 0
+        async def _aclose_stream() -> None:
+            # Best-effort close of the SDK's async iterator on any exit
+            # path (normal completion, timeout, ProcessError, generic
+            # exception). Async generators don't auto-aclose at GC time
+            # in a way we can rely on, so an early bail-out (timeout)
+            # could leave the SDK's claude-cli subprocess parked. The
+            # SDK's generator runs its own finally on aclose, which is
+            # what reaps the subprocess.
+            aclose = getattr(_stream_iter, "aclose", None)
+            if aclose is None:
+                return
+            try:
+                await aclose()
+            except Exception:
+                pass
+
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(
+                        _stream_iter.__anext__(), timeout=_stream_timeout
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError as exc:
+                    # Surface as a transient failure — the orchestrator's
+                    # transient path pauses the experiment (releasing the
+                    # lock) so /resume can pick it back up. Including
+                    # "timeout" in the message is intentional: the
+                    # existing ``_classify_error`` regex catches it and
+                    # routes to ``transient`` automatically.
+                    await _aclose_stream()
+                    raise RuntimeError(
+                        f"Agent stream timeout — no message from "
+                        f"{config.name} for >{_stream_timeout:.0f}s. "
+                        f"Suspected hung API call. Override the cap with "
+                        f"URIKA_AGENT_STREAM_TIMEOUT (seconds)."
+                    ) from exc
+                if on_message is not None:
+                    try:
+                        on_message(msg)
+                    except Exception as cb_exc:
+                        # Don't let callback errors break the agent, but
+                        # do log them — pre-v0.3.2 a UI-render bug in the
+                        # callback would silently kill progress feedback
+                        # and the user just saw "agent stalled".
+                        logger.warning(
+                            "on_message callback raised %s: %s",
+                            type(cb_exc).__name__,
+                            cb_exc,
+                            exc_info=True,
+                        )
+
+                messages.append(_message_to_dict(msg))
+                if isinstance(msg, AssistantMessage):
+                    for block in msg.content:
+                        if isinstance(block, TextBlock):
+                            text_parts.append(block.text)
+                    # Capture the model name from the latest assistant message
+                    if getattr(msg, "model", None):
+                        model_name = msg.model
+                elif isinstance(msg, ResultMessage):
+                    session_id = msg.session_id
+                    num_turns = msg.num_turns
+                    duration_ms = msg.duration_ms
+                    # Accumulate cost/tokens across multi-ResultMessage
+                    # streams (subagent + final). Pre-v0.3.2 these were
+                    # set (not summed), so a subagent's usage was clobbered
+                    # by the final ResultMessage's usage.
+                    if msg.total_cost_usd is not None:
+                        cost_usd = (cost_usd or 0.0) + msg.total_cost_usd
+                    is_error = msg.is_error
+                    # Capture the actual error/result text
+                    result_text = getattr(msg, "result", "") or ""
+                    # Populate token counts from usage dict, including the
+                    # cache fields newer SDKs emit separately.
+                    usage = getattr(msg, "usage", None) or {}
+                    _input = usage.get("input_tokens") or 0
+                    _cache_create = usage.get("cache_creation_input_tokens") or 0
+                    _cache_read = usage.get("cache_read_input_tokens") or 0
+                    tokens_in += _input + _cache_create + _cache_read
+                    input_tokens_only += _input
+                    cache_creation_in += _cache_create
+                    cache_read_in += _cache_read
+                    tokens_out += usage.get("output_tokens") or 0
 
         except ProcessError as exc:
             # Tolerate the system claude CLI v2.1.124+ streaming-mode
@@ -466,9 +528,8 @@ class ClaudeSDKRunner(AgentRunner):
             # still propagate as failures via the path below.
             got_content = bool(text_parts) or bool(messages)
             trailing_exit_after_success = (
-                (num_turns > 0 or got_content)
-                and "Command failed with exit code" in str(exc)
-            )
+                num_turns > 0 or got_content
+            ) and "Command failed with exit code" in str(exc)
             if trailing_exit_after_success:
                 logger.debug(
                     "Tolerating trailing CLI exit after successful stream "
@@ -535,9 +596,7 @@ class ClaudeSDKRunner(AgentRunner):
             if result_text:
                 error_msg = result_text
             else:
-                _last_assistant = (
-                    text_parts[-1][:200] if text_parts else ""
-                )
+                _last_assistant = text_parts[-1][:200] if text_parts else ""
                 error_msg = (
                     f"Agent reported error after {num_turns} turn(s) "
                     f"in {duration_ms}ms"
@@ -598,7 +657,9 @@ class ClaudeSDKRunner(AgentRunner):
         # them here means the model never even sees the tools, which is
         # cleaner; the callback is the fallback for CLI builds that
         # ignore ``disallowed_tools`` for built-ins.
-        disallowed = list(dict.fromkeys([*config.disallowed_tools, *_SANDBOX_ESCAPING_TOOLS]))
+        disallowed = list(
+            dict.fromkeys([*config.disallowed_tools, *_SANDBOX_ESCAPING_TOOLS])
+        )
 
         kwargs: dict[str, object] = {
             "system_prompt": config.system_prompt,

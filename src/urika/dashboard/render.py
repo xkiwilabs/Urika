@@ -27,6 +27,7 @@ def render_markdown(source: str | None, *, base_url: str | None = None) -> str:
     except ImportError:
         # Graceful degradation: just escape and pre-wrap.
         from html import escape
+
         return f"<pre>{escape(source)}</pre>"
 
     md = markdown.Markdown(
@@ -69,11 +70,8 @@ def _rewrite_relative_paths(html: str, base_url: str) -> str:
     def _rewrite(match: re.Match[str]) -> str:
         attr = match.group(1)
         path = match.group(2)
-        if (
-            not path
-            or path.startswith(
-                ("http://", "https://", "data:", "/", "#", "mailto:")
-            )
+        if not path or path.startswith(
+            ("http://", "https://", "data:", "/", "#", "mailto:")
         ):
             return match.group(0)
         # Strip leading 'artifacts/' if present — the artifact viewer

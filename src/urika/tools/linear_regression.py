@@ -28,7 +28,12 @@ class LinearRegressionMethod(ITool):
         return "regression"
 
     def default_params(self) -> dict[str, Any]:
-        return {"target": "", "features": None, "train_indices": None, "test_indices": None}
+        return {
+            "target": "",
+            "features": None,
+            "train_indices": None,
+            "test_indices": None,
+        }
 
     def run(self, data: DatasetView, params: dict[str, Any]) -> ToolResult:
         target = params.get("target", "")

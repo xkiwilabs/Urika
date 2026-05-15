@@ -201,7 +201,11 @@ def new(
                 for ep in _named_endpoints:
                     label = (
                         f"{ep['name']}  ({ep['base_url']}"
-                        + (f", key={ep['api_key_env']}" if ep.get("api_key_env") else "")
+                        + (
+                            f", key={ep['api_key_env']}"
+                            if ep.get("api_key_env")
+                            else ""
+                        )
                         + ")"
                     )
                     _ep_options.append(label)
@@ -219,19 +223,13 @@ def new(
                         None,
                     )
                     if chosen_ep is not None:
-                        private_endpoint_url = (
-                            chosen_ep.get("base_url") or ""
-                        ).strip()
+                        private_endpoint_url = (chosen_ep.get("base_url") or "").strip()
                         private_endpoint_key_env = (
                             chosen_ep.get("api_key_env") or ""
                         ).strip()
-                        print_step(
-                            "Testing endpoint connection…"
-                        )
+                        print_step("Testing endpoint connection…")
                         if _test_endpoint(private_endpoint_url):
-                            print_success(
-                                f"Connected to {private_endpoint_url}"
-                            )
+                            print_success(f"Connected to {private_endpoint_url}")
                         else:
                             print_error(
                                 f"Could not connect to "
@@ -279,9 +277,7 @@ def new(
                         print_success(f"Connected to {private_endpoint_url}")
                         break
                     else:
-                        print_error(
-                            f"Could not connect to {private_endpoint_url}"
-                        )
+                        print_error(f"Could not connect to {private_endpoint_url}")
                         retry = click.prompt(
                             "  Try again, switch to open mode, or quit?",
                             type=click.Choice(["retry", "open", "quit"]),
@@ -466,9 +462,7 @@ def new(
 
     seeded_channels = seed_project_notifications_from_global(project_dir)
     if seeded_channels and not json_output:
-        print_success(
-            f"Notifications auto-enabled: {', '.join(seeded_channels)}"
-        )
+        print_success(f"Notifications auto-enabled: {', '.join(seeded_channels)}")
 
     # Ingest knowledge BEFORE agent Q&A — agents benefit from domain context
     if data_path and scan_result and has_knowledge:
@@ -586,7 +580,9 @@ def new(
                 extra_profiles=extra_profiles if data_path else None,
             )
         except Exception as exc:
-            print_error(f"Agent loop unavailable ({exc}). Continuing with manual setup.")
+            print_error(
+                f"Agent loop unavailable ({exc}). Continuing with manual setup."
+            )
     elif _no_builder_env:
         click.echo("  Skipping project-builder agent (URIKA_NO_BUILDER_AGENT set).")
 

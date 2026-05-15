@@ -1,4 +1,5 @@
 """Orchestrator conversation session persistence — per-project."""
+
 from __future__ import annotations
 
 import json
@@ -84,14 +85,16 @@ def list_sessions(project_dir: Path, limit: int = 20) -> list[dict[str, Any]]:
     for f in files:
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
-            result.append({
-                "session_id": data["session_id"],
-                "started": data.get("started", ""),
-                "updated": data.get("updated", ""),
-                "preview": data.get("preview", ""),
-                "turn_count": len(data.get("recent_messages", [])) // 2,
-                "has_older_summary": bool(data.get("older_summary")),
-            })
+            result.append(
+                {
+                    "session_id": data["session_id"],
+                    "started": data.get("started", ""),
+                    "updated": data.get("updated", ""),
+                    "preview": data.get("preview", ""),
+                    "turn_count": len(data.get("recent_messages", [])) // 2,
+                    "has_older_summary": bool(data.get("older_summary")),
+                }
+            )
         except Exception:
             continue
     return result

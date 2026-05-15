@@ -183,11 +183,7 @@ def _copy_figure_or_placeholder(
             figures_dir.mkdir(exist_ok=True)
             shutil.copy2(src, figures_dir / fig_name)
             return f'<img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">'
-    return (
-        f'<div class="figure-missing">'
-        f'Figure missing: {_escape(figure_path)}'
-        f'</div>'
-    )
+    return f'<div class="figure-missing">Figure missing: {_escape(figure_path)}</div>'
 
 
 def _render_figure_slide(

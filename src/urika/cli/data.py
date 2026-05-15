@@ -54,10 +54,28 @@ def results(project: str, experiment_id: str | None, json_output: bool) -> None:
     leaderboard = load_leaderboard(project_path)
     ranking = leaderboard.get("ranking", [])
 
+    # Count actual runs across all experiments so we can flag the
+    # leaderboard-vs-run-count discrepancy when it would otherwise
+    # confuse the user. The leaderboard keeps best-per-method, so a
+    # run that doesn't improve any method's best is silently
+    # dropped from the ranking. Pre-fix this surfaced as ``urika
+    # status`` reporting "8 runs" while ``urika results`` listed
+    # only 7 with no explanation — reported by Cathy on Windows.
+    total_runs = 0
+    for exp in list_experiments(project_path):
+        progress = load_progress(project_path, exp.experiment_id)
+        total_runs += len(progress.get("runs", []))
+
     if json_output:
         from urika.cli_helpers import output_json
 
-        output_json({"ranking": ranking})
+        output_json(
+            {
+                "ranking": ranking,
+                "total_runs": total_runs,
+                "ranked_runs": len(ranking),
+            }
+        )
         return
 
     if not ranking:
@@ -67,6 +85,17 @@ def results(project: str, experiment_id: str | None, json_output: bool) -> None:
     for entry in ranking:
         metrics_str = ", ".join(f"{k}={v}" for k, v in entry.get("metrics", {}).items())
         click.echo(f"  #{entry['rank']}  {entry['method']}  {metrics_str}")
+
+    if total_runs > len(ranking):
+        diff = total_runs - len(ranking)
+        word = "run" if diff == 1 else "runs"
+        click.echo("")
+        click.echo(
+            f"  Showing {len(ranking)} of {total_runs} runs "
+            f"(leaderboard keeps best-per-method; "
+            f"{diff} {word} below their method's best are hidden — "
+            f"use 'urika results --experiment <id>' to see all)."
+        )
 
 
 @cli.command()
@@ -216,9 +245,7 @@ def logs(
 
     progress = load_progress(project_path, experiment_id)
     session = load_session(project_path, experiment_id)
-    log_path = (
-        project_path / "experiments" / experiment_id / "run.log"
-    )
+    log_path = project_path / "experiments" / experiment_id / "run.log"
 
     if json_output:
         from urika.cli_helpers import output_json
@@ -237,7 +264,9 @@ def logs(
         data["log_path"] = str(log_path)
         if log_path.exists():
             try:
-                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                lines = log_path.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
                 data["log_lines"] = lines[-tail:] if tail > 0 else lines
             except OSError as exc:
                 data["log_lines"] = []
@@ -598,9 +627,7 @@ def unlock(
     if experiment_id is None:
         experiments = list_experiments(project_path)
         locked = [
-            e
-            for e in experiments
-            if _lock_path(project_path, e.experiment_id).exists()
+            e for e in experiments if _lock_path(project_path, e.experiment_id).exists()
         ]
         if not locked:
             click.echo(f"  No locked experiments in {project}.")

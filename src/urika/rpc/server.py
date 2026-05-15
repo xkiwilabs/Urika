@@ -1,4 +1,5 @@
 """Stdio JSON-RPC server for Urika compute backend."""
+
 from __future__ import annotations
 
 import sys

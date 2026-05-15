@@ -70,11 +70,7 @@ def _print_dry_run_plan(
         if costs:
             costs_sorted = sorted(costs)
             mid = costs_sorted[len(costs_sorted) // 2]
-            n_runs_planned = (
-                max_experiments
-                if max_experiments is not None
-                else 1
-            )
+            n_runs_planned = max_experiments if max_experiments is not None else 1
             est_low = min(costs_sorted) * n_runs_planned
             est_high = max(costs_sorted) * n_runs_planned
             est_mid = mid * n_runs_planned
@@ -163,13 +159,13 @@ def _determine_next_experiment(
                     """
                     metrics = m.get("metrics", {})
                     nums = {
-                        k: v
-                        for k, v in metrics.items()
-                        if isinstance(v, (int, float))
+                        k: v for k, v in metrics.items() if isinstance(v, (int, float))
                     }
                     if not nums:
                         return float("-inf")
-                    higher = {k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER}
+                    higher = {
+                        k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER
+                    }
                     if higher:
                         return max(higher.values())
                     # All available metrics are lower-is-better — invert
@@ -201,10 +197,15 @@ def _determine_next_experiment(
         except (json.JSONDecodeError, KeyError):
             pass
 
-    # If user provided instructions, always call advisor agent to think
-    # Otherwise fall back to initial plan
+    # Call the advisor agent when there's something for it to react to:
+    # the user gave instructions, there are completed experiments to
+    # build on, or this is an autonomous run (``--auto`` — the user
+    # explicitly delegated method selection to the agent). For a fresh
+    # interactive run with no instructions, fall through to the
+    # deterministic baseline seed rather than spending API credits on a
+    # cold-start advisor call.
     next_suggestion = None
-    call_advisor_agent = bool(instructions) or bool(completed)
+    call_advisor_agent = bool(instructions) or bool(completed) or bool(auto)
 
     # Check for pending suggestions from remote advisor (Telegram/Slack)
     pending_path = project_path / "suggestions" / "pending.json"
@@ -233,8 +234,16 @@ def _determine_next_experiment(
             except (json.JSONDecodeError, KeyError):
                 pass
 
-    # Call suggestion agent to think about next steps
-    if next_suggestion is None:
+    # Call suggestion agent to think about next steps — but ONLY when
+    # we actually want to (user gave instructions, or there are
+    # completed experiments to react to). Pre-v0.4.4.2 the advisor was
+    # called unconditionally for a fresh project with no plan, even in
+    # non-interactive mode — burning API credits and (worse) hanging
+    # ``urika run test-proj`` in a non-TTY context (CliRunner, dashboard
+    # subprocess, CI) before the loop's "no experiments and no plan"
+    # message could surface. The seed-baseline branch below handles the
+    # "fresh project, advisor unwanted" path deterministically.
+    if next_suggestion is None and call_advisor_agent:
         try:
             import asyncio
 
@@ -481,13 +490,13 @@ def _run_advisor_first_for_experiment_impl(
                     """
                     metrics = m.get("metrics", {})
                     nums = {
-                        k: v
-                        for k, v in metrics.items()
-                        if isinstance(v, (int, float))
+                        k: v for k, v in metrics.items() if isinstance(v, (int, float))
                     }
                     if not nums:
                         return float("-inf")
-                    higher = {k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER}
+                    higher = {
+                        k: v for k, v in nums.items() if k not in _LOWER_IS_BETTER
+                    }
                     if higher:
                         return max(higher.values())
                     # All available metrics are lower-is-better — invert

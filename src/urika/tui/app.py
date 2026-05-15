@@ -28,9 +28,19 @@ from urika.tui.widgets.status_bar import StatusBar
 # the worker's stdin queue automatically.
 _WORKER_COMMANDS = frozenset(
     {
-        "run", "finalize", "evaluate", "plan", "advisor",
-        "present", "report", "build-tool", "resume",
-        "new", "config", "notifications", "setup",
+        "run",
+        "finalize",
+        "evaluate",
+        "plan",
+        "advisor",
+        "present",
+        "report",
+        "build-tool",
+        "resume",
+        "new",
+        "config",
+        "notifications",
+        "setup",
         # v0.4.2 H8: ``/summarize`` is an agent call (long-running);
         # the rest of the new H8 slashes (/sessions, /memory, /venv,
         # /experiment-create) are fast read/write operations and
@@ -47,7 +57,6 @@ _WORKER_COMMANDS = frozenset(
 # rejected it and the documented "pause mid-experiment" feature was
 # unreachable from the TUI.
 _ALWAYS_ALLOWED_COMMANDS = frozenset({"quit", "stop", "pause"})
-
 
 
 class UrikaApp(App):
@@ -193,9 +202,7 @@ class UrikaApp(App):
                 recent.sort(key=lambda x: x[2], reverse=True)
 
                 panel.write_line("")
-                panel.write_line(
-                    Text("  Recent projects:", style="bold")
-                )
+                panel.write_line(Text("  Recent projects:", style="bold"))
                 for name, n_exps, dt in recent[:5]:
                     line = Text()
                     line.append("    /project ", style="dim")
@@ -280,9 +287,7 @@ class UrikaApp(App):
                     return  # A real worker is alive — flag is accurate.
         # Flag lies. Reset it.
         self.session.set_agent_idle()
-        self.log.warning(
-            "agent_running was stale (no live worker found) — self-healed"
-        )
+        self.log.warning("agent_running was stale (no live worker found) — self-healed")
 
     @staticmethod
     def _is_path_not_command(text: str) -> bool:
@@ -339,9 +344,7 @@ class UrikaApp(App):
         # try this, but we do it eagerly so the UI unblocks now).
         self.session.set_agent_idle()
 
-        self._run_with_panel_output(
-            lambda: print(f"  Stopped /{agent}.")
-        )
+        self._run_with_panel_output(lambda: print(f"  Stopped /{agent}."))
 
         # Refresh the input bar prompt
         from urika.tui.widgets.input_bar import InputBar as IB
@@ -657,11 +660,7 @@ class UrikaApp(App):
                         parts = content.split(": ", 1)
                         tool_name = parts[0]
                         detail = parts[1] if len(parts) > 1 else ""
-                        short = (
-                            detail[:120] + "…"
-                            if len(detail) > 120
-                            else detail
-                        )
+                        short = detail[:120] + "…" if len(detail) > 120 else detail
                         panel.write_line(
                             Text(
                                 f"  ▸ {tool_name} {short}",
@@ -725,9 +724,7 @@ class UrikaApp(App):
             # (via query_one if still available) or the Textual log
             # if the panel itself is the thing that raised.
             try:
-                self.query_one(OutputPanel).write_line(
-                    f"  \u2717 Error: {exc}"
-                )
+                self.query_one(OutputPanel).write_line(f"  \u2717 Error: {exc}")
             except Exception:
                 self.log.error(f"chat error (panel unavailable): {exc}")
         finally:
@@ -772,7 +769,7 @@ class UrikaApp(App):
             if len(response) > 60:
                 preview += "…"
             self.notify(
-                f'Copied {len(response)} chars: “{preview}”',
+                f"Copied {len(response)} chars: “{preview}”",
                 title="Copied to clipboard",
                 timeout=3,
             )
@@ -816,18 +813,14 @@ class UrikaApp(App):
         if cmd == "ask":
             short = args[:60] + "…" if len(args) > 60 else args
             panel.write_line("")
-            panel.write_line(
-                Text(f"  [Remote] {short}", style="bold #ffcc66")
-            )
+            panel.write_line(Text(f"  [Remote] {short}", style="bold #ffcc66"))
             self.session.set_agent_running(agent_name="orchestrator")
             self._dispatch_remote_free_text(args, respond)
             return
 
         cmd_text = f"/{cmd} {args}".strip()
         panel.write_line("")
-        panel.write_line(
-            Text(f"  [Remote] {cmd_text}", style="bold #ffcc66")
-        )
+        panel.write_line(Text(f"  [Remote] {cmd_text}", style="bold #ffcc66"))
 
         # Route through the normal TUI dispatch path. Worker commands
         # run in a background thread; read-only ones run inline.
@@ -872,9 +865,7 @@ class UrikaApp(App):
         else:
             # Inline (read-only commands like /status, /results)
             try:
-                self._run_with_panel_output(
-                    lambda: handler(self.session, args)
-                )
+                self._run_with_panel_output(lambda: handler(self.session, args))
                 if respond:
                     respond(f"/{cmd} completed.")
             except Exception as exc:
