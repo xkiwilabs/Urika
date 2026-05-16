@@ -101,17 +101,30 @@ class TestSessionLifecycle:
     ) -> None:
         """Trying to start a session when ANOTHER live process owns the
         lock raises — the same-PID short-circuit (used for the dashboard
-        handoff) still lets the actual owner re-acquire."""
+        handoff) still lets the actual owner re-acquire.
+
+        Pre-fix the test pre-wrote PID 1 (init on POSIX) under the
+        assumption that ``_pid_is_alive(1)`` returns True everywhere.
+        On Windows there is no guaranteed PID 1 — ``psutil.pid_exists(1)``
+        returns False, so ``acquire_lock`` treated the lock as stale,
+        cleaned it, and ``session.start`` succeeded without raising.
+        Surfaced by the first post-billing-block CI run on v0.4.4.4.
+
+        Fix: monkeypatch both ``_get_process_name`` AND ``_pid_is_alive``
+        so the test exercises the ``foreign live urika process`` branch
+        independently of platform-specific PID assignment. This matches
+        the existing pattern in ``tests/test_core/test_session.py`` for
+        the same scenario.
+        """
         from urika.core import session as session_module
 
         proj, exp = project_with_experiment
-        # Pre-write a lock file with PID 1 (init — always alive, never us).
         lock_path = proj / "experiments" / exp / ".lock"
-        lock_path.write_text("1")
-        # Pretend init is named "python" so acquire_lock treats it as
-        # a real urika run rather than recycled-PID stale lock.
+        # Any non-self PID; the monkeypatched ``_pid_is_alive`` will
+        # report it alive regardless of the actual OS state.
+        lock_path.write_text("99999998")
         monkeypatch.setattr(session_module, "_get_process_name", lambda pid: "python")
-        # ``_pid_is_alive(1)`` returns True (init exists) — good.
+        monkeypatch.setattr(session_module, "_pid_is_alive", lambda pid: True)
         registry = build_registry()
         with pytest.raises(RuntimeError, match="already running"):
             registry["session.start"]({"project_dir": str(proj), "experiment_id": exp})
