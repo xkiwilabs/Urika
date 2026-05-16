@@ -74,7 +74,41 @@ across at least one user-tested project.
 
 ---
 
-## v0.5.0 — project memory deepening (target: ~1 week, week 1.5)
+## v0.4.5 — surface parity track (target: ~5 dev-days, inserted 2026-05-17)
+
+**Inserted 2026-05-17** between v0.4.4 (shipped) and v0.5.0 (planned).
+Closes the surface-parity gaps surfaced by the 2026-05-17 audit so
+v0.5.0 memory deepening lands on stable surfaces (rather than
+shipping features that immediately need parity backfill, one feature
+at a time).
+
+Detailed plan: `dev/plans/2026-05-17-v0.4.5-parity-track.md`.
+
+**Ships (summary):**
+
+1. **Dashboard `POST /api/projects` runs the builder-agent Q&A loop.**
+   Closes the one blocker — today the endpoint scaffolds but
+   explicitly skips the interactive loop. ~2-3 days.
+2. **TUI ports of `/inspect`, `/unlock`, `/update`, `/secret`.**
+   None of these exist on TUI today (verified by grep). REPL
+   already has the first two. ~1.5 days.
+3. **Dashboard unlock endpoint + UI** + REPL `cmd_unlock`. ~0.5 day.
+4. **Five new cross-surface parity tests** extending
+   `tests/test_cross_interface_parity.py` — builder-loop
+   invocation, pause-flag path, settings cascade, criteria-met
+   exit, notification auto-seed. ~1 day.
+
+**Cut criterion:** Dashboard new-project produces the same builder
+artifacts as `urika new`; all four TUI commands exist and use
+shared helpers (no parallel implementations); REPL `cmd_unlock`
+exists; five new parity tests pass on the full 6-job matrix; full
+3395-test suite green under both populated and empty `URIKA_HOME`.
+
+**Calendar impact:** Pushes v0.5.0 (originally week 1.5) by ~1 week.
+
+---
+
+## v0.5.0 — project memory deepening (target: ~1 week, was week 1.5; now shifted +1wk by v0.4.5)
 
 **Focus:** Make project memory the actual cross-experiment knowledge
 backbone it was designed to be. v0.4 shipped Phase 1 (auto-capture
