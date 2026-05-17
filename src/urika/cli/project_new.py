@@ -750,11 +750,22 @@ def _run_builder_agent_loop(
     question: str,
     extra_profiles: dict | None = None,
 ) -> None:
-    """Run the interactive agent loop: questions → suggestions → plan."""
+    """CLI entry point for the interactive builder loop.
+
+    Thin sync wrapper around ``urika.core.builder_loop.run_builder_loop``
+    that injects CLI-shaped ``ask_user`` (prompt_toolkit / numbered
+    menu) and ``emit`` (ThinkingPanel + print_* helpers) callbacks so
+    the runtime-agnostic core behaves identically to the pre-v0.4.5
+    in-line implementation.
+
+    v0.4.5 Track 1 refactor: the loop body moved to
+    ``urika.core.builder_loop`` so the dashboard's new-project wizard
+    can drive the same core via SSE + POST-answer endpoints. CLI
+    behaviour is unchanged — same agent prompts, same on-disk
+    artifacts, same screen output.
+    """
     import asyncio
 
-    from urika.agents.runner import get_runner
-    from urika.agents.registry import AgentRegistry
     from urika.cli_display import (
         Spinner,
         ThinkingPanel,
@@ -767,255 +778,111 @@ def _run_builder_agent_loop(
         thinking_phrase,
     )
     from urika.cli_helpers import interactive_prompt
-    from urika.core.builder_prompts import (
-        build_planning_prompt,
-        build_scoping_prompt,
-        build_suggestion_prompt,
-    )
-    from urika.orchestrator.parsing import (
-        _extract_json_blocks,
-        parse_suggestions,
+    from urika.core.builder_loop import (
+        BuilderAborted,
+        BuilderEvent,
+        BuilderQuestion,
+        run_builder_loop,
     )
 
-    import time as _time
-
-    runner = get_runner()
-    registry = AgentRegistry()
-    registry.discover()
-
-    # Usage accumulation for the whole builder loop — pre-v0.4.4 the
-    # project_builder / advisor / planning agent calls here were never
-    # counted, so ``urika usage`` understated the cost of ``urika new``.
-    _builder_usage = {"tin": 0, "tout": 0, "cost": 0.0, "calls": 0}
-    _builder_t0 = _time.monotonic()
-    from datetime import datetime as _dt, timezone as _tz
-
-    _builder_started_iso = _dt.now(_tz.utc).isoformat()
-
-    def _run_agent(cfg: object, prompt: str) -> object:
-        """Run a builder-loop agent and accumulate its usage."""
-        r = asyncio.run(runner.run(cfg, prompt, on_message=_on_builder_msg))
-        _builder_usage["tin"] += getattr(r, "tokens_in", 0) or 0
-        _builder_usage["tout"] += getattr(r, "tokens_out", 0) or 0
-        _builder_usage["cost"] += getattr(r, "cost_usd", 0.0) or 0.0
-        _builder_usage["calls"] += 1
-        return r
-
-    # --- Phase 1: Clarifying questions ---
-    builder_role = registry.get("project_builder")
-    if builder_role is None:
-        print_error("Project builder agent not found. Skipping interactive scoping.")
-        return
-
-    if scan_result is None:
-        print_error("No data scanned. Skipping interactive scoping.")
-        return
-
-    # Resolve the actual project directory (where urika.toml lives)
-    project_dir = getattr(
-        builder, "projects_dir", Path.home() / "urika-projects"
-    ) / getattr(builder, "name", "")
-
-    def _record_builder_usage() -> None:
-        """Persist the builder loop's usage to <project>/.urika/usage.json."""
-        if _builder_usage["calls"] == 0:
-            return
-        try:
-            from urika.core.usage import record_session
-
-            record_session(
-                project_dir,
-                started=_builder_started_iso,
-                ended=_dt.now(_tz.utc).isoformat(),
-                duration_ms=int((_time.monotonic() - _builder_t0) * 1000),
-                tokens_in=_builder_usage["tin"],
-                tokens_out=_builder_usage["tout"],
-                cost_usd=_builder_usage["cost"],
-                agent_calls=_builder_usage["calls"],
-                experiments_run=0,
-            )
-        except Exception as exc:  # never let usage bookkeeping break setup
-            logger.warning("Builder usage record failed: %s", exc)
-
-    # Create persistent footer panel for the entire builder loop
+    # CLI-side state for the emit handler: a persistent footer panel
+    # for the whole loop, plus a Spinner that wraps each refinement-
+    # phase agent call. Pre-v0.4.5 the panel + spinner were created
+    # inline in the loop body; the refactor pushed UI concerns out so
+    # the dashboard can run a queue-driven loop with no terminal UI.
     panel = ThinkingPanel()
     panel.project = getattr(builder, "name", "")
     panel.activity = thinking_phrase()
     panel.activate()
     panel.start_spinner()
 
-    def _on_builder_msg(msg: object) -> None:
-        """Show tool use + update panel from builder agents."""
-        try:
-            model = getattr(msg, "model", None)
-            if model:
-                panel.set_model(model)
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    tool_name = getattr(block, "name", None)
-                    if tool_name:
-                        inp = getattr(block, "input", {}) or {}
-                        detail = ""
-                        if isinstance(inp, dict):
-                            detail = (
-                                inp.get("command", "")
-                                or inp.get("file_path", "")
-                                or inp.get("pattern", "")
-                            )
-                        print_tool_use(tool_name, detail)
-                        panel.set_thinking(tool_name)
-                    else:
-                        panel.set_thinking("Thinking…")
-        except Exception:
+    # Used for the "spinner around refinement-phase agent calls"
+    # affordance — see the ``Spinner`` block at the bottom of the
+    # original pre-v0.4.5 function.
+    active_spinner: list[Spinner] = []
+
+    def _emit(event: BuilderEvent) -> None:
+        kind = event.kind
+        p = event.payload
+        if kind == "step":
+            print_step(p.get("text", ""))
+        elif kind == "phase":
+            agent = p.get("agent", "")
+            activity = p.get("activity", _AGENT_ACTIVITY.get(agent, thinking_phrase()))
+            print_agent(agent)
+            panel.update(agent=agent, activity=activity)
+            # Refinement-phase agent calls were wrapped in a Spinner
+            # pre-refactor. Mirror that here by opening a Spinner on
+            # phase change for the advisor/planning refinement loops
+            # and closing it on the next phase / agent_text / done.
+            for s in active_spinner:
+                try:
+                    s.__exit__(None, None, None)
+                except Exception:
+                    pass
+            active_spinner.clear()
+        elif kind == "model":
+            panel.set_model(p.get("model", ""))
+        elif kind == "tool_use":
+            print_tool_use(p.get("tool", ""), p.get("detail", ""))
+            panel.set_thinking(p.get("tool", ""))
+        elif kind == "thinking":
+            panel.set_thinking(p.get("phrase", "Thinking…"))
+        elif kind == "error":
+            print_error(p.get("message", ""))
+        elif kind == "agent_text":
+            click.echo(format_agent_output(p.get("text", "")))
+        elif kind == "done":
+            # Panel cleanup happens in the wrapper's ``finally`` —
+            # done-event is informational.
             pass
 
-    answers: dict[str, str] = {}
-    context = ""
-    max_questions = 10
-
-    print_step("The project builder will ask questions to scope the project.")
+    async def _ask(q: BuilderQuestion) -> str:
+        """CLI ask_user: numbered menu for ``options``, plain prompt
+        otherwise. Runs the (sync) prompt_toolkit primitives via
+        ``asyncio.to_thread`` so we don't block the event loop."""
+        if q.options and q.is_terminal_choice:
+            # Terminal "looks good / refine / abort" decision row.
+            return await asyncio.to_thread(_prompt_numbered, q.text, q.options, 1)
+        if q.options:
+            # Non-terminal multi-choice clarifying question — render
+            # the options inline (matching the pre-refactor output),
+            # then accept a free-text answer so the user can either
+            # type "1" / "2" or write something custom.
+            click.echo(f"\n{q.text}")
+            for j, opt in enumerate(q.options, 1):
+                click.echo(f"  {j}. {opt}")
+            return await asyncio.to_thread(
+                interactive_prompt, "Your answer (or 'done' to move on)"
+            )
+        if q.text:
+            click.echo(f"\n{q.text}")
+        return await asyncio.to_thread(
+            interactive_prompt, "Your answer (or 'done' to move on)"
+        )
 
     try:
-        for i in range(max_questions):
-            prompt = build_scoping_prompt(
+        asyncio.run(
+            run_builder_loop(
+                builder,
                 scan_result,
                 data_summary,
                 description,
-                context,
-                question=question,
+                question,
+                ask_user=_ask,
+                emit=_emit,
                 extra_profiles=extra_profiles,
             )
-            config = builder_role.build_config(project_dir=project_dir)
-
-            panel.update(agent="project_builder", activity=thinking_phrase())
-            result = _run_agent(config, prompt)
-
-            if not result.success:
-                print_error(f"Agent error: {result.error}")
-                break
-
-            # Try to parse structured question from JSON block
-            blocks = _extract_json_blocks(result.text_output)
-            question_text = None
-            for block in blocks:
-                # Agent signals it has enough context
-                if block.get("ready"):
-                    question_text = None
-                    break
-                if "question" in block:
-                    question_text = block["question"]
-                    if block.get("options"):
-                        click.echo(f"\n{question_text}")
-                        for j, opt in enumerate(block["options"], 1):
-                            click.echo(f"  {j}. {opt}")
-                    break
-
-            if question_text is None:
-                question_text = result.text_output.strip()
-                if not question_text or any(b.get("ready") for b in blocks):
-                    break
-                click.echo(f"\n{question_text}")
-
-            answer = interactive_prompt("Your answer (or 'done' to move on)")
-            if answer.lower() == "done":
-                break
-
-            answers[question_text] = answer
-            context += f"Q: {question_text}\nA: {answer}\n\n"
-
-        # --- Phase 2: Advisor agent ---
-        print_agent("advisor_agent")
-        suggest_role = registry.get("advisor_agent")
-        if suggest_role is None:
-            print_error("Advisor agent not found. Skipping.")
-            return
-
-        suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
-        suggest_config = suggest_role.build_config(
-            project_dir=project_dir, experiment_id=""
         )
-
-        panel.update(
-            agent="advisor_agent",
-            activity=_AGENT_ACTIVITY.get("advisor_agent", thinking_phrase()),
-        )
-        suggest_result = _run_agent(suggest_config, suggest_prompt)
-
-        if not suggest_result.success:
-            print_error(f"Advisor agent error: {suggest_result.error}")
-            return
-
-        suggestions = parse_suggestions(suggest_result.text_output)
-        click.echo(format_agent_output(suggest_result.text_output))
-
-        # --- Phase 3: Planning agent ---
-        print_agent("planning_agent")
-        plan_role = registry.get("planning_agent")
-        if plan_role is None:
-            print_error("Planning agent not found. Skipping.")
-            if suggestions:
-                builder.set_initial_suggestions(suggestions)
-            return
-
-        plan_prompt = build_planning_prompt(
-            suggestions or {}, description, data_summary
-        )
-        plan_config = plan_role.build_config(project_dir=project_dir, experiment_id="")
-
-        panel.update(
-            agent="planning_agent",
-            activity=_AGENT_ACTIVITY.get("planning_agent", thinking_phrase()),
-        )
-        plan_result = _run_agent(plan_config, plan_prompt)
-
-        if not plan_result.success:
-            print_error(f"Planning agent error: {plan_result.error}")
-            if suggestions:
-                builder.set_initial_suggestions(suggestions)
-            return
-
-        click.echo(format_agent_output(plan_result.text_output))
-
+    except BuilderAborted:
+        raise click.ClickException("Aborted.")
     finally:
+        for s in active_spinner:
+            try:
+                s.__exit__(None, None, None)
+            except Exception:
+                pass
         panel.cleanup()
-
-    # --- Phase 4: User refinement loop ---
-    while True:
-        click.echo("")
-        choice = _prompt_numbered(
-            "What would you like to do?",
-            ["Looks good — create the project", "Refine — I have suggestions", "Abort"],
-            default=1,
-        )
-        if choice == "Abort":
-            raise click.ClickException("Aborted.")
-        if choice.startswith("Looks good"):
-            break
-        refinement = interactive_prompt("Your suggestions")
-        if not refinement:
-            continue
-
-        print_agent("advisor_agent")
-        refined_prompt = suggest_prompt + f"\n\n## User Refinement\n{refinement}"
-        with Spinner(_AGENT_ACTIVITY.get("advisor_agent", thinking_phrase())):
-            suggest_result = _run_agent(suggest_config, refined_prompt)
-        if suggest_result.success:
-            suggestions = parse_suggestions(suggest_result.text_output)
-            print_agent("planning_agent")
-            plan_prompt = build_planning_prompt(
-                suggestions or {}, description, data_summary
-            )
-            with Spinner(_AGENT_ACTIVITY.get("planning_agent", thinking_phrase())):
-                plan_result = _run_agent(plan_config, plan_prompt)
-            if plan_result.success:
-                click.echo(format_agent_output(plan_result.text_output))
-
-    # Store final suggestions
-    if suggestions:
-        builder.set_initial_suggestions(suggestions)
-
-    # Persist the builder loop's token/cost usage.
-    _record_builder_usage()
 
 
 def _ingest_knowledge(

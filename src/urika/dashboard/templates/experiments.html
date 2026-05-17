@@ -109,11 +109,71 @@
               </button>
             </form>
           {% endif %}
+          {# v0.4.5 D2: Unlock button when a .lock is present but the
+             experiment isn't actively running. Calls the
+             unlock endpoint with force=false first; on 409 (the live-
+             PID safety check fired) a confirm prompts the user before
+             retrying with force=true. #}
+          {% if exp.has_lock and exp.status != "running" %}
+            <button type="button"
+                    class="btn btn--small btn--secondary list-item-action"
+                    data-unlock-url="/api/projects/{{ project.name }}/experiments/{{ exp.experiment_id }}/unlock"
+                    onclick="window.urikaUnlockExperiment(this)">
+              Unlock
+            </button>
+          {% endif %}
         </li>
       {% endfor %}
     </ul>
 
     <script>
+      // v0.4.5 D2: per-experiment Unlock button. Tries force=false
+      // first; on 409 (live-PID safety check), confirms with the
+      // user and retries with force=true. Reloads the page after a
+      // successful clear so the Unlock button disappears (and the
+      // status tag reflects the cleaned state).
+      window.urikaUnlockExperiment = function (btn) {
+        const url = btn.dataset.unlockUrl;
+        if (!url) return;
+        btn.disabled = true;
+        function post(force) {
+          return fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ force: force }),
+          });
+        }
+        post(false).then(function (r) {
+          if (r.ok) {
+            window.location.reload();
+            return;
+          }
+          if (r.status === 409) {
+            r.json().then(function (detail) {
+              const d = detail && detail.detail ? detail.detail : detail;
+              const pid = d && d.pid ? d.pid : "?";
+              const name = d && d.proc_name ? d.proc_name : "unknown";
+              const status = d && d.status ? d.status : "";
+              const isUrikaLike = status === "refused_live_urika";
+              const msg = isUrikaLike
+                ? "Lock owner PID " + pid + " (" + name + ") looks like a real running Urika process. Force-unlocking will leave it orphaned. Continue anyway?"
+                : "Lock owner PID " + pid + (name ? " (" + name + ")" : "") + " is alive but doesn't look like Urika (probably a recycled PID). Force-unlock?";
+              if (!confirm(msg)) {
+                btn.disabled = false;
+                return;
+              }
+              post(true).then(function (r2) {
+                if (r2.ok) window.location.reload();
+                else { alert("Force unlock failed: HTTP " + r2.status); btn.disabled = false; }
+              }).catch(function () { btn.disabled = false; });
+            });
+            return;
+          }
+          alert("Unlock failed: HTTP " + r.status);
+          btn.disabled = false;
+        }).catch(function () { btn.disabled = false; });
+      };
+
       (function() {
         const root = document.querySelector('.list-controls');
         const list = document.getElementById('experiments-list');

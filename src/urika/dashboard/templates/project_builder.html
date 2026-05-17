@@ -1,0 +1,206 @@
+{% extends "_base.html" %}
+
+{% block title %}Setup wizard · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Setup wizard: {{ project.name | humanize }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a class="breadcrumb-item" href="/projects">Projects</a>
+  <span class="breadcrumb-separator">/</span>
+  <a class="breadcrumb-item" href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+  <span class="breadcrumb-separator">/</span>
+  <span class="breadcrumb-current">Setup wizard</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <p class="text-muted">
+    The project builder agent will ask clarifying questions to scope this
+    project, suggest experiments, and draft an initial plan. Closing this
+    page or clicking Abort will discard the partial project (moved to
+    trash).
+  </p>
+
+  <div id="builder-status" class="text-muted" style="margin-top: var(--space-3);">Connecting…</div>
+
+  {# Chronological event log. Each event becomes a row classified by
+     kind so theme CSS can colour-code phase / tool_use / error /
+     agent_text differently. Matches the CLI's audit-trail rendering. #}
+  <div id="builder-log" class="log-line" style="max-height: 500px; overflow: auto; padding: var(--space-4); margin-top: var(--space-3);"></div>
+
+  {# Answer composer: hidden until a question event arrives, then
+     reveals either a button row (for terminal-choice questions) or a
+     free-text input. Disabled across the network round-trip to
+     prevent double-submit. #}
+  <div id="builder-composer" style="display: none; margin-top: var(--space-4);">
+    <div id="builder-question-text" style="font-weight: 600; margin-bottom: var(--space-2);"></div>
+    <div id="builder-choices" style="display: none; margin-bottom: var(--space-2);"></div>
+    <div id="builder-freetext-row" style="display: none;">
+      <input id="builder-answer-input" type="text" placeholder="Your answer (or 'done' to move on)" style="width: 70%;" />
+      <button id="builder-answer-submit" class="btn btn--primary">Send</button>
+    </div>
+  </div>
+
+  <div id="builder-completion" style="display: none; margin-top: var(--space-4);">
+    <p>Builder finished. The project is ready.</p>
+    <a class="btn btn--primary" href="/projects/{{ project.name }}">Open project →</a>
+  </div>
+
+  <div style="margin-top: var(--space-4);">
+    <button id="builder-abort" class="btn btn--secondary">Abort and trash project</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  const projectName = {{ project.name | tojson }};
+  const logEl = document.getElementById("builder-log");
+  const statusEl = document.getElementById("builder-status");
+  const composerEl = document.getElementById("builder-composer");
+  const questionTextEl = document.getElementById("builder-question-text");
+  const choicesEl = document.getElementById("builder-choices");
+  const freetextRow = document.getElementById("builder-freetext-row");
+  const answerInput = document.getElementById("builder-answer-input");
+  const answerSubmit = document.getElementById("builder-answer-submit");
+  const abortBtn = document.getElementById("builder-abort");
+  const completionEl = document.getElementById("builder-completion");
+
+  function append(kind, text) {
+    const row = document.createElement("div");
+    row.className = "builder-event builder-event--" + kind;
+    row.textContent = text;
+    logEl.appendChild(row);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function removeAllChildren(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+  }
+
+  function hideComposer() {
+    composerEl.style.display = "none";
+    choicesEl.style.display = "none";
+    freetextRow.style.display = "none";
+    removeAllChildren(choicesEl);
+    answerInput.value = "";
+    answerSubmit.disabled = false;
+  }
+
+  function postAnswer(answer) {
+    answerSubmit.disabled = true;
+    fetch("/api/projects/" + encodeURIComponent(projectName) + "/builder/answer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer: answer }),
+    }).then(function (r) {
+      if (!r.ok) {
+        append("error", "Answer rejected: HTTP " + r.status);
+        answerSubmit.disabled = false;
+        return;
+      }
+      hideComposer();
+    }).catch(function (e) {
+      append("error", "Network error: " + e);
+      answerSubmit.disabled = false;
+    });
+  }
+
+  function showQuestion(payload) {
+    questionTextEl.textContent = payload.text || "";
+    removeAllChildren(choicesEl);
+    if (payload.options && payload.options.length > 0) {
+      choicesEl.style.display = "";
+      payload.options.forEach(function (opt) {
+        const btn = document.createElement("button");
+        btn.className = "btn btn--secondary";
+        btn.style.marginRight = "var(--space-2)";
+        btn.style.marginBottom = "var(--space-2)";
+        btn.textContent = opt;
+        btn.addEventListener("click", function () { postAnswer(opt); });
+        choicesEl.appendChild(btn);
+      });
+      // For non-terminal multi-choice, also allow free-text so the
+      // user can type a custom answer or "done" to skip.
+      if (!payload.is_terminal_choice) {
+        freetextRow.style.display = "";
+      }
+    } else {
+      freetextRow.style.display = "";
+      answerInput.focus();
+    }
+    composerEl.style.display = "";
+  }
+
+  answerSubmit.addEventListener("click", function () {
+    const ans = (answerInput.value || "").trim();
+    if (!ans) return;
+    postAnswer(ans);
+  });
+  answerInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      answerSubmit.click();
+    }
+  });
+
+  abortBtn.addEventListener("click", function () {
+    if (!confirm("Abort the builder and move this project to trash?")) return;
+    abortBtn.disabled = true;
+    fetch("/api/projects/" + encodeURIComponent(projectName) + "/builder/abort", { method: "POST" })
+      .then(function () { window.location.href = "/projects"; })
+      .catch(function () { abortBtn.disabled = false; });
+  });
+
+  // Start (or attach to) the builder session, then open the SSE
+  // stream. A 409 means a session is already in flight for this
+  // project — that's fine, we just attach to it. Any other error
+  // surfaces in the status bar.
+  let es = null;
+  fetch("/api/projects/" + encodeURIComponent(projectName) + "/builder/start", { method: "POST" })
+    .then(function (r) {
+      if (!r.ok && r.status !== 409) {
+        statusEl.textContent = "Could not start builder: HTTP " + r.status;
+        return;
+      }
+      es = new EventSource("/api/projects/" + encodeURIComponent(projectName) + "/builder/stream");
+      es.onopen = function () { statusEl.textContent = "Streaming…"; };
+      es.addEventListener("builder", onBuilderEvent);
+      es.onerror = function () { statusEl.textContent = "Connection lost."; };
+    })
+    .catch(function (err) {
+      statusEl.textContent = "Could not start builder: " + err;
+    });
+
+  function onBuilderEvent(e) {
+    let data;
+    try { data = JSON.parse(e.data); } catch (err) { return; }
+    const kind = data.kind;
+    const p = data.payload || {};
+    if (kind === "step") {
+      append("step", "• " + (p.text || ""));
+    } else if (kind === "phase") {
+      append("phase", "→ " + (p.agent || "") + ": " + (p.activity || ""));
+    } else if (kind === "model") {
+      append("model", "model: " + (p.model || ""));
+    } else if (kind === "tool_use") {
+      append("tool_use", "  ↳ " + (p.tool || "") + (p.detail ? " " + p.detail : ""));
+    } else if (kind === "thinking") {
+      // Don't append; this is a busy indicator. Future: update a
+      // sticky activity bar instead of dropping the event.
+    } else if (kind === "error") {
+      append("error", "⚠ " + (p.message || ""));
+    } else if (kind === "agent_text") {
+      append("agent_text", p.text || "");
+    } else if (kind === "question") {
+      showQuestion(p);
+    } else if (kind === "done") {
+      statusEl.textContent = "Completed.";
+      hideComposer();
+      completionEl.style.display = "";
+      if (es) es.close();
+    }
+  }
+})();
+</script>
+{% endblock %}

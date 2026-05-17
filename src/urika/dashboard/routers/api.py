@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import signal
@@ -31,6 +32,8 @@ from urika.dashboard.runs import (
     spawn_report,
     spawn_summarize,
 )
+
+logger = logging.getLogger(__name__)
 
 # Hardcoded list of agent roles whose model/endpoint can be overridden.
 # Mirrors KNOWN_AGENTS in dashboard/routers/pages.py — kept duplicated to
@@ -274,6 +277,311 @@ async def api_create_project(request: Request):
     if request.headers.get("hx-request") == "true":
         return Response(status_code=201, headers={"HX-Redirect": f"/projects/{name}"})
     return JSONResponse({"name": name, "path": str(project_dir)}, status_code=201)
+
+
+# ── Interactive project-builder wizard (v0.4.5 Track 1) ───────────────
+#
+# These four endpoints drive the dashboard's interactive new-project
+# wizard, which runs the same builder agent Q&A loop that ``urika new``
+# does in a TTY. Pre-v0.4.5 the dashboard's ``POST /projects`` above
+# scaffolded the workspace but skipped the loop entirely — projects
+# created via the dashboard never benefited from agent-guided scoping.
+#
+# Flow:
+#   1. Wizard POSTs to ``/projects/{name}/builder/start`` after the
+#      workspace already exists. Server kicks off the loop as a
+#      background asyncio task, returns a session id.
+#   2. Wizard opens an EventSource on ``/projects/{name}/builder/stream``
+#      and renders each emitted ``BuilderEvent`` chronologically.
+#   3. When the loop wants a user answer, it emits a ``question`` event
+#      carrying the question text + (for menus) options. The wizard
+#      POSTs back to ``/projects/{name}/builder/answer``.
+#   4. On user cancel or window close, the wizard POSTs to
+#      ``/projects/{name}/builder/abort`` which cancels the background
+#      task and trashes the partial workspace.
+#
+# Concurrency: one builder session per project at a time (keyed by
+# project name in ``builder_sessions``). A second ``start`` returns 409
+# until the first is done or aborted.
+
+
+def _persist_builder_suggestions(project_dir: Path, suggestions: dict | None) -> None:
+    """Mirror what ``ProjectBuilder.write_project`` does for the
+    suggestions slot — writes them to
+    ``<project_dir>/suggestions/initial.json`` so the rest of the
+    project-startup machinery picks them up the same way the CLI
+    path produces. No-op for falsy suggestions."""
+    if not suggestions:
+        return
+    suggestions_dir = project_dir / "suggestions"
+    suggestions_dir.mkdir(exist_ok=True)
+    (suggestions_dir / "initial.json").write_text(
+        json.dumps(suggestions, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+class _DashboardBuilderShim:
+    """Minimal ``ProjectBuilder``-shaped object that the runtime-
+    agnostic ``run_builder_loop`` core uses for ``.name`` /
+    ``.projects_dir`` lookups and the ``set_initial_suggestions``
+    callback. The CLI path uses a real ``ProjectBuilder``; here the
+    workspace already exists on disk so we just need somewhere to
+    park the final suggestions until they're flushed by the
+    endpoint's ``done`` handler."""
+
+    def __init__(self, name: str, projects_dir: Path) -> None:
+        self.name = name
+        self.projects_dir = projects_dir
+        self._suggestions: dict | None = None
+
+    def set_initial_suggestions(self, suggestions: dict) -> None:
+        self._suggestions = suggestions
+
+
+@router.post("/projects/{name}/builder/start")
+async def api_builder_start(name: str):
+    """Kick off the interactive builder loop for an existing project.
+
+    The project must already exist on disk (scaffolded via
+    ``POST /projects``). Returns ``{"session_id": "..."}`` so the
+    wizard can open the SSE stream and POST answers.
+
+    409 if another builder session is already active for this project.
+    """
+    import uuid
+
+    from urika.core.builder_loop import (
+        BuilderAborted,
+        BuilderEvent,
+        BuilderQuestion,
+        run_builder_loop,
+    )
+    from urika.core.project_builder import scan_source_path
+    from urika.dashboard import builder_sessions
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    existing = builder_sessions.get_for_project(name)
+    if existing is not None and not existing.done and not existing.aborted:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A builder session is already active for '{name}' (session_id={existing.session_id})",
+        )
+
+    # Pull the data path + research question from the existing
+    # urika.toml so the loop runs against the same inputs the CLI
+    # path would see. data_paths may be empty (a fresh project with
+    # no data); the loop handles that early-exit in its own guards.
+    toml_path = summary.path / "urika.toml"
+    with open(toml_path, "rb") as f:
+        cfg = tomllib.load(f)
+    project_block = cfg.get("project", {}) or {}
+    question = (project_block.get("question") or "").strip()
+    description = (project_block.get("description") or "").strip()
+    data_paths_raw = (cfg.get("data", {}) or {}).get("source", "")
+    data_paths = [data_paths_raw] if data_paths_raw else []
+
+    # Scan + profile inline. Cheap for small datasets; for big ones
+    # this blocks the request briefly but matches CLI behavior. If
+    # that turns out to be a problem we move it into the background
+    # task — for v0.4.5 keep it simple.
+    scan_result = None
+    data_summary = None
+    extra_profiles: dict | None = None
+    if data_paths and Path(data_paths[0]).exists():
+        try:
+            scan_result = scan_source_path(Path(data_paths[0]))
+            if scan_result and scan_result.data_files:
+                import pandas as pd
+
+                from urika.core.project_builder import _read_data_file
+                from urika.data.profiler import profile_dataset
+
+                frames = []
+                for f in scan_result.data_files[:5]:
+                    try:
+                        frames.append(_read_data_file(f))
+                    except Exception:
+                        continue
+                if frames:
+                    combined = pd.concat(frames, ignore_index=True)
+                    data_summary = profile_dataset(combined)
+        except Exception as exc:
+            logger.warning("Builder scan/profile failed for %s: %s", name, exc)
+
+    session = builder_sessions.BuilderSession(
+        session_id=uuid.uuid4().hex[:12],
+        project_name=name,
+        project_dir=summary.path,
+    )
+
+    builder = _DashboardBuilderShim(name=name, projects_dir=summary.path.parent)
+
+    async def _ask(q: "BuilderQuestion") -> str:
+        # Park the question on the session for the SSE stream + wizard,
+        # then await an answer Future the answer endpoint resolves.
+        session.pending_question_data = q
+        session.pending_question = asyncio.get_running_loop().create_future()
+        session.events.put_nowait(
+            BuilderEvent(
+                "question",  # type: ignore[arg-type]
+                {
+                    "text": q.text,
+                    "options": list(q.options),
+                    "is_terminal_choice": q.is_terminal_choice,
+                },
+            )
+        )
+        try:
+            answer = await session.pending_question
+        finally:
+            session.pending_question = None
+            session.pending_question_data = None
+        return answer
+
+    def _emit(event: "BuilderEvent") -> None:
+        try:
+            session.events.put_nowait(event)
+        except Exception as exc:
+            logger.warning("builder emit drop on %s: %s", name, exc)
+
+    async def _runner() -> None:
+        try:
+            suggestions = await run_builder_loop(
+                builder,
+                scan_result,
+                data_summary,
+                description,
+                question,
+                ask_user=_ask,
+                emit=_emit,
+                extra_profiles=extra_profiles,
+            )
+            session.final_suggestions = suggestions
+            # Persist to disk in the dashboard path (CLI path's
+            # ProjectBuilder.write_project handles this for ``urika new``).
+            _persist_builder_suggestions(summary.path, suggestions)
+        except BuilderAborted:
+            session.aborted = True
+        except asyncio.CancelledError:
+            session.aborted = True
+            raise
+        except Exception as exc:
+            logger.exception("Builder loop crashed for %s", name)
+            session.events.put_nowait(
+                BuilderEvent("error", {"message": f"Builder loop crashed: {exc}"})  # type: ignore[arg-type]
+            )
+        finally:
+            session.done = True
+            # Wake up any pending stream consumer with a sentinel
+            # so it returns instead of polling indefinitely.
+            session.events.put_nowait(
+                BuilderEvent("done", {"suggestions": session.final_suggestions})  # type: ignore[arg-type]
+            )
+
+    session.task = asyncio.create_task(_runner())
+    builder_sessions.register(session)
+
+    return JSONResponse({"session_id": session.session_id}, status_code=202)
+
+
+@router.get("/projects/{name}/builder/stream")
+async def api_builder_stream(name: str, request: Request):
+    """SSE stream of builder events for an active session.
+
+    Each event is encoded as ``event: builder\\ndata: <json>\\n\\n``
+    where the JSON has ``{"kind": "...", "payload": {...}}``. The
+    stream closes after a ``done`` event is sent.
+    """
+    from urika.dashboard import builder_sessions
+
+    session = builder_sessions.get_for_project(name)
+    if session is None:
+        raise HTTPException(
+            status_code=404, detail="No builder session for this project"
+        )
+
+    async def event_stream():
+        while True:
+            if await request.is_disconnected():
+                return
+            try:
+                event = await asyncio.wait_for(session.events.get(), timeout=2.0)
+            except asyncio.TimeoutError:
+                # Periodic heartbeat so intermediate proxies don't
+                # idle-close the SSE connection.
+                yield ": heartbeat\n\n"
+                continue
+            payload = {"kind": event.kind, "payload": event.payload}
+            yield f"event: builder\ndata: {json.dumps(payload)}\n\n"
+            if event.kind == "done":
+                return
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/projects/{name}/builder/answer")
+async def api_builder_answer(name: str, request: Request):
+    """Resolve the currently-pending builder question with the user's
+    answer. 400 if no question is pending."""
+    from urika.dashboard import builder_sessions
+
+    session = builder_sessions.get_for_project(name)
+    if session is None:
+        raise HTTPException(
+            status_code=404, detail="No builder session for this project"
+        )
+    if session.pending_question is None:
+        raise HTTPException(status_code=400, detail="No pending question")
+
+    body = (
+        await request.json()
+        if request.headers.get("content-type", "").startswith("application/json")
+        else dict(await request.form())
+    )
+    answer = (body.get("answer") or "").strip() if isinstance(body, dict) else ""
+    try:
+        session.pending_question.set_result(answer)
+    except asyncio.InvalidStateError:
+        # Already resolved (race with a concurrent answer POST).
+        raise HTTPException(status_code=409, detail="Question already answered")
+    return JSONResponse({"ok": True})
+
+
+@router.post("/projects/{name}/builder/abort")
+async def api_builder_abort(name: str):
+    """Cancel the in-flight builder session and trash the partial
+    project. The wizard calls this on user cancel or window close."""
+    from urika.core.project_delete import trash_project
+    from urika.dashboard import builder_sessions
+
+    session = builder_sessions.get_for_project(name)
+    if session is None:
+        raise HTTPException(
+            status_code=404, detail="No builder session for this project"
+        )
+
+    if session.task is not None and not session.task.done():
+        session.task.cancel()
+    session.aborted = True
+    session.done = True
+
+    # Trash the partial workspace per the v0.4.5 plan's abort
+    # semantic ("move partial project to trash"). If trash fails
+    # (active locks, missing folder), surface the error but still
+    # consider the abort handled — the user wanted out.
+    trash_path: str | None = None
+    try:
+        result = trash_project(name)
+        trash_path = str(result.trash_path) if result.trash_path else None
+    except Exception as exc:
+        logger.warning("Builder abort: trash failed for %s: %s", name, exc)
+
+    builder_sessions.unregister(name)
+    return JSONResponse({"ok": True, "trash_path": trash_path})
 
 
 @router.delete("/projects/{name}")
@@ -2657,6 +2965,70 @@ def api_projectbook_artifacts(name: str):
         or (book / "final-presentation" / "index.html").exists(),
         "has_findings": (book / "findings.json").exists(),
     }
+
+
+@router.post("/projects/{name}/experiments/{exp_id}/unlock")
+async def api_unlock_experiment(name: str, exp_id: str, request: Request) -> dict:
+    """Dashboard parity for ``urika unlock`` (v0.4.5 D2).
+
+    Pre-v0.4.5 the dashboard had ``/active-ops/clear-stale`` which
+    only cleared *dead-PID* locks. Recovery from a live-but-recycled
+    PID (the "force" path in ``urika unlock --force``) was CLI-only.
+    This endpoint closes that gap so a stuck dashboard project can
+    be unstuck without dropping to a shell.
+
+    Body JSON: ``{"force": bool}`` (optional, default false).
+    Response: ``{"status": "<UnlockStatus>", "pid": int|null,
+    "proc_name": str, "error": str}``.
+
+    Safe by default: refuses if the PID is alive AND looks like a
+    real urika/python process (HTTP 409). Pass ``force=true`` to
+    override.
+    """
+    from urika.core.unlock import UnlockStatus, try_unlock
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    body: dict = {}
+    try:
+        if request.headers.get("content-type", "").startswith("application/json"):
+            body = await request.json()
+        else:
+            form = await request.form()
+            body = dict(form)
+    except Exception:
+        body = {}
+    force_raw = body.get("force", False)
+    force = force_raw is True or (
+        isinstance(force_raw, str) and force_raw.lower() in ("true", "1", "yes")
+    )
+
+    result = try_unlock(summary.path, exp_id, force=force)
+
+    payload = {
+        "status": result.status.value,
+        "experiment_id": result.experiment_id,
+        "pid": result.pid,
+        "proc_name": result.proc_name,
+        "error": result.error,
+    }
+
+    if result.status in (
+        UnlockStatus.REFUSED_LIVE_URIKA,
+        UnlockStatus.REFUSED_LIVE_OTHER,
+    ):
+        # 409 Conflict — the live-PID safety check fired. Client
+        # must POST again with ``force=true`` to override.
+        raise HTTPException(status_code=409, detail=payload)
+    if result.status == UnlockStatus.READ_FAILED:
+        raise HTTPException(status_code=500, detail=payload)
+    if result.status == UnlockStatus.REMOVE_FAILED:
+        raise HTTPException(status_code=500, detail=payload)
+    # NO_LOCK or CLEARED — 200.
+    return payload
 
 
 @router.post("/projects/{name}/active-ops/clear-stale")

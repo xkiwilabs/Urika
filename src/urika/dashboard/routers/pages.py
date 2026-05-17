@@ -232,6 +232,35 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     return templates.TemplateResponse(request, "project_home.html", ctx)
 
 
+@router.get("/projects/{name}/builder", response_class=HTMLResponse)
+def project_builder_wizard(request: Request, name: str) -> HTMLResponse:
+    """Interactive setup-wizard page for a scaffolded project.
+
+    v0.4.5 Track 1: the dashboard's interactive new-project Q&A page.
+    The project must already exist on disk (created via the existing
+    ``POST /projects`` modal or the CLI). The wizard's JS POSTs to
+    ``/api/projects/{name}/builder/start`` on page load to kick off
+    the builder loop, then opens an SSE EventSource on
+    ``/builder/stream`` to render events and POSTs answers to
+    ``/builder/answer``.
+
+    The page route itself only renders the template — the start /
+    stream / answer / abort dance is entirely JS-driven so a single
+    page reload re-attaches to an in-flight session cleanly (the
+    start endpoint is idempotent and returns 409 if a session is
+    already active, which the JS handles).
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    templates = request.app.state.templates
+    ctx = {"project": summary}
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(request, "project_builder.html", ctx)
+
+
 # Keys finalize.json is documented to emit (see
 # src/urika/agents/roles/prompts/finalizer_system.md). Each well-known key
 # gets its own block in the template. Anything else lands in a "More"
@@ -524,6 +553,14 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     for exp in experiments:
         exp_dir = summary.path / "experiments" / exp.experiment_id
         runs_count, last_touched, status = _experiment_runs_summary(exp_dir, exp)
+        # v0.4.5 D2: surface whether a ``.lock`` is on disk so the
+        # template can show the "Unlock" button (next to / instead of
+        # Resume) for experiments stuck in a stale-lock state. ``status
+        # == "running"`` already implies an active live-PID lock and is
+        # handled by Pause/Stop; the Unlock affordance is for the
+        # "lock present but status isn't actively running" case where
+        # the user needs an explicit recovery path.
+        has_lock = (exp_dir / ".lock").is_file()
         rows.append(
             {
                 "experiment_id": exp.experiment_id,
@@ -531,6 +568,7 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
                 "status": status,
                 "runs_count": runs_count,
                 "last_touched": last_touched,
+                "has_lock": has_lock,
             }
         )
     # Newest-first for display (list_experiments returns oldest-first by ID).
