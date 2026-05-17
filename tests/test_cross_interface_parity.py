@@ -28,6 +28,8 @@ trip) with the rest of the cross-interface surface area:
 
 from __future__ import annotations
 
+import pytest
+
 
 # ── Audience choices ───────────────────────────────────────────────
 
@@ -485,3 +487,94 @@ class TestBuilderLoopInvocationParity:
         from urika.core.builder_loop import BuilderAborted
 
         assert issubclass(BuilderAborted, Exception)
+
+
+# ── Unlock helper invocation parity (v0.4.5 Track 2) ───────────────
+
+
+class TestUnlockHelperParity:
+    """v0.4.5 Track 2: stale-lock recovery must call a single source
+    of truth — ``urika.core.unlock.try_unlock`` — from CLI, REPL,
+    and dashboard. The TUI inherits the REPL command registry so it
+    gets the same path automatically. Pre-v0.4.5 the safety logic
+    lived inline in ``cli/data.py`` and the other surfaces had no
+    parity at all.
+
+    These tests pin that all three explicit surfaces route through
+    the helper. A future refactor that re-inlines the logic on one
+    surface will break the corresponding import check below.
+    """
+
+    def test_unlock_helper_is_the_documented_api(self) -> None:
+        from urika.core.unlock import (
+            UnlockResult,
+            UnlockStatus,
+            list_locked_experiments,
+            try_unlock,
+        )
+
+        assert callable(try_unlock)
+        assert callable(list_locked_experiments)
+        # Stable string values for JSON consumers (dashboard, RPC).
+        assert UnlockStatus.CLEARED.value == "cleared"
+        assert UnlockStatus.NO_LOCK.value == "no_lock"
+        assert UnlockStatus.REFUSED_LIVE_URIKA.value == "refused_live_urika"
+        assert UnlockStatus.REFUSED_LIVE_OTHER.value == "refused_live_other"
+        # UnlockResult must be frozen so callers can hash it / pass it
+        # through queues without aliasing surprises.
+        result = UnlockResult(
+            status=UnlockStatus.NO_LOCK,
+            experiment_id="x",
+            lock_path=__import__("pathlib").Path("/tmp/x"),
+        )
+        with pytest.raises(Exception):
+            result.status = UnlockStatus.CLEARED  # type: ignore[misc]
+
+    def test_cli_unlock_calls_shared_helper(self) -> None:
+        """CLI ``urika unlock`` (cli/data.py) must import from
+        ``urika.core.unlock``, not re-implement the safety logic
+        inline. Pre-v0.4.5 the logic was inline — extraction is
+        what enables REPL + dashboard parity."""
+        import inspect
+
+        from urika.cli import data as cli_data
+
+        # ``cli_data.unlock`` is a click.Command — get the underlying
+        # function via ``.callback`` so ``inspect.getsource`` works.
+        src = inspect.getsource(cli_data.unlock.callback)
+        assert "from urika.core.unlock import" in src, (
+            "CLI urika unlock should call the shared core helper, "
+            "not the (deleted) inline logic"
+        )
+        assert "try_unlock" in src
+
+    def test_repl_unlock_calls_shared_helper(self) -> None:
+        import inspect
+
+        from urika.repl.commands import cmd_unlock
+
+        src = inspect.getsource(cmd_unlock)
+        assert "from urika.core.unlock import" in src
+        assert "try_unlock" in src
+
+    def test_dashboard_unlock_calls_shared_helper(self) -> None:
+        import inspect
+
+        from urika.dashboard.routers import api as dashboard_api
+
+        src = inspect.getsource(dashboard_api.api_unlock_experiment)
+        assert "from urika.core.unlock import" in src
+        assert "try_unlock" in src
+
+    def test_unlock_status_values_match_dashboard_js_contract(self) -> None:
+        """The dashboard's experiments.html JS branches on the
+        ``status`` field of the 409 detail payload to decide which
+        confirm message to show. The string values are pinned here
+        as the wire contract between the JSON endpoint and the
+        browser-side handler."""
+        from urika.core.unlock import UnlockStatus
+
+        assert UnlockStatus.REFUSED_LIVE_URIKA.value == "refused_live_urika"
+        assert UnlockStatus.REFUSED_LIVE_OTHER.value == "refused_live_other"
+        # And the endpoint exposes these strings in its detail payload
+        # (verified separately in test_api_unlock.py).

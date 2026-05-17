@@ -2967,6 +2967,70 @@ def api_projectbook_artifacts(name: str):
     }
 
 
+@router.post("/projects/{name}/experiments/{exp_id}/unlock")
+async def api_unlock_experiment(name: str, exp_id: str, request: Request) -> dict:
+    """Dashboard parity for ``urika unlock`` (v0.4.5 D2).
+
+    Pre-v0.4.5 the dashboard had ``/active-ops/clear-stale`` which
+    only cleared *dead-PID* locks. Recovery from a live-but-recycled
+    PID (the "force" path in ``urika unlock --force``) was CLI-only.
+    This endpoint closes that gap so a stuck dashboard project can
+    be unstuck without dropping to a shell.
+
+    Body JSON: ``{"force": bool}`` (optional, default false).
+    Response: ``{"status": "<UnlockStatus>", "pid": int|null,
+    "proc_name": str, "error": str}``.
+
+    Safe by default: refuses if the PID is alive AND looks like a
+    real urika/python process (HTTP 409). Pass ``force=true`` to
+    override.
+    """
+    from urika.core.unlock import UnlockStatus, try_unlock
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    body: dict = {}
+    try:
+        if request.headers.get("content-type", "").startswith("application/json"):
+            body = await request.json()
+        else:
+            form = await request.form()
+            body = dict(form)
+    except Exception:
+        body = {}
+    force_raw = body.get("force", False)
+    force = force_raw is True or (
+        isinstance(force_raw, str) and force_raw.lower() in ("true", "1", "yes")
+    )
+
+    result = try_unlock(summary.path, exp_id, force=force)
+
+    payload = {
+        "status": result.status.value,
+        "experiment_id": result.experiment_id,
+        "pid": result.pid,
+        "proc_name": result.proc_name,
+        "error": result.error,
+    }
+
+    if result.status in (
+        UnlockStatus.REFUSED_LIVE_URIKA,
+        UnlockStatus.REFUSED_LIVE_OTHER,
+    ):
+        # 409 Conflict — the live-PID safety check fired. Client
+        # must POST again with ``force=true`` to override.
+        raise HTTPException(status_code=409, detail=payload)
+    if result.status == UnlockStatus.READ_FAILED:
+        raise HTTPException(status_code=500, detail=payload)
+    if result.status == UnlockStatus.REMOVE_FAILED:
+        raise HTTPException(status_code=500, detail=payload)
+    # NO_LOCK or CLEARED — 200.
+    return payload
+
+
 @router.post("/projects/{name}/active-ops/clear-stale")
 def api_clear_stale_locks(name: str) -> dict:
     """Remove run-lock files whose recorded PID is no longer alive.

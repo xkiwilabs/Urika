@@ -553,6 +553,14 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
     for exp in experiments:
         exp_dir = summary.path / "experiments" / exp.experiment_id
         runs_count, last_touched, status = _experiment_runs_summary(exp_dir, exp)
+        # v0.4.5 D2: surface whether a ``.lock`` is on disk so the
+        # template can show the "Unlock" button (next to / instead of
+        # Resume) for experiments stuck in a stale-lock state. ``status
+        # == "running"`` already implies an active live-PID lock and is
+        # handled by Pause/Stop; the Unlock affordance is for the
+        # "lock present but status isn't actively running" case where
+        # the user needs an explicit recovery path.
+        has_lock = (exp_dir / ".lock").is_file()
         rows.append(
             {
                 "experiment_id": exp.experiment_id,
@@ -560,6 +568,7 @@ def project_experiments(request: Request, name: str) -> HTMLResponse:
                 "status": status,
                 "runs_count": runs_count,
                 "last_touched": last_touched,
+                "has_lock": has_lock,
             }
         )
     # Newest-first for display (list_experiments returns oldest-first by ID).

@@ -1021,6 +1021,186 @@ def cmd_inspect(session: ReplSession, args: str) -> None:
     )
 
 
+@command(
+    "unlock",
+    requires_project=True,
+    description="Clear a stale experiment lock (use --force to override safety check)",
+)
+def cmd_unlock(session: ReplSession, args: str) -> None:
+    """REPL parity for ``urika unlock`` (v0.4.5 R1).
+
+    Pre-v0.4.5 the REPL had no analogue, so a stale lock detected
+    from inside the REPL meant dropping to a shell. The TUI was
+    similarly stranded (v0.4.5 T2 wires the same helper there).
+
+    Args: ``[experiment_id] [--force]``. If no experiment_id is
+    given and exactly one is locked, picks it; if multiple, asks.
+    """
+    from urika.core.unlock import (
+        UnlockStatus,
+        list_locked_experiments,
+        try_unlock,
+    )
+
+    parts = (args or "").split()
+    force = "--force" in parts or "-f" in parts
+    positional = [p for p in parts if not p.startswith("-")]
+    experiment_id: str | None = positional[0] if positional else None
+
+    if experiment_id is None:
+        locked = list_locked_experiments(session.project_path)
+        if not locked:
+            click.echo(f"  No locked experiments in {session.project_name}.")
+            return
+        if len(locked) == 1:
+            experiment_id = locked[0]
+            click.echo(f"  Unlocking {experiment_id}...")
+        else:
+            click.echo("  Multiple locked experiments — pass one:")
+            for eid in locked:
+                click.echo(f"    {eid}")
+            return
+
+    result = try_unlock(session.project_path, experiment_id, force=force)
+
+    if result.status == UnlockStatus.NO_LOCK:
+        click.echo(f"  No lock file at {result.lock_path}.")
+        return
+    if result.status == UnlockStatus.READ_FAILED:
+        click.echo(f"  Could not read lock file: {result.error}")
+        return
+    if result.status == UnlockStatus.REMOVE_FAILED:
+        click.echo(f"  Failed to remove lock: {result.error}")
+        return
+    if result.status in (
+        UnlockStatus.REFUSED_LIVE_URIKA,
+        UnlockStatus.REFUSED_LIVE_OTHER,
+    ):
+        click.echo(
+            f"  Lock owner PID {result.pid} is ALIVE"
+            + (f" (process: {result.proc_name})" if result.proc_name else "")
+            + "."
+        )
+        if result.status == UnlockStatus.REFUSED_LIVE_URIKA:
+            click.echo("  Looks like a real running Urika process.")
+            click.echo(
+                f"  Refusing without --force. If you're sure, run: "
+                f"/unlock {experiment_id} --force"
+            )
+        else:
+            click.echo(
+                "  PID does NOT look like Urika — likely a recycled "
+                "PID. Pass --force to unlock anyway."
+            )
+        return
+    click.echo(f"  Unlocked {result.experiment_id}.")
+
+
+@command(
+    "secret",
+    description="List, set, or delete a global secret (vault). Usage: /secret [list|set NAME|delete NAME]",
+)
+def cmd_secret(session: ReplSession, args: str) -> None:
+    """REPL parity for ``urika config secret`` (v0.4.5 T4).
+
+    Pre-v0.4.5 there was no REPL or TUI surface for the secrets
+    vault — only the CLI's ``urika config secret`` (interactive) and
+    the dashboard's Secrets tab. This adds list / set / delete
+    subcommands. Since the TUI inherits the REPL registry, the
+    command is reachable from there too — with a caveat noted in
+    the ``set`` branch about masked input.
+
+    Sub-syntax:
+      /secret              -> list global secret names (no values)
+      /secret list         -> same
+      /secret set NAME     -> set NAME's value (masked entry on REPL;
+                              TUI redirects to CLI/dashboard for
+                              secure value entry)
+      /secret delete NAME  -> remove NAME from the global vault
+    """
+    from urika.core.registry import _urika_home
+    from urika.core.vault import SecretsVault
+
+    parts = (args or "").split()
+    subcmd = parts[0].lower() if parts else "list"
+    rest = parts[1:]
+
+    vault = SecretsVault(global_path=_urika_home() / "secrets.env")
+
+    if subcmd == "list" or (subcmd and subcmd not in ("set", "delete")):
+        # No subcmd, "list", or an unrecognised first word: list.
+        # (Treating unknown subcmds as "list" matches the rest of
+        # the REPL's tolerant-arg conventions.)
+        keys = vault.list_keys()
+        if not keys:
+            click.echo("  No secrets stored.")
+            return
+        click.echo(f"\n  {len(keys)} secret(s) in the global vault:")
+        for k in keys:
+            click.echo(f"    {k}")
+        return
+
+    if subcmd == "set":
+        if not rest:
+            click.echo("  Usage: /secret set NAME")
+            return
+        name = rest[0]
+        # Refuse masked entry on non-TTY stdin (TUI worker dispatch,
+        # CI scripts piping into the REPL). The user gets a clear
+        # redirect rather than us accidentally echoing the value
+        # into scrollback. Real REPL on a TTY gets click's masked
+        # prompt.
+        import sys
+
+        if not sys.stdin.isatty():
+            click.echo(
+                "  Secure value entry needs a real terminal. Set "
+                f"{name} with one of:\n"
+                "    urika config secret              (CLI, masked)\n"
+                "    dashboard Settings → Secrets   (browser form)\n"
+                f"    export {name}=<value>            (env-var, ephemeral)"
+            )
+            return
+        try:
+            value = click.prompt(
+                f"  Value for {name}",
+                hide_input=True,
+                default="",
+                show_default=False,
+            ).strip()
+        except (click.Abort, EOFError, KeyboardInterrupt):
+            click.echo("\n  Cancelled.")
+            return
+        if not value:
+            click.echo("  No value entered — cancelled.")
+            return
+        vault.set_global(name, value, description="set via /secret")
+        click.echo(f"  Saved {name} to the global vault.")
+        return
+
+    if subcmd == "delete":
+        if not rest:
+            click.echo("  Usage: /secret delete NAME")
+            return
+        name = rest[0]
+        if name not in vault.list_keys():
+            click.echo(f"  No secret named {name}.")
+            return
+        try:
+            ok = click.confirm(f"  Delete {name} from the global vault?", default=False)
+        except (click.Abort, EOFError, KeyboardInterrupt):
+            click.echo("\n  Cancelled.")
+            return
+        if not ok:
+            click.echo("  Cancelled.")
+            return
+        if vault.delete_global(name):
+            click.echo(f"  Deleted {name}.")
+        else:
+            click.echo(f"  Could not delete {name} (not in global tier).")
+        return
+
+
 @command("logs", requires_project=True, description="Show experiment logs")
 def cmd_logs(session: ReplSession, args: str) -> None:
     from urika.cli import logs as cli_logs

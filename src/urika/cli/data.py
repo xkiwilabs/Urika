@@ -612,73 +612,50 @@ def unlock(
     ``--force`` to override (e.g. for PID-recycle false positives the
     OS handed your old PID to a different program).
     """
-    import re
-
-    from urika.core.experiment import list_experiments
-    from urika.core.session import (
-        _get_process_name,
-        _lock_path,
-        _pid_is_alive,
+    from urika.core.unlock import (
+        UnlockStatus,
+        list_locked_experiments,
+        try_unlock,
     )
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
 
     if experiment_id is None:
-        experiments = list_experiments(project_path)
-        locked = [
-            e for e in experiments if _lock_path(project_path, e.experiment_id).exists()
-        ]
+        locked = list_locked_experiments(project_path)
         if not locked:
             click.echo(f"  No locked experiments in {project}.")
             return
         if len(locked) == 1:
-            experiment_id = locked[0].experiment_id
+            experiment_id = locked[0]
             click.echo(f"  Unlocking {experiment_id}...")
         else:
-            options = [e.experiment_id for e in locked]
-            choice = _prompt_numbered(
-                "\n  Select experiment to unlock:", options, default=1
+            experiment_id = _prompt_numbered(
+                "\n  Select experiment to unlock:", locked, default=1
             )
-            experiment_id = choice
 
-    lock_path = _lock_path(project_path, experiment_id)
-    if not lock_path.exists():
-        click.echo(f"  No lock file at {lock_path}.")
+    result = try_unlock(project_path, experiment_id, force=force)
+
+    if result.status == UnlockStatus.NO_LOCK:
+        click.echo(f"  No lock file at {result.lock_path}.")
         return
-
-    pid_str = ""
-    try:
-        pid_str = lock_path.read_text().strip()
-    except OSError as exc:
-        click.echo(f"  Could not read lock file: {exc}", err=True)
-        raise SystemExit(1) from exc
-
-    pid_alive = False
-    proc_name = ""
-    if pid_str:
-        try:
-            pid = int(pid_str)
-        except ValueError:
-            pid = -1
-        if pid > 0:
-            pid_alive = _pid_is_alive(pid)
-            if pid_alive:
-                # Surface what the PID actually IS so the user can
-                # decide whether it's a real Urika run vs a recycled-
-                # PID false positive. Cross-platform via psutil; pre-
-                # fix this read /proc/<pid>/comm and was Linux-only.
-                proc_name = _get_process_name(pid)
-
-    if pid_alive and not force:
-        looks_like_urika = bool(re.search(r"urika|python", proc_name, re.I))
+    if result.status == UnlockStatus.READ_FAILED:
+        click.echo(f"  Could not read lock file: {result.error}", err=True)
+        raise SystemExit(1)
+    if result.status == UnlockStatus.REMOVE_FAILED:
+        click.echo(f"  Failed to remove lock: {result.error}", err=True)
+        raise SystemExit(1)
+    if result.status in (
+        UnlockStatus.REFUSED_LIVE_URIKA,
+        UnlockStatus.REFUSED_LIVE_OTHER,
+    ):
         click.echo(
-            f"  Lock owner PID {pid_str} is ALIVE"
-            + (f" (process: {proc_name})" if proc_name else "")
+            f"  Lock owner PID {result.pid} is ALIVE"
+            + (f" (process: {result.proc_name})" if result.proc_name else "")
             + ".",
             err=True,
         )
-        if looks_like_urika:
+        if result.status == UnlockStatus.REFUSED_LIVE_URIKA:
             click.echo(
                 "  This looks like a real running Urika process.",
                 err=True,
@@ -689,21 +666,15 @@ def unlock(
                 f"{experiment_id} --force",
                 err=True,
             )
-            raise SystemExit(1)
         else:
             click.echo(
                 "  The PID does NOT look like Urika — likely a "
                 "recycled PID. Pass --force to unlock anyway.",
                 err=True,
             )
-            raise SystemExit(1)
-
-    try:
-        lock_path.unlink()
-        click.echo(f"  Unlocked {experiment_id}.")
-    except OSError as exc:
-        click.echo(f"  Failed to remove lock: {exc}", err=True)
-        raise SystemExit(1) from exc
+        raise SystemExit(1)
+    # CLEARED
+    click.echo(f"  Unlocked {result.experiment_id}.")
 
 
 # ── Venv subgroup ───────────────────────────────────────────
