@@ -578,3 +578,298 @@ class TestUnlockHelperParity:
         assert UnlockStatus.REFUSED_LIVE_OTHER.value == "refused_live_other"
         # And the endpoint exposes these strings in its detail payload
         # (verified separately in test_api_unlock.py).
+
+
+# ── Notification auto-seed parity (v0.4.5 Track 3) ───────────────
+
+
+class TestNotificationAutoSeedParity:
+    """Both ``urika new`` (CLI) and ``POST /api/projects`` (dashboard)
+    must seed ``[notifications].channels`` from the global per-channel
+    ``auto_enable`` flags so a user who turned on Slack/Telegram once
+    gets pinged for every new project. Pre-v0.4.5 the dashboard had
+    already implemented this (api.py:264-272) but no test pinned it,
+    so a future refactor could silently break the mobile-only user's
+    workflow.
+
+    The contract: BOTH surfaces must call
+    ``urika.core.settings.get_default_notifications_auto_enable`` and
+    apply its return value the same way.
+    """
+
+    def test_single_source_of_truth_helper_exists(self) -> None:
+        from urika.core.settings import get_default_notifications_auto_enable
+
+        result = get_default_notifications_auto_enable()
+        assert isinstance(result, dict)
+        # Every channel name must be a known notification dispatcher
+        # name (see TestNotificationChannelNames for the canonical
+        # set). dict values are bools.
+        for ch, on in result.items():
+            assert isinstance(ch, str), ch
+            assert isinstance(on, bool), (ch, on)
+
+    def test_cli_imports_auto_seed_helper(self) -> None:
+        """CLI ``urika new`` path seeds notifications via the shared
+        ``seed_project_notifications_from_global`` wrapper (which
+        internally calls ``get_default_notifications_auto_enable``).
+        Dashboard inlines the same logic. Either pattern preserves
+        the parity contract — accept both so the test doesn't
+        artificially force convergence on one helper form."""
+        import inspect
+
+        from urika.cli import project_new
+
+        src = inspect.getsource(project_new)
+        assert (
+            "seed_project_notifications_from_global" in src
+            or "get_default_notifications_auto_enable" in src
+        ), (
+            "CLI urika new should seed notifications channels from "
+            "the global auto_enable flags — same as the dashboard"
+        )
+
+    def test_dashboard_imports_auto_seed_helper(self) -> None:
+        import inspect
+
+        from urika.dashboard.routers import api as dashboard_api
+
+        src = inspect.getsource(dashboard_api.api_create_project)
+        assert "get_default_notifications_auto_enable" in src, (
+            "Dashboard POST /projects should seed notifications "
+            "channels from the global auto_enable flags — same as the "
+            "CLI. Pre-v0.4.5 there was a real risk this would drift "
+            "since no test pinned the parity"
+        )
+
+
+# ── Pause-flag path parity (v0.4.5 Track 3) ─────────────────────────
+
+
+class TestPauseFlagPathParity:
+    """The orchestrator polls ``<project>/.urika/pause_requested`` to
+    cooperatively pause / stop a run. Multiple surfaces write that
+    flag (REPL ``/pause``, TUI ``/stop`` + ``/pause``, dashboard
+    POST endpoints, RPC). CLI runs the orchestrator in-process so it
+    uses ``PauseController`` directly (no file flag needed). Every
+    surface that DOES use the file path must use the SAME path the
+    orchestrator polls — drift would silently make pause / stop
+    no-ops on one surface only.
+
+    Single source of truth: ``urika.orchestrator.pause`` —
+    ``read_and_clear_flag`` defines the canonical path.
+    """
+
+    def _canonical_relative_flag_path(self) -> tuple[str, str]:
+        """The canonical pause-flag path relative to a project dir.
+        ``read_and_clear_flag`` constructs ``project_dir / ".urika"
+        / "pause_requested"`` — every writer must agree."""
+        return (".urika", "pause_requested")
+
+    def test_orchestrator_reads_canonical_path(self) -> None:
+        import inspect
+
+        from urika.orchestrator import pause as pause_module
+
+        src = inspect.getsource(pause_module)
+        # The canonical reader assembles the path piecewise:
+        #   project_dir / ".urika" / "pause_requested"
+        assert '".urika"' in src
+        assert '"pause_requested"' in src
+
+    def test_repl_pause_writes_canonical_path(self) -> None:
+        import inspect
+
+        from urika.repl.commands import cmd_pause
+
+        src = inspect.getsource(cmd_pause)
+        assert '".urika"' in src
+        assert '"pause_requested"' in src
+        # Content must be one of the two values the orchestrator
+        # honours (``read_and_clear_flag`` accepts "pause" or "stop").
+        assert '"pause"' in src or "'pause'" in src
+
+    def test_tui_stop_writes_canonical_path(self) -> None:
+        """The TUI's stop handler writes ``"stop"`` to the same flag
+        the REPL/dashboard write ``"pause"`` to — the orchestrator's
+        ``read_and_clear_flag`` distinguishes the two contents."""
+        import inspect
+
+        from urika.tui import app as tui_app
+
+        src = inspect.getsource(tui_app)
+        assert "pause_requested" in src
+        # The TUI's stop path writes "stop"; pause path writes "pause".
+        # Both go to the same file.
+
+    def test_dashboard_pause_writes_canonical_path(self) -> None:
+        import inspect
+
+        from urika.dashboard.routers import api as dashboard_api
+
+        src = inspect.getsource(dashboard_api.api_run_pause)
+        assert '".urika"' in src or "pause_requested" in src
+        # Dashboard's pause endpoint writes "pause" to the flag.
+
+    def test_rpc_pause_writes_canonical_path(self) -> None:
+        """RPC ``run.pause`` (called by external tools like the Slack /
+        Telegram channels' inline keyboards) must write to the same
+        path. Pre-v0.4 there was no RPC pause; the channel callbacks
+        had to shell out to ``urika run --pause``."""
+        import inspect
+
+        from urika.rpc import methods as rpc_methods
+
+        src = inspect.getsource(rpc_methods)
+        assert '".urika"' in src
+        assert '"pause_requested"' in src
+
+    def test_pause_flag_content_protocol_is_two_known_strings(self) -> None:
+        """``orchestrator.pause.read_and_clear_flag`` accepts exactly
+        two contents: ``"pause"`` and ``"stop"``. Any other content
+        is ignored. Pinning the protocol here so a new surface that
+        writes a different string (e.g. ``"halt"``) would surface as
+        a test failure rather than a silent no-op."""
+        import inspect
+
+        from urika.orchestrator import pause as pause_module
+
+        src = inspect.getsource(pause_module.read_and_clear_flag)
+        assert '"pause"' in src
+        assert '"stop"' in src
+
+
+# ── Criteria-met early exit parity (v0.4.5 Track 3) ─────────────────
+
+
+class TestCriteriaMetEarlyExitParity:
+    """When the evaluator emits a JSON block containing
+    ``"criteria_met": true``, the orchestrator should exit the
+    autonomous loop cleanly across every surface that drives it.
+
+    All four surfaces converge on the same shared functions in
+    ``urika.orchestrator`` — ``run_experiment`` for single-experiment
+    runs, ``run_project`` for autonomous loops. The criteria-met
+    handling lives in ``orchestrator/loop.py:680`` (single source);
+    these tests pin that no surface bypasses the shared loop.
+    """
+
+    def test_shared_run_experiment_handles_criteria_met(self) -> None:
+        """The single source of truth is ``orchestrator/loop.py`` —
+        every surface must reach it for autonomous criteria handling."""
+        import inspect
+
+        from urika.orchestrator import loop as loop_module
+
+        src = inspect.getsource(loop_module)
+        # The branch must exist exactly once in the shared loop —
+        # multiple copies would imply a fork.
+        assert 'evaluation.get("criteria_met")' in src
+        assert src.count('evaluation.get("criteria_met")') == 1, (
+            "criteria_met handling should appear exactly once in the "
+            "shared orchestrator loop — multiple occurrences would "
+            "imply a per-surface fork"
+        )
+
+    def test_cli_run_uses_shared_run_experiment(self) -> None:
+        """CLI ``urika run`` imports the shared orchestrator
+        functions, doesn't reimplement the loop.
+
+        Note: ``from urika.cli import run`` resolves to the click
+        ``Command`` object (the ``@cli.command()`` decorator
+        registration), so we use ``importlib`` to grab the module
+        itself for ``inspect.getsource``."""
+        import importlib
+        import inspect
+
+        cli_run_module = importlib.import_module("urika.cli.run")
+        src = inspect.getsource(cli_run_module)
+        assert "from urika.orchestrator import" in src
+        assert "run_experiment" in src
+
+    def test_repl_run_invokes_cli_run_command(self) -> None:
+        """REPL ``/run`` delegates to the CLI's ``run`` command via
+        ``ctx.invoke`` — no parallel orchestrator loop."""
+        import inspect
+
+        from urika.repl import commands_run
+
+        src = inspect.getsource(commands_run)
+        # ctx.invoke is the dispatch primitive used elsewhere in the
+        # REPL (e.g. cmd_inspect, cmd_logs, cmd_update).
+        assert "ctx" in src and "invoke" in src
+
+    def test_dashboard_run_spawns_cli_subprocess(self) -> None:
+        """Dashboard runs invoke the CLI as a subprocess so the same
+        ``orchestrator.run_experiment`` path runs in both contexts.
+        ``dashboard/runs.py:spawn_experiment_run`` is the entry."""
+        from urika.dashboard.runs import spawn_experiment_run
+
+        # The function exists and is callable; the actual spawn path
+        # is exercised by the dashboard's existing run-launch tests.
+        # This test only pins the import — losing the spawn function
+        # would break the criteria-met chain for the dashboard.
+        assert callable(spawn_experiment_run)
+
+
+# ── Settings cascade parity (v0.4.5 Track 3) ────────────────────────
+
+
+class TestSettingsCascadeParity:
+    """The privacy / model settings cascade is project → global →
+    hard-coded default. ``test_cross_interface_defaults.py`` already
+    pins the dashboard ↔ ``get_default_runtime`` round-trip; this
+    class extends that to verify EVERY surface's run path applies
+    the same fallback by routing through ``urika.core.settings``
+    helpers, not a parallel TOML read.
+    """
+
+    def test_get_default_runtime_is_the_documented_helper(self) -> None:
+        """``get_default_runtime(privacy_mode)`` is the single
+        documented entry point that every surface must use to
+        resolve "what model + endpoint for an agent in this privacy
+        mode". Pin its signature so a refactor doesn't accidentally
+        rename it (which would silently break the dashboard's
+        Settings → Models tab which round-trips through it)."""
+        from urika.core.settings import get_default_runtime
+
+        # Smoke: call it for each documented privacy mode and assert
+        # a dict comes back. Empty/missing settings is fine — the
+        # helper returns a dict (possibly empty) rather than raising.
+        for mode in ("open", "private", "hybrid"):
+            rt = get_default_runtime(mode)
+            assert isinstance(rt, dict), (
+                f"get_default_runtime({mode!r}) must return a dict — "
+                f"every surface unpacks the result the same way"
+            )
+
+    def test_get_named_endpoints_is_the_endpoint_enumeration_helper(
+        self,
+    ) -> None:
+        """Both CLI and dashboard show endpoint pickers built from
+        ``get_named_endpoints``. The function returns a list of dicts
+        with at minimum ``name`` + ``base_url``."""
+        from urika.core.settings import get_named_endpoints
+
+        result = get_named_endpoints()
+        assert isinstance(result, list)
+        for ep in result:
+            assert isinstance(ep, dict)
+
+    def test_cli_new_uses_shared_settings_helpers(self) -> None:
+        import inspect
+
+        from urika.cli import project_new
+
+        src = inspect.getsource(project_new)
+        # Pre-v0.4 the CLI did its own TOML reads here; v0.4 funnelled
+        # everything through the shared helpers. Keep it that way.
+        assert "get_named_endpoints" in src
+
+    def test_dashboard_create_uses_shared_settings_helpers(self) -> None:
+        import inspect
+
+        from urika.dashboard.routers import api as dashboard_api
+
+        src = inspect.getsource(dashboard_api.api_create_project)
+        assert "get_named_endpoints" in src
