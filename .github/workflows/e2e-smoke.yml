@@ -16,14 +16,19 @@ name: E2E smoke (real API)
 # maintainer locally before tagging a release:
 #   URIKA_SMOKE_REAL=1 bash dev/scripts/smoke-v04-e2e-open.sh
 #
-# Triggered nightly and on demand. Not on push (too slow, costs money
-# per commit). Skipped on the public mirror via the `if:` guard -- it
-# has no ANTHROPIC_API_KEY secret.
+# Triggered manually only. Not on push (too slow, costs money per
+# commit). The scheduled nightly trigger was removed 2026-05-17
+# because the canonical maintainer pre-release flow is the LOCAL
+# script invocation
+# (``URIKA_SMOKE_REAL=1 bash dev/scripts/smoke-v04-e2e-open.sh``),
+# and running it on GitHub Actions would require committing an
+# ``ANTHROPIC_API_KEY`` to repo secrets — extra trust surface for
+# no marginal coverage. ``workflow_dispatch`` is kept so future-you
+# can fire it from the UI if you ever DO want to set up the secret.
+# Skipped on the public mirror via the `if:` guard -- it has no
+# ANTHROPIC_API_KEY secret either.
 
 on:
-  schedule:
-    # 04:00 UTC daily
-    - cron: "0 4 * * *"
   workflow_dispatch:
 
 concurrency:
