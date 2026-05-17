@@ -808,9 +808,7 @@ def _run_builder_agent_loop(
             print_step(p.get("text", ""))
         elif kind == "phase":
             agent = p.get("agent", "")
-            activity = p.get(
-                "activity", _AGENT_ACTIVITY.get(agent, thinking_phrase())
-            )
+            activity = p.get("activity", _AGENT_ACTIVITY.get(agent, thinking_phrase()))
             print_agent(agent)
             panel.update(agent=agent, activity=activity)
             # Refinement-phase agent calls were wrapped in a Spinner
@@ -845,9 +843,7 @@ def _run_builder_agent_loop(
         ``asyncio.to_thread`` so we don't block the event loop."""
         if q.options and q.is_terminal_choice:
             # Terminal "looks good / refine / abort" decision row.
-            return await asyncio.to_thread(
-                _prompt_numbered, q.text, q.options, 1
-            )
+            return await asyncio.to_thread(_prompt_numbered, q.text, q.options, 1)
         if q.options:
             # Non-terminal multi-choice clarifying question — render
             # the options inline (matching the pre-refactor output),

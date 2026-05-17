@@ -359,3 +359,129 @@ class TestValidModesValidAudiencesExposed:
         valid = sorted(VALID_MODES)
         assert set(valid) == VALID_MODES
         assert valid == sorted(valid)
+
+
+# ── Builder loop invocation parity (v0.4.5 Track 1) ───────────────
+
+
+class TestBuilderLoopInvocationParity:
+    """v0.4.5 Track 1: the interactive project-builder loop must be
+    callable from both the CLI (``urika new``) and the dashboard
+    (``POST /api/projects/{name}/builder/start``) against the same
+    underlying core function, with identical agent prompts and
+    identical on-disk artifacts when given identical dummy
+    responses.
+
+    Pre-v0.4.5 the loop body lived inline in
+    ``cli/project_new._run_builder_agent_loop`` and was unreachable
+    from the dashboard. The CLI wrapper now passes
+    prompt_toolkit-based callbacks; the dashboard endpoints pass
+    asyncio-queue-based callbacks. These tests pin the shared core's
+    contract so neither surface can drift from the other
+    accidentally.
+    """
+
+    def test_cli_and_dashboard_both_call_core(self) -> None:
+        """Both surfaces must route through
+        ``urika.core.builder_loop.run_builder_loop`` (single source
+        of truth). If a future refactor reverts one surface to an
+        inline copy, the import here will break or the function
+        will diverge."""
+        from urika.core.builder_loop import run_builder_loop
+
+        assert callable(run_builder_loop)
+
+        # CLI wrapper: thin sync entry that imports the core symbol.
+        import inspect
+
+        from urika.cli import project_new
+
+        cli_src = inspect.getsource(project_new._run_builder_agent_loop)
+        assert "from urika.core.builder_loop import" in cli_src, (
+            "CLI wrapper should import the runtime-agnostic core, "
+            "not reimplement the loop body inline"
+        )
+        assert "run_builder_loop" in cli_src, (
+            "CLI wrapper should call the shared core function"
+        )
+
+        # Dashboard endpoint: same import.
+        from urika.dashboard.routers import api as dashboard_api
+
+        dash_src = inspect.getsource(dashboard_api.api_builder_start)
+        assert "from urika.core.builder_loop import" in dash_src, (
+            "Dashboard builder/start endpoint should import the "
+            "runtime-agnostic core, not reimplement the loop body"
+        )
+        assert "run_builder_loop" in dash_src
+
+    def test_builder_question_carries_options_and_terminal_flag(self) -> None:
+        """The ``BuilderQuestion`` dataclass is the wire format
+        between core and adapters. Both options-carrying
+        clarifying questions and the terminal accept/refine/abort
+        choice must round-trip through it without losing the
+        ``is_terminal_choice`` flag — the dashboard wizard uses
+        that flag to render the row as a button strip rather than
+        a free-text turn.
+        """
+        from urika.core.builder_loop import BuilderQuestion
+
+        q_free = BuilderQuestion(text="Anything to add?")
+        assert q_free.options == []
+        assert q_free.is_terminal_choice is False
+
+        q_choice = BuilderQuestion(
+            text="Pick one", options=["a", "b", "c"], is_terminal_choice=False
+        )
+        assert q_choice.options == ["a", "b", "c"]
+        assert q_choice.is_terminal_choice is False
+
+        q_terminal = BuilderQuestion(
+            text="What now?",
+            options=["Looks good", "Refine", "Abort"],
+            is_terminal_choice=True,
+        )
+        assert q_terminal.is_terminal_choice is True
+
+    def test_builder_event_kinds_cover_all_adapter_render_paths(self) -> None:
+        """The dashboard wizard JS handles 8 event kinds (step,
+        phase, model, tool_use, thinking, error, agent_text, question,
+        done). The ``BuilderEvent`` Literal must include every kind
+        the wizard knows how to render — adding a kind to the literal
+        without updating the wizard is fine (forward-compatible);
+        emitting a kind the wizard can't handle silently drops it.
+
+        This test pins the contract: every event kind a real adapter
+        currently produces is in the EventKind union.
+        """
+        from urika.core.builder_loop import EventKind
+
+        # ``Literal[...].__args__`` gives the tuple of allowed string
+        # literals. Match against the kinds the dashboard JS knows.
+        kinds = set(EventKind.__args__)  # type: ignore[attr-defined]
+        wizard_handled = {
+            "step",
+            "phase",
+            "model",
+            "tool_use",
+            "thinking",
+            "error",
+            "agent_text",
+            "question",
+            "done",
+        }
+        missing_from_union = wizard_handled - kinds
+        assert not missing_from_union, (
+            f"wizard JS handles kinds the union doesn't declare: "
+            f"{sorted(missing_from_union)} — adapter would emit a "
+            f"kind that's not in the type contract"
+        )
+
+    def test_builder_aborted_is_the_documented_signal(self) -> None:
+        """The CLI wrapper catches ``BuilderAborted`` to convert it
+        into a ``click.ClickException("Aborted.")``; the dashboard's
+        background runner catches it to set ``session.aborted=True``.
+        Both rely on it being importable from the core."""
+        from urika.core.builder_loop import BuilderAborted
+
+        assert issubclass(BuilderAborted, Exception)

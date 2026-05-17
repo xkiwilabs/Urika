@@ -41,6 +41,11 @@ EventKind = Literal[
     "thinking",  # agent is thinking with phrase: payload {"phrase": str}
     "error",  # recoverable error / early exit: payload {"message": str}
     "agent_text",  # raw agent output to render: payload {"text": str}
+    "question",  # waiting for user answer (dashboard mirror of ask_user call):
+    # payload {"text": str, "options": list[str], "is_terminal_choice": bool}.
+    # NOT emitted by the core itself — produced by adapter layers
+    # (e.g. the dashboard wizard) that need a stream-visible record
+    # of the question for their UI. The CLI doesn't emit it.
     "done",  # whole loop completed: payload {"suggestions": dict | None}
 ]
 
@@ -198,7 +203,9 @@ async def run_builder_loop(
         emit(
             BuilderEvent(
                 "error",
-                {"message": "Project builder agent not found. Skipping interactive scoping."},
+                {
+                    "message": "Project builder agent not found. Skipping interactive scoping."
+                },
             )
         )
         _record_usage()
@@ -225,7 +232,8 @@ async def run_builder_loop(
 
     emit(
         BuilderEvent(
-            "step", {"text": "The project builder will ask questions to scope the project."}
+            "step",
+            {"text": "The project builder will ask questions to scope the project."},
         )
     )
     emit(
@@ -291,7 +299,9 @@ async def run_builder_loop(
         )
         suggest_role = registry.get("advisor_agent")
         if suggest_role is None:
-            emit(BuilderEvent("error", {"message": "Advisor agent not found. Skipping."}))
+            emit(
+                BuilderEvent("error", {"message": "Advisor agent not found. Skipping."})
+            )
             return None
 
         suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
@@ -320,10 +330,16 @@ async def run_builder_loop(
         )
         plan_role = registry.get("planning_agent")
         if plan_role is None:
-            emit(BuilderEvent("error", {"message": "Planning agent not found. Skipping."}))
+            emit(
+                BuilderEvent(
+                    "error", {"message": "Planning agent not found. Skipping."}
+                )
+            )
             return suggestions
 
-        plan_prompt = build_planning_prompt(suggestions or {}, description, data_summary)
+        plan_prompt = build_planning_prompt(
+            suggestions or {}, description, data_summary
+        )
         plan_config = plan_role.build_config(project_dir=project_dir, experiment_id="")
         plan_result = await _run_agent(plan_config, plan_prompt)
 

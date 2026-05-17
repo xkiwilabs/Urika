@@ -232,6 +232,35 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     return templates.TemplateResponse(request, "project_home.html", ctx)
 
 
+@router.get("/projects/{name}/builder", response_class=HTMLResponse)
+def project_builder_wizard(request: Request, name: str) -> HTMLResponse:
+    """Interactive setup-wizard page for a scaffolded project.
+
+    v0.4.5 Track 1: the dashboard's interactive new-project Q&A page.
+    The project must already exist on disk (created via the existing
+    ``POST /projects`` modal or the CLI). The wizard's JS POSTs to
+    ``/api/projects/{name}/builder/start`` on page load to kick off
+    the builder loop, then opens an SSE EventSource on
+    ``/builder/stream`` to render events and POSTs answers to
+    ``/builder/answer``.
+
+    The page route itself only renders the template — the start /
+    stream / answer / abort dance is entirely JS-driven so a single
+    page reload re-attaches to an in-flight session cleanly (the
+    start endpoint is idempotent and returns 409 if a session is
+    already active, which the JS handles).
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    templates = request.app.state.templates
+    ctx = {"project": summary}
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(request, "project_builder.html", ctx)
+
+
 # Keys finalize.json is documented to emit (see
 # src/urika/agents/roles/prompts/finalizer_system.md). Each well-known key
 # gets its own block in the template. Anything else lands in a "More"
