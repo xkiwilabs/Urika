@@ -37,7 +37,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      # Explicitly check out the ``dev`` branch. The workflow file
+      # lives on ``main`` (release allowlist) but the smoke runner
+      # script ``dev/scripts/smoke-v04-e2e-open.sh`` does NOT (the
+      # release-to-main denylist strips ``dev/`` so it stays
+      # dev-only). Without ``ref: dev`` the scheduled job picks up
+      # main's tree, can't find the script, and dies with exit 127
+      # "command not found" — silent failure mode since v0.4.x
+      # started using the strict release allowlist.
       - uses: actions/checkout@v4
+        with:
+          ref: dev
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
