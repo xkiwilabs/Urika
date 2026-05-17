@@ -5,6 +5,105 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-05-17
+
+Surface parity track. The CLI / TUI / REPL / dashboard had drifted —
+one feature on one surface, a different flavour on another, and one
+real blocker (the dashboard's new-project flow skipped the
+interactive Q&A loop that ``urika new`` runs). v0.4.5 closes that
+blocker, fills in the missing TUI / REPL / dashboard commands, and
+adds a cross-surface parity test class that pins the four major
+shared paths so future refactors can't accidentally re-fork them.
+
+### Added
+
+- **Dashboard interactive new-project wizard.** A new
+  ``/projects/{name}/builder`` page drives the same agent Q&A loop
+  that ``urika new`` runs in a TTY — clarifying questions, advisor
+  suggestions, planning agent, refinement choice. Built on three new
+  endpoints (``POST /builder/start``, ``GET /builder/stream`` SSE,
+  ``POST /builder/answer``) plus an ``abort`` endpoint that
+  cancels the background task and trashes the partial project. The
+  builder loop body lives in a new ``urika.core.builder_loop`` core
+  module with injectable ``ask_user`` / ``emit`` callbacks; CLI and
+  dashboard both route through it.
+
+- **REPL ``/unlock`` command.** Stale-lock recovery without
+  dropping to a shell. Mirrors ``urika unlock`` semantics
+  (``--force`` to override the live-PID safety check) and uses
+  the same ``urika.core.unlock.try_unlock`` helper as the CLI and
+  the new dashboard endpoint, so all three surfaces stay in lockstep.
+
+- **Dashboard per-experiment Unlock button.** Shown on the
+  experiments page whenever a ``.lock`` is on disk but the
+  experiment isn't actively running. Tries the safe path first; on
+  a live-PID refusal, surfaces a confirm dialog with a
+  context-appropriate message (urika-looking vs. recycled-PID) and
+  retries with ``force=true``. Calls a new
+  ``POST /api/projects/{name}/experiments/{exp_id}/unlock`` endpoint.
+
+- **REPL ``/secret`` command** (also reachable from the TUI via the
+  shared REPL command registry). ``/secret list`` enumerates the
+  global vault (names only, never values). ``/secret set NAME``
+  prompts for a masked value on a real TTY; refuses on non-TTY
+  stdin (TUI worker dispatch, CI scripts) and redirects to the CLI
+  / dashboard so a secret value never lands in TUI scrollback.
+  ``/secret delete NAME`` confirms and removes.
+
+- **``urika.core.unlock``** — new module exposing ``try_unlock`` +
+  ``list_locked_experiments`` + ``UnlockStatus`` enum + frozen
+  ``UnlockResult`` dataclass. Single source of truth for stale-lock
+  recovery semantics; the CLI / REPL / dashboard surfaces all route
+  through it.
+
+- **``urika.core.builder_loop``** — new module exposing
+  ``run_builder_loop`` (async, injectable callbacks) +
+  ``BuilderEvent`` / ``BuilderQuestion`` / ``BuilderAborted``.
+
+### Changed
+
+- **``urika unlock`` (CLI) refactored** to route through
+  ``urika.core.unlock.try_unlock`` instead of inline PID-safety
+  logic. User-visible output strings unchanged; existing 7
+  CLI-unlock tests still pass.
+
+- **``_run_builder_agent_loop`` (CLI) reduced to a 100-line wrapper**
+  that injects prompt_toolkit-based ``ask_user`` and ThinkingPanel /
+  print_* ``emit`` callbacks. The loop body — ~290 lines — moved to
+  ``urika.core.builder_loop.run_builder_loop`` so the dashboard can
+  drive the same logic. CLI behaviour unchanged.
+
+### Tests
+
+47 new tests across the three tracks:
+
+- **Track 1 — 4 builder-loop parity tests** in
+  ``test_cross_interface_parity.py::TestBuilderLoopInvocationParity``.
+- **Track 2 — 26 tests** across new files
+  ``test_repl/test_cmd_unlock.py``, ``test_repl/test_cmd_secret.py``,
+  ``test_dashboard/test_api_unlock.py``, plus
+  ``test_cross_interface_parity.py::TestUnlockHelperParity``.
+- **Track 3 — 17 cross-surface parity tests** in 4 new classes:
+  ``TestNotificationAutoSeedParity``, ``TestPauseFlagPathParity``,
+  ``TestCriteriaMetEarlyExitParity``, ``TestSettingsCascadeParity``.
+
+Full suite: 3442 passed / 2 skipped under ``URIKA_HOME=/tmp/empty/``.
+
+### Notes
+
+The parity audit that drove this release surfaced several
+**false-negative gaps** — features the first audit pass thought
+were missing on the dashboard but actually worked (advisor chat
+composer + streaming, pause button, new-experiment modal,
+summarize button, resume endpoint). Those didn't need any new
+code; only the D1 blocker (interactive builder Q&A loop) was real.
+
+Similarly the TUI: it inherits the REPL's ``PROJECT_COMMANDS``
+registry, so REPL ``/inspect``, ``/update``, etc. already worked
+from the TUI all along. The audit's T1 / T2 / T3 gaps collapsed
+to just "add ``/unlock`` and ``/secret`` to the REPL — TUI
+inherits them for free".
+
 ## [0.4.4.4] - 2026-05-16
 
 Tiny follow-up release. One production-code fix; the other changes are
