@@ -50,7 +50,7 @@ def test_returns_reachable_true_when_endpoint_responds(client, monkeypatch):
     """When the helper returns True, the response says reachable + OK."""
     monkeypatch.setattr(
         "urika.cli._helpers._probe_endpoint",
-        lambda url: (True, "OK"),
+        lambda url, **kw: (True, "OK"),
     )
     r = client.post(
         "/api/settings/test-endpoint",
@@ -67,7 +67,7 @@ def test_returns_reachable_false_when_endpoint_does_not_respond(client, monkeypa
     reason from the helper (e.g. 'connection refused')."""
     monkeypatch.setattr(
         "urika.cli._helpers._probe_endpoint",
-        lambda url: (False, "connection refused"),
+        lambda url, **kw: (False, "connection refused"),
     )
     r = client.post(
         "/api/settings/test-endpoint",
@@ -85,7 +85,7 @@ def test_returns_reachable_false_when_helper_raises(client, monkeypatch):
     creds embedded in a misconfigured proxy URL)."""
     secret = "supersecret-token-do-not-leak"
 
-    def boom(url):
+    def boom(url, **kw):
         raise RuntimeError(secret)
 
     monkeypatch.setattr("urika.cli._helpers._probe_endpoint", boom)
@@ -108,7 +108,7 @@ def test_returns_api_key_set_true_when_env_var_set(client, monkeypatch):
     monkeypatch.setenv("MY_KEY", "secret")
     monkeypatch.setattr(
         "urika.cli._helpers._probe_endpoint",
-        lambda url: (True, "OK"),
+        lambda url, **kw: (True, "OK"),
     )
     r = client.post(
         "/api/settings/test-endpoint",
@@ -129,7 +129,7 @@ def test_returns_api_key_set_false_when_env_var_missing(client, monkeypatch):
     monkeypatch.delenv("MISSING_KEY", raising=False)
     monkeypatch.setattr(
         "urika.cli._helpers._probe_endpoint",
-        lambda url: (True, "OK"),
+        lambda url, **kw: (True, "OK"),
     )
     r = client.post(
         "/api/settings/test-endpoint",
@@ -150,7 +150,7 @@ def test_returns_api_key_set_false_when_env_var_empty_string(client, monkeypatch
     monkeypatch.setenv("EMPTY_KEY", "")
     monkeypatch.setattr(
         "urika.cli._helpers._probe_endpoint",
-        lambda url: (True, "OK"),
+        lambda url, **kw: (True, "OK"),
     )
     r = client.post(
         "/api/settings/test-endpoint",
@@ -170,7 +170,7 @@ def test_omits_api_key_check_when_no_env_specified(client, monkeypatch):
     api_key_set: false`` (open endpoints don't need a key)."""
     monkeypatch.setattr(
         "urika.cli._helpers._probe_endpoint",
-        lambda url: (True, "OK"),
+        lambda url, **kw: (True, "OK"),
     )
     r = client.post(
         "/api/settings/test-endpoint",
@@ -186,7 +186,7 @@ def test_does_not_persist_settings(client, monkeypatch, tmp_path):
     """A test POST must never touch ``~/.urika/settings.toml``."""
     monkeypatch.setattr(
         "urika.cli._helpers._probe_endpoint",
-        lambda url: (True, "OK"),
+        lambda url, **kw: (True, "OK"),
     )
     settings_file = tmp_path / "home" / "settings.toml"
     assert not settings_file.exists()

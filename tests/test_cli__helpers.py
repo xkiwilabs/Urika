@@ -172,3 +172,43 @@ def test_probe_endpoint_bypasses_system_proxy(monkeypatch) -> None:
     assert any(
         isinstance(h, urllib.request.ProxyHandler) and h.proxies == {} for h in handlers
     ), f"expected a ProxyHandler({{}}) in handlers, got {handlers!r}"
+
+
+def test_probe_endpoint_blocks_private_when_require_public(monkeypatch) -> None:
+    """With ``require_public=True`` (the dashboard path), a request-supplied
+    URL pointing at a private/metadata address is rejected BEFORE any
+    network connection is opened."""
+    import urllib.request
+
+    from urika.cli._helpers import _probe_endpoint
+
+    # If the blocklist fails to reject first, this opener would be used —
+    # building it must never happen for a blocked host.
+    def explode(*a, **kw):
+        raise AssertionError("network opener built for a blocked host")
+
+    monkeypatch.setattr(urllib.request, "build_opener", explode)
+
+    reachable, detail = _probe_endpoint("http://169.254.169.254", require_public=True)
+    assert reachable is False
+    assert "blocked" in detail
+
+
+def test_probe_endpoint_default_does_not_block_private(monkeypatch) -> None:
+    """The default (``require_public=False``, the CLI path) does NOT apply
+    the SSRF blocklist — a user's own LAN/loopback endpoint is allowed
+    through to the network attempt. Patch the opener so no real network
+    call is made; we just assert the 'blocked' path was not taken."""
+
+    def behaviour(req, timeout):
+        import urllib.error
+
+        raise urllib.error.URLError("Connection refused")
+
+    _patch_opener(monkeypatch, behaviour)
+
+    from urika.cli._helpers import _probe_endpoint
+
+    reachable, detail = _probe_endpoint("http://127.0.0.1:8000")
+    assert reachable is False
+    assert "blocked" not in detail

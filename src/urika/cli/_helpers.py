@@ -157,7 +157,7 @@ def _ensure_project(project: str | None) -> str:
         raise SystemExit(0)
 
 
-def _probe_endpoint(url: str) -> tuple[bool, str]:
+def _probe_endpoint(url: str, require_public: bool = False) -> tuple[bool, str]:
     """Probe an API endpoint; return ``(reachable, detail)``.
 
     ``reachable`` is True for any HTTP response from the server —
@@ -189,6 +189,19 @@ def _probe_endpoint(url: str) -> tuple[bool, str]:
         return False, "URL is empty"
     if not (stripped.startswith("http://") or stripped.startswith("https://")):
         return False, "URL must start with http:// or https://"
+
+    # SSRF guard: when invoked from a remote-reachable surface (the
+    # dashboard) we must refuse request-supplied URLs that resolve to
+    # private/loopback/link-local/metadata addresses. CLI callers leave
+    # this off — a user typing their own LAN/Tailscale endpoint is not
+    # an SSRF vector (no remote attacker).
+    if require_public:
+        from urika.core.netguard import BlockedHostError, assert_public_host
+
+        try:
+            assert_public_host(stripped)
+        except BlockedHostError as exc:
+            return False, f"blocked: {exc}"
 
     # Bypass any system HTTP(S)_PROXY env vars: private endpoints
     # (Tailscale, LAN, localhost) almost always need a direct
