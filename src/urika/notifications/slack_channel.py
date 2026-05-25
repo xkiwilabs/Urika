@@ -55,8 +55,8 @@ class SlackChannel(NotificationChannel):
         if not self._allowed_channels and not self._allowed_users:
             logger.warning(
                 "Slack channel configured without allowed_channels or "
-                "allowed_users — any user in the workspace can trigger "
-                "actions. Set one to restrict."
+                "allowed_users — inbound commands (pause/stop/ask) are "
+                "DISABLED (fail-closed). Set one to enable them."
             )
 
     # ------------------------------------------------------------------
