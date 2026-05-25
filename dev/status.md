@@ -1,11 +1,14 @@
 # Urika — Current Status
 
-**Date:** 2026-05-02
-**Version:** v0.4.0 (released to PyPI as `urika==0.4.0`)
-**Branch:** `dev` synced with `origin/dev`; `main` synced on both
-`origin` and `public` and tagged `v0.4.0`.
-**Tests:** 1816 passed / 1 skipped / 0 failed in the dashboard-
-excluded fast suite.
+**Date:** 2026-05-25
+**Version:** v0.4.5 (released to PyPI as `urika==0.4.5`, tagged
+2026-05-17). A pre-v0.5 hardening sweep has since landed on `dev`
+(unreleased as of 2026-05-25).
+**Branch:** `dev` is ahead of `main` with the hardening sweep; `main`
+synced on both `origin` and `public` and tagged `v0.4.5`.
+**Tests:** ~3541 collected; 3477 pass in the unit suite
+(`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 1 skipped, 63
+integration deselected.
 
 The active roadmap is **`dev/plans/2026-05-02-roadmap-to-v1.0.md`** —
 covers v0.4.0 → v1.0.0 with cut criteria, release contents, and
@@ -17,10 +20,10 @@ testing windows. Single source of truth.
 
 | Plan | Status |
 |------|--------|
-| `2026-05-02-roadmap-to-v1.0.md` | **Master roadmap** — v0.4.0 → v1.0.0 |
-| `2026-05-02-v0.4.x-bug-backlog.md` | Bugs queued for v0.4.1 / v0.4.2 |
-| `2026-05-02-prompt-bloat-and-context-budget.md` | Layer 1+2 in v0.4.1, Layer 3 in v0.5.x |
-| `2026-04-30-github-integration.md` | Full design — implementation in v0.5.0 |
+| `2026-05-02-roadmap-to-v1.0.md` | **Master roadmap** — v0.4.0 → v1.0.0 (v0.4.5 inserted; v0.6/v0.7 swapped 2026-05-04) |
+| `2026-05-17-v0.5.0-memory-deepening.md` | **Next release** — project memory Phases 3–4 (drafted, not started) |
+| `2026-05-25-pre-v0.5-hardening-fixes.md` | Hardening sweep landed on `dev` 2026-05-25 |
+| `dev/archive/2026-04-30-github-integration.md` | Full design — implementation in v0.6.0 (GitHub auto-backup) |
 
 Everything else lives under `dev/archive/plans/` — see the
 "Plan-doc hygiene rules" section of the master roadmap for the
@@ -28,9 +31,18 @@ discipline.
 
 ---
 
-## v0.4.0 — what shipped (2026-05-02)
+## v0.4.x — what shipped (2026-05-02 → 2026-05-25)
 
-First feature-complete v0.4 release. PyPI: `pip install urika==0.4.0`.
+The full v0.4 line is out: v0.4.0 (feature-complete), v0.4.3
+(prompt-cache + cross-platform CI), the v0.4.4.x hardening hotfixes,
+and v0.4.5 (surface parity across CLI/TUI/REPL/dashboard). A pre-v0.5
+hardening sweep then landed on `dev` (2026-05-25): brace-balanced
+JSON run-record extraction, stop-aware finalize, **default-secure
+dashboard** (auto-generated auth token + Origin/CSRF guard + SSRF
+blocklist), atomic vault/session writes, shared ANSI scrubber,
+fail-closed Slack/Telegram inbound, and REPL `/run --resume` parity.
+PyPI: `pip install urika==0.4.5`. The v0.4.0 detail below is retained
+as the baseline-feature record.
 
 ### Major surfaces (the v0.4 tracks)
 
@@ -97,17 +109,19 @@ See `CHANGELOG.md` for the full per-fix accounting.
 
 ## What's next (per the roadmap)
 
-| Release | Focus | Target |
+Post-swap canonical order (v0.6/v0.7 swapped 2026-05-04 so GitHub
+backup ships before the multi-provider work):
+
+| Release | Focus | Status |
 |---|---|---|
-| **v0.4.1** | Bug-fix hotfix (dashboard footer, prompt-bloat trim + per-endpoint context_window, sigterm exit, bash timeout) | ~4 days (week 0.5) |
-| **v0.5.0** | Project memory Phases 2–4 (curator agent, archive viewer, diff view) | ~1 week (week 1.5) |
-| **v0.6.0** | OpenAI Agents SDK adapter + project templates | ~1.5 weeks (week 3) |
-| **v0.7.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | ~1.2 weeks (week 4.2) |
-| **v0.8.0** | Output exports (PDF/LaTeX/Jupyter via Pandoc, model-card auto-generation) | ~1.5 weeks (week 5.5) |
-| **v0.9.0** | Accessibility audit + i18n string-extraction stubs | ~3 days (week 6.5) |
-| **v1.0.0rc1** | Feature freeze + API audit + migration guide | ~3 days (week 7) |
-| **v1.0.0rc2** | RC feedback fixes only | ~2-3 days (week 7.3) |
-| **v1.0.0** | OFFICIAL RELEASE — API stability commitment | week 7.5 |
+| **v0.5.0** | Project memory deepening — curator agent, archive viewer, diff view, advisor injection (Phases 3–4) | NEXT — drafted, not started |
+| **v0.6.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | planned |
+| **v0.7.0** | Multi-provider model adapters (OpenAI Agents SDK + others) | planned |
+| **v0.8.0** | Output polish — exports (PDF/LaTeX/Jupyter via Pandoc), model-card auto-generation | planned |
+| **v0.9.0** | UX polish — project templates + accessibility audit + i18n string-extraction stubs | planned |
+| **v1.0.0rc1** | Feature freeze + API audit + migration guide | planned |
+| **v1.0.0rc2** | RC feedback fixes only | planned |
+| **v1.0.0** | OFFICIAL RELEASE — API stability commitment | planned |
 
 **Total: ~32 dev-days over ~7.5 weeks.** No `.x` stabilisation
 windows between minors — bug-fix budget is folded into the first
@@ -175,10 +189,11 @@ dev/
 │   ├── 2026-04-27-tester-checklist.md
 │   └── typescript-tui/              # 186MB, untracked, can be `rm -rf`d
 ├── plans/
-│   ├── 2026-05-02-roadmap-to-v1.0.md      # **master**
-│   ├── 2026-05-02-v0.4.x-bug-backlog.md
-│   ├── 2026-05-02-prompt-bloat-and-context-budget.md
-│   └── 2026-04-30-github-integration.md   # for v0.5
+│   ├── 2026-05-02-roadmap-to-v1.0.md           # **master**
+│   ├── 2026-05-17-v0.5.0-memory-deepening.md   # next release
+│   ├── 2026-05-25-pre-v0.5-hardening-fixes.md  # landed on dev
+│   └── ... (shipped-release plans pending archive)
+│   # github-integration design archived at dev/archive/ (for v0.6)
 ├── scripts/
 │   ├── release-to-main.sh
 │   ├── smoke-v04-e2e-{open,hybrid,private,all}.sh
