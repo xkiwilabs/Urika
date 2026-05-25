@@ -170,11 +170,22 @@ def acquire_lock(project_dir: Path, experiment_id: str) -> bool:
             path.unlink()
         except OSError:
             return False
-    # Create new lock with our PID
+    # Create new lock with our PID, atomically. O_EXCL makes creation
+    # itself the exclusivity check, closing the empty-lock TOCTOU where a
+    # concurrent acquirer could read a half-written empty file and treat
+    # the live lock as stale. After a stale lock is unlinked above, this
+    # create succeeds; if two acquirers race past the unlink, only one
+    # O_EXCL create wins and the loser returns False.
     try:
-        path.write_text(str(os.getpid()))
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return False
     except OSError:
         return False
+    try:
+        os.write(fd, str(os.getpid()).encode())
+    finally:
+        os.close(fd)
     return True
 
 
