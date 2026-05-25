@@ -354,3 +354,44 @@ class TestEmptyStringSecretIsNotUnset:
         monkeypatch.delenv("MISSING_KEY", raising=False)
         vault = _new_vault(SecretsVault, tmp_path)
         assert vault.get("MISSING_KEY") is None
+
+
+def test_remove_env_key_keeps_0600(tmp_path, vault_module):
+    """Removing a key must rewrite the file atomically at 0o600, not via a
+    write-then-chmod race that briefly exposes default-umask perms."""
+    import stat
+
+    p = tmp_path / "vault.env"
+    # Seed two keys via the real upsert helper.
+    vault_module._upsert_env_file(p, "A", "1")
+    vault_module._upsert_env_file(p, "B", "2")
+
+    removed = vault_module._remove_env_key(p, "A")
+
+    assert removed is True
+    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+    body = p.read_text()
+    assert "A=" not in body
+    assert "B=2" in body
+
+
+def test_remove_env_key_uses_atomic_write(tmp_path, vault_module, monkeypatch):
+    """The removal path must go through write_text_atomic(..., mode=0o600)
+    rather than a non-atomic write_text + chmod (the perms-window bug)."""
+    p = tmp_path / "vault.env"
+    vault_module._upsert_env_file(p, "A", "1")
+    vault_module._upsert_env_file(p, "B", "2")
+
+    calls: list[dict] = []
+    real_atomic = vault_module.write_text_atomic
+
+    def _spy(path, text, mode=None):
+        calls.append({"path": path, "mode": mode})
+        return real_atomic(path, text, mode=mode)
+
+    monkeypatch.setattr(vault_module, "write_text_atomic", _spy)
+
+    vault_module._remove_env_key(p, "A")
+
+    assert calls, "removal did not use write_text_atomic"
+    assert calls[-1]["mode"] == 0o600
