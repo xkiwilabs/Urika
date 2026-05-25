@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import urllib.request
 from pathlib import Path
 
 import click
@@ -12,6 +13,20 @@ from urika.core.errors import ConfigError, ValidationError
 from urika.core.models import ProjectConfig
 from urika.core.registry import ProjectRegistry
 from urika.core.workspace import load_project_config
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow HTTP redirects on the endpoint probe.
+
+    A public URL that 302-redirects to a private address (e.g.
+    http://169.254.169.254/) would otherwise be followed WITHOUT
+    re-validation — a classic SSRF redirect bypass. Returning None
+    here means urllib raises ``urllib.error.HTTPError`` for a 3xx,
+    which the probe already treats as "reachable (HTTP <code>)".
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # do not follow redirects (SSRF redirect-bypass defense)
 
 
 def _make_on_message() -> object:
@@ -207,7 +222,9 @@ def _probe_endpoint(url: str, require_public: bool = False) -> tuple[bool, str]:
     # (Tailscale, LAN, localhost) almost always need a direct
     # connection; routing them through a corporate proxy is the wrong
     # default and the most common cause of "url error: str" failures.
-    no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    no_proxy_opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoRedirect
+    )
     url = stripped
 
     last_reason: str | None = None

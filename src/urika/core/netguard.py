@@ -11,7 +11,7 @@ class BlockedHostError(ValueError):
     """Raised when a URL resolves to a non-public address."""
 
 
-def _is_blocked_ip(ip) -> bool:
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return (
         ip.is_private
         or ip.is_loopback
@@ -26,9 +26,12 @@ def assert_public_host(url: str) -> None:
     """Raise BlockedHostError if the URL's host resolves to a non-public IP.
 
     Resolves ALL A/AAAA records and blocks if ANY is non-public (defeats
-    DNS-rebind-to-localhost). Callers that legitimately need private
-    endpoints (the privacy preflight for user-declared private LLMs)
-    must opt out explicitly rather than calling this."""
+    multi-record DNS-rebind). NOTE: callers re-resolve at connect time, so
+    a sub-TTL re-resolution rebind is a residual TOCTOU — accepted here
+    because the probe is an unauthenticated GET that returns no response
+    body. Callers that legitimately need private endpoints (the privacy
+    preflight for user-declared private LLMs) must opt out explicitly
+    rather than calling this."""
     host = urlparse(url).hostname
     if not host:
         raise BlockedHostError("URL has no host")

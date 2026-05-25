@@ -212,3 +212,45 @@ def test_probe_endpoint_default_does_not_block_private(monkeypatch) -> None:
     reachable, detail = _probe_endpoint("http://127.0.0.1:8000")
     assert reachable is False
     assert "blocked" not in detail
+
+
+# ---- redirect-following defense (SSRF redirect bypass) ----
+# A public URL that 302-redirects to a private address must NOT be
+# followed without re-validation. The probe installs a no-op redirect
+# handler so urllib raises HTTPError on a 3xx instead of chasing the
+# Location header to (potentially) a metadata/loopback address.
+
+
+def test_no_redirect_handler_refuses_to_follow() -> None:
+    """``_NoRedirect.redirect_request`` returns None so urllib does not
+    chase a 3xx Location header (SSRF redirect-bypass defense)."""
+    from urika.cli._helpers import _NoRedirect
+
+    result = _NoRedirect().redirect_request(
+        None, None, 302, "", {}, "http://169.254.169.254/"
+    )
+    assert result is None
+
+
+def test_probe_endpoint_treats_redirect_as_reachable(monkeypatch) -> None:
+    """With redirects disabled, urllib surfaces a 3xx as HTTPError; the
+    probe must still report 'reachable' (HTTP 302) rather than crash or
+    follow the redirect to a private host."""
+    import urllib.error
+
+    def behaviour(req, timeout):
+        raise urllib.error.HTTPError(
+            url=req.full_url,
+            code=302,
+            msg="Found",
+            hdrs={"Location": "http://169.254.169.254/"},
+            fp=None,
+        )
+
+    _patch_opener(monkeypatch, behaviour)
+
+    from urika.cli._helpers import _probe_endpoint
+
+    reachable, detail = _probe_endpoint("http://example.invalid:11434")
+    assert reachable is True
+    assert "302" in detail
