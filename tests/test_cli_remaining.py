@@ -756,13 +756,15 @@ class TestDashboardCommand:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _create_project(runner, urika_env)
-        opened = self._patch_launcher(monkeypatch)
+        self._patch_launcher(monkeypatch)
         result = runner.invoke(cli, ["dashboard", "test-proj"], env=urika_env)
         assert result.exit_code == 0, result.output
         assert "Starting" in result.output
         assert "Dashboard stopped" in result.output
-        # Browser opened to the project page
-        assert any("/projects/test-proj" in u for u in opened)
+        # Default launch generates a token and PRINTS the tokenized URL
+        # (no auto-open, since the token must ride in the URL).
+        assert "/projects/test-proj" in result.output
+        assert "token=" in result.output
 
     @pytest.mark.skipif(
         sys.platform == "win32",
@@ -778,12 +780,14 @@ class TestDashboardCommand:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _create_project(runner, urika_env)
-        opened = self._patch_launcher(monkeypatch)
+        self._patch_launcher(monkeypatch)
         result = runner.invoke(
             cli, ["dashboard", "test-proj", "--port", "9999"], env=urika_env
         )
         assert result.exit_code == 0, result.output
-        assert any("http://127.0.0.1:9999" in u for u in opened)
+        # Default launch prints the tokenized URL on the custom port.
+        assert "http://127.0.0.1:9999" in result.output
+        assert "token=" in result.output
 
     @pytest.mark.skipif(
         sys.platform == "win32",
@@ -792,24 +796,43 @@ class TestDashboardCommand:
             "two test_dashboard tests above."
         ),
     )
-    def test_no_project_arg_opens_projects_list(
+    def test_no_project_arg_prints_projects_list_url(
         self,
         runner: CliRunner,
         urika_env: dict[str, str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`urika dashboard` without a project opens /projects."""
-        opened = self._patch_launcher(monkeypatch)
+        """`urika dashboard` without a project prints the /projects URL."""
+        self._patch_launcher(monkeypatch)
         result = runner.invoke(cli, ["dashboard"], env=urika_env)
         assert result.exit_code == 0, result.output
-        # Some URL was opened
-        assert opened, "browser should have been opened"
-        # All opened URLs end with /projects (no project segment)
-        for url in opened:
-            assert url.endswith("/projects"), url
-            # belt-and-braces: no /projects/<name>
-            tail = url.rsplit("/projects", 1)[1]
-            assert tail == ""
+        # Default launch prints the tokenized projects-list URL (no auto-open).
+        assert "/projects?token=" in result.output
+        # No /projects/<name> segment for the bare-list launch.
+        assert "/projects/" not in result.output
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason=(
+            "Same Windows-only CliRunner+Click+uvicorn issue as the "
+            "two test_dashboard tests above."
+        ),
+    )
+    def test_no_auth_opens_browser(
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With --no-auth the launcher auto-opens the browser (no token)."""
+        _create_project(runner, urika_env)
+        opened = self._patch_launcher(monkeypatch)
+        result = runner.invoke(
+            cli, ["dashboard", "test-proj", "--no-auth"], env=urika_env
+        )
+        assert result.exit_code == 0, result.output
+        assert any("/projects/test-proj" in u for u in opened)
+        assert all("token=" not in u for u in opened)
 
 
 # ── Venv create command ────────────────────────────────────────
