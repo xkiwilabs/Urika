@@ -52,7 +52,7 @@ class SlackChannel(NotificationChannel):
         self._socket_client: Any = None
         self._warned_no_allowlist = False
 
-        if self._allowed_channels is None and self._allowed_users is None:
+        if not self._allowed_channels and not self._allowed_users:
             logger.warning(
                 "Slack channel configured without allowed_channels or "
                 "allowed_users — any user in the workspace can trigger "
