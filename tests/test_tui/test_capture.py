@@ -15,6 +15,19 @@ def _panel_text(panel) -> str:
     return "\n".join(str(strip) for strip in panel.lines)
 
 
+def test_capture_strip_ansi_covers_decsc_decrc() -> None:
+    """Regression: the TUI capture path must strip Fp escapes (DECSC/DECRC).
+
+    The old CSI-only regex left ``\\x1b7`` / ``\\x1b8`` in the panel buffer.
+    Now that capture shares ``urika.core.ansi.strip_ansi``, they're gone.
+    """
+    from urika.tui.capture import _strip_ansi
+
+    assert _strip_ansi("a\x1b7b") == "ab"
+    assert _strip_ansi("a\x1b7b\x1b8c") == "abc"
+    assert _strip_ansi("x\x1b]0;title\x07y") == "xy"
+
+
 class TestStdoutCapture:
     """OutputCapture + _TuiWriter behavior end-to-end."""
 
