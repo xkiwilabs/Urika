@@ -205,3 +205,13 @@ class TestSpecialCharsRoundTrip:
 
         for s in ['x"y\\z', "a\r\nb", "t\tt", "\x07", "plain", "é✓", ""]:
             assert tomllib.loads("v = " + _toml_basic_string(s))["v"] == s
+
+    def test_toml_value_handles_path_and_roundtrips(self) -> None:
+        import tomllib
+        from pathlib import Path
+
+        from urika.core.workspace import _toml_value
+
+        rendered = f'p = {_toml_value(Path("/x/y.csv"))}\n'
+        parsed = tomllib.loads(rendered)
+        assert parsed["p"] == "/x/y.csv"

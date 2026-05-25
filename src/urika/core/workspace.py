@@ -176,4 +176,7 @@ def _toml_value(val: object) -> str:
 
         items = ", ".join(f"{_fmt_key(k)} = {_toml_value(v)}" for k, v in val.items())
         return "{" + items + "}"
-    return repr(val)
+    # Unknown type (Path, datetime, tuple, etc.): encode as a TOML basic
+    # string. repr() produced invalid TOML (e.g. PosixPath('/x')) that
+    # broke the next tomllib.load.
+    return _toml_basic_string(str(val))
