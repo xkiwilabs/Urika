@@ -691,3 +691,123 @@ class TestRunProjectCappedModeSafetyNet:
         assert not any("robustness-check" in e.name for e in exps), (
             f"Capped safety net leaked into checkpoint mode: {[e.name for e in exps]}"
         )
+
+
+class _FakeStopController:
+    """A pause_controller stand-in: a STOP was requested (not a pause)."""
+
+    def is_pause_requested(self) -> bool:
+        return False
+
+    def is_stop_requested(self) -> bool:
+        return True
+
+
+class _FakePauseController:
+    """A pause_controller stand-in: a PAUSE was requested (not a stop)."""
+
+    def is_pause_requested(self) -> bool:
+        return True
+
+    def is_stop_requested(self) -> bool:
+        return False
+
+
+class TestRunProjectStopSkipsFinalize:
+    """A run that was deliberately STOPPED must not be finalized (Task 1.3).
+
+    Before the fix, ``paused`` was computed only from
+    ``is_pause_requested()``, so a stop fell through to
+    ``finalize_project`` — finalizing a project the user explicitly
+    halted. Both stop and pause must skip finalize."""
+
+    @pytest.mark.asyncio
+    async def test_stop_request_skips_finalize(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project_dir = tmp_path / "stopped-proj"
+        create_project_workspace(
+            project_dir,
+            ProjectConfig(
+                name="stopped-proj",
+                question="Q?",
+                mode="exploratory",
+                data_paths=[],
+            ),
+        )
+        runner = _FakeRunner(
+            text='```json\n{"suggestions": [{"name": "rf", "method": "random forest"}]}\n```'
+        )
+
+        finalize_calls: list[Path] = []
+
+        async def _fake_run_experiment(pdir, exp_id, rnr, **kw):  # noqa: ANN001
+            return {"status": "completed", "turns": 1}
+
+        async def _fake_finalize(pdir, *a, **k):  # noqa: ANN001, ANN002, ANN003
+            finalize_calls.append(pdir)
+            return None
+
+        monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
+        monkeypatch.setattr(
+            "urika.orchestrator.finalize.finalize_project", _fake_finalize
+        )
+
+        await run_project(
+            project_dir,
+            runner,
+            mode="capped",
+            max_experiments=2,
+            max_turns=1,
+            pause_controller=_FakeStopController(),
+        )
+
+        assert finalize_calls == [], (
+            "finalize_project was called despite a stop request"
+        )
+
+    @pytest.mark.asyncio
+    async def test_pause_request_still_skips_finalize(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression guard: pause must keep skipping finalize too."""
+        project_dir = tmp_path / "paused-proj"
+        create_project_workspace(
+            project_dir,
+            ProjectConfig(
+                name="paused-proj",
+                question="Q?",
+                mode="exploratory",
+                data_paths=[],
+            ),
+        )
+        runner = _FakeRunner(
+            text='```json\n{"suggestions": [{"name": "rf", "method": "random forest"}]}\n```'
+        )
+
+        finalize_calls: list[Path] = []
+
+        async def _fake_run_experiment(pdir, exp_id, rnr, **kw):  # noqa: ANN001
+            return {"status": "completed", "turns": 1}
+
+        async def _fake_finalize(pdir, *a, **k):  # noqa: ANN001, ANN002, ANN003
+            finalize_calls.append(pdir)
+            return None
+
+        monkeypatch.setattr("urika.orchestrator.run_experiment", _fake_run_experiment)
+        monkeypatch.setattr(
+            "urika.orchestrator.finalize.finalize_project", _fake_finalize
+        )
+
+        await run_project(
+            project_dir,
+            runner,
+            mode="capped",
+            max_experiments=2,
+            max_turns=1,
+            pause_controller=_FakePauseController(),
+        )
+
+        assert finalize_calls == [], (
+            "finalize_project was called despite a pause request"
+        )

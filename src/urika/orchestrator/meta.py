@@ -262,9 +262,12 @@ async def run_project(
             if choice == "instructions":
                 instructions = click.prompt("  Instructions").strip()
 
-    # Finalize after all experiments complete (skip if paused)
-    paused = pause_controller is not None and pause_controller.is_pause_requested()
-    if results and not paused:
+    # Finalize after all experiments complete (skip if paused or stopped)
+    pc = pause_controller
+    interrupted = pc is not None and (
+        pc.is_pause_requested() or pc.is_stop_requested()
+    )
+    if results and not interrupted:
         try:
             from urika.orchestrator.finalize import finalize_project
 
