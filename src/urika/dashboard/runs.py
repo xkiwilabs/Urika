@@ -29,6 +29,17 @@ from pathlib import Path
 _DAEMON_THREADS: list[threading.Thread] = []
 
 
+def _register_daemon_thread(t: threading.Thread) -> None:
+    """Track a daemon thread for tests, pruning any that have finished.
+
+    The dashboard is long-lived; without pruning this list grows for the
+    lifetime of the process (one entry per run/finalize/advisor/etc. spawn).
+    """
+    _DAEMON_THREADS[:] = [x for x in _DAEMON_THREADS if x.is_alive()]
+    _DAEMON_THREADS.append(t)
+    t.start()
+
+
 def _build_env(*, no_tee: bool = False) -> dict[str, str]:
     """Environment for spawned urika subprocesses.
 
@@ -196,8 +207,7 @@ def _start_reaper(proc: subprocess.Popen, lock_path: Path) -> threading.Thread:
                 pass
 
     t = threading.Thread(target=_wait, daemon=True)
-    t.start()
-    _DAEMON_THREADS.append(t)
+    _register_daemon_thread(t)
     return t
 
 
@@ -284,8 +294,7 @@ def _start_drainer(
                     pass
 
     t = threading.Thread(target=_drain, daemon=True)
-    t.start()
-    _DAEMON_THREADS.append(t)
+    _register_daemon_thread(t)
     return t
 
 

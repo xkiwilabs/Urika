@@ -459,3 +459,19 @@ def test_reaper_skips_status_write_for_zero_exit(tmp_path, monkeypatch):
     # Stays "running" — the reaper trusts the CLI to have written
     # the completion state by the time it exited cleanly.
     assert progress["status"] == "running"
+
+
+def test_daemon_threads_pruned():
+    import threading
+    from urika.dashboard import runs
+    runs._DAEMON_THREADS.clear()
+    dead = threading.Thread(target=lambda: None)
+    dead.start()
+    dead.join()
+    runs._DAEMON_THREADS.append(dead)
+    runs._register_daemon_thread(threading.Thread(target=lambda: None))
+    assert dead not in runs._DAEMON_THREADS
+    # cleanup
+    for t in list(runs._DAEMON_THREADS):
+        t.join(timeout=1)
+    runs._DAEMON_THREADS.clear()
