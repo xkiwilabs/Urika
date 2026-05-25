@@ -896,6 +896,26 @@ def cmd_delete_experiment(session: ReplSession, args: str) -> None:
     click.echo(f"  Moved '{exp_id}' to {result.trash_path}")
 
 
+# Consistent ``experiment-<verb>`` aliases so the REPL/TUI match the
+# CLI's ``experiment create`` / ``experiment delete`` / ``experiment
+# list`` naming. The original names (``delete-experiment``,
+# ``experiments``) are kept above for back-compat; these register the
+# SAME handler under the consistent name. (``experiment-create``
+# already exists in the consistent form.) The registry has no
+# ``aliases=`` param, so we register programmatically — matching the
+# imported-agent-command style further down this module.
+command(
+    "experiment-delete",
+    requires_project=True,
+    description="Move an experiment to project-local trash (alias of delete-experiment)",
+)(cmd_delete_experiment)
+command(
+    "experiment-list",
+    requires_project=True,
+    description="List experiments (alias of experiments)",
+)(cmd_experiments)
+
+
 @command("methods", requires_project=True, description="Show methods table")
 def cmd_methods(session: ReplSession, args: str) -> None:
     from urika.core.method_registry import load_methods
