@@ -97,6 +97,36 @@ def test_dashboard_starts_and_serves_healthz(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only")
+def test_dashboard_default_launch_requires_token(tmp_path: Path) -> None:
+    """A bare ``urika dashboard`` (no flags) now generates a token by
+    default, so /projects must 401 without one while /healthz stays
+    exempt. Guards against regressing back to a fully-open default."""
+    port = _find_free_port()
+    proc = _spawn_dashboard(tmp_path, port)
+    try:
+        assert _wait_for_port(port, timeout=10.0)
+        import urllib.error
+        import urllib.request
+
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/healthz", timeout=5
+        ) as resp:
+            assert resp.status == 200
+
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/projects")
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req, timeout=5)
+        assert exc.value.code in (401, 403)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only")
 def test_dashboard_with_auth_token_requires_bearer(tmp_path: Path) -> None:
     """When --auth-token is set, /healthz remains accessible (it's exempt)
     but other endpoints require the bearer token."""

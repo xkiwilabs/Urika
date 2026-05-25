@@ -39,6 +39,7 @@ def start_dashboard_server(
     open_path: str = "/projects",
     open_browser: bool = True,
     auth_token: str | None = None,
+    no_auth: bool = False,
 ) -> tuple[Any, threading.Thread, int]:
     """Start the FastAPI dashboard on a background daemon thread.
 
@@ -53,9 +54,17 @@ def start_dashboard_server(
         If ``True`` (default), call ``webbrowser.open`` once the
         server reports started. Set to ``False`` for tests.
     auth_token:
-        If set, every page and API request must carry
-        ``Authorization: Bearer <token>``. ``/healthz`` and
-        ``/static/...`` remain accessible without the header.
+        If set, every page and API request must carry the token via
+        ``Authorization: Bearer <token>``, a ``urika_token`` cookie, or
+        a ``?token=`` query param. ``/healthz`` and ``/static/...``
+        remain accessible without it. If ``None`` (and ``no_auth`` is
+        False) a random token is generated here so the default launch
+        is never fully open.
+    no_auth:
+        If ``True``, launch without auth even when ``auth_token`` is
+        ``None`` (fully open on 127.0.0.1). Callers that already made
+        the auth decision (e.g. the CLI ``dashboard`` command) pass an
+        explicit ``auth_token`` and leave this False.
 
     Returns
     -------
@@ -65,13 +74,27 @@ def start_dashboard_server(
         ``server.should_exit = True`` to stop), ``thread`` is the
         daemon thread running the event loop, and ``port`` is the
         actual port chosen.
+
+    The generated/effective ``auth_token`` is also stashed on the
+    returned server as ``server.urika_auth_token`` so callers can print
+    the tokenized URL.
     """
+    import secrets as _secrets
+
     import uvicorn
 
     from urika.dashboard.app import create_app
 
     if port is None:
         port = _find_free_port()
+
+    # Default-secure: when no token was supplied and the caller didn't
+    # opt out, generate one so the launch path is never fully open.
+    # ``create_app``'s own ``auth_token=None`` default is left intact
+    # for tests — the decision lives in the launch path, not the
+    # factory.
+    if auth_token is None and not no_auth:
+        auth_token = _secrets.token_urlsafe(24)
 
     # Registry is read from URIKA_HOME; project_root=None lets the
     # dashboard use the registered project directories.
@@ -84,6 +107,8 @@ def start_dashboard_server(
         access_log=False,
     )
     server = uvicorn.Server(config)
+    # Stash the effective token so callers can print the tokenized URL.
+    server.urika_auth_token = auth_token
 
     def _run() -> None:
         # uvicorn manages its own event loop; run it in the daemon thread.
@@ -101,6 +126,11 @@ def start_dashboard_server(
 
     if open_browser:
         url = f"http://127.0.0.1:{port}{open_path}"
+        # Append the token so the opened tab authenticates (and the
+        # server pins the urika_token cookie for follow-up XHRs).
+        if auth_token:
+            sep = "&" if "?" in open_path else "?"
+            url = f"{url}{sep}token={auth_token}"
         webbrowser.open(url)
 
     return server, t, port

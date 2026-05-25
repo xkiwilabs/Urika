@@ -1350,7 +1350,12 @@ def cmd_dashboard(session: ReplSession, args: str) -> None:
     else:
         session._dashboard_servers = [server]
 
-    click.echo(f"  Dashboard at http://127.0.0.1:{port}{open_path}")
+    token = getattr(server, "urika_auth_token", None)
+    url = f"http://127.0.0.1:{port}{open_path}"
+    if token:
+        sep = "&" if "?" in open_path else "?"
+        url = f"{url}{sep}token={token}"
+    click.echo(f"  Dashboard at {url}")
     click.echo("  /dashboard stop to shut down")
 
 

@@ -113,3 +113,57 @@ def test_no_auth_token_allows_anonymous_requests(tmp_path: Path) -> None:
     assert client.get("/healthz").status_code == 200
     # /projects works (no projects → empty list, but the route renders).
     assert client.get("/projects").status_code == 200
+
+
+# ── Token via query param ──────────────────────────────────────────
+
+
+def test_projects_with_query_token_returns_200(authed_client: TestClient) -> None:
+    r = authed_client.get("/projects?token=secret-token")
+    assert r.status_code == 200
+
+
+def test_projects_with_wrong_query_token_returns_401(authed_client: TestClient) -> None:
+    r = authed_client.get("/projects?token=nope")
+    assert r.status_code == 401
+
+
+# ── Token via cookie ───────────────────────────────────────────────
+
+
+def test_projects_with_cookie_token_returns_200(authed_client: TestClient) -> None:
+    authed_client.cookies.set("urika_token", "secret-token")
+    r = authed_client.get("/projects")
+    assert r.status_code == 200
+
+
+def test_projects_with_wrong_cookie_token_returns_401(
+    authed_client: TestClient,
+) -> None:
+    authed_client.cookies.set("urika_token", "nope")
+    r = authed_client.get("/projects")
+    assert r.status_code == 401
+
+
+# ── Cookie set after a valid ?token= request ───────────────────────
+
+
+def test_valid_query_token_sets_cookie(authed_client: TestClient) -> None:
+    """A successful ?token= request sets a urika_token cookie so that
+    subsequent HTMX/Alpine requests (which carry no query param) stay
+    authenticated via the cookie."""
+    # Disable redirect-following and cookie persistence to inspect the
+    # raw Set-Cookie on the first hop.
+    r = authed_client.get("/projects?token=secret-token")
+    assert r.status_code == 200
+    set_cookie = r.headers.get("set-cookie", "")
+    assert "urika_token=secret-token" in set_cookie
+    assert "httponly" in set_cookie.lower()
+    assert "samesite=strict" in set_cookie.lower()
+
+
+def test_no_cookie_set_on_wrong_query_token(authed_client: TestClient) -> None:
+    """A failed token must NOT set the cookie."""
+    r = authed_client.get("/projects?token=nope")
+    assert r.status_code == 401
+    assert "urika_token" not in r.headers.get("set-cookie", "")
