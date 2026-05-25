@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import secrets
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from urika.dashboard.filters import humanize, tag_status
+
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 _PKG_DIR = Path(__file__).parent
 _TEMPLATES_DIR = _PKG_DIR / "templates"
@@ -133,6 +136,33 @@ def create_app(
                     samesite="strict",
                 )
             return response
+
+    # CSRF defense-in-depth: reject cross-origin state-changing requests.
+    # Applies in BOTH authenticated and unauthenticated modes (it is
+    # independent of the token), so it lives outside the ``if auth_token``
+    # block above. Registered AFTER the cookie middleware so that, under
+    # the reverse-order semantics of ``@app.middleware("http")``, it runs
+    # FIRST and rejects a forged cross-origin POST before any other layer.
+    #
+    # Only non-safe methods are checked. Browsers always attach an
+    # ``Origin`` header to cross-origin state-changing requests, so a
+    # mismatch between the Origin netloc and the request ``Host`` is the
+    # CSRF signal. Requests with no ``Origin`` header (curl, server-side
+    # clients, some same-origin navigations) are allowed through.
+    @app.middleware("http")
+    async def _origin_guard(request, call_next):  # noqa: ANN001
+        if request.method not in _SAFE_METHODS:
+            origin = request.headers.get("origin")
+            if origin is not None:
+                host = request.headers.get("host", "")
+                if urlparse(origin).netloc != host:
+                    from starlette.responses import JSONResponse
+
+                    return JSONResponse(
+                        {"detail": "cross-origin request rejected"},
+                        status_code=403,
+                    )
+        return await call_next(request)
 
     from urika.dashboard.routers import pages, api, docs as docs_router
 
