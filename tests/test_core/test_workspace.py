@@ -212,6 +212,6 @@ class TestSpecialCharsRoundTrip:
 
         from urika.core.workspace import _toml_value
 
-        rendered = f'p = {_toml_value(Path("/x/y.csv"))}\n'
+        rendered = f"p = {_toml_value(Path('/x/y.csv'))}\n"
         parsed = tomllib.loads(rendered)
         assert parsed["p"] == "/x/y.csv"

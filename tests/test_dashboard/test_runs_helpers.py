@@ -464,6 +464,7 @@ def test_reaper_skips_status_write_for_zero_exit(tmp_path, monkeypatch):
 def test_daemon_threads_pruned():
     import threading
     from urika.dashboard import runs
+
     runs._DAEMON_THREADS.clear()
     dead = threading.Thread(target=lambda: None)
     dead.start()

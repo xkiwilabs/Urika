@@ -47,9 +47,7 @@ def _capture_invoke(monkeypatch) -> dict:
     return captured
 
 
-def test_local_run_resume_threads_resume_true(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_local_run_resume_threads_resume_true(tmp_path: Path, monkeypatch) -> None:
     session, _ = _setup(tmp_path)
     # Pick "Run with defaults" at the interactive menu.
     monkeypatch.setattr(
@@ -63,9 +61,7 @@ def test_local_run_resume_threads_resume_true(
     assert captured.get("resume") is True
 
 
-def test_local_run_without_resume_is_false(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_local_run_without_resume_is_false(tmp_path: Path, monkeypatch) -> None:
     session, _ = _setup(tmp_path)
     monkeypatch.setattr(
         "urika.repl.commands_run._prompt_numbered",

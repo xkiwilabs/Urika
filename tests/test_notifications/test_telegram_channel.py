@@ -44,9 +44,7 @@ def test_telegram_high_format_escapes_metric_values():
     from urika.notifications.telegram_channel import _format_high
 
     # Pick any high-priority canonical event type.
-    high_type = next(
-        t for t, m in EVENT_METADATA.items() if m.priority == "high"
-    )
+    high_type = next(t for t, m in EVENT_METADATA.items() if m.priority == "high")
     event = NotificationEvent(
         event_type=high_type,
         project_name="proj",
