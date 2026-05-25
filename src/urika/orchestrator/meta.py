@@ -264,9 +264,7 @@ async def run_project(
 
     # Finalize after all experiments complete (skip if paused or stopped)
     pc = pause_controller
-    interrupted = pc is not None and (
-        pc.is_pause_requested() or pc.is_stop_requested()
-    )
+    interrupted = pc is not None and (pc.is_pause_requested() or pc.is_stop_requested())
     if results and not interrupted:
         try:
             from urika.orchestrator.finalize import finalize_project
@@ -362,9 +360,7 @@ async def _determine_next(
                     metrics = {}
                 metric_str = ", ".join(f"{k}={v}" for k, v in list(metrics.items())[:3])
                 name = m.get("name", "<unnamed>")
-                context_parts.append(
-                    f"  {name} [{m.get('status', '?')}] {metric_str}"
-                )
+                context_parts.append(f"  {name} [{m.get('status', '?')}] {metric_str}")
         except Exception as exc:  # noqa: BLE001 - context is best-effort
             logger.debug("Skipping method-context block: %s", exc)
 
