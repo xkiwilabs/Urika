@@ -320,6 +320,72 @@ class TestDetermineNext:
         assert "Q?" in runner.last_prompt
 
 
+class TestMethodContextResilience:
+    """A single malformed methods.json row must not wipe out the entire
+    method-context block injected into the advisor prompt (Task 1.2)."""
+
+    @pytest.mark.asyncio
+    async def test_method_context_survives_row_missing_name(
+        self, tmp_path: Path
+    ) -> None:
+        _write_toml(tmp_path)
+        # Two method rows: one well-formed ("ridge"), one missing 'name'.
+        # The old code did m['name'] inside a broad try/except, so the
+        # KeyError from the second row dropped ALL method context.
+        (tmp_path / "methods.json").write_text(
+            json.dumps(
+                {
+                    "methods": [
+                        {
+                            "name": "ridge",
+                            "status": "completed",
+                            "metrics": {"r2": 0.81},
+                        },
+                        {
+                            # no 'name' key
+                            "status": "failed",
+                            "metrics": {"r2": 0.10},
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _FakeRunner(text="no suggestions")
+
+        await _determine_next(tmp_path, runner, instructions="", on_message=None)
+
+        prompt = runner.last_prompt
+        # The well-formed row's method survived into the advisor context.
+        assert "ridge" in prompt
+        # The "N methods tried" count line is present.
+        assert "2 methods tried" in prompt
+        # The malformed row is rendered defensively, not dropped silently.
+        assert "<unnamed>" in prompt
+
+    @pytest.mark.asyncio
+    async def test_method_context_survives_non_dict_metrics(
+        self, tmp_path: Path
+    ) -> None:
+        _write_toml(tmp_path)
+        (tmp_path / "methods.json").write_text(
+            json.dumps(
+                {
+                    "methods": [
+                        {"name": "lasso", "status": "completed", "metrics": None},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _FakeRunner(text="no suggestions")
+
+        await _determine_next(tmp_path, runner, instructions="", on_message=None)
+
+        assert "lasso" in runner.last_prompt
+        assert "1 methods tried" in runner.last_prompt
+
+
 class TestRunProjectFreshSafetyNet:
     """A brand-new project must not exit having done zero experiments
     just because the advisor's first response had no parseable
