@@ -133,6 +133,20 @@ Good block:
         assert len(records) == 1
         assert records[0].run_id == "good-1"
 
+    def test_extract_json_block_with_embedded_code_fence(self) -> None:
+        """A code fence inside a JSON string value must not truncate parsing."""
+        text = (
+            "Here is the run:\n"
+            "```json\n"
+            '{"run_id": "r1", "method": "ridge", "metrics": {"r2": 0.9}, '
+            '"observation": "I ran:\\n```python\\nmodel.fit(X, y)\\n```\\nand it worked"}\n'
+            "```\n"
+        )
+        records = parse_run_records(text)
+        assert len(records) == 1
+        assert records[0].run_id == "r1"
+        assert records[0].metrics == {"r2": 0.9}
+
     def test_non_dict_params_skipped(self) -> None:
         text = """```json
 {
