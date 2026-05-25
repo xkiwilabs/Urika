@@ -20,6 +20,17 @@ from contextlib import closing
 from typing import Any
 
 
+def default_auth_token(auth_token: str | None, no_auth: bool) -> str | None:
+    """Return a generated token when none was supplied and auth wasn't
+    explicitly disabled, else the caller's value. Single source of truth
+    for the dashboard's default-secure behaviour (CLI + REPL/TUI)."""
+    import secrets
+
+    if auth_token is None and not no_auth:
+        return secrets.token_urlsafe(24)
+    return auth_token
+
+
 def _find_free_port() -> int:
     """Return an available TCP port on 127.0.0.1.
 
@@ -79,8 +90,6 @@ def start_dashboard_server(
     returned server as ``server.urika_auth_token`` so callers can print
     the tokenized URL.
     """
-    import secrets as _secrets
-
     import uvicorn
 
     from urika.dashboard.app import create_app
@@ -93,8 +102,7 @@ def start_dashboard_server(
     # ``create_app``'s own ``auth_token=None`` default is left intact
     # for tests — the decision lives in the launch path, not the
     # factory.
-    if auth_token is None and not no_auth:
-        auth_token = _secrets.token_urlsafe(24)
+    auth_token = default_auth_token(auth_token, no_auth)
 
     # Registry is read from URIKA_HOME; project_root=None lets the
     # dashboard use the registered project directories.
@@ -128,6 +136,9 @@ def start_dashboard_server(
         url = f"http://127.0.0.1:{port}{open_path}"
         # Append the token so the opened tab authenticates (and the
         # server pins the urika_token cookie for follow-up XHRs).
+        # The token rides in the URL for first-load UX; it then moves to an
+        # httponly cookie. Acceptable for a loopback single-user dashboard
+        # (token can persist in browser history) — not a network-exposed default.
         if auth_token:
             sep = "&" if "?" in open_path else "?"
             url = f"{url}{sep}token={auth_token}"

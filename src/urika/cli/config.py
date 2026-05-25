@@ -125,9 +125,10 @@ def dashboard(
     printed for you to open. Pass ``--no-auth`` to launch fully open
     (only do this on a trusted single-user machine).
     """
-    import secrets as _secrets
-
-    from urika.tui.dashboard_launcher import start_dashboard_server
+    from urika.tui.dashboard_launcher import (
+        default_auth_token,
+        start_dashboard_server,
+    )
 
     open_path = "/projects"
     label = "Urika dashboard"
@@ -141,10 +142,10 @@ def dashboard(
     # user supplied one or explicitly opted out. ``create_app``'s own
     # ``auth_token=None`` default stays unauthenticated for tests; the
     # decision lives here, not in the factory.
-    generated = False
-    if auth_token is None and not no_auth:
-        auth_token = _secrets.token_urlsafe(24)
-        generated = True
+    # Compute whether we're about to generate a token *before* calling the
+    # helper, so we know whether to print the tokenized URL below.
+    generated = auth_token is None and not no_auth
+    auth_token = default_auth_token(auth_token, no_auth)
 
     click.echo(f"\n  Starting {label}...")
     server, _thread, used_port = start_dashboard_server(
@@ -160,6 +161,9 @@ def dashboard(
             "  Dashboard auth enabled. Open this URL (token included):",
             fg="yellow",
         )
+        # The token rides in the URL for first-load UX; it then moves to an
+        # httponly cookie. Acceptable for a loopback single-user dashboard
+        # (token can persist in browser history) — not a network-exposed default.
         click.echo(f"  http://{host}:{used_port}{open_path}?token={auth_token}")
     else:
         click.echo(f"  Listening on http://{host}:{used_port}{open_path}")
