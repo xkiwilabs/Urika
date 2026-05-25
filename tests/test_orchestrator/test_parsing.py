@@ -147,6 +147,28 @@ Good block:
         assert records[0].run_id == "r1"
         assert records[0].metrics == {"r2": 0.9}
 
+    def test_quoted_json_fence_inside_string_does_not_warn(self, caplog) -> None:
+        """A ```json fence quoted inside a JSON string value must parse
+        cleanly and must NOT trigger a "Skipping malformed" warning.
+
+        Before the cursor-advance fix, ``open_re`` re-matched the inner
+        ```json opener (consumed inside the already-parsed string value)
+        and emitted a spurious warning on the unbalanced remainder.
+        """
+        text = (
+            "Here is the run:\n"
+            "```json\n"
+            '{"run_id": "r1", "method": "ridge", "metrics": {"r2": 0.9}, '
+            '"observation": "the agent emitted ```json\\n{\\"x\\": 1}\\n``` inline"}\n'
+            "```\n"
+        )
+        with caplog.at_level("WARNING"):
+            records = parse_run_records(text)
+        assert len(records) == 1
+        assert records[0].run_id == "r1"
+        assert records[0].metrics == {"r2": 0.9}
+        assert not any("Skipping malformed" in r.getMessage() for r in caplog.records)
+
     def test_non_dict_params_skipped(self) -> None:
         text = """```json
 {

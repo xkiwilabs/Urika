@@ -70,14 +70,26 @@ def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
     """
     results: list[dict[str, Any]] = []
     open_re = re.compile(r"```(?:json|JSON)[ \t]*\r?\n?", re.IGNORECASE)
-    for m in open_re.finditer(text):
+    pos = 0
+    # Manual cursor scan: on a successful balanced parse we advance ``pos``
+    # past the *end* of the balanced region so a ```json opener that lives
+    # inside an already-parsed JSON string value isn't re-matched (which
+    # would otherwise emit a spurious "Skipping malformed JSON block"
+    # warning). The unbalanced fallback advances past the opening fence only,
+    # to keep the legacy behaviour and avoid an infinite loop.
+    while True:
+        m = open_re.search(text, pos)
+        if m is None:
+            break
         balanced = _find_balanced_json(text, m.end())
         if balanced is not None:
             raw = balanced[0]
+            pos = balanced[1]
         else:
             tail = text[m.end() :]
             close = tail.find("```")
             raw = (tail[:close] if close != -1 else tail).strip()
+            pos = m.end()
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, ValueError) as exc:
