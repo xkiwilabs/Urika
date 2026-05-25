@@ -50,6 +50,7 @@ class SlackChannel(NotificationChannel):
         self._listener_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._socket_client: Any = None
+        self._warned_no_allowlist = False
 
         if self._allowed_channels is None and self._allowed_users is None:
             logger.warning(
@@ -196,12 +197,20 @@ class SlackChannel(NotificationChannel):
     def _is_authorized(self, payload: dict[str, Any]) -> bool:
         """Check whether an inbound interaction payload is allowed.
 
-        Back-compat: if neither ``allowed_channels`` nor ``allowed_users`` is
-        configured, all payloads are allowed. Otherwise fail closed if the
+        Fail CLOSED: if neither ``allowed_channels`` nor ``allowed_users`` is
+        configured, all inbound commands are denied (otherwise any workspace
+        member could trigger pause/stop/ask). Otherwise fail closed if the
         corresponding list is set but the id is missing or not allowlisted.
         """
-        if self._allowed_channels is None and self._allowed_users is None:
-            return True
+        if not self._allowed_channels and not self._allowed_users:
+            if not self._warned_no_allowlist:
+                logger.warning(
+                    "Slack inbound commands are DISABLED: no allowed_channels "
+                    "or allowed_users configured. Set one to enable "
+                    "pause/stop/ask."
+                )
+                self._warned_no_allowlist = True
+            return False
 
         channel_id, user_id = self._extract_ids(payload)
 

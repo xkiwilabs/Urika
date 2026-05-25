@@ -437,7 +437,7 @@ def _format_high(event: NotificationEvent) -> str:
     # Append metrics from details if present.
     metrics = event.details.get("metrics") if event.details else None
     if isinstance(metrics, dict):
-        metric_lines = [f"  {_esc(k)}: {v}" for k, v in metrics.items()]
+        metric_lines = [f"  {_esc(k)}: {_esc(str(v))}" for k, v in metrics.items()]
         lines.append("\n<b>Metrics:</b>\n" + "\n".join(metric_lines))
 
     return "\n".join(lines)

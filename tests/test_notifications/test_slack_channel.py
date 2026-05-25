@@ -36,17 +36,43 @@ def _make_channel(
 # ---------------------------------------------------------------------------
 
 
-def test_is_authorized_allows_all_when_no_allowlist():
+def test_is_authorized_denies_when_no_allowlist():
+    # Fail CLOSED when neither allowlist is configured: any workspace member
+    # would otherwise be able to trigger pause/stop/ask.
     channel = _make_channel()
     assert (
         channel._is_authorized({"channel": {"id": "CANY"}, "user": {"id": "UANY"}})
+        is False
+    )
+
+
+def test_is_authorized_denies_when_no_allowlist_even_with_empty_payload():
+    channel = _make_channel()
+    assert channel._is_authorized({}) is False
+
+
+def test_slack_denies_when_no_allowlist():
+    # Explicit fail-closed regression guard (Task 2.5 B1).
+    channel = _make_channel()
+    assert channel._is_authorized({"user": {"id": "U1"}}) is False
+
+
+def test_slack_allows_listed_user():
+    channel = _make_channel(allowed_users=["U1"])
+    assert (
+        channel._is_authorized({"channel": {"id": "CANY"}, "user": {"id": "U1"}})
         is True
     )
 
 
-def test_is_authorized_allows_all_when_no_allowlist_even_with_empty_payload():
+def test_slack_no_allowlist_warns_once(caplog):
+    caplog.set_level(logging.WARNING, logger="urika.notifications.slack_channel")
     channel = _make_channel()
-    assert channel._is_authorized({}) is True
+    caplog.clear()
+    channel._is_authorized({"user": {"id": "U1"}})
+    channel._is_authorized({"user": {"id": "U2"}})
+    disabled = [r for r in caplog.records if "DISABLED" in r.message]
+    assert len(disabled) == 1
 
 
 def test_is_authorized_blocks_non_allowlisted_channel():
