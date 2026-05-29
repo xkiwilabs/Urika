@@ -121,6 +121,17 @@ def cmd_run(session: ReplSession, args: str) -> None:
 
     defaults = _load_run_defaults(session)
 
+    # ``--resume`` parity for the local typed path. The remote path
+    # threads ``--resume`` via ``_parse_remote_run_args`` (and routes
+    # straight to ``cmd_resume`` above); the local input path used to
+    # hardcode ``resume=False`` in the ``ctx.invoke`` below, so a user
+    # typing ``/run --resume`` in the REPL/TUI could never resume. We
+    # detect the flag here using the same simple split convention the
+    # remote parser uses and thread it through.
+    resume = bool(remote_parsed.get("resume")) if remote_parsed else False
+    if not is_remote and "--resume" in args.split():
+        resume = True
+
     if is_remote:
         # Remote: skip all interactive prompts, use defaults + parsed args
         max_turns = remote_parsed.get("max_turns") or defaults["max_turns"]
@@ -310,7 +321,7 @@ def cmd_run(session: ReplSession, args: str) -> None:
             project=session.project_name,
             experiment_id=use_experiment_id,
             max_turns=max_turns,
-            resume=False,
+            resume=resume,
             quiet=False,
             auto=(is_remote or auto_mode != "checkpoint"),
             instructions=run_instructions,

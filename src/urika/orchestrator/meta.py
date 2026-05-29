@@ -262,9 +262,10 @@ async def run_project(
             if choice == "instructions":
                 instructions = click.prompt("  Instructions").strip()
 
-    # Finalize after all experiments complete (skip if paused)
-    paused = pause_controller is not None and pause_controller.is_pause_requested()
-    if results and not paused:
+    # Finalize after all experiments complete (skip if paused or stopped)
+    pc = pause_controller
+    interrupted = pc is not None and (pc.is_pause_requested() or pc.is_stop_requested())
+    if results and not interrupted:
         try:
             from urika.orchestrator.finalize import finalize_project
 
@@ -355,12 +356,13 @@ async def _determine_next(
             )
             for m in methods[-20:]:
                 metrics = m.get("metrics", {})
+                if not isinstance(metrics, dict):
+                    metrics = {}
                 metric_str = ", ".join(f"{k}={v}" for k, v in list(metrics.items())[:3])
-                context_parts.append(
-                    f"  {m['name']} [{m.get('status', '?')}] {metric_str}"
-                )
-        except Exception:
-            pass
+                name = m.get("name", "<unnamed>")
+                context_parts.append(f"  {name} [{m.get('status', '?')}] {metric_str}")
+        except Exception as exc:  # noqa: BLE001 - context is best-effort
+            logger.debug("Skipping method-context block: %s", exc)
 
     # Current criteria
     try:

@@ -11,15 +11,12 @@ from typing import TYPE_CHECKING
 
 from textual.css.query import NoMatches
 
+from urika.core.ansi import strip_ansi as _strip_ansi
+
 if TYPE_CHECKING:
     from urika.tui.app import UrikaApp
 
 log = logging.getLogger(__name__)
-
-# Compiled once. Matches CSI escape sequences like \x1b[31m, \x1b[1;32m.
-# Does NOT cover OSC (\x1b]...) or 8-bit CSI. Fine for agent output which
-# only uses plain CSI color codes via click / our cli_display module.
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
 # Safety cap: if a caller emits a progress-bar style stream with only \r
 # separators, the buffer would grow unbounded. Force-flush beyond this.
@@ -29,11 +26,6 @@ _MAX_BUFFER_BYTES = 64 * 1024
 # Only fires when a stdin reader is active (a command is waiting for input).
 # Captures the default value inside the brackets.
 _PROMPT_DEFAULT_RE = re.compile(r"\[([^\]]+)\]\s*:\s*$")
-
-
-def _strip_ansi(text: str) -> str:
-    """Remove ANSI CSI escape sequences from text."""
-    return _ANSI_RE.sub("", text)
 
 
 class _TuiWriter:

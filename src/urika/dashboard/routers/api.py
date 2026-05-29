@@ -2184,7 +2184,10 @@ async def api_test_endpoint(request: Request) -> JSONResponse:
         raise HTTPException(status_code=422, detail="base_url is required")
 
     try:
-        reachable, details = _probe_endpoint(base_url)
+        # require_public=True: this URL is request-supplied and the
+        # dashboard is remote-reachable, so block SSRF to private /
+        # loopback / link-local / cloud-metadata addresses.
+        reachable, details = _probe_endpoint(base_url, require_public=True)
     except Exception as e:  # noqa: BLE001 — surface the type, not the message.
         reachable = False
         # Don't leak ``str(e)`` — could carry creds embedded in a

@@ -112,6 +112,10 @@ def check_private_endpoint(project_dir: Path) -> tuple[bool, str]:
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
 
+        # Deliberate SSRF-guard exemption: a user-declared private LLM
+        # endpoint (hybrid/private mode) IS the intended target here, so
+        # we must reach private/loopback addresses. Do NOT apply
+        # netguard.assert_public_host to this preflight.
         req = urllib.request.Request(test_url, method="GET", headers=headers)
         urllib.request.urlopen(req, timeout=5)
         return True, f"Local model connected ({base_url})"

@@ -9,33 +9,57 @@ from __future__ import annotations
 
 import secrets
 from pathlib import Path
+from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from urika.dashboard.filters import humanize, tag_status
+
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 _PKG_DIR = Path(__file__).parent
 _TEMPLATES_DIR = _PKG_DIR / "templates"
 _STATIC_DIR = _PKG_DIR / "static"
 
 
-def _make_auth_dependency(token: str):
-    """Build a FastAPI dependency that requires ``Authorization: Bearer <token>``.
+def _make_auth_dependency(expected: str):
+    """Build a FastAPI dependency that requires a matching token.
 
-    The token comparison uses :func:`secrets.compare_digest` so callers
-    can't time-leak the expected value. Routes that should be exempt
+    The token can arrive via three channels, in priority order:
+
+    1. ``Authorization: Bearer <token>`` header (programmatic clients,
+       RPC tooling, ``curl``).
+    2. A ``urika_token`` cookie (set after the first valid ``?token=``
+       request — keeps HTMX/Alpine XHRs authenticated without rewriting
+       every URL).
+    3. A ``token`` query param (the link the CLI/TUI prints for the
+       user to open in the browser).
+
+    All comparisons use :func:`secrets.compare_digest` so callers can't
+    time-leak the expected value. Routes that should be exempt
     (``/healthz``, ``/static/...``) are registered without this
     dependency.
+
+    The captured token is bound as ``expected`` (not ``token``) so it
+    doesn't shadow the ``token`` query-param parameter below.
     """
 
-    def require_auth(authorization: str | None = Header(default=None)) -> None:
-        if authorization is None:
-            raise HTTPException(status_code=401, detail="Authorization required")
-        scheme, _, value = authorization.partition(" ")
-        if scheme.lower() != "bearer" or not secrets.compare_digest(value, token):
-            raise HTTPException(status_code=401, detail="Invalid token")
+    def require_auth(
+        authorization: str | None = Header(default=None),
+        token: str | None = Query(default=None),
+        urika_token: str | None = Cookie(default=None),
+    ) -> None:
+        candidate = None
+        if authorization is not None:
+            scheme, _, value = authorization.partition(" ")
+            if scheme.lower() == "bearer":
+                candidate = value
+        if candidate is None:
+            candidate = urika_token or token
+        if candidate is None or not secrets.compare_digest(candidate, expected):
+            raise HTTPException(status_code=401, detail="Invalid or missing token")
 
     return require_auth
 
@@ -89,6 +113,56 @@ def create_app(
     deps = []
     if auth_token:
         deps.append(Depends(_make_auth_dependency(auth_token)))
+
+        # When the user opens the printed ``?token=<t>`` link, the auth
+        # dependency lets the request through; this middleware then
+        # pins a ``urika_token`` cookie on the response so subsequent
+        # HTMX/Alpine XHRs (which carry no query param) stay
+        # authenticated. Only set it when the query token matches and
+        # the request didn't already present the cookie.
+        @app.middleware("http")
+        async def _set_token_cookie(request, call_next):  # noqa: ANN001
+            response = await call_next(request)
+            qp_token = request.query_params.get("token")
+            if (
+                qp_token is not None
+                and secrets.compare_digest(qp_token, auth_token)
+                and request.cookies.get("urika_token") != auth_token
+            ):
+                response.set_cookie(
+                    "urika_token",
+                    auth_token,
+                    httponly=True,
+                    samesite="strict",
+                )
+            return response
+
+    # CSRF defense-in-depth: reject cross-origin state-changing requests.
+    # Applies in BOTH authenticated and unauthenticated modes (it is
+    # independent of the token), so it lives outside the ``if auth_token``
+    # block above. Registered AFTER the cookie middleware so that, under
+    # the reverse-order semantics of ``@app.middleware("http")``, it runs
+    # FIRST and rejects a forged cross-origin POST before any other layer.
+    #
+    # Only non-safe methods are checked. Browsers always attach an
+    # ``Origin`` header to cross-origin state-changing requests, so a
+    # mismatch between the Origin netloc and the request ``Host`` is the
+    # CSRF signal. Requests with no ``Origin`` header (curl, server-side
+    # clients, some same-origin navigations) are allowed through.
+    @app.middleware("http")
+    async def _origin_guard(request, call_next):  # noqa: ANN001
+        if request.method not in _SAFE_METHODS:
+            origin = request.headers.get("origin")
+            if origin is not None:
+                host = request.headers.get("host", "")
+                if urlparse(origin).netloc != host:
+                    from starlette.responses import JSONResponse
+
+                    return JSONResponse(
+                        {"detail": "cross-origin request rejected"},
+                        status_code=403,
+                    )
+        return await call_next(request)
 
     from urika.dashboard.routers import pages, api, docs as docs_router
 

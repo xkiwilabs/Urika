@@ -148,11 +148,7 @@ def _remove_env_key(path: Path, key: str) -> bool:
                 removed = True
                 continue
         new_lines.append(line)
-    path.write_text("\n".join(new_lines) + "\n")
-    try:
-        path.chmod(0o600)
-    except Exception:
-        pass
+    write_text_atomic(path, "\n".join(new_lines) + "\n", mode=0o600)
     return removed
 
 

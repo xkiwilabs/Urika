@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import urllib.request
 from pathlib import Path
 
 import click
@@ -12,6 +13,20 @@ from urika.core.errors import ConfigError, ValidationError
 from urika.core.models import ProjectConfig
 from urika.core.registry import ProjectRegistry
 from urika.core.workspace import load_project_config
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow HTTP redirects on the endpoint probe.
+
+    A public URL that 302-redirects to a private address (e.g.
+    http://169.254.169.254/) would otherwise be followed WITHOUT
+    re-validation — a classic SSRF redirect bypass. Returning None
+    here means urllib raises ``urllib.error.HTTPError`` for a 3xx,
+    which the probe already treats as "reachable (HTTP <code>)".
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # do not follow redirects (SSRF redirect-bypass defense)
 
 
 def _make_on_message() -> object:
@@ -157,7 +172,7 @@ def _ensure_project(project: str | None) -> str:
         raise SystemExit(0)
 
 
-def _probe_endpoint(url: str) -> tuple[bool, str]:
+def _probe_endpoint(url: str, require_public: bool = False) -> tuple[bool, str]:
     """Probe an API endpoint; return ``(reachable, detail)``.
 
     ``reachable`` is True for any HTTP response from the server —
@@ -190,11 +205,26 @@ def _probe_endpoint(url: str) -> tuple[bool, str]:
     if not (stripped.startswith("http://") or stripped.startswith("https://")):
         return False, "URL must start with http:// or https://"
 
+    # SSRF guard: when invoked from a remote-reachable surface (the
+    # dashboard) we must refuse request-supplied URLs that resolve to
+    # private/loopback/link-local/metadata addresses. CLI callers leave
+    # this off — a user typing their own LAN/Tailscale endpoint is not
+    # an SSRF vector (no remote attacker).
+    if require_public:
+        from urika.core.netguard import BlockedHostError, assert_public_host
+
+        try:
+            assert_public_host(stripped)
+        except BlockedHostError as exc:
+            return False, f"blocked: {exc}"
+
     # Bypass any system HTTP(S)_PROXY env vars: private endpoints
     # (Tailscale, LAN, localhost) almost always need a direct
     # connection; routing them through a corporate proxy is the wrong
     # default and the most common cause of "url error: str" failures.
-    no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    no_proxy_opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoRedirect
+    )
     url = stripped
 
     last_reason: str | None = None

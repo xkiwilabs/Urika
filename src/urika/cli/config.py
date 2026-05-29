@@ -100,17 +100,35 @@ def _prompt_for_endpoint_key_value(key_env: str) -> None:
         "(Authorization: Bearer <token>). /healthz and /static are exempt."
     ),
 )
+@click.option(
+    "--no-auth",
+    is_flag=True,
+    default=False,
+    help=(
+        "Launch the dashboard WITHOUT auth (fully open on 127.0.0.1). "
+        "By default a random token is generated and required."
+    ),
+)
 def dashboard(
     project: str | None,
     port: int | None,
     auth_token: str | None,
+    no_auth: bool,
 ) -> None:
     """Open the dashboard in your browser.
 
     Without PROJECT, opens the projects list at ``/projects``.
     With PROJECT, opens that project's page at ``/projects/<name>``.
+
+    By default the dashboard requires an auth token: if you don't pass
+    ``--auth-token`` a random one is generated and the tokenized URL is
+    printed for you to open. Pass ``--no-auth`` to launch fully open
+    (only do this on a trusted single-user machine).
     """
-    from urika.tui.dashboard_launcher import start_dashboard_server
+    from urika.tui.dashboard_launcher import (
+        default_auth_token,
+        start_dashboard_server,
+    )
 
     open_path = "/projects"
     label = "Urika dashboard"
@@ -120,15 +138,43 @@ def dashboard(
         open_path = f"/projects/{project}"
         label = f"{_config.name} dashboard"
 
+    # Default-secure: generate a token in the launch path unless the
+    # user supplied one or explicitly opted out. ``create_app``'s own
+    # ``auth_token=None`` default stays unauthenticated for tests; the
+    # decision lives here, not in the factory.
+    # Compute whether we're about to generate a token *before* calling the
+    # helper, so we know whether to print the tokenized URL below.
+    generated = auth_token is None and not no_auth
+    auth_token = default_auth_token(auth_token, no_auth)
+
     click.echo(f"\n  Starting {label}...")
     server, _thread, used_port = start_dashboard_server(
         port=port,
         open_path=open_path,
         auth_token=auth_token,
+        no_auth=no_auth,
+        open_browser=not generated,
     )
-    click.echo(f"  Listening on http://127.0.0.1:{used_port}{open_path}")
-    if auth_token:
-        click.echo("  Auth: Authorization: Bearer <token> required.")
+    host = "127.0.0.1"
+    if generated:
+        click.secho(
+            "  Dashboard auth enabled. Open this URL (token included):",
+            fg="yellow",
+        )
+        # The token rides in the URL for first-load UX; it then moves to an
+        # httponly cookie. Acceptable for a loopback single-user dashboard
+        # (token can persist in browser history) — not a network-exposed default.
+        click.echo(f"  http://{host}:{used_port}{open_path}?token={auth_token}")
+    else:
+        click.echo(f"  Listening on http://{host}:{used_port}{open_path}")
+    if auth_token and not generated:
+        click.echo("  Auth: Authorization: Bearer <token> (or ?token=) required.")
+    if no_auth:
+        click.secho(
+            "  WARNING: launched with --no-auth — every mutating route is "
+            "reachable with zero auth.",
+            fg="red",
+        )
     click.echo("  Press Ctrl+C to stop.")
 
     try:

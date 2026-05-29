@@ -12,6 +12,44 @@ from urika.core.models import RunRecord
 logger = logging.getLogger(__name__)
 
 
+def _find_balanced_json(text: str, start: int) -> tuple[str, int] | None:
+    """From ``text[start:]`` (first non-space char must be { or [),
+    return (json_substring, end_index) covering the balanced object/array,
+    honoring string literals and escapes. None if unbalanced."""
+    i = start
+    n = len(text)
+    while i < n and text[i] in " \t\r\n":
+        i += 1
+    if i >= n or text[i] not in "{[":
+        return None
+    open_ch = text[i]
+    close_ch = "}" if open_ch == "{" else "]"
+    depth = 0
+    in_str = False
+    escape = False
+    j = i
+    while j < n:
+        c = text[j]
+        if in_str:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == open_ch:
+                depth += 1
+            elif c == close_ch:
+                depth -= 1
+                if depth == 0:
+                    return text[i : j + 1], j + 1
+        j += 1
+    return None
+
+
 def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
     """Find all ```json fenced blocks in text, parse them, skip malformed.
 
@@ -21,11 +59,37 @@ def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
     actually emit) were silently dropped. The relaxed pattern
     accepts the language tag followed by any whitespace, including
     none.
+
+    v0.5.0: uses brace-balanced extraction from the opening fence so a
+    code fence embedded inside a JSON *string value* (e.g. a Python
+    snippet in a task-agent ``observation`` field) no longer truncates
+    the match at the first closing fence it sees — which previously
+    dropped the whole run record and could mark an experiment
+    ``failed`` with 0 runs despite real work. Falls back to the legacy
+    non-greedy regex slice only if balancing fails.
     """
-    pattern = re.compile(r"```(?:json|JSON)\s*(.*?)```", re.DOTALL)
     results: list[dict[str, Any]] = []
-    for match in pattern.finditer(text):
-        raw = match.group(1).strip()
+    open_re = re.compile(r"```(?:json|JSON)[ \t]*\r?\n?", re.IGNORECASE)
+    pos = 0
+    # Manual cursor scan: on a successful balanced parse we advance ``pos``
+    # past the *end* of the balanced region so a ```json opener that lives
+    # inside an already-parsed JSON string value isn't re-matched (which
+    # would otherwise emit a spurious "Skipping malformed JSON block"
+    # warning). The unbalanced fallback advances past the opening fence only,
+    # to keep the legacy behaviour and avoid an infinite loop.
+    while True:
+        m = open_re.search(text, pos)
+        if m is None:
+            break
+        balanced = _find_balanced_json(text, m.end())
+        if balanced is not None:
+            raw = balanced[0]
+            pos = balanced[1]
+        else:
+            tail = text[m.end() :]
+            close = tail.find("```")
+            raw = (tail[:close] if close != -1 else tail).strip()
+            pos = m.end()
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, ValueError) as exc:
