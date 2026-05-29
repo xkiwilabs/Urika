@@ -5,7 +5,151 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.5] - 2026-05-17
+## [0.4.5.1] - 2026-05-26
+
+Pre-v0.5 hardening release. A deep review surfaced one silent
+data-loss bug, an unauthenticated dashboard surface, a confirmed
+per-surface drift regression, and a handful of smaller robustness
+gaps. This release closes them all before the v0.5.0 memory-
+deepening work begins. No new features — all fixes.
+
+### Security
+
+- **Dashboard ships default-secure.** ``urika dashboard`` with no
+  ``--auth-token`` now auto-generates a random token
+  (``secrets.token_urlsafe(24)``) and prints the tokenized URL the
+  user should open. ``_make_auth_dependency`` accepts the token via
+  ``Authorization: Bearer`` header, a ``urika_token`` cookie
+  (``httponly``, ``samesite=strict``), or a ``?token=`` query param —
+  all compared with ``secrets.compare_digest``. The cookie is set
+  automatically on the first valid ``?token=`` request so HTMX/Alpine
+  XHRs stay authenticated. ``--no-auth`` (with a red warning) opts
+  back into the old open mode for users who deliberately want it.
+  ``create_app(auth_token=None)`` is unchanged so the test suite still
+  exercises both modes.
+- **CSRF / cross-origin guard.** A new middleware in
+  ``dashboard/app.py`` rejects state-changing requests (anything not
+  ``GET``/``HEAD``/``OPTIONS``) whose ``Origin`` header doesn't match
+  the request's ``Host`` — closing the cross-origin form-POST vector
+  that was reachable from any web page the user visited while the
+  dashboard ran on localhost. Applies in both auth and no-auth modes.
+- **SSRF blocklist on the endpoint probe.** The dashboard's
+  ``/settings/test-endpoint`` route (and any future caller that opts
+  in) now resolves the URL host via a new ``urika.core.netguard``
+  module and refuses to open it if any resolved A/AAAA record is
+  private, loopback, link-local, reserved, multicast, or unspecified
+  — defeating the cloud-metadata (``169.254.169.254``) / RFC1918 /
+  internal-admin oracle a logged-in dashboard user could otherwise
+  build. Redirects are also disabled on the probe opener so a public
+  URL can't ``302`` into a private address. The CLI ``urika config``
+  endpoint test stays opt-out (a user typing their own Tailscale /
+  LAN endpoint isn't an SSRF vector), and the privacy preflight to a
+  user-declared private LLM endpoint is deliberately exempt and
+  documented as such.
+- **Slack inbound fails closed without an allowlist.** Previously
+  ``SlackChannel._is_authorized`` returned ``True`` when both
+  ``allowed_channels`` and ``allowed_users`` were unset — meaning any
+  workspace member could trigger ``pause``/``stop``/``ask``. It now
+  returns ``False``, logs a one-time ``DISABLED`` warning telling the
+  user to configure an allowlist, and matches Telegram's already-
+  strict ``chat_id`` posture. Telegram's high-priority metric values
+  are also HTML-escaped now (the key was escaped but the value
+  wasn't, under ``parse_mode="HTML"``).
+- **Vault secret-removal write is atomic.** ``vault._remove_env_key``
+  used ``path.write_text(...)`` then ``path.chmod(0o600)``, leaving a
+  brief window where the rewritten secrets file had default umask
+  perms. It now routes through the same ``write_text_atomic(..., mode
+  =0o600)`` helper the create / upsert paths use, so the 0600 bits
+  are baked in at ``O_CREAT|O_EXCL``.
+
+### Fixed
+
+- **Output parser no longer drops run records that embed a code
+  fence in a string value.** ``_extract_json_blocks`` used a
+  non-greedy ``re.compile(r"```(?:json)\s*(.*?)```")`` that stopped
+  at the **first** ``` it saw — so a task-agent record whose
+  ``observation`` or ``hypothesis`` quoted a ```python snippet got
+  truncated mid-JSON, ``json.loads`` raised, and the block was
+  silently skipped. The downstream effect was severe: an experiment
+  whose only run records all embedded fences recorded zero runs and
+  was marked ``failed`` despite real work; the same truncation also
+  defeated ``parse_evaluation`` so ``criteria_met`` could go
+  unrecognised and the loop ran to ``max_turns`` wondering why
+  criteria never matched. The parser now does brace-balanced
+  extraction from each ``json`` opening fence (honouring string
+  literals and escapes), falling back to the legacy slice only when
+  balancing fails. The scan cursor also advances past balanced
+  regions so a quoted ``json`` opener inside an already-parsed string
+  value no longer fires a spurious "Skipping malformed JSON block"
+  warning.
+- **Advisor no longer loses ALL method context when one methods.json
+  row is malformed.** ``_determine_next`` did ``m['name']`` (direct
+  key access) inside a ``for m in methods[-20:]`` loop wrapped by an
+  outer ``except Exception: pass``. One row missing ``name`` raised
+  ``KeyError``, the except swallowed it, and the entire method-
+  context block — every well-formed row — dropped out of the advisor
+  prompt with no signal, degrading next-experiment suggestions. The
+  loop is now defensive at the row level (``m.get("name",
+  "<unnamed>")``, guarded non-dict ``metrics``), and the broad
+  ``except`` logs at ``debug`` instead of silent ``pass`` so future
+  failures are observable.
+- **Stopped runs no longer get finalized.** ``run_project``
+  computed its finalize-skip predicate from ``is_pause_requested()``
+  only, so a run that broke out via ``is_stop_requested()`` (the
+  dashboard's stop button) fell through to ``finalize_project`` —
+  finalizing a project the user had explicitly stopped. The gate now
+  matches the loop's own exit semantics (``is_pause_requested() or
+  is_stop_requested()``).
+- **TUI live output panel no longer leaks ``ESC 7`` / ``ESC 8`` /
+  OSC bytes.** The hardened ANSI-stripping regex added in v0.4.4.3
+  (covering CSI + OSC + Fe + Fp incl. DECSC/DECRC) lived only in
+  ``orchestrator/run_log.py``; ``tui/capture.py`` still had the old
+  CSI-only regex its own comment admitted didn't cover OSC or 8-bit
+  CSI. The TUI panel could therefore re-leak the same bytes
+  ``run_log`` was specifically fixed to strip. Both call sites now
+  import ``strip_ansi`` from a new ``urika.core.ansi`` module — one
+  shared source of truth for ANSI stripping across all surfaces.
+- **Session lock creation is atomic.** ``acquire_lock``'s final
+  step was ``path.write_text(str(os.getpid()))`` — truncate-then-
+  write, non-atomic. A concurrent ``acquire_lock`` racing past the
+  stale-lock unlink could read the half-written empty file, deem it
+  stale, unlink the live lock, and both processes proceed. The
+  create now goes through ``os.open(..., O_CREAT|O_EXCL|O_WRONLY,
+  0o644)`` so creation itself is the exclusivity primitive — the
+  empty-lock TOCTOU window is gone.
+- **``_DAEMON_THREADS`` no longer grows unbounded in the dashboard
+  process.** The list of spawned reaper / drainer threads in
+  ``dashboard/runs.py`` was append-only; in a long-lived dashboard
+  every run / finalize / advisor / etc. spawn slowly leaked a
+  ``Thread`` object plus its closure. Registration now prunes
+  finished (``not is_alive()``) entries on each append.
+- **``_toml_value`` no longer emits invalid TOML for unknown
+  types.** Values that weren't str / bool / int / float / list / dict
+  (``Path``, ``datetime``, tuples) fell through to ``return
+  repr(val)``, producing output (``PosixPath('/x/y.csv')``) that
+  ``tomllib.load`` couldn't parse — same failure family as the
+  v0.4.4 control-char bug. Unknown types are now encoded as a TOML
+  basic string via the same helper the dict-key branch uses.
+- **REPL ``/run --resume`` works from local typed input.** Only the
+  remote Slack / Telegram path threaded ``--resume`` (via
+  ``_parse_remote_run_args``); the local handler hard-coded
+  ``resume=False`` in its ``ctx.invoke(cli_run, ...)`` call, so
+  typing ``/run --resume`` in the REPL or TUI silently dropped the
+  flag. ``--resume`` is now parsed from local typed args too.
+
+### Changed
+
+- **Experiment commands have consistent ``experiment-<verb>``
+  aliases.** CLI uses space-subcommands (``experiment create`` /
+  ``experiment delete`` / ``experiment list``); the REPL had a mix
+  of ``/experiment-create``, ``/delete-experiment``, and
+  ``/experiments``. The REPL registry now exposes
+  ``/experiment-delete`` and ``/experiment-list`` aliases pointing at
+  the same handlers; the old names keep working for back-compat. The
+  TUI inherits both via the shared ``PROJECT_COMMANDS`` registry, so
+  this lands on all three surfaces without a TUI-side change.
+
+
 
 Surface parity track. The CLI / TUI / REPL / dashboard had drifted —
 one feature on one surface, a different flavour on another, and one
