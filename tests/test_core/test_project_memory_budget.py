@@ -55,3 +55,51 @@ def test_load_memory_soft_cap_does_not_truncate(tmp_path):
     out = pm.load_project_memory(proj)
     assert "over budget" not in out  # no marker at soft cap
     assert body in out  # full body still present
+
+
+def test_soft_cap_sets_session_flag(tmp_path):
+    from urika.core import project_memory as pm
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    body = "x" * 21_000  # ~6K tokens
+    pm.save_entry(proj, mem_type="user", description="m", body=body)
+    pm.load_project_memory(proj, session_id="s1")
+    assert pm.is_curator_due(proj, session_id="s1") is True
+    assert pm.is_curator_due(proj, session_id="s2") is False  # other session
+
+
+def test_under_soft_cap_does_not_set_flag(tmp_path):
+    from urika.core import project_memory as pm
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="m", body="small body")
+    pm.load_project_memory(proj, session_id="s1")
+    assert pm.is_curator_due(proj, session_id="s1") is False
+
+
+def test_mark_curator_ran_clears_session(tmp_path):
+    from urika.core import project_memory as pm
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    body = "x" * 21_000
+    pm.save_entry(proj, mem_type="user", description="m", body=body)
+    pm.load_project_memory(proj, session_id="s1")
+    pm.mark_curator_ran(proj, session_id="s1")
+    assert pm.is_curator_due(proj, session_id="s1") is False
+
+
+def test_load_memory_session_id_optional(tmp_path):
+    """Existing callers that pass no session_id must still work."""
+    from urika.core import project_memory as pm
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="m", body="b")
+    # No session_id arg — must not raise, must not write flag file.
+    out = pm.load_project_memory(proj)
+    assert "m" in out or "b" in out  # entry present
+    flag = proj / "memory" / ".curator-flag.json"
+    assert not flag.exists()  # no signal because session_id=None

@@ -14,6 +14,7 @@ Curator (Phase 3) defers to v0.5.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date as _date
@@ -168,7 +169,7 @@ def _render_entry(project_dir: Path, entry: dict[str, str]) -> str | None:
     return "\n".join(chunk)
 
 
-def load_project_memory(project_dir: Path) -> str:
+def load_project_memory(project_dir: Path, session_id: str | None = None) -> str:
     """Read every memory file, return a system-prompt-ready block.
 
     Empty string when memory dir is missing or empty. When the total
@@ -176,6 +177,14 @@ def load_project_memory(project_dir: Path) -> str:
     (by mtime) are dropped until the result fits and the section
     header is replaced with an "over budget" marker telling the user
     to run ``urika memory curate``.
+
+    When ``session_id`` is provided AND the soft cap is exceeded
+    (either by tokens or entry count), flag the session as
+    "curator-due" so the orchestrator can run the curator at the
+    next strategic checkpoint (see :func:`is_curator_due` /
+    :func:`mark_curator_ran`). When ``session_id`` is ``None``
+    (the default for existing callers) the flag file is never
+    touched.
     """
     entries = list_entries(project_dir)
     if not entries:
@@ -207,9 +216,15 @@ def load_project_memory(project_dir: Path) -> str:
 
     full_blob = _assemble([c for _, _, c in rendered], _HEADER_NORMAL)
     full_tokens = estimate_tokens(full_blob)
+    soft_exceeded = full_tokens > SOFT_CAP_TOKENS or len(rendered) > SOFT_CAP_ENTRIES
+
+    # Signal curator-due BEFORE the early-return path so the flag is
+    # set even when we're still under the hard cap.
+    if session_id is not None and soft_exceeded:
+        _signal_curator_due(project_dir, session_id)
 
     if full_tokens <= HARD_CAP_TOKENS:
-        if full_tokens > SOFT_CAP_TOKENS or len(rendered) > SOFT_CAP_ENTRIES:
+        if soft_exceeded:
             logger.warning(
                 "Project memory exceeds soft cap (%d > %d tokens or %d > %d entries)"
                 " — curator should run",
@@ -241,6 +256,66 @@ def load_project_memory(project_dir: Path) -> str:
         len(rendered) - len(kept),
     )
     return _assemble(kept_in_order, _HEADER_OVER_BUDGET)
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped curator-due flag (v0.5.0 Task 2.3)
+#
+# When ``load_project_memory`` is called with a ``session_id`` and the
+# soft cap is crossed, the session is recorded in
+# ``<project>/memory/.curator-flag.json`` under a ``pending_sessions``
+# list. The orchestrator queries this with :func:`is_curator_due`
+# before each strategic checkpoint, fires the curator agent, then
+# clears the flag with :func:`mark_curator_ran`. Once-per-session.
+# ---------------------------------------------------------------------------
+_FLAG_FILENAME = ".curator-flag.json"
+
+
+def _flag_path(project_dir: Path) -> Path:
+    return memory_dir(project_dir) / _FLAG_FILENAME
+
+
+def _read_flag(project_dir: Path) -> dict:
+    p = _flag_path(project_dir)
+    if not p.is_file():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_flag(project_dir: Path, data: dict) -> None:
+    p = _flag_path(project_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+
+
+def is_curator_due(project_dir: Path, session_id: str) -> bool:
+    """True if the curator should run for this session (soft cap was
+    crossed AND it hasn't run in this session yet).
+    """
+    flag = _read_flag(project_dir)
+    return session_id in set(flag.get("pending_sessions", []))
+
+
+def mark_curator_ran(project_dir: Path, session_id: str) -> None:
+    """Clear the curator-due flag for ``session_id`` after the curator
+    has executed in that session.
+    """
+    flag = _read_flag(project_dir)
+    pending = set(flag.get("pending_sessions", []))
+    pending.discard(session_id)
+    flag["pending_sessions"] = sorted(pending)
+    _write_flag(project_dir, flag)
+
+
+def _signal_curator_due(project_dir: Path, session_id: str) -> None:
+    flag = _read_flag(project_dir)
+    pending = set(flag.get("pending_sessions", []))
+    pending.add(session_id)
+    flag["pending_sessions"] = sorted(pending)
+    _write_flag(project_dir, flag)
 
 
 def save_entry(
