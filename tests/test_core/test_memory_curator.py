@@ -182,3 +182,80 @@ def test_apply_handles_malformed_decision_without_crashing(tmp_path: Path) -> No
     # Should not raise.
     result = asyncio.run(run_curator(proj, runner=runner, apply=True))
     assert result.applied is True
+
+
+def test_apply_flag_contradiction_uses_between_filename(tmp_path):
+    """flag_contradiction targets the first filename in `between` and writes flagged_contradiction:"""
+    from urika.core.memory_curator import run_curator
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="x", body="b1")
+    pm.save_entry(proj, mem_type="user", description="y", body="b2")
+    names = [e["filename"] for e in pm.list_entries(proj)]
+    runner = _FakeRunner(
+        [
+            {
+                "action": "flag_contradiction",
+                "between": names,
+                "reason": "opposite claims",
+            }
+        ]
+    )
+    asyncio.run(run_curator(proj, runner=runner, apply=True))
+    # First filename in `between` gets the flag
+    text = (proj / "memory" / names[0]).read_text()
+    assert "flagged_contradiction:" in text
+    assert "opposite claims" in text
+
+
+def test_apply_flag_sanitizes_multiline_reason(tmp_path):
+    """A multi-line reason becomes single-line in the frontmatter."""
+    from urika.core.memory_curator import run_curator
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="x", body="b")
+    name = pm.list_entries(proj)[0]["filename"]
+    runner = _FakeRunner(
+        [
+            {
+                "action": "flag_stale",
+                "filename": name,
+                "reason": "first line\nsecond line",
+            }
+        ]
+    )
+    asyncio.run(run_curator(proj, runner=runner, apply=True))
+    text = (proj / "memory" / name).read_text()
+    # Single line in frontmatter — both phrases on the same line
+    assert "flagged_stale: first line second line" in text
+
+
+def test_run_curator_returns_error_when_runner_raises(tmp_path):
+    """A runner exception surfaces as CuratorResult.error, not a raise."""
+    from urika.core.memory_curator import run_curator
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="x", body="b")
+
+    class _BoomRunner(AgentRunner):
+        async def run(self, config, prompt, *, on_message=None):
+            raise RuntimeError("kaboom")
+
+    result = asyncio.run(run_curator(proj, runner=_BoomRunner(), apply=False))
+    assert result.applied is False
+    assert result.error is not None
+    assert "kaboom" in result.error
+
+
+def test_build_curator_input_handles_empty_memory_dir(tmp_path):
+    """No entries → header-only message, no crash."""
+    from urika.core.memory_curator import _build_curator_input
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    msg = _build_curator_input(proj)
+    assert msg  # not empty (header at minimum)
+    # No entry sections (no "---" separator that would precede entry content)

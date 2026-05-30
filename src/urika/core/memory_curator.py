@@ -140,7 +140,7 @@ def _apply_decisions(project_dir: Path, decisions: list[dict[str, Any]]) -> bool
             if action == "archive":
                 fn = d.get("filename")
                 if isinstance(fn, str):
-                    archive_entry(project_dir, fn)
+                    archive_entry(project_dir, fn, _skip_index=True)
             elif action == "merge":
                 keep = d.get("into")
                 if not isinstance(keep, str):
@@ -148,7 +148,7 @@ def _apply_decisions(project_dir: Path, decisions: list[dict[str, Any]]) -> bool
                 from_list = [f for f in d.get("from", []) if isinstance(f, str)]
                 _apply_merge(md, keep, from_list)
                 for fn in from_list:
-                    archive_entry(project_dir, fn)
+                    archive_entry(project_dir, fn, _skip_index=True)
             elif action in ("flag_stale", "flag_contradiction"):
                 _apply_flag(md, d)
         except Exception as exc:  # noqa: BLE001 — per-decision errors don't abort the batch
@@ -207,18 +207,29 @@ def _apply_flag(memory_dir_path: Path, decision: dict[str, Any]) -> None:
         if decision.get("action") == "flag_stale"
         else "flagged_contradiction"
     )
-    reason = decision.get("reason", "")
+    reason = (
+        str(decision.get("reason", "")).replace("\n", " ").replace("\r", " ").strip()
+    )
     text = path.read_text(encoding="utf-8")
     # Idempotent: don't add the same flag twice.
     if f"{flag_key}:" in text:
         return
     lines = text.splitlines()
+    inserted = False
     if lines and lines[0] == "---":
         # Find the closing --- and inject the flag before it.
         for i, line in enumerate(lines[1:], start=1):
             if line == "---":
                 lines.insert(i, f"{flag_key}: {reason}")
+                inserted = True
                 break
     else:
         lines = ["---", f"{flag_key}: {reason}", "---"] + lines
+        inserted = True
+    if not inserted:
+        logger.warning(
+            "Could not flag %s — frontmatter has opening --- but no closing marker",
+            path,
+        )
+        return
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

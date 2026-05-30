@@ -353,7 +353,7 @@ def save_entry(
     return path
 
 
-def archive_entry(project_dir: Path, filename: str) -> Path:
+def archive_entry(project_dir: Path, filename: str, _skip_index: bool = False) -> Path:
     """Move a live memory entry to ``memory/archive/<YYYY-MM>/<filename>``.
 
     Returns the destination path. Idempotent in spirit: if ``filename``
@@ -363,6 +363,10 @@ def archive_entry(project_dir: Path, filename: str) -> Path:
     merged-and-archived earlier in the same batch. If a same-named file
     already exists in the target month, the new copy overwrites it
     (``Path.replace`` semantics — atomic on the same filesystem).
+
+    ``_skip_index`` is a private optimization for batch callers (e.g.
+    the curator's ``_apply_decisions`` loop) that rebuild the index
+    themselves at the end — avoids N+1 ``MEMORY.md`` rewrites.
     """
     src = memory_dir(project_dir) / filename
     if not src.is_file():
@@ -372,7 +376,8 @@ def archive_entry(project_dir: Path, filename: str) -> Path:
     archive_root.mkdir(parents=True, exist_ok=True)
     dst = archive_root / filename
     src.replace(dst)  # atomic on same filesystem
-    rebuild_index(project_dir)
+    if not _skip_index:
+        rebuild_index(project_dir)
     return dst
 
 
