@@ -30,6 +30,25 @@ _TYPES = ("user", "feedback", "instruction", "decision", "reference")
 _SOFT_CAP_BYTES = 5_000
 _HARD_CAP_BYTES = 20_000
 
+# v0.5.0 token-budget caps (Decision 2 of the memory-deepening plan).
+# Token estimate uses ``estimate_tokens`` (bytes / 3.5) — biased UP so
+# the curator fires slightly early rather than late on non-ASCII text.
+SOFT_CAP_TOKENS = 5_000
+HARD_CAP_TOKENS = 10_000
+SOFT_CAP_ENTRIES = 30
+
+
+def estimate_tokens(text: str) -> int:
+    """Conservative byte-heuristic token count (bytes / 3.5).
+
+    Biases the estimate UP so non-Latin scripts and code don't sneak
+    under the cap. The failure mode is curator-fires-slightly-early,
+    which is harmless. See dev/plans/2026-05-17-v0.5.0-memory-deepening.md
+    Decision 2.
+    """
+    return int(len(text.encode("utf-8")) / 3.5)
+
+
 _MEMORY_RE = re.compile(
     r"<memory\s+type=[\"'](?P<type>[^\"']+)[\"']\s*>(?P<body>.*?)</memory>",
     re.IGNORECASE | re.DOTALL,
