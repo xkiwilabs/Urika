@@ -26,3 +26,5 @@ Guidance:
 - DO NOT propose changes for entries that are clearly current, distinct, and well-formed.
 
 Be conservative: when in doubt, leave the entry alone. False positives are worse than false negatives.
+
+If no changes are warranted, return `{"decisions": []}`. An empty list is the expected output when memory is already factual, deduplicated, and current.
