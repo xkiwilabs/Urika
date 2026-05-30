@@ -20,6 +20,8 @@ import re
 from datetime import date as _date
 from pathlib import Path
 
+from urika.core.atomic_write import write_json_atomic
+
 logger = logging.getLogger(__name__)
 
 
@@ -286,9 +288,7 @@ def _read_flag(project_dir: Path) -> dict:
 
 
 def _write_flag(project_dir: Path, data: dict) -> None:
-    p = _flag_path(project_dir)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data), encoding="utf-8")
+    write_json_atomic(_flag_path(project_dir), data)
 
 
 def is_curator_due(project_dir: Path, session_id: str) -> bool:

@@ -91,6 +91,19 @@ def test_mark_curator_ran_clears_session(tmp_path):
     assert pm.is_curator_due(proj, session_id="s1") is False
 
 
+def test_soft_cap_entries_branch_sets_flag(tmp_path):
+    """The OR branch on n_entries fires the signal independently of byte size."""
+    from urika.core import project_memory as pm
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    # 31 tiny entries — way under the token cap but over SOFT_CAP_ENTRIES=30.
+    for i in range(31):
+        pm.save_entry(proj, mem_type="user", description=f"tiny-{i}", body=".")
+    pm.load_project_memory(proj, session_id="s1")
+    assert pm.is_curator_due(proj, session_id="s1") is True
+
+
 def test_load_memory_session_id_optional(tmp_path):
     """Existing callers that pass no session_id must still work."""
     from urika.core import project_memory as pm
