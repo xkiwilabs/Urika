@@ -114,3 +114,28 @@ def test_curator_idempotent_within_session(tmp_path, monkeypatch):
     asyncio.run(loop._maybe_run_curator(proj, runner=object(), session_id="s1"))
     asyncio.run(loop._maybe_run_curator(proj, runner=object(), session_id="s1"))
     assert fired == 1
+
+
+def test_curator_returns_error_in_notice(tmp_path, monkeypatch):
+    """A CuratorResult with error set (soft failure) must surface in the notice,
+    not be reported as 'no changes suggested'."""
+    from urika.orchestrator import loop
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm._signal_curator_due(proj, session_id="s1")
+
+    async def fake_run_curator(project_dir, runner, apply=False):
+        from urika.core.memory_curator import CuratorResult
+
+        return CuratorResult(decisions=[], applied=False, error="agent stream timeout")
+
+    monkeypatch.setattr("urika.core.memory_curator.run_curator", fake_run_curator)
+    notice = asyncio.run(
+        loop._maybe_run_curator(proj, runner=object(), session_id="s1")
+    )
+    assert notice is not None
+    assert "failed" in notice
+    assert "agent stream timeout" in notice
+    assert "no changes suggested" not in notice
+    assert pm.is_curator_due(proj, session_id="s1") is False  # flag cleared

@@ -91,6 +91,8 @@ async def _maybe_run_curator(
         return f"Memory curator: failed to run ({exc}). Skipping."
 
     project_memory.mark_curator_ran(project_dir, session_id)
+    if result.error:
+        return f"Memory curator: failed ({result.error}). Skipping."
     if not result.decisions:
         return "Memory curator: ran (no changes suggested)."
 
