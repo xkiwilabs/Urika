@@ -1036,7 +1036,11 @@ class TestAdvisorContextSummaryInjection:
 
         assert result["status"] == "completed"
         assert len(advisor_prompts) >= 1
-        assert "Research Context (from previous sessions)" in advisor_prompts[0]
+        # v0.5.0 Task 1.1: the end-of-loop advisor now receives memory
+        # + summary via ``format_advisor_context``, which uses the same
+        # "## Project Memory & Prior Context" heading as planning_agent
+        # (symmetric per-turn surface for the read-side memory loop).
+        assert "Project Memory & Prior Context" in advisor_prompts[0]
         assert "time-series approaches" in advisor_prompts[0]
 
     @pytest.mark.asyncio
@@ -1077,6 +1081,11 @@ class TestAdvisorContextSummaryInjection:
 
         await run_experiment(project_dir, exp_id, CapturingRunner(), max_turns=2)
         assert len(advisor_prompts) >= 1
+        # v0.5.0 Task 1.1: bare evaluator output — no Project Memory
+        # block when there's nothing to inject (and no legacy
+        # "Research Context" heading from the old per-summary
+        # injection either).
+        assert "Project Memory & Prior Context" not in advisor_prompts[0]
         assert "Research Context" not in advisor_prompts[0]
 
     @pytest.mark.asyncio
