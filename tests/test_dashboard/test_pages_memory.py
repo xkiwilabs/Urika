@@ -71,8 +71,10 @@ def test_memory_page_empty_state_when_no_entries(client_and_proj):
     client, _proj = client_and_proj
     resp = client.get("/projects/proj/memory")
     assert resp.status_code == 200
-    # Page still renders the heading and an empty-state hint.
-    assert "Memory" in resp.text
+    # Empty-state copy lives in memory.html — match the exact prefix so
+    # this test cannot pass on the populated case (where "Memory" alone
+    # would still appear in the sidebar / heading / breadcrumb).
+    assert "No memory entries yet" in resp.text
 
 
 def test_memory_page_has_add_form(client_and_proj):
@@ -85,6 +87,19 @@ def test_memory_page_has_add_form(client_and_proj):
     assert 'name="mem_type"' in resp.text
     assert 'name="description"' in resp.text
     assert 'name="body"' in resp.text
+
+
+def test_memory_form_has_response_error_handler(client_and_proj):
+    """HTMX does not swap response bodies for non-2xx by default — the
+    form needs an ``hx-on::response-error`` handler to surface 422
+    validation failures (or 5xx errors) into the feedback span instead
+    of silently swallowing them.
+    """
+    client, _proj = client_and_proj
+    resp = client.get("/projects/proj/memory")
+    assert resp.status_code == 200
+    assert "hx-on::response-error" in resp.text
+    assert "add-memory-feedback" in resp.text
 
 
 def test_sidebar_has_memory_link(client_and_proj):

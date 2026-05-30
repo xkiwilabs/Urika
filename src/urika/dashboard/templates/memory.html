@@ -70,10 +70,12 @@
   {% endif %}
 
   {% call modal('add-memory', 'Add a memory entry') %}
+    {# On success the API returns HX-Redirect → page reloads. On 4xx/5xx
+       HTMX does not swap by default, so we surface the response body
+       into ``#add-memory-feedback`` via ``hx-on::response-error``. #}
     <form
       hx-post="/api/projects/{{ project.name }}/memory"
-      hx-target="#add-memory-feedback"
-      hx-swap="innerHTML"
+      hx-on::response-error="document.getElementById('add-memory-feedback').textContent = 'Save failed: ' + (event.detail.xhr.responseText || event.detail.xhr.statusText || 'unknown error');"
     >
       <div class="form-row">
         <label for="am-type">Type</label>
@@ -88,6 +90,7 @@
       <div class="form-row">
         <label for="am-description">Description <span class="text-muted">(short label)</span></label>
         <input id="am-description" name="description" type="text"
+               maxlength="80"
                placeholder="e.g. prefers concise output">
       </div>
       <div class="form-row">

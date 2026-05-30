@@ -759,10 +759,16 @@ async def api_get_project_memory_entry(name: str, filename: str) -> JSONResponse
 
 
 @router.post("/projects/{name}/memory")
-async def api_upsert_project_memory(name: str, request: Request) -> JSONResponse:
+async def api_upsert_project_memory(name: str, request: Request) -> Response:
     """Upsert a memory entry. Form fields: ``mem_type``,
     ``description`` (optional), ``body`` (required). Re-runs
     :func:`rebuild_index` via :func:`save_entry`.
+
+    When invoked from the dashboard's HTMX form (``HX-Request: true``
+    header), responds with ``HX-Redirect`` back to the memory page so
+    the newly-saved entry appears in the list without the raw JSON
+    being injected into the feedback span. Programmatic API callers
+    (no ``HX-Request`` header) keep the original ``201`` + JSON shape.
     """
     from urika.core.project_memory import save_entry
 
@@ -790,6 +796,11 @@ async def api_upsert_project_memory(name: str, request: Request) -> JSONResponse
         description=description,
         body=body,
     )
+    if request.headers.get("hx-request") == "true":
+        return Response(
+            status_code=204,
+            headers={"HX-Redirect": f"/projects/{name}/memory"},
+        )
     return JSONResponse({"ok": True, "filename": path.name}, status_code=201)
 
 

@@ -130,6 +130,25 @@ def test_post_upsert_creates_entry(client_and_proj):
     assert "new" in index
 
 
+def test_post_upsert_hx_request_returns_redirect(client_and_proj):
+    """When the dashboard's HTMX form POSTs (``HX-Request: true``),
+    the endpoint should return 204 + ``HX-Redirect`` back to the memory
+    page rather than the JSON body, so HTMX reloads the list instead
+    of injecting raw JSON into the feedback span.
+    """
+    client, proj = client_and_proj
+    resp = client.post(
+        "/api/projects/proj/memory",
+        data={"mem_type": "user", "description": "hx-new", "body": "hx-body"},
+        headers={"Origin": "http://testserver", "HX-Request": "true"},
+    )
+    assert resp.status_code == 204
+    assert resp.headers.get("HX-Redirect") == "/projects/proj/memory"
+    # Entry still got saved.
+    entries = project_memory.list_entries(proj)
+    assert any(e["description"] == "hx-new" for e in entries)
+
+
 def test_post_upsert_rejects_unknown_mem_type(client_and_proj):
     client, _proj = client_and_proj
     resp = client.post(
