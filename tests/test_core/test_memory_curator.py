@@ -97,3 +97,88 @@ def test_build_curator_input_includes_each_entry(tmp_path: Path) -> None:
     # Both filenames present.
     assert "user_alpha.md" in msg
     assert "user_beta.md" in msg
+
+
+# ---------------------------------------------------------------------------
+# T2.6 — apply path: archive / merge / flag
+# ---------------------------------------------------------------------------
+
+
+def test_apply_archive_moves_entry(tmp_path: Path) -> None:
+    from urika.core.memory_curator import run_curator
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="old", body="stale")
+    name = pm.list_entries(proj)[0]["filename"]
+    runner = _FakeRunner([{"action": "archive", "filename": name, "reason": "stale"}])
+    result = asyncio.run(run_curator(proj, runner=runner, apply=True))
+    assert result.applied is True
+    assert not (proj / "memory" / name).exists()
+    archived = list((proj / "memory" / "archive").rglob(name))
+    assert len(archived) == 1
+
+
+def test_apply_merge_keeps_one_and_archives_other(tmp_path: Path) -> None:
+    from urika.core.memory_curator import run_curator
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="a", body="first claim")
+    pm.save_entry(
+        proj, mem_type="user", description="b", body="same claim, more detail"
+    )
+    names = [e["filename"] for e in pm.list_entries(proj)]
+    keep, drop = names[0], names[1]
+    runner = _FakeRunner(
+        [{"action": "merge", "into": keep, "from": [drop], "reason": "dup"}]
+    )
+    asyncio.run(run_curator(proj, runner=runner, apply=True))
+    assert (proj / "memory" / keep).exists()
+    assert not (proj / "memory" / drop).exists()
+    body = (proj / "memory" / keep).read_text()
+    assert "first claim" in body
+    assert "same claim" in body
+
+
+def test_apply_flag_stale_appends_flag(tmp_path: Path) -> None:
+    from urika.core.memory_curator import run_curator
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="x", body="b")
+    name = pm.list_entries(proj)[0]["filename"]
+    runner = _FakeRunner(
+        [
+            {
+                "action": "flag_stale",
+                "filename": name,
+                "reason": "no longer matches code",
+            }
+        ]
+    )
+    asyncio.run(run_curator(proj, runner=runner, apply=True))
+    text = (proj / "memory" / name).read_text()
+    assert "flagged_stale:" in text
+    # Idempotent — running again should not duplicate the flag.
+    asyncio.run(run_curator(proj, runner=runner, apply=True))
+    text2 = (proj / "memory" / name).read_text()
+    assert text2.count("flagged_stale:") == 1
+
+
+def test_apply_handles_malformed_decision_without_crashing(tmp_path: Path) -> None:
+    """A decision missing required fields is silently skipped."""
+    from urika.core.memory_curator import run_curator
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    pm.save_entry(proj, mem_type="user", description="x", body="b")
+    runner = _FakeRunner(
+        [
+            {"action": "merge"},  # missing 'into' / 'from'
+            {"action": "archive", "filename": "nonexistent.md"},
+        ]
+    )
+    # Should not raise.
+    result = asyncio.run(run_curator(proj, runner=runner, apply=True))
+    assert result.applied is True

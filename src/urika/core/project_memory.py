@@ -18,6 +18,8 @@ import json
 import logging
 import re
 from datetime import date as _date
+from datetime import datetime as _datetime
+from datetime import timezone as _timezone
 from pathlib import Path
 
 from urika.core.atomic_write import write_json_atomic
@@ -349,6 +351,29 @@ def save_entry(
     path.write_text(frontmatter + body.strip() + "\n", encoding="utf-8")
     rebuild_index(project_dir)
     return path
+
+
+def archive_entry(project_dir: Path, filename: str) -> Path:
+    """Move a live memory entry to ``memory/archive/<YYYY-MM>/<filename>``.
+
+    Returns the destination path. Idempotent in spirit: if ``filename``
+    doesn't exist under ``memory/`` we return the (non-existent) source
+    path without raising — the curator's apply loop relies on this to
+    swallow stale ``archive`` decisions on entries that were already
+    merged-and-archived earlier in the same batch. If a same-named file
+    already exists in the target month, the new copy overwrites it
+    (``Path.replace`` semantics — atomic on the same filesystem).
+    """
+    src = memory_dir(project_dir) / filename
+    if not src.is_file():
+        return src
+    yyyy_mm = _datetime.now(_timezone.utc).strftime("%Y-%m")
+    archive_root = memory_dir(project_dir) / "archive" / yyyy_mm
+    archive_root.mkdir(parents=True, exist_ok=True)
+    dst = archive_root / filename
+    src.replace(dst)  # atomic on same filesystem
+    rebuild_index(project_dir)
+    return dst
 
 
 def delete_entry(project_dir: Path, filename: str) -> bool:

@@ -112,6 +112,113 @@ async def run_curator(
 
     result = CuratorResult(decisions=decisions, applied=False)
     if apply:
-        # T2.6 will fill this in.
-        pass
+        result.applied = _apply_decisions(project_dir, decisions)
     return result
+
+
+def _apply_decisions(project_dir: Path, decisions: list[dict[str, Any]]) -> bool:
+    """Commit each decision to the memory directory.
+
+    Decision-level errors do NOT abort the batch — a single malformed
+    entry (e.g. ``merge`` missing ``into``/``from``, or ``archive``
+    pointing at a nonexistent file) is logged and skipped so the rest
+    of the curator's decisions still land. The function returns True
+    once the batch has been processed even when individual decisions
+    were no-ops; ``applied=True`` means "we ran the apply path", not
+    "every decision succeeded".
+    """
+    from urika.core.project_memory import (
+        archive_entry,
+        memory_dir,
+        rebuild_index,
+    )
+
+    md = memory_dir(project_dir)
+    for d in decisions:
+        action = d.get("action")
+        try:
+            if action == "archive":
+                fn = d.get("filename")
+                if isinstance(fn, str):
+                    archive_entry(project_dir, fn)
+            elif action == "merge":
+                keep = d.get("into")
+                if not isinstance(keep, str):
+                    continue
+                from_list = [f for f in d.get("from", []) if isinstance(f, str)]
+                _apply_merge(md, keep, from_list)
+                for fn in from_list:
+                    archive_entry(project_dir, fn)
+            elif action in ("flag_stale", "flag_contradiction"):
+                _apply_flag(md, d)
+        except Exception as exc:  # noqa: BLE001 — per-decision errors don't abort the batch
+            logger.warning(
+                "Curator decision %r failed: %s: %s",
+                action,
+                type(exc).__name__,
+                exc,
+            )
+            continue
+    rebuild_index(project_dir)
+    return True
+
+
+def _apply_merge(memory_dir_path: Path, keep: str, from_list: list[str]) -> None:
+    """Concatenate ``from_list`` entries' contents onto the ``keep``
+    entry, separated by markdown ``---`` rules. Callers archive the
+    ``from`` entries separately after this returns so the merge is
+    visible even if the archive step later fails.
+    """
+    keep_path = memory_dir_path / keep
+    if not keep_path.is_file():
+        return
+    keep_text = keep_path.read_text(encoding="utf-8")
+    add: list[str] = []
+    for fn in from_list:
+        src = memory_dir_path / fn
+        if not src.is_file():
+            continue
+        add.append(src.read_text(encoding="utf-8"))
+    if add:
+        merged = keep_text + "\n\n---\n\n" + "\n\n---\n\n".join(add)
+        keep_path.write_text(merged, encoding="utf-8")
+
+
+def _apply_flag(memory_dir_path: Path, decision: dict[str, Any]) -> None:
+    """Inject a ``flagged_stale: <reason>`` or ``flagged_contradiction:
+    <reason>`` line into the entry's frontmatter. Idempotent — if a
+    flag with that key already exists in the file (regardless of
+    reason text), this is a no-op rather than appending a duplicate.
+
+    For ``flag_contradiction`` decisions that name multiple files via
+    a ``between`` list, the flag is applied to the FIRST file in the
+    list (the curator is expected to issue one decision per file when
+    flagging both sides — the ``between`` shorthand here is best-
+    effort fallback).
+    """
+    fn = decision.get("filename") or (decision.get("between") or [None])[0]
+    if not isinstance(fn, str):
+        return
+    path = memory_dir_path / fn
+    if not path.is_file():
+        return
+    flag_key = (
+        "flagged_stale"
+        if decision.get("action") == "flag_stale"
+        else "flagged_contradiction"
+    )
+    reason = decision.get("reason", "")
+    text = path.read_text(encoding="utf-8")
+    # Idempotent: don't add the same flag twice.
+    if f"{flag_key}:" in text:
+        return
+    lines = text.splitlines()
+    if lines and lines[0] == "---":
+        # Find the closing --- and inject the flag before it.
+        for i, line in enumerate(lines[1:], start=1):
+            if line == "---":
+                lines.insert(i, f"{flag_key}: {reason}")
+                break
+    else:
+        lines = ["---", f"{flag_key}: {reason}", "---"] + lines
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
