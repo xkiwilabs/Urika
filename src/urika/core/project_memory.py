@@ -23,12 +23,6 @@ logger = logging.getLogger(__name__)
 
 
 _TYPES = ("user", "feedback", "instruction", "decision", "reference")
-# Soft cap: when injected memory exceeds this byte count, agents
-# still see it but a warning fires. Hard cap is 4× this in
-# ``load_project_memory`` — past which the inject is truncated and
-# an explicit "[memory truncated …]" line appears.
-_SOFT_CAP_BYTES = 5_000
-_HARD_CAP_BYTES = 20_000
 
 # v0.5.0 token-budget caps (Decision 2 of the memory-deepening plan).
 # Token estimate uses ``estimate_tokens`` (bytes / 3.5) — biased UP so
@@ -145,52 +139,108 @@ def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
     return meta, body
 
 
+_PREAMBLE = (
+    "The following persistent project memory shapes how you should "
+    "approach this project. Honor these preferences and decisions "
+    "unless the user explicitly overrides them in this session."
+)
+_HEADER_NORMAL = "## Project Memory"
+_HEADER_OVER_BUDGET = "## Project Memory (over budget — run urika memory curate)"
+
+
+def _render_entry(project_dir: Path, entry: dict[str, str]) -> str | None:
+    """Render one memory entry as the markdown block it occupies in
+    the injection. Returns None if the file can't be read.
+    """
+    d = memory_dir(project_dir) / entry["filename"]
+    try:
+        text = d.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Could not read memory file %s: %s", d, exc)
+        return None
+    _meta, body = _split_frontmatter(text)
+    chunk = [f"### {entry['type']}: {entry['name']}"]
+    if entry["description"]:
+        chunk.append(f"_{entry['description']}_")
+    chunk.append("")
+    chunk.append(body.strip())
+    chunk.append("")
+    return "\n".join(chunk)
+
+
 def load_project_memory(project_dir: Path) -> str:
     """Read every memory file, return a system-prompt-ready block.
 
-    Empty string when memory dir is missing or empty. Soft-capped at
-    5 KB (warns); hard-capped at 20 KB (truncates + appends a
-    truncation marker).
+    Empty string when memory dir is missing or empty. When the total
+    rendered block exceeds :data:`HARD_CAP_TOKENS`, oldest entries
+    (by mtime) are dropped until the result fits and the section
+    header is replaced with an "over budget" marker telling the user
+    to run ``urika memory curate``.
     """
     entries = list_entries(project_dir)
     if not entries:
         return ""
-    parts: list[str] = ["## Project Memory", ""]
-    parts.append(
-        "The following persistent project memory shapes how you should "
-        "approach this project. Honor these preferences and decisions "
-        "unless the user explicitly overrides them in this session."
-    )
-    parts.append("")
-    for e in entries:
-        d = memory_dir(project_dir) / e["filename"]
-        try:
-            text = d.read_text(encoding="utf-8")
-        except OSError as exc:
-            logger.warning("Could not read memory file %s: %s", d, exc)
+
+    # Pair each entry with its rendered body + mtime so we can drop
+    # oldest-first when over budget.
+    rendered: list[tuple[float, int, str]] = []  # (mtime, orig_idx, text)
+    for idx, e in enumerate(entries):
+        chunk = _render_entry(project_dir, e)
+        if chunk is None:
             continue
-        _meta, body = _split_frontmatter(text)
-        parts.append(f"### {e['type']}: {e['name']}")
-        if e["description"]:
-            parts.append(f"_{e['description']}_")
-        parts.append("")
-        parts.append(body.strip())
-        parts.append("")
-    blob = "\n".join(parts).rstrip() + "\n"
-    if len(blob) > _SOFT_CAP_BYTES:
-        logger.warning(
-            "Project memory exceeds soft cap (%d > %d bytes) — "
-            "consider running `urika memory list` and pruning",
-            len(blob),
-            _SOFT_CAP_BYTES,
-        )
-    if len(blob) > _HARD_CAP_BYTES:
-        truncated = blob[:_HARD_CAP_BYTES]
-        return (
-            truncated
-            + "\n\n[memory truncated at hard cap — run `urika memory list` to prune]\n"
-        )
-    return blob
+        path = memory_dir(project_dir) / e["filename"]
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        rendered.append((mtime, idx, chunk))
+
+    if not rendered:
+        return ""
+
+    # Helper to assemble the final blob from a chunks-in-original-order
+    # sequence, with the chosen header.
+    def _assemble(chunks_in_order: list[str], header: str) -> str:
+        parts = [header, "", _PREAMBLE, ""]
+        parts.extend(chunks_in_order)
+        return "\n".join(parts).rstrip() + "\n"
+
+    full_blob = _assemble([c for _, _, c in rendered], _HEADER_NORMAL)
+    full_tokens = estimate_tokens(full_blob)
+
+    if full_tokens <= HARD_CAP_TOKENS:
+        if full_tokens > SOFT_CAP_TOKENS or len(rendered) > SOFT_CAP_ENTRIES:
+            logger.warning(
+                "Project memory exceeds soft cap (%d > %d tokens or %d > %d entries)"
+                " — curator should run",
+                full_tokens,
+                SOFT_CAP_TOKENS,
+                len(rendered),
+                SOFT_CAP_ENTRIES,
+            )
+        return full_blob
+
+    # Over hard cap: drop oldest entries (smallest mtime) until under.
+    # Sort newest-first; take entries while accumulated token count fits.
+    by_newest = sorted(rendered, key=lambda r: r[0], reverse=True)
+    kept: list[tuple[float, int, str]] = []
+    for mtime, idx, chunk in by_newest:
+        candidate = kept + [(mtime, idx, chunk)]
+        # Re-assemble in original ordering to estimate accurately.
+        ordered = [c for _, _, c in sorted(candidate, key=lambda r: r[1])]
+        if estimate_tokens(_assemble(ordered, _HEADER_OVER_BUDGET)) > HARD_CAP_TOKENS:
+            break
+        kept = candidate
+
+    kept_in_order = [c for _, _, c in sorted(kept, key=lambda r: r[1])]
+    logger.warning(
+        "Project memory exceeds hard cap (%d > %d tokens) — "
+        "dropped %d oldest entries; run `urika memory curate`",
+        full_tokens,
+        HARD_CAP_TOKENS,
+        len(rendered) - len(kept),
+    )
+    return _assemble(kept_in_order, _HEADER_OVER_BUDGET)
 
 
 def save_entry(

@@ -28,3 +28,30 @@ def test_caps_exposed_as_module_constants():
     assert pm.SOFT_CAP_TOKENS == 5_000
     assert pm.HARD_CAP_TOKENS == 10_000
     assert pm.SOFT_CAP_ENTRIES == 30
+
+
+def test_load_memory_hard_cap_truncates_and_appends_marker(tmp_path):
+    from urika.core import project_memory as pm
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    # 15K tokens worth of body: each big entry is ~16800 tokens
+    big = "x" * 60_000  # 60000 / 3.5 ≈ 17142 tokens
+    for i in range(3):
+        pm.save_entry(proj, mem_type="user", description=f"big-{i}", body=big)
+    out = pm.load_project_memory(proj)
+    assert pm.estimate_tokens(out) <= pm.HARD_CAP_TOKENS + 500  # ±slack for marker
+    assert "Project Memory (over budget — run urika memory curate)" in out
+
+
+def test_load_memory_soft_cap_does_not_truncate(tmp_path):
+    from urika.core import project_memory as pm
+
+    proj = tmp_path / "proj"
+    (proj / "memory").mkdir(parents=True)
+    # ~6K tokens — over soft (5K) but under hard (10K)
+    body = "x" * 21_000  # 21000/3.5 = 6000 tokens
+    pm.save_entry(proj, mem_type="user", description="medium", body=body)
+    out = pm.load_project_memory(proj)
+    assert "over budget" not in out  # no marker at soft cap
+    assert body in out  # full body still present
