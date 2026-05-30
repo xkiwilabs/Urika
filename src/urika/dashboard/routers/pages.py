@@ -1727,6 +1727,31 @@ def project_knowledge(request: Request, name: str) -> HTMLResponse:
     return templates.TemplateResponse(request, "knowledge.html", ctx)
 
 
+@router.get("/projects/{name}/memory", response_class=HTMLResponse)
+def project_memory_page(request: Request, name: str) -> HTMLResponse:
+    """List project memory entries with an "Add an entry" HTMX form.
+
+    Backed by the CRUD API at ``/api/projects/{name}/memory`` (shipped
+    in v0.5.0 T1.3). The form POSTs ``mem_type`` / ``description`` /
+    ``body`` to the same endpoint; the v0.4.5.1 CSRF middleware accepts
+    the same-origin request because HTMX sends an ``Origin`` header.
+    """
+    from urika.core.project_memory import list_entries
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    entries = list_entries(summary.path)
+    templates = request.app.state.templates
+    ctx = {
+        "project": summary,
+        "entries": entries,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(request, "memory.html", ctx)
+
+
 @router.get(
     "/projects/{name}/knowledge/{entry_id}",
     response_class=HTMLResponse,

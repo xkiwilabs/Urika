@@ -1,0 +1,105 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import modal %}
+
+{% block title %}Memory · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Memory{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Memory</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .page-actions { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
+    .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+    .form-row label { font-weight: 600; }
+    .form-row input,
+    .form-row select,
+    .form-row textarea { width: 100%; font: inherit; padding: 0.4rem; }
+    .form-row textarea { min-height: 6rem; resize: vertical; }
+    .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+  </style>
+
+  <div class="page-actions">
+    <button
+      class="btn btn--primary"
+      @click="$dispatch('open-modal', { id: 'add-memory' })"
+      type="button"
+    >+ Add an entry</button>
+  </div>
+
+  {% if entries %}
+    <ul class="list">
+      {% for entry in entries %}
+        <li class="list-item">
+          <div class="list-item-row">
+            <div class="list-item-main">
+              <div class="list-item-title">{{ entry.name }}</div>
+              {% if entry.description %}
+                <div class="list-item-subtitle text-muted">{{ entry.description }}</div>
+              {% endif %}
+              {% if entry.body_preview %}
+                <div class="list-item-subtitle">{{ entry.body_preview }}</div>
+              {% endif %}
+            </div>
+            <div class="list-item-meta">
+              <span class="tag">{{ entry.type }}</span>
+              <button
+                type="button"
+                class="btn btn--ghost btn--small"
+                hx-delete="/api/projects/{{ project.name }}/memory/{{ entry.filename }}"
+                hx-confirm="Delete this memory entry?"
+                hx-target="closest .list-item"
+                hx-swap="outerHTML"
+              >Delete</button>
+            </div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <p>No memory entries yet. Click <strong>+ Add an entry</strong> above to capture a preference, instruction, decision, or reference that should persist across sessions.</p>
+    </div>
+  {% endif %}
+
+  {% call modal('add-memory', 'Add a memory entry') %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/memory"
+      hx-target="#add-memory-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="am-type">Type</label>
+        <select id="am-type" name="mem_type" required>
+          <option value="user">user — preference about the person / project</option>
+          <option value="feedback">feedback — correction the user gave you</option>
+          <option value="instruction">instruction — standing rule for the agents</option>
+          <option value="decision">decision — design choice already made</option>
+          <option value="reference">reference — pointer to docs / data</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="am-description">Description <span class="text-muted">(short label)</span></label>
+        <input id="am-description" name="description" type="text"
+               placeholder="e.g. prefers concise output">
+      </div>
+      <div class="form-row">
+        <label for="am-body">Body</label>
+        <textarea id="am-body" name="body" required
+                  placeholder="The actual memory content the agents will see."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Save entry</button>
+        <span id="add-memory-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
+{% endblock %}
