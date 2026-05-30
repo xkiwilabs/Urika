@@ -58,6 +58,21 @@ def _run_report_agent(
 
         prompt = format_audience_context(audience) + prompt
 
+        # Inject project memory + the rolling advisor-history summary
+        # via the shared ``format_report_context`` helper (mirrors
+        # planning and advisor — same heading text, same loader, so
+        # memory writes are symmetrically read by all three roles).
+        # Closes the read-side loop for the CLI ``urika report`` path.
+        try:
+            from urika.agents.roles.report_agent import format_report_context
+
+            _ctx_block = format_report_context(project_path)
+            if _ctx_block:
+                prompt = f"{_ctx_block}{prompt}"
+        except Exception:
+            # Memory is best-effort — never fail the report over it.
+            pass
+
         with Spinner("Writing narrative"):
             result = asyncio.run(
                 runner.run(config, prompt, on_message=_make_on_message())

@@ -103,9 +103,24 @@ async def finalize_project(
                 "Structure: Abstract, Introduction, Methods, Results, Discussion, "
                 "Reproducibility, References."
             )
+        # Inject project memory + the rolling advisor-history summary
+        # via the shared ``format_report_context`` helper (mirrors
+        # planning and advisor — same heading text, same loader). The
+        # final report is the highest-stakes write surface, so user
+        # preferences and rejected framings captured to memory must
+        # land here too.
+        final_report_input = format_audience_context(audience) + report_prompt
+        try:
+            from urika.agents.roles.report_agent import format_report_context
+
+            _ctx_block = format_report_context(project_dir)
+            if _ctx_block:
+                final_report_input = f"{_ctx_block}{final_report_input}"
+        except Exception as exc:
+            logger.warning("Report context block unavailable: %s", exc)
         report_result = await runner.run(
             report_config,
-            format_audience_context(audience) + report_prompt,
+            final_report_input,
             on_message=on_message,
         )
         if report_result.success and report_result.text_output:
