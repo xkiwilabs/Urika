@@ -381,6 +381,110 @@ def archive_entry(project_dir: Path, filename: str, _skip_index: bool = False) -
     return dst
 
 
+def list_archive(project_dir: Path, month: str | None = None) -> list[dict[str, str]]:
+    """List archived entries, optionally filtered to one YYYY-MM month.
+
+    Returns a list of dicts with keys: filename, month, type, name,
+    description, body_preview — matching the shape of :func:`list_entries`
+    but with an extra ``month`` field. Empty list when the archive root
+    is missing.
+    """
+    root = memory_dir(project_dir) / "archive"
+    if not root.is_dir():
+        return []
+    out: list[dict[str, str]] = []
+    if month:
+        months = [month]
+    else:
+        months = sorted(p.name for p in root.iterdir() if p.is_dir())
+    for m in months:
+        mdir = root / m
+        if not mdir.is_dir():
+            continue
+        for p in sorted(mdir.iterdir()):
+            if p.suffix != ".md" or not p.is_file():
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            fm, body = _split_frontmatter(text)
+            body_preview = body.strip()[:120].replace("\n", " ")
+            out.append(
+                {
+                    "filename": p.name,
+                    "month": m,
+                    "type": fm.get("type", _infer_type_from_filename(p.name)),
+                    "name": fm.get("name", p.stem),
+                    "description": fm.get("description", ""),
+                    "body_preview": body_preview,
+                }
+            )
+    return out
+
+
+def diff_between(
+    project_dir: Path,
+    from_ts: _datetime,
+    to_ts: _datetime,
+) -> dict[str, list[dict[str, str]]]:
+    """Classify memory entries by mtime between two timestamps.
+
+    Returns ``{'added': [...], 'archived': [...], 'trashed': [...]}``
+    where each list contains dicts with ``filename`` (and ``month`` for
+    archived entries). ``added`` = files in the live memory dir with
+    mtime in window. ``archived`` = files in ``archive/<YYYY-MM>/``.
+    ``trashed`` = files in ``.trash/``.
+
+    NOTE: a single mtime per file means we have NO notion of prior state
+    for in-place rewrites — those are silently classified as ``added``
+    if re-touched in window, OR omitted if untouched. Per-edit history
+    is a v0.6.0+ concern (GitHub auto-backup). See Decision 3 of the
+    v0.5.0 plan.
+    """
+    md = memory_dir(project_dir)
+    added: list[dict[str, str]] = []
+    archived: list[dict[str, str]] = []
+    trashed: list[dict[str, str]] = []
+
+    lo = from_ts.timestamp()
+    hi = to_ts.timestamp()
+
+    def _in_window(p: Path) -> bool:
+        try:
+            st = p.stat().st_mtime
+        except OSError:
+            return False
+        return lo <= st <= hi
+
+    if md.is_dir():
+        for p in md.iterdir():
+            if (
+                p.is_file()
+                and p.suffix == ".md"
+                and p.name != "MEMORY.md"
+                and _in_window(p)
+            ):
+                added.append({"filename": p.name})
+
+    archive_root = md / "archive"
+    if archive_root.is_dir():
+        for sub in archive_root.iterdir():
+            if not sub.is_dir():
+                continue
+            for p in sub.iterdir():
+                if p.is_file() and p.suffix == ".md" and _in_window(p):
+                    archived.append({"filename": p.name, "month": sub.name})
+
+    trash_root = md / ".trash"
+    if trash_root.is_dir():
+        for p in trash_root.iterdir():
+            if p.is_file() and p.suffix == ".md" and _in_window(p):
+                trashed.append({"filename": p.name})
+
+    return {"added": added, "archived": archived, "trashed": trashed}
+
+
 def delete_entry(project_dir: Path, filename: str) -> bool:
     """Remove a memory entry by filename. Trashes to ``memory/.trash/``
     rather than deleting outright. Returns True if removed.
