@@ -140,3 +140,141 @@ def test_write_gitignore_honors_extra_patterns(tmp_path):
     text = (tmp_path / ".gitignore").read_text()
     assert "my_secrets.toml" in text
     assert "*.bak" in text
+
+
+def _make_bare_remote(tmp_path) -> Path:
+    """Create a bare git repo at tmp_path/remote.git suitable as `origin`."""
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    return remote
+
+
+def _setup_work_repo(tmp_path) -> Path:
+    """Create a non-bare repo with a remote configured, ready for commit/push."""
+    from urika.core.git import init_repo, add_remote, write_gitignore
+
+    work = tmp_path / "work"
+    work.mkdir()
+    init_repo(work)
+    # Identity (CI / fresh tmp dirs have no global git config)
+    subprocess.run(
+        ["git", "-C", str(work), "config", "user.email", "test@urika"], check=True
+    )
+    subprocess.run(["git", "-C", str(work), "config", "user.name", "test"], check=True)
+    remote = _make_bare_remote(tmp_path)
+    add_remote(work, str(remote))
+    write_gitignore(work)
+    return work
+
+
+def test_commit_all_creates_commit(tmp_path):
+    from urika.core.git import commit_all
+
+    work = _setup_work_repo(tmp_path)
+    (work / "hello.txt").write_text("world")
+    result = commit_all(work, message="initial")
+    assert result.ok is True
+    assert result.sha is not None and len(result.sha) >= 7
+    out = _run_git(work, "log", "--oneline")
+    assert "initial" in out
+
+
+def test_commit_all_returns_ok_false_when_nothing_to_commit(tmp_path):
+    from urika.core.git import commit_all
+
+    work = _setup_work_repo(tmp_path)
+    # First commit succeeds (adds .gitignore)
+    first = commit_all(work, message="initial")
+    assert first.ok is True
+    # Second with no changes returns ok=False with a clear reason.
+    second = commit_all(work, message="empty")
+    assert second.ok is False
+    assert "nothing to commit" in (second.error or "").lower()
+
+
+def test_push_succeeds_to_local_bare_remote(tmp_path):
+    from urika.core.git import commit_all, push
+
+    work = _setup_work_repo(tmp_path)
+    (work / "f.txt").write_text("x")
+    commit_all(work, message="initial")
+    result = push(work)
+    assert result.ok is True
+    # Confirm the remote sees the commit
+    remote = tmp_path / "remote.git"
+    out = subprocess.run(
+        ["git", "-C", str(remote), "log", "--oneline"], capture_output=True, text=True
+    ).stdout
+    assert "initial" in out
+
+
+def test_push_failure_returns_error(tmp_path):
+    """Push to a nonexistent remote returns ok=False with stderr."""
+    from urika.core.git import init_repo, add_remote, commit_all, push
+
+    work = tmp_path / "work"
+    work.mkdir()
+    init_repo(work)
+    subprocess.run(["git", "-C", str(work), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.name", "t"], check=True)
+    add_remote(work, "/nonexistent/path/that/does/not/exist.git")
+    (work / "a.txt").write_text("a")
+    commit_all(work, message="x")
+    result = push(work)
+    assert result.ok is False
+    assert result.error  # non-empty stderr from git
+
+
+def test_pull_ff_only_succeeds_when_local_clean(tmp_path):
+    from urika.core.git import commit_all, push, pull
+
+    work = _setup_work_repo(tmp_path)
+    (work / "a.txt").write_text("a")
+    commit_all(work, message="first")
+    push(work)
+    # Simulate a remote commit landing (clone, commit, push)
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", str(tmp_path / "remote.git"), str(clone)], check=True
+    )
+    subprocess.run(["git", "-C", str(clone), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(clone), "config", "user.name", "t"], check=True)
+    (clone / "b.txt").write_text("b")
+    subprocess.run(["git", "-C", str(clone), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(clone), "commit", "-m", "second"], check=True)
+    subprocess.run(["git", "-C", str(clone), "push"], check=True)
+    # Now pull from the original work tree
+    result = pull(work)
+    assert result.ok is True
+    assert (work / "b.txt").exists()
+
+
+def test_status_returns_dirty_count_and_branch(tmp_path):
+    from urika.core.git import commit_all, status
+
+    work = _setup_work_repo(tmp_path)
+    commit_all(work, message="initial")  # need a commit so HEAD exists
+    (work / "untracked.txt").write_text("x")
+    (work / "modified.txt").write_text("a")
+    subprocess.run(["git", "-C", str(work), "add", "modified.txt"], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-m", "add modified"], check=True)
+    (work / "modified.txt").write_text("changed")
+    st = status(work)
+    assert st.branch  # non-empty (whatever the default is — main / master)
+    assert st.dirty_count >= 2  # untracked + modified
+
+
+def test_recent_commits_returns_list(tmp_path):
+    from urika.core.git import commit_all, recent_commits
+
+    work = _setup_work_repo(tmp_path)
+    (work / "a.txt").write_text("a")
+    commit_all(work, message="urika: first\n\nurika-event: experiment_complete")
+    (work / "b.txt").write_text("b")
+    commit_all(work, message="urika: second\n\nurika-event: finalize_complete")
+    commits = recent_commits(work, limit=10)
+    assert len(commits) == 2
+    # Most recent first
+    assert "second" in commits[0].subject
+    assert commits[0].event == "finalize_complete"
+    assert commits[1].event == "experiment_complete"

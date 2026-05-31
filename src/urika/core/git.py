@@ -18,6 +18,7 @@ design decisions.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -133,3 +134,143 @@ def write_gitignore(project_dir: Path, extra_patterns: list[str] | None = None) 
         # Append the block at the end, preserving everything else.
         sep = "" if existing.endswith("\n") else "\n"
         path.write_text(existing + sep + "\n" + block, encoding="utf-8")
+
+
+@dataclass
+class CommitResult:
+    ok: bool
+    sha: str | None = None
+    error: str | None = None
+
+
+@dataclass
+class PushResult:
+    ok: bool
+    pushed_sha: str | None = None
+    error: str | None = None
+
+
+@dataclass
+class PullResult:
+    ok: bool
+    error: str | None = None
+
+
+@dataclass
+class GitStatus:
+    branch: str
+    dirty_count: int
+    remote_url: str | None
+    last_commit_sha: str | None
+    last_commit_subject: str | None
+
+
+@dataclass
+class GitCommit:
+    sha: str
+    subject: str
+    event: str | None  # populated from ``urika-event:`` trailer when present
+    ts: str  # ISO 8601
+
+
+def commit_all(project_dir: Path, message: str) -> CommitResult:
+    """Stage everything and create a commit. Returns ok=False if there's
+    nothing to commit (clean working tree)."""
+    _git(project_dir, "add", "-A")
+    # Detect "nothing to commit" without raising.
+    diff = _git(project_dir, "diff", "--cached", "--name-only", check=False)
+    if diff.returncode == 0 and not diff.stdout.strip():
+        return CommitResult(ok=False, error="nothing to commit (working tree clean)")
+    result = _git(project_dir, "commit", "-m", message, check=False)
+    if result.returncode != 0:
+        return CommitResult(
+            ok=False, error=result.stderr.strip() or result.stdout.strip()
+        )
+    sha = _git(project_dir, "rev-parse", "HEAD").stdout.strip()
+    return CommitResult(ok=True, sha=sha[:12])
+
+
+def push(project_dir: Path, remote: str = "origin") -> PushResult:
+    """Push current branch to *remote*. ok=False with verbatim git stderr on failure."""
+    result = _git(project_dir, "push", remote, "HEAD", check=False)
+    if result.returncode != 0:
+        return PushResult(ok=False, error=(result.stderr or result.stdout).strip())
+    sha = _git(project_dir, "rev-parse", "HEAD").stdout.strip()
+    return PushResult(ok=True, pushed_sha=sha[:12])
+
+
+def pull(project_dir: Path, remote: str = "origin") -> PullResult:
+    """Fetch + ff-only merge from *remote*. Refuses on divergence.
+
+    Fetches the current branch explicitly so FETCH_HEAD is marked
+    for-merge even when no upstream tracking is configured.
+    """
+    branch = _git(project_dir, "rev-parse", "--abbrev-ref", "HEAD", check=False)
+    if branch.returncode != 0 or not branch.stdout.strip():
+        return PullResult(ok=False, error=(branch.stderr or branch.stdout).strip())
+    branch_name = branch.stdout.strip()
+    fetch = _git(project_dir, "fetch", remote, branch_name, check=False)
+    if fetch.returncode != 0:
+        return PullResult(ok=False, error=(fetch.stderr or fetch.stdout).strip())
+    merge = _git(project_dir, "merge", "--ff-only", "FETCH_HEAD", check=False)
+    if merge.returncode != 0:
+        return PullResult(ok=False, error=(merge.stderr or merge.stdout).strip())
+    return PullResult(ok=True)
+
+
+def status(project_dir: Path) -> GitStatus:
+    """Snapshot of current branch, dirty file count, remote URL, last commit."""
+    branch = _git(project_dir, "rev-parse", "--abbrev-ref", "HEAD", check=False)
+    branch_name = branch.stdout.strip() if branch.returncode == 0 else ""
+    porcelain = _git(project_dir, "status", "--porcelain", check=False)
+    dirty = (
+        len([line for line in porcelain.stdout.splitlines() if line.strip()])
+        if porcelain.returncode == 0
+        else 0
+    )
+    remote = _git(project_dir, "remote", "get-url", "origin", check=False)
+    remote_url = remote.stdout.strip() if remote.returncode == 0 else None
+    last = _git(project_dir, "log", "-1", "--format=%H%n%s", check=False)
+    last_sha = None
+    last_subject = None
+    if last.returncode == 0 and last.stdout.strip():
+        parts = last.stdout.strip().split("\n", 1)
+        last_sha = parts[0][:12]
+        last_subject = parts[1] if len(parts) > 1 else ""
+    return GitStatus(
+        branch=branch_name,
+        dirty_count=dirty,
+        remote_url=remote_url,
+        last_commit_sha=last_sha,
+        last_commit_subject=last_subject,
+    )
+
+
+def recent_commits(project_dir: Path, limit: int = 10) -> list[GitCommit]:
+    """Last *limit* commits, newest first. Parses ``urika-event:`` from the body."""
+    fmt = "%H%x00%s%x00%aI%x00%b%x1e"  # NUL-separated fields, RS-separated records
+    out = _git(
+        project_dir,
+        "log",
+        f"-{limit}",
+        f"--format={fmt}",
+        check=False,
+    )
+    if out.returncode != 0 or not out.stdout.strip():
+        return []
+    commits: list[GitCommit] = []
+    for rec in out.stdout.split("\x1e"):
+        rec = rec.strip("\n")
+        if not rec:
+            continue
+        fields = rec.split("\x00")
+        if len(fields) < 4:
+            continue
+        sha, subject, ts, body = fields[0], fields[1], fields[2], fields[3]
+        event = None
+        for line in body.splitlines():
+            if line.startswith("urika-event:"):
+                event = line.split(":", 1)[1].strip()
+                break
+        commits.append(GitCommit(sha=sha[:12], subject=subject, event=event, ts=ts))
+    return commits
