@@ -872,6 +872,74 @@ def api_git_status(name: str) -> JSONResponse:
     )
 
 
+@router.post("/projects/{name}/git/push")
+async def api_git_push(name: str, request: Request) -> JSONResponse:
+    """Stage everything, secret-scan, then commit + push (v0.6.0 Task 3.2).
+
+    Mirrors ``urika github push`` CLI semantics:
+
+    * 404 if the project name isn't registered.
+    * 409 with ``detail: "not a git repo"`` if the project exists but
+      hasn't been ``urika github init``'d yet.
+    * Stage everything, then run :func:`urika.core.git.scan_for_secrets`
+      against the staged index. If any match: reset the index, return
+      409 with ``{"ok": false, "error": "secret-detected: ...",
+      "matches": [...]}`` so the dashboard panel can render the
+      file:line(s) inline (no commit lands).
+    * Otherwise commit + push and return the push result.
+
+    The CSRF middleware (v0.4.5.1) rejects cross-origin POSTs with 403
+    before this handler runs.
+    """
+    from urika.core import git
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not git.is_git_repo(summary.path):
+        raise HTTPException(status_code=409, detail="not a git repo")
+
+    # Stage everything so the scanner sees what we're about to commit.
+    git._git(summary.path, "add", "-A")
+
+    matches = git.scan_for_secrets(summary.path)
+    if matches:
+        # Unstage so the working tree isn't left in a half-staged state.
+        git._git(summary.path, "reset", "HEAD", check=False)
+        first = matches[0]
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": (
+                    f"secret-detected: {first.file}:{first.line} ({first.pattern_name})"
+                ),
+                "matches": [
+                    {
+                        "file": m.file,
+                        "line": m.line,
+                        "pattern": m.pattern_name,
+                        "preview": m.preview,
+                    }
+                    for m in matches
+                ],
+            },
+            status_code=409,
+        )
+
+    subject = "urika: project state"
+    body = "\n\nurika-event: manual\nurika-version: 0.6.0\n"
+    git.commit_all(summary.path, message=subject + body)
+    pushed = git.push(summary.path)
+    return JSONResponse(
+        {
+            "ok": pushed.ok,
+            "pushed_sha": pushed.pushed_sha,
+            "error": pushed.error,
+        }
+    )
+
+
 @router.post("/projects/{name}/memory/curate")
 async def api_memory_curate(name: str, request: Request) -> Response:
     """Run the memory curator (v0.5.0 T2.10).
