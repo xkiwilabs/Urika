@@ -16,7 +16,7 @@
 
 {% block content %}
   <style>
-    .page-actions { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
+    .page-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-bottom: 1rem; }
     .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
     .form-row label { font-weight: 600; }
     .form-row input,
@@ -24,7 +24,65 @@
     .form-row textarea { width: 100%; font: inherit; padding: 0.4rem; }
     .form-row textarea { min-height: 6rem; resize: vertical; }
     .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+    .curator-panel { margin-bottom: 1.5rem; padding: 1rem; border: 1px solid var(--border, #ccc); border-radius: 4px; }
+    .curator-panel header h2 { margin: 0 0 0.25rem; font-size: 1.05rem; }
+    .curator-panel .actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .curator-decisions { list-style: none; padding: 0; margin: 0.75rem 0 0; }
+    .curator-decisions li { padding: 0.4rem 0; border-top: 1px dashed var(--border, #ddd); display: flex; gap: 0.5rem; align-items: baseline; }
+    .curator-error { color: var(--danger, #b00); margin-top: 0.5rem; }
   </style>
+
+  <section
+    class="curator-panel"
+    x-data="{ decisions: [], busy: false, error: '', applied: false, ran: false }"
+  >
+    <header>
+      <h2>Curator</h2>
+      <p class="text-muted">Dry-run by default. Review proposed merge / archive / flag decisions before applying.</p>
+    </header>
+    <div class="actions">
+      <button
+        type="button"
+        class="btn btn--ghost"
+        :disabled="busy"
+        @click="busy = true; error = ''; applied = false; ran = false;
+                fetch('/api/projects/{{ project.name }}/memory/curate', {
+                  method: 'POST',
+                  headers: { 'Origin': location.origin },
+                })
+                .then(r => r.json())
+                .then(d => { decisions = d.decisions || []; error = d.error || ''; applied = !!d.applied; ran = true; busy = false; })
+                .catch(e => { error = 'Request failed: ' + e; busy = false; })"
+      >Curate (dry-run)</button>
+      <button
+        type="button"
+        class="btn btn--primary"
+        :disabled="busy || decisions.length === 0"
+        @click="if (!confirm('Apply ' + decisions.length + ' decision(s) to the memory directory?')) return;
+                busy = true;
+                fetch('/api/projects/{{ project.name }}/memory/curate?apply=true', {
+                  method: 'POST',
+                  headers: { 'Origin': location.origin },
+                })
+                .then(r => r.json())
+                .then(d => { applied = !!d.applied; decisions = []; busy = false; if (d.applied) window.location.reload(); })
+                .catch(e => { error = 'Apply failed: ' + e; busy = false; })"
+      >Apply</button>
+      <span class="text-muted" x-show="busy">working…</span>
+    </div>
+    <p class="curator-error" x-show="error" x-text="'Curator error: ' + error"></p>
+    <p class="text-muted" x-show="ran && !error && decisions.length === 0">
+      Curator: no changes suggested.
+    </p>
+    <ul class="curator-decisions" x-show="decisions.length > 0">
+      <template x-for="d in decisions" :key="JSON.stringify(d)">
+        <li>
+          <span class="tag" x-text="d.action"></span>
+          <span x-text="(d.filename || d.into || '') + (d.reason ? ' — ' + d.reason : '')"></span>
+        </li>
+      </template>
+    </ul>
+  </section>
 
   <div class="page-actions">
     <button

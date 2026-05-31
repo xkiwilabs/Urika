@@ -825,6 +825,48 @@ async def api_delete_project_memory_entry(name: str, filename: str) -> Response:
     return Response(status_code=204)
 
 
+@router.post("/projects/{name}/memory/curate")
+async def api_memory_curate(name: str, request: Request) -> Response:
+    """Run the memory curator (v0.5.0 T2.10).
+
+    Dry-run by default — returns the proposed merge/archive/flag
+    decisions without touching the memory directory. Pass
+    ``?apply=true`` (the dashboard's separate Apply button) to commit
+    them.
+
+    Mirrors the CLI's ``urika memory curate [--apply]`` surface; both
+    routes call into :func:`urika.core.memory_curator.run_curator`
+    with a runner from :func:`urika.agents.runner.get_runner` — the
+    same idiom every other Urika agent-invocation surface uses.
+
+    Returns JSON ``{"applied": bool, "decisions": [...], "error":
+    str|null}``. Errors from the curator surface as a 200 with a
+    populated ``error`` field rather than a 5xx so the dashboard JS
+    can render the message inline instead of a generic browser fetch
+    failure.
+    """
+    from urika.agents.runner import get_runner
+    from urika.core.memory_curator import run_curator
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    apply_param = request.query_params.get("apply", "").lower()
+    apply_changes = apply_param in ("true", "1", "yes")
+
+    runner = get_runner()
+    result = await run_curator(summary.path, runner=runner, apply=apply_changes)
+    return JSONResponse(
+        {
+            "applied": result.applied,
+            "decisions": result.decisions,
+            "error": result.error,
+        }
+    )
+
+
 @router.put("/projects/{name}/settings")
 async def api_project_settings_put(name: str, request: Request):
     """Atomically update project settings and record per-field revisions.
