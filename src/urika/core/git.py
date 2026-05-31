@@ -56,3 +56,80 @@ def add_remote(project_dir: Path, url: str, name: str = "origin") -> None:
         _git(project_dir, "remote", "set-url", name, url)
     else:
         _git(project_dir, "remote", "add", name, url)
+
+
+_GITIGNORE_TEMPLATE = """\
+# Urika internal state — never commit (secrets, sessions, meta)
+.urika/
+*.lock
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.tox/
+
+# Credentials / private keys (never commit, even if you remove other
+# patterns from this list)
+.env
+*.pem
+*.key
+*_rsa
+*_ed25519
+
+# Research data — researcher-safe default exclusion. Remove the lines
+# below (or override via [github] gitignore_extra in urika.toml) if
+# your project's raw data is safe to commit.
+data/raw/
+*.parquet
+*.h5
+*.pkl
+*.joblib
+"""
+
+_BLOCK_START = "# >>> urika: managed block — do not edit between markers >>>"
+_BLOCK_END = "# <<< urika: managed block <<<"
+
+
+def write_gitignore(project_dir: Path, extra_patterns: list[str] | None = None) -> None:
+    """Write or update the project's ``.gitignore`` with researcher-safe defaults.
+
+    Behaviour:
+    - Fresh project: writes a new ``.gitignore`` containing the managed
+      block (between BLOCK_START / BLOCK_END markers) and no other content.
+    - Existing ``.gitignore`` without an Urika block: appends the
+      managed block at the end, preserving user content.
+    - Existing ``.gitignore`` WITH an Urika block: replaces the block
+      in place, preserving content above and below it.
+
+    ``extra_patterns`` are user-provided lines appended inside the
+    managed block. Comes from ``[github] gitignore_extra`` in urika.toml.
+    """
+    extra = list(extra_patterns or [])
+    block_lines = [_BLOCK_START, _GITIGNORE_TEMPLATE.rstrip("\n")]
+    if extra:
+        block_lines.append("\n# Extra patterns from urika.toml")
+        block_lines.extend(extra)
+    block_lines.append(_BLOCK_END)
+    block = "\n".join(block_lines) + "\n"
+
+    path = project_dir / ".gitignore"
+    if not path.exists():
+        path.write_text(block, encoding="utf-8")
+        return
+
+    existing = path.read_text(encoding="utf-8")
+    if _BLOCK_START in existing and _BLOCK_END in existing:
+        # Replace the existing block in place.
+        before, _, rest = existing.partition(_BLOCK_START)
+        _old_block, _, after = rest.partition(_BLOCK_END)
+        new_text = before.rstrip() + "\n\n" + block + after.lstrip()
+        # Collapse runs of >=3 newlines that the slicing may have produced.
+        while "\n\n\n" in new_text:
+            new_text = new_text.replace("\n\n\n", "\n\n")
+        path.write_text(new_text, encoding="utf-8")
+    else:
+        # Append the block at the end, preserving everything else.
+        sep = "" if existing.endswith("\n") else "\n"
+        path.write_text(existing + sep + "\n" + block, encoding="utf-8")
