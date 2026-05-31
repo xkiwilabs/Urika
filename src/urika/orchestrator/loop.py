@@ -55,6 +55,7 @@ from urika.orchestrator.parsing import (
     parse_evaluation,
     parse_method_plan,
     parse_run_records,
+    read_labbook_run_records,
     parse_suggestions,
 )
 from urika.orchestrator.pause import read_and_clear_flag
@@ -555,12 +556,29 @@ async def run_experiment(
                     progress("phase", f"Experiment failed: {_err}")
                 return _usage_dict(_status, turn, error=_err)
 
-            # Parse and record runs
-            runs = parse_run_records(task_result.text_output)
+            # Parse and record runs. Two sources:
+            #   1. Inline ```json blocks in the task agent's text output.
+            #   2. On-disk ``<experiment>/labbook/run-*.json`` files the
+            #      agent wrote via Bash tool calls (modern Claude task
+            #      agents — especially on Haiku — often skip inline
+            #      narration entirely and persist run records as files).
+            # Pre-v0.5.0.2 only source 1 was honored, so a tools-only
+            # task agent burned its turn budget producing real work that
+            # never landed in the leaderboard.
+            text_runs = parse_run_records(task_result.text_output)
+            experiment_dir = project_dir / "experiments" / experiment_id
+            disk_runs = read_labbook_run_records(experiment_dir)
+            seen_ids = {r.run_id for r in text_runs}
+            runs = list(text_runs)
+            for r in disk_runs:
+                if r.run_id not in seen_ids:
+                    runs.append(r)
+                    seen_ids.add(r.run_id)
             if not runs:
-                # The task agent ran but emitted no parseable
-                # ``{"run_id","method","metrics"}`` JSON block — so this
-                # turn produced nothing: no run recorded, no method
+                # The task agent ran but neither emitted a parseable
+                # ``{"run_id","method","metrics"}`` JSON block NOR
+                # persisted a labbook/run-*.json file — so this turn
+                # produced nothing: no run recorded, no method
                 # registered, no leaderboard update. Pre-v0.4.4 this was
                 # completely silent; an experiment could burn every turn
                 # this way and still exit "completed" with an empty
@@ -569,7 +587,7 @@ async def run_experiment(
                 progress(
                     "warning",
                     f"Turn {turn}: task agent produced no parseable run "
-                    "records — nothing recorded for this turn.",
+                    "records (text or labbook) — nothing recorded for this turn.",
                 )
             for run in runs:
                 append_run(project_dir, experiment_id, run)
