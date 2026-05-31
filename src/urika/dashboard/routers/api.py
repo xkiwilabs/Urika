@@ -940,6 +940,56 @@ async def api_git_push(name: str, request: Request) -> JSONResponse:
     )
 
 
+@router.post("/projects/{name}/git/init")
+async def api_git_init(name: str, request: Request) -> JSONResponse:
+    """Initialise a project's git repo + attach an existing remote (v0.6.0 Task 3.3).
+
+    The dashboard surface accepts ONLY ``remote=<URL>``. ``--create``
+    (auto-provisioning a GitHub repo via ``gh``) is CLI-only for v0.6
+    because the ``gh`` binary isn't reliably available in the
+    dashboard process's env across deployments; sending
+    ``create=true`` returns 400 with a message pointing the user at
+    the CLI.
+
+    * 404 if the project name isn't registered.
+    * 400 if ``create=true`` is sent.
+    * 400 if neither ``remote`` nor ``create`` is provided.
+    * Otherwise runs ``git init`` + writes ``.gitignore`` + adds the
+      origin remote + creates the initial ``urika: initial project
+      state`` commit and returns ``{"ok": true, "remote": "<URL>"}``.
+
+    The CSRF middleware (v0.4.5.1) rejects cross-origin POSTs with
+    403 before this handler runs.
+    """
+    from urika.core import git
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    remote = form.get("remote")
+    create = (form.get("create") or "").lower() in ("true", "1", "yes")
+    if create:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "--create is only supported via the CLI for v0.6: run "
+                "`urika github init <project> --create` in your terminal "
+                "where the gh CLI is available."
+            ),
+        )
+    if not remote:
+        raise HTTPException(status_code=400, detail="remote URL required")
+
+    git.init_repo(summary.path)
+    git.write_gitignore(summary.path)
+    git.add_remote(summary.path, str(remote))
+    git.commit_all(summary.path, message="urika: initial project state")
+    return JSONResponse({"ok": True, "remote": str(remote)})
+
+
 @router.post("/projects/{name}/memory/curate")
 async def api_memory_curate(name: str, request: Request) -> Response:
     """Run the memory curator (v0.5.0 T2.10).
