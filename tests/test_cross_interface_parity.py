@@ -873,3 +873,436 @@ class TestSettingsCascadeParity:
 
         src = inspect.getsource(dashboard_api.api_create_project)
         assert "get_named_endpoints" in src
+
+
+# ── Memory curator invocation parity (v0.5.0 Task 4.1) ──────────────
+
+
+class TestMemoryCuratorInvocationParity:
+    """All three surfaces route memory curation through
+    ``urika.core.memory_curator.run_curator`` — single source of truth.
+
+    Adds v0.5.0 memory-deepening curator surface to the parity matrix:
+    CLI ``urika memory curate``, REPL ``/memory curate``, and the
+    dashboard ``POST /api/projects/{name}/memory/curate`` must ALL
+    dispatch through the same async core function. A monkeypatched
+    spy on ``urika.core.memory_curator.run_curator`` confirms each
+    surface lands the same call shape (and that the ``apply`` flag
+    threads through correctly).
+
+    Pre-v0.5.0 there was no curator surface anywhere; this class pins
+    that all three were added against the same implementation rather
+    than three independent copies.
+    """
+
+    def _seed_project(
+        self,
+        tmp_project_dir,
+        monkeypatch,
+        name: str = "proj",
+    ):
+        """Build a project on disk + register it under a sandboxed
+        ``URIKA_HOME``. Mirrors the helper used in
+        ``tests/test_dashboard/test_api_memory_curate.py``.
+
+        Returns the project directory ``Path``. The caller is expected
+        to (a) drive whichever surface they're testing and (b) rely on
+        the URIKA_HOME monkeypatch staying in scope until the test
+        ends so the registry resolves the project name.
+        """
+        import json as _json
+
+        from urika.core import project_memory as pm
+
+        proj = tmp_project_dir / name
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "urika.toml").write_text(
+            f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+            f'description = ""\n\n[preferences]\naudience = "expert"\n'
+        )
+        home = tmp_project_dir / "_home"
+        home.mkdir(exist_ok=True)
+        monkeypatch.setenv("URIKA_HOME", str(home))
+        (home / "projects.json").write_text(_json.dumps({name: str(proj)}))
+        (proj / "memory").mkdir(parents=True, exist_ok=True)
+        pm.save_entry(proj, mem_type="user", description="t", body="b")
+        return proj
+
+    def test_cli_curate_calls_run_curator(self, tmp_project_dir, monkeypatch) -> None:
+        called: list[tuple[object, bool]] = []
+
+        async def spy(project_dir, runner, apply=False):
+            called.append((project_dir, apply))
+            from urika.core.memory_curator import CuratorResult
+
+            return CuratorResult(decisions=[], applied=apply)
+
+        monkeypatch.setattr("urika.core.memory_curator.run_curator", spy)
+        self._seed_project(tmp_project_dir, monkeypatch)
+
+        from click.testing import CliRunner
+
+        from urika.cli import cli
+
+        result = CliRunner().invoke(cli, ["memory", "curate", "proj"])
+        assert result.exit_code == 0, result.output
+        assert called, "CLI did not call run_curator"
+        # Default is dry-run.
+        assert called[0][1] is False
+
+    def test_repl_curate_calls_run_curator(self, tmp_project_dir, monkeypatch) -> None:
+        called: list[tuple[object, bool]] = []
+
+        async def spy(project_dir, runner, apply=False):
+            called.append((project_dir, apply))
+            from urika.core.memory_curator import CuratorResult
+
+            return CuratorResult(decisions=[], applied=apply)
+
+        monkeypatch.setattr("urika.core.memory_curator.run_curator", spy)
+        proj = self._seed_project(tmp_project_dir, monkeypatch)
+
+        # Build a session the same way the REPL parity tests do (see
+        # tests/test_repl/test_memory_curate.py::_setup).
+        from urika.repl.session import ReplSession
+
+        session = ReplSession()
+        session.load_project(path=proj, name="proj")
+
+        from urika.repl.commands import cmd_memory
+
+        cmd_memory(session, "curate")
+        assert called, "REPL did not call run_curator"
+        assert called[0][1] is False
+
+    def test_dashboard_curate_calls_run_curator(
+        self, tmp_project_dir, monkeypatch
+    ) -> None:
+        called: list[tuple[object, bool]] = []
+
+        async def spy(project_dir, runner, apply=False):
+            called.append((project_dir, apply))
+            from urika.core.memory_curator import CuratorResult
+
+            return CuratorResult(decisions=[], applied=apply)
+
+        monkeypatch.setattr("urika.core.memory_curator.run_curator", spy)
+        self._seed_project(tmp_project_dir, monkeypatch)
+
+        from fastapi.testclient import TestClient
+
+        from urika.dashboard.app import create_app
+
+        client = TestClient(create_app(tmp_project_dir, auth_token=None))
+        resp = client.post(
+            "/api/projects/proj/memory/curate",
+            headers={"Origin": "http://testserver"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert called, "Dashboard did not call run_curator"
+        assert called[0][1] is False
+
+    def test_all_three_apply_flag_threads_through(
+        self, tmp_project_dir, monkeypatch
+    ) -> None:
+        """``--apply`` (CLI), ``--apply`` (REPL slash), and
+        ``?apply=true`` (dashboard) all reach ``run_curator(...,
+        apply=True)``. The flag is the only state-changing
+        parameter on the curator surface; a drift on any one of the
+        three would mean a user's commit gesture silently turned
+        into a dry-run (or worse, the reverse — a dry-run UX that
+        mutated disk)."""
+        seen: dict[str, bool] = {}
+
+        async def spy(project_dir, runner, apply=False):
+            from urika.core.memory_curator import CuratorResult
+
+            return CuratorResult(decisions=[], applied=apply)
+
+        monkeypatch.setattr("urika.core.memory_curator.run_curator", spy)
+        proj = self._seed_project(tmp_project_dir, monkeypatch)
+
+        # CLI surface.
+        cli_calls: list[bool] = []
+
+        async def cli_spy(project_dir, runner, apply=False):
+            from urika.core.memory_curator import CuratorResult
+
+            cli_calls.append(apply)
+            return CuratorResult(decisions=[], applied=apply)
+
+        monkeypatch.setattr("urika.core.memory_curator.run_curator", cli_spy)
+        from click.testing import CliRunner
+
+        from urika.cli import cli
+
+        result = CliRunner().invoke(cli, ["memory", "curate", "proj", "--apply"])
+        assert result.exit_code == 0, result.output
+        assert cli_calls == [True], f"CLI --apply did not thread through: {cli_calls}"
+        seen["cli"] = cli_calls[0]
+
+        # REPL surface — re-monkeypatch the spy and re-drive.
+        repl_calls: list[bool] = []
+
+        async def repl_spy(project_dir, runner, apply=False):
+            from urika.core.memory_curator import CuratorResult
+
+            repl_calls.append(apply)
+            return CuratorResult(decisions=[], applied=apply)
+
+        monkeypatch.setattr("urika.core.memory_curator.run_curator", repl_spy)
+        from urika.repl.commands import cmd_memory
+        from urika.repl.session import ReplSession
+
+        session = ReplSession()
+        session.load_project(path=proj, name="proj")
+        cmd_memory(session, "curate --apply")
+        assert repl_calls == [True], (
+            f"REPL --apply did not thread through: {repl_calls}"
+        )
+        seen["repl"] = repl_calls[0]
+
+        # Dashboard surface.
+        dash_calls: list[bool] = []
+
+        async def dash_spy(project_dir, runner, apply=False):
+            from urika.core.memory_curator import CuratorResult
+
+            dash_calls.append(apply)
+            return CuratorResult(decisions=[], applied=apply)
+
+        monkeypatch.setattr("urika.core.memory_curator.run_curator", dash_spy)
+        from fastapi.testclient import TestClient
+
+        from urika.dashboard.app import create_app
+
+        client = TestClient(create_app(tmp_project_dir, auth_token=None))
+        resp = client.post(
+            "/api/projects/proj/memory/curate?apply=true",
+            headers={"Origin": "http://testserver"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert dash_calls == [True], (
+            f"Dashboard ?apply=true did not thread through: {dash_calls}"
+        )
+        seen["dashboard"] = dash_calls[0]
+
+        # Final cross-surface check — all three observed ``apply=True``.
+        assert seen == {"cli": True, "repl": True, "dashboard": True}
+
+
+# ── Memory CRUD path-shape parity (v0.5.0 Task 4.1) ─────────────────
+
+
+class TestMemoryCRUDPathParity:
+    """CLI, dashboard, and the direct core helper all produce memory
+    entries at the same canonical path with the same naming
+    convention: ``<project>/memory/<type>_<slug>.md``.
+
+    The CLI ``urika memory add`` path opens ``click.edit`` when neither
+    ``--from-file`` nor ``--stdin`` is supplied — that's not
+    CliRunner-friendly, so we exercise the CLI's path-shape contract
+    by driving ``save_entry`` (the same underlying primitive the CLI
+    calls) and confirming all surfaces converge on the same on-disk
+    layout.
+    """
+
+    def test_dashboard_post_writes_to_canonical_path(self, tmp_project_dir) -> None:
+        """POST /api/projects/{name}/memory writes an entry to
+        ``<project>/memory/<type>_<slug>.md`` — same shape every
+        other surface produces."""
+        import json as _json
+
+        from fastapi.testclient import TestClient
+
+        from urika.dashboard.app import create_app
+
+        proj = tmp_project_dir / "proj"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "urika.toml").write_text(
+            '[project]\nname = "proj"\nquestion = "q"\nmode = "exploratory"\n'
+            'description = ""\n\n[preferences]\naudience = "expert"\n'
+        )
+        home = tmp_project_dir / "_home"
+        home.mkdir(exist_ok=True)
+        # Use monkeypatch via the env to keep parity with the other
+        # dashboard tests — but here we set it directly because the
+        # method signature in this class does not take monkeypatch
+        # (matches the existing parity test style). The TestClient
+        # uses its own short-lived process, so the env write is
+        # scoped to this test invocation.
+        import os as _os
+
+        prev_home = _os.environ.get("URIKA_HOME")
+        _os.environ["URIKA_HOME"] = str(home)
+        try:
+            (home / "projects.json").write_text(_json.dumps({"proj": str(proj)}))
+            client = TestClient(create_app(tmp_project_dir, auth_token=None))
+            resp = client.post(
+                "/api/projects/proj/memory",
+                data={"mem_type": "user", "description": "t", "body": "b"},
+                headers={"Origin": "http://testserver"},
+            )
+            assert resp.status_code in (200, 201), resp.text
+            # Canonical filename: <type>_<slug>.md. For description "t"
+            # the slug is "t" so the file is "user_t.md".
+            assert (proj / "memory" / "user_t.md").exists(), (
+                f"Dashboard POST did not write canonical path; "
+                f"contents: {list((proj / 'memory').iterdir())}"
+            )
+        finally:
+            if prev_home is None:
+                _os.environ.pop("URIKA_HOME", None)
+            else:
+                _os.environ["URIKA_HOME"] = prev_home
+
+    def test_core_save_entry_matches_canonical_path(self, tmp_project_dir) -> None:
+        """The underlying ``save_entry`` primitive (called by CLI
+        ``urika memory add`` and the dashboard's POST handler) writes
+        to the same ``<type>_<slug>.md`` path. Pinning this here means
+        a future rename in ``project_memory.py`` would surface as a
+        parity break, not a silent on-disk schema drift."""
+        from urika.core import project_memory as pm
+
+        proj = tmp_project_dir / "proj"
+        (proj / "memory").mkdir(parents=True, exist_ok=True)
+        path = pm.save_entry(proj, mem_type="user", description="t", body="b")
+        assert (proj / "memory" / "user_t.md").exists()
+        # And the returned path matches.
+        assert path == proj / "memory" / "user_t.md"
+
+    def test_cli_save_entry_call_shape_matches_dashboard(self, tmp_project_dir) -> None:
+        """The CLI ``urika memory add`` path opens ``click.edit`` for
+        the editor case — not CliRunner-friendly. Instead, assert that
+        the CLI imports/uses the SAME ``save_entry`` primitive the
+        dashboard does, so its on-disk artifact lands at the canonical
+        path.
+
+        This is the static-analysis equivalent of the dynamic
+        dashboard-POST test above: by pinning the import + same
+        primitive name, we guarantee both surfaces produce the same
+        on-disk layout without having to drive an interactive editor.
+        """
+        import inspect
+
+        from urika.cli import memory as cli_memory
+
+        src = inspect.getsource(cli_memory.memory_add.callback)
+        assert "save_entry" in src, (
+            "CLI `urika memory add` should call the shared "
+            "`urika.core.project_memory.save_entry` primitive — "
+            "anything else would mean the CLI and dashboard could "
+            "drift apart on the on-disk path layout."
+        )
+        assert "project_memory" in src or "from urika.core.project_memory" in src
+
+        # Sanity: the slug rule used to build the canonical path is
+        # deterministic — ``save_entry(mem_type='user', description='t',
+        # body='b', slug='topic')`` lands at
+        # ``memory/user_topic.md``. The CLI passes ``slug=topic``
+        # (the positional argument). Confirm by direct call:
+        from urika.core import project_memory as pm
+
+        proj = tmp_project_dir / "proj2"
+        (proj / "memory").mkdir(parents=True, exist_ok=True)
+        path = pm.save_entry(
+            proj, mem_type="user", description="d", body="b", slug="topic"
+        )
+        assert path == proj / "memory" / "user_topic.md"
+
+
+# ── Archive layout parity (v0.5.0 Task 4.1) ─────────────────────────
+
+
+class TestArchivePathParity:
+    """``archive_entry`` produces a consistent ``memory/archive/
+    <YYYY-MM>/<filename>`` layout regardless of caller.
+
+    Two callers exist today: the direct ``project_memory.archive_entry``
+    primitive (used by CLI/dashboard once they expose explicit archive
+    actions) and the curator's apply path (``run_curator(apply=True)``
+    routing ``archive`` decisions through ``_apply_decisions``). Both
+    must land files at the same UTC-month layout. The curator pre-v0.5
+    didn't exist; this test pins that adding it didn't introduce a
+    parallel archive directory shape.
+    """
+
+    def test_direct_archive_uses_yyyy_mm_layout(self, tmp_project_dir) -> None:
+        from datetime import datetime, timezone
+
+        from urika.core import project_memory as pm
+
+        proj = tmp_project_dir / "proj"
+        (proj / "memory").mkdir(parents=True, exist_ok=True)
+        pm.save_entry(proj, mem_type="user", description="x", body="b")
+        name = pm.list_entries(proj)[0]["filename"]
+        pm.archive_entry(proj, name)
+
+        m = datetime.now(timezone.utc).strftime("%Y-%m")
+        assert (proj / "memory" / "archive" / m / name).exists(), (
+            f"archive_entry did not produce YYYY-MM layout; "
+            f"archive dir contents: "
+            f"{list((proj / 'memory' / 'archive').rglob('*'))}"
+        )
+
+    def test_curator_apply_uses_yyyy_mm_layout(self, tmp_project_dir) -> None:
+        """When ``run_curator(apply=True)`` archives an entry, it
+        produces the SAME ``<YYYY-MM>/<filename>`` layout as the
+        direct primitive. Otherwise: dashboard's "show archived
+        entries" list (which globs ``memory/archive/<YYYY-MM>``)
+        would miss curator-produced files."""
+        import asyncio
+        import json
+        from datetime import datetime, timezone
+
+        from urika.agents.config import AgentConfig
+        from urika.agents.runner import AgentResult, AgentRunner
+        from urika.core import project_memory as pm
+        from urika.core.memory_curator import run_curator
+
+        proj = tmp_project_dir / "proj"
+        (proj / "memory").mkdir(parents=True, exist_ok=True)
+        pm.save_entry(proj, mem_type="user", description="x", body="b")
+        name = pm.list_entries(proj)[0]["filename"]
+
+        # Mirror the ``_FakeRunner`` pattern from
+        # tests/test_core/test_memory_curator.py — same AgentResult
+        # shape (success=True, text_output=fenced JSON, session_id,
+        # num_turns, duration_ms).
+        class _FakeRunner(AgentRunner):
+            def __init__(self, decisions: list[dict]):
+                self._decisions = decisions
+
+            async def run(
+                self,
+                config: AgentConfig,
+                prompt: str,
+                *,
+                on_message: object = None,
+            ) -> AgentResult:
+                body = json.dumps({"decisions": self._decisions})
+                text = f"```json\n{body}\n```"
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=text,
+                    session_id="session-memory_curator-0",
+                    num_turns=1,
+                    duration_ms=10,
+                )
+
+        runner = _FakeRunner(
+            [{"action": "archive", "filename": name, "reason": "stale"}]
+        )
+        result = asyncio.run(run_curator(proj, runner=runner, apply=True))
+        assert result.applied is True
+
+        m = datetime.now(timezone.utc).strftime("%Y-%m")
+        assert (proj / "memory" / "archive" / m / name).exists(), (
+            "Curator's apply path did not produce the canonical "
+            "YYYY-MM archive layout — dashboard's archive list would "
+            "miss this entry."
+        )
+        # And the live entry was removed (curator's archive = move,
+        # not copy — same semantics as direct archive_entry).
+        assert not (proj / "memory" / name).exists()
