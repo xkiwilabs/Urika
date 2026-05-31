@@ -207,11 +207,17 @@ class TestSpecialCharsRoundTrip:
             assert tomllib.loads("v = " + _toml_basic_string(s))["v"] == s
 
     def test_toml_value_handles_path_and_roundtrips(self) -> None:
+        """``_toml_value`` stringifies unknown types so they round-trip
+        through ``tomllib``. The expected value is ``str(path)`` because
+        ``Path('/x/y.csv')`` stringifies differently on POSIX vs Windows
+        (``/x/y.csv`` vs ``\\x\\y.csv``) — what we care about is that
+        whatever ``str(val)`` produces survives the TOML round-trip."""
         import tomllib
         from pathlib import Path
 
         from urika.core.workspace import _toml_value
 
-        rendered = f"p = {_toml_value(Path('/x/y.csv'))}\n"
+        path = Path("/x/y.csv")
+        rendered = f"p = {_toml_value(path)}\n"
         parsed = tomllib.loads(rendered)
-        assert parsed["p"] == "/x/y.csv"
+        assert parsed["p"] == str(path)

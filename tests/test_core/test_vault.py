@@ -358,8 +358,16 @@ class TestEmptyStringSecretIsNotUnset:
 
 def test_remove_env_key_keeps_0600(tmp_path, vault_module):
     """Removing a key must rewrite the file atomically at 0o600, not via a
-    write-then-chmod race that briefly exposes default-umask perms."""
+    write-then-chmod race that briefly exposes default-umask perms.
+
+    The 0o600 mode assertion is POSIX-only — Windows doesn't honor
+    POSIX file modes (NTFS uses ACLs; ``os.stat`` always returns 0o666
+    regardless of the mode passed to ``os.open``). The atomic-writer
+    contract is verified separately by ``test_remove_env_key_uses_atomic_write``
+    via spy, which works on every platform.
+    """
     import stat
+    import sys
 
     p = tmp_path / "vault.env"
     # Seed two keys via the real upsert helper.
@@ -369,7 +377,8 @@ def test_remove_env_key_keeps_0600(tmp_path, vault_module):
     removed = vault_module._remove_env_key(p, "A")
 
     assert removed is True
-    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+    if sys.platform != "win32":
+        assert stat.S_IMODE(p.stat().st_mode) == 0o600
     body = p.read_text()
     assert "A=" not in body
     assert "B=2" in body
