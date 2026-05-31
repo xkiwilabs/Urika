@@ -174,3 +174,56 @@ def memory_delete(project: str | None, filename: str, force: bool) -> None:
         click.echo(f"  Trashed {filename}.")
     else:
         raise click.ClickException(f"No entry found at {filename!r}.")
+
+
+@memory.command("curate")
+@click.argument("project", required=False, default=None)
+@click.option(
+    "--apply",
+    "apply_changes",
+    is_flag=True,
+    help="Commit curator decisions to disk (default is dry-run).",
+)
+def memory_curate(project: str | None, apply_changes: bool) -> None:
+    """Run the memory curator (dry-run by default).
+
+    With no flags: prints proposed merge/archive/flag decisions without
+    touching the memory directory. Run with --apply to commit them.
+
+    The curator invokes the ``memory_curator`` agent role with a
+    snapshot of the project's memory directory and parses its proposed
+    decisions out of the response. Decisions are listed one-per-line
+    with their action + reason so the user can eyeball them before
+    re-running with --apply.
+    """
+    import asyncio
+
+    from urika.agents.runner import get_runner
+    from urika.core.memory_curator import run_curator
+
+    name = _ensure_project(project)
+    project_path, _ = _resolve_project(name)
+
+    runner = get_runner()
+    result = asyncio.run(run_curator(project_path, runner=runner, apply=apply_changes))
+
+    if result.error:
+        click.secho(f"Memory curator failed: {result.error}", fg="red", err=True)
+        raise SystemExit(1)
+
+    if not result.decisions:
+        click.echo("Memory curator: no changes suggested.")
+        return
+
+    suffix = "applied" if result.applied else "dry-run"
+    click.echo(f"Memory curator: {len(result.decisions)} decision(s) ({suffix})")
+    for d in result.decisions:
+        action = d.get("action", "?")
+        reason = (d.get("reason") or "").strip()
+        target = d.get("filename") or d.get("into") or ""
+        if target:
+            click.echo(f"  - {action} {target}: {reason}")
+        else:
+            click.echo(f"  - {action}: {reason}")
+    if not result.applied:
+        click.echo("\nRe-run with --apply to commit these changes.")
