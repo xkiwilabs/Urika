@@ -68,11 +68,21 @@ def github_init(
         click.echo(f"  remote 'origin' -> {remote}")
 
     if create:
-        # T2.2 lights this branch up by delegating to
-        # ``urika.core.git.gh_create_repo``. Today the flag exists in
-        # the parser (so the test for its presence passes) but the
-        # behaviour is reserved.
-        raise NotImplementedError("--create lands in v0.6 T2.2")
+        # ``gh repo create --push`` initialises remote + pushes the
+        # initial commit in one shot. On success we return early so we
+        # don't redundantly run ``commit_all`` (which would either say
+        # "nothing to commit" or — worse — create a duplicate commit).
+        gh_result = _git.gh_create_repo(
+            project_dir, name=project_dir.name, public=public
+        )
+        if gh_result.ok:
+            click.echo(f"  ✓ created GitHub repo: {gh_result.repo_url}")
+            return
+        # Failure — surface error + install_hint.
+        click.secho(f"  ✗ {gh_result.error}", fg="red", err=True)
+        if gh_result.install_hint:
+            click.echo(gh_result.install_hint, err=True)
+        raise SystemExit(2)
 
     # Initial commit if there's something to commit.
     result = _git.commit_all(project_dir, message="urika: initial project state")

@@ -1,16 +1,17 @@
-"""Tests for ``urika github init`` (v0.6.0 Task 2.1).
+"""Tests for ``urika github init`` (v0.6.0 Tasks 2.1 + 2.2).
 
 The CLI sub-command initialises a project as a git repo, writes the
 researcher-safe ``.gitignore`` managed block, optionally configures the
-remote, and creates the initial commit. The ``--create`` flag (which
-would shell out to ``gh repo create``) is reserved for T2.2 — for now
-the flag exists but raises ``NotImplementedError`` when set.
+remote, and creates the initial commit. The ``--create`` flag shells
+out to ``gh repo create`` (via :func:`urika.core.git.gh_create_repo`)
+and falls back gracefully when ``gh`` is missing or unauthenticated.
 """
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -96,14 +97,55 @@ def test_github_init_unknown_project_exits_nonzero(tmp_path: Path, monkeypatch) 
     assert result.exit_code != 0
 
 
-def test_github_init_create_flag_not_yet_implemented(
+def test_github_init_create_invokes_gh(tmp_path: Path, monkeypatch) -> None:
+    """--create with default visibility (private) invokes gh_create_repo correctly."""
+    _setup(tmp_path, monkeypatch)
+
+    from urika.core.git import GhCreateResult
+
+    with patch(
+        "urika.core.git.gh_create_repo",
+        return_value=GhCreateResult(ok=True, repo_url="https://github.com/u/proj"),
+    ) as spy:
+        result = CliRunner().invoke(cli, ["github", "init", "proj", "--create"])
+    assert result.exit_code == 0, result.output
+    assert spy.called
+    kwargs = spy.call_args.kwargs
+    assert kwargs.get("public") is False
+    assert kwargs.get("name") == "proj"
+
+
+def test_github_init_create_public(tmp_path: Path, monkeypatch) -> None:
+    """--create --public passes public=True."""
+    _setup(tmp_path, monkeypatch)
+
+    from urika.core.git import GhCreateResult
+
+    with patch(
+        "urika.core.git.gh_create_repo",
+        return_value=GhCreateResult(ok=True, repo_url="https://github.com/u/proj"),
+    ) as spy:
+        CliRunner().invoke(cli, ["github", "init", "proj", "--create", "--public"])
+    assert spy.call_args.kwargs.get("public") is True
+
+
+def test_github_init_create_prints_install_hint_when_gh_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """The --create flag exists (reserved for T2.2) but raises
-    NotImplementedError today so its presence in the parser is verified."""
+    """When gh_create_repo returns ok=False with install_hint, exit 2 + show hint."""
     _setup(tmp_path, monkeypatch)
-    result = CliRunner().invoke(cli, ["github", "init", "proj", "--create"])
-    # Click surfaces the exception as a non-zero exit with the exception
-    # attached to result.exception.
-    assert result.exit_code != 0
-    assert isinstance(result.exception, NotImplementedError)
+
+    from urika.core.git import GhCreateResult
+
+    with patch(
+        "urika.core.git.gh_create_repo",
+        return_value=GhCreateResult(
+            ok=False,
+            error="gh CLI not found",
+            install_hint="Install: brew install gh ...",
+        ),
+    ):
+        result = CliRunner().invoke(cli, ["github", "init", "proj", "--create"])
+    assert result.exit_code == 2  # usage / dependency error
+    assert "gh CLI not found" in result.output
+    assert "Install:" in result.output
