@@ -1,13 +1,13 @@
 # Urika — Current Status
 
 **Date:** 2026-05-31
-**Version:** v0.5.0.2 (labbook run-record reader) shipped 2026-05-31;
-v0.5.0.1 (vault hotfix) shipped 2026-05-31; v0.5.0 (memory deepening)
-shipped 2026-05-31; v0.4.5.1 (hardening) shipped 2026-05-26; v0.4.5
-(surface parity) shipped 2026-05-17.
+**Version:** v0.6.0 (GitHub auto-backup) shipped 2026-05-31; v0.5.0.2
+(labbook run-record reader) 2026-05-31; v0.5.0.1 (vault hotfix)
+2026-05-31; v0.5.0 (memory deepening) 2026-05-31; v0.4.5.1 (hardening)
+2026-05-26; v0.4.5 (surface parity) 2026-05-17.
 **Branch:** `main` synced on both `origin` and `public` and tagged
-`v0.5.0.2`. `dev` is at the same commit.
-**Tests:** ~3678 collected; **3614 pass** in the unit suite
+`v0.6.0`. `dev` is at the same commit.
+**Tests:** ~3753 collected; **3689 pass** in the unit suite
 (`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 1 skipped, 63
 integration deselected. End-to-end smoke verified on the real API
 after both hotfixes — the open-mode pipeline passes all 39 checks.

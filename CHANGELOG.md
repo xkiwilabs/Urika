@@ -5,6 +5,165 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-05-31
+
+GitHub auto-backup. Each Urika project can now be a git repo
+automatically backed up to a user-configured remote. **Backup, not
+collaboration** — Urika never sees a GitHub credential, never calls
+the GitHub API, and stays provider-agnostic (works against any git
+remote: GitHub, GitLab, Gitea, Bitbucket, self-hosted). The user's
+existing ``git`` auth (HTTPS+PAT, SSH key, ``gh``-stored
+credential — anything that already makes ``git push`` work in their
+shell) does all the authentication.
+
+This is the thin design. The "Connect GitHub" device-flow OAuth
+experience (preserved in ``dev/archive/2026-04-30-github-integration.md``)
+is deferred to v1.1+ if real demand surfaces.
+
+### Added
+
+- **``urika github init <project> [--remote URL]``** — initialise the
+  project as a git repo, write a researcher-safe ``.gitignore``, set
+  ``origin``, and create the initial commit. Idempotent — re-running
+  on an existing repo is a no-op for the init step and a
+  ``set-url`` for the remote.
+
+- **``urika github init <project> --create [--public]``** — uses the
+  ``gh`` CLI (if installed and authed) to create a fresh private
+  (default) or public GitHub repo named after the project, set the
+  remote, and do the first push in one shot. Wraps ``gh repo create
+  <name> --{private|public} --source <dir> --push``. Falls back
+  gracefully when ``gh`` is missing or unauthed (prints a one-line
+  install hint, exits 2, no partial state).
+
+- **``urika github push / pull / status``** — manual push wraps
+  ``git add -A && git commit && git push`` with the **pre-commit
+  secret scanner** in front (regex sweep for ``sk-ant-...``,
+  ``sk-...`` OpenAI, ``ghp_...``, ``gho_...``, ``ghu_...``,
+  ``ghs_...`` GitHub, ``AKIA...`` AWS shapes; aborts with exit code
+  3 and ``[urika:secret-detected] <file>:<line>`` if any match).
+  ``pull`` does fetch + ff-only merge, refuses on divergence.
+  ``status`` shows remote/branch/dirty-count/last-commit/recent.
+
+- **``urika new <name> --github [--public]``** — opt-in at
+  project-creation time. After the project wizard's
+  ``write_project()`` returns, runs ``urika github init --create``
+  with the appropriate visibility. ``--no-github`` skips it even
+  when the global preference is set.
+
+- **Global preference: ``[preferences] github_auto_create = true``** —
+  in ``~/.urika/settings.toml``. Every ``urika new`` defaults to
+  creating a remote; override per invocation with ``--no-github``.
+  Companion key ``github_auto_create_visibility = "private"|"public"``
+  controls the default visibility.
+
+- **Auto-push hook** — opt-in via ``[github] auto_push = true`` in
+  ``urika.toml``. Fires at the end of each command in
+  ``[github] auto_push_after = ["run", "finalize", "build-tool"]``
+  (the default set). Sequence: stage everything → secret scan →
+  commit (with a per-event commit message and the
+  ``urika-event: <event>`` trailer) → push. On scan failure, aborts
+  without committing. On push failure, prints the verbatim ``git``
+  stderr and leaves the local commit intact for the user to retry.
+  Wrapped in an outer ``try/except`` so an auto-push failure can
+  **never** break the host command. Three CLI commands wired
+  (``urika run``, ``urika finalize``, ``urika build-tool``) at four
+  call-sites total (``urika run`` has both a meta-experiment and a
+  single-experiment success path, both gated on ``run_status ==
+  "completed"`` so paused/stopped/failed runs don't trigger).
+
+- **Researcher-safe ``.gitignore`` template** with managed-block
+  markers (``# >>> urika: managed block``) so re-running
+  ``urika github init`` updates the Urika section in place while
+  preserving anything the user added above or below. Defaults
+  exclude ``.urika/`` (whole dir — secrets, sessions, meta),
+  ``*.lock``, Python build/venv directories, PEM/SSH/dotenv files,
+  AND research-data conventions (``data/raw/``, ``*.parquet``,
+  ``*.h5``, ``*.pkl``, ``*.joblib``). User can add patterns via
+  ``[github] gitignore_extra = [...]`` in urika.toml.
+
+- **Pre-commit secret scanner** (``urika.core.git.scan_for_secrets``)
+  scans staged blobs (``git show :<path>``) for known token shapes.
+  Binary files skipped via a NUL-byte heuristic. Patterns ordered
+  most-specific-first so ``sk-ant-...`` is reported as
+  ``anthropic_api_key`` rather than the looser ``openai_api_key``
+  pattern. Match preview is masked (first 8 chars + last 4) so the
+  user can identify the leak without the full token appearing in
+  the error output.
+
+- **Dashboard Git tab** at ``/projects/{name}/git`` — read-only
+  status panel (remote URL, branch, dirty count, last commit) plus
+  a recent-commits list (with ``urika-event:`` chip per commit) and
+  a "Push now" button. When the project isn't yet a git repo, the
+  page renders an "Initialise" form (remote URL input) that POSTs
+  to ``/api/projects/{name}/git/init``. Sidebar entry between
+  Methods and Criteria. Four new API routes:
+  ``GET /git/status``, ``POST /git/push``, ``POST /git/init``,
+  ``GET /git/log``. ``POST /git/push`` runs the same secret scan
+  as the CLI and returns ``409`` with the match details when a
+  secret is detected (no commit, working tree unmodified). All
+  state-changing routes preserve the v0.4.5.1 CSRF middleware
+  (cross-origin requests return 403).
+
+### Architecture
+
+- ``src/urika/core/git.py`` — pure ``git`` (and optional ``gh``)
+  ``subprocess`` wrapper. All functions are stateless; errors come
+  back as values (``CommitResult``/``PushResult``/``PullResult``/``GhCreateResult``
+  dataclasses with ``ok`` + ``error``) rather than exceptions, so
+  callers print remediation hints cleanly. ``add_remote`` updates
+  the URL when ``origin`` already exists rather than failing.
+  ``pull`` fetches the specific branch (not ``FETCH_HEAD``) so a
+  fresh remote without upstream tracking still does the right
+  thing. ``recent_commits`` parses the ``urika-event:`` trailer
+  from commit bodies using a NUL/RS-separated git pretty-format.
+
+- ``src/urika/cli/github.py`` — Click subgroup with four
+  subcommands (``init``, ``push``, ``pull``, ``status``) plus the
+  ``_maybe_auto_push(project_dir, event)`` helper used by
+  ``run``/``finalize``/``build-tool`` tails.
+
+- ``src/urika/dashboard/`` — page route in ``routers/pages.py``,
+  four API routes in ``routers/api.py``, template
+  ``templates/git.html`` (mirrors the v0.5.0 ``memory.html``
+  layout), sidebar entry in ``_sidebar.html``.
+
+### Verified
+
+- 16 implementation tasks, 105 net new tests (3689 total in the
+  unit suite, up from 3615), full pytest green.
+- Cut criterion #3 verified by an opt-in integration test
+  (``tests/test_integration_github_push.py``) that runs ``urika
+  new`` + ``urika github init --remote <local-bare>`` + ``urika run
+  --max-turns 1`` with a stub agent runner and confirms the bare
+  remote received a commit with the expected ``urika-event: run``
+  trailer in ~0.3s (vs the 60s cut-criterion budget).
+- Secret scanner verified end-to-end: a planted ``sk-ant-...XXX``
+  in a staged file aborts ``urika github push`` with exit code 3
+  and the file:line of the leak. The dashboard endpoint returns
+  409 with the same match details.
+- ``gh repo create --push`` integration verified by unit tests that
+  mock the ``gh`` invocation; the cut-criterion's "real GitHub
+  one-time check" is left to the operator's first invocation
+  against their own GitHub account.
+
+### Out of scope (deferred)
+
+- Device-flow OAuth and the dashboard "Connect GitHub" experience —
+  preserved in ``dev/archive/2026-04-30-github-integration.md`` for
+  a future v1.1+ feature if real demand evidence surfaces.
+- GitHub-API-driven repo creation (use ``gh`` CLI instead).
+- Audit log viewer in the dashboard.
+- Offline commit queue + retry-next-event.
+- ``dry_run`` mode that stops before push (the dashboard's
+  ``--remote`` form already lets users sanity-check before
+  enabling auto_push).
+- README auto-management on every event.
+- Branch-per-experiment / auto-PR workflows.
+- LFS support for large artifacts.
+- Multi-remote per project (Urika manages exactly one ``origin``;
+  users can add more remotes manually with raw ``git`` if needed).
+
 ## [0.5.0.2] - 2026-05-31
 
 Hotfix. After the v0.5.0.1 vault fix unblocked the e2e smoke, the
