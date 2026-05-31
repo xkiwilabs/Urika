@@ -52,8 +52,14 @@ def test_read_labbook_sorts_by_filename(tmp_path):
     from urika.orchestrator.parsing import read_labbook_run_records
 
     exp = tmp_path / "exp-001"
-    _seed(exp, "run-002-wilcoxon.json", {"run_id": "run-002", "method": "w", "metrics": {}})
-    _seed(exp, "run-001-paired.json", {"run_id": "run-001", "method": "p", "metrics": {}})
+    _seed(
+        exp,
+        "run-002-wilcoxon.json",
+        {"run_id": "run-002", "method": "w", "metrics": {}},
+    )
+    _seed(
+        exp, "run-001-paired.json", {"run_id": "run-001", "method": "p", "metrics": {}}
+    )
 
     records = read_labbook_run_records(exp)
     assert [r.run_id for r in records] == ["run-001", "run-002"]
@@ -77,7 +83,11 @@ def test_read_labbook_skips_record_without_required_fields(tmp_path):
 
     exp = tmp_path / "exp"
     _seed(exp, "run-001-no-metrics.json", {"run_id": "r1", "method": "x"})  # no metrics
-    _seed(exp, "run-002-bad-metrics.json", {"run_id": "r2", "method": "x", "metrics": "not-a-dict"})
+    _seed(
+        exp,
+        "run-002-bad-metrics.json",
+        {"run_id": "r2", "method": "x", "metrics": "not-a-dict"},
+    )
     _seed(exp, "run-003-ok.json", {"run_id": "r3", "method": "x", "metrics": {"a": 1}})
 
     records = read_labbook_run_records(exp)
