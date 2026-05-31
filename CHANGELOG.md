@@ -5,6 +5,165 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-31
+
+Memory deepening. v0.4 shipped the project-memory plumbing (auto-
+capture + read injection in the planning agent + CLI/REPL/TUI manual
+surfaces) but the loop was half-wired: the advisor — the strongest
+design-rationale source — never READ what it (or anyone else) wrote
+last session, the dashboard had no memory page, and there was no way
+to keep the memory directory tidy as projects grew. v0.5.0 closes
+that loop. Every agent that benefits now reads memory, every surface
+can manage it, and an auto-curator (dry-run by default) keeps the
+budget in check.
+
+### Added
+
+- **Advisor and report agents inject project memory** (Decision 1 of
+  the v0.5.0 plan). Both roles now compose the same
+  ``## Project Memory & Prior Context`` block the planning agent
+  uses, delivered via the per-turn user message so the system prompt
+  stays byte-stable for the Anthropic prompt cache. The advisor —
+  the strongest design-rationale source for capture — now reads what
+  it wrote last session; the report agent picks up user preferences
+  (tone, audience, prior decisions) and can reference them in
+  narrative output. ``format_advisor_context(project_dir)`` and
+  ``format_report_context(project_dir)`` are thin delegates to
+  ``planning_agent.format_planning_context`` — one shared source of
+  truth.
+
+- **Memory curator agent.** A new ``memory_curator`` role
+  (``src/urika/agents/roles/memory_curator.py``) proposes four kinds
+  of decisions on the memory directory:
+
+  - ``merge`` two entries that make the same load-bearing claim,
+  - ``archive`` stale facts (finished experiments, closed PRs),
+  - ``flag_stale`` entries whose currency is suspect, and
+  - ``flag_contradiction`` between pairs that say opposite things.
+
+  The role is sandbox-locked (no Read / Write / Bash tools, empty
+  ``SecurityPolicy``) — it only emits decisions; the apply step
+  belongs to a separate code path that the user explicitly invokes.
+
+- **Curator dispatch and auto-trigger (dry-run by default — Decision
+  4).** ``urika.core.memory_curator.run_curator(project_dir, runner,
+  apply=False)`` invokes the agent, parses decisions, and (when
+  ``apply=True``) commits them: merges via concatenation,
+  ``archive_entry`` moves to ``memory/archive/<YYYY-MM>/<filename>``,
+  flags inject ``flagged_stale: <reason>`` (or ``flagged_contradiction``)
+  into the entry's frontmatter idempotently. The orchestrator's
+  pre-turn hook (``_maybe_run_curator`` in ``orchestrator/loop.py``)
+  runs the curator in dry-run when the session-scoped soft-cap flag
+  is set, surfaces proposed decisions through the standard
+  ``progress("warning", ...)`` channel (stdout → ``run.log`` →
+  dashboard SSE → Slack/Telegram), and clears the flag. Nothing
+  mutates without an explicit ``urika memory curate --apply`` (or
+  the dashboard "Apply" button).
+
+- **CLI ``urika memory curate [--apply]``** (with same ``--json``
+  pattern as the other memory subcommands), **REPL/TUI
+  ``/memory curate [--apply]``** (dispatches to the CLI subcommand;
+  TUI inherits via ``PROJECT_COMMANDS``), and **dashboard ``POST
+  /api/projects/{name}/memory/curate?apply=true``** (with a
+  Curate / Apply two-button UI on the memory page that confirms
+  before applying and propagates curator errors into the visible
+  error field).
+
+- **Dashboard memory page** (the Phase 2 holdover from v0.4 the
+  v0.4.5 parity audit flagged as D3). Sidebar entry between
+  Knowledge and Methods. List / Add / Delete CRUD via four new API
+  endpoints (``GET /api/projects/{name}/memory``,
+  ``GET .../memory/{filename}``, ``POST .../memory``,
+  ``DELETE .../memory/{filename}``). Filename path-traversal
+  rejected (``/``, ``\``, ``..`` → 400). Save returns ``HX-Redirect``
+  to the same page so the new entry appears immediately;
+  ``hx-on::response-error`` surfaces validation failures so 422s
+  no longer silently swallow themselves.
+
+- **Archive viewer + diff view** (Decision 3 — mtime-based). New
+  ``project_memory.list_archive(project_dir, month=None)`` enumerates
+  archived entries by ``YYYY-MM``; ``project_memory.diff_between(
+  project_dir, from_ts, to_ts)`` classifies entries into ``added`` /
+  ``archived`` / ``trashed`` buckets from filesystem mtime. Surfaced
+  across all three text surfaces:
+
+  - CLI: ``urika memory archive [--month YYYY-MM] [--json]`` and
+    ``urika memory diff <from> <to> [--json]`` with a relative-time
+    parser accepting ``now`` / ``yesterday`` / ``Nh|Nd|Nw ago`` (or
+    the underscore form ``1h_ago``) / ISO 8601.
+  - REPL/TUI: ``/memory archive [--month YYYY-MM]`` and
+    ``/memory diff <from> <to>``.
+  - Dashboard: ``?show_archived=true`` query toggle on the memory
+    page, with the archived block rendered below the live list.
+
+- **Per-project ``auto_capture`` toggle.** A checkbox in the
+  dashboard memory page header writes ``[memory].auto_capture =
+  true|false`` to the project's ``urika.toml`` via a new ``POST
+  /api/projects/{name}/memory/auto_capture`` endpoint. Other TOML
+  sections (``[project]``, ``[endpoints]``, ``[privacy]``, etc.) are
+  preserved on update.
+
+- **Cross-surface parity tests** (``tests/test_cross_interface_parity
+  .py``) pin three v0.5.0 contracts: every surface routes curate
+  through ``run_curator`` (single source of truth); all surfaces
+  write entries to ``<project>/memory/<type>_<slug>.md``; archive
+  layout is ``memory/archive/<YYYY-MM>/<filename>`` regardless of
+  caller (direct vs curator-apply).
+
+### Changed
+
+- ``load_project_memory(project_dir, session_id=None)`` gained an
+  optional session_id parameter. When provided AND the soft cap
+  (30 entries OR ~5 000 tokens, Decision 2 byte-heuristic
+  ``len(text.encode()) / 3.5``) is exceeded, a flag in
+  ``<project>/memory/.curator-flag.json`` is set so the orchestrator
+  knows to run the curator in dry-run at next agent invocation. Once
+  per session — the flag is cleared after the curator runs (or
+  fails) so the same over-budget state doesn't re-fire. Existing
+  callers (planning / advisor / report agents — and every test in
+  the old test suite) pass no session_id; their behavior is
+  unchanged (atomic ``write_json_atomic`` is used for the flag
+  to match the post-hardening sweep convention).
+
+- When the **hard cap** (~10 000 tokens) is exceeded,
+  ``load_project_memory`` drops the OLDEST entries (by mtime,
+  newest preserved) until under cap and replaces the section header
+  with ``## Project Memory (over budget — run urika memory curate)``
+  so the user sees the situation in the agent's text output. No
+  more byte-slicing mid-frontmatter or mid-codeblock.
+
+- The advisor's per-turn context heading changed from
+  ``## Research Context (from previous sessions)`` to
+  ``## Project Memory & Prior Context`` (the canonical role-symmetric
+  heading the planner already uses). Three call sites in
+  ``orchestrator/loop.py`` and ``orchestrator/meta.py`` consolidated
+  on the shared helper; the old summary-only injection is gone.
+
+### Fixed
+
+- ``/memory curate`` now works from inside the REPL/TUI. The first
+  cut of the CLI subcommand called ``asyncio.run(run_curator(...))``
+  which raised ``RuntimeError: asyncio.run() cannot be called from a
+  running event loop`` when dispatched from the REPL or TUI (both
+  run slash commands inline on a live loop). The subcommand now
+  detects a running loop via ``asyncio.get_running_loop()`` and
+  runs the curator on a fresh loop in a worker thread when one
+  exists; the bare CLI path still uses ``asyncio.run`` for
+  no-overhead startup.
+
+- The dashboard "Apply" button no longer silently swallows curator
+  errors. ``CuratorResult(error=...)`` returned from a soft failure
+  is now propagated to the visible error span, and the page only
+  reloads on ``d.applied && !d.error``.
+
+### Out of scope (revisit post-1.0 if usage demands)
+
+- Read-memory **tool call** (agents currently get memory as a
+  system-prompt prefix; no on-demand ``read_memory(topic)`` tool).
+- Memory-aware **turn summarisation** that uses memory to dedupe
+  captures at write time (the curator dedupes post-hoc instead).
+- Cross-project memory — memory stays project-scoped by design.
+
 ## [0.4.5.1] - 2026-05-26
 
 Pre-v0.5 hardening release. A deep review surfaced one silent

@@ -1,12 +1,12 @@
 # Urika — Current Status
 
-**Date:** 2026-05-25
-**Version:** v0.4.5 (released to PyPI as `urika==0.4.5`, tagged
-2026-05-17). A pre-v0.5 hardening sweep has since landed on `dev`
-(unreleased as of 2026-05-25).
-**Branch:** `dev` is ahead of `main` with the hardening sweep; `main`
-synced on both `origin` and `public` and tagged `v0.4.5`.
-**Tests:** ~3541 collected; 3477 pass in the unit suite
+**Date:** 2026-05-31
+**Version:** v0.5.0 (memory deepening) shipped 2026-05-31; v0.4.5.1
+(hardening) shipped 2026-05-26; v0.4.5 (surface parity) shipped
+2026-05-17.
+**Branch:** `main` synced on both `origin` and `public` and tagged
+`v0.5.0`. `dev` is at the same commit.
+**Tests:** ~3670 collected; **3606 pass** in the unit suite
 (`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 1 skipped, 63
 integration deselected.
 
@@ -21,8 +21,9 @@ testing windows. Single source of truth.
 | Plan | Status |
 |------|--------|
 | `2026-05-02-roadmap-to-v1.0.md` | **Master roadmap** — v0.4.0 → v1.0.0 (v0.4.5 inserted; v0.6/v0.7 swapped 2026-05-04) |
-| `2026-05-17-v0.5.0-memory-deepening.md` | **Next release** — project memory Phases 3–4 (drafted, not started) |
-| `2026-05-25-pre-v0.5-hardening-fixes.md` | Hardening sweep landed on `dev` 2026-05-25 |
+| `2026-05-17-v0.5.0-memory-deepening.md` | v0.5.0 spec — SHIPPED 2026-05-31 |
+| `2026-05-25-pre-v0.5-hardening-fixes.md` | v0.4.5.1 hardening — SHIPPED 2026-05-26 |
+| `2026-05-31-v0.5.0-implementation.md` | v0.5.0 implementation plan — 22 tasks, all done |
 | `dev/archive/2026-04-30-github-integration.md` | Full design — implementation in v0.6.0 (GitHub auto-backup) |
 
 Everything else lives under `dev/archive/plans/` — see the
@@ -114,8 +115,8 @@ backup ships before the multi-provider work):
 
 | Release | Focus | Status |
 |---|---|---|
-| **v0.5.0** | Project memory deepening — curator agent, archive viewer, diff view, advisor injection (Phases 3–4) | NEXT — drafted, not started |
-| **v0.6.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | planned |
+| **v0.5.0** | Project memory deepening — advisor+report inject; curator agent + dry-run auto-trigger; archive + mtime diff; dashboard memory page; auto_capture toggle; cross-surface parity tests | SHIPPED 2026-05-31 |
+| **v0.6.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | **NEXT** |
 | **v0.7.0** | Multi-provider model adapters (OpenAI Agents SDK + others) | planned |
 | **v0.8.0** | Output polish — exports (PDF/LaTeX/Jupyter via Pandoc), model-card auto-generation | planned |
 | **v0.9.0** | UX polish — project templates + accessibility audit + i18n string-extraction stubs | planned |
