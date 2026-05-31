@@ -490,12 +490,21 @@ if bad:
 # run.log for a step must NOT contain the *fatal* early-exit
 # tell-tales: an experiment that failed on turn 1, that paused on
 # turn 1 (a transient/unknown error before any progress — resumable,
-# but the run did not advance), any "Experiment failed:" line, or the
-# meta loop bailing with no advisor suggestion, or an experiment that
-# ran every turn but recorded zero runs. (A per-turn "produced no
-# parseable run records / criteria assessment / method plan" *warning*
-# is fine — that's the warning system working; the run-content checks
-# above catch the case where it actually mattered.) Args: <desc> <logfile>.
+# but the run did not advance), any "Experiment failed:" line, or an
+# experiment that ran every turn but recorded zero runs. (A per-turn
+# "produced no parseable run records / criteria assessment / method
+# plan" *warning* is fine — that's the warning system working; the
+# run-content checks above catch the case where it actually mattered.)
+#
+# ``no further experiments to suggest`` is intentionally OMITTED here:
+# it's the advisor's NORMAL terminal signal when an autonomous run has
+# explored the space adequately. Whether the run completed enough
+# experiments to satisfy the smoke is already measured by the
+# ``autonomous run started >=2 experiments`` assertion. Treating that
+# string as fatal flagged runs that had already met their experiment-
+# count goal as failures, which they aren't. Removed v0.5.0.2.
+#
+# Args: <desc> <logfile>.
 verify_no_early_exit_markers() {
   local desc="$1"; local logfile="$2"
   if [[ ! -f "$logfile" ]]; then
@@ -503,7 +512,7 @@ verify_no_early_exit_markers() {
     return 1
   fi
   local hit
-  hit="$(grep -m1 -iE 'failed after 1 turn|paused after turn 1\b|Experiment failed:|no further experiments to suggest|but recorded 0 runs' "$logfile" || true)"
+  hit="$(grep -m1 -iE 'failed after 1 turn|paused after turn 1\b|Experiment failed:|but recorded 0 runs' "$logfile" || true)"
   if [[ -n "$hit" ]]; then
     fail "$desc" "early-exit marker in log: $hit"
   else
