@@ -17,6 +17,7 @@ design decisions.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -274,3 +275,91 @@ def recent_commits(project_dir: Path, limit: int = 10) -> list[GitCommit]:
                 break
         commits.append(GitCommit(sha=sha[:12], subject=subject, event=event, ts=ts))
     return commits
+
+
+@dataclass
+class SecretMatch:
+    file: str
+    line: int
+    pattern_name: str
+    preview: str  # masked: first 8 + last 4 chars of the matched token
+
+
+# Patterns ordered most-specific first so e.g. ``sk-ant-`` doesn't get
+# overshadowed by the generic ``sk-`` openai pattern.
+_SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("anthropic_api_key", re.compile(r"sk-ant-[A-Za-z0-9_\-]{32,}")),
+    ("github_pat", re.compile(r"ghp_[A-Za-z0-9]{36}")),
+    ("github_oauth", re.compile(r"gho_[A-Za-z0-9]{36}")),
+    ("github_user_to_server", re.compile(r"ghu_[A-Za-z0-9]{36}")),
+    ("github_server_to_server", re.compile(r"ghs_[A-Za-z0-9]{36}")),
+    ("aws_access_key_id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    # OpenAI-shape last because ``sk-ant-`` would also match a permissive
+    # ``sk-...{40,}`` pattern. The earlier anthropic entry will be tried
+    # first and reported as ``anthropic_api_key``.
+    ("openai_api_key", re.compile(r"\bsk-[A-Za-z0-9]{40,}\b")),
+]
+
+
+def _mask_token(token: str) -> str:
+    """Return a masked preview: first 8 chars + ``...`` + last 4."""
+    if len(token) <= 12:
+        return token  # too short to mask meaningfully
+    return f"{token[:8]}...{token[-4:]}"
+
+
+def _is_binary(content: bytes) -> bool:
+    """Heuristic: contains a NUL byte in the first 8KB -> binary."""
+    return b"\x00" in content[:8192]
+
+
+def scan_for_secrets(project_dir: Path) -> list[SecretMatch]:
+    """Scan staged files for known secret patterns.
+
+    Reads each staged file's CONTENT (``git show :<path>``) rather than
+    the working-tree version, so a secret that the user has since
+    removed locally but already staged is still caught.
+
+    Returns a list of :class:`SecretMatch` (empty when clean). Binary
+    files are skipped - random bytes can match a regex by chance, and
+    we don't want to waste time on PNGs.
+    """
+    staged = _git(project_dir, "diff", "--cached", "--name-only", check=False)
+    if staged.returncode != 0:
+        return []
+    matches: list[SecretMatch] = []
+    for path in staged.stdout.splitlines():
+        path = path.strip()
+        if not path:
+            continue
+        # Read the staged blob as raw bytes so binary content doesn't blow
+        # up the utf-8 decoder. The text-mode ``_git`` helper would raise
+        # ``UnicodeDecodeError`` on PNG/parquet bytes here.
+        blob = subprocess.run(
+            ["git", "show", f":{path}"],
+            cwd=str(project_dir),
+            capture_output=True,
+            check=False,
+        )
+        if blob.returncode != 0:
+            continue
+        raw_bytes = blob.stdout
+        if _is_binary(raw_bytes):
+            continue
+        try:
+            text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw_bytes.decode("utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            for pattern_name, pattern in _SECRET_PATTERNS:
+                for m in pattern.finditer(line):
+                    matches.append(
+                        SecretMatch(
+                            file=path,
+                            line=lineno,
+                            pattern_name=pattern_name,
+                            preview=_mask_token(m.group(0)),
+                        )
+                    )
+                    break  # one match per line is enough; the user gets the file:line
+    return matches
