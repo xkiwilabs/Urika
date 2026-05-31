@@ -93,3 +93,126 @@ def github_init(
     else:
         # Edge: brand-new init but nothing to commit (empty dir). Fine.
         click.echo("  initialised (no tracked content yet)")
+
+
+@github.command("status")
+@click.argument("project", required=False, default=None)
+def github_status(project: str | None) -> None:
+    """Show remote URL, branch, dirty count, and recent commits."""
+    from urika.core import git as _git
+
+    name = _ensure_project(project)
+    project_dir, _config = _resolve_project(name)
+
+    if not _git.is_git_repo(project_dir):
+        click.secho(f"  not a git repo: {project_dir}", fg="yellow")
+        click.echo("  run `urika github init <project>` first")
+        return
+
+    st = _git.status(project_dir)
+    click.echo(f"  branch:        {st.branch or '(none)'}")
+    click.echo(f"  remote:        {st.remote_url or '(not set)'}")
+    click.echo(f"  uncommitted:   {st.dirty_count} file(s)")
+    if st.last_commit_sha:
+        click.echo(f"  last commit:   {st.last_commit_sha}  {st.last_commit_subject}")
+    recent = _git.recent_commits(project_dir, limit=5)
+    if recent:
+        click.echo("  recent:")
+        for c in recent:
+            tag = f" [{c.event}]" if c.event else ""
+            click.echo(f"    {c.sha}  {c.subject}{tag}")
+
+
+@github.command("push")
+@click.argument("project", required=False, default=None)
+def github_push(project: str | None) -> None:
+    """Stage everything, commit (after secret scan), and push to origin.
+
+    The secret scanner runs on staged content *before* the commit lands.
+    If anything matches a known credential pattern (Anthropic, GitHub PAT,
+    AWS, OpenAI, etc.), the push aborts with exit code 3, the offending
+    file:line is printed, and the index is reset so the working tree
+    isn't left in a half-staged state.
+    """
+    from urika.core import git as _git
+
+    name = _ensure_project(project)
+    project_dir, _config = _resolve_project(name)
+
+    if not _git.is_git_repo(project_dir):
+        click.secho(f"  not a git repo: {project_dir}", fg="red", err=True)
+        click.echo("  run `urika github init <project>` first", err=True)
+        raise SystemExit(2)
+
+    # 1. Stage everything so the secret scanner sees what we're about to commit.
+    _git._git(project_dir, "add", "-A")
+
+    # 2. Secret scan.
+    matches = _git.scan_for_secrets(project_dir)
+    if matches:
+        for m in matches:
+            click.secho(
+                f"  ✗ [urika:secret-detected] {m.file}:{m.line} "
+                f"({m.pattern_name})  match: {m.preview}",
+                fg="red",
+                err=True,
+            )
+        click.echo(
+            "\n  Aborted commit. Remove the secret(s) from the file(s) above "
+            "or add the file(s) to .gitignore, then re-run.",
+            err=True,
+        )
+        # Un-stage so the user's tree isn't left in a weird state.
+        _git._git(project_dir, "reset", "HEAD", check=False)
+        raise SystemExit(3)
+
+    # 3. Commit.
+    subject = "urika: project state"
+    body = "\n\nurika-event: manual\nurika-version: 0.6.0\n"
+    commit = _git.commit_all(project_dir, message=subject + body)
+    if commit.ok:
+        click.echo(f"  committed {commit.sha}: {subject}")
+    else:
+        click.echo(f"  (no new commit: {commit.error})")
+
+    # 4. Push.
+    pushed = _git.push(project_dir)
+    if pushed.ok:
+        click.echo(f"  ✓ pushed {pushed.pushed_sha} to origin")
+    else:
+        click.secho("  ⚠ urika github push: failed", fg="yellow", err=True)
+        click.echo(f"    {pushed.error}", err=True)
+        click.echo(
+            "    Retry with `urika github push <project>` once the underlying "
+            "issue is resolved.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+
+@github.command("pull")
+@click.argument("project", required=False, default=None)
+def github_pull(project: str | None) -> None:
+    """Fetch + fast-forward-only merge from origin.
+
+    Refuses on divergence — if local has commits that aren't on the
+    remote (or vice versa in a non-ff way), the user must resolve that
+    themselves with their own git tooling. Urika does not auto-merge.
+    """
+    from urika.core import git as _git
+
+    name = _ensure_project(project)
+    project_dir, _config = _resolve_project(name)
+
+    if not _git.is_git_repo(project_dir):
+        click.secho(f"  not a git repo: {project_dir}", fg="yellow", err=True)
+        click.echo("  run `urika github init <project>` first", err=True)
+        raise SystemExit(2)
+
+    result = _git.pull(project_dir)
+    if result.ok:
+        click.echo("  ✓ pulled from origin")
+    else:
+        click.secho("  ⚠ urika github pull: failed", fg="yellow", err=True)
+        click.echo(f"    {result.error}", err=True)
+        raise SystemExit(1)
