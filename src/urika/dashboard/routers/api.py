@@ -867,6 +867,41 @@ async def api_memory_curate(name: str, request: Request) -> Response:
     )
 
 
+@router.post("/projects/{name}/memory/auto_capture")
+async def api_memory_auto_capture(name: str, request: Request) -> Response:
+    """Toggle ``[memory] auto_capture`` in the project's ``urika.toml``.
+
+    v0.5.0 Task 3.5 — paired with the checkbox on the memory page. The
+    helper :func:`urika.core.project_memory.is_enabled` already READS
+    the flag (default ``true``); this endpoint WRITES it via the
+    shared :func:`urika.core.workspace._write_toml` helper so the
+    format stays consistent with every other dashboard settings
+    write.
+
+    Accepts ``enabled=true|false`` (also ``1`` / ``0`` / ``yes`` /
+    ``no`` / ``on`` — anything outside the truthy set is treated as
+    false). Returns ``{"enabled": bool}`` for client-side confirmation.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    enabled_str = str(form.get("enabled", "")).lower()
+    enabled = enabled_str in ("true", "1", "yes", "on")
+
+    toml_path = summary.path / "urika.toml"
+    if toml_path.exists():
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+    else:
+        data = {}
+    data.setdefault("memory", {})["auto_capture"] = enabled
+    _write_toml(toml_path, data)
+    return JSONResponse({"enabled": enabled})
+
+
 @router.put("/projects/{name}/settings")
 async def api_project_settings_put(name: str, request: Request):
     """Atomically update project settings and record per-field revisions.

@@ -35,6 +35,8 @@
     .archived-block h2 { font-size: 1.05rem; margin: 0 0 0.5rem; }
     .archived-block .list-item { opacity: 0.65; }
     .month-chip { display: inline-block; padding: 0.1rem 0.4rem; border: 1px solid var(--border, #ccc); border-radius: 3px; font-size: 0.8rem; margin-right: 0.25rem; }
+    .auto-capture-toggle { margin-bottom: 0.75rem; }
+    .auto-capture-toggle label { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 400; }
   </style>
 
   <section
@@ -94,6 +96,22 @@
       </template>
     </ul>
   </section>
+
+  <div class="auto-capture-toggle">
+    <label>
+      <input
+        type="checkbox"
+        name="enabled"
+        value="true"
+        hx-post="/api/projects/{{ project.name }}/memory/auto_capture"
+        hx-vals='js:{enabled: event.target.checked ? "true" : "false"}'
+        hx-trigger="change"
+        hx-swap="none"
+        {% if auto_capture %}checked{% endif %}
+      >
+      Auto-capture from agent turns
+    </label>
+  </div>
 
   <div class="archive-toggle">
     <a
