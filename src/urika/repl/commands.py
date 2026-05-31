@@ -576,17 +576,18 @@ def cmd_memory(session: ReplSession, args: str) -> None:
 
     Usage from the TUI:
 
-        /memory                  → list entries
-        /memory list             → same
-        /memory show <topic>     → print one entry
-        /memory delete <file>    → trash an entry (with confirm)
+        /memory                       → list entries
+        /memory list                  → same
+        /memory show <topic>          → print one entry
+        /memory delete <file>         → trash an entry (with confirm)
+        /memory curate [--apply]      → run the curator (dry-run / commit)
 
     ``/memory add`` is intentionally NOT exposed here because the
     underlying CLI variant opens an editor (``click.edit``) which
     won't reach the TUI bridge. Use ``urika memory add`` from a
     shell for now.
     """
-    from urika.cli.memory import memory_list, memory_show, memory_delete
+    from urika.cli.memory import memory_curate, memory_delete, memory_list, memory_show
 
     project = session.project_name if session.has_project else None
     if project is None:
@@ -617,9 +618,17 @@ def cmd_memory(session: ReplSession, args: str) -> None:
         ctx.invoke(memory_delete, project=project, filename=parts[1], force=False)
         return
 
+    if sub == "curate":
+        # `--apply` may sit anywhere after the sub-action.
+        apply_flag = "--apply" in parts[1:]
+        ctx = click.Context(memory_curate)
+        ctx.invoke(memory_curate, project=project, apply_changes=apply_flag)
+        return
+
     click.echo(
         f"Unknown memory subcommand: {sub!r}. "
-        f"Try /memory list, /memory show <topic>, or /memory delete <file>."
+        f"Try /memory list, /memory show <topic>, /memory delete <file>, "
+        f"or /memory curate [--apply]."
     )
 
 
