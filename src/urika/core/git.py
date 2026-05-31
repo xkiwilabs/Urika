@@ -18,6 +18,7 @@ design decisions.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -363,3 +364,64 @@ def scan_for_secrets(project_dir: Path) -> list[SecretMatch]:
                     )
                     break  # one match per line is enough; the user gets the file:line
     return matches
+
+
+@dataclass
+class GhCreateResult:
+    ok: bool
+    repo_url: str | None = None
+    error: str | None = None
+    install_hint: str | None = None
+
+
+_GH_INSTALL_HINT = (
+    "gh CLI is not installed or not authenticated. Install:\n"
+    "  brew install gh   (macOS)\n"
+    "  apt install gh    (Debian/Ubuntu)\n"
+    "  https://cli.github.com (other platforms)\n"
+    "Then authenticate: gh auth login\n"
+    "Alternative: create the repo manually on GitHub and re-run\n"
+    "  `urika github init <project> --remote <URL>`."
+)
+
+
+def _gh_check_auth() -> bool:
+    """Returns True if ``gh auth status`` exits 0 (authenticated)."""
+    result = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def gh_create_repo(project_dir: Path, name: str, public: bool) -> GhCreateResult:
+    """Create a GitHub repo via ``gh repo create``, set as origin, push.
+
+    Equivalent to ``gh repo create <name> --{public,private} --source
+    <project_dir> --push``. Falls back gracefully when ``gh`` is missing
+    or unauthed (no exception, just a structured result with an install
+    hint).
+    """
+    if shutil.which("gh") is None:
+        return GhCreateResult(
+            ok=False, error="gh CLI not found", install_hint=_GH_INSTALL_HINT
+        )
+    if not _gh_check_auth():
+        return GhCreateResult(
+            ok=False,
+            error="gh CLI not authenticated",
+            install_hint=_GH_INSTALL_HINT,
+        )
+    visibility = "--public" if public else "--private"
+    cmd = [
+        "gh",
+        "repo",
+        "create",
+        name,
+        visibility,
+        "--source",
+        str(project_dir),
+        "--push",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return GhCreateResult(ok=False, error=(result.stderr or result.stdout).strip())
+    # ``gh repo create`` prints the URL to stdout on success.
+    return GhCreateResult(ok=True, repo_url=result.stdout.strip() or None)
