@@ -576,17 +576,30 @@ def cmd_memory(session: ReplSession, args: str) -> None:
 
     Usage from the TUI:
 
-        /memory                  → list entries
-        /memory list             → same
-        /memory show <topic>     → print one entry
-        /memory delete <file>    → trash an entry (with confirm)
+        /memory                            → list entries
+        /memory list                       → same
+        /memory show <topic>               → print one entry
+        /memory delete <file>              → trash an entry (with confirm)
+        /memory curate [--apply]           → run the curator (dry-run / commit)
+        /memory archive [--month YYYY-MM]  → list archived entries
+        /memory diff <from> <to>           → show changes in a window
+                                             (timestamps must be single
+                                             tokens — use ``1h_ago`` for
+                                             a relative form)
 
     ``/memory add`` is intentionally NOT exposed here because the
     underlying CLI variant opens an editor (``click.edit``) which
     won't reach the TUI bridge. Use ``urika memory add`` from a
     shell for now.
     """
-    from urika.cli.memory import memory_list, memory_show, memory_delete
+    from urika.cli.memory import (
+        memory_archive,
+        memory_curate,
+        memory_delete,
+        memory_diff,
+        memory_list,
+        memory_show,
+    )
 
     project = session.project_name if session.has_project else None
     if project is None:
@@ -617,9 +630,51 @@ def cmd_memory(session: ReplSession, args: str) -> None:
         ctx.invoke(memory_delete, project=project, filename=parts[1], force=False)
         return
 
+    if sub == "curate":
+        # `--apply` may sit anywhere after the sub-action.
+        apply_flag = "--apply" in parts[1:]
+        ctx = click.Context(memory_curate)
+        ctx.invoke(memory_curate, project=project, apply_changes=apply_flag)
+        return
+
+    if sub == "archive":
+        # Optional ``--month YYYY-MM``. Everything else is ignored.
+        month = None
+        tail = parts[1:]
+        if "--month" in tail:
+            i = tail.index("--month")
+            if i + 1 < len(tail):
+                month = tail[i + 1]
+        ctx = click.Context(memory_archive)
+        ctx.invoke(memory_archive, project=project, month=month, json_output=False)
+        return
+
+    if sub == "diff":
+        # Two-token UX: ``/memory diff <from> <to>``. Multi-word relative
+        # forms must be written with an underscore (``1h_ago``) — the
+        # CLI parser strips it back to a space.
+        tail = parts[1:]
+        if len(tail) < 2:
+            click.echo(
+                "Usage: /memory diff <from> <to>  (e.g. '1h_ago now' or ISO timestamps)"
+            )
+            return
+        from_ts, to_ts = tail[0], tail[1]
+        ctx = click.Context(memory_diff)
+        ctx.invoke(
+            memory_diff,
+            project=project,
+            from_ts=from_ts,
+            to_ts=to_ts,
+            json_output=False,
+        )
+        return
+
     click.echo(
         f"Unknown memory subcommand: {sub!r}. "
-        f"Try /memory list, /memory show <topic>, or /memory delete <file>."
+        f"Try /memory list, /memory show <topic>, /memory delete <file>, "
+        f"/memory curate [--apply], /memory archive [--month YYYY-MM], "
+        f"or /memory diff <from> <to>."
     )
 
 

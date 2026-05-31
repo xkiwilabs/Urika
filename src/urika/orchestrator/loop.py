@@ -62,6 +62,54 @@ from urika.orchestrator.pause import read_and_clear_flag
 logger = logging.getLogger(__name__)
 
 
+async def _maybe_run_curator(
+    project_dir: Path, runner, session_id: str | None
+) -> str | None:
+    """If the session-scoped curator flag is set, run the curator in
+    dry-run, mark this session done, and return a notice the
+    orchestrator surfaces to the agent's text output. Returns None when
+    nothing to do.
+
+    Once-per-session by design (Decision 4) — the session_id-keyed flag
+    in ``<project>/memory/.curator-flag.json`` is cleared after the run,
+    so the curator does not re-fire for the same over-budget state in
+    this session. The curator runs in DRY-RUN only here; nothing is
+    applied without ``urika memory curate --apply`` (T2.8) or the
+    dashboard "Apply" button (T2.10).
+    """
+    from urika.core import project_memory
+    from urika.core import memory_curator as _curator_mod
+
+    if not session_id or not project_memory.is_curator_due(project_dir, session_id):
+        return None
+    try:
+        # Re-resolve attribute at call time so tests can monkeypatch
+        # ``urika.core.memory_curator.run_curator`` after import.
+        result = await _curator_mod.run_curator(project_dir, runner=runner, apply=False)
+    except Exception as exc:  # noqa: BLE001 — curator failure must not break the turn
+        project_memory.mark_curator_ran(project_dir, session_id)
+        return f"Memory curator: failed to run ({exc}). Skipping."
+
+    project_memory.mark_curator_ran(project_dir, session_id)
+    if result.error:
+        return f"Memory curator: failed ({result.error}). Skipping."
+    if not result.decisions:
+        return "Memory curator: ran (no changes suggested)."
+
+    n = len(result.decisions)
+    lines = [
+        f"Memory curator: {n} suggestion(s). "
+        "Run `urika memory curate --apply` to commit."
+    ]
+    for d in result.decisions[:5]:
+        action = d.get("action", "?")
+        reason = (d.get("reason") or "").strip().replace("\n", " ")
+        lines.append(f"  - {action}: {reason}")
+    if n > 5:
+        lines.append(f"  ... and {n - 5} more.")
+    return "\n".join(lines)
+
+
 async def run_experiment(
     project_dir: Path,
     experiment_id: str,
@@ -272,6 +320,27 @@ async def run_experiment(
                 return _usage_dict("failed", turn, error=_ep_error)
 
         progress("turn", f"Turn {turn}/{max_turns}")
+
+        # v0.5.0 Task 2.7: pre-turn memory-curator dry-run. When the
+        # soft cap was crossed during a prior memory injection this
+        # session, ``is_curator_due`` returns True; we run the curator
+        # in dry-run, surface its proposed decisions via the
+        # established progress/warning channel (which the CLI prints
+        # as a warning AND tees into run.log for the dashboard SSE
+        # feed), then clear the flag so we don't re-fire this session.
+        # The curator NEVER auto-applies — the user reviews via
+        # ``urika memory curate --apply`` or the dashboard.
+        try:
+            _curator_notice = await _maybe_run_curator(
+                project_dir, runner, session_id=experiment_id
+            )
+            if _curator_notice:
+                progress("warning", _curator_notice)
+        except Exception as exc:  # noqa: BLE001 — never break the turn over the curator
+            logger.warning(
+                "Pre-turn curator hook failed: %s: %s", type(exc).__name__, exc
+            )
+
         try:
             # --- planning_agent (optional) ---
             plan_role = registry.get("planning_agent")
@@ -720,26 +789,22 @@ async def run_experiment(
                             project_dir=project_dir,
                             experiment_id=experiment_id,
                         )
-                        # Inject the rolling advisor-history summary so
-                        # the criteria-review advisor sees what's been
-                        # discussed before deciding whether to raise the
-                        # bar — same context the other advisor paths get.
+                        # Inject project memory + rolling advisor-history
+                        # summary so the criteria-review advisor sees
+                        # what's been discussed before deciding whether
+                        # to raise the bar — shared ``format_advisor_context``
+                        # surface, same heading as planning_agent.
                         review_input = f"{eval_result.text_output}\n\n{review_prompt}"
                         try:
-                            from urika.core.advisor_memory import (
-                                load_context_summary,
+                            from urika.agents.roles.advisor_agent import (
+                                format_advisor_context,
                             )
 
-                            _ctx = load_context_summary(project_dir)
-                            if _ctx:
-                                review_input = (
-                                    f"## Research Context (from previous sessions)\n\n"
-                                    f"{_ctx}\n\n---\n\n{review_input}"
-                                )
+                            _ctx_block = format_advisor_context(project_dir)
+                            if _ctx_block:
+                                review_input = f"{_ctx_block}{review_input}"
                         except Exception as exc:
-                            logger.warning(
-                                "Advisor context summary unavailable: %s", exc
-                            )
+                            logger.warning("Advisor context block unavailable: %s", exc)
                         review_result = await runner.run(
                             review_config,
                             review_input,
@@ -817,27 +882,23 @@ async def run_experiment(
                     logger.warning("User input retrieval failed: %s", exc)
 
             # Pass evaluator output + any user input to advisor.
-            # Inject the rolling advisor-history summary so the agent
-            # sees what it (and the user) has been discussing across
-            # sessions — same context the standalone advisor and the
-            # meta-loop already get. Closes the inconsistency where
-            # the per-turn end-of-loop advisor was the only path
-            # without explicit history injection.
+            # Inject project memory + the rolling advisor-history summary
+            # via the shared ``format_advisor_context`` helper (mirrors
+            # planning_agent's per-turn surface — same heading text, same
+            # underlying loader, so memory writes are symmetrically read
+            # by both agents). Closes the read-side loop for advisor.
             advisor_prompt = eval_result.text_output
             try:
-                from urika.core.advisor_memory import load_context_summary
+                from urika.agents.roles.advisor_agent import (
+                    format_advisor_context,
+                )
 
-                _ctx_summary = load_context_summary(project_dir)
-                if _ctx_summary:
-                    advisor_prompt = (
-                        f"## Research Context (from previous sessions)\n\n"
-                        f"{_ctx_summary}\n\n"
-                        f"---\n\n"
-                        f"{advisor_prompt}"
-                    )
+                _ctx_block = format_advisor_context(project_dir)
+                if _ctx_block:
+                    advisor_prompt = f"{_ctx_block}{advisor_prompt}"
             except Exception as exc:
-                # Summary is best-effort — never fail the turn over it.
-                logger.warning("Advisor context summary unavailable: %s", exc)
+                # Memory + summary are best-effort — never fail the turn over it.
+                logger.warning("Advisor context block unavailable: %s", exc)
             if user_inject:
                 advisor_prompt = f"User instruction: {user_inject}\n\n{advisor_prompt}"
 

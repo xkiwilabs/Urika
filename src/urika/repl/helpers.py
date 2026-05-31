@@ -99,6 +99,10 @@ def _run_single_agent(
         # prompt. planning_agent gets project-memory + advisor context
         # summary; report/presentation/finalizer get the audience
         # style block. Other roles get the prompt as-is.
+        # v0.5 T1.2: report_agent also gets project-memory + advisor
+        # context summary via ``format_report_context`` so user
+        # preferences and prior decisions flow into experiment and
+        # project-level narratives written through the REPL/TUI.
         agent_user_input = prompt
         if agent_name == "planning_agent":
             from urika.agents.roles.planning_agent import (
@@ -110,6 +114,18 @@ def _run_single_agent(
             from urika.agents.audience import format_audience_context
 
             agent_user_input = format_audience_context(audience) + prompt
+            if agent_name == "report_agent":
+                try:
+                    from urika.agents.roles.report_agent import (
+                        format_report_context,
+                    )
+
+                    _ctx_block = format_report_context(session.project_path)
+                    if _ctx_block:
+                        agent_user_input = f"{_ctx_block}{agent_user_input}"
+                except Exception:
+                    # Memory is best-effort — never fail the call over it.
+                    pass
 
         session_info = {
             "project": session.project_name or "",

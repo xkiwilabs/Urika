@@ -101,10 +101,30 @@ async def _generate_reports(
                     experiment_id=experiment_id,
                     audience=audience,
                 )
+                # Inject project memory + the rolling advisor-history
+                # summary via the shared ``format_report_context``
+                # helper (mirrors planning_agent and advisor_agent —
+                # same heading text, same underlying loader, so memory
+                # writes are symmetrically read by all three roles).
+                # Closes the read-side loop for report.
+                report_prompt = (
+                    format_audience_context(audience)
+                    + f"Write a detailed narrative report for experiment {experiment_id}."
+                )
+                try:
+                    from urika.agents.roles.report_agent import (
+                        format_report_context,
+                    )
+
+                    _ctx_block = format_report_context(project_dir)
+                    if _ctx_block:
+                        report_prompt = f"{_ctx_block}{report_prompt}"
+                except Exception as exc:
+                    # Memory + summary are best-effort — never fail the turn over it.
+                    logger.warning("Report context block unavailable: %s", exc)
                 result = await runner.run(
                     config,
-                    format_audience_context(audience)
-                    + f"Write a detailed narrative report for experiment {experiment_id}.",
+                    report_prompt,
                     on_message=on_message,
                 )
                 _track(result)
@@ -350,9 +370,21 @@ async def _async_generate_summary(
     # README summary doesn't take an audience param — default to
     # ``standard`` so the audience-context block is non-empty and the
     # system prompt stays byte-stable across calls.
-    result = await runner.run(
-        config, format_audience_context("standard") + prompt, on_message=on_message
-    )
+    summary_prompt = format_audience_context("standard") + prompt
+    # Inject project memory + the rolling advisor-history summary via
+    # the shared ``format_report_context`` helper (mirrors planning
+    # and advisor — same heading, same loader). Even the short README
+    # paragraph should respect captured audience preferences and
+    # banned terminology.
+    try:
+        from urika.agents.roles.report_agent import format_report_context
+
+        _ctx_block = format_report_context(project_dir)
+        if _ctx_block:
+            summary_prompt = f"{_ctx_block}{summary_prompt}"
+    except Exception as exc:
+        logger.warning("Report context block unavailable: %s", exc)
+    result = await runner.run(config, summary_prompt, on_message=on_message)
     _result_usage: dict[str, int | float] = {
         "tokens_in": result.tokens_in,
         "tokens_out": result.tokens_out,

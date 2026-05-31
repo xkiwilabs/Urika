@@ -1,0 +1,229 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import modal %}
+
+{% block title %}Memory · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Memory{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Memory</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .page-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-bottom: 1rem; }
+    .form-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+    .form-row label { font-weight: 600; }
+    .form-row input,
+    .form-row select,
+    .form-row textarea { width: 100%; font: inherit; padding: 0.4rem; }
+    .form-row textarea { min-height: 6rem; resize: vertical; }
+    .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+    .curator-panel { margin-bottom: 1.5rem; padding: 1rem; border: 1px solid var(--border, #ccc); border-radius: 4px; }
+    .curator-panel header h2 { margin: 0 0 0.25rem; font-size: 1.05rem; }
+    .curator-panel .actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .curator-decisions { list-style: none; padding: 0; margin: 0.75rem 0 0; }
+    .curator-decisions li { padding: 0.4rem 0; border-top: 1px dashed var(--border, #ddd); display: flex; gap: 0.5rem; align-items: baseline; }
+    .curator-error { color: var(--danger, #b00); margin-top: 0.5rem; }
+    .archive-toggle { margin-bottom: 1rem; }
+    .archived-block { margin-top: 2rem; }
+    .archived-block h2 { font-size: 1.05rem; margin: 0 0 0.5rem; }
+    .archived-block .list-item { opacity: 0.65; }
+    .month-chip { display: inline-block; padding: 0.1rem 0.4rem; border: 1px solid var(--border, #ccc); border-radius: 3px; font-size: 0.8rem; margin-right: 0.25rem; }
+    .auto-capture-toggle { margin-bottom: 0.75rem; }
+    .auto-capture-toggle label { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 400; }
+  </style>
+
+  <section
+    class="curator-panel"
+    x-data="{ decisions: [], busy: false, error: '', applied: false, ran: false }"
+  >
+    <header>
+      <h2>Curator</h2>
+      <p class="text-muted">Dry-run by default. Review proposed merge / archive / flag decisions before applying.</p>
+    </header>
+    <div class="actions">
+      <button
+        type="button"
+        class="btn btn--ghost"
+        :disabled="busy"
+        @click="busy = true; error = ''; applied = false; ran = false;
+                fetch('/api/projects/{{ project.name }}/memory/curate', {
+                  method: 'POST',
+                  headers: { 'Origin': location.origin },
+                })
+                .then(r => r.json())
+                .then(d => { decisions = d.decisions || []; error = d.error || ''; applied = !!d.applied; ran = true; busy = false; })
+                .catch(e => { error = 'Request failed: ' + e; busy = false; })"
+      >Curate (dry-run)</button>
+      <button
+        type="button"
+        class="btn btn--primary"
+        :disabled="busy || decisions.length === 0"
+        @click="if (!confirm('Apply ' + decisions.length + ' decision(s) to the memory directory?')) return;
+                busy = true; error = ''; applied = false;
+                fetch('/api/projects/{{ project.name }}/memory/curate?apply=true', {
+                  method: 'POST',
+                  headers: { 'Origin': location.origin },
+                })
+                .then(r => r.json())
+                .then(d => {
+                  applied = !!d.applied;
+                  error = d.error || '';
+                  decisions = [];
+                  busy = false;
+                  if (d.applied && !d.error) window.location.reload();
+                })
+                .catch(e => { error = 'Apply failed: ' + e; busy = false; })"
+      >Apply</button>
+      <span class="text-muted" x-show="busy">working…</span>
+    </div>
+    <p class="curator-error" x-show="error" x-text="'Curator error: ' + error"></p>
+    <p class="text-muted" x-show="ran && !error && decisions.length === 0">
+      Curator: no changes suggested.
+    </p>
+    <ul class="curator-decisions" x-show="decisions.length > 0">
+      <template x-for="d in decisions" :key="JSON.stringify(d)">
+        <li>
+          <span class="tag" x-text="d.action"></span>
+          <span x-text="(d.filename || d.into || '') + (d.reason ? ' — ' + d.reason : '')"></span>
+        </li>
+      </template>
+    </ul>
+  </section>
+
+  <div class="auto-capture-toggle">
+    <label>
+      <input
+        type="checkbox"
+        name="enabled"
+        value="true"
+        hx-post="/api/projects/{{ project.name }}/memory/auto_capture"
+        hx-vals='js:{enabled: event.target.checked ? "true" : "false"}'
+        hx-trigger="change"
+        hx-swap="none"
+        {% if auto_capture %}checked{% endif %}
+      >
+      Auto-capture from agent turns
+    </label>
+  </div>
+
+  <div class="archive-toggle">
+    <a
+      href="?show_archived={{ 'false' if show_archived else 'true' }}"
+      class="toggle-archive"
+    >{{ 'Hide archived' if show_archived else 'Show archived' }}</a>
+  </div>
+
+  <div class="page-actions">
+    <button
+      class="btn btn--primary"
+      @click="$dispatch('open-modal', { id: 'add-memory' })"
+      type="button"
+    >+ Add an entry</button>
+  </div>
+
+  {% if entries %}
+    <ul class="list">
+      {% for entry in entries %}
+        <li class="list-item">
+          <div class="list-item-row">
+            <div class="list-item-main">
+              <div class="list-item-title">{{ entry.name }}</div>
+              {% if entry.description %}
+                <div class="list-item-subtitle text-muted">{{ entry.description }}</div>
+              {% endif %}
+              {% if entry.body_preview %}
+                <div class="list-item-subtitle">{{ entry.body_preview }}</div>
+              {% endif %}
+            </div>
+            <div class="list-item-meta">
+              <span class="tag">{{ entry.type }}</span>
+              <button
+                type="button"
+                class="btn btn--ghost btn--small"
+                hx-delete="/api/projects/{{ project.name }}/memory/{{ entry.filename }}"
+                hx-confirm="Delete this memory entry?"
+                hx-target="closest .list-item"
+                hx-swap="outerHTML"
+              >Delete</button>
+            </div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <p>No memory entries yet. Click <strong>+ Add an entry</strong> above to capture a preference, instruction, decision, or reference that should persist across sessions.</p>
+    </div>
+  {% endif %}
+
+  {% if show_archived and archived %}
+    <section class="archived-block">
+      <h2>Archived</h2>
+      <ul class="list">
+        {% for entry in archived %}
+          <li class="list-item archived">
+            <div class="list-item-row">
+              <div class="list-item-main">
+                <div class="list-item-title">{{ entry.name }}</div>
+                {% if entry.description %}
+                  <div class="list-item-subtitle text-muted">{{ entry.description }}</div>
+                {% endif %}
+                {% if entry.body_preview %}
+                  <div class="list-item-subtitle">{{ entry.body_preview }}</div>
+                {% endif %}
+              </div>
+              <div class="list-item-meta">
+                <span class="tag">{{ entry.type }}</span>
+                <span class="month-chip">{{ entry.month }}</span>
+              </div>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% call modal('add-memory', 'Add a memory entry') %}
+    {# On success the API returns HX-Redirect → page reloads. On 4xx/5xx
+       HTMX does not swap by default, so we surface the response body
+       into ``#add-memory-feedback`` via ``hx-on::response-error``. #}
+    <form
+      hx-post="/api/projects/{{ project.name }}/memory"
+      hx-on::response-error="document.getElementById('add-memory-feedback').textContent = 'Save failed: ' + (event.detail.xhr.responseText || event.detail.xhr.statusText || 'unknown error');"
+    >
+      <div class="form-row">
+        <label for="am-type">Type</label>
+        <select id="am-type" name="mem_type" required>
+          <option value="user">user — preference about the person / project</option>
+          <option value="feedback">feedback — correction the user gave you</option>
+          <option value="instruction">instruction — standing rule for the agents</option>
+          <option value="decision">decision — design choice already made</option>
+          <option value="reference">reference — pointer to docs / data</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="am-description">Description <span class="text-muted">(short label)</span></label>
+        <input id="am-description" name="description" type="text"
+               maxlength="80"
+               placeholder="e.g. prefers concise output">
+      </div>
+      <div class="form-row">
+        <label for="am-body">Body</label>
+        <textarea id="am-body" name="body" required
+                  placeholder="The actual memory content the agents will see."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Save entry</button>
+        <span id="add-memory-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
+{% endblock %}

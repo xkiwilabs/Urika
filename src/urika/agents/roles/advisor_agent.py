@@ -25,6 +25,32 @@ def get_role() -> AgentRole:
     )
 
 
+def format_advisor_context(project_dir: Path) -> str:
+    """Build the per-turn user-message prefix for advisor_agent.
+
+    Mirrors ``planning_agent.format_planning_context``: returns project
+    memory (MEMORY.md) + the rolling advisor context summary, formatted
+    under the same ``## Project Memory & Prior Context`` heading, or an
+    empty string when neither is present.
+
+    The advisor is the strongest source of design-rationale capture into
+    project memory (user preferences, rejected approaches, key insights),
+    so it must also READ what it — or other agents — wrote in prior
+    sessions. Closes the read-side loop that planning_agent already had.
+
+    Like its planning sibling this helper delivers the block via the
+    per-turn user message rather than the system prompt, preserving the
+    byte-stable system prompt that the Anthropic prompt cache keys on.
+    """
+    # Delegate to the planning helper: identical project-memory +
+    # context-summary loading logic, identical heading text. Sharing the
+    # implementation here means any future tweak (e.g. truncation policy,
+    # new memory section) lands in one place and both roles inherit it.
+    from urika.agents.roles.planning_agent import format_planning_context
+
+    return format_planning_context(project_dir)
+
+
 def build_config(
     project_dir: Path, *, experiment_id: str = "", **kwargs: object
 ) -> AgentConfig:

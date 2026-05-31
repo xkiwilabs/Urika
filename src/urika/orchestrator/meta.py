@@ -321,14 +321,19 @@ async def _determine_next(
 
     context_parts = []
 
-    # Inject rolling context summary from previous advisor sessions
-    from urika.core.advisor_memory import load_context_summary
+    # Inject project memory + rolling advisor-context summary via the
+    # shared ``format_advisor_context`` helper. Mirrors the planning
+    # agent's per-turn surface (identical heading text + loader) so a
+    # memory entry written by one agent is symmetrically read by the
+    # other. Closes the meta-loop advisor's read-side memory loop.
+    from urika.agents.roles.advisor_agent import format_advisor_context
 
-    context_summary = load_context_summary(project_dir)
-    if context_summary:
-        context_parts.append(
-            f"## Research Context (from previous sessions)\n\n{context_summary}"
-        )
+    advisor_ctx = format_advisor_context(project_dir)
+    if advisor_ctx:
+        # format_advisor_context already emits a trailing "\n\n---\n\n";
+        # rstrip it here so it joins cleanly with the rest of the
+        # newline-separated context_parts below.
+        context_parts.append(advisor_ctx.rstrip())
 
     # Project info
     toml_path = project_dir / "urika.toml"

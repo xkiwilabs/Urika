@@ -14,21 +14,39 @@ Curator (Phase 3) defers to v0.5.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date as _date
+from datetime import datetime as _datetime
+from datetime import timezone as _timezone
 from pathlib import Path
+
+from urika.core.atomic_write import write_json_atomic
 
 logger = logging.getLogger(__name__)
 
 
 _TYPES = ("user", "feedback", "instruction", "decision", "reference")
-# Soft cap: when injected memory exceeds this byte count, agents
-# still see it but a warning fires. Hard cap is 4× this in
-# ``load_project_memory`` — past which the inject is truncated and
-# an explicit "[memory truncated …]" line appears.
-_SOFT_CAP_BYTES = 5_000
-_HARD_CAP_BYTES = 20_000
+
+# v0.5.0 token-budget caps (Decision 2 of the memory-deepening plan).
+# Token estimate uses ``estimate_tokens`` (bytes / 3.5) — biased UP so
+# the curator fires slightly early rather than late on non-ASCII text.
+SOFT_CAP_TOKENS = 5_000
+HARD_CAP_TOKENS = 10_000
+SOFT_CAP_ENTRIES = 30
+
+
+def estimate_tokens(text: str) -> int:
+    """Conservative byte-heuristic token count (bytes / 3.5).
+
+    Biases the estimate UP so non-Latin scripts and code don't sneak
+    under the cap. The failure mode is curator-fires-slightly-early,
+    which is harmless. See dev/plans/2026-05-17-v0.5.0-memory-deepening.md
+    Decision 2.
+    """
+    return int(len(text.encode("utf-8")) / 3.5)
+
 
 _MEMORY_RE = re.compile(
     r"<memory\s+type=[\"'](?P<type>[^\"']+)[\"']\s*>(?P<body>.*?)</memory>",
@@ -126,52 +144,180 @@ def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
     return meta, body
 
 
-def load_project_memory(project_dir: Path) -> str:
+_PREAMBLE = (
+    "The following persistent project memory shapes how you should "
+    "approach this project. Honor these preferences and decisions "
+    "unless the user explicitly overrides them in this session."
+)
+_HEADER_NORMAL = "## Project Memory"
+_HEADER_OVER_BUDGET = "## Project Memory (over budget — run urika memory curate)"
+
+
+def _render_entry(project_dir: Path, entry: dict[str, str]) -> str | None:
+    """Render one memory entry as the markdown block it occupies in
+    the injection. Returns None if the file can't be read.
+    """
+    d = memory_dir(project_dir) / entry["filename"]
+    try:
+        text = d.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Could not read memory file %s: %s", d, exc)
+        return None
+    _meta, body = _split_frontmatter(text)
+    chunk = [f"### {entry['type']}: {entry['name']}"]
+    if entry["description"]:
+        chunk.append(f"_{entry['description']}_")
+    chunk.append("")
+    chunk.append(body.strip())
+    chunk.append("")
+    return "\n".join(chunk)
+
+
+def load_project_memory(project_dir: Path, session_id: str | None = None) -> str:
     """Read every memory file, return a system-prompt-ready block.
 
-    Empty string when memory dir is missing or empty. Soft-capped at
-    5 KB (warns); hard-capped at 20 KB (truncates + appends a
-    truncation marker).
+    Empty string when memory dir is missing or empty. When the total
+    rendered block exceeds :data:`HARD_CAP_TOKENS`, oldest entries
+    (by mtime) are dropped until the result fits and the section
+    header is replaced with an "over budget" marker telling the user
+    to run ``urika memory curate``.
+
+    When ``session_id`` is provided AND the soft cap is exceeded
+    (either by tokens or entry count), flag the session as
+    "curator-due" so the orchestrator can run the curator at the
+    next strategic checkpoint (see :func:`is_curator_due` /
+    :func:`mark_curator_ran`). When ``session_id`` is ``None``
+    (the default for existing callers) the flag file is never
+    touched.
     """
     entries = list_entries(project_dir)
     if not entries:
         return ""
-    parts: list[str] = ["## Project Memory", ""]
-    parts.append(
-        "The following persistent project memory shapes how you should "
-        "approach this project. Honor these preferences and decisions "
-        "unless the user explicitly overrides them in this session."
-    )
-    parts.append("")
-    for e in entries:
-        d = memory_dir(project_dir) / e["filename"]
-        try:
-            text = d.read_text(encoding="utf-8")
-        except OSError as exc:
-            logger.warning("Could not read memory file %s: %s", d, exc)
+
+    # Pair each entry with its rendered body + mtime so we can drop
+    # oldest-first when over budget.
+    rendered: list[tuple[float, int, str]] = []  # (mtime, orig_idx, text)
+    for idx, e in enumerate(entries):
+        chunk = _render_entry(project_dir, e)
+        if chunk is None:
             continue
-        _meta, body = _split_frontmatter(text)
-        parts.append(f"### {e['type']}: {e['name']}")
-        if e["description"]:
-            parts.append(f"_{e['description']}_")
-        parts.append("")
-        parts.append(body.strip())
-        parts.append("")
-    blob = "\n".join(parts).rstrip() + "\n"
-    if len(blob) > _SOFT_CAP_BYTES:
-        logger.warning(
-            "Project memory exceeds soft cap (%d > %d bytes) — "
-            "consider running `urika memory list` and pruning",
-            len(blob),
-            _SOFT_CAP_BYTES,
-        )
-    if len(blob) > _HARD_CAP_BYTES:
-        truncated = blob[:_HARD_CAP_BYTES]
-        return (
-            truncated
-            + "\n\n[memory truncated at hard cap — run `urika memory list` to prune]\n"
-        )
-    return blob
+        path = memory_dir(project_dir) / e["filename"]
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        rendered.append((mtime, idx, chunk))
+
+    if not rendered:
+        return ""
+
+    # Helper to assemble the final blob from a chunks-in-original-order
+    # sequence, with the chosen header.
+    def _assemble(chunks_in_order: list[str], header: str) -> str:
+        parts = [header, "", _PREAMBLE, ""]
+        parts.extend(chunks_in_order)
+        return "\n".join(parts).rstrip() + "\n"
+
+    full_blob = _assemble([c for _, _, c in rendered], _HEADER_NORMAL)
+    full_tokens = estimate_tokens(full_blob)
+    soft_exceeded = full_tokens > SOFT_CAP_TOKENS or len(rendered) > SOFT_CAP_ENTRIES
+
+    # Signal curator-due BEFORE the early-return path so the flag is
+    # set even when we're still under the hard cap.
+    if session_id is not None and soft_exceeded:
+        _signal_curator_due(project_dir, session_id)
+
+    if full_tokens <= HARD_CAP_TOKENS:
+        if soft_exceeded:
+            logger.warning(
+                "Project memory exceeds soft cap (%d > %d tokens or %d > %d entries)"
+                " — curator should run",
+                full_tokens,
+                SOFT_CAP_TOKENS,
+                len(rendered),
+                SOFT_CAP_ENTRIES,
+            )
+        return full_blob
+
+    # Over hard cap: drop oldest entries (smallest mtime) until under.
+    # Sort newest-first; take entries while accumulated token count fits.
+    by_newest = sorted(rendered, key=lambda r: r[0], reverse=True)
+    kept: list[tuple[float, int, str]] = []
+    for mtime, idx, chunk in by_newest:
+        candidate = kept + [(mtime, idx, chunk)]
+        # Re-assemble in original ordering to estimate accurately.
+        ordered = [c for _, _, c in sorted(candidate, key=lambda r: r[1])]
+        if estimate_tokens(_assemble(ordered, _HEADER_OVER_BUDGET)) > HARD_CAP_TOKENS:
+            break
+        kept = candidate
+
+    kept_in_order = [c for _, _, c in sorted(kept, key=lambda r: r[1])]
+    logger.warning(
+        "Project memory exceeds hard cap (%d > %d tokens) — "
+        "dropped %d oldest entries; run `urika memory curate`",
+        full_tokens,
+        HARD_CAP_TOKENS,
+        len(rendered) - len(kept),
+    )
+    return _assemble(kept_in_order, _HEADER_OVER_BUDGET)
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped curator-due flag (v0.5.0 Task 2.3)
+#
+# When ``load_project_memory`` is called with a ``session_id`` and the
+# soft cap is crossed, the session is recorded in
+# ``<project>/memory/.curator-flag.json`` under a ``pending_sessions``
+# list. The orchestrator queries this with :func:`is_curator_due`
+# before each strategic checkpoint, fires the curator agent, then
+# clears the flag with :func:`mark_curator_ran`. Once-per-session.
+# ---------------------------------------------------------------------------
+_FLAG_FILENAME = ".curator-flag.json"
+
+
+def _flag_path(project_dir: Path) -> Path:
+    return memory_dir(project_dir) / _FLAG_FILENAME
+
+
+def _read_flag(project_dir: Path) -> dict:
+    p = _flag_path(project_dir)
+    if not p.is_file():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_flag(project_dir: Path, data: dict) -> None:
+    write_json_atomic(_flag_path(project_dir), data)
+
+
+def is_curator_due(project_dir: Path, session_id: str) -> bool:
+    """True if the curator should run for this session (soft cap was
+    crossed AND it hasn't run in this session yet).
+    """
+    flag = _read_flag(project_dir)
+    return session_id in set(flag.get("pending_sessions", []))
+
+
+def mark_curator_ran(project_dir: Path, session_id: str) -> None:
+    """Clear the curator-due flag for ``session_id`` after the curator
+    has executed in that session.
+    """
+    flag = _read_flag(project_dir)
+    pending = set(flag.get("pending_sessions", []))
+    pending.discard(session_id)
+    flag["pending_sessions"] = sorted(pending)
+    _write_flag(project_dir, flag)
+
+
+def _signal_curator_due(project_dir: Path, session_id: str) -> None:
+    flag = _read_flag(project_dir)
+    pending = set(flag.get("pending_sessions", []))
+    pending.add(session_id)
+    flag["pending_sessions"] = sorted(pending)
+    _write_flag(project_dir, flag)
 
 
 def save_entry(
@@ -205,6 +351,138 @@ def save_entry(
     path.write_text(frontmatter + body.strip() + "\n", encoding="utf-8")
     rebuild_index(project_dir)
     return path
+
+
+def archive_entry(project_dir: Path, filename: str, _skip_index: bool = False) -> Path:
+    """Move a live memory entry to ``memory/archive/<YYYY-MM>/<filename>``.
+
+    Returns the destination path. Idempotent in spirit: if ``filename``
+    doesn't exist under ``memory/`` we return the (non-existent) source
+    path without raising — the curator's apply loop relies on this to
+    swallow stale ``archive`` decisions on entries that were already
+    merged-and-archived earlier in the same batch. If a same-named file
+    already exists in the target month, the new copy overwrites it
+    (``Path.replace`` semantics — atomic on the same filesystem).
+
+    ``_skip_index`` is a private optimization for batch callers (e.g.
+    the curator's ``_apply_decisions`` loop) that rebuild the index
+    themselves at the end — avoids N+1 ``MEMORY.md`` rewrites.
+    """
+    src = memory_dir(project_dir) / filename
+    if not src.is_file():
+        return src
+    yyyy_mm = _datetime.now(_timezone.utc).strftime("%Y-%m")
+    archive_root = memory_dir(project_dir) / "archive" / yyyy_mm
+    archive_root.mkdir(parents=True, exist_ok=True)
+    dst = archive_root / filename
+    src.replace(dst)  # atomic on same filesystem
+    if not _skip_index:
+        rebuild_index(project_dir)
+    return dst
+
+
+def list_archive(project_dir: Path, month: str | None = None) -> list[dict[str, str]]:
+    """List archived entries, optionally filtered to one YYYY-MM month.
+
+    Returns a list of dicts with keys: filename, month, type, name,
+    description, body_preview — matching the shape of :func:`list_entries`
+    but with an extra ``month`` field. Empty list when the archive root
+    is missing.
+    """
+    root = memory_dir(project_dir) / "archive"
+    if not root.is_dir():
+        return []
+    out: list[dict[str, str]] = []
+    if month:
+        months = [month]
+    else:
+        months = sorted(p.name for p in root.iterdir() if p.is_dir())
+    for m in months:
+        mdir = root / m
+        if not mdir.is_dir():
+            continue
+        for p in sorted(mdir.iterdir()):
+            if p.suffix != ".md" or not p.is_file():
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            fm, body = _split_frontmatter(text)
+            body_preview = body.strip()[:120].replace("\n", " ")
+            out.append(
+                {
+                    "filename": p.name,
+                    "month": m,
+                    "type": fm.get("type", _infer_type_from_filename(p.name)),
+                    "name": fm.get("name", p.stem),
+                    "description": fm.get("description", ""),
+                    "body_preview": body_preview,
+                }
+            )
+    return out
+
+
+def diff_between(
+    project_dir: Path,
+    from_ts: _datetime,
+    to_ts: _datetime,
+) -> dict[str, list[dict[str, str]]]:
+    """Classify memory entries by mtime between two timestamps.
+
+    Returns ``{'added': [...], 'archived': [...], 'trashed': [...]}``
+    where each list contains dicts with ``filename`` (and ``month`` for
+    archived entries). ``added`` = files in the live memory dir with
+    mtime in window. ``archived`` = files in ``archive/<YYYY-MM>/``.
+    ``trashed`` = files in ``.trash/``.
+
+    NOTE: a single mtime per file means we have NO notion of prior state
+    for in-place rewrites — those are silently classified as ``added``
+    if re-touched in window, OR omitted if untouched. Per-edit history
+    is a v0.6.0+ concern (GitHub auto-backup). See Decision 3 of the
+    v0.5.0 plan.
+    """
+    md = memory_dir(project_dir)
+    added: list[dict[str, str]] = []
+    archived: list[dict[str, str]] = []
+    trashed: list[dict[str, str]] = []
+
+    lo = from_ts.timestamp()
+    hi = to_ts.timestamp()
+
+    def _in_window(p: Path) -> bool:
+        try:
+            st = p.stat().st_mtime
+        except OSError:
+            return False
+        return lo <= st <= hi
+
+    if md.is_dir():
+        for p in md.iterdir():
+            if (
+                p.is_file()
+                and p.suffix == ".md"
+                and p.name != "MEMORY.md"
+                and _in_window(p)
+            ):
+                added.append({"filename": p.name})
+
+    archive_root = md / "archive"
+    if archive_root.is_dir():
+        for sub in archive_root.iterdir():
+            if not sub.is_dir():
+                continue
+            for p in sub.iterdir():
+                if p.is_file() and p.suffix == ".md" and _in_window(p):
+                    archived.append({"filename": p.name, "month": sub.name})
+
+    trash_root = md / ".trash"
+    if trash_root.is_dir():
+        for p in trash_root.iterdir():
+            if p.is_file() and p.suffix == ".md" and _in_window(p):
+                trashed.append({"filename": p.name})
+
+    return {"added": added, "archived": archived, "trashed": trashed}
 
 
 def delete_entry(project_dir: Path, filename: str) -> bool:

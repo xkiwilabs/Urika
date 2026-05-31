@@ -45,6 +45,9 @@
            :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/knowledge') }"
            href="/projects/{{ project.name }}/knowledge">Knowledge</a>
         <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/memory') }"
+           href="/projects/{{ project.name }}/memory">Memory</a>
+        <a class="sidebar-link"
            :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/methods') }"
            href="/projects/{{ project.name }}/methods">Methods</a>
         <a class="sidebar-link"

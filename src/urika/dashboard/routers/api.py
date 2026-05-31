@@ -683,6 +683,225 @@ async def api_session_delete(name: str, session_id: str) -> Response:
     return Response(status_code=204)
 
 
+# ─────────────────────── Project memory CRUD (v0.5.0) ────────────────
+#
+# Dashboard memory page reads/writes per-project memory entries under
+# ``<project>/memory/``. Underlying store lives at
+# ``urika.core.project_memory`` — ``save_entry`` writes + rebuilds the
+# ``MEMORY.md`` index; ``delete_entry`` trashes to ``memory/.trash/``;
+# ``list_entries`` returns ``{filename, type, name, description,
+# body_preview}`` rows. We surface those keys verbatim in the GET-list
+# response so the dashboard JS doesn't need to translate.
+#
+# Filename traversal: path-segment params from FastAPI arrive
+# URL-decoded, so ``..%2Fevil`` becomes ``../evil`` by the time we see
+# it. The validator below rejects anything with ``/``, ``\``, or ``..``
+# with 400, which keeps the trash + read paths inside ``memory/``.
+
+_MEMORY_TYPES = ("user", "feedback", "instruction", "decision", "reference")
+
+
+def _validate_memory_filename(filename: str) -> None:
+    """Reject path-traversal attempts in the memory filename segment."""
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+
+@router.get("/projects/{name}/memory")
+async def api_list_project_memory(name: str) -> JSONResponse:
+    """List every memory entry for the project.
+
+    Returns ``{"entries": [...]}`` where each entry is a dict with
+    ``filename``, ``type``, ``name``, ``description``, and
+    ``body_preview`` — the exact shape produced by
+    :func:`urika.core.project_memory.list_entries`.
+    """
+    from urika.core.project_memory import list_entries
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    entries = list_entries(summary.path)
+    return JSONResponse({"entries": entries})
+
+
+@router.get("/projects/{name}/memory/{filename}")
+async def api_get_project_memory_entry(name: str, filename: str) -> JSONResponse:
+    """Return the parsed contents of a single memory entry.
+
+    Response shape ``{"filename": str, "frontmatter": dict, "body":
+    str}``. 404 when the file is missing, 400 on traversal attempts.
+    """
+    from urika.core.project_memory import _split_frontmatter, memory_dir
+
+    _validate_memory_filename(filename)
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    path = memory_dir(summary.path) / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Unknown memory entry")
+
+    text = path.read_text(encoding="utf-8")
+    frontmatter, body = _split_frontmatter(text)
+    return JSONResponse(
+        {
+            "filename": filename,
+            "frontmatter": frontmatter,
+            "body": body,
+        }
+    )
+
+
+@router.post("/projects/{name}/memory")
+async def api_upsert_project_memory(name: str, request: Request) -> Response:
+    """Upsert a memory entry. Form fields: ``mem_type``,
+    ``description`` (optional), ``body`` (required). Re-runs
+    :func:`rebuild_index` via :func:`save_entry`.
+
+    When invoked from the dashboard's HTMX form (``HX-Request: true``
+    header), responds with ``HX-Redirect`` back to the memory page so
+    the newly-saved entry appears in the list without the raw JSON
+    being injected into the feedback span. Programmatic API callers
+    (no ``HX-Request`` header) keep the original ``201`` + JSON shape.
+    """
+    from urika.core.project_memory import save_entry
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    mem_type = (form.get("mem_type") or "").strip()
+    description = (form.get("description") or "").strip()
+    body = (form.get("body") or "").strip()
+
+    if mem_type not in _MEMORY_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"mem_type must be one of {list(_MEMORY_TYPES)}",
+        )
+    if not body:
+        raise HTTPException(status_code=422, detail="body is required")
+
+    path = save_entry(
+        summary.path,
+        mem_type=mem_type,
+        description=description,
+        body=body,
+    )
+    if request.headers.get("hx-request") == "true":
+        return Response(
+            status_code=204,
+            headers={"HX-Redirect": f"/projects/{name}/memory"},
+        )
+    return JSONResponse({"ok": True, "filename": path.name}, status_code=201)
+
+
+@router.delete("/projects/{name}/memory/{filename}")
+async def api_delete_project_memory_entry(name: str, filename: str) -> Response:
+    """Trash a memory entry. Routes through
+    :func:`urika.core.project_memory.delete_entry` which moves the file
+    to ``memory/.trash/`` and rebuilds the index. 204 on success, 404
+    if the entry doesn't exist, 400 on traversal attempts.
+    """
+    from urika.core.project_memory import delete_entry
+
+    _validate_memory_filename(filename)
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    if not delete_entry(summary.path, filename):
+        raise HTTPException(status_code=404, detail="Unknown memory entry")
+    return Response(status_code=204)
+
+
+@router.post("/projects/{name}/memory/curate")
+async def api_memory_curate(name: str, request: Request) -> Response:
+    """Run the memory curator (v0.5.0 T2.10).
+
+    Dry-run by default — returns the proposed merge/archive/flag
+    decisions without touching the memory directory. Pass
+    ``?apply=true`` (the dashboard's separate Apply button) to commit
+    them.
+
+    Mirrors the CLI's ``urika memory curate [--apply]`` surface; both
+    routes call into :func:`urika.core.memory_curator.run_curator`
+    with a runner from :func:`urika.agents.runner.get_runner` — the
+    same idiom every other Urika agent-invocation surface uses.
+
+    Returns JSON ``{"applied": bool, "decisions": [...], "error":
+    str|null}``. Errors from the curator surface as a 200 with a
+    populated ``error`` field rather than a 5xx so the dashboard JS
+    can render the message inline instead of a generic browser fetch
+    failure.
+    """
+    from urika.agents.runner import get_runner
+    from urika.core.memory_curator import run_curator
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    apply_param = request.query_params.get("apply", "").lower()
+    apply_changes = apply_param in ("true", "1", "yes")
+
+    runner = get_runner()
+    result = await run_curator(summary.path, runner=runner, apply=apply_changes)
+    return JSONResponse(
+        {
+            "applied": result.applied,
+            "decisions": result.decisions,
+            "error": result.error,
+        }
+    )
+
+
+@router.post("/projects/{name}/memory/auto_capture")
+async def api_memory_auto_capture(name: str, request: Request) -> Response:
+    """Toggle ``[memory] auto_capture`` in the project's ``urika.toml``.
+
+    v0.5.0 Task 3.5 — paired with the checkbox on the memory page. The
+    helper :func:`urika.core.project_memory.is_enabled` already READS
+    the flag (default ``true``); this endpoint WRITES it via the
+    shared :func:`urika.core.workspace._write_toml` helper so the
+    format stays consistent with every other dashboard settings
+    write.
+
+    Accepts ``enabled=true|false`` (also ``1`` / ``0`` / ``yes`` /
+    ``no`` / ``on`` — anything outside the truthy set is treated as
+    false). Returns ``{"enabled": bool}`` for client-side confirmation.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    enabled_str = str(form.get("enabled", "")).lower()
+    enabled = enabled_str in ("true", "1", "yes", "on")
+
+    toml_path = summary.path / "urika.toml"
+    if toml_path.exists():
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+    else:
+        data = {}
+    data.setdefault("memory", {})["auto_capture"] = enabled
+    _write_toml(toml_path, data)
+    return JSONResponse({"enabled": enabled})
+
+
 @router.put("/projects/{name}/settings")
 async def api_project_settings_put(name: str, request: Request):
     """Atomically update project settings and record per-field revisions.
