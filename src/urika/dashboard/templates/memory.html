@@ -30,6 +30,11 @@
     .curator-decisions { list-style: none; padding: 0; margin: 0.75rem 0 0; }
     .curator-decisions li { padding: 0.4rem 0; border-top: 1px dashed var(--border, #ddd); display: flex; gap: 0.5rem; align-items: baseline; }
     .curator-error { color: var(--danger, #b00); margin-top: 0.5rem; }
+    .archive-toggle { margin-bottom: 1rem; }
+    .archived-block { margin-top: 2rem; }
+    .archived-block h2 { font-size: 1.05rem; margin: 0 0 0.5rem; }
+    .archived-block .list-item { opacity: 0.65; }
+    .month-chip { display: inline-block; padding: 0.1rem 0.4rem; border: 1px solid var(--border, #ccc); border-radius: 3px; font-size: 0.8rem; margin-right: 0.25rem; }
   </style>
 
   <section
@@ -90,6 +95,13 @@
     </ul>
   </section>
 
+  <div class="archive-toggle">
+    <a
+      href="?show_archived={{ 'false' if show_archived else 'true' }}"
+      class="toggle-archive"
+    >{{ 'Hide archived' if show_archived else 'Show archived' }}</a>
+  </div>
+
   <div class="page-actions">
     <button
       class="btn btn--primary"
@@ -131,6 +143,33 @@
     <div class="empty-state">
       <p>No memory entries yet. Click <strong>+ Add an entry</strong> above to capture a preference, instruction, decision, or reference that should persist across sessions.</p>
     </div>
+  {% endif %}
+
+  {% if show_archived and archived %}
+    <section class="archived-block">
+      <h2>Archived</h2>
+      <ul class="list">
+        {% for entry in archived %}
+          <li class="list-item archived">
+            <div class="list-item-row">
+              <div class="list-item-main">
+                <div class="list-item-title">{{ entry.name }}</div>
+                {% if entry.description %}
+                  <div class="list-item-subtitle text-muted">{{ entry.description }}</div>
+                {% endif %}
+                {% if entry.body_preview %}
+                  <div class="list-item-subtitle">{{ entry.body_preview }}</div>
+                {% endif %}
+              </div>
+              <div class="list-item-meta">
+                <span class="tag">{{ entry.type }}</span>
+                <span class="month-chip">{{ entry.month }}</span>
+              </div>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
   {% endif %}
 
   {% call modal('add-memory', 'Add a memory entry') %}

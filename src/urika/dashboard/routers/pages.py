@@ -1728,25 +1728,37 @@ def project_knowledge(request: Request, name: str) -> HTMLResponse:
 
 
 @router.get("/projects/{name}/memory", response_class=HTMLResponse)
-def project_memory_page(request: Request, name: str) -> HTMLResponse:
+def project_memory_page(
+    request: Request,
+    name: str,
+    show_archived: bool = False,
+) -> HTMLResponse:
     """List project memory entries with an "Add an entry" HTMX form.
 
     Backed by the CRUD API at ``/api/projects/{name}/memory`` (shipped
     in v0.5.0 T1.3). The form POSTs ``mem_type`` / ``description`` /
     ``body`` to the same endpoint; the v0.4.5.1 CSRF middleware accepts
     the same-origin request because HTMX sends an ``Origin`` header.
+
+    ``?show_archived=true`` (v0.5.0 T3.4) additionally loads
+    :func:`urika.core.project_memory.list_archive` and renders the
+    archived entries in a separate block below the live list. The page
+    header carries a toggle link that flips the query param.
     """
-    from urika.core.project_memory import list_entries
+    from urika.core.project_memory import list_archive, list_entries
 
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
     entries = list_entries(summary.path)
+    archived = list_archive(summary.path) if show_archived else []
     templates = request.app.state.templates
     ctx = {
         "project": summary,
         "entries": entries,
+        "archived": archived,
+        "show_archived": show_archived,
     }
     ctx.update(_project_template_context(name, summary))
     return templates.TemplateResponse(request, "memory.html", ctx)
