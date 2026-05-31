@@ -484,6 +484,10 @@ def build_tool(
 
     if result.success and result.text_output:
         click.echo(format_agent_output(result.text_output))
+        # Auto-push to GitHub iff configured. Only fires on success.
+        from urika.cli.github import _maybe_auto_push
+
+        _maybe_auto_push(project_path, event="build-tool")
     else:
         click.echo(f"Error: {result.error}")
 

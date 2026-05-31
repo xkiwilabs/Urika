@@ -11,6 +11,9 @@ design.
 
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 import click
 
 from urika.cli._base import cli
@@ -216,3 +219,88 @@ def github_pull(project: str | None) -> None:
         click.secho("  ⚠ urika github pull: failed", fg="yellow", err=True)
         click.echo(f"    {result.error}", err=True)
         raise SystemExit(1)
+
+
+# ── auto-push helper ───────────────────────────────────────────────
+# Wired into the tail of ``urika run`` / ``urika finalize`` /
+# ``urika build-tool``. Honours ``[github] auto_push`` in
+# ``urika.toml``. NEVER raises — auto-push failure must not break the
+# host command (the outer try/except is intentional defensive coding).
+
+_EVENT_SUBJECT_TEMPLATES = {
+    "run": "urika: experiment run completed",
+    "finalize": "urika: finalized project",
+    "build-tool": "urika: added/updated project tool",
+    "manual": "urika: project state",
+}
+
+
+def _maybe_auto_push(project_dir: Path, event: str) -> bool:
+    """If [github].auto_push is true AND ``event`` is in auto_push_after,
+    run the same scan→commit→push sequence as ``urika github push`` and
+    return True. Returns False (and prints a non-fatal warning where
+    appropriate) when skipped or aborted; never raises.
+
+    Used by the tail of ``urika run`` / ``urika finalize`` /
+    ``urika build-tool``. The orchestrator stays untouched.
+    """
+    try:
+        from urika.core import git as _git_mod
+
+        toml_path = project_dir / "urika.toml"
+        if not toml_path.exists():
+            return False
+        try:
+            data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError:
+            return False
+        gh = data.get("github") or {}
+        if not gh.get("auto_push", False):
+            return False
+        if event not in gh.get("auto_push_after", []):
+            return False
+        if not _git_mod.is_git_repo(project_dir):
+            click.secho(
+                f"  ⚠ auto_push: project not initialised as a git repo "
+                f"(run `urika github init {project_dir.name}` first)",
+                fg="yellow",
+            )
+            return False
+
+        # Stage everything so the secret scanner sees what we're about
+        # to commit.
+        _git_mod._git(project_dir, "add", "-A")
+        matches = _git_mod.scan_for_secrets(project_dir)
+        if matches:
+            click.secho("  ⚠ urika auto_push: aborted — secret(s) detected:", fg="red")
+            for m in matches:
+                click.secho(
+                    f"    [urika:secret-detected] {m.file}:{m.line} "
+                    f"({m.pattern_name})  match: {m.preview}",
+                    fg="red",
+                )
+            click.echo(
+                "    Either remove the secret(s) or add to .gitignore, then "
+                "run `urika github push` manually."
+            )
+            _git_mod._git(project_dir, "reset", "HEAD", check=False)
+            return False
+
+        subject = _EVENT_SUBJECT_TEMPLATES.get(event, f"urika: {event}")
+        body = f"\n\nurika-event: {event}\nurika-version: 0.6.0\n"
+        # commit.ok may be False if there's nothing to commit; still
+        # attempt the push in case an earlier commit was never pushed.
+        _git_mod.commit_all(project_dir, message=subject + body)
+        pushed = _git_mod.push(project_dir)
+        if pushed.ok:
+            click.echo(f"  ✓ auto_push: {pushed.pushed_sha}")
+            return True
+        click.secho(f"  ⚠ urika auto_push: failed ({pushed.error})", fg="yellow")
+        click.echo(
+            "    Retry with `urika github push <project>` once the underlying "
+            "issue is resolved."
+        )
+        return False
+    except Exception as exc:  # noqa: BLE001 - belt-and-braces; never break the host command
+        click.secho(f"  ⚠ urika auto_push: unexpected error ({exc})", fg="yellow")
+        return False
