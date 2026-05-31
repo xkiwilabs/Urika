@@ -5,6 +5,44 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0.2] - 2026-05-31
+
+Hotfix. After the v0.5.0.1 vault fix unblocked the e2e smoke, the
+test ran end-to-end for the first time in two months and surfaced a
+second long-standing bug: experiments completed with no leaderboard,
+no recorded runs, and no method registry entries despite the task
+agent doing real work. Method scripts and run-record JSON files
+landed in ``<experiment>/labbook/run-*.json`` as expected, but the
+orchestrator never saw them.
+
+Root cause: pre-v0.5.0.2 the orchestrator's run-record harvester only
+scanned the task agent's text output for inline ```json blocks. Modern
+Claude task agents — especially on Haiku / cheap-config — often skip
+inline narration entirely and persist run records exclusively via
+``Bash``/``Write`` tool calls. The "no parseable run records" warning
+fired every turn while real work was being committed to disk one tool
+call away.
+
+### Fixed
+
+- **Orchestrator now reads run records from both channels.** New
+  ``urika.orchestrator.parsing.read_labbook_run_records(experiment_dir)``
+  enumerates ``<experiment>/labbook/run-*.json`` files and validates
+  each with the same field/type checks as ``parse_run_records``
+  (shared ``_record_from_block`` helper). The experiment loop
+  (``orchestrator/loop.py``) merges text-parsed and disk records by
+  ``run_id`` — text wins on duplicate, disk fills in the gaps — so a
+  tools-only agent's work lands in the leaderboard, methods registry,
+  and progress.json the same way an inline-narrating agent's would.
+
+### Verified
+
+- The open-mode e2e smoke (``dev/scripts/smoke-v04-e2e-open.sh``) was
+  re-run end-to-end on the real API after the fix. Run records,
+  leaderboard, methods/progress consistency, and the autonomous
+  2-experiment pipeline all now pass — the same 8 failures that
+  appeared in the v0.5.0.1 e2e flip to green.
+
 ## [0.5.0.1] - 2026-05-31
 
 Hotfix. After installing the ``keyring`` extra (e.g. via
