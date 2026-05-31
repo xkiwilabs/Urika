@@ -148,6 +148,41 @@ class TestKeyringBackendSelection:
         backend = vault_module._global_backend()
         assert isinstance(backend, vault_module.FileBackend)
 
+    def test_falls_back_to_file_when_keyring_index_is_empty(
+        self, monkeypatch, tmp_path, vault_module
+    ) -> None:
+        """Regression: when keyring is installed but its sidecar index is
+        empty (no keys ever stored via keyring), the vault must fall back
+        to the file backend rather than returning an empty KeyringBackend
+        that strands file-vault entries.
+
+        This is the bug that surfaced after ``pip install -e ".[dev]"``
+        pulled in the ``keyring`` extra alongside an existing file vault.
+        See CHANGELOG v0.5.0.1.
+        """
+        # Keyring is reachable…
+        monkeypatch.setattr(vault_module, "_keyring_available", lambda: True)
+        # …but its sidecar index doesn't exist (no keys stored).
+        monkeypatch.setattr(
+            vault_module, "_KEYRING_INDEX_PATH", tmp_path / "nonexistent-index.txt"
+        )
+        vault_module._global_backend.cache_clear()
+        backend = vault_module._global_backend()
+        assert isinstance(backend, vault_module.FileBackend)
+
+    def test_picks_keyring_when_index_has_entries(
+        self, monkeypatch, tmp_path, vault_module
+    ) -> None:
+        """When the keyring is reachable AND has at least one indexed key,
+        ``_global_backend`` prefers it over the file fallback."""
+        monkeypatch.setattr(vault_module, "_keyring_available", lambda: True)
+        index = tmp_path / "secrets-index.txt"
+        index.write_text("SOME_KEY\n")
+        monkeypatch.setattr(vault_module, "_KEYRING_INDEX_PATH", index)
+        vault_module._global_backend.cache_clear()
+        backend = vault_module._global_backend()
+        assert isinstance(backend, vault_module.KeyringBackend)
+
 
 class TestPermissions:
     @pytest.mark.skipif(

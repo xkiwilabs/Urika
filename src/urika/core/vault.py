@@ -373,13 +373,29 @@ class KeyringBackend:
 def _global_backend() -> SecretsBackend:
     """Pick the best available global backend.
 
-    Order: OS keyring (when ``keyring`` is installed AND a probe call
-    succeeds) -> file fallback at ``~/.urika/secrets.env``.
+    Order:
+
+    1. OS keyring — when ``keyring`` is installed AND a probe call
+       succeeds AND the keyring's sidecar index lists at least one
+       key (i.e. the user has actually stored something via keyring).
+    2. File fallback at ``~/.urika/secrets.env``.
+
+    The "non-empty keyring index" check matters: if the user originally
+    ran ``urika config api-key`` BEFORE the ``keyring`` extra was
+    installed, their secrets live in the file. Later installing
+    ``keyring`` (e.g. via ``pip install -e ".[dev]"`` pulling in the
+    [all] extra) would otherwise silently swap the backend to an empty
+    keyring, stranding the file-vault entries. The empty-index check
+    keeps the file backend in use until the user explicitly stores
+    something via the keyring (at which point the index becomes
+    non-empty and we switch).
 
     Cached per-process; tests can call ``_global_backend.cache_clear()``.
     """
     if _keyring_available():
-        return KeyringBackend()
+        kb = KeyringBackend()
+        if kb.list_keys():
+            return kb
     return FileBackend()
 
 

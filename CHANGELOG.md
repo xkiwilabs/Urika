@@ -5,6 +5,33 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0.1] - 2026-05-31
+
+Hotfix. After installing the ``keyring`` extra (e.g. via
+``pip install urika[dev]`` or ``urika[all]``), the vault backend
+selection at ``urika.core.vault._global_backend`` flipped to the OS
+keyring **even when that keyring was empty** — silently stranding any
+secrets the user had previously stored via the file backend at
+``~/.urika/secrets.env``. ``urika config api-key`` would report the
+key was set, ``urika config api-key --test`` would deny it, and every
+agent invocation would refuse with ``APIKeyRequiredError: ANTHROPIC_API_KEY
+is not set``. The pre-existing bug (since the v0.3.1 vault tiering
+shipped 2026-04-29) became reachable once ``pip install -e ".[dev]"``
+physically installed the ``keyring`` package alongside an existing
+file vault.
+
+### Fixed
+
+- **Vault backend selection now requires a non-empty keyring index.**
+  ``_global_backend`` returns the OS keyring only when ``keyring`` is
+  reachable AND its sidecar index file (``~/.urika/secrets-index.txt``)
+  lists at least one stored key. Otherwise it falls back to the file
+  backend at ``~/.urika/secrets.env``. Users who never explicitly
+  switched to the keyring backend keep using the file vault even after
+  ``keyring`` lands in their Python environment as a transitive
+  install. Users who *have* stored keys via the keyring are unaffected
+  (their index has entries → keyring stays selected).
+
 ## [0.5.0] - 2026-05-31
 
 Memory deepening. v0.4 shipped the project-memory plumbing (auto-
