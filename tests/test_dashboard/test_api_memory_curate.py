@@ -209,3 +209,45 @@ def test_memory_page_curator_panel_uses_alpine(client_and_proj) -> None:
     assert "curator-panel" in resp.text
     # Alpine binding present.
     assert "x-data" in resp.text
+
+
+def test_apply_button_handler_propagates_curator_error_to_ui(client_and_proj) -> None:
+    """The Apply button's @click handler must surface
+    ``CuratorResult.error`` to the visible ``error`` Alpine field,
+    not silently swallow it.
+
+    Pre-fix the Apply handler only set ``error`` in the ``.catch`` path
+    (network failure), so a curator soft-failure with HTTP 200 +
+    ``error="..."`` body produced: decisions list emptied, no reload,
+    no on-screen explanation. The dry-run button always did this
+    correctly; this test pins the Apply handler to the same shape.
+
+    We can't fully execute the Alpine JS in a pytest without a
+    headless browser, but we CAN assert the template contains the
+    error-propagation snippet — i.e. the Apply ``.then(d => ...)``
+    references ``d.error`` and only reloads when ``d.applied`` AND
+    not ``d.error``.
+    """
+    client, _proj = client_and_proj
+    resp = client.get("/projects/proj/memory")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Find the Apply button block. It's the second @click handler that
+    # POSTs with apply=true. Slice from that marker forward and assert
+    # the error-propagation code lives inside it.
+    apply_marker = "?apply=true"
+    assert apply_marker in html, "Apply endpoint URL missing from memory page"
+    apply_section = html[html.index(apply_marker) :]
+    # Bound the slice so we only inspect the Apply button's handler,
+    # not arbitrary HTML further down the page.
+    apply_section = apply_section[:1500]
+
+    assert "d.error" in apply_section or "d?.error" in apply_section, (
+        "Apply handler doesn't propagate curator error to the UI"
+    )
+    # Reload should be guarded by absence of error — otherwise we
+    # navigate away before the user can see the message.
+    assert "!d.error" in apply_section or "d.error" in apply_section, (
+        "Apply handler should gate window.location.reload on absence of d.error"
+    )

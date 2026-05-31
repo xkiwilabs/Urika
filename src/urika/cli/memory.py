@@ -197,15 +197,58 @@ def memory_curate(project: str | None, apply_changes: bool) -> None:
     re-running with --apply.
     """
     import asyncio
+    import threading
 
     from urika.agents.runner import get_runner
-    from urika.core.memory_curator import run_curator
+    from urika.core import memory_curator as _curator_mod
 
     name = _ensure_project(project)
     project_path, _ = _resolve_project(name)
 
     runner = get_runner()
-    result = asyncio.run(run_curator(project_path, runner=runner, apply=apply_changes))
+
+    # The CLI is also dispatched from the REPL/TUI ``/memory curate``
+    # slash command (via ``click.Context.invoke``) which runs inside an
+    # already-running asyncio loop. ``asyncio.run`` would then raise
+    # ``RuntimeError: asyncio.run() cannot be called from a running
+    # event loop``. Detect that case and run the coroutine on a fresh
+    # loop in a worker thread instead — same as the telegram channel.
+    # Late module-level lookup of ``run_curator`` keeps monkeypatches in
+    # tests (which patch ``urika.core.memory_curator.run_curator``)
+    # working transparently.
+    def _call() -> "object":
+        return _curator_mod.run_curator(
+            project_path, runner=runner, apply=apply_changes
+        )
+
+    try:
+        asyncio.get_running_loop()
+        running_loop = True
+    except RuntimeError:
+        running_loop = False
+
+    if not running_loop:
+        result = asyncio.run(_call())
+    else:
+        # A loop is already spinning in this thread (REPL/TUI). Run the
+        # coroutine on its own loop in a worker thread and wait.
+        box: list[object] = [None]
+
+        def _runner() -> None:
+            loop = asyncio.new_event_loop()
+            try:
+                box[0] = loop.run_until_complete(_call())
+            except BaseException as exc:  # noqa: BLE001
+                box[0] = exc
+            finally:
+                loop.close()
+
+        t = threading.Thread(target=_runner, daemon=True)
+        t.start()
+        t.join()
+        if isinstance(box[0], BaseException):
+            raise box[0]
+        result = box[0]  # type: ignore[assignment]
 
     if result.error:
         click.secho(f"Memory curator failed: {result.error}", fg="red", err=True)

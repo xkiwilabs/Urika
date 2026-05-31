@@ -106,3 +106,46 @@ def test_repl_memory_unknown_subaction_lists_curate(
     cmd_memory(session, "bogus-subaction-name")
     out = capsys.readouterr().out
     assert "curate" in out
+
+
+def test_repl_memory_curate_works_from_running_event_loop(
+    tmp_path, monkeypatch
+) -> None:
+    """Regression: ``/memory curate`` must work when dispatched from
+    inside an already-running event loop (REPL/TUI case), not just
+    from CliRunner.
+
+    Pre-fix the CLI subcommand called ``asyncio.run(run_curator(...))``
+    unconditionally. When the REPL/TUI dispatched ``/memory curate`` on
+    its own event loop, that raised
+    ``RuntimeError: asyncio.run() cannot be called from a running event
+    loop``. The earlier tests in this file monkeypatch
+    ``click.Context.invoke`` so they bypass the body of the CLI command
+    and never trip the collision. This test drives ``cmd_memory``
+    through the real Click invocation path while the caller is inside
+    ``asyncio.run(driver())`` — reproducing the bug exactly.
+    """
+    import asyncio
+
+    from urika.core import memory_curator as _curator_mod
+    from urika.core.memory_curator import CuratorResult
+
+    session = _setup(tmp_path, monkeypatch)
+
+    async def fake(project_dir, runner, apply=False):
+        return CuratorResult(decisions=[], applied=False)
+
+    monkeypatch.setattr(_curator_mod, "run_curator", fake)
+
+    from urika.repl.commands import cmd_memory
+
+    async def driver():
+        # Must NOT raise:
+        #   RuntimeError: asyncio.run() cannot be called from a
+        #   running event loop
+        cmd_memory(session, "curate")
+
+    # ``asyncio.run`` here simulates the REPL/TUI's already-running
+    # main loop. Any leaked asyncio.run inside the CLI subcommand
+    # would bubble out and fail the test.
+    asyncio.run(driver())

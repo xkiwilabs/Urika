@@ -59,13 +59,19 @@
         class="btn btn--primary"
         :disabled="busy || decisions.length === 0"
         @click="if (!confirm('Apply ' + decisions.length + ' decision(s) to the memory directory?')) return;
-                busy = true;
+                busy = true; error = ''; applied = false;
                 fetch('/api/projects/{{ project.name }}/memory/curate?apply=true', {
                   method: 'POST',
                   headers: { 'Origin': location.origin },
                 })
                 .then(r => r.json())
-                .then(d => { applied = !!d.applied; decisions = []; busy = false; if (d.applied) window.location.reload(); })
+                .then(d => {
+                  applied = !!d.applied;
+                  error = d.error || '';
+                  decisions = [];
+                  busy = false;
+                  if (d.applied && !d.error) window.location.reload();
+                })
                 .catch(e => { error = 'Apply failed: ' + e; busy = false; })"
       >Apply</button>
       <span class="text-muted" x-show="busy">working…</span>
