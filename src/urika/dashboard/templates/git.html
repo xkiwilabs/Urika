@@ -1,0 +1,102 @@
+{% extends "_base.html" %}
+
+{% block title %}Git · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Git{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Git</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .git-status { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin: 0 0 1rem; }
+    .git-status dt { font-weight: 600; }
+    .git-status dd { margin: 0; }
+    .git-actions { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; }
+    .git-recent { margin-top: 1.5rem; }
+    .git-recent h2 { font-size: 1.05rem; margin: 0 0 0.5rem; }
+    .git-init-form { margin: 0.75rem 0; display: flex; flex-direction: column; gap: 0.4rem; }
+    .git-init-form label { display: flex; flex-direction: column; gap: 0.25rem; font-weight: 600; }
+    .git-init-form input { font: inherit; padding: 0.4rem; }
+    .git-init-form .form-actions { display: flex; align-items: center; gap: 0.75rem; }
+  </style>
+
+  {% if not initialised %}
+    <div class="empty-state">
+      <h3 class="empty-state-title">Not initialised</h3>
+      <p>Initialise this project as a git repo with a remote URL.</p>
+      <form
+        class="git-init-form"
+        hx-post="/api/projects/{{ project.name }}/git/init"
+        hx-swap="none"
+        hx-on::after-request="if (event.detail.successful) window.location.reload()"
+        hx-on::response-error="document.getElementById('git-init-feedback').textContent = 'Init failed: ' + (event.detail.xhr.responseText || event.detail.xhr.statusText);"
+      >
+        <label>Remote URL
+          <input name="remote" type="url" placeholder="https://github.com/user/repo.git" required>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn--primary">Initialise</button>
+          <span id="git-init-feedback" class="text-muted"></span>
+        </div>
+      </form>
+      <p class="text-muted">
+        To create a new repo via the <code>gh</code> CLI, run
+        <code>urika github init {{ project.name }} --create</code> in your terminal.
+      </p>
+    </div>
+  {% else %}
+    <dl class="git-status">
+      <dt>Branch</dt><dd>{{ status.branch or '—' }}</dd>
+      <dt>Remote</dt><dd>{{ status.remote_url or '—' }}</dd>
+      <dt>Uncommitted</dt><dd>{{ status.dirty_count }} file(s)</dd>
+      {% if status.last_commit_sha %}
+        <dt>Last commit</dt>
+        <dd><code>{{ status.last_commit_sha }}</code> {{ status.last_commit_subject }}</dd>
+      {% endif %}
+    </dl>
+
+    <div class="git-actions">
+      <button
+        type="button"
+        class="btn btn--primary"
+        hx-post="/api/projects/{{ project.name }}/git/push"
+        hx-confirm="Stage everything, scan for secrets, commit, and push to origin?"
+        hx-swap="none"
+        hx-on::after-request="if (event.detail.successful) window.location.reload()"
+        hx-on::response-error="document.getElementById('git-push-feedback').textContent = 'Push failed: ' + (event.detail.xhr.responseText || event.detail.xhr.statusText);"
+      >Push now</button>
+      <span id="git-push-feedback" class="text-muted"></span>
+    </div>
+
+    {% if recent %}
+      <section class="git-recent">
+        <h2>Recent commits</h2>
+        <ul class="list">
+          {% for c in recent %}
+            <li class="list-item">
+              <div class="list-item-row">
+                <div class="list-item-main">
+                  <div class="list-item-title">{{ c.subject }}</div>
+                  <div class="list-item-subtitle text-muted">
+                    <code>{{ c.sha }}</code>
+                    <span>{{ c.ts }}</span>
+                  </div>
+                </div>
+                <div class="list-item-meta">
+                  {% if c.event %}<span class="tag">{{ c.event }}</span>{% endif %}
+                </div>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+  {% endif %}
+{% endblock %}

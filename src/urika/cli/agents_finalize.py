@@ -215,5 +215,12 @@ def finalize(
                 f"{project_path / 'projectbook' / 'final-presentation' / 'index.html'}"
             )
             click.echo(f"  Reproduce:     {project_path / 'reproduce.sh'}")
+
+        # Auto-push to GitHub iff configured. Skipped on draft so the
+        # user can iterate on draft outputs without spamming commits.
+        if not draft:
+            from urika.cli.github import _maybe_auto_push
+
+            _maybe_auto_push(project_path, event="finalize")
     else:
         print_error(f"Finalization failed: {result.get('error', 'unknown')}")

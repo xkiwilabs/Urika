@@ -1727,6 +1727,41 @@ def project_knowledge(request: Request, name: str) -> HTMLResponse:
     return templates.TemplateResponse(request, "knowledge.html", ctx)
 
 
+@router.get("/projects/{name}/git", response_class=HTMLResponse)
+def project_git_page(name: str, request: Request) -> HTMLResponse:
+    """Per-project Git tab (v0.6.0 Task 3.4).
+
+    Shows branch / remote / dirty count / last commit + a "Push now"
+    button + recent commits when the project is initialised as a git
+    repo, or an Initialise form (POSTs to ``/api/projects/{name}/git/init``)
+    when not. Read-only data path uses :mod:`urika.core.git`; mutation
+    is delegated to the existing JSON API routes (``git/init`` /
+    ``git/push``) via HTMX so this page never owns the side-effect.
+    """
+    from urika.core import git as _git
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    initialised = _git.is_git_repo(summary.path)
+    if initialised:
+        st = _git.status(summary.path)
+        recent = _git.recent_commits(summary.path, limit=10)
+    else:
+        st = None
+        recent = []
+    templates = request.app.state.templates
+    ctx = {
+        "project": summary,
+        "initialised": initialised,
+        "status": st,
+        "recent": recent,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(request, "git.html", ctx)
+
+
 @router.get("/projects/{name}/memory", response_class=HTMLResponse)
 def project_memory_page(
     request: Request,

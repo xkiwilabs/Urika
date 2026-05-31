@@ -825,6 +825,171 @@ async def api_delete_project_memory_entry(name: str, filename: str) -> Response:
     return Response(status_code=204)
 
 
+@router.get("/projects/{name}/git/status")
+def api_git_status(name: str) -> JSONResponse:
+    """JSON snapshot of the project's git state (v0.6.0 Task 3.1).
+
+    Powers the dashboard's GitHub panel without shelling out to the CLI.
+    Returns ``{"initialized": false, ...}`` for projects that exist but
+    haven't been ``urika github init``'d yet — the panel can offer an
+    "Initialise" affordance from that signal.
+    """
+    from urika.core import git
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    if not git.is_git_repo(summary.path):
+        return JSONResponse(
+            {
+                "initialized": False,
+                "branch": None,
+                "remote": None,
+                "dirty_count": 0,
+                "last_commit_sha": None,
+                "last_commit_subject": None,
+                "recent": [],
+            }
+        )
+
+    st = git.status(summary.path)
+    recent = git.recent_commits(summary.path, limit=10)
+    return JSONResponse(
+        {
+            "initialized": True,
+            "branch": st.branch,
+            "remote": st.remote_url,
+            "dirty_count": st.dirty_count,
+            "last_commit_sha": st.last_commit_sha,
+            "last_commit_subject": st.last_commit_subject,
+            "recent": [
+                {"sha": c.sha, "subject": c.subject, "event": c.event, "ts": c.ts}
+                for c in recent
+            ],
+        }
+    )
+
+
+@router.post("/projects/{name}/git/push")
+async def api_git_push(name: str, request: Request) -> JSONResponse:
+    """Stage everything, secret-scan, then commit + push (v0.6.0 Task 3.2).
+
+    Mirrors ``urika github push`` CLI semantics:
+
+    * 404 if the project name isn't registered.
+    * 409 with ``detail: "not a git repo"`` if the project exists but
+      hasn't been ``urika github init``'d yet.
+    * Stage everything, then run :func:`urika.core.git.scan_for_secrets`
+      against the staged index. If any match: reset the index, return
+      409 with ``{"ok": false, "error": "secret-detected: ...",
+      "matches": [...]}`` so the dashboard panel can render the
+      file:line(s) inline (no commit lands).
+    * Otherwise commit + push and return the push result.
+
+    The CSRF middleware (v0.4.5.1) rejects cross-origin POSTs with 403
+    before this handler runs.
+    """
+    from urika.core import git
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not git.is_git_repo(summary.path):
+        raise HTTPException(status_code=409, detail="not a git repo")
+
+    # Stage everything so the scanner sees what we're about to commit.
+    git._git(summary.path, "add", "-A")
+
+    matches = git.scan_for_secrets(summary.path)
+    if matches:
+        # Unstage so the working tree isn't left in a half-staged state.
+        git._git(summary.path, "reset", "HEAD", check=False)
+        first = matches[0]
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": (
+                    f"secret-detected: {first.file}:{first.line} ({first.pattern_name})"
+                ),
+                "matches": [
+                    {
+                        "file": m.file,
+                        "line": m.line,
+                        "pattern": m.pattern_name,
+                        "preview": m.preview,
+                    }
+                    for m in matches
+                ],
+            },
+            status_code=409,
+        )
+
+    subject = "urika: project state"
+    body = "\n\nurika-event: manual\nurika-version: 0.6.0\n"
+    git.commit_all(summary.path, message=subject + body)
+    pushed = git.push(summary.path)
+    return JSONResponse(
+        {
+            "ok": pushed.ok,
+            "pushed_sha": pushed.pushed_sha,
+            "error": pushed.error,
+        }
+    )
+
+
+@router.post("/projects/{name}/git/init")
+async def api_git_init(name: str, request: Request) -> JSONResponse:
+    """Initialise a project's git repo + attach an existing remote (v0.6.0 Task 3.3).
+
+    The dashboard surface accepts ONLY ``remote=<URL>``. ``--create``
+    (auto-provisioning a GitHub repo via ``gh``) is CLI-only for v0.6
+    because the ``gh`` binary isn't reliably available in the
+    dashboard process's env across deployments; sending
+    ``create=true`` returns 400 with a message pointing the user at
+    the CLI.
+
+    * 404 if the project name isn't registered.
+    * 400 if ``create=true`` is sent.
+    * 400 if neither ``remote`` nor ``create`` is provided.
+    * Otherwise runs ``git init`` + writes ``.gitignore`` + adds the
+      origin remote + creates the initial ``urika: initial project
+      state`` commit and returns ``{"ok": true, "remote": "<URL>"}``.
+
+    The CSRF middleware (v0.4.5.1) rejects cross-origin POSTs with
+    403 before this handler runs.
+    """
+    from urika.core import git
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    form = await request.form()
+    remote = form.get("remote")
+    create = (form.get("create") or "").lower() in ("true", "1", "yes")
+    if create:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "--create is only supported via the CLI for v0.6: run "
+                "`urika github init <project> --create` in your terminal "
+                "where the gh CLI is available."
+            ),
+        )
+    if not remote:
+        raise HTTPException(status_code=400, detail="remote URL required")
+
+    git.init_repo(summary.path)
+    git.write_gitignore(summary.path)
+    git.add_remote(summary.path, str(remote))
+    git.commit_all(summary.path, message="urika: initial project state")
+    return JSONResponse({"ok": True, "remote": str(remote)})
+
+
 @router.post("/projects/{name}/memory/curate")
 async def api_memory_curate(name: str, request: Request) -> Response:
     """Run the memory curator (v0.5.0 T2.10).

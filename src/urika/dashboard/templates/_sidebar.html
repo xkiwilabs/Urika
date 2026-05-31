@@ -51,6 +51,9 @@
            :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/methods') }"
            href="/projects/{{ project.name }}/methods">Methods</a>
         <a class="sidebar-link"
+           :class="{ 'sidebar-link--active': window.location.pathname.startsWith('/projects/{{ project.name }}/git') }"
+           href="/projects/{{ project.name }}/git">Git</a>
+        <a class="sidebar-link"
            :class="{ 'sidebar-link--active': window.location.pathname === '/projects/{{ project.name }}/criteria' }"
            href="/projects/{{ project.name }}/criteria">Criteria</a>
         <a class="sidebar-link"

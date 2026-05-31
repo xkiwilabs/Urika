@@ -609,6 +609,9 @@ def run(
 
         print_success(f"Meta-orchestrator completed: {n_exp} experiment(s) run.")
         print_footer(duration_ms=elapsed_ms, turns=n_exp, status="completed")
+        from urika.cli.github import _maybe_auto_push
+
+        _maybe_auto_push(project_path, event="run")
         return
 
     # --- Single experiment path ---
@@ -1093,6 +1096,14 @@ def run(
         print_step(f"Experiment finished with status: {run_status} ({turns} turns)")
 
     print_footer(duration_ms=elapsed_ms, turns=turns, status=run_status)
+
+    # Auto-push to GitHub iff configured. Only fires on the
+    # ``completed`` status — paused/stopped/failed leave the user mid-
+    # flight and shouldn't trigger a backup commit. Helper never raises.
+    if run_status == "completed":
+        from urika.cli.github import _maybe_auto_push
+
+        _maybe_auto_push(project_path, event="run")
 
 
 # ── Re-exports from sibling modules (Phase 8 split) ───────────────

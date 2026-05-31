@@ -62,6 +62,28 @@ logger = logging.getLogger(__name__)
         "the interactive flow always confirms first."
     ),
 )
+@click.option(
+    "--github/--no-github",
+    "github_flag",
+    default=None,
+    help=(
+        "After creating the project, also create a GitHub repo via the "
+        "`gh` CLI (equivalent to running `urika github init --create` "
+        "afterwards). Default behaviour falls back to the global "
+        "`[preferences] github_auto_create` setting in "
+        "~/.urika/settings.toml. Failure here is non-fatal — the project "
+        "itself is still created."
+    ),
+)
+@click.option(
+    "--public",
+    is_flag=True,
+    help=(
+        "With --github (or with `[preferences] github_auto_create = true` "
+        "and no override): make the created repo public. Default is "
+        "private."
+    ),
+)
 def new(
     name: str | None,
     question: str | None,
@@ -71,6 +93,8 @@ def new(
     privacy_mode_flag: str | None = None,
     json_output: bool = False,
     overwrite: bool = False,
+    github_flag: bool | None = None,
+    public: bool = False,
 ) -> None:
     """Create a new project."""
     from urika.cli_display import (
@@ -415,6 +439,10 @@ def new(
         seed_project_notifications_from_global(project_dir)
         registry = ProjectRegistry()
         registry.register(name, project_dir)
+        # Optional GitHub auto-create. Non-fatal — the project is already
+        # registered before we get here, so a gh failure just prints a
+        # warning and returns cleanly.
+        _maybe_create_github_repo(project_dir, github_flag, public)
         from urika.cli_helpers import output_json
 
         output_json({"project": name, "path": str(project_dir)})
@@ -591,6 +619,11 @@ def new(
 
     print_success(f"Created project '{name}' at {project_dir}")
 
+    # Optional GitHub auto-create. Resolved from explicit --github/--no-github
+    # or the global [preferences] github_auto_create setting. Failure here is
+    # non-fatal — the project itself was created successfully.
+    _maybe_create_github_repo(project_dir, github_flag, public)
+
     # The post-creation "offer to run an experiment" block prompts via
     # ``_prompt_numbered`` whose default is "Run one experiment", which
     # under non-TTY stdin (CliRunner, CI) silently dispatches to
@@ -740,6 +773,55 @@ def new(
         except Exception:
             # Don't let dashboard prompt failures block project creation flow
             pass
+
+
+def _maybe_create_github_repo(
+    project_dir: Path,
+    github_flag: bool | None,
+    public: bool,
+) -> None:
+    """Optionally run ``gh repo create --push`` for the freshly-built project.
+
+    Resolution order for ``github_flag``:
+      1. Explicit ``--github`` or ``--no-github`` from the CLI wins.
+      2. Otherwise, ``[preferences] github_auto_create`` in
+         ``~/.urika/settings.toml`` (False default) decides.
+
+    When the preference path is taken AND the user didn't pass ``--public``,
+    visibility comes from ``[preferences] github_auto_create_visibility``
+    (``"private"`` default).
+
+    Failure is NON-FATAL: the project itself was already written, so we
+    surface the error + install hint and return cleanly.
+    """
+    from urika.core.settings import get_preference
+
+    effective_github = github_flag
+    effective_public = public
+    if effective_github is None:
+        effective_github = bool(get_preference("github_auto_create", default=False))
+        if effective_github and not effective_public:
+            effective_public = (
+                str(
+                    get_preference("github_auto_create_visibility", default="private")
+                ).lower()
+                == "public"
+            )
+    if not effective_github:
+        return
+
+    from urika.core import git as _git
+
+    result = _git.gh_create_repo(
+        project_dir, name=project_dir.name, public=effective_public
+    )
+    if result.ok:
+        click.echo(f"  ✓ created GitHub repo: {result.repo_url}")
+    else:
+        click.secho(f"  ⚠ github create failed: {result.error}", fg="yellow", err=True)
+        if result.install_hint:
+            click.echo(result.install_hint, err=True)
+        # Non-fatal — the project itself was created.
 
 
 def _run_builder_agent_loop(

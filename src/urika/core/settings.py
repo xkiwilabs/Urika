@@ -156,6 +156,19 @@ def get_default_preferences() -> dict[str, Any]:
     return settings.get("preferences", {})
 
 
+def get_preference(key: str, default: Any = None) -> Any:
+    """Read ``[preferences].<key>`` from ``~/.urika/settings.toml``.
+
+    Returns *default* if the file is missing, unparseable, or the key is
+    absent. Honours ``URIKA_HOME`` (via :func:`load_settings`) so tests
+    that point ``URIKA_HOME`` at a temp dir Just Work.
+    """
+    prefs = get_default_preferences()
+    if not isinstance(prefs, dict):
+        return default
+    return prefs.get(key, default)
+
+
 # ── Migration ─────────────────────────────────────────────────────
 #
 # Settings written by the v0.3.0/0.3.1 dashboard form pinned every
