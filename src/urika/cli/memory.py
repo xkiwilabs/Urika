@@ -8,7 +8,11 @@ agents captured.
 
 from __future__ import annotations
 
+import re as _re
 import sys
+from datetime import datetime as _datetime
+from datetime import timedelta as _timedelta
+from datetime import timezone as _timezone
 from pathlib import Path
 
 import click
@@ -18,6 +22,38 @@ from urika.cli._helpers import _ensure_project, _resolve_project
 
 
 _VALID_TYPES = ("user", "feedback", "instruction", "decision", "reference")
+
+
+def _parse_relative(s: str) -> _datetime:
+    """Parse a timestamp argument for ``urika memory diff``.
+
+    Accepts:
+
+    * ``"now"``
+    * ``"yesterday"``
+    * ``"{N}{h|d|w} ago"`` — e.g. ``"3h ago"``, ``"2d ago"``, ``"1w ago"``.
+      Underscores are also accepted in place of the space (``"1h_ago"``)
+      so the REPL slash command can pass single-token arguments.
+    * Anything else is fed to :meth:`datetime.fromisoformat` — raises
+      ``ValueError`` on failure.
+    """
+    s = s.strip().lower().replace("_", " ")
+    now = _datetime.now(_timezone.utc)
+    if s == "now":
+        return now
+    if s == "yesterday":
+        return now - _timedelta(days=1)
+    m = _re.match(r"^(\d+)([hdw])\s+ago$", s)
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2)
+        deltas = {
+            "h": _timedelta(hours=n),
+            "d": _timedelta(days=n),
+            "w": _timedelta(weeks=n),
+        }
+        return now - deltas[unit]
+    return _datetime.fromisoformat(s)
 
 
 @cli.group()
@@ -270,3 +306,106 @@ def memory_curate(project: str | None, apply_changes: bool) -> None:
             click.echo(f"  - {action}: {reason}")
     if not result.applied:
         click.echo("\nRe-run with --apply to commit these changes.")
+
+
+@memory.command("archive")
+@click.argument("project", required=False, default=None)
+@click.option(
+    "--month",
+    default=None,
+    help="Filter to one YYYY-MM month (e.g. 2024-01).",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit machine-readable JSON.",
+)
+def memory_archive(project: str | None, month: str | None, json_output: bool) -> None:
+    """List archived memory entries.
+
+    Archived entries live under ``<project>/memory/archive/<YYYY-MM>/``
+    and are produced by the curator (``urika memory curate --apply``).
+    With no flags, prints one line per entry grouped by month. Pass
+    ``--month YYYY-MM`` to scope the listing to a single month.
+    """
+    import json as _json
+
+    from urika.core.project_memory import list_archive
+
+    name = _ensure_project(project)
+    project_path, _ = _resolve_project(name)
+
+    entries = list_archive(project_path, month=month)
+
+    if json_output:
+        click.echo(_json.dumps(entries, indent=2))
+        return
+
+    if not entries:
+        click.echo("No archived entries.")
+        return
+
+    for e in entries:
+        click.echo(
+            f"  [{e['month']}] {e['type']:8s} {e['filename']:36s} {e['description']}"
+        )
+
+
+@memory.command("diff")
+@click.argument("project", required=False, default=None)
+@click.argument("from_ts")
+@click.argument("to_ts")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit machine-readable JSON.",
+)
+def memory_diff(
+    project: str | None,
+    from_ts: str,
+    to_ts: str,
+    json_output: bool,
+) -> None:
+    """Show memory entries added / archived / trashed between two timestamps.
+
+    Timestamps can be ISO 8601 (e.g. ``2024-01-15T10:00:00+00:00``) or
+    one of the relative forms: ``now``, ``yesterday``, ``1h ago``,
+    ``2d ago``, ``1w ago``. Underscores work in place of spaces
+    (``1h_ago``) so the REPL slash command can use single-token args.
+    """
+    import json as _json
+
+    from urika.core.project_memory import diff_between
+
+    name = _ensure_project(project)
+    project_path, _ = _resolve_project(name)
+
+    try:
+        f = _parse_relative(from_ts)
+        t = _parse_relative(to_ts)
+    except (ValueError, KeyError) as exc:
+        click.secho(f"Cannot parse timestamp: {exc}", fg="red", err=True)
+        raise SystemExit(1)
+
+    diff = diff_between(project_path, f, t)
+
+    if json_output:
+        click.echo(_json.dumps(diff, indent=2))
+        return
+
+    any_output = False
+    for label, group in (
+        ("added", diff["added"]),
+        ("archived", diff["archived"]),
+        ("trashed", diff["trashed"]),
+    ):
+        if group:
+            any_output = True
+            click.echo(f"\n  {label}:")
+            for e in group:
+                month_str = f" [{e.get('month', '')}]" if e.get("month") else ""
+                click.echo(f"    {e['filename']}{month_str}")
+    if not any_output:
+        click.echo("No changes in the given window.")
