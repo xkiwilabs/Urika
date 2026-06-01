@@ -35,6 +35,19 @@ def test_gpt_models_route_to_openai_runner():
     assert isinstance(runner_for("o3"), OpenAIAgentsRunner)
 
 
+def test_gemini_models_route_to_google_runner():
+    """``gemini-*`` prefixes route to the Google ADK adapter.
+
+    The class lives in ``urika.agents.adapters.google_adk`` and is
+    lazily imported by ``runner_for`` so this test exercises the full
+    routing path (prefix-match + lazy import + instantiation).
+    """
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    assert isinstance(runner_for("gemini-3-pro"), GoogleADKRunner)
+    assert isinstance(runner_for("gemini-3-flash"), GoogleADKRunner)
+
+
 def test_unknown_model_raises():
     with pytest.raises(UnknownModelError) as exc:
         runner_for("totally-made-up-model")

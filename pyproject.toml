@@ -82,8 +82,18 @@ keyring = [
 openai = [
     "openai-agents>=0.4",
 ]
+# v0.7.0 Phase 3: Google Agent Development Kit (ADK) adapter. The
+# PyPI package and import root are both ``google-adk`` /
+# ``google.adk``. The adapter at
+# ``urika.agents.adapters.google_adk`` surfaces a clear "extra not
+# installed" error when this is absent, so the core install stays
+# slim and only users who route to gemini-* models need to install
+# it.
+google = [
+    "google-adk>=1.0",
+]
 all = [
-    "urika[dl,keyring,openai]",
+    "urika[dl,keyring,openai,google]",
 ]
 dev = [
     "urika[all]",
