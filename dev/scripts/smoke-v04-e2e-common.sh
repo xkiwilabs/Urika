@@ -58,6 +58,131 @@ else
 fi
 export URIKA_SMOKE_MAX_TURNS_OPEN URIKA_SMOKE_MAX_TURNS_HYBRID URIKA_SMOKE_MODE_LABEL URIKA_SMOKE_INJECT_CHEAP_MODELS
 
+# v0.7.0 Task 4.5: provider → default model helpers.
+#
+# Used by the multi-provider smoke modes (``--provider`` and
+# ``--mixed-providers`` on ``smoke-v04-e2e-open.sh``). Keep the
+# defaults aligned with ``urika.agents.registry.recommended_models_for``
+# so the smoke exercises the same models a user would pick up by
+# default after ``urika config <provider>``.
+#
+# Reasoning models drive planning_agent / advisor_agent / evaluator /
+# finalizer / report_agent / presentation_agent; execution models
+# drive task_agent / tool_builder.
+provider_default_reasoning_model() {
+  case "$1" in
+    anthropic) echo "claude-opus-4-7" ;;
+    openai) echo "gpt-5.4" ;;
+    google) echo "gemini-3-pro" ;;
+    *) echo "ERROR: unknown provider $1" >&2; exit 1 ;;
+  esac
+}
+
+provider_default_execution_model() {
+  case "$1" in
+    anthropic) echo "claude-sonnet-4-5" ;;
+    openai) echo "gpt-5.4-mini" ;;
+    google) echo "gemini-3-flash" ;;
+    *) echo "ERROR: unknown provider $1" >&2; exit 1 ;;
+  esac
+}
+
+# v0.7.0 Task 4.5: write per-agent provider/model overrides into a
+# freshly-created project's urika.toml.
+#
+# Single-provider mode (provider passed as arg):
+#   reasoning agents → provider_default_reasoning_model(<provider>)
+#   execution agents → provider_default_execution_model(<provider>)
+#
+# Mixed mode (special sentinel "__mixed__"):
+#   planning_agent → Anthropic reasoning
+#   task_agent     → OpenAI execution
+#   advisor_agent  → Google reasoning
+#   remaining roles → Anthropic defaults (so the run completes even
+#                     if only the three target adapters are pinned).
+#
+# Overrides this project's urika.toml only — global config is
+# untouched. Mutually exclusive with ``inject_cheap_models`` (caller
+# decides which to invoke based on PROVIDER / MIXED_PROVIDERS).
+inject_provider_models() {
+  local proj_dir="$1"
+  local provider="$2"
+  if [[ ! -f "$proj_dir/urika.toml" ]]; then
+    log "warning: inject_provider_models: $proj_dir/urika.toml not found, skipping"
+    return 0
+  fi
+  if [[ "$provider" == "__mixed__" ]]; then
+    log "Injecting MIXED-PROVIDER models (planner=Anthropic, task=OpenAI, advisor=Google)"
+    local anth_r anth_e oai_e goog_r
+    anth_r="$(provider_default_reasoning_model anthropic)"
+    anth_e="$(provider_default_execution_model anthropic)"
+    oai_e="$(provider_default_execution_model openai)"
+    goog_r="$(provider_default_reasoning_model google)"
+    cat >> "$proj_dir/urika.toml" <<EOF
+
+# v0.7.0 Task 4.5 mixed-providers smoke override: distribute roles
+# across all three adapters so a single run exercises every code path.
+[runtime.models.planning_agent]
+model = "${anth_r}"
+
+[runtime.models.task_agent]
+model = "${oai_e}"
+
+[runtime.models.advisor_agent]
+model = "${goog_r}"
+
+[runtime.models.evaluator]
+model = "${anth_r}"
+
+[runtime.models.finalizer]
+model = "${anth_r}"
+
+[runtime.models.report_agent]
+model = "${anth_r}"
+
+[runtime.models.presentation_agent]
+model = "${anth_r}"
+
+[runtime.models.tool_builder]
+model = "${anth_e}"
+EOF
+    return 0
+  fi
+
+  local rmodel emodel
+  rmodel="$(provider_default_reasoning_model "$provider")"
+  emodel="$(provider_default_execution_model "$provider")"
+  log "Injecting ${provider} models (reasoning=${rmodel}, execution=${emodel})"
+  cat >> "$proj_dir/urika.toml" <<EOF
+
+# v0.7.0 Task 4.5 single-provider smoke override (--provider ${provider}):
+# pin every agent to the ${provider} adapter for this project.
+[runtime.models.planning_agent]
+model = "${rmodel}"
+
+[runtime.models.advisor_agent]
+model = "${rmodel}"
+
+[runtime.models.evaluator]
+model = "${rmodel}"
+
+[runtime.models.finalizer]
+model = "${rmodel}"
+
+[runtime.models.report_agent]
+model = "${rmodel}"
+
+[runtime.models.presentation_agent]
+model = "${rmodel}"
+
+[runtime.models.task_agent]
+model = "${emodel}"
+
+[runtime.models.tool_builder]
+model = "${emodel}"
+EOF
+}
+
 # Helper: write per-agent model overrides into a freshly-created
 # project's urika.toml so the cheap-config smoke uses sonnet for
 # reasoning and haiku for execution. Project-level overrides win

@@ -7,12 +7,25 @@
 # dashboard for visual inspection.
 #
 # Usage:
-#   bash dev/scripts/smoke-v04-e2e-open.sh            # leave project for inspection
-#   bash dev/scripts/smoke-v04-e2e-open.sh --cleanup  # delete project on success
+#   bash dev/scripts/smoke-v04-e2e-open.sh                     # leave project for inspection
+#   bash dev/scripts/smoke-v04-e2e-open.sh --cleanup           # delete project on success
+#
+# v0.7.0 multi-provider modes (Task 4.5):
+#   bash dev/scripts/smoke-v04-e2e-open.sh --provider anthropic
+#   bash dev/scripts/smoke-v04-e2e-open.sh --provider openai
+#   bash dev/scripts/smoke-v04-e2e-open.sh --provider google
+#   bash dev/scripts/smoke-v04-e2e-open.sh --mixed-providers
+#   bash dev/scripts/smoke-v04-e2e-open.sh --provider anthropic --anthropic-auth subscription
+#
+# Flags can be combined freely (e.g. ``--provider openai --cleanup``).
 #
 # Prereqs:
 #   - urika installed and on PATH
-#   - ANTHROPIC_API_KEY exported OR ~/.urika/secrets.env contains one
+#   - For --provider anthropic: ANTHROPIC_API_KEY in env or ~/.urika/secrets.env
+#     (or, with --anthropic-auth subscription, ``claude login`` completed)
+#   - For --provider openai: OPENAI_API_KEY in env or vault
+#   - For --provider google: GOOGLE_API_KEY (or GEMINI_API_KEY) in env or vault
+#   - For --mixed-providers: all three keys above
 #
 # This script will take 30-60 minutes (real LLM round-trips at every
 # stage). Per-step output goes to dev/scripts/.smoke-logs/<ts>-<pid>/.
@@ -28,7 +41,42 @@ PROJ_DIR="$HOME/urika-projects/$PROJ"
 QUESTION="Is there a statistically significant Stroop interference effect, and what is the effect size?"
 DESCRIPTION="E2E smoke (open mode) — Stroop reaction-time data, paired-difference confirmatory test."
 
-CLEANUP="${1:-}"
+# v0.7.0 Task 4.5: flag parsing. Order-independent; everything is
+# optional. Backward-compat: a lone ``--cleanup`` (the CI invocation)
+# still works exactly as before.
+PROVIDER="${PROVIDER:-anthropic}"
+MIXED_PROVIDERS=0
+ANTHROPIC_AUTH="${ANTHROPIC_AUTH:-api_key}"
+CLEANUP=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --provider) PROVIDER="$2"; shift 2 ;;
+    --mixed-providers) MIXED_PROVIDERS=1; shift ;;
+    --anthropic-auth) ANTHROPIC_AUTH="$2"; shift 2 ;;
+    --cleanup) CLEANUP="--cleanup"; shift ;;
+    *) break ;;
+  esac
+done
+
+# Validate
+case "$PROVIDER" in
+  anthropic|openai|google) ;;
+  *) echo "FATAL: --provider must be one of: anthropic, openai, google (got: $PROVIDER)" >&2; exit 2 ;;
+esac
+case "$ANTHROPIC_AUTH" in
+  api_key|subscription) ;;
+  *) echo "FATAL: --anthropic-auth must be one of: api_key, subscription (got: $ANTHROPIC_AUTH)" >&2; exit 2 ;;
+esac
+
+if (( MIXED_PROVIDERS == 1 )); then
+  MODE_LINE="MIXED (planner=anthropic, task=openai, advisor=google)"
+else
+  MODE_LINE="${PROVIDER}"
+  if [[ "$PROVIDER" == "anthropic" ]]; then
+    MODE_LINE="${MODE_LINE} (auth=${ANTHROPIC_AUTH})"
+  fi
+fi
 
 echo "======================================================================"
 echo "v0.4 E2E SMOKE — OPEN MODE"
@@ -39,15 +87,49 @@ echo "  log dir:    $URIKA_E2E_LOG_DIR"
 echo "  cleanup:    ${CLEANUP:-no}"
 echo "  config:     ${URIKA_SMOKE_MODE_LABEL}"
 echo "  max-turns:  ${URIKA_SMOKE_MAX_TURNS_OPEN}"
+echo "  providers:  ${MODE_LINE}"
 echo "======================================================================"
 
 # === Pre-flight: API key present =====================================
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]] && \
-   ! { [[ -f "$HOME/.urika/secrets.env" ]] && grep -q "^ANTHROPIC_API_KEY=" "$HOME/.urika/secrets.env"; }; then
-  echo
-  echo "FATAL: open mode requires ANTHROPIC_API_KEY in env or ~/.urika/secrets.env."
-  exit 2
+# Required keys depend on which provider(s) the run will use. Anthropic
+# subscription mode (``--anthropic-auth subscription``) is the only
+# path that doesn't need ANTHROPIC_API_KEY — it relies on a prior
+# ``claude login``, so we don't probe it here.
+_check_env_or_secrets() {
+  local key="$1"
+  if [[ -n "${!key:-}" ]]; then return 0; fi
+  if [[ -f "$HOME/.urika/secrets.env" ]] && grep -q "^${key}=" "$HOME/.urika/secrets.env"; then
+    return 0
+  fi
+  return 1
+}
+
+REQUIRED_KEYS=()
+if (( MIXED_PROVIDERS == 1 )); then
+  REQUIRED_KEYS+=(ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY)
+else
+  case "$PROVIDER" in
+    anthropic)
+      if [[ "$ANTHROPIC_AUTH" == "api_key" ]]; then
+        REQUIRED_KEYS+=(ANTHROPIC_API_KEY)
+      fi
+      ;;
+    openai) REQUIRED_KEYS+=(OPENAI_API_KEY) ;;
+    google) REQUIRED_KEYS+=(GOOGLE_API_KEY) ;;
+  esac
 fi
+
+for key in "${REQUIRED_KEYS[@]}"; do
+  if ! _check_env_or_secrets "$key"; then
+    # GOOGLE_API_KEY / GEMINI_API_KEY are interchangeable for Gemini.
+    if [[ "$key" == "GOOGLE_API_KEY" ]] && _check_env_or_secrets GEMINI_API_KEY; then
+      continue
+    fi
+    echo
+    echo "FATAL: open mode (providers=${MODE_LINE}) requires ${key} in env or ~/.urika/secrets.env."
+    exit 2
+  fi
+done
 
 # === 1. urika new ====================================================
 step "1. urika new (open mode)"
@@ -63,10 +145,36 @@ if run_step_with_timeout "urika new" 180 \
   verify_artifact "data dir" "$PROJ_DIR/data"
   verify_artifact "projectbook dir" "$PROJ_DIR/projectbook"
 
-  # v0.4.3 Track 2d: pin per-agent models cheaply for default smoke
-  # runs. No-op when URIKA_SMOKE_REAL=1 (pre-release validation
-  # uses the global config — typically opus + sonnet).
-  inject_cheap_models "$PROJ_DIR"
+  # v0.7.0 Task 4.5: provider-driven model selection takes precedence
+  # over the cheap-config injection. When the operator explicitly picks
+  # a non-Anthropic provider, or asks for the mixed mode, we want the
+  # smoke to exercise THOSE adapters with their default models — the
+  # cheap-config (sonnet+haiku) is Anthropic-only and would defeat the
+  # purpose. When the operator runs the default (or ``--provider
+  # anthropic`` without overrides), fall back to the existing cheap
+  # path so the dev-loop cost stays low.
+  if (( MIXED_PROVIDERS == 1 )); then
+    inject_provider_models "$PROJ_DIR" "__mixed__"
+  elif [[ "$PROVIDER" != "anthropic" ]]; then
+    inject_provider_models "$PROJ_DIR" "$PROVIDER"
+  else
+    # v0.4.3 Track 2d: pin per-agent models cheaply for default smoke
+    # runs. No-op when URIKA_SMOKE_REAL=1 (pre-release validation
+    # uses the global config — typically opus + sonnet).
+    inject_cheap_models "$PROJ_DIR"
+  fi
+fi
+
+# v0.7.0 Task 4.5: subscription-mode preflight. Switches the
+# Anthropic adapter to use the bundled ``claude`` CLI (no API key,
+# no metered cost). The operator must have already run
+# ``claude login`` for this to work end-to-end. ``--no-verify``
+# skips the live "ping the API" check (subscription mode has no
+# equivalent for the bearer-token probe).
+if [[ "$PROVIDER" == "anthropic" && "$ANTHROPIC_AUTH" == "subscription" ]]; then
+  step "0b. urika config anthropic --mode subscription"
+  run_step_with_timeout "config anthropic subscription" 30 \
+    urika config anthropic --mode subscription --no-verify
 fi
 
 # === 2. urika status & inspect (read-only sanity) ====================

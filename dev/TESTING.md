@@ -139,6 +139,53 @@ honest residual gap is *semantic* correctness of agent-written prose /
 code — that's what `URIKA_SMOKE_REAL` + eyeballing the dashboard is
 for.
 
+### 5a. Running the v0.7.0 multi-provider smokes
+
+The open-mode e2e harness accepts three operator-only flags
+(`--provider`, `--mixed-providers`, `--anthropic-auth`) so each provider
+adapter can be verified end-to-end against a real API before tagging a
+release. Order-independent; the legacy `--cleanup` flag still works
+unchanged.
+
+```bash
+# 1. Anthropic via API key — the default, also what nightly CI runs.
+bash dev/scripts/smoke-v04-e2e-open.sh --provider anthropic
+
+# 2. OpenAI Agents SDK adapter (gpt-5.4 / gpt-5.4-mini).
+bash dev/scripts/smoke-v04-e2e-open.sh --provider openai
+
+# 3. Google Gen AI adapter (gemini-3-pro / gemini-3-flash).
+bash dev/scripts/smoke-v04-e2e-open.sh --provider google
+
+# 4. Mixed mode: planner=Anthropic, task=OpenAI, advisor=Google —
+#    exercises every adapter in one run.
+bash dev/scripts/smoke-v04-e2e-open.sh --mixed-providers
+
+# 5. Optional (post-June-15, requires a Claude Pro / Max subscription
+#    and a completed `claude login`). Routes the Anthropic adapter
+#    through the bundled `claude` CLI instead of the metered API.
+bash dev/scripts/smoke-v04-e2e-open.sh --provider anthropic --anthropic-auth subscription
+```
+
+Each run takes ~30–60 minutes and costs ~$0.50–$1 in cheap-config mode
+(the default; sonnet + haiku for Anthropic, mini-tier execution models
+for the others). Total budget for the full five-run matrix above is
+~$2–5. Set `URIKA_SMOKE_REAL=1` to flip to full-fidelity opus / gpt-5.4
+/ gemini-3-pro and 5 turns — multiplies the cost by ~5×.
+
+Required keys per mode:
+
+| mode | required in env or `~/.urika/secrets.env` |
+|---|---|
+| `--provider anthropic` (default) | `ANTHROPIC_API_KEY` |
+| `--provider anthropic --anthropic-auth subscription` | prior `claude login`; no API key needed |
+| `--provider openai` | `OPENAI_API_KEY` |
+| `--provider google` | `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) |
+| `--mixed-providers` | all three: `ANTHROPIC_API_KEY` + `OPENAI_API_KEY` + `GOOGLE_API_KEY` |
+
+The pre-flight check refuses to start the run if a required key is
+missing — no half-finished projects from a key typo.
+
 ### 6. Nightly CI — `.github/workflows/e2e-smoke.yml`
 
 Runs the cheap-config open-mode e2e smoke on a schedule + on demand,
