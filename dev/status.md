@@ -1,16 +1,20 @@
 # Urika — Current Status
 
-**Date:** 2026-05-31
-**Version:** v0.6.0 (GitHub auto-backup) shipped 2026-05-31; v0.5.0.2
-(labbook run-record reader) 2026-05-31; v0.5.0.1 (vault hotfix)
-2026-05-31; v0.5.0 (memory deepening) 2026-05-31; v0.4.5.1 (hardening)
-2026-05-26; v0.4.5 (surface parity) 2026-05-17.
-**Branch:** `main` synced on both `origin` and `public` and tagged
-`v0.6.0`. `dev` is at the same commit.
-**Tests:** ~3753 collected; **3689 pass** in the unit suite
-(`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 1 skipped, 63
-integration deselected. End-to-end smoke verified on the real API
-after both hotfixes — the open-mode pipeline passes all 39 checks.
+**Date:** 2026-06-02
+**Version:** v0.7.0 (multi-provider adapters) READY for tag 2026-06-02;
+v0.6.0.1 (Windows hotfix) shipped 2026-06-01; v0.6.0 (GitHub
+auto-backup) shipped 2026-05-31; v0.5.0.2 (labbook run-record reader)
+2026-05-31; v0.5.0.1 (vault hotfix) 2026-05-31; v0.5.0 (memory
+deepening) 2026-05-31; v0.4.5.1 (hardening) 2026-05-26; v0.4.5
+(surface parity) 2026-05-17.
+**Branch:** `dev` at v0.7.0 release-prep tip (29 commits since
+`bfe19ea5` baseline). `main` on both `origin` and `public` still at
+v0.6.0.1 (tag `v0.6.0.1`); awaiting v0.7.0 release-to-main + tag.
+**Tests:** ~3854 collected; **3787 pass** in the unit suite
+(`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 3 skipped, 64
+integration deselected. Multi-provider operator smoke
+(`dev/scripts/smoke-v04-e2e-open.sh --provider {anthropic|openai|google}
+--mixed-providers`) NOT yet run against real APIs — release-day step.
 
 The active roadmap is **`dev/plans/2026-05-02-roadmap-to-v1.0.md`** —
 covers v0.4.0 → v1.0.0 with cut criteria, release contents, and
@@ -23,6 +27,8 @@ testing windows. Single source of truth.
 | Plan | Status |
 |------|--------|
 | `2026-05-02-roadmap-to-v1.0.md` | **Master roadmap** — v0.4.0 → v1.0.0 (v0.4.5 inserted; v0.6/v0.7 swapped 2026-05-04) |
+| `2026-06-01-v0.7.0-design.md` | v0.7.0 multi-provider adapters spec — IMPLEMENTED |
+| `2026-06-01-v0.7.0-implementation.md` | v0.7.0 implementation plan — 16 tasks + Task #78 rewire, all done; awaiting tag |
 | `2026-05-17-v0.5.0-memory-deepening.md` | v0.5.0 spec — SHIPPED 2026-05-31 |
 | `2026-05-25-pre-v0.5-hardening-fixes.md` | v0.4.5.1 hardening — SHIPPED 2026-05-26 |
 | `2026-05-31-v0.5.0-implementation.md` | v0.5.0 implementation plan — 22 tasks, all done |
