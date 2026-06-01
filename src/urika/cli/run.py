@@ -12,8 +12,14 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from typing import TYPE_CHECKING
 
 import click
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from urika.agents.runner import AgentRunner
 
 from urika.cli._base import cli
 from urika.cli._helpers import (
@@ -68,38 +74,28 @@ def _update_repl_activity(event: str, detail: str) -> None:
         pass
 
 
-def _resolve_runner(project_path):
+def _resolve_runner(project_path: Path | str | None) -> AgentRunner:
     """Resolve the AgentRunner for ``project_path``'s runtime config.
 
     v0.7.0 Task 1.4 wiring: read the project's ``urika.toml`` and
     route through :func:`urika.agents.runner_registry.runner_for` if a
     model is configured. Falls back to the legacy
     :func:`urika.agents.runner.get_runner` factory when no model is
-    set (preserves pre-v0.7.0 behavior). All current models are
-    ``claude-*``, so the registry passthrough is behaviour-identical
-    today — the routing only fans out once OpenAI (Task 2.1) and
-    Google (Task 3.1) adapters ship.
+    set (preserves pre-v0.7.0 behavior).
+
+    v0.7.0 Task 1.5: now a thin wrapper around the shared
+    :func:`urika.agents.runner_routing.runner_for_project` helper —
+    same semantics, but the helper also catches ``ModuleNotFoundError``
+    from a missing-extra adapter and surfaces it as the friendly
+    :class:`~urika.agents.runner_routing.AdapterNotInstalledError`
+    with a ``pip install urika[<provider>]`` hint. Kept as a named
+    function here because it's referenced by name from two call
+    sites in this module + tests; new call sites should import the
+    helper directly.
     """
-    from urika.agents.config import load_runtime_config
-    from urika.agents.runner import get_runner
-    from urika.agents.runner_registry import UnknownModelError, runner_for
+    from urika.agents.runner_routing import runner_for_project
 
-    try:
-        rc = load_runtime_config(project_path)
-    except Exception:
-        return get_runner()
-
-    model = (rc.model or "").strip()
-    if not model:
-        return get_runner()
-    try:
-        return runner_for(model)
-    except UnknownModelError:
-        # Unknown prefix — fall back so existing claude-default setups
-        # are never broken by a stray model string. The registry will
-        # accept anything ``claude-*`` already; this only triggers for
-        # an explicit non-claude string in a pre-v0.7.0 config.
-        return get_runner()
+    return runner_for_project(project_path)
 
 
 @cli.command()
