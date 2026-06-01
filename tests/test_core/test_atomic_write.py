@@ -124,3 +124,45 @@ def test_no_temp_files_left_on_success(tmp_path: Path) -> None:
     write_text_atomic(target, "ok")
     siblings = [p.name for p in tmp_path.iterdir() if p.name.startswith(".out.txt.tmp")]
     assert siblings == []
+
+
+def test_atomic_replace_retries_on_windows_permissionerror(monkeypatch, tmp_path: Path) -> None:
+    """On Windows, os.replace can transiently fail with WinError 5 under
+    concurrent contention. Our wrapper retries with brief backoff.
+    """
+    from urika.core import atomic_write as aw
+
+    monkeypatch.setattr(aw, "_IS_WINDOWS", True)
+    monkeypatch.setattr(aw, "_WINDOWS_REPLACE_DELAYS_S", (0.0, 0.0, 0.0))
+
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError("[WinError 5] Access is denied (simulated)")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(aw.os, "replace", flaky_replace)
+
+    target = tmp_path / "retry.txt"
+    write_text_atomic(target, "after retries")
+    assert target.read_text(encoding="utf-8") == "after retries"
+    assert calls["n"] == 3
+
+
+def test_atomic_replace_propagates_after_exhausted_retries(monkeypatch, tmp_path: Path) -> None:
+    from urika.core import atomic_write as aw
+
+    monkeypatch.setattr(aw, "_IS_WINDOWS", True)
+    monkeypatch.setattr(aw, "_WINDOWS_REPLACE_DELAYS_S", (0.0, 0.0))
+
+    def always_locked(src, dst):
+        raise PermissionError("[WinError 5] Access is denied (simulated)")
+
+    monkeypatch.setattr(aw.os, "replace", always_locked)
+
+    target = tmp_path / "doomed.txt"
+    with pytest.raises(PermissionError):
+        write_text_atomic(target, "x")

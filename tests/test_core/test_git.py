@@ -77,7 +77,7 @@ def test_write_gitignore_creates_new_file(tmp_path):
     from urika.core.git import write_gitignore
 
     write_gitignore(tmp_path)
-    gitignore = (tmp_path / ".gitignore").read_text()
+    gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     # Researcher-safe defaults present:
     assert ".urika/" in gitignore
     assert "data/raw/" in gitignore
@@ -91,9 +91,9 @@ def test_write_gitignore_preserves_user_content(tmp_path):
     from urika.core.git import write_gitignore
 
     pre = "# User's own patterns\n*.log\nbuild/\n"
-    (tmp_path / ".gitignore").write_text(pre)
+    (tmp_path / ".gitignore").write_text(pre, encoding="utf-8")
     write_gitignore(tmp_path)
-    text = (tmp_path / ".gitignore").read_text()
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     # User content survives
     assert "*.log" in text
     assert "build/" in text
@@ -117,9 +117,9 @@ def test_write_gitignore_replaces_existing_block_in_place(tmp_path):
         "# user footer\n"
         "build/\n"
     )
-    (tmp_path / ".gitignore").write_text(initial)
+    (tmp_path / ".gitignore").write_text(initial, encoding="utf-8")
     write_gitignore(tmp_path)
-    text = (tmp_path / ".gitignore").read_text()
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     # User content above + below the block survives
     assert "# user header" in text
     assert "# user footer" in text
@@ -137,7 +137,7 @@ def test_write_gitignore_honors_extra_patterns(tmp_path):
     from urika.core.git import write_gitignore
 
     write_gitignore(tmp_path, extra_patterns=["my_secrets.toml", "*.bak"])
-    text = (tmp_path / ".gitignore").read_text()
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert "my_secrets.toml" in text
     assert "*.bak" in text
 

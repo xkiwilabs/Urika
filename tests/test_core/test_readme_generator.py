@@ -195,7 +195,9 @@ def test_write_readme_overwrites_existing(tmp_path: Path) -> None:
         '[project]\nname = "x"\nquestion = "?"\nmode = "exploratory"\n',
         encoding="utf-8",
     )
-    (tmp_path / "README.md").write_text("OLD CONTENT — should be replaced")
+    (tmp_path / "README.md").write_text(
+        "OLD CONTENT — should be replaced", encoding="utf-8"
+    )
     write_readme(tmp_path)
     body = (tmp_path / "README.md").read_text(encoding="utf-8")
     assert "OLD CONTENT" not in body
