@@ -21,6 +21,20 @@ def test_claude_models_route_to_claude_runner():
     assert isinstance(runner_for("claude-sonnet-4-5"), ClaudeSDKRunner)
 
 
+def test_gpt_models_route_to_openai_runner():
+    """``gpt-*`` and ``o3``/``o4``/``o5`` prefixes route to OpenAI adapter.
+
+    The class lives in ``urika.agents.adapters.openai_agents`` and is
+    lazily imported by ``runner_for`` so this test exercises the full
+    routing path (prefix-match + lazy import + instantiation).
+    """
+    from urika.agents.adapters.openai_agents import OpenAIAgentsRunner
+
+    assert isinstance(runner_for("gpt-5.4"), OpenAIAgentsRunner)
+    assert isinstance(runner_for("gpt-5.4-mini"), OpenAIAgentsRunner)
+    assert isinstance(runner_for("o3"), OpenAIAgentsRunner)
+
+
 def test_unknown_model_raises():
     with pytest.raises(UnknownModelError) as exc:
         runner_for("totally-made-up-model")

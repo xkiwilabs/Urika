@@ -73,8 +73,17 @@ dl = [
 keyring = [
     "keyring>=24.0,<26.0",
 ]
+# v0.7.0 Phase 2: OpenAI Agents SDK adapter. The PyPI package is
+# ``openai-agents``; the import name is just ``agents``. The adapter
+# at ``urika.agents.adapters.openai_agents`` surfaces a clear
+# "extra not installed" error when this is absent, so the core
+# install stays slim and only users who route to gpt-*/o3-o5 models
+# need to install it.
+openai = [
+    "openai-agents>=0.4",
+]
 all = [
-    "urika[dl,keyring]",
+    "urika[dl,keyring,openai]",
 ]
 dev = [
     "urika[all]",
