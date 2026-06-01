@@ -168,7 +168,7 @@ class OpenAIAgentsRunner(AgentRunner):
             model=config.model,
             tools=tools,
         )
-        max_turns = getattr(config, "max_turns", 10)
+        max_turns = config.max_turns
         model_name = config.model or ""
 
         try:
