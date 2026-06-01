@@ -1,57 +1,47 @@
 """SecurityPolicy enforcement helpers shared across tools.
 
-Mirrors the runtime checks in ``urika.agents.permission`` so adapters
-that don't go through the Claude SDK's ``can_use_tool`` callback still
-get the same enforcement.
+Thin wrappers over ``urika.agents.permission._bash_decision`` /
+``_path_decision`` — those are the v0.4 single source of truth for
+SDK-side ``can_use_tool`` enforcement, and the v0.7.0 design
+(``dev/plans/2026-06-01-v0.7.0-design.md``) requires the OpenAI /
+Google function-tool layer to use the *same* logic so the two
+surfaces can't drift.
 
-These helpers are deliberately a small, conservative subset of the
-``permission._bash_decision`` / ``_path_decision`` logic — they assume
-the caller already knows which policy attribute (``writable_dirs`` vs
-``readable_dirs``) applies, and they return a single deny-reason
-string rather than a (bool, reason) pair.
+The wrappers translate the underlying ``(bool, str)`` return shape
+into the tools-layer-friendly shapes:
+
+- ``enforce_bash`` returns ``None`` on allow, the deny reason on
+  deny.
+- ``enforce_path_read`` / ``enforce_path_write`` return
+  ``(resolved_path | None, error | None)``.
+
+If a new check is added to ``permission._bash_decision`` (e.g. a
+new metachar), it propagates here automatically. Parity is also
+pinned by ``tests/test_agents/test_tools_security_parity.py``.
 """
 
 from __future__ import annotations
 
-import shlex
 from pathlib import Path
 
-from urika.agents.permission import SecurityPolicy
+from urika.agents.config import SecurityPolicy
+from urika.agents.permission import (
+    _bash_decision,
+    _path_decision,
+    _resolve_safe,
+)
 
 
 def enforce_bash(cmd: str, policy: SecurityPolicy) -> str | None:
-    """Return None if ``cmd`` is allowed, else a human-readable reason.
+    """Return ``None`` if ``cmd`` is allowed, else a deny reason.
 
-    Matches ``permission._bash_decision`` semantics: reject shell
-    metacharacters outright, apply blocklist first (always wins), then
-    require the head token to match an entry in
-    ``allowed_bash_prefixes`` (tokenised, NOT raw startswith).
+    Delegates to ``permission._bash_decision`` so the metachar
+    blocklist (including ``\\n``, ``&&``, ``||``, ``$(``, etc.),
+    the blocklist-first ordering, and the tokenised-prefix
+    allowlist match are all single-source-of-truth.
     """
-    try:
-        tokens = shlex.split(cmd)
-    except ValueError as exc:
-        return f"unparseable command: {exc}"
-    if not tokens:
-        return "empty command"
-    for tok in tokens:
-        if any(ch in tok for ch in ";|&`$()<>"):
-            return f"shell metacharacter rejected in token {tok!r}"
-    for pat in policy.blocked_bash_patterns:
-        if pat in cmd:
-            return f"blocked pattern {pat!r}"
-    if not policy.allowed_bash_prefixes:
-        return "no bash prefixes whitelisted for this agent"
-    head = tokens[0]
-    for prefix in policy.allowed_bash_prefixes:
-        try:
-            head_tokens = shlex.split(prefix)
-        except ValueError:
-            continue
-        if not head_tokens:
-            continue
-        if tokens[: len(head_tokens)] == head_tokens:
-            return None
-    return f"command {head!r} not in allowlist"
+    allow, reason = _bash_decision(cmd, policy)
+    return None if allow else reason
 
 
 def enforce_path_write(
@@ -59,17 +49,17 @@ def enforce_path_write(
 ) -> tuple[Path | None, str | None]:
     """Resolve ``path`` and check it's under a writable dir.
 
-    Returns ``(resolved, error)``.
+    Returns ``(resolved, error)``. Delegates to
+    ``permission._path_decision`` for the allow/deny check and to
+    ``_resolve_safe`` for the resolved-path value (so symlink /
+    ``..`` collapse semantics match what the SDK callback sees).
     """
-    p = Path(path).expanduser().resolve(strict=False)
-    for writable in policy.writable_dirs:
-        try:
-            resolved_dir = Path(writable).expanduser().resolve(strict=False)
-            if p == resolved_dir or p.is_relative_to(resolved_dir):
-                return p, None
-        except (TypeError, ValueError):
-            continue
-    return None, f"path {p} not under any writable dir"
+    allow, reason = _path_decision(
+        path, policy.writable_dirs, project_root=None, op="write"
+    )
+    if not allow:
+        return None, reason
+    return _resolve_safe(path, None), None
 
 
 def enforce_path_read(
@@ -78,14 +68,16 @@ def enforce_path_read(
     """Resolve ``path`` and check it's under a readable or writable dir.
 
     Writable dirs imply read access. Returns ``(resolved, error)``.
+    Delegates to ``permission._path_decision`` against the combined
+    list — same as the SDK callback's read-tool branch in
+    ``permission._decide``.
     """
-    p = Path(path).expanduser().resolve(strict=False)
-    candidates = list(policy.readable_dirs) + list(policy.writable_dirs)
-    for d in candidates:
-        try:
-            resolved_dir = Path(d).expanduser().resolve(strict=False)
-            if p == resolved_dir or p.is_relative_to(resolved_dir):
-                return p, None
-        except (TypeError, ValueError):
-            continue
-    return None, f"path {p} not under any readable dir"
+    allow, reason = _path_decision(
+        path,
+        list(policy.readable_dirs) + list(policy.writable_dirs),
+        project_root=None,
+        op="read",
+    )
+    if not allow:
+        return None, reason
+    return _resolve_safe(path, None), None

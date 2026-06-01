@@ -49,3 +49,35 @@ def test_bash_rejects_shell_metachars(tmp_path: Path):
     result = bash("echo hi; rm -rf /", security=policy, project_dir=tmp_path)
     assert result.ok is False
     assert "metacharacter" in (result.error or "")
+
+
+def test_bash_rejects_newline_injection(tmp_path: Path):
+    """A literal newline in the command is a shell separator on both
+    POSIX and Windows. ``shlex.split`` happily tokenises across lines,
+    so the head can match the allowlist while the second line runs an
+    arbitrary command. ``enforce_bash`` must reject newline outright,
+    matching ``permission._bash_decision``'s metachar list.
+    """
+    policy = _policy(allowed_bash=["echo"], writable=[tmp_path])
+    result = bash("echo ok\nrm -rf /tmp/x", security=policy, project_dir=tmp_path)
+    assert result.ok is False
+    assert "metacharacter" in (result.error or "")
+
+
+def test_bash_truncates_huge_stdout(tmp_path: Path):
+    """A runaway command that produces >32 KB of stdout must have its
+    output bounded before flowing into ``ToolResult.output`` — otherwise
+    the LLM context fills up with a single tool result.
+    """
+    policy = _policy(
+        allowed_bash=["printf"],
+        writable=[tmp_path],
+    )
+    # printf with a wide %.*s payload produces ~100 KB of 'x' chars.
+    # Single token (no metachars), head matches allowlist.
+    big = "x" * 100_000
+    result = bash(f"printf %s {big}", security=policy, project_dir=tmp_path)
+    assert result.ok is True
+    # Result must be capped at ~32 KB plus the truncation marker.
+    assert len(result.output) < 40_000
+    assert "truncated" in result.output
