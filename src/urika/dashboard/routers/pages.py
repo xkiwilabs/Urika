@@ -45,6 +45,53 @@ KNOWN_CLOUD_MODELS = [
     "claude-haiku-4-5",
 ]
 
+# v0.7.0 Task 4.4 — per-provider model dropdown options for the
+# dashboard's Models-tab Provider filter. Purely additive next to
+# ``KNOWN_CLOUD_MODELS`` so the cross-interface invariant test
+# (``tests/test_cross_interface_defaults.py``) stays green: the
+# Anthropic CLI wizard (``_CLOUD_MODELS`` in ``urika.cli.config``)
+# only knows about Anthropic models, and that flat list still has
+# to mirror ``KNOWN_CLOUD_MODELS`` one-for-one. This per-provider
+# table is dashboard-only for v0.7.0 — when the CLI wizard grows
+# provider awareness (v0.7.x or later), a CLI-side mirror lands
+# next to ``_CLOUD_MODELS`` and a new cross-interface invariant
+# pins per-provider parity.
+#
+# Model ids come from ``urika.agents.pricing.PRICES`` (the single
+# source of $-per-token truth across adapters). Order matters
+# within each row — the first entry is the visual default and
+# tracks ``recommended_models_for(provider)["reasoning"]`` so a
+# fresh "Provider=X" view lands on the right recommendation.
+KNOWN_CLOUD_MODELS_BY_PROVIDER: dict[str, list[str]] = {
+    "anthropic": [
+        # Superset of ``KNOWN_CLOUD_MODELS``: keeps the legacy 4-6 / 4-7
+        # / sonnet / haiku quartet selectable and adds nothing — the
+        # Anthropic invariant test asserts this subset relationship.
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+    ],
+    "openai": [
+        # Mirrors the OpenAI rows in ``urika.agents.pricing.PRICES``.
+        # ``gpt-5.4`` first so Provider=OpenAI lands on the
+        # reasoning recommendation.
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano",
+        "gpt-5.4-pro",
+        "gpt-5.4-thinking",
+    ],
+    "google": [
+        # Mirrors the Google rows in ``urika.agents.pricing.PRICES``.
+        # ``gemini-3-pro`` first so Provider=Google lands on the
+        # reasoning recommendation. Prices are placeholders pending
+        # final published rates — see ``urika.agents.pricing``.
+        "gemini-3-pro",
+        "gemini-3-flash",
+    ],
+}
+
 # The eleven agent roles whose model/endpoint can be overridden per-project.
 # Hardcoded (rather than discovered from the AgentRegistry) so the dashboard
 # stays decoupled from the agent loading machinery.
@@ -1276,6 +1323,11 @@ def global_settings(request: Request) -> HTMLResponse:
             "valid_audiences": sorted(VALID_AUDIENCES),
             "cloud_models": cloud_models,
             "known_cloud_models": KNOWN_CLOUD_MODELS,
+            # v0.7.0 Task 4.4 — Provider filter on Models tab. The
+            # template iterates this dict to render one ``<option>``
+            # group per provider, all hidden by Alpine ``x-show`` until
+            # the user picks a different provider from the <select>.
+            "known_cloud_models_by_provider": KNOWN_CLOUD_MODELS_BY_PROVIDER,
             "known_agents": KNOWN_AGENTS,
             "endpoint_choices": ENDPOINT_CHOICES,
             # Secrets tab — backend label (file vs keyring).
@@ -1525,6 +1577,9 @@ def project_settings(request: Request, name: str) -> HTMLResponse:
             ),
             "cloud_models": cloud_models,
             "known_cloud_models": KNOWN_CLOUD_MODELS,
+            # v0.7.0 Task 4.4 — Provider filter on Models tab. See the
+            # global Settings handler above for the rationale.
+            "known_cloud_models_by_provider": KNOWN_CLOUD_MODELS_BY_PROVIDER,
             "private_endpoint_options": private_endpoint_options,
             "inherited_endpoint": inherited_endpoint,
             "notifications": notifications,

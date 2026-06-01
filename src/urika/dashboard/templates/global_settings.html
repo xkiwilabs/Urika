@@ -329,9 +329,17 @@
        Agent / Endpoint / Model. The Endpoint cell varies per mode
        (read-only text vs UI-category select) but the visual rhythm
        stays consistent across modes. #}
+    {# v0.7.0 Task 4.4 — ``provider`` drives the Provider filter
+       <select> at the top of this tab. Every model dropdown below
+       renders one ``<option>`` per provider/model pair with an
+       ``x-show='provider === ...'`` clause, so flipping the
+       provider <select> instantly filters every dropdown. Default
+       is ``anthropic`` so existing dashboard sessions render the
+       same Anthropic-only options they did before the filter. #}
     <div class="tab-panel" x-show="active === 'models'" x-cloak
          x-data="{
            mode: 'open',
+           provider: 'anthropic',
            resetMsg: (() => {
              const p = new URLSearchParams(window.location.search);
              if (p.has('reset_applied')) {
@@ -378,6 +386,23 @@
         </div>
       </div>
 
+      {# v0.7.0 Task 4.4 — Provider filter. Pure client-side <option>
+         filter via Alpine x-show: every model <select> below renders
+         options for all three providers, hidden by default. Switching
+         this <select> reveals one provider's options at a time. #}
+      <div class="form-row">
+        <label for="models-provider-select">Provider</label>
+        <select id="models-provider-select" x-model="provider">
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+          <option value="google">Google</option>
+        </select>
+        <span class="form-help">
+          Filters every model dropdown below to one provider's family.
+          Submitted values come from whichever option you select inside each dropdown.
+        </span>
+      </div>
+
       <div class="tab-list" role="tablist" style="margin-bottom: var(--space-3);">
         <button class="tab-button" type="button"
                 :class="{ 'tab-button--active': mode === 'open' }"
@@ -404,11 +429,19 @@
         <h4>Open mode</h4>
         <div class="form-row">
           <label for="runtime_modes_open_model">Default model for open mode</label>
+          {# v0.7.0 Task 4.4 — render one <option> per (provider, model)
+             pair; Alpine x-show filters by the chosen provider. The
+             default-fallback "claude-opus-4-6" still selects the
+             Anthropic Opus option (Anthropic is the default provider),
+             matching pre-filter behaviour exactly. #}
           <select id="runtime_modes_open_model"
                   name="runtime_modes_open_model">
-            {% for m in known_cloud_models %}
-              <option value="{{ m }}"
-                      {% if m == (grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
+            {% for prov, models in known_cloud_models_by_provider.items() %}
+              {% for m in models %}
+                <option value="{{ m }}"
+                        x-show="provider === '{{ prov }}'"
+                        {% if m == (grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
+              {% endfor %}
             {% endfor %}
           </select>
         </div>
@@ -432,9 +465,12 @@
               </td>
               <td>
                 <select name="runtime_modes_open_models[{{ row.agent }}][model]">
-                  {% for m in known_cloud_models %}
-                    <option value="{{ m }}"
-                            {% if m == (row.model or grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
+                  {% for prov, models in known_cloud_models_by_provider.items() %}
+                    {% for m in models %}
+                      <option value="{{ m }}"
+                              x-show="provider === '{{ prov }}'"
+                              {% if m == (row.model or grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
                   {% endfor %}
                 </select>
               </td>
@@ -545,11 +581,16 @@
         {% else %}
         <div class="form-row">
           <label for="runtime_modes_hybrid_model">Default model for hybrid mode</label>
+          {# v0.7.0 Task 4.4 — provider-filtered options; see open-mode
+             grid above for the rationale. #}
           <select id="runtime_modes_hybrid_model"
                   name="runtime_modes_hybrid_model">
-            {% for m in known_cloud_models %}
-              <option value="{{ m }}"
-                      {% if m == (grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
+            {% for prov, models in known_cloud_models_by_provider.items() %}
+              {% for m in models %}
+                <option value="{{ m }}"
+                        x-show="provider === '{{ prov }}'"
+                        {% if m == (grid.default_model or "claude-opus-4-6") %}selected{% endif %}>{{ m }}</option>
+              {% endfor %}
             {% endfor %}
           </select>
         </div>
@@ -618,10 +659,17 @@
                 {# Cloud variant — a free <select> of known cloud models.
                    No name=; the hidden [model] input below carries the
                    resolved value. #}
+                {# v0.7.0 Task 4.4 — provider-filtered options. Nested
+                   x-show: outer cat-cloak hides the whole <select> when
+                   cat=private; inner per-option x-show filters by
+                   provider. #}
                 <select x-show="cat === 'open'" x-model="cloud_model">
-                  {% for m in known_cloud_models %}
-                    <option value="{{ m }}"
-                            {% if m == initial_cloud_model %}selected{% endif %}>{{ m }}</option>
+                  {% for prov, models in known_cloud_models_by_provider.items() %}
+                    {% for m in models %}
+                      <option value="{{ m }}"
+                              x-show="provider === '{{ prov }}'"
+                              {% if m == initial_cloud_model %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
                   {% endfor %}
                 </select>
                 {# Private variant — same shape as the Private mode grid:
