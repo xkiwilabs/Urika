@@ -1001,8 +1001,9 @@ async def api_memory_curate(name: str, request: Request) -> Response:
 
     Mirrors the CLI's ``urika memory curate [--apply]`` surface; both
     routes call into :func:`urika.core.memory_curator.run_curator`
-    with a runner from :func:`urika.agents.runner.get_runner` — the
-    same idiom every other Urika agent-invocation surface uses.
+    with a runner from :func:`urika.agents.runner_routing.runner_for_agent`
+    — same idiom every other Urika agent-invocation surface uses
+    post-v0.7.0 Task 1.5.
 
     Returns JSON ``{"applied": bool, "decisions": [...], "error":
     str|null}``. Errors from the curator surface as a 200 with a
@@ -1010,7 +1011,7 @@ async def api_memory_curate(name: str, request: Request) -> Response:
     can render the message inline instead of a generic browser fetch
     failure.
     """
-    from urika.agents.runner import get_runner
+    from urika.agents.runner_routing import runner_for_agent
     from urika.core.memory_curator import run_curator
 
     registry = ProjectRegistry().list_all()
@@ -1021,7 +1022,11 @@ async def api_memory_curate(name: str, request: Request) -> Response:
     apply_param = request.query_params.get("apply", "").lower()
     apply_changes = apply_param in ("true", "1", "yes")
 
-    runner = get_runner()
+    # v0.7.0 Task 1.5: honour the project's ``[runtime.models.memory_curator]``
+    # override so dashboard-triggered curate runs route through the
+    # right adapter for mixed-provider users. Mirrors the CLI's
+    # ``urika memory curate`` rewire.
+    runner = runner_for_agent("memory_curator", summary.path)
     result = await run_curator(summary.path, runner=runner, apply=apply_changes)
     return JSONResponse(
         {

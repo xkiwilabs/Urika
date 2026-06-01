@@ -111,15 +111,30 @@ def _resolve(model: str) -> AgentRunner:
     string from project + per-agent config.
 
     * Empty model → legacy default (``get_runner()``).
+    * ``claude-*`` prefix → legacy default (``get_runner()`` returns
+      ``ClaudeSDKRunner``, semantically identical to the registry
+      route). This branch preserves the canonical
+      ``unittest.mock.patch("urika.agents.runner.get_runner")`` test
+      idiom — pre-v0.7.0 tests that inject a fake runner via that
+      patch keep working without needing to be rewritten to patch
+      ``runner_for_agent`` instead. The dispatch still funnels through
+      ``get_runner`` for Claude models, so the assertion paths are
+      unchanged.
     * Unknown prefix → legacy default (preserves pre-v0.7.0 behaviour
       for users with stray strings).
-    * Known prefix but adapter module can't import → raise
-      :class:`AdapterNotInstalledError` with an install hint.
+    * Known non-claude prefix → registry route; adapter module
+      ``ModuleNotFoundError`` re-raises as
+      :class:`AdapterNotInstalledError`.
     """
     from urika.agents.runner_registry import UnknownModelError, runner_for
 
     model = (model or "").strip()
     if not model:
+        return _default_runner()
+    if model.startswith("claude-"):
+        # Funnel Claude routing through the legacy get_runner so the
+        # canonical test patch idiom still applies. Production
+        # semantics unchanged — both paths return ``ClaudeSDKRunner``.
         return _default_runner()
     try:
         return runner_for(model)

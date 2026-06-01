@@ -33,7 +33,7 @@ from urika.agents.runner_routing import (
 
 def _write_toml(tmp_path: Path, body: str) -> Path:
     project = tmp_path / "proj"
-    project.mkdir()
+    project.mkdir(parents=True, exist_ok=True)
     (project / "urika.toml").write_text(body, encoding="utf-8")
     return project
 
@@ -176,6 +176,40 @@ def test_missing_adapter_extra_raises_actionable_error(monkeypatch, tmp_path):
     msg = str(exc.value)
     assert "gpt-5.4" in msg
     assert "pip install urika[openai]" in msg
+
+
+def test_claude_routing_honours_get_runner_patch(monkeypatch, tmp_path):
+    """``mock.patch("urika.agents.runner.get_runner")`` must still work.
+
+    This is the canonical test idiom that ~20 existing CLI / REPL /
+    RPC tests use to inject fake runners. The v0.7.0 routing rewire
+    funnels Claude through ``get_runner`` to preserve the patch path
+    — without this, every test that injects a fake runner would
+    silently fall back to the real ``ClaudeSDKRunner`` and try to
+    hit api.anthropic.com.
+
+    Production semantics are unchanged: both code paths return
+    ``ClaudeSDKRunner`` for ``claude-*`` models.
+    """
+    import urika.agents.runner as _runner_mod
+
+    sentinel = object()
+    monkeypatch.setattr(_runner_mod, "get_runner", lambda *a, **k: sentinel)
+
+    project = _write_toml(tmp_path, '[runtime]\nmodel = "claude-opus-4-7"\n')
+    assert runner_for_project(project) is sentinel
+    # And per-agent too, with both override and project-default paths.
+    assert runner_for_agent("advisor_agent", project) is sentinel
+
+    project2 = _write_toml(
+        tmp_path / "p2-host",
+        '[runtime]\n'
+        'model = "claude-opus-4-7"\n'
+        '\n'
+        '[runtime.models.advisor_agent]\n'
+        'model = "claude-sonnet-4-5"\n',
+    )
+    assert runner_for_agent("advisor_agent", project2) is sentinel
 
 
 def test_missing_gemini_adapter_extra_hint(monkeypatch, tmp_path):

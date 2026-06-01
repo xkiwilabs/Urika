@@ -219,7 +219,12 @@ def run_repl() -> None:
     """Main REPL entry point."""
     session = ReplSession()
 
-    # Set default model from SDK so the footer shows it from startup
+    # Set default model from SDK so the footer shows it from startup.
+    # Bootstrap path — runs before any project is loaded into the
+    # session so there's no urika.toml to route on; v0.7.0 Task 1.5
+    # intentionally leaves this as the legacy Claude default. The
+    # footer is purely cosmetic; the actual per-agent routing flows
+    # through ``runner_for_agent`` once a project is opened.
     try:
         from urika.agents.runner import get_runner
 
