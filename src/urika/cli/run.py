@@ -68,6 +68,40 @@ def _update_repl_activity(event: str, detail: str) -> None:
         pass
 
 
+def _resolve_runner(project_path):
+    """Resolve the AgentRunner for ``project_path``'s runtime config.
+
+    v0.7.0 Task 1.4 wiring: read the project's ``urika.toml`` and
+    route through :func:`urika.agents.runner_registry.runner_for` if a
+    model is configured. Falls back to the legacy
+    :func:`urika.agents.runner.get_runner` factory when no model is
+    set (preserves pre-v0.7.0 behavior). All current models are
+    ``claude-*``, so the registry passthrough is behaviour-identical
+    today — the routing only fans out once OpenAI (Task 2.1) and
+    Google (Task 3.1) adapters ship.
+    """
+    from urika.agents.config import load_runtime_config
+    from urika.agents.runner import get_runner
+    from urika.agents.runner_registry import UnknownModelError, runner_for
+
+    try:
+        rc = load_runtime_config(project_path)
+    except Exception:
+        return get_runner()
+
+    model = (rc.model or "").strip()
+    if not model:
+        return get_runner()
+    try:
+        return runner_for(model)
+    except UnknownModelError:
+        # Unknown prefix — fall back so existing claude-default setups
+        # are never broken by a stray model string. The registry will
+        # accept anything ``claude-*`` already; this only triggers for
+        # an explicit non-claude string in a pre-v0.7.0 config.
+        return get_runner()
+
+
 @cli.command()
 @click.argument("project", required=False, default=None)
 @click.option(
@@ -174,7 +208,7 @@ def run(
     # launch TS orchestrator in headless mode instead.
     # For now, both paths use the Python orchestrator.
     try:
-        from urika.agents.runner import get_runner
+        from urika.agents.runner import get_runner  # noqa: F401 -- SDK presence probe
     except ImportError:
         raise click.ClickException(
             "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
@@ -425,7 +459,7 @@ def run(
             signal.signal(signal.SIGTERM, _cleanup_meta)
 
         start_ms, start_iso = _agent_run_start()
-        sdk_runner = get_runner()
+        sdk_runner = _resolve_runner(project_path)
 
         try:
             if json_output:
@@ -820,7 +854,7 @@ def run(
 
     start_ms, start_iso = _agent_run_start()
 
-    sdk_runner = get_runner()
+    sdk_runner = _resolve_runner(project_path)
 
     # Panel already created and active from experiment selection above
     try:
