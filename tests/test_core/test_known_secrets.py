@@ -10,7 +10,7 @@ def test_known_secrets_has_expected_entries() -> None:
     for name in (
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
-        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
         "HUGGINGFACE_HUB_TOKEN",
         "GITHUB_TOKEN",
     ):
@@ -43,10 +43,10 @@ def test_openai_provider_is_available() -> None:
     assert prov.available is True
 
 
-def test_google_provider_is_locked() -> None:
-    """Gemini adapter is still pre-roadmap — render as a locked row."""
-    prov = next(p for p in LLM_PROVIDERS if p.name == "GOOGLE_API_KEY")
-    assert prov.available is False, "GOOGLE_API_KEY should be locked"
+def test_gemini_provider_is_available() -> None:
+    """Google ADK adapter ships in v0.7.0 (Task 3.x)."""
+    prov = next(p for p in LLM_PROVIDERS if p.name == "GEMINI_API_KEY")
+    assert prov.available is True
 
 
 def test_provider_info_is_frozen() -> None:

@@ -2656,7 +2656,7 @@ def _backend_label() -> str:
 # even when unset. The Secrets tab guarantees these rows appear so users
 # see the multi-provider roadmap.
 _PROVIDER_NAMES: frozenset[str] = frozenset(
-    {"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"}
+    {"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
 )
 
 
@@ -2874,8 +2874,9 @@ async def api_set_secret(request: Request) -> JSONResponse:
                 status_code=400,
                 detail=(
                     f"{name} is reserved for the planned "
-                    f"{prov.display} adapter (v0.5). Configuration "
-                    f"available when that adapter ships."
+                    f"{prov.display} adapter — not yet supported in "
+                    f"this Urika version. Configuration available "
+                    f"when that adapter ships."
                 ),
             )
 

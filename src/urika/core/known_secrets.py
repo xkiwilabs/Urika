@@ -19,7 +19,7 @@ from dataclasses import dataclass
 KNOWN_SECRETS: dict[str, str] = {
     "ANTHROPIC_API_KEY": "Claude API (Anthropic adapter — required by Urika v0.3+).",
     "OPENAI_API_KEY": "OpenAI API (multi-provider adapter — v0.7.0+).",
-    "GOOGLE_API_KEY": "Google AI / Gemini API (planned multi-provider adapter).",
+    "GEMINI_API_KEY": "Google Gemini API (Google ADK adapter — v0.7.0+).",
     "HUGGINGFACE_HUB_TOKEN": "HuggingFace gated models / datasets / embeddings.",
     "WANDB_API_KEY": "Weights & Biases experiment tracking.",
     "KAGGLE_USERNAME": "Kaggle dataset access (paired with KAGGLE_KEY).",
@@ -74,11 +74,12 @@ LLM_PROVIDERS: list[ProviderInfo] = [
         available=True,
     ),
     ProviderInfo(
-        name="GOOGLE_API_KEY",
+        name="GEMINI_API_KEY",
         display="Google AI (Gemini)",
         description=(
-            "Multi-provider support — settable once that adapter ships in v0.5."
+            "Google ADK adapter (ships in v0.7.0). "
+            "Get a key at https://aistudio.google.com/apikey."
         ),
-        available=False,
+        available=True,
     ),
 ]
