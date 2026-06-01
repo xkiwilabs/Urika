@@ -214,12 +214,34 @@ def dashboard(
         "~/.urika/settings.toml. Idempotent."
     ),
 )
+@click.option(
+    "--mode",
+    "provider_mode",
+    type=click.Choice(["api_key", "subscription"]),
+    default=None,
+    help=(
+        "Provider auth mode for ``urika config anthropic|openai|google``. "
+        "``api_key`` is the default everywhere; ``subscription`` is only "
+        "accepted for ``anthropic`` (post-June-15-2026 `claude login` path)."
+    ),
+)
+@click.option(
+    "--no-verify",
+    "no_verify",
+    is_flag=True,
+    help=(
+        "With ``urika config anthropic --mode subscription``: skip the "
+        "``claude --version`` probe that warns about a missing local CLI."
+    ),
+)
 def config_command(
     project: str | None,
     show: bool,
     json_output: bool,
     test_flag: bool,
     reset_models: bool,
+    provider_mode: str | None,
+    no_verify: bool,
 ) -> None:
     """View or configure privacy mode and models.
 
@@ -234,6 +256,17 @@ def config_command(
         named secret (e.g. a private vLLM key, HuggingFace token,
         third-party API credential). Saves to the global secrets vault
         the same way; agents and tools read it via ``os.environ.get(NAME)``.
+      * ``urika config anthropic --mode {api_key|subscription}`` — pin the
+        Anthropic auth mode. ``subscription`` (post-June-15-2026) skips
+        the pre-spawn ``ANTHROPIC_API_KEY`` check and lets the bundled
+        ``claude`` CLI authenticate via ``claude login``; add
+        ``--no-verify`` to skip the local-CLI probe.
+      * ``urika config openai --mode api_key`` — pin OpenAI to the
+        API-key path. (``--mode subscription`` is rejected: OpenAI Plus
+        is a separate product from the API.)
+      * ``urika config google --mode api_key`` — pin Google to the
+        Gemini-API-key path. (``--mode subscription`` is rejected:
+        Google AI Pro/Ultra ToS forbid third-party SDK use.)
 
     Examples:
 
@@ -242,11 +275,42 @@ def config_command(
         urika config api-key             # interactive Anthropic API key setup
         urika config api-key --test      # verify the saved key works
         urika config secret              # interactive setup for any named secret
+        urika config anthropic --mode subscription --no-verify
+        urika config openai --mode api_key
+        urika config google --mode api_key
         urika config my-project --show   # show project settings
         urika config my-project          # interactive setup (project)
     """
     from urika.cli_display import print_step
     from urika.cli_helpers import UserCancelled
+
+    # ── Special routing: "urika config anthropic|openai|google" ──
+    # v0.7.0 Task 4.2: per-provider auth-mode setup. Implemented as
+    # pseudo-project routes (rather than a Click subgroup) because the
+    # ``config`` command is a single ``@cli.command`` with positional-arg
+    # dispatch — converting it to a group would churn every other route
+    # below. Each handler writes ``[<provider>] auth = "<mode>"`` to
+    # ``~/.urika/settings.toml`` and prints next-steps; the Anthropic
+    # subscription path also probes ``claude --version`` (skip with
+    # ``--no-verify``).
+    if project in ("anthropic", "openai", "google"):
+        from urika.cli.config_provider import (
+            run_config_anthropic,
+            run_config_google,
+            run_config_openai,
+        )
+
+        if provider_mode is None:
+            raise click.UsageError(
+                f"`urika config {project}` requires --mode (api_key or subscription)."
+            )
+        if project == "anthropic":
+            run_config_anthropic(provider_mode, no_verify)
+        elif project == "openai":
+            run_config_openai(provider_mode)
+        else:  # project == "google"
+            run_config_google(provider_mode)
+        return
 
     # ── Special routing: "urika config api-key" ──
     # ``api-key`` is a reserved pseudo-project name that triggers the
