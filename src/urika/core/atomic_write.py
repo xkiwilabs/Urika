@@ -18,8 +18,32 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import sys
+import time
 from pathlib import Path
 from typing import Any
+
+_IS_WINDOWS = sys.platform == "win32"
+# Windows `os.replace` can fail with PermissionError (WinError 5) under
+# concurrent contention — another thread holds a transient handle on the
+# destination during its own replace. The actual lock window is microseconds,
+# so a short retry loop is the standard fix. Total ~100ms across 6 attempts.
+_WINDOWS_REPLACE_DELAYS_S = (0.001, 0.005, 0.010, 0.020, 0.040, 0.080)
+
+
+def _atomic_replace(src: str, dst: str) -> None:
+    if not _IS_WINDOWS:
+        os.replace(src, dst)
+        return
+    delays = _WINDOWS_REPLACE_DELAYS_S
+    for i, delay in enumerate(delays):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == len(delays) - 1:
+                raise
+            time.sleep(delay)
 
 
 def write_text_atomic(path: Path, body: str, *, mode: int = 0o644) -> None:
@@ -42,7 +66,7 @@ def write_text_atomic(path: Path, body: str, *, mode: int = 0o644) -> None:
                 os.fsync(f.fileno())
             except OSError:
                 pass
-        os.replace(str(tmp), str(path))
+        _atomic_replace(str(tmp), str(path))
     except Exception:
         try:
             os.unlink(str(tmp))

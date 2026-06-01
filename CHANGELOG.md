@@ -5,6 +5,58 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0.1] - 2026-06-01
+
+Windows hotfix. Two pre-existing bugs in the v0.6.0 release were masked
+on CI because the v0.6.0 test suite never set ``GIT_AUTHOR_NAME`` /
+``GIT_COMMITTER_NAME`` for the runners, so all Windows + Linux jobs
+failed at ``git commit`` before reaching the real bugs. After the
+ident issue was fixed, two Windows-only failures surfaced — both are
+real bugs that would have bitten Windows users in production.
+
+### Fixed
+
+- **``urika.core.atomic_write.os.replace`` retry on Windows
+  ``PermissionError``.** Under concurrent contention (many threads
+  writing to the same file via ``write_json_atomic`` /
+  ``write_text_atomic``), Windows raises ``WinError 5`` because
+  another thread holds a microsecond-scale lock on the destination
+  during its own replace. POSIX is unaffected. The fix is a
+  Windows-only retry loop with exponential backoff (1–80 ms, six
+  attempts) wrapping ``os.replace``. The lock window is microseconds
+  in practice, so the retries succeed quickly and behavior is
+  unchanged on POSIX.
+- **Tests now pass ``encoding="utf-8"`` explicitly when seeding
+  test fixtures with em-dash content.** Production code already used
+  explicit utf-8 everywhere; the tests had three call sites where
+  ``.write_text(initial)`` defaulted to ``cp1252`` on Windows, storing
+  the em-dash as byte ``0x97``, after which production code's
+  ``.read_text(encoding="utf-8")`` crashed with
+  ``UnicodeDecodeError``. Affected: ``tests/test_core/test_git.py``
+  (4 sites), ``tests/test_core/test_readme_generator.py`` (1 site).
+- **``tests/conftest.py`` session-scoped fixture sets
+  ``GIT_AUTHOR_*`` / ``GIT_COMMITTER_*`` env vars** so the v0.6.0
+  GitHub-test surfaces no longer depend on the developer's
+  ``~/.gitconfig``. CI runners on Ubuntu and Windows have no global
+  identity by default. macOS happens to come preconfigured, which is
+  why this only failed on the other two platforms.
+
+### Tests
+
+Two new regression tests pin the ``_atomic_replace`` retry path on
+ALL platforms by monkeypatching ``_IS_WINDOWS`` + ``os.replace``:
+``test_atomic_replace_retries_on_windows_permissionerror`` (3-attempt
+transient lock succeeds on attempt 3) and
+``test_atomic_replace_propagates_after_exhausted_retries`` (all six
+attempts fail → ``PermissionError`` propagates).
+
+### Compatibility
+
+This is a pure bugfix release. No CLI, dashboard, or settings changes.
+Existing v0.6.0 projects need no migration; ``pip install --upgrade
+urika`` is sufficient. Full diff:
+[v0.6.0...v0.6.0.1](https://github.com/xkiwilabs/Urika/compare/v0.6.0...v0.6.0.1).
+
 ## [0.6.0] - 2026-05-31
 
 GitHub auto-backup. Each Urika project can now be a git repo
