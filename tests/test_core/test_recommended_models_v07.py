@@ -38,8 +38,8 @@ def test_openai_defaults() -> None:
 
 def test_google_defaults() -> None:
     rec = recommended_models_for("google")
-    assert rec["reasoning"] == "gemini-3-pro"
-    assert rec["execution"] == "gemini-3-flash"
+    assert rec["reasoning"] == "gemini-3.1-pro-preview"
+    assert rec["execution"] == "gemini-3.5-flash"
 
 
 def test_unknown_provider_raises() -> None:

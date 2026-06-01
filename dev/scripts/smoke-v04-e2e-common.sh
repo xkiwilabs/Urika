@@ -73,7 +73,7 @@ provider_default_reasoning_model() {
   case "$1" in
     anthropic) echo "claude-opus-4-7" ;;
     openai) echo "gpt-5.4" ;;
-    google) echo "gemini-3-pro" ;;
+    google) echo "gemini-3.1-pro-preview" ;;
     *) echo "ERROR: unknown provider $1" >&2; exit 1 ;;
   esac
 }
@@ -82,7 +82,7 @@ provider_default_execution_model() {
   case "$1" in
     anthropic) echo "claude-sonnet-4-5" ;;
     openai) echo "gpt-5.4-mini" ;;
-    google) echo "gemini-3-flash" ;;
+    google) echo "gemini-3.5-flash" ;;
     *) echo "ERROR: unknown provider $1" >&2; exit 1 ;;
   esac
 }

@@ -26,7 +26,7 @@ from urika.agents.pricing import cost_for
 
 
 def _make_config(tmp_path: Path) -> AgentConfig:
-    """Minimal AgentConfig for adapter tests — gemini-3-pro routed to Google."""
+    """Minimal AgentConfig for adapter tests — gemini-3.1-pro-preview routed to Google."""
     return AgentConfig(
         name="test_agent",
         system_prompt="system here",
@@ -38,7 +38,7 @@ def _make_config(tmp_path: Path) -> AgentConfig:
             allowed_bash_prefixes=[],
             blocked_bash_patterns=[],
         ),
-        model="gemini-3-pro",
+        model="gemini-3.1-pro-preview",
         cwd=tmp_path,
     )
 
@@ -179,22 +179,22 @@ def test_google_run_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
 
     runner = GoogleADKRunner()
     cfg = _make_config(tmp_path)
-    # Use gemini-3-flash to pin the cheaper price-card row — the
-    # base ``_make_config`` defaults to gemini-3-pro for the
-    # extra-missing test, but gemini-3-flash gives the simplest
-    # cost calculation to assert on (0.00009 USD for 80/20 tokens).
-    cfg.model = "gemini-3-flash"
+    # Use gemini-3.5-flash to pin the cheaper price-card row — the
+    # base ``_make_config`` defaults to gemini-3.1-pro-preview for the
+    # extra-missing test, but gemini-3.5-flash gives the simplest
+    # cost calculation to assert on (0.0003 USD for 80/20 tokens).
+    cfg.model = "gemini-3.5-flash"
     result = asyncio.run(runner.run(cfg, "user prompt", on_message=on_msg))
 
     assert result.success is True
     assert result.text_output == "hello world"
     assert result.tokens_in == 80
     assert result.tokens_out == 20
-    # cost_for("gemini-3-flash", 80, 20) = (80/1M)*0.50 + (20/1M)*2.50
-    #                                    = 0.00004 + 0.00005 = 0.00009
-    assert result.cost_usd == pytest.approx(cost_for("gemini-3-flash", 80, 20))
-    assert result.cost_usd == pytest.approx(0.00009)
-    assert result.model == "gemini-3-flash"
+    # cost_for("gemini-3.5-flash", 80, 20) = (80/1M)*1.50 + (20/1M)*9.0
+    #                                      = 0.00012 + 0.00018 = 0.0003
+    assert result.cost_usd == pytest.approx(cost_for("gemini-3.5-flash", 80, 20))
+    assert result.cost_usd == pytest.approx(0.0003)
+    assert result.model == "gemini-3.5-flash"
     # The ADK stream-folding model means we *can* fire on_message
     # per text-bearing event — exercise it so the wire-up regresses
     # loudly if a future refactor drops the callback.

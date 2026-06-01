@@ -91,7 +91,7 @@ def _policy(tmp_path: Path) -> SecurityPolicy:
 def test_full_chain_for_gemini_3_flash(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """``runner_for("gemini-3-flash")`` reaches the (faked) ADK SDK.
+    """``runner_for("gemini-3.5-flash")`` reaches the (faked) ADK SDK.
 
     Pins the contract that downstream consumers rely on after Task
     3.2: the success path populates ``cost_usd`` from the shared
@@ -106,14 +106,14 @@ def test_full_chain_for_gemini_3_flash(
     monkeypatch.setitem(sys.modules, "google.adk.agents", agents_mod)
     monkeypatch.setitem(sys.modules, "google.adk.runners", runners_mod)
 
-    runner = runner_for("gemini-3-flash")
+    runner = runner_for("gemini-3.5-flash")
     cfg = AgentConfig(
         name="planning_agent",
         system_prompt="s",
         allowed_tools=["Read"],
         disallowed_tools=[],
         security=_policy(tmp_path),
-        model="gemini-3-flash",
+        model="gemini-3.5-flash",
         cwd=tmp_path,
     )
 
@@ -123,9 +123,9 @@ def test_full_chain_for_gemini_3_flash(
     assert result.text_output == "hello"
     assert result.tokens_in == 5
     assert result.tokens_out == 2
-    # cost_for("gemini-3-flash", 5, 2) = (5/1M)*0.50 + (2/1M)*2.50
-    #                                  = 0.0000025 + 0.000005 = 0.0000075 USD
-    assert result.cost_usd == pytest.approx(cost_for("gemini-3-flash", 5, 2))
-    assert result.cost_usd == pytest.approx(0.0000075)
+    # cost_for("gemini-3.5-flash", 5, 2) = (5/1M)*1.50 + (2/1M)*9.0
+    #                                    = 0.0000075 + 0.000018 = 0.0000255 USD
+    assert result.cost_usd == pytest.approx(cost_for("gemini-3.5-flash", 5, 2))
+    assert result.cost_usd == pytest.approx(0.0000255)
     assert result.cost_usd is not None and result.cost_usd > 0
-    assert result.model == "gemini-3-flash"
+    assert result.model == "gemini-3.5-flash"

@@ -52,9 +52,8 @@ freely within a single ``urika.toml``.
   family, Google Gemini 3 Pro / Flash). Both new adapters call
   ``cost_for(model, tokens_in, tokens_out)`` so cost reporting is
   uniform across the leaderboard, ``urika usage``, and the
-  dashboard Usage page. Gemini prices ship as placeholders and
-  must be cross-checked against Google AI Studio's published rates
-  before the v0.7.0 tag.
+  dashboard Usage page. Gemini rates verified against
+  ai.google.dev/pricing on 2026-06-02 (≤200k-token tier).
 
 - **``urika.agents.runner_registry.runner_for()``** — model-prefix
   routing. Callers with a model string in hand (the orchestrator,
@@ -96,7 +95,7 @@ freely within a single ``urika.toml``.
   four reasoning agents, Sonnet 4.5 for the eight execution
   agents" split from v0.4.0 remains the default for Anthropic;
   OpenAI maps to ``gpt-5.4`` + ``gpt-5.4-mini``, Google to
-  ``gemini-3-pro`` + ``gemini-3-flash``.
+  ``gemini-3.1-pro-preview`` + ``gemini-3.5-flash``.
 
 - **Dashboard Models tab Provider filter** — a three-way toggle
   (Anthropic / OpenAI / Google) on ``/projects/{name}/models`` that

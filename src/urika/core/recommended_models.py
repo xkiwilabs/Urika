@@ -64,7 +64,7 @@ EXECUTION_AGENT_DEFAULT_MODEL = "claude-sonnet-4-5"
 _RECOMMENDED_BY_PROVIDER: dict[str, dict[str, str]] = {
     "anthropic": {"reasoning": "claude-opus-4-7", "execution": "claude-sonnet-4-5"},
     "openai": {"reasoning": "gpt-5.4", "execution": "gpt-5.4-mini"},
-    "google": {"reasoning": "gemini-3-pro", "execution": "gemini-3-flash"},
+    "google": {"reasoning": "gemini-3.1-pro-preview", "execution": "gemini-3.5-flash"},
 }
 
 

@@ -154,7 +154,7 @@ bash dev/scripts/smoke-v04-e2e-open.sh --provider anthropic
 # 2. OpenAI Agents SDK adapter (gpt-5.4 / gpt-5.4-mini).
 bash dev/scripts/smoke-v04-e2e-open.sh --provider openai
 
-# 3. Google Gen AI adapter (gemini-3-pro / gemini-3-flash).
+# 3. Google Gen AI adapter (gemini-3.1-pro-preview / gemini-3.5-flash).
 bash dev/scripts/smoke-v04-e2e-open.sh --provider google
 
 # 4. Mixed mode: planner=Anthropic, task=OpenAI, advisor=Google —
@@ -171,7 +171,7 @@ Each run takes ~30–60 minutes and costs ~$0.50–$1 in cheap-config mode
 (the default; sonnet + haiku for Anthropic, mini-tier execution models
 for the others). Total budget for the full five-run matrix above is
 ~$2–5. Set `URIKA_SMOKE_REAL=1` to flip to full-fidelity opus / gpt-5.4
-/ gemini-3-pro and 5 turns — multiplies the cost by ~5×.
+/ gemini-3.1-pro-preview and 5 turns — multiplies the cost by ~5×.
 
 Required keys per mode:
 

@@ -15,7 +15,7 @@ provider so existing users see the same UI on first load.
 
 These tests pin:
   - all three provider labels are present in the rendered HTML
-  - each provider's signature model id (gpt-5.4 / gemini-3-pro / the
+  - each provider's signature model id (gpt-5.4 / gemini-3.1-pro-preview / the
     Anthropic Opus row) appears in the page
   - the Provider <select> exists and defaults to ``anthropic``
 """
@@ -117,8 +117,8 @@ class TestProviderModelsTable:
         from urika.dashboard.routers.pages import KNOWN_CLOUD_MODELS_BY_PROVIDER
 
         google = KNOWN_CLOUD_MODELS_BY_PROVIDER["google"]
-        assert "gemini-3-pro" in google
-        assert "gemini-3-flash" in google
+        assert "gemini-3.1-pro-preview" in google
+        assert "gemini-3.5-flash" in google
 
     def test_recommended_models_are_in_provider_table(self) -> None:
         """For every provider in the table, the
@@ -188,7 +188,7 @@ class TestGlobalModelsTabProviderFilter:
         """
         body = settings_client.get("/settings").text
         assert "gpt-5.4" in body
-        assert "gemini-3-pro" in body
+        assert "gemini-3.1-pro-preview" in body
 
 
 # ----------------------------------------------------------------------
@@ -213,4 +213,4 @@ class TestProjectModelsTabProviderFilter:
         assert "claude-opus-4-7" in body
         # OpenAI + Google option rows must also be in the DOM.
         assert "gpt-5.4" in body
-        assert "gemini-3-pro" in body
+        assert "gemini-3.1-pro-preview" in body

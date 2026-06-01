@@ -1,7 +1,9 @@
 """Single source of $-per-1M-tokens truth across all adapters.
 
-Gemini prices are placeholders — verify against published rates
-before tagging v0.7.0.
+Gemini rates verified against ai.google.dev/pricing on 2026-06-02.
+Both Gemini rows quote the ≤200k-token tier — Google charges more
+for prompts above that threshold, but Urika's agent calls stay well
+under it; if that changes, add a tiered lookup rather than averaging.
 """
 
 from __future__ import annotations
@@ -16,9 +18,9 @@ PRICES: dict[str, tuple[float, float]] = {
     "gpt-5.4-nano": (0.20, 1.25),
     "gpt-5.4-pro": (30.0, 180.0),
     "gpt-5.4-thinking": (2.50, 15.0),
-    # Google — placeholders, verify at impl time
-    "gemini-3-pro": (5.0, 25.0),
-    "gemini-3-flash": (0.50, 2.50),
+    # Google — verified against ai.google.dev/pricing on 2026-06-02
+    "gemini-3.1-pro-preview": (2.0, 12.0),
+    "gemini-3.5-flash": (1.50, 9.0),
 }
 
 

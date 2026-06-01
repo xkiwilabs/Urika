@@ -44,8 +44,8 @@ def test_gemini_models_route_to_google_runner():
     """
     from urika.agents.adapters.google_adk import GoogleADKRunner
 
-    assert isinstance(runner_for("gemini-3-pro"), GoogleADKRunner)
-    assert isinstance(runner_for("gemini-3-flash"), GoogleADKRunner)
+    assert isinstance(runner_for("gemini-3.1-pro-preview"), GoogleADKRunner)
+    assert isinstance(runner_for("gemini-3.5-flash"), GoogleADKRunner)
 
 
 def test_unknown_model_raises():

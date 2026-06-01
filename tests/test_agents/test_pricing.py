@@ -20,7 +20,7 @@ def test_all_advertised_defaults_have_prices():
         "claude-sonnet-4-5",
         "gpt-5.4",
         "gpt-5.4-mini",
-        "gemini-3-pro",
-        "gemini-3-flash",
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash",
     }
     assert required <= set(PRICES.keys())

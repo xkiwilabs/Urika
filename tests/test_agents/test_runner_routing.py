@@ -78,7 +78,7 @@ def test_project_gpt_model_routes_to_openai(tmp_path):
 def test_project_gemini_model_routes_to_google(tmp_path):
     from urika.agents.adapters.google_adk import GoogleADKRunner
 
-    project = _write_toml(tmp_path, '[runtime]\nmodel = "gemini-3-pro"\n')
+    project = _write_toml(tmp_path, '[runtime]\nmodel = "gemini-3.1-pro-preview"\n')
     runner = runner_for_project(project)
     assert isinstance(runner, GoogleADKRunner)
 
@@ -221,7 +221,7 @@ def test_missing_gemini_adapter_extra_hint(monkeypatch, tmp_path):
 
     monkeypatch.setattr(_reg, "runner_for", _boom)
 
-    project = _write_toml(tmp_path, '[runtime]\nmodel = "gemini-3-pro"\n')
+    project = _write_toml(tmp_path, '[runtime]\nmodel = "gemini-3.1-pro-preview"\n')
     with pytest.raises(AdapterNotInstalledError) as exc:
         runner_for_project(project)
     assert "pip install urika[google]" in str(exc.value)

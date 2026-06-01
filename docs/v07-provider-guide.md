@@ -13,8 +13,8 @@ different things. The first-pass rubric:
 | Use case | Recommended provider | Why |
 |---|---|---|
 | Default / unsure | Anthropic Claude | Most mature adapter, the original target, best test coverage |
-| Cost-sensitive batch work | OpenAI `gpt-5.4-mini` or Google `gemini-3-flash` | ~5× cheaper per 1M tokens than Opus / GPT-5.4-pro |
-| Lowest latency | Google `gemini-3-flash` | Fastest first-token in our smoke runs |
+| Cost-sensitive batch work | OpenAI `gpt-5.4-mini` (~3× cheaper than `gpt-5.4`) or Google `gemini-3.5-flash` (~25% cheaper than `gemini-3.1-pro-preview`) | Lower per-1M-token rates than the reasoning tier |
+| Lowest latency | Google `gemini-3.5-flash` | Fastest first-token in our smoke runs |
 | Long-context reasoning | Anthropic `claude-opus-4-7` | Largest stable context window + strongest design-rationale generation |
 | Tool-heavy execution loops | OpenAI Agents SDK | Most polished function-calling surface in our tests |
 | Native subscription auth | Anthropic | Only provider with subscription-mode auth (Pro / Max) |
@@ -67,7 +67,7 @@ model = "claude-opus-4-7"        # Anthropic for design-rationale
 model = "gpt-5.4-mini"           # OpenAI for cheap execution
 
 [runtime.models.advisor_agent]
-model = "gemini-3-pro"           # Google for between-experiment analysis
+model = "gemini-3.1-pro-preview" # Google for between-experiment analysis
 
 [runtime.models.evaluator]
 model = "gpt-5.4-mini"           # OpenAI for cheap rule-application
@@ -102,7 +102,8 @@ is `0.0` with an explicit `usage["mode"] = "subscription"`
 annotation so downstream tooling can tell the difference between
 "unknown cost" and "subscription, $0 by design".
 
-Gemini prices in `urika.agents.pricing.PRICES` ship as
-placeholders against Google's published rates — verify them
-against [ai.google.dev/pricing](https://ai.google.dev/pricing)
-before depending on a cost estimate for budgeting.
+Gemini prices in `urika.agents.pricing.PRICES` were verified
+against [ai.google.dev/pricing](https://ai.google.dev/pricing) on
+2026-06-02. Both Gemini rows quote the ≤200k-token tier — Google
+charges more for prompts above that threshold, so cost estimates
+under-report for very long-context calls.
