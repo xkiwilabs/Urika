@@ -273,9 +273,10 @@ def test_secrets_tab_has_three_sections(settings_client):
 
 
 def test_locked_provider_row_marks_unavailable(settings_client, tmp_path, monkeypatch):
-    """OPENAI_API_KEY / GOOGLE_API_KEY are flagged available=False so
-    the template can render the 'coming v0.5' badge instead of action
-    buttons."""
+    """GOOGLE_API_KEY is flagged available=False so the template can
+    render the 'coming soon' badge instead of action buttons. OpenAI
+    flipped to available=True in v0.7.0 (Task 2.3); Anthropic has been
+    available since v0.3."""
     monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
@@ -283,8 +284,8 @@ def test_locked_provider_row_marks_unavailable(settings_client, tmp_path, monkey
     r = settings_client.get("/api/secrets")
     assert r.status_code == 200
     by_name = {item["name"]: item for item in r.json()["secrets"]}
-    assert by_name["OPENAI_API_KEY"]["available"] is False
     assert by_name["GOOGLE_API_KEY"]["available"] is False
+    assert by_name["OPENAI_API_KEY"]["available"] is True
     assert by_name["ANTHROPIC_API_KEY"]["available"] is True
 
 
@@ -292,17 +293,17 @@ def test_post_secret_refuses_unavailable_provider_name(
     settings_client, monkeypatch, tmp_path
 ):
     """Saving a value for a locked provider returns 400 with a
-    roadmap-aware message."""
+    roadmap-aware message. GOOGLE_API_KEY is the canonical locked row
+    post-v0.7.0 (OpenAI unlocked in Task 2.3)."""
     monkeypatch.setenv("URIKA_HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     r = settings_client.post(
         "/api/secrets",
-        data={"name": "OPENAI_API_KEY", "value": "sk-fake-test-value-padding"},
+        data={"name": "GOOGLE_API_KEY", "value": "fake-google-test-value-padding"},
     )
     assert r.status_code == 400
     body_text = r.text
-    assert "OPENAI_API_KEY" in body_text or "OpenAI" in body_text
-    assert "v0.5" in body_text
+    assert "GOOGLE_API_KEY" in body_text or "Google" in body_text
 
 
 def test_used_by_config_row_shows_annotation(settings_client, monkeypatch, tmp_path):

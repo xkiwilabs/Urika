@@ -37,11 +37,16 @@ def test_anthropic_provider_is_available() -> None:
     assert prov.available is True
 
 
-def test_openai_and_google_providers_are_locked() -> None:
-    """Pre-roadmap providers render as locked rows."""
-    for env_name in ("OPENAI_API_KEY", "GOOGLE_API_KEY"):
-        prov = next(p for p in LLM_PROVIDERS if p.name == env_name)
-        assert prov.available is False, f"{env_name} should be locked"
+def test_openai_provider_is_available() -> None:
+    """OpenAI Agents SDK adapter ships in v0.7.0."""
+    prov = next(p for p in LLM_PROVIDERS if p.name == "OPENAI_API_KEY")
+    assert prov.available is True
+
+
+def test_google_provider_is_locked() -> None:
+    """Gemini adapter is still pre-roadmap — render as a locked row."""
+    prov = next(p for p in LLM_PROVIDERS if p.name == "GOOGLE_API_KEY")
+    assert prov.available is False, "GOOGLE_API_KEY should be locked"
 
 
 def test_provider_info_is_frozen() -> None:
