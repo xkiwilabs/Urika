@@ -31,11 +31,11 @@ def _run_report_agent(
 ) -> str:
     """Run the report agent and return its text output."""
     try:
-        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
+        from urika.agents.runner_routing import runner_for_agent
         from urika.cli_display import Spinner, print_agent
 
-        runner = get_runner()
+        runner = runner_for_agent("report_agent", project_path)
         registry = AgentRegistry()
         registry.discover()
 

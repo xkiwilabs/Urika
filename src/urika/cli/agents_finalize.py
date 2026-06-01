@@ -71,7 +71,7 @@ def finalize(
     _rc = load_runtime_config(project_path)
 
     try:
-        from urika.agents.runner import get_runner
+        from urika.agents.runner_routing import runner_for_project
         from urika.orchestrator.finalize import finalize_project
     except ImportError:
         raise ConfigError(
@@ -79,7 +79,12 @@ def finalize(
             hint="Run: pip install claude-agent-sdk",
         )
 
-    runner = get_runner()
+    # Orchestrator-level entry point: ``finalize_project`` drives the
+    # finalizer → report_agent → presentation_agent sequence under a
+    # single runner. Route via the project default; per-agent routing
+    # inside the finalize sequence is a larger refactor (orchestrator
+    # would need to accept a runner-per-agent map).
+    runner = runner_for_project(project_path)
     _start_ms, _start_iso = _agent_run_start()
 
     if json_output:

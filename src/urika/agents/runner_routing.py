@@ -52,10 +52,26 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from urika.agents.runner import AgentRunner, get_runner
+if TYPE_CHECKING:
+    from urika.agents.runner import AgentRunner
 
 logger = logging.getLogger(__name__)
+
+
+def _default_runner() -> "AgentRunner":
+    """Return the legacy :func:`urika.agents.runner.get_runner` runner.
+
+    Imported lazily inside the helper so that ``unittest.mock.patch``
+    on ``urika.agents.runner.get_runner`` (used widely across the
+    existing test suite to stub out the SDK) is honoured. A
+    module-level ``from urika.agents.runner import get_runner`` would
+    bind the name into this module's namespace and bypass the patch.
+    """
+    from urika.agents.runner import get_runner
+
+    return get_runner()
 
 
 class AdapterNotInstalledError(RuntimeError):
@@ -104,7 +120,7 @@ def _resolve(model: str) -> AgentRunner:
 
     model = (model or "").strip()
     if not model:
-        return get_runner()
+        return _default_runner()
     try:
         return runner_for(model)
     except UnknownModelError:
@@ -116,7 +132,7 @@ def _resolve(model: str) -> AgentRunner:
             "No adapter registered for model %r — falling back to default runner",
             model,
         )
-        return get_runner()
+        return _default_runner()
     except ModuleNotFoundError as exc:
         # Adapter is registered but its module-level imports failed —
         # most likely a missing optional extra. Re-raise with an
@@ -150,7 +166,7 @@ def runner_for_project(project_path: Path | None) -> AgentRunner:
     convenience for bootstrap paths where no project context exists yet.
     """
     if project_path is None:
-        return get_runner()
+        return _default_runner()
 
     from urika.agents.config import load_runtime_config
 
@@ -162,7 +178,7 @@ def runner_for_project(project_path: Path | None) -> AgentRunner:
             project_path,
             exc,
         )
-        return get_runner()
+        return _default_runner()
 
     return _resolve(rc.model or "")
 
@@ -185,7 +201,7 @@ def runner_for_agent(agent_name: str, project_path: Path | None) -> AgentRunner:
     ``project_path=None`` is accepted and returns the legacy default.
     """
     if project_path is None:
-        return get_runner()
+        return _default_runner()
 
     from urika.agents.config import get_agent_model, load_runtime_config
 
@@ -197,7 +213,7 @@ def runner_for_agent(agent_name: str, project_path: Path | None) -> AgentRunner:
             project_path,
             exc,
         )
-        return get_runner()
+        return _default_runner()
 
     model = get_agent_model(agent_name, rc) or ""
     return _resolve(model)

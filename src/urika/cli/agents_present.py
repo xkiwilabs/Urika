@@ -67,7 +67,7 @@ def present(
         raise click.ClickException("No experiments.")
 
     try:
-        from urika.agents.runner import get_runner
+        from urika.agents.runner_routing import runner_for_agent
         from urika.orchestrator.loop import _generate_presentation, _noop_callback
     except ImportError:
         raise ConfigError(
@@ -75,7 +75,9 @@ def present(
             hint="Run: pip install claude-agent-sdk",
         )
 
-    runner = get_runner()
+    # ``_generate_presentation`` drives a single agent
+    # (``presentation_agent``); honour its per-agent override.
+    runner = runner_for_agent("presentation_agent", project_path)
     on_msg = (lambda m: None) if json_output else _make_on_message()
 
     if experiment_id is not None:
