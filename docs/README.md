@@ -33,3 +33,6 @@
 | [19a Notifications — Channels](19a-notifications-channels.md) | Email, Slack, Telegram setup walkthroughs |
 | [19b Notifications — Remote](19b-notifications-remote.md) | Remote `/commands`, what gets notified, troubleshooting, caveats |
 | [20 Security Model](20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard/notifications security |
+| [21 Cookbook — Long-Running Training](21-cookbook-long-running-training.md) | Wrap a long PyTorch training run inside an experiment so it survives reboots and shows progress live |
+| [22 GitHub Backup](22-github-backup.md) | `urika github` commands, pre-commit secret scanner, opt-in auto-push after `run` / `finalize` / `build-tool` |
+| [v0.7 Provider Guide](v07-provider-guide.md) | Choosing between Anthropic / OpenAI / Google adapters, auth setup per provider, mixing providers per agent |
