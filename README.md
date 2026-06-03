@@ -227,6 +227,8 @@ See [Models and Privacy](docs/13a-models-and-privacy.md) for configuration detai
 | [Notifications — Channels](docs/19a-notifications-channels.md) | Email, Slack, Telegram setup walkthroughs |
 | [Notifications — Remote](docs/19b-notifications-remote.md) | Remote `/commands`, what gets notified, troubleshooting, caveats |
 | [Security Model](docs/20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
+| [GitHub Backup](docs/22-github-backup.md) | `urika github` commands, pre-commit secret scanner, opt-in auto-push hook |
+| [v0.7 Provider Guide](docs/v07-provider-guide.md) | Choosing between Anthropic / OpenAI / Google, auth setup per provider, mixing providers per agent |
 
 ## Reporting bugs and requesting features
 
@@ -236,21 +238,30 @@ Pick the **🐛 Bug report** or **✨ Feature request** template — it
 asks for the version, OS, and a few other details that make the
 issue much faster to act on.
 
-## Coming soon
+## Recently shipped
 
-Planned features on the road to **v1.0.0**, in order. Bug-fix
-hotfixes (`v0.x.y`) ship in between as issues are reported.
-
-**v0.5 — smarter project memory**
-- Curator agent that organises captured memory, merges duplicates, and flags contradictions
-- Browse archived / superseded memory entries in CLI + dashboard
-- See how a project's memory evolved over time (`urika memory diff`, dashboard timeline)
+**v0.7 — multi-provider adapters** (current release)
+- OpenAI Agents SDK adapter + `[openai]` extra (`pip install urika[openai]`)
+- Google Agent Development Kit adapter + `[google]` extra (`pip install urika[google]`)
+- Model-prefix routing (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google) — mix providers per agent in the same project
+- Anthropic subscription auth path (`urika config anthropic --mode subscription`), API-key path unchanged
+- Setup: `urika config anthropic|openai|google --mode api_key` then `urika config api-key` (Anthropic) or `urika config secret` (OpenAI / Google) — see the [v0.7 Provider Guide](docs/v07-provider-guide.md) for the full decision rubric.
 
 **v0.6 — GitHub backup**
-- One-command setup of a remote git repo for any project
-- Optional auto-create of a private GitHub repo at project-creation time
-- Auto-push after every successful `urika run` / `finalize` so your work is always backed up
-- Dashboard Git tab showing remote URL, last push, recent commits
+- One-command setup of a git repo per project + opt-in auto-push after every successful `urika run` / `finalize` / `build-tool` — see the [GitHub Backup guide](docs/22-github-backup.md)
+- Pre-commit secret scanner (Anthropic, OpenAI, GitHub PAT/OAuth, AWS shapes) blocks leaks before they reach the remote
+- Dashboard Git tab with remote URL, last push, recent commits
+- Researcher-safe `.gitignore` template with managed-block markers
+
+**v0.5 — smarter project memory**
+- `memory_curator` agent organises captured memory, merges duplicates, flags contradictions (`urika memory curate`)
+- Browse archived / superseded entries (`urika memory archive`) + see how memory evolved (`urika memory diff`)
+- Dashboard Memory page with full CRUD + Curate / Apply UI
+
+## Coming next
+
+Planned features on the road to **v1.0.0**. Bug-fix hotfixes
+(`v0.x.y`) ship in between as issues are reported.
 
 **v0.8 — publication-ready output**
 - Export reports as PDF or LaTeX
