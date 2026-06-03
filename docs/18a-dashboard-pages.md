@@ -50,6 +50,8 @@ The dashboard is a multi-page app. Each route is a server-rendered Jinja templat
 | `/projects/<name>/presentation` | Project-level presentation (reveal.js). |
 | `/projects/<name>/knowledge` | Knowledge base entries for the project, with an "+ Add knowledge" button (see below). |
 | `/projects/<name>/knowledge/<id>` | A single knowledge entry. |
+| `/projects/<name>/memory` | Project memory entries (v0.5.0): list / add / edit / delete via the CRUD API at `/api/projects/<name>/memory`, plus **Curate** (dry-run) and **Apply** controls that wire to the `memory_curator` agent. `?show_archived=true` toggles the archived-snapshot list below the live entries. |
+| `/projects/<name>/git` | Git tab (v0.6.0): branch / remote / dirty count / last commit panel, recent-commits list with `urika-event:` chips, and a "Push now" button when initialised. When not yet a git repo, shows an "Initialise" form that POSTs to `/api/projects/<name>/git/init`. Sidebar entry between Methods and Criteria. |
 | `/projects/<name>/tools` | Registered tools listing (read-only viewer for the project tool registry). |
 | `/projects/<name>/criteria` | Versioned success-criteria viewer (read-only). |
 | `/projects/<name>/advisor` | Advisor chat panel — persistent transcript per project (see below). |

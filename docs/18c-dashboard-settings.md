@@ -9,12 +9,12 @@ Two settings pages share the same tabbed form pattern. Tabs are a small Alpine.j
 - **Project settings** (`/projects/<name>/settings`) — writes to that project's `urika.toml`. Five tabs:
   - **Basics**: name, mode, audience, research question.
   - **Data**: dataset path, target column, feature columns. Saving appends a new entry to `revisions.json` so changes are auditable.
-  - **Models**: per-agent model overrides (planning, task, evaluator, advisor, etc.).
+  - **Models**: per-agent model overrides (planning, task, evaluator, advisor, etc.). The tab carries a **Provider filter** (a three-way Anthropic / OpenAI / Google toggle, v0.7.0) that pre-populates each per-agent dropdown with the matching provider's recommended models — `claude-opus-4-7` / `claude-sonnet-4-5` for Anthropic, `gpt-5.4` / `gpt-5.4-mini` for OpenAI, `gemini-3.1-pro-preview` / `gemini-3.5-flash` for Google. You can still type a model string by hand for any agent — the filter is a convenience, not a constraint. Mixing providers across agents in the same project is the explicit design.
   - **Privacy**: an **Inherit / Override global** picker. Inherit removes the `[privacy]` block from `urika.toml` and the project falls back to the global default. Override exposes privacy mode (`local`, `hybrid`, `cloud`) and any path allow-listing.
   - **Notifications**: per-channel **Inherit / Enabled / Disabled** radios (slack, email, desktop) plus an editable extra-recipients list. Same inheritance pattern as Privacy.
 - **Global settings** (`/settings`) — writes to `~/.urika/settings.toml` and seeds new projects. Four tabs:
   - **Privacy**: default privacy mode for new projects.
-  - **Models**: default per-agent model assignments.
+  - **Models**: default per-agent model assignments. Same Anthropic / OpenAI / Google Provider filter as the project Models tab; the per-agent defaults seeded here flow into every newly-created project's `urika.toml`.
   - **Preferences**: default audience, max turns, theme preference.
   - **Notifications**: default notification configuration.
 
