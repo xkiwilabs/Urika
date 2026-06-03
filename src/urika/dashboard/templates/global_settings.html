@@ -403,6 +403,92 @@
         </span>
       </div>
 
+      {# Provider auth mode toggle — cross-surface parity with
+         ``urika config <provider> --mode {api_key|subscription}``.
+         Writes ``[<provider>] auth`` to ~/.urika/settings.toml via
+         the dedicated POST endpoint below; never travels through the
+         main settings PUT so a partial save here doesn't accidentally
+         clobber other tabs. OpenAI / Google subscription mode is
+         rejected server-side (matches the CLI). #}
+      <div class="form-row"
+           x-data="{
+             saving: false,
+             status: '',
+             save() {
+               this.saving = true;
+               this.status = '';
+               const provider = (this.provider || 'anthropic');
+               const mode = document.getElementById(
+                 'provider-auth-' + provider
+               ).value;
+               const fd = new FormData();
+               fd.append('provider', provider);
+               fd.append('mode', mode);
+               fetch('/api/settings/provider-auth', {
+                 method: 'POST',
+                 body: fd,
+                 headers: { 'Origin': location.origin },
+               })
+                 .then(r => r.json().then(j => ({ ok: r.ok, j })))
+                 .then(({ ok, j }) => {
+                   this.saving = false;
+                   this.status = ok
+                     ? 'Saved.'
+                     : 'Failed: ' + (j.detail || 'unknown error');
+                 })
+                 .catch(e => {
+                   this.saving = false;
+                   this.status = 'Failed: ' + e;
+                 });
+             },
+           }">
+        <label>Provider auth mode</label>
+
+        {# One <select> per provider — Alpine x-show flips to match the
+           Provider <select> above. Names are namespaced so they don't
+           collide with the main settings form fields. #}
+        <select id="provider-auth-anthropic"
+                name="anthropic_auth"
+                x-show="provider === 'anthropic'"
+                x-cloak>
+          <option value="api_key" {% if anthropic_auth == "api_key" %}selected{% endif %}>API key (ANTHROPIC_API_KEY)</option>
+          <option value="subscription" {% if anthropic_auth == "subscription" %}selected{% endif %}>Subscription (Claude CLI / Pro/Max)</option>
+        </select>
+
+        <select id="provider-auth-openai"
+                name="openai_auth"
+                x-show="provider === 'openai'"
+                x-cloak>
+          <option value="api_key" {% if openai_auth == "api_key" %}selected{% endif %}>API key (OPENAI_API_KEY)</option>
+          {# Subscription rejected server-side; option included only as a
+             non-selectable marker so users see WHY it's missing. #}
+          <option value="subscription" disabled>Subscription (not supported — OpenAI Plus is a separate product)</option>
+        </select>
+
+        <select id="provider-auth-google"
+                name="google_auth"
+                x-show="provider === 'google'"
+                x-cloak>
+          <option value="api_key" {% if google_auth == "api_key" %}selected{% endif %}>API key (GEMINI_API_KEY)</option>
+          <option value="subscription" disabled>Subscription (not supported — Google AI Pro/Ultra ToS forbids third-party SDK use)</option>
+        </select>
+
+        <div style="margin-top: var(--space-2); display: flex; gap: var(--space-2); align-items: center;">
+          <button type="button" class="btn btn--secondary"
+                  :disabled="saving"
+                  @click="save()">
+            <span x-show="!saving">Save auth mode</span>
+            <span x-show="saving">Saving…</span>
+          </button>
+          <span class="form-help" x-text="status" x-show="status"></span>
+        </div>
+        <span class="form-help" style="margin-top: var(--space-2);">
+          Subscription mode requires running <code>claude login</code> in your terminal
+          first (Anthropic only). API-key mode reads the corresponding
+          environment variable (configurable on the Secrets tab).
+        </span>
+      </div>
+
       <div class="tab-list" role="tablist" style="margin-bottom: var(--space-3);">
         <button class="tab-button" type="button"
                 :class="{ 'tab-button--active': mode === 'open' }"

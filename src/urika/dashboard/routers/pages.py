@@ -192,7 +192,7 @@ def root() -> RedirectResponse:
 
 @router.get("/projects", response_class=HTMLResponse)
 def projects_list(request: Request) -> HTMLResponse:
-    from urika.core.settings import get_named_endpoints
+    from urika.core.settings import get_named_endpoints, get_preference
 
     registry = ProjectRegistry().list_all()
     summaries = list_project_summaries(registry)
@@ -208,6 +208,14 @@ def projects_list(request: Request) -> HTMLResponse:
         if (ep.get("base_url") or "").strip()
     ]
     has_private_endpoint = bool(private_endpoints)
+    # v0.6 / v0.7 parity: New Project modal exposes a "Create GitHub
+    # repo" checkbox. Default is the global ``[preferences]
+    # github_auto_create`` flag (False unset), with visibility from
+    # ``github_auto_create_visibility`` (``"private"`` default).
+    github_auto_create = bool(get_preference("github_auto_create", default=False))
+    github_auto_create_visibility = str(
+        get_preference("github_auto_create_visibility", default="private")
+    ).lower()
     return templates.TemplateResponse(
         request,
         "projects_list.html",
@@ -217,6 +225,8 @@ def projects_list(request: Request) -> HTMLResponse:
             "valid_audiences": sorted(VALID_AUDIENCES),
             "has_private_endpoint": has_private_endpoint,
             "private_endpoints": private_endpoints,
+            "github_auto_create": github_auto_create,
+            "github_auto_create_visibility": github_auto_create_visibility,
         },
     )
 
@@ -1276,12 +1286,24 @@ def global_settings(request: Request) -> HTMLResponse:
     )
     notif_telegram_bot_token_set = bool(_tg_bot_env and _notif_backend.get(_tg_bot_env))
 
+    # Provider auth-mode toggles (Models tab). Mirrors the CLI's
+    # ``urika config anthropic|openai|google --mode ...`` selectors —
+    # writes ``[<provider>] auth`` in ~/.urika/settings.toml. Default
+    # is ``api_key`` for every provider (matches CLI fallback).
+    anthropic_auth = (s.get("anthropic", {}) or {}).get("auth", "api_key")
+    openai_auth = (s.get("openai", {}) or {}).get("auth", "api_key")
+    google_auth = (s.get("google", {}) or {}).get("auth", "api_key")
+
     return templates.TemplateResponse(
         request,
         "global_settings.html",
         {
             # Compliance banner state.
             "api_key_configured": api_key_configured,
+            # Provider auth-mode (Models tab — v0.7.0 parity).
+            "anthropic_auth": anthropic_auth,
+            "openai_auth": openai_auth,
+            "google_auth": google_auth,
             # Privacy tab — multi-endpoint editor.
             "named_endpoints": named_endpoints,
             "defined_endpoint_names": defined_endpoint_names,
@@ -1816,6 +1838,119 @@ def project_git_page(name: str, request: Request) -> HTMLResponse:
     }
     ctx.update(_project_template_context(name, summary))
     return templates.TemplateResponse(request, "git.html", ctx)
+
+
+def _parse_memory_diff_ts(s: str):
+    """Parse a memory-diff timestamp form value.
+
+    Mirrors :func:`urika.cli.memory._parse_relative` so dashboard +
+    CLI accept exactly the same input vocabulary
+    (``now``, ``yesterday``, ``Nh_ago`` / ``Nd_ago`` / ``Nw_ago``, ISO 8601).
+    Underscores in place of spaces let the URL query carry single
+    tokens (``?from_ts=1h_ago``). Raises ``ValueError`` on garbage so
+    the caller can map it to a 422.
+    """
+    import re as _re
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+    from datetime import timezone as _tz
+
+    s = (s or "").strip().lower().replace("_", " ")
+    now = _dt.now(_tz.utc)
+    if s == "now":
+        return now
+    if s == "yesterday":
+        return now - _td(days=1)
+    m = _re.match(r"^(\d+)([hdw])\s+ago$", s)
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2)
+        deltas = {
+            "h": _td(hours=n),
+            "d": _td(days=n),
+            "w": _td(weeks=n),
+        }
+        return now - deltas[unit]
+    return _dt.fromisoformat(s)
+
+
+@router.get("/projects/{name}/memory/archive", response_class=HTMLResponse)
+def project_memory_archive_page(
+    request: Request,
+    name: str,
+    month: str | None = None,
+) -> HTMLResponse:
+    """Browse archived memory entries — dashboard analogue of
+    ``urika memory archive``.
+
+    Backed by :func:`urika.core.project_memory.list_archive`. ``?month=YYYY-MM``
+    scopes the listing to one month; without it every archived month
+    is rendered grouped by ``YYYY-MM`` section.
+    """
+    from urika.core.project_memory import list_archive
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    entries = list_archive(summary.path, month=month)
+    # Group by month so the template can render section headings.
+    entries_by_month: dict[str, list] = {}
+    for e in entries:
+        entries_by_month.setdefault(e.get("month", ""), []).append(e)
+
+    templates = request.app.state.templates
+    ctx = {
+        "project": summary,
+        "entries_by_month": entries_by_month,
+        "month": month or "",
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(request, "memory_archive.html", ctx)
+
+
+@router.get("/projects/{name}/memory/diff", response_class=HTMLResponse)
+def project_memory_diff_page(
+    request: Request,
+    name: str,
+    from_ts: str = "1d_ago",
+    to_ts: str = "now",
+) -> HTMLResponse:
+    """Show memory entries added / archived / trashed in a time window —
+    dashboard analogue of ``urika memory diff <from_ts> <to_ts>``.
+
+    Timestamps accept the same vocabulary as the CLI (relative
+    ``Nh_ago`` forms, ``now``, ``yesterday``, or ISO 8601). Garbage
+    timestamps produce a 422 — matching the CLI's exit-1 behaviour.
+    """
+    from urika.core.project_memory import diff_between
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    try:
+        f = _parse_memory_diff_ts(from_ts)
+        t = _parse_memory_diff_ts(to_ts)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"cannot parse timestamp: {exc}",
+        ) from exc
+
+    diff = diff_between(summary.path, f, t)
+
+    templates = request.app.state.templates
+    ctx = {
+        "project": summary,
+        "diff": diff,
+        "from_ts": from_ts,
+        "to_ts": to_ts,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return templates.TemplateResponse(request, "memory_diff.html", ctx)
 
 
 @router.get("/projects/{name}/memory", response_class=HTMLResponse)

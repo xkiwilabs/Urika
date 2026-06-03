@@ -1,0 +1,83 @@
+{% extends "_base.html" %}
+
+{% block title %}Memory archive · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Memory archive{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}/memory">Memory</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Archive</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .archive-filter { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; }
+    .archive-filter label { font-weight: 600; }
+    .archive-filter input { font: inherit; padding: 0.3rem 0.5rem; }
+    .month-section { margin-top: 1.5rem; }
+    .month-section h2 { font-size: 1rem; margin: 0 0 0.5rem; color: var(--text-muted); }
+    .month-chip { display: inline-block; padding: 0.1rem 0.4rem; border: 1px solid var(--border, #ccc); border-radius: 3px; font-size: 0.8rem; margin-right: 0.25rem; }
+  </style>
+
+  <p class="text-muted">
+    Archived memory entries live under
+    <code>memory/archive/&lt;YYYY-MM&gt;/</code> and are produced by the
+    curator (<code>urika memory curate --apply</code>). This page is the
+    dashboard analogue of <code>urika memory archive</code>.
+  </p>
+
+  <form method="get" class="archive-filter" action="/projects/{{ project.name }}/memory/archive">
+    <label for="month-filter">Month</label>
+    <input id="month-filter" name="month" type="text"
+           placeholder="YYYY-MM"
+           pattern="[0-9]{4}-[0-9]{2}"
+           value="{{ month or '' }}">
+    <button type="submit" class="btn btn--secondary">Filter</button>
+    {% if month %}
+      <a class="btn btn--ghost" href="/projects/{{ project.name }}/memory/archive">Clear</a>
+    {% endif %}
+    <span class="text-muted" style="margin-left: auto;">
+      <a href="/projects/{{ project.name }}/memory/diff?from_ts=1w_ago&to_ts=now">View diff →</a>
+    </span>
+  </form>
+
+  {% if entries_by_month %}
+    {% for month_key, month_entries in entries_by_month.items() %}
+      <section class="month-section">
+        <h2>{{ month_key }}</h2>
+        <ul class="list">
+          {% for entry in month_entries %}
+            <li class="list-item">
+              <div class="list-item-row">
+                <div class="list-item-main">
+                  <div class="list-item-title">{{ entry.name }}</div>
+                  {% if entry.description %}
+                    <div class="list-item-subtitle text-muted">{{ entry.description }}</div>
+                  {% endif %}
+                  {% if entry.body_preview %}
+                    <div class="list-item-subtitle">{{ entry.body_preview }}</div>
+                  {% endif %}
+                </div>
+                <div class="list-item-meta">
+                  <span class="tag">{{ entry.type }}</span>
+                  <span class="month-chip">{{ entry.month }}</span>
+                  <span class="text-muted" style="font-size: 0.8em;">{{ entry.filename }}</span>
+                </div>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state">
+      <p>No archived entries{% if month %} for <code>{{ month }}</code>{% endif %}.</p>
+    </div>
+  {% endif %}
+{% endblock %}
