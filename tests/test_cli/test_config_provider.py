@@ -120,6 +120,10 @@ def test_config_openai_api_key_writes_preference(tmp_path, monkeypatch):
     assert "[openai]" in text
     assert 'auth = "api_key"' in text
     assert "OPENAI_API_KEY" in result.output
+    # Hint must point at the generic `urika config secret` flow (NOT the
+    # Anthropic-only `urika config api-key`, which ignores positional args).
+    assert "urika config secret" in result.output
+    assert "urika config api-key" not in result.output
 
 
 def test_config_google_rejects_subscription(tmp_path, monkeypatch):
@@ -144,6 +148,10 @@ def test_config_google_api_key_writes_preference(tmp_path, monkeypatch):
     assert "[google]" in text
     assert 'auth = "api_key"' in text
     assert "GEMINI_API_KEY" in result.output
+    # Hint must point at the generic `urika config secret` flow (NOT the
+    # Anthropic-only `urika config api-key`, which ignores positional args).
+    assert "urika config secret" in result.output
+    assert "urika config api-key" not in result.output
 
 
 def test_config_anthropic_preserves_existing_settings(tmp_path, monkeypatch):

@@ -29,6 +29,13 @@ it's the configuration every other Urika user is running.
 Every provider supports API-key auth. Anthropic additionally
 supports subscription auth (opt-in, post-June 15 2026).
 
+Setup is a **two-step** flow: first pin the auth mode, then
+store the actual key. `urika config <provider>` only writes the
+`[<provider>] auth = "..."` toggle to `~/.urika/settings.toml`
+— it does **not** save the key itself.
+
+### Step 1 — Pin the auth mode
+
 ```bash
 # Anthropic — API key (default)
 urika config anthropic --mode api_key
@@ -36,18 +43,48 @@ urika config anthropic --mode api_key
 # Anthropic — subscription (requires `claude login` first)
 urika config anthropic --mode subscription
 
-# OpenAI
+# OpenAI (subscription not supported — OpenAI Plus is not the API)
 urika config openai --mode api_key
 
-# Google
+# Google (subscription not supported — AI Pro/Ultra ToS forbids it)
 urika config google --mode api_key
 ```
 
-The wizard saves API keys to the vault under the canonical secret
-name (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`)
-and writes the `[<provider>] auth = "..."` toggle to
-`~/.urika/settings.toml`. You can verify with `urika config
-<provider> --test`.
+### Step 2 — Store the API key
+
+The key goes into the secrets vault, which agents read at spawn
+time. Vault storage is `~/.urika/secrets.env` by default, or the
+OS keyring if you installed Urika with `pip install urika[keyring]`.
+
+| Provider | Command | Canonical name |
+|---|---|---|
+| Anthropic | `urika config api-key` | `ANTHROPIC_API_KEY` |
+| OpenAI | `urika config secret` | `OPENAI_API_KEY` |
+| Google | `urika config secret` | `GEMINI_API_KEY` |
+
+`urika config api-key` is the Anthropic-specific wizard (it
+ignores any positional name argument). For OpenAI and Google use
+`urika config secret`, which prompts you for the secret name
+(enter the canonical name from the table above) and then for the
+value.
+
+> **Dashboard alternative:** the dashboard Settings page has a
+> Secrets tab that stores the same vault entries via a form. See
+> [Dashboard settings](18c-dashboard-settings.md) for the route.
+
+### Step 3 — Verify
+
+For Anthropic, the API-key wizard ships with a live-call probe:
+
+```bash
+urika config api-key --test
+```
+
+OpenAI and Google don't have a per-provider `--test` flag today
+— the fastest end-to-end check is to set the matching mode in
+`urika.toml` (or an experiment override) and run a one-shot
+`urika run`; if the adapter can't authenticate the run fails
+loudly with the provider's own error string.
 
 ## Mixing providers per agent role
 

@@ -147,8 +147,9 @@ def run_config_openai(mode: str) -> None:
         )
     _write_provider_auth("openai", "api_key")
     click.echo(
-        "OpenAI API-key mode set. Store your key with "
-        "`urika config api-key OPENAI_API_KEY` (or export it in your shell)."
+        "OpenAI API-key mode set. Store your key by running "
+        "`urika config secret`, then entering `OPENAI_API_KEY` as the "
+        "secret name (or export it in your shell)."
     )
 
 
@@ -169,6 +170,7 @@ def run_config_google(mode: str) -> None:
         )
     _write_provider_auth("google", "api_key")
     click.echo(
-        "Google API-key mode set. Store your key with "
-        "`urika config api-key GEMINI_API_KEY` (or export it in your shell)."
+        "Google API-key mode set. Store your key by running "
+        "`urika config secret`, then entering `GEMINI_API_KEY` as the "
+        "secret name (or export it in your shell)."
     )
