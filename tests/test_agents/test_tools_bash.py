@@ -64,19 +64,28 @@ def test_bash_rejects_newline_injection(tmp_path: Path):
     assert "metacharacter" in (result.error or "")
 
 
-def test_bash_truncates_huge_stdout(tmp_path: Path):
+def test_bash_truncates_huge_stdout(tmp_path: Path, monkeypatch):
     """A runaway command that produces >32 KB of stdout must have its
     output bounded before flowing into ``ToolResult.output`` — otherwise
     the LLM context fills up with a single tool result.
+
+    Monkeypatch ``subprocess.run`` so the test doesn't rely on argv
+    lengths the OS may refuse (Windows cmd has ~8 KB argv limit).
     """
+    import subprocess
+
+    class _FakeCompleted:
+        returncode = 0
+        stdout = "x" * 100_000
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: _FakeCompleted())
+
     policy = _policy(
-        allowed_bash=["printf"],
+        allowed_bash=["echo"],
         writable=[tmp_path],
     )
-    # printf with a wide %.*s payload produces ~100 KB of 'x' chars.
-    # Single token (no metachars), head matches allowlist.
-    big = "x" * 100_000
-    result = bash(f"printf %s {big}", security=policy, project_dir=tmp_path)
+    result = bash("echo placeholder", security=policy, project_dir=tmp_path)
     assert result.ok is True
     # Result must be capped at ~32 KB plus the truncation marker.
     assert len(result.output) < 40_000

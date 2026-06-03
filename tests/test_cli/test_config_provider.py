@@ -86,11 +86,12 @@ def test_config_anthropic_subscription_verify_warns_when_claude_missing(
         raise FileNotFoundError("no claude CLI")
 
     monkeypatch.setattr("subprocess.run", _missing)
-    runner = CliRunner(mix_stderr=False)
+    # Click 8.2 removed CliRunner(mix_stderr=...) — assert against mixed output instead.
+    runner = CliRunner()
     result = runner.invoke(cli, ["config", "anthropic", "--mode", "subscription"])
     assert result.exit_code == 0, result.output
-    # Warning lands on stderr.
-    assert "claude" in (result.stderr or "")
+    # Warning surfaces in the mixed stdout/stderr stream.
+    assert "claude" in result.output
     # Setting is still written.
     assert 'auth = "subscription"' in _settings_text(home)
 
