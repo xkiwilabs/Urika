@@ -189,7 +189,15 @@ def dashboard(
     click.echo("  Dashboard stopped.")
 
 
-@cli.command("config")
+@cli.command(
+    "config",
+    # Allow extra positionals on ``urika config auto-capture <project>``
+    # — Click sees ``auto-capture`` as ``project`` and would normally
+    # reject the trailing project name. The actual project lookup is
+    # done inside ``_config_auto_capture`` by re-scanning sys.argv.
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": False},
+)
+@click.pass_context
 @click.argument("project", required=False, default=None)
 @click.option("--show", is_flag=True, help="Show current settings.")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
@@ -234,7 +242,18 @@ def dashboard(
         "``claude --version`` probe that warns about a missing local CLI."
     ),
 )
+@click.option(
+    "--enable/--disable",
+    "enable_flag",
+    default=None,
+    help=(
+        "With ``urika config auto-capture <project>``: enable or disable "
+        "the project's ``[memory] auto_capture`` flag. Default (without "
+        "either) prints the current value."
+    ),
+)
 def config_command(
+    ctx: click.Context,
     project: str | None,
     show: bool,
     json_output: bool,
@@ -242,6 +261,7 @@ def config_command(
     reset_models: bool,
     provider_mode: str | None,
     no_verify: bool,
+    enable_flag: bool | None,
 ) -> None:
     """View or configure privacy mode and models.
 
@@ -267,6 +287,11 @@ def config_command(
       * ``urika config google --mode api_key`` — pin Google to the
         Gemini-API-key path. (``--mode subscription`` is rejected:
         Google AI Pro/Ultra ToS forbid third-party SDK use.)
+      * ``urika config auto-capture <project> [--enable|--disable]`` —
+        toggle the project's ``[memory] auto_capture`` flag (v0.5.0
+        memory deepening). Without ``--enable`` / ``--disable`` the
+        current value is printed. Mirrors the dashboard's memory-page
+        checkbox (POST ``/api/projects/<name>/memory/auto_capture``).
 
     Examples:
 
@@ -278,6 +303,9 @@ def config_command(
         urika config anthropic --mode subscription --no-verify
         urika config openai --mode api_key
         urika config google --mode api_key
+        urika config auto-capture my-project --enable
+        urika config auto-capture my-project --disable
+        urika config auto-capture my-project           # show current value
         urika config my-project --show   # show project settings
         urika config my-project          # interactive setup (project)
     """
@@ -310,6 +338,18 @@ def config_command(
             run_config_openai(provider_mode)
         else:  # project == "google"
             run_config_google(provider_mode)
+        return
+
+    # ── Special routing: "urika config auto-capture <project>" ──
+    # ``auto-capture`` is a pseudo-project name that toggles the per-
+    # project ``[memory] auto_capture`` flag. The CLI parser sees
+    # ``auto-capture`` as the positional and any subsequent token as
+    # part of the help/flag stream, so we re-parse ``sys.argv`` to pull
+    # the real project name out. The dashboard already exposes a
+    # checkbox for this on the memory page; this command + the matching
+    # ``/config auto-capture`` REPL slash close the CLI/REPL surface.
+    if project == "auto-capture":
+        _config_auto_capture(enable_flag)
         return
 
     # ── Special routing: "urika config api-key" ──
@@ -864,6 +904,89 @@ def _config_interactive(*, session, current_mode, is_project, project_path):
         "section in urika.toml directly."
     )
     click.echo()
+
+
+def _config_auto_capture(enable_flag: bool | None) -> None:
+    """Toggle ``[memory] auto_capture`` for a project.
+
+    Mirrors what the dashboard's memory-page checkbox does (the
+    ``POST /api/projects/<name>/memory/auto_capture`` endpoint in
+    ``urika.dashboard.routers.api``). Writes through the shared
+    ``_write_toml`` helper so the file format stays consistent with
+    every other settings write.
+
+    Project selection: if a project name follows ``auto-capture`` on
+    the command line (e.g. ``urika config auto-capture my-proj
+    --enable``) we use it; otherwise we fall back to
+    ``_ensure_project(None)`` which auto-picks if there's exactly one
+    project, or prompts to pick one. Returns the new value through
+    stdout for scripting; with no ``--enable`` / ``--disable`` we just
+    print the current value (default ``True``).
+    """
+    import sys
+    import tomllib
+
+    from urika.cli._helpers import _ensure_project, _resolve_project
+    from urika.cli_display import print_step
+    from urika.core.workspace import _write_toml
+
+    # ── Pull a project name from sys.argv if the user typed one ──
+    # ``urika config auto-capture <project> [--enable]`` lands here with
+    # ``project=='auto-capture'`` from Click's positional. The real
+    # project name (when supplied) sits one token to the right; walk
+    # the argv to grab it without forcing a rewrite of the config
+    # command's positional contract.
+    argv = list(sys.argv)
+    project_name: str | None = None
+    try:
+        i = argv.index("auto-capture")
+        # The next non-flag token is the project name.
+        for tok in argv[i + 1 :]:
+            if tok.startswith("-"):
+                continue
+            project_name = tok
+            break
+    except ValueError:
+        pass
+
+    project_name = _ensure_project(project_name)
+    project_path, _config = _resolve_project(project_name)
+
+    toml_path = project_path / "urika.toml"
+    if toml_path.exists():
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+    else:
+        data = {}
+
+    current = bool(data.get("memory", {}).get("auto_capture", True))
+
+    if enable_flag is None:
+        # Show-mode: print the current value and exit.
+        print_step(
+            f"[memory] auto_capture for {project_name}: "
+            f"{'enabled' if current else 'disabled'}"
+        )
+        click.echo(
+            "  Use --enable or --disable to change. Default (when unset) is enabled."
+        )
+        return
+
+    if current == enable_flag:
+        click.echo(
+            f"  [memory] auto_capture for {project_name} is already "
+            f"{'enabled' if enable_flag else 'disabled'} — no change."
+        )
+        return
+
+    data.setdefault("memory", {})["auto_capture"] = enable_flag
+    _write_toml(toml_path, data)
+    from urika.cli_display import print_success
+
+    print_success(
+        f"[memory] auto_capture for {project_name} "
+        f"{'enabled' if enable_flag else 'disabled'}."
+    )
 
 
 def _config_api_key_interactive() -> None:
