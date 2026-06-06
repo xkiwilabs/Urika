@@ -67,14 +67,17 @@ def test_google_runner_raises_clear_error_when_extra_missing(
     AgentResult with ``success=False`` and an actionable error
     message that points at the ``urika[google]`` extra.
 
-    Both ``google.adk.agents`` and ``google.adk.runners`` are pinned
-    to ``None`` because the adapter imports both — if either is
-    present the ImportError branch wouldn't fire reliably.
+    All four import targets (``google.adk.agents``, ``google.adk.runners``,
+    ``google.adk.sessions``, ``google.genai``) are pinned to ``None`` —
+    the adapter imports all of them in the gating ``try`` block, so if
+    any one is present we wouldn't reliably hit the ImportError branch.
     """
     # Simulate ImportError by setting the modules to None — Python's
     # import machinery treats this as "explicitly absent" and raises.
     monkeypatch.setitem(sys.modules, "google.adk.agents", None)
     monkeypatch.setitem(sys.modules, "google.adk.runners", None)
+    monkeypatch.setitem(sys.modules, "google.adk.sessions", None)
+    monkeypatch.setitem(sys.modules, "google.genai", None)
 
     from urika.agents.adapters.google_adk import GoogleADKRunner
 
@@ -89,15 +92,30 @@ def test_google_runner_raises_clear_error_when_extra_missing(
 #
 # The ADK exposes an async event-stream model rather than the OpenAI
 # Agents SDK's single awaited ``RunResult``: ``Runner.run_async`` is
-# an async iterator that yields ``LlmResponse`` / ``ToolCall`` /
-# ``ToolResult`` events. The adapter folds the stream into one
-# ``AgentResult`` by accumulating ``event.text`` and pulling token
-# counts off the trailing usage-bearing event. The fake below pins
-# that contract — text-bearing events, then a final usage event.
+# an async iterator that yields ``Event`` objects (subclassing
+# ``LlmResponse``). The adapter folds the stream into one
+# ``AgentResult`` by walking ``event.content.parts[].text`` and pulling
+# token counts off ``event.usage_metadata`` (``prompt_token_count`` /
+# ``candidates_token_count``). The fakes below MUST pin the real ADK
+# API shape — that's the v0.7.0 release-blocker lesson: a mock that
+# diverges from the real SDK passes its unit test and then explodes
+# in the first smoke run. The structural assertions in
+# ``test_google_adk_real_imports.py`` keep this contract honest by
+# checking the live ADK package; the mocks here are what the adapter
+# is exercised against on dev boxes without the [google] extra.
 #
-# Adapter quirk worth flagging: the ADK ``Agent`` constructor uses
-# ``instruction=`` (singular), not OpenAI's ``instructions=`` — the
-# fake mirrors that so a regression on the keyword name is loud.
+# Specifically pinned:
+#
+# * ``Runner.__init__(*, app_name=..., agent=..., session_service=...,
+#   auto_create_session=..., ...)`` — all keyword-only, session_service
+#   is REQUIRED in real ADK. Adapter passes ``auto_create_session=True``.
+# * ``Runner.run_async(*, user_id, session_id, new_message=...)`` —
+#   keyword-only, ``new_message`` is a ``types.Content`` (not str).
+# * ``Event.content`` is a ``Content`` with ``.parts`` list, each
+#   ``Part`` carrying ``.text``.
+# * ``Event.usage_metadata`` exposes ``prompt_token_count`` /
+#   ``candidates_token_count``.
+# * The ``Agent`` constructor uses ``instruction=`` (singular).
 
 
 class _FakeAdkAgent:
@@ -110,48 +128,147 @@ class _FakeAdkAgent:
         self.tools = tools
 
 
-class _FakeAdkEvent:
-    """Tiny stand-in for an ADK event (``LlmResponse``-ish).
+class _FakePart:
+    """Stand-in for ``google.genai.types.Part`` — carries ``text``."""
 
-    Real events would carry richer payloads (tool-call args, etc.);
-    the adapter only reads ``text`` for accumulation and
-    ``input_tokens`` / ``output_tokens`` for the usage roll-up, so
-    that's all the fake needs to expose.
+    def __init__(self, text: str | None = None) -> None:
+        self.text = text
+
+
+class _FakeContent:
+    """Stand-in for ``google.genai.types.Content`` — list of parts."""
+
+    def __init__(self, role: str = "model", parts: list[_FakePart] | None = None) -> None:
+        self.role = role
+        self.parts = parts or []
+
+
+class _FakeUsageMetadata:
+    """Stand-in for ``GenerateContentResponseUsageMetadata``.
+
+    Uses Google's standard naming so a future rename in real ADK
+    would be loud at test time (paired with
+    ``test_google_adk_real_imports.test_usage_metadata_token_field_names``).
+    """
+
+    def __init__(self, prompt_token_count: int = 0, candidates_token_count: int = 0) -> None:
+        self.prompt_token_count = prompt_token_count
+        self.candidates_token_count = candidates_token_count
+
+
+class _FakeAdkEvent:
+    """Stand-in for an ADK ``Event`` (which subclasses ``LlmResponse``).
+
+    Mirrors the real shape: text rides on ``content.parts[].text`` and
+    token counts ride on ``usage_metadata.{prompt,candidates}_token_count``.
+    The adapter walks both via ``getattr`` so absent fields are fine.
     """
 
     def __init__(
         self,
         text: str | None = None,
-        input_tokens: int = 0,
-        output_tokens: int = 0,
-        is_final: bool = False,
+        prompt_token_count: int = 0,
+        candidates_token_count: int = 0,
     ) -> None:
-        self.text = text
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
-        self.is_final = is_final
+        if text is not None:
+            self.content = _FakeContent(role="model", parts=[_FakePart(text=text)])
+        else:
+            self.content = None
+        if prompt_token_count or candidates_token_count:
+            self.usage_metadata = _FakeUsageMetadata(
+                prompt_token_count=prompt_token_count,
+                candidates_token_count=candidates_token_count,
+            )
+        else:
+            self.usage_metadata = None
 
 
 class _FakeAdkRunner:
-    """Stand-in for ``google.adk.runners.Runner`` — yields 3 events."""
+    """Stand-in for ``google.adk.runners.Runner`` — yields 3 events.
 
-    def __init__(self, agent):  # noqa: ANN001 — fake SDK
+    Keyword-only ctor and ``run_async`` mirror the real ADK API. If
+    the adapter ever regresses to positional args (the v0.7.0
+    release-blocker shape), this fake raises TypeError immediately —
+    that's the whole point.
+    """
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,  # forward-compat: tolerate unknown kwargs
+    ) -> None:
+        # session_service is required in real ADK — if our adapter
+        # ever stops passing it, this trips loudly.
+        assert session_service is not None, "Runner requires session_service"
+        self.app_name = app_name
         self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
 
-    async def run_async(self, prompt):  # noqa: ANN001 — fake SDK
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK (types.Content)
+        **_extra,
+    ):
+        # ``new_message`` must be a Content-like object with a parts
+        # list — assert the shape so a regression to plain-string is
+        # loud here, not at the real-API call site.
+        assert new_message is not None, "new_message is required"
+        assert hasattr(new_message, "parts"), "new_message must be a Content"
+        assert user_id, "user_id must be non-empty"
+        assert session_id, "session_id must be non-empty"
         yield _FakeAdkEvent(text="hello ")
         yield _FakeAdkEvent(text="world")
-        yield _FakeAdkEvent(input_tokens=80, output_tokens=20, is_final=True)
+        yield _FakeAdkEvent(prompt_token_count=80, candidates_token_count=20)
+
+
+class _FakeSessionService:
+    """Stand-in for ``InMemorySessionService``.
+
+    The adapter never calls into it (``auto_create_session=True`` lets
+    the Runner own the lifecycle), so a bare instance suffices. Real
+    ``InMemorySessionService`` has more surface than this — we only
+    need the *type* to exist for the import to resolve.
+    """
 
 
 def _install_fake_adk(monkeypatch: pytest.MonkeyPatch, runner_cls: type) -> None:
-    """Install fake ``google.adk.agents`` + ``google.adk.runners``."""
+    """Install fake ``google.adk.{agents,runners,sessions}`` + ``google.genai``.
+
+    All four modules are now needed because ``_run_with_sdk`` imports
+    from each: ``Agent``, ``Runner``, ``InMemorySessionService``, and
+    ``types`` (for ``Content`` / ``Part``).
+    """
     agents_mod = type(sys)("google.adk.agents")
     agents_mod.Agent = _FakeAdkAgent
+
     runners_mod = type(sys)("google.adk.runners")
     runners_mod.Runner = runner_cls
+
+    sessions_mod = type(sys)("google.adk.sessions")
+    sessions_mod.InMemorySessionService = _FakeSessionService
+
+    # ``google.genai`` exposes a ``types`` submodule that the adapter
+    # uses for ``types.Content`` and ``types.Part``. Wire both so the
+    # adapter's ``from google.genai import types`` resolves.
+    types_mod = type(sys)("google.genai.types")
+    types_mod.Content = _FakeContent
+    types_mod.Part = _FakePart
+    genai_mod = type(sys)("google.genai")
+    genai_mod.types = types_mod
+
     monkeypatch.setitem(sys.modules, "google.adk.agents", agents_mod)
     monkeypatch.setitem(sys.modules, "google.adk.runners", runners_mod)
+    monkeypatch.setitem(sys.modules, "google.adk.sessions", sessions_mod)
+    monkeypatch.setitem(sys.modules, "google.genai", genai_mod)
+    monkeypatch.setitem(sys.modules, "google.genai.types", types_mod)
 
 
 def test_google_run_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -202,12 +319,35 @@ def test_google_run_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
 
 
 class _ExplodingAdkRunner:
-    """Fake Runner whose ``run_async`` raises mid-stream."""
+    """Fake Runner whose ``run_async`` raises mid-stream.
 
-    def __init__(self, agent):  # noqa: ANN001 — fake SDK
+    Keyword-only ctor + ``run_async`` mirror the real ADK shape, same
+    rationale as ``_FakeAdkRunner`` — a positional-args regression in
+    the adapter would TypeError here too.
+    """
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        self.app_name = app_name
         self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
 
-    async def run_async(self, prompt):  # noqa: ANN001 — fake SDK
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK
+        **_extra,
+    ):
         # Yield one text event so we can also assert partial-text
         # capture before the failure point.
         yield _FakeAdkEvent(text="partial ")

@@ -50,32 +50,101 @@ class _FakeAdkAgent:
         self.tools = tools
 
 
+class _FakePart:
+    """Stand-in for ``google.genai.types.Part``."""
+
+    def __init__(self, text: str | None = None) -> None:
+        self.text = text
+
+
+class _FakeContent:
+    """Stand-in for ``google.genai.types.Content``."""
+
+    def __init__(self, role: str = "model", parts: list[_FakePart] | None = None) -> None:
+        self.role = role
+        self.parts = parts or []
+
+
+class _FakeUsageMetadata:
+    """Stand-in for ``GenerateContentResponseUsageMetadata``."""
+
+    def __init__(self, prompt_token_count: int = 0, candidates_token_count: int = 0) -> None:
+        self.prompt_token_count = prompt_token_count
+        self.candidates_token_count = candidates_token_count
+
+
 class _FakeAdkEvent:
-    """Stand-in for an ADK event — carries text or usage counts."""
+    """Stand-in for an ADK ``Event`` — real shape.
+
+    Text rides on ``content.parts[].text`` and tokens ride on
+    ``usage_metadata.{prompt,candidates}_token_count``. Same
+    contract as the fakes in :file:`test_google_adk.py` — keep them
+    aligned with the real ADK API or the structural test in
+    :file:`test_google_adk_real_imports.py` flags the drift.
+    """
 
     def __init__(
         self,
         text: str | None = None,
-        input_tokens: int = 0,
-        output_tokens: int = 0,
-        is_final: bool = False,
+        prompt_token_count: int = 0,
+        candidates_token_count: int = 0,
     ) -> None:
-        self.text = text
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
-        self.is_final = is_final
+        if text is not None:
+            self.content = _FakeContent(role="model", parts=[_FakePart(text=text)])
+        else:
+            self.content = None
+        if prompt_token_count or candidates_token_count:
+            self.usage_metadata = _FakeUsageMetadata(
+                prompt_token_count=prompt_token_count,
+                candidates_token_count=candidates_token_count,
+            )
+        else:
+            self.usage_metadata = None
 
 
 class _FakeAdkRunner:
-    """Stand-in for ``google.adk.runners.Runner`` — yields 3 events."""
+    """Stand-in for ``google.adk.runners.Runner`` — keyword-only API.
 
-    def __init__(self, agent):  # noqa: ANN001 — fake SDK
+    Mirrors the real ADK ``Runner(*, app_name=, agent=,
+    session_service=, auto_create_session=, ...)`` shape so a
+    positional-args adapter regression (the v0.7.0 release-blocker
+    class) TypeErrors here too.
+    """
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        assert session_service is not None, "Runner requires session_service"
+        self.app_name = app_name
         self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
 
-    async def run_async(self, prompt):  # noqa: ANN001 — fake SDK
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK (types.Content)
+        **_extra,
+    ):
+        assert new_message is not None, "new_message is required"
+        assert hasattr(new_message, "parts"), "new_message must be a Content"
+        assert user_id
+        assert session_id
         yield _FakeAdkEvent(text="hel")
         yield _FakeAdkEvent(text="lo")
-        yield _FakeAdkEvent(input_tokens=5, output_tokens=2, is_final=True)
+        yield _FakeAdkEvent(prompt_token_count=5, candidates_token_count=2)
+
+
+class _FakeSessionService:
+    """Stand-in for ``InMemorySessionService`` — bare type suffices."""
 
 
 def _policy(tmp_path: Path) -> SecurityPolicy:
@@ -103,8 +172,18 @@ def test_full_chain_for_gemini_3_flash(
     agents_mod.Agent = _FakeAdkAgent
     runners_mod = type(sys)("google.adk.runners")
     runners_mod.Runner = _FakeAdkRunner
+    sessions_mod = type(sys)("google.adk.sessions")
+    sessions_mod.InMemorySessionService = _FakeSessionService
+    types_mod = type(sys)("google.genai.types")
+    types_mod.Content = _FakeContent
+    types_mod.Part = _FakePart
+    genai_mod = type(sys)("google.genai")
+    genai_mod.types = types_mod
     monkeypatch.setitem(sys.modules, "google.adk.agents", agents_mod)
     monkeypatch.setitem(sys.modules, "google.adk.runners", runners_mod)
+    monkeypatch.setitem(sys.modules, "google.adk.sessions", sessions_mod)
+    monkeypatch.setitem(sys.modules, "google.genai", genai_mod)
+    monkeypatch.setitem(sys.modules, "google.genai.types", types_mod)
 
     runner = runner_for("gemini-3.5-flash")
     cfg = AgentConfig(

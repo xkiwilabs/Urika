@@ -25,6 +25,7 @@ in its ``try`` block and treats either ``ImportError`` as
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -63,6 +64,10 @@ class GoogleADKRunner(AgentRunner):
         try:
             from google.adk.agents import Agent  # noqa: F401
             from google.adk.runners import Runner  # noqa: F401
+            from google.adk.sessions import (  # noqa: F401
+                InMemorySessionService,
+            )
+            from google.genai import types  # noqa: F401
         except ImportError:
             return AgentResult(
                 success=False,
@@ -91,14 +96,15 @@ class GoogleADKRunner(AgentRunner):
         The ADK's execution model is different from the OpenAI Agents
         SDK: instead of an awaited ``Runner.run`` that returns a
         single ``RunResult``, the ADK exposes an async event stream
-        (``Runner.run_async``) that yields ``LlmResponse`` /
-        ``ToolCall`` / ``ToolResult`` events. This adapter folds the
-        stream into a single :class:`AgentResult` by accumulating
-        ``event.text`` and pulling token counts off whichever event
-        carries the final usage payload.
+        (``Runner.run_async``) that yields ``Event`` objects (which
+        subclass ``LlmResponse``). This adapter folds the stream into
+        a single :class:`AgentResult` by walking
+        ``event.content.parts[].text`` for the textual output and
+        pulling token counts off ``event.usage_metadata``
+        (``prompt_token_count`` / ``candidates_token_count``).
 
-        ``on_message`` fires per text-bearing event — the stream
-        model makes this natural here, unlike the OpenAI adapter's
+        ``on_message`` fires per text-bearing part — the stream model
+        makes this natural here, unlike the OpenAI adapter's
         synchronous-result API where it had to be a no-op.
 
         Notable ADK quirks vs. the OpenAI adapter:
@@ -106,12 +112,24 @@ class GoogleADKRunner(AgentRunner):
         * ``Agent(instruction=...)`` is singular (OpenAI uses
           ``instructions=``). A regression on the keyword would
           surface as a TypeError at agent construction.
-        * Token fields on Gemini are conventionally
-          ``prompt_token_count`` / ``candidates_token_count``, but
-          the ADK normalises these on the event object to flat
-          ``input_tokens`` / ``output_tokens`` — we read those and
-          map onto :class:`AgentResult` 's flat fields, same shape
-          as the Claude + OpenAI adapters.
+        * ``Runner.__init__`` is keyword-only and ``session_service``
+          is required — passing the agent positionally raises
+          ``TypeError`` immediately. We use
+          ``auto_create_session=True`` so the Runner manages the
+          session lifecycle from a generated ``session_id`` rather
+          than us pre-calling ``SessionService.create_session``;
+          fewer moving parts and the resulting ``AgentResult``
+          ``session_id`` matches what the Runner actually used.
+        * ``Runner.run_async`` is also keyword-only and expects a
+          ``types.Content`` for ``new_message`` rather than a plain
+          string. We wrap the prompt as ``Content(role="user",
+          parts=[Part(text=prompt)])`` — the canonical Gemini shape.
+        * Token counts ride on ``event.usage_metadata`` using
+          Google's standard naming (``prompt_token_count`` /
+          ``candidates_token_count``) — we map those onto
+          :class:`AgentResult` 's flat ``tokens_in`` / ``tokens_out``
+          fields, same shape as the Claude + OpenAI adapters, so the
+          usage tab and advisor cost printout stay provider-agnostic.
         * ADK auto-discovers tool signatures via reflection — plain
           Python functions can be passed in ``tools=[...]`` without
           a decorator. If a future ADK release requires
@@ -120,6 +138,8 @@ class GoogleADKRunner(AgentRunner):
         """
         from google.adk.agents import Agent
         from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.genai import types
 
         from urika.agents.pricing import cost_for
         from urika.agents.tools import ToolRegistry
@@ -180,7 +200,27 @@ class GoogleADKRunner(AgentRunner):
             model=config.model,
             tools=tools,
         )
-        runner = Runner(agent)
+
+        # Per-run isolated session — ``auto_create_session=True`` lets
+        # the Runner materialise it on the first ``run_async`` call so
+        # we don't have to dance with an explicit
+        # ``session_service.create_session`` (which is async and would
+        # require us to plumb through the resulting Session.id). The
+        # generated ``session_id`` is what we report back on the
+        # ``AgentResult`` so the orchestrator can correlate retries.
+        session_service = InMemorySessionService()
+        session_id = f"urika-{config.name}-{uuid.uuid4().hex[:8]}"
+        runner = Runner(
+            app_name="urika",
+            agent=agent,
+            session_service=session_service,
+            auto_create_session=True,
+        )
+
+        user_message = types.Content(
+            role="user",
+            parts=[types.Part(text=prompt)],
+        )
 
         model_name = config.model or ""
         accumulated_text = ""
@@ -188,34 +228,56 @@ class GoogleADKRunner(AgentRunner):
         out_tok = 0
 
         try:
-            async for event in runner.run_async(prompt):
-                event_text = getattr(event, "text", None)
-                if event_text:
-                    accumulated_text += event_text
-                    if on_message is not None:
-                        # Fire per text-bearing event — the stream
-                        # model lets us offer parity with the Claude
-                        # adapter's per-message callback that the
-                        # OpenAI adapter can't currently provide.
-                        try:
-                            on_message(event_text)
-                        except Exception:  # noqa: BLE001 — user callback
-                            # A misbehaving callback must not break
-                            # the agent loop. Swallow + continue.
-                            pass
-                # Usage tokens may ride the final event or appear
-                # incrementally — keep updating so the trailing
-                # event's totals win. The ``or in_tok`` guard avoids
-                # clobbering an earlier non-zero value with a 0 on
-                # an event that doesn't carry usage.
-                in_tok = getattr(event, "input_tokens", in_tok) or in_tok
-                out_tok = getattr(event, "output_tokens", out_tok) or out_tok
+            async for event in runner.run_async(
+                user_id="urika-user",
+                session_id=session_id,
+                new_message=user_message,
+            ):
+                # Real ADK events carry text on
+                # ``event.content.parts[].text`` (a ``types.Content``
+                # with a list of ``types.Part``) rather than a flat
+                # ``event.text`` attr. Walk parts defensively — some
+                # events (tool calls, usage-only finals) have no text.
+                content = getattr(event, "content", None)
+                if content is not None:
+                    for part in getattr(content, "parts", None) or []:
+                        text = getattr(part, "text", None)
+                        if text:
+                            accumulated_text += text
+                            if on_message is not None:
+                                # Fire per text-bearing part — the
+                                # stream model lets us offer parity
+                                # with the Claude adapter's per-message
+                                # callback that the OpenAI adapter
+                                # can't currently provide.
+                                try:
+                                    on_message(text)
+                                except Exception:  # noqa: BLE001 — user callback
+                                    # A misbehaving callback must not
+                                    # break the agent loop.
+                                    pass
+
+                # Usage tokens ride on ``event.usage_metadata`` with
+                # Google's standard ``prompt_token_count`` /
+                # ``candidates_token_count`` names. May appear on the
+                # trailing event only, or incrementally — keep
+                # updating so the latest non-zero value wins. The
+                # ``or in_tok`` guard avoids clobbering an earlier
+                # non-zero with a 0 on a tool-call event.
+                usage = getattr(event, "usage_metadata", None)
+                if usage is not None:
+                    in_tok = (
+                        getattr(usage, "prompt_token_count", in_tok) or in_tok
+                    )
+                    out_tok = (
+                        getattr(usage, "candidates_token_count", out_tok) or out_tok
+                    )
         except Exception as exc:  # noqa: BLE001 — SDK boundary
             return AgentResult(
                 success=False,
                 messages=[],
                 text_output=accumulated_text,
-                session_id="",
+                session_id=session_id,
                 error=str(exc),
                 model=model_name,
             )
@@ -225,7 +287,7 @@ class GoogleADKRunner(AgentRunner):
             success=True,
             messages=[],
             text_output=accumulated_text,
-            session_id="",
+            session_id=session_id,
             tokens_in=in_tok,
             tokens_out=out_tok,
             cost_usd=cost,
