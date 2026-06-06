@@ -104,6 +104,24 @@ provider_default_execution_model() {
 # Overrides this project's urika.toml only — global config is
 # untouched. Mutually exclusive with ``inject_cheap_models`` (caller
 # decides which to invoke based on PROVIDER / MIXED_PROVIDERS).
+_bump_top_level_runtime_model() {
+  # Replace the top-level [runtime] model = "..." line with a new value.
+  # Required for honest --provider smokes: the orchestrator loop
+  # (run/autonomous/finalize) uses runner_for_project(project_path)
+  # which reads top-level [runtime] model, NOT per-agent overrides.
+  # Without this bump, --provider X would test X only on the support-
+  # agent CLI paths (advisor/build-tool/present/etc.) and silently
+  # leave the orchestrator loop on the default claude model.
+  local proj_toml="$1"
+  local new_model="$2"
+  awk -v new_model="$new_model" '
+    /^\[runtime\]$/ { in_rt=1; print; next }
+    in_rt && /^model[[:space:]]*=/ { print "model = \"" new_model "\""; in_rt=0; next }
+    /^\[/ { in_rt=0 }
+    { print }
+  ' "$proj_toml" > "$proj_toml.tmp" && mv "$proj_toml.tmp" "$proj_toml"
+}
+
 inject_provider_models() {
   local proj_dir="$1"
   local provider="$2"
@@ -118,6 +136,9 @@ inject_provider_models() {
     anth_e="$(provider_default_execution_model anthropic)"
     oai_e="$(provider_default_execution_model openai)"
     goog_r="$(provider_default_reasoning_model google)"
+    # Orchestrator loop uses top-level model; in mixed mode pin it
+    # to Anthropic's reasoning model (planner is Anthropic in the mix).
+    _bump_top_level_runtime_model "$proj_dir/urika.toml" "$anth_r"
     cat >> "$proj_dir/urika.toml" <<EOF
 
 # v0.7.0 Task 4.5 mixed-providers smoke override: distribute roles
@@ -153,6 +174,9 @@ EOF
   rmodel="$(provider_default_reasoning_model "$provider")"
   emodel="$(provider_default_execution_model "$provider")"
   log "Injecting ${provider} models (reasoning=${rmodel}, execution=${emodel})"
+  # Orchestrator loop uses top-level model; pin it to this provider's
+  # reasoning model so run/autonomous/finalize route via the right adapter.
+  _bump_top_level_runtime_model "$proj_dir/urika.toml" "$rmodel"
   cat >> "$proj_dir/urika.toml" <<EOF
 
 # v0.7.0 Task 4.5 single-provider smoke override (--provider ${provider}):
