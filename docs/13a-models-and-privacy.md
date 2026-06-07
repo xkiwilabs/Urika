@@ -13,7 +13,7 @@ As of v0.7.0 Urika ships three first-class runtime adapters:
 
 - **Anthropic Claude Agent SDK** — Claude models (Haiku / Sonnet / Opus) via the Anthropic API, **local models** via Ollama / LM Studio / vLLM, and **institutional endpoints** (any Anthropic-compatible API server, e.g. an organisation's secure Claude instance).
 - **OpenAI Agents SDK** (`pip install urika[openai]`) — `gpt-5.4` family and `o3` / `o4` / `o5` reasoning models. API-key auth only.
-- **Google Agent Development Kit** (`pip install urika[google]`) — `gemini-3.1-pro-preview` / `gemini-3.5-flash` / family. API-key auth only.
+- **Google Agent Development Kit** (`pip install urika[google]`) — `gemini-3.5-flash` (recommended default for both reasoning and execution roles; free-tier accessible) and `gemini-3.1-pro-preview` (requires a billing-enabled Google AI account — selectable per-agent override). API-key auth only.
 
 Urika routes each call to the right adapter using the **model prefix**: `claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google. There is no central provider setting — each agent role can be on a different provider, mixed freely within a single `urika.toml`. See the [v0.7 Provider Guide](v07-provider-guide.md) for the decision rubric and per-provider auth setup.
 

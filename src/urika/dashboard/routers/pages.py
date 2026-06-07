@@ -84,12 +84,16 @@ KNOWN_CLOUD_MODELS_BY_PROVIDER: dict[str, list[str]] = {
     ],
     "google": [
         # Mirrors the Google rows in ``urika.agents.pricing.PRICES``.
-        # ``gemini-3.1-pro-preview`` first so Provider=Google lands on
-        # the reasoning recommendation. Rates verified against
+        # ``gemini-3.5-flash`` first so Provider=Google lands on the
+        # v0.7.0 recommendation (Flash for both reasoning and execution
+        # — see ``urika.core.recommended_models`` for why Google skips
+        # the Pro/Flash split: ``gemini-3.1-pro-preview`` is free-tier
+        # blocked). Pro stays in the list so users with billing can
+        # still pick it per-agent. Rates verified against
         # ai.google.dev/pricing on 2026-06-02 — see
         # ``urika.agents.pricing``.
-        "gemini-3.1-pro-preview",
         "gemini-3.5-flash",
+        "gemini-3.1-pro-preview",
     ],
 }
 

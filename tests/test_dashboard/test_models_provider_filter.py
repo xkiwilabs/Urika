@@ -15,7 +15,7 @@ provider so existing users see the same UI on first load.
 
 These tests pin:
   - all three provider labels are present in the rendered HTML
-  - each provider's signature model id (gpt-5.4 / gemini-3.1-pro-preview / the
+  - each provider's signature model id (gpt-5.4 / gemini-3.5-flash / the
     Anthropic Opus row) appears in the page
   - the Provider <select> exists and defaults to ``anthropic``
 """
@@ -185,9 +185,14 @@ class TestGlobalModelsTabProviderFilter:
         ``<option>`` rows must be in the DOM (Alpine just hides them
         with x-show). Otherwise switching the Provider <select> would
         show an empty dropdown.
+
+        Both Google rows (the v0.7.0 default ``gemini-3.5-flash`` and
+        the billing-only ``gemini-3.1-pro-preview`` kept selectable for
+        users who override per-agent) must render.
         """
         body = settings_client.get("/settings").text
         assert "gpt-5.4" in body
+        assert "gemini-3.5-flash" in body
         assert "gemini-3.1-pro-preview" in body
 
 
@@ -211,6 +216,9 @@ class TestProjectModelsTabProviderFilter:
         body = project_settings_client.get("/projects/alpha/settings").text
         # Anthropic (existing dropdown content, default provider)
         assert "claude-opus-4-7" in body
-        # OpenAI + Google option rows must also be in the DOM.
+        # OpenAI + Google option rows must also be in the DOM. Both
+        # Google rows render: the v0.7.0 default Flash, plus the
+        # billing-only Pro kept selectable for per-agent overrides.
         assert "gpt-5.4" in body
+        assert "gemini-3.5-flash" in body
         assert "gemini-3.1-pro-preview" in body

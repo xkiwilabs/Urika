@@ -37,8 +37,17 @@ def test_openai_defaults() -> None:
 
 
 def test_google_defaults() -> None:
+    """Google's recommended pair is Flash for both reasoning and
+    execution — unlike Anthropic and OpenAI, Google does not get a
+    per-role Pro/Flash split. ``gemini-3.1-pro-preview`` requires a
+    billing-enabled Google AI account (free tier limit = 0), so
+    recommending it as the default would block free-tier onboarding.
+    Users with billing can still override per-agent to Pro and the
+    cost-reporting table in ``urika.agents.pricing.PRICES`` carries
+    the row.
+    """
     rec = recommended_models_for("google")
-    assert rec["reasoning"] == "gemini-3.1-pro-preview"
+    assert rec["reasoning"] == "gemini-3.5-flash"
     assert rec["execution"] == "gemini-3.5-flash"
 
 

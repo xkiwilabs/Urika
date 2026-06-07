@@ -4,6 +4,13 @@ Gemini rates verified against ai.google.dev/pricing on 2026-06-02.
 Both Gemini rows quote the ≤200k-token tier — Google charges more
 for prompts above that threshold, but Urika's agent calls stay well
 under it; if that changes, add a tiered lookup rather than averaging.
+
+Note: ``gemini-3.1-pro-preview`` requires a billing-enabled Google AI
+account; the free tier blocks it at limit=0. v0.7.0 defaults to
+``gemini-3.5-flash`` for both reasoning and execution roles for
+free-tier friendliness (see ``urika.core.recommended_models``). The
+Pro row is kept here so users with billing who override per-agent to
+Pro still get correct cost reporting.
 """
 
 from __future__ import annotations

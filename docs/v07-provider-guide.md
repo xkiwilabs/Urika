@@ -13,7 +13,7 @@ different things. The first-pass rubric:
 | Use case | Recommended provider | Why |
 |---|---|---|
 | Default / unsure | Anthropic Claude | Most mature adapter, the original target, best test coverage |
-| Cost-sensitive batch work | OpenAI `gpt-5.4-mini` (~3× cheaper than `gpt-5.4`) or Google `gemini-3.5-flash` (~25% cheaper than `gemini-3.1-pro-preview`) | Lower per-1M-token rates than the reasoning tier |
+| Cost-sensitive batch work | OpenAI `gpt-5.4-mini` (~3× cheaper than `gpt-5.4`) or Google `gemini-3.5-flash` | Lower per-1M-token rates than the reasoning tier |
 | Lowest latency | Google `gemini-3.5-flash` | Fastest first-token in our smoke runs |
 | Long-context reasoning | Anthropic `claude-opus-4-7` | Largest stable context window + strongest design-rationale generation |
 | Tool-heavy execution loops | OpenAI Agents SDK | Most polished function-calling surface in our tests |
@@ -23,6 +23,35 @@ When in doubt, leave the default (Anthropic Opus for the four
 reasoning agents, Sonnet 4.5 for the eight execution agents) —
 that's the cost/quality sweet-spot the v0.4.0 work landed on, and
 it's the configuration every other Urika user is running.
+
+### Google Pro vs Flash — billing-only Pro
+
+Unlike Anthropic and OpenAI, Google's v0.7.0 recommendation is
+`gemini-3.5-flash` for **both** reasoning and execution roles.
+`gemini-3.1-pro-preview` has a free-tier rate limit of 0 — it
+requires a billing-enabled Google AI account, and recommending it
+as the default would block free-tier users at first agent call.
+
+If you have a billing-enabled Google account and want the Pro
+quality for the four reasoning agents, override per-agent in your
+project's `urika.toml`:
+
+```toml
+[runtime.models.planning_agent]
+model = "gemini-3.1-pro-preview"
+
+[runtime.models.advisor_agent]
+model = "gemini-3.1-pro-preview"
+
+[runtime.models.finalizer]
+model = "gemini-3.1-pro-preview"
+
+[runtime.models.project_builder]
+model = "gemini-3.1-pro-preview"
+```
+
+Cost reporting works for these overrides — Pro rates are in
+`urika.agents.pricing.PRICES`.
 
 ## Auth setup per provider
 
@@ -104,7 +133,8 @@ model = "claude-opus-4-7"        # Anthropic for design-rationale
 model = "gpt-5.4-mini"           # OpenAI for cheap execution
 
 [runtime.models.advisor_agent]
-model = "gemini-3.1-pro-preview" # Google for between-experiment analysis
+model = "gemini-3.5-flash"       # Google for between-experiment analysis
+                                 # (use "gemini-3.1-pro-preview" if billing-enabled)
 
 [runtime.models.evaluator]
 model = "gpt-5.4-mini"           # OpenAI for cheap rule-application

@@ -73,7 +73,10 @@ provider_default_reasoning_model() {
   case "$1" in
     anthropic) echo "claude-opus-4-7" ;;
     openai) echo "gpt-5.4" ;;
-    google) echo "gemini-3.1-pro-preview" ;;
+    # Google: Flash for BOTH roles (free-tier-friendly default; see
+    # ``urika.core.recommended_models``). ``gemini-3.1-pro-preview``
+    # requires a billing-enabled Google AI account.
+    google) echo "gemini-3.5-flash" ;;
     *) echo "ERROR: unknown provider $1" >&2; exit 1 ;;
   esac
 }

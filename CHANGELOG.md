@@ -94,8 +94,15 @@ freely within a single ``urika.toml``.
   provider without hard-coding. The cost-saving "Opus for the
   four reasoning agents, Sonnet 4.5 for the eight execution
   agents" split from v0.4.0 remains the default for Anthropic;
-  OpenAI maps to ``gpt-5.4`` + ``gpt-5.4-mini``, Google to
-  ``gemini-3.1-pro-preview`` + ``gemini-3.5-flash``.
+  OpenAI maps to ``gpt-5.4`` + ``gpt-5.4-mini``. Google is the
+  asymmetric case: ``gemini-3.5-flash`` for **both** reasoning and
+  execution. Reason: ``gemini-3.1-pro-preview`` requires a
+  billing-enabled Google AI account (free-tier rate limit = 0), so
+  recommending it as the default would block free-tier users at
+  first agent call. The Pro row stays in
+  ``urika.agents.pricing.PRICES`` and remains selectable from the
+  dashboard Models tab, so users with billing can still override
+  per-agent and get correct cost reporting.
 
 - **Dashboard Models tab Provider filter** — a three-way toggle
   (Anthropic / OpenAI / Google) on ``/projects/{name}/models`` that
@@ -133,6 +140,15 @@ users need zero config changes. Specifically:
 
 ### Known limitations
 
+- **Google ``gemini-3.1-pro-preview`` requires billing.** The Google
+  AI free tier has a rate limit of 0 for the Pro preview model, so
+  v0.7.0 defaults Google's reasoning + execution recommendations to
+  ``gemini-3.5-flash`` for both roles. Users with a billing-enabled
+  Google AI account can override per-agent in ``urika.toml``
+  (``[runtime.models.<agent>] model = "gemini-3.1-pro-preview"``) or
+  via the dashboard Models tab — the Pro row stays in
+  ``urika.agents.pricing.PRICES`` so cost reporting works for those
+  overrides.
 - **20 support-agent call sites still route via ``get_runner()``.**
   ``cli/agents*.py``, ``repl/helpers.py``, and a handful of
   dashboard chat endpoints hard-code the legacy

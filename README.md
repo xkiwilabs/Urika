@@ -42,9 +42,11 @@ As of v0.7.0, Urika ships adapters for three model providers. Pick one for the w
 |---|---|---|---|---|
 | Anthropic | `claude-agent-sdk` | `claude-opus-4-7` | `claude-sonnet-4-5` | API key OR subscription |
 | OpenAI | `openai-agents` | `gpt-5.4` | `gpt-5.4-mini` | API key |
-| Google | `google-adk` | `gemini-3.1-pro-preview` | `gemini-3.5-flash` | API key |
+| Google | `google-adk` | `gemini-3.5-flash` | `gemini-3.5-flash` | API key |
 
 Set model strings per agent in `urika.toml` -- Urika routes each call to the right adapter based on the model prefix (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google). Mix providers across agent roles for cost or quality trade-offs (e.g. Opus for the planner, GPT-5.4-mini for the task agent, Gemini Flash for the report). See [v0.7 Provider Guide](docs/v07-provider-guide.md) for the full decision rubric and auth setup per provider.
+
+> **Why Google has no Pro/Flash split.** `gemini-3.1-pro-preview` requires a billing-enabled Google AI account (free-tier rate limit = 0), so v0.7.0 recommends `gemini-3.5-flash` for both reasoning and execution roles to keep onboarding friction-free for free-tier users. Users with billing can override per-agent to Pro and cost reporting works correctly (`urika.agents.pricing.PRICES` carries the row).
 
 ## Installation
 
