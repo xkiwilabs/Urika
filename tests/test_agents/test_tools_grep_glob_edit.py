@@ -51,6 +51,22 @@ def test_glob_matches_pattern(tmp_path: Path):
     assert "c.txt" not in r.output
 
 
+def test_glob_handles_absolute_pattern(tmp_path: Path):
+    """Gemini agents tend to pass absolute patterns like '/home/foo/*.csv'.
+    Python 3.12 Path.rglob raises NotImplementedError on absolute patterns —
+    the glob tool splits root from pattern and re-validates the resolved
+    root against the SecurityPolicy.
+    """
+    (tmp_path / "data.csv").write_text("x")
+    (tmp_path / "other.txt").write_text("x")
+    policy = _policy(writable=[tmp_path], readable=[tmp_path])
+    abs_pattern = str(tmp_path / "*.csv")
+    r = glob_tool(abs_pattern, security=policy, project_dir=tmp_path)
+    assert r.ok is True, r.error
+    assert "data.csv" in r.output
+    assert "other.txt" not in r.output
+
+
 def test_edit_replaces_string(tmp_path: Path):
     target = tmp_path / "f.txt"
     target.write_text("alpha\nbeta\ngamma\n")

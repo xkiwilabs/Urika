@@ -19,8 +19,28 @@ from urika.agents.tools.security import enforce_path_read
 
 
 def glob(pattern: str, *, security: SecurityPolicy, project_dir: Path) -> ToolResult:
-    _, err = enforce_path_read(str(project_dir), security)
-    if err is not None:
-        return ToolResult(ok=False, output="", error=err)
-    matches = [str(p) for p in project_dir.rglob(pattern)]
+    # Some agents (notably Gemini) pass absolute patterns like
+    # "/home/foo/*.csv" instead of relative "*.csv". Python 3.12's
+    # Path.rglob() raises NotImplementedError on absolute patterns.
+    # Detect + split: use the absolute parent as the search root and
+    # the trailing name pattern as the rglob filter. Then re-enforce
+    # the security policy against the resolved root.
+    p = Path(pattern)
+    if p.is_absolute():
+        root = p.parent
+        name_pattern = p.name or "*"
+        resolved, err = enforce_path_read(str(root), security)
+        if err is not None:
+            return ToolResult(ok=False, output="", error=err)
+        search_root = resolved or root
+    else:
+        _, err = enforce_path_read(str(project_dir), security)
+        if err is not None:
+            return ToolResult(ok=False, output="", error=err)
+        search_root = project_dir
+        name_pattern = pattern
+    try:
+        matches = [str(m) for m in search_root.rglob(name_pattern)]
+    except (NotImplementedError, ValueError) as exc:
+        return ToolResult(ok=False, output="", error=f"invalid glob pattern: {exc}")
     return ToolResult(ok=True, output=_cap_stream("\n".join(matches)))
