@@ -169,6 +169,34 @@
         </span>
       </div>
 
+      {# GitHub auto-create — cross-surface parity with
+         ``urika new --github / --public``. When unchecked, falls
+         back to ``[preferences] github_auto_create`` server-side.
+         When ``gh`` is missing/unauthed, the failure is non-fatal:
+         the project is still created and the response carries the
+         failure detail. #}
+      <div class="form-row form-row--inline"
+           x-data="{ gh: {{ 'true' if github_auto_create else 'false' }} }">
+        <label>
+          <input type="checkbox" name="github" value="true"
+                 x-model="gh"
+                 {% if github_auto_create %}checked{% endif %}>
+          Create GitHub repo
+        </label>
+        <label x-show="gh" x-cloak>
+          <input type="checkbox" name="public" value="true"
+                 {% if github_auto_create_visibility == "public" %}checked{% endif %}>
+          Public
+        </label>
+        <span class="form-help" x-show="gh" x-cloak
+              style="font-size: 0.85em; flex-basis: 100%;">
+          Requires the <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer"><code>gh</code> CLI</a>
+          installed and authenticated (<code>gh auth login</code>). A
+          missing or unauthed <code>gh</code> is non-fatal — the project
+          is still created and the response notes the failure.
+        </span>
+      </div>
+
       <div class="form-row form-row--inline" x-data="{ pmode: 'open' }">
         <label for="np-privacy-mode">Privacy mode</label>
         <select id="np-privacy-mode" name="privacy_mode" x-model="pmode">

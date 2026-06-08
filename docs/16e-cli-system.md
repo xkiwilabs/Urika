@@ -290,10 +290,13 @@ urika tools [--category CATEGORY] [--project NAME]
 Read or edit the project memory directory at `<project>/memory/`. Project memory is structured markdown — a curated `MEMORY.md` index plus per-topic entry files (`feedback_*.md`, `instruction_*.md`, `decision_*.md`, …) — that gets injected into the planner's and advisor's system prompts on every run, so the agents stay aware of past decisions, user preferences, and constraints across experiments. Auto-capture from `<memory type="...">...</memory>` markers in agent output is on by default; manual edits live under this command group.
 
 ```
-urika memory list   [PROJECT] [--json]
-urika memory show   [PROJECT] TOPIC
-urika memory add    [PROJECT] TOPIC [--type TYPE] [--from-file PATH | --stdin] [--description TEXT]
-urika memory delete [PROJECT] FILENAME [--force]
+urika memory list    [PROJECT] [--json]
+urika memory show    [PROJECT] TOPIC
+urika memory add     [PROJECT] TOPIC [--type TYPE] [--from-file PATH | --stdin] [--description TEXT]
+urika memory delete  [PROJECT] FILENAME [--force]
+urika memory curate  [PROJECT] [--apply]
+urika memory archive [PROJECT] [--month YYYY-MM] [--json]
+urika memory diff    [PROJECT] FROM_TS TO_TS [--json]
 ```
 
 **Subcommands:**
@@ -304,6 +307,9 @@ urika memory delete [PROJECT] FILENAME [--force]
 | `show TOPIC` | Print one entry by filename or slug. Partial matches resolve via prefix glob (`feedback_methods` finds `feedback_methods.md` or `feedback_methods_v2.md`). |
 | `add TOPIC` | Write a new entry. `--type` picks one of `user`, `feedback`, `instruction`, `decision`, `reference` (default: `instruction`). Body comes from `--from-file PATH`, `--stdin`, or an interactive editor. |
 | `delete FILENAME` | Move the entry to `memory/.trash/` (preserved on disk). Pass `--force` to skip the confirmation prompt. |
+| `curate` | Run the `memory_curator` agent over the project memory directory and print proposed merge / archive / flag decisions. **Defaults to dry-run** — re-run with `--apply` to commit the changes to disk. Used both manually and behind the once-per-session soft-cap auto-trigger that fires when memory grows past the configured budget (the auto-trigger is also dry-run by default). |
+| `archive` | List archived memory entries (snapshots produced by `curate --apply`). Archives live under `<project>/memory/archive/<YYYY-MM>/`. With no flags, prints one line per entry grouped by month; `--month YYYY-MM` scopes the listing to a single month. `--json` emits the structured form. |
+| `diff FROM_TS TO_TS` | mtime-based diff between two memory snapshots — shows which entries were `added`, `archived`, or `trashed` between two timestamps. Timestamps accept ISO 8601 (e.g. `2024-01-15T10:00:00+00:00`) or the relative forms `now`, `yesterday`, `1h ago`, `2d ago`, `1w ago`. Underscores work in place of spaces (`1h_ago`) so the REPL slash command can pass single-token arguments. `--json` for machine output. |
 
 **Examples:**
 
@@ -319,9 +325,45 @@ urika memory show my-project feedback_methods
 
 # Trash an outdated entry
 urika memory delete my-project instruction_old_baseline.md --force
+
+# Ask the curator to tidy things up — dry-run first
+urika memory curate my-project
+urika memory curate my-project --apply
+
+# Browse last month's archived snapshots
+urika memory archive my-project --month 2026-05
+
+# What changed in the last week?
+urika memory diff my-project "1w_ago" now
 ```
 
 Soft cap 5 KB per entry (warning), hard cap 20 KB (truncated with marker). Per-project disable via `[memory] auto_capture = false` in `urika.toml`.
+
+---
+
+### `urika github`
+
+Turn a project into a git repo and (optionally) auto-push it to a remote after every successful `urika run` / `finalize` / `build-tool`. Shipped in **v0.6.0**.
+
+Urika never holds a GitHub credential — the commands shell out to the system `git` (and optionally `gh`) so your existing auth (HTTPS+PAT, SSH key, `gh auth login`) does all the work. Works against GitHub, GitLab, Gitea, Bitbucket, or self-hosted remotes.
+
+```
+urika github init   [PROJECT] [--remote URL] [--create] [--public]
+urika github status [PROJECT]
+urika github push   [PROJECT]
+urika github pull   [PROJECT]
+```
+
+| Subcommand | Purpose |
+|---|---|
+| `init` | Initialise the project as a git repo, write the researcher-safe `.gitignore` managed block, optionally set `origin`, and create the first commit. Idempotent. With `--create`, uses `gh repo create --push` to provision a fresh private (default) or public (`--public`) GitHub repo in one shot. |
+| `status` | Snapshot of branch, remote URL, dirty file count, last commit, and five most recent commits (with `urika-event:` chip per commit). |
+| `push` | Stage everything, run the pre-commit secret scanner, commit (with `urika-event: manual` trailer), push to `origin`. Exits 3 if the scanner finds a known secret pattern (Anthropic, GitHub PAT/OAuth, AWS, OpenAI shapes). |
+| `pull` | Fetch the current branch from `origin` and fast-forward-only merge. Refuses on divergence. |
+
+The `[github] auto_push = true` opt-in hook in `urika.toml` runs the same scan → commit → push sequence at the tail of `urika run`, `urika finalize`, and `urika build-tool` (the default `auto_push_after` set). Wrapped in defensive `try/except` so auto-push failure can never break the host command.
+
+See [GitHub Backup](22-github-backup.md) for the full guide — secret-scanner pattern list, `.gitignore` template, `urika new --github / --no-github / --public` flags at project-creation time, the `[preferences] github_auto_create` global default, the dashboard Git tab, and the `urika-event:` trailer format.
 
 ---
 

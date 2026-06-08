@@ -48,6 +48,17 @@ from urika.cli.config import (  # noqa: F401
     dashboard,
 )
 
+# Per-provider auth setup (v0.7.0 Task 4.2). The helpers are invoked from
+# config_command's pseudo-project routing; importing them here keeps the
+# module load order deterministic and gives external code a single place
+# to discover the surface.
+import urika.cli.config_provider  # noqa: F401
+from urika.cli.config_provider import (  # noqa: F401
+    run_config_anthropic,
+    run_config_google,
+    run_config_openai,
+)
+
 # Data/results commands (includes experiment and venv subgroups)
 import urika.cli.data  # noqa: F401
 from urika.cli.data import (  # noqa: F401

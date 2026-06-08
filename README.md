@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/header.png?v=0.6.0.1" alt="Urika" width="580">
+  <img src="docs/assets/header.png?v=0.7.0" alt="Urika" width="580">
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 Urika uses multiple AI agents to autonomously explore analytical approaches for your dataset and research question. It creates experiments, tries different methods, evaluates results, searches relevant literature, and builds custom tools when needed. Everything is documented automatically — experiment labbooks, project-level reports, key findings, and slide presentations you can view in any browser. Each experiment's methods, metrics, and observations are tracked in structured records that agents use to plan the next step.
 
-Currently supports the **Claude Agent SDK** (Anthropic), including local models via Ollama. Adapters for **OpenAI Agents SDK**, **Google Agent Development Kit (ADK)**, and **PI** are planned for upcoming releases.
+As of v0.7.0, Urika supports the **Claude Agent SDK** (Anthropic), **OpenAI Agents SDK**, and **Google Agent Development Kit (ADK)** — see the [Supported providers](#supported-providers) table below. Local models via Ollama / LM Studio / vLLM also work through the Anthropic adapter's private-endpoint mode. A **PI** adapter is planned for a future release.
 
 **Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/13a-models-and-privacy.md).
 
@@ -34,12 +34,26 @@ Urika has three first-class interfaces — CLI, TUI, and dashboard. They share t
 
 See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-task cheat sheet across all three.
 
+## Supported providers
+
+As of v0.7.0, Urika ships adapters for three model providers. Pick one for the whole project, or mix-and-match per agent role.
+
+| Provider | SDK | Reasoning default | Execution default | Auth |
+|---|---|---|---|---|
+| Anthropic | `claude-agent-sdk` | `claude-opus-4-7` | `claude-sonnet-4-5` | API key OR subscription |
+| OpenAI | `openai-agents` | `gpt-5.4` | `gpt-5.4-mini` | API key |
+| Google | `google-adk` | `gemini-3.5-flash` | `gemini-3.5-flash` | API key |
+
+Set model strings per agent in `urika.toml` -- Urika routes each call to the right adapter based on the model prefix (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google). Mix providers across agent roles for cost or quality trade-offs (e.g. Opus for the planner, GPT-5.4-mini for the task agent, Gemini Flash for the report). See [v0.7 Provider Guide](docs/v07-provider-guide.md) for the full decision rubric and auth setup per provider.
+
+> **Why Google has no Pro/Flash split.** `gemini-3.1-pro-preview` requires a billing-enabled Google AI account (free-tier rate limit = 0), so v0.7.0 recommends `gemini-3.5-flash` for both reasoning and execution roles to keep onboarding friction-free for free-tier users. Users with billing can override per-agent to Pro and cost reporting works correctly (`urika.agents.pricing.PRICES` carries the row).
+
 ## Installation
 
 ### Prerequisites
 
 1. **Python 3.11+** (required) — see [Getting Started → Step 1](docs/01-getting-started.md#python-311-required) for per-OS install commands.
-2. **Anthropic API key** (required) — set up in step 3 below. Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification, a Claude Pro/Max subscription cannot be used to authenticate the Claude Agent SDK that Urika depends on. v0.3 ships with the Anthropic adapter only; adapters for OpenAI, Google ADK, and PI are planned for upcoming releases.
+2. **Provider API key** (required) — at least one of Anthropic, OpenAI, or Google (set up in step 3 below). Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification, Claude Pro/Max subscription auth was not previously usable with the Claude Agent SDK; from June 15 2026 onward, subscription auth is supported as an opt-in mode via `urika config anthropic --mode subscription`. Default remains API-key auth across all three providers. See [Supported providers](#supported-providers) for the full matrix.
 3. **Claude Code CLI on PATH** *(recommended, not required)* — `npm install -g @anthropic-ai/claude-code`. The Claude Agent SDK ships its own bundled `claude` binary, so you can skip this and Urika will fall back to the bundled one. Install your own to use `claude-opus-4-7` or any future Anthropic model — the bundled binary lags. See [Getting Started → Claude Code CLI](docs/01-getting-started.md#claude-code-cli-recommended) for the why.
 
 ### Install Urika
@@ -215,6 +229,8 @@ See [Models and Privacy](docs/13a-models-and-privacy.md) for configuration detai
 | [Notifications — Channels](docs/19a-notifications-channels.md) | Email, Slack, Telegram setup walkthroughs |
 | [Notifications — Remote](docs/19b-notifications-remote.md) | Remote `/commands`, what gets notified, troubleshooting, caveats |
 | [Security Model](docs/20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
+| [GitHub Backup](docs/22-github-backup.md) | `urika github` commands, pre-commit secret scanner, opt-in auto-push hook |
+| [v0.7 Provider Guide](docs/v07-provider-guide.md) | Choosing between Anthropic / OpenAI / Google, auth setup per provider, mixing providers per agent |
 
 ## Reporting bugs and requesting features
 
@@ -224,26 +240,30 @@ Pick the **🐛 Bug report** or **✨ Feature request** template — it
 asks for the version, OS, and a few other details that make the
 issue much faster to act on.
 
-## Coming soon
+## Recently shipped
 
-Planned features on the road to **v1.0.0**, in order. Bug-fix
-hotfixes (`v0.x.y`) ship in between as issues are reported.
-
-**v0.5 — smarter project memory**
-- Curator agent that organises captured memory, merges duplicates, and flags contradictions
-- Browse archived / superseded memory entries in CLI + dashboard
-- See how a project's memory evolved over time (`urika memory diff`, dashboard timeline)
+**v0.7 — multi-provider adapters** (current release)
+- OpenAI Agents SDK adapter + `[openai]` extra (`pip install urika[openai]`)
+- Google Agent Development Kit adapter + `[google]` extra (`pip install urika[google]`)
+- Model-prefix routing (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google) — mix providers per agent in the same project
+- Anthropic subscription auth path (`urika config anthropic --mode subscription`), API-key path unchanged
+- Setup: `urika config anthropic|openai|google --mode api_key` then `urika config api-key` (Anthropic) or `urika config secret` (OpenAI / Google) — see the [v0.7 Provider Guide](docs/v07-provider-guide.md) for the full decision rubric.
 
 **v0.6 — GitHub backup**
-- One-command setup of a remote git repo for any project
-- Optional auto-create of a private GitHub repo at project-creation time
-- Auto-push after every successful `urika run` / `finalize` so your work is always backed up
-- Dashboard Git tab showing remote URL, last push, recent commits
+- One-command setup of a git repo per project + opt-in auto-push after every successful `urika run` / `finalize` / `build-tool` — see the [GitHub Backup guide](docs/22-github-backup.md)
+- Pre-commit secret scanner (Anthropic, OpenAI, GitHub PAT/OAuth, AWS shapes) blocks leaks before they reach the remote
+- Dashboard Git tab with remote URL, last push, recent commits
+- Researcher-safe `.gitignore` template with managed-block markers
 
-**v0.7 — more model choice (OpenAI + Google)**
-- OpenAI Agents SDK as a second LLM backend (run experiments against GPT models)
-- Google Gen AI SDK as a third LLM backend (run experiments against Gemini models)
-- Mix and match: pick the best model per agent role across providers in `urika config`
+**v0.5 — smarter project memory**
+- `memory_curator` agent organises captured memory, merges duplicates, flags contradictions (`urika memory curate`)
+- Browse archived / superseded entries (`urika memory archive`) + see how memory evolved (`urika memory diff`)
+- Dashboard Memory page with full CRUD + Curate / Apply UI
+
+## Coming next
+
+Planned features on the road to **v1.0.0**. Bug-fix hotfixes
+(`v0.x.y`) ship in between as issues are reported.
 
 **v0.8 — publication-ready output**
 - Export reports as PDF or LaTeX

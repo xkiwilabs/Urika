@@ -257,12 +257,42 @@ def cmd_project(session: ReplSession, args: str) -> None:
 
 @command("new", description="Create a new project")
 def cmd_new(session: ReplSession, args: str) -> None:
+    """Create a new project (delegates to ``urika new``).
+
+    v0.7 cross-surface sweep: ``--github / --no-github / --public`` are
+    forwarded to the CLI so a REPL/TUI user can opt into (or out of)
+    the v0.6.0 GitHub auto-create at project-creation time without
+    dropping to a shell. Pre-sweep the slash dropped the flags and the
+    only way to opt in mid-REPL was to set ``[preferences]
+    github_auto_create = true`` globally first.
+
+    Recognised tokens (anywhere in ``args``; positional remainder is
+    treated as the project name like before):
+
+      --github / --no-github   → tri-state: True / False / None=preference
+      --public                 → make the created GitHub repo public
+                                 (private is the default)
+    """
     import os as _os
 
     from urika.cli import _sanitize_project_name, new as cli_new
     from urika.core.registry import ProjectRegistry
 
-    name = args.strip() if args.strip() else None
+    raw = (args or "").strip()
+    github_flag: bool | None = None
+    public = False
+    name_tokens: list[str] = []
+    for tok in raw.split():
+        if tok == "--github":
+            github_flag = True
+        elif tok == "--no-github":
+            github_flag = False
+        elif tok == "--public":
+            public = True
+        else:
+            name_tokens.append(tok)
+
+    name = " ".join(name_tokens).strip() or None
     if name is not None:
         name = _sanitize_project_name(name)
 
@@ -280,6 +310,8 @@ def cmd_new(session: ReplSession, args: str) -> None:
             mode=None,
             data_path=None,
             description=None,
+            github_flag=github_flag,
+            public=public,
         )
     except (SystemExit, EOFError, KeyboardInterrupt):
         pass
@@ -412,9 +444,60 @@ def cmd_copy(session: ReplSession, args: str) -> None:
 
 @command("config", description="Configure privacy mode and models")
 def cmd_config(session: ReplSession, args: str) -> None:
+    """Dispatch to ``urika config``.
+
+    Subcommands the REPL accepts:
+
+        /config                        → interactive setup
+                                          (current project, else global)
+        /config show                   → show current settings
+        /config global                 → interactive global setup
+        /config global show            → show global settings
+        /config auto-capture           → show current [memory] auto_capture
+                                          for the loaded project (default
+                                          ``true`` when unset)
+        /config auto-capture --enable  → set [memory] auto_capture = true
+        /config auto-capture --disable → set [memory] auto_capture = false
+    """
     from urika.cli import config_command
 
-    arg = args.strip().lstrip("-")
+    raw = (args or "").strip()
+    parts = raw.split()
+    head = parts[0].lower() if parts else ""
+
+    # ── /config auto-capture [--enable|--disable] ──
+    # v0.7 cross-surface sweep: previously REPL/TUI users had to hand-
+    # edit ``urika.toml`` to flip the v0.5 memory auto_capture flag.
+    # Mirrors the dashboard's memory-page checkbox.
+    if head == "auto-capture":
+        if not session.has_project:
+            click.echo(
+                "  /config auto-capture needs a loaded project. "
+                "Use /project <name> first."
+            )
+            return
+        enable: bool | None = None
+        for tok in parts[1:]:
+            if tok == "--enable":
+                enable = True
+            elif tok == "--disable":
+                enable = False
+        # ``_config_auto_capture`` reads the project name from sys.argv
+        # to support ``urika config auto-capture <project>`` — patch
+        # argv so the REPL path supplies the loaded project's name the
+        # same way.
+        import sys
+        from urika.cli.config import _config_auto_capture
+
+        saved = list(sys.argv)
+        try:
+            sys.argv = ["urika", "config", "auto-capture", session.project_name]
+            _config_auto_capture(enable)
+        finally:
+            sys.argv = saved
+        return
+
+    arg = raw.lstrip("-")
     ctx = click.Context(config_command)
 
     if arg == "show":
@@ -1432,6 +1515,116 @@ def cmd_dashboard(session: ReplSession, args: str) -> None:
         url = f"{url}{sep}token={token}"
     click.echo(f"  Dashboard at {url}")
     click.echo("  /dashboard stop to shut down")
+
+
+@command(
+    "github",
+    requires_project=True,
+    description="GitHub backup: /github init [--remote URL] [--create] [--public] | push | pull | status",
+)
+def cmd_github(session: ReplSession, args: str) -> None:
+    """Dispatch to ``urika github init|push|pull|status``.
+
+    REPL/TUI parity for the v0.6.0 GitHub auto-backup commands. Pre-v0.7
+    parity sweep the slashes did not exist — a REPL/TUI user who wanted
+    to back up their project had to drop to a shell to type ``urika
+    github push``. Mirrors the dispatch style of ``/memory``,
+    ``/sessions``, and ``/venv``.
+
+    Usage from the TUI:
+
+        /github                                     → status (default)
+        /github status                              → same
+        /github init [--remote URL] [--create] [--public]
+                                                    → initialise as a
+                                                      git repo
+        /github push                                → scan + commit + push
+        /github pull                                → fetch + ff-only
+
+    All four subcommands delegate to the corresponding Click command via
+    ``ctx.invoke`` so the actual logic stays single-sourced in
+    ``urika.cli.github``.
+    """
+    from urika.cli.github import (
+        github_init,
+        github_pull,
+        github_push,
+        github_status,
+    )
+
+    project = session.project_name
+    parts = (args or "").strip().split()
+    sub = parts[0].lower() if parts else "status"
+    tail = parts[1:]
+
+    if sub == "status":
+        ctx = click.Context(github_status)
+        ctx.invoke(github_status, project=project)
+        return
+
+    if sub == "init":
+        # ``init`` accepts ``--remote URL``, ``--create``, ``--public``.
+        remote: str | None = None
+        create = False
+        public = False
+        i = 0
+        while i < len(tail):
+            tok = tail[i]
+            if tok == "--remote" and i + 1 < len(tail):
+                remote = tail[i + 1]
+                i += 2
+                continue
+            if tok.startswith("--remote="):
+                remote = tok.split("=", 1)[1]
+                i += 1
+                continue
+            if tok == "--create":
+                create = True
+                i += 1
+                continue
+            if tok == "--public":
+                public = True
+                i += 1
+                continue
+            i += 1  # unknown token — ignore (matches REPL's tolerant convention)
+        ctx = click.Context(github_init)
+        try:
+            ctx.invoke(
+                github_init,
+                project=project,
+                remote=remote,
+                create=create,
+                public=public,
+            )
+        except SystemExit:
+            # ``github init --create`` raises SystemExit(2) on gh failure
+            # — the underlying command already printed the error/hint, so
+            # swallow the exit so the REPL/TUI stays alive.
+            pass
+        return
+
+    if sub == "push":
+        ctx = click.Context(github_push)
+        try:
+            ctx.invoke(github_push, project=project)
+        except SystemExit:
+            # SystemExit(1) on push failure / SystemExit(3) on secret
+            # detection — the command already printed the diagnostic.
+            pass
+        return
+
+    if sub == "pull":
+        ctx = click.Context(github_pull)
+        try:
+            ctx.invoke(github_pull, project=project)
+        except SystemExit:
+            pass
+        return
+
+    click.echo(
+        f"Unknown github subcommand: {sub!r}. "
+        f"Try /github status, /github init, /github push, or /github pull."
+    )
 
 
 # ── Sibling-module imports (Phase 8 split) ─────────────────────────

@@ -274,9 +274,72 @@ async def api_create_project(request: Request):
 
     registry.register(name, project_dir)
 
+    # Optional GitHub auto-create — cross-surface parity with
+    # ``urika new --github / --public``. Form fields:
+    #   * ``github`` (optional) — "true" / "false" / unset
+    #   * ``public`` (optional) — "true" / "false"
+    # Resolution mirrors ``urika.cli.project_new._maybe_create_github_repo``:
+    #   1. Explicit form field wins.
+    #   2. Otherwise ``[preferences] github_auto_create`` decides; when
+    #      that path is taken AND the user didn't tick "Public",
+    #      ``github_auto_create_visibility`` decides visibility.
+    # Failure (gh missing / unauthed / network) is NON-FATAL — the
+    # project is already on disk + registered. The response carries a
+    # structured ``github`` block so the UI can surface what happened.
+    github_form = (body.get("github") or "").strip().lower()
+    public_form = (body.get("public") or "").strip().lower()
+    github_flag: bool | None
+    if github_form in ("true", "1", "yes", "on"):
+        github_flag = True
+    elif github_form in ("false", "0", "no", "off"):
+        github_flag = False
+    else:
+        github_flag = None
+    public_flag = public_form in ("true", "1", "yes", "on")
+
+    github_result: dict[str, Any] | None = None
+    effective_github = github_flag
+    effective_public = public_flag
+    if effective_github is None:
+        from urika.core.settings import get_preference
+
+        effective_github = bool(get_preference("github_auto_create", default=False))
+        if effective_github and not effective_public:
+            effective_public = (
+                str(
+                    get_preference("github_auto_create_visibility", default="private")
+                ).lower()
+                == "public"
+            )
+    if effective_github:
+        # Import lazily so the test suite can monkeypatch
+        # ``urika.core.git.gh_create_repo`` between requests.
+        from urika.core import git as _git
+
+        try:
+            result = _git.gh_create_repo(
+                project_dir, name=name, public=effective_public
+            )
+        except Exception as exc:  # noqa: BLE001 — never fail project create
+            github_result = {
+                "ok": False,
+                "error": f"unexpected gh error: {type(exc).__name__}",
+            }
+        else:
+            github_result = {"ok": bool(result.ok)}
+            if result.repo_url:
+                github_result["repo_url"] = result.repo_url
+            if result.error:
+                github_result["error"] = result.error
+            if result.install_hint:
+                github_result["install_hint"] = result.install_hint
+
     if request.headers.get("hx-request") == "true":
         return Response(status_code=201, headers={"HX-Redirect": f"/projects/{name}"})
-    return JSONResponse({"name": name, "path": str(project_dir)}, status_code=201)
+    payload: dict[str, Any] = {"name": name, "path": str(project_dir)}
+    if github_result is not None:
+        payload["github"] = github_result
+    return JSONResponse(payload, status_code=201)
 
 
 # ── Interactive project-builder wizard (v0.4.5 Track 1) ───────────────
@@ -1001,8 +1064,9 @@ async def api_memory_curate(name: str, request: Request) -> Response:
 
     Mirrors the CLI's ``urika memory curate [--apply]`` surface; both
     routes call into :func:`urika.core.memory_curator.run_curator`
-    with a runner from :func:`urika.agents.runner.get_runner` — the
-    same idiom every other Urika agent-invocation surface uses.
+    with a runner from :func:`urika.agents.runner_routing.runner_for_agent`
+    — same idiom every other Urika agent-invocation surface uses
+    post-v0.7.0 Task 1.5.
 
     Returns JSON ``{"applied": bool, "decisions": [...], "error":
     str|null}``. Errors from the curator surface as a 200 with a
@@ -1010,7 +1074,7 @@ async def api_memory_curate(name: str, request: Request) -> Response:
     can render the message inline instead of a generic browser fetch
     failure.
     """
-    from urika.agents.runner import get_runner
+    from urika.agents.runner_routing import runner_for_agent
     from urika.core.memory_curator import run_curator
 
     registry = ProjectRegistry().list_all()
@@ -1021,7 +1085,11 @@ async def api_memory_curate(name: str, request: Request) -> Response:
     apply_param = request.query_params.get("apply", "").lower()
     apply_changes = apply_param in ("true", "1", "yes")
 
-    runner = get_runner()
+    # v0.7.0 Task 1.5: honour the project's ``[runtime.models.memory_curator]``
+    # override so dashboard-triggered curate runs route through the
+    # right adapter for mixed-provider users. Mirrors the CLI's
+    # ``urika memory curate`` rewire.
+    runner = runner_for_agent("memory_curator", summary.path)
     result = await run_curator(summary.path, runner=runner, apply=apply_changes)
     return JSONResponse(
         {
@@ -2500,6 +2568,79 @@ async def api_notifications_test_send(request: Request) -> JSONResponse:
     return JSONResponse({"channels": channels_list})
 
 
+# Provider auth-mode toggle — cross-surface parity with
+# ``urika config anthropic|openai|google --mode ...``. Writes
+# ``[<provider>] auth = "<mode>"`` to ``~/.urika/settings.toml``,
+# preserving every other section verbatim. Mirrors the CLI helpers
+# in ``urika.cli.config_provider`` but inline (the API router
+# cannot import from ``urika.cli`` per layering rules).
+_VALID_PROVIDERS = {"anthropic", "openai", "google"}
+_VALID_AUTH_MODES = {"api_key", "subscription"}
+
+
+@router.post("/settings/provider-auth")
+async def api_provider_auth(request: Request) -> JSONResponse:
+    """Set ``[<provider>] auth = "<mode>"`` for one of anthropic /
+    openai / google.
+
+    Form fields:
+      * ``provider`` (required) — one of ``anthropic``, ``openai``,
+        ``google``.
+      * ``mode`` (required) — one of ``api_key``, ``subscription``.
+
+    Subscription mode is rejected for ``openai`` and ``google`` (per
+    ``urika config openai|google --mode subscription`` UsageError):
+    OpenAI Plus is a separate product from the API, and Google AI
+    Pro/Ultra ToS forbid third-party SDK use. Returns 400 with an
+    explanation in those cases.
+
+    The save path goes through :func:`urika.core.settings.save_settings`
+    so unrelated sections (``[privacy]``, ``[runtime]``, etc.) are
+    preserved verbatim.
+    """
+    form = await request.form()
+    provider = (form.get("provider") or "").strip().lower()
+    mode = (form.get("mode") or "").strip().lower()
+    if provider not in _VALID_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"provider must be one of {sorted(_VALID_PROVIDERS)}",
+        )
+    if mode not in _VALID_AUTH_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"mode must be one of {sorted(_VALID_AUTH_MODES)}",
+        )
+    if provider == "openai" and mode == "subscription":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "OpenAI Plus subscriptions cannot be used with Urika. "
+                "OpenAI's API key is a separate product — get one at "
+                "https://platform.openai.com/api-keys and choose api_key."
+            ),
+        )
+    if provider == "google" and mode == "subscription":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Google AI Pro/Ultra subscriptions cannot be used with "
+                "Urika — Google's Terms of Service forbid third-party "
+                "use. Get a Gemini API key from "
+                "https://aistudio.google.com/app/apikey and choose api_key."
+            ),
+        )
+
+    data = load_settings()
+    section = data.get(provider)
+    if not isinstance(section, dict):
+        section = {}
+    section["auth"] = mode
+    data[provider] = section
+    save_settings(data)
+    return JSONResponse({"provider": provider, "mode": mode, "ok": True})
+
+
 @router.post("/settings/test-anthropic-key")
 async def api_test_anthropic_key() -> JSONResponse:
     """Verify the configured ANTHROPIC_API_KEY against api.anthropic.com.
@@ -2656,7 +2797,7 @@ def _backend_label() -> str:
 # even when unset. The Secrets tab guarantees these rows appear so users
 # see the multi-provider roadmap.
 _PROVIDER_NAMES: frozenset[str] = frozenset(
-    {"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"}
+    {"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
 )
 
 
@@ -2874,8 +3015,9 @@ async def api_set_secret(request: Request) -> JSONResponse:
                 status_code=400,
                 detail=(
                     f"{name} is reserved for the planned "
-                    f"{prov.display} adapter (v0.5). Configuration "
-                    f"available when that adapter ships."
+                    f"{prov.display} adapter — not yet supported in "
+                    f"this Urika version. Configuration available "
+                    f"when that adapter ships."
                 ),
             )
 

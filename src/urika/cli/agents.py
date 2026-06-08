@@ -59,15 +59,15 @@ def advisor(project: str | None, text: str | None, json_output: bool) -> None:
         text = interactive_prompt("Question or instructions", required=True)
 
     try:
-        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
+        from urika.agents.runner_routing import runner_for_agent
     except ImportError:
         raise ConfigError(
             "Claude Agent SDK not installed.",
             hint="Run: pip install claude-agent-sdk",
         )
 
-    runner = get_runner()
+    runner = runner_for_agent("advisor_agent", project_path)
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("advisor_agent")
@@ -240,15 +240,15 @@ def evaluate(
         experiment_id = experiments[-1].experiment_id
 
     try:
-        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
+        from urika.agents.runner_routing import runner_for_agent
     except ImportError:
         raise ConfigError(
             "Claude Agent SDK not installed.",
             hint="Run: pip install claude-agent-sdk",
         )
 
-    runner = get_runner()
+    runner = runner_for_agent("evaluator", project_path)
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("evaluator")
@@ -328,15 +328,15 @@ def plan(
         experiment_id = experiments[-1].experiment_id
 
     try:
-        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
+        from urika.agents.runner_routing import runner_for_agent
     except ImportError:
         raise ConfigError(
             "Claude Agent SDK not installed.",
             hint="Run: pip install claude-agent-sdk",
         )
 
-    runner = get_runner()
+    runner = runner_for_agent("planning_agent", project_path)
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("planning_agent")
@@ -433,15 +433,15 @@ def build_tool(
         )
 
     try:
-        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
+        from urika.agents.runner_routing import runner_for_agent
     except ImportError:
         raise ConfigError(
             "Claude Agent SDK not installed.",
             hint="Run: pip install claude-agent-sdk",
         )
 
-    runner = get_runner()
+    runner = runner_for_agent("tool_builder", project_path)
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("tool_builder")
@@ -509,15 +509,15 @@ def summarize(project: str | None, instructions: str | None, json_output: bool) 
     project_path, _config = _resolve_project(project)
 
     try:
-        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
+        from urika.agents.runner_routing import runner_for_agent
     except ImportError:
         raise ConfigError(
             "Claude Agent SDK not installed.",
             hint="Run: pip install claude-agent-sdk",
         )
 
-    runner = get_runner()
+    runner = runner_for_agent("project_summarizer", project_path)
     registry = AgentRegistry()
     registry.discover()
     role = registry.get("project_summarizer")

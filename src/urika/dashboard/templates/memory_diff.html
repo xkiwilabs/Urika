@@ -1,0 +1,83 @@
+{% extends "_base.html" %}
+
+{% block title %}Memory diff · {{ project.name | humanize }} · Urika{% endblock %}
+{% block heading %}Memory diff{% endblock %}
+
+{% block breadcrumb %}
+  <nav class="breadcrumb">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}">{{ project.name | humanize }}</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="/projects/{{ project.name }}/memory">Memory</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-current">Diff</span>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .diff-filter { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; margin-bottom: 1.5rem; }
+    .diff-filter label { display: block; font-weight: 600; font-size: 0.9rem; }
+    .diff-filter input { font: inherit; padding: 0.3rem 0.5rem; width: 12rem; }
+    .diff-section { margin-top: 1.5rem; }
+    .diff-section h2 { font-size: 1rem; margin: 0 0 0.5rem; color: var(--text-muted); text-transform: capitalize; }
+    .diff-empty { color: var(--text-muted); font-style: italic; padding: 0.25rem 0; }
+    .month-chip { display: inline-block; padding: 0.1rem 0.4rem; border: 1px solid var(--border, #ccc); border-radius: 3px; font-size: 0.8rem; margin-right: 0.25rem; }
+  </style>
+
+  <p class="text-muted">
+    Shows memory entries added, archived, or trashed between two timestamps.
+    Dashboard analogue of <code>urika memory diff &lt;from_ts&gt; &lt;to_ts&gt;</code>.
+    Timestamps accept ISO 8601 or relative forms like <code>1d_ago</code>,
+    <code>2h_ago</code>, <code>1w_ago</code>, <code>yesterday</code>, <code>now</code>.
+  </p>
+
+  <form method="get" class="diff-filter" action="/projects/{{ project.name }}/memory/diff">
+    <div>
+      <label for="from-ts">From</label>
+      <input id="from-ts" name="from_ts" type="text"
+             value="{{ from_ts or '1d_ago' }}"
+             placeholder="1d_ago">
+    </div>
+    <div>
+      <label for="to-ts">To</label>
+      <input id="to-ts" name="to_ts" type="text"
+             value="{{ to_ts or 'now' }}"
+             placeholder="now">
+    </div>
+    <button type="submit" class="btn btn--secondary">Diff</button>
+    <span class="text-muted" style="margin-left: auto;">
+      <a href="/projects/{{ project.name }}/memory/archive">Browse archive →</a>
+    </span>
+  </form>
+
+  {# Three sections — always rendered with headings so users see the
+     structure even when a group is empty. Mirrors the CLI's output
+     layout. #}
+  {% for label, group in [("added", diff.added), ("archived", diff.archived), ("trashed", diff.trashed)] %}
+    <section class="diff-section">
+      <h2>{{ label }} <span class="text-muted" style="font-weight: 400;">({{ group | length }})</span></h2>
+      {% if group %}
+        <ul class="list">
+          {% for entry in group %}
+            <li class="list-item">
+              <div class="list-item-row">
+                <div class="list-item-main">
+                  <code>{{ entry.filename }}</code>
+                </div>
+                <div class="list-item-meta">
+                  {% if entry.month %}
+                    <span class="month-chip">{{ entry.month }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="diff-empty">(no entries)</div>
+      {% endif %}
+    </section>
+  {% endfor %}
+{% endblock %}

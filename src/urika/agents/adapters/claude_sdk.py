@@ -25,6 +25,12 @@ from claude_agent_sdk import (
 
 from urika.agents.config import AgentConfig
 from urika.agents.runner import AgentResult, AgentRunner
+
+# Import the module (not the names) for the auth-preference helper so
+# tests that monkeypatch ``urika.core.compliance._get_anthropic_auth_preference``
+# also affect this adapter — a `from ... import _get_anthropic_auth_preference`
+# would bind a local reference that monkeypatch can't reach.
+from urika.core import compliance as _compliance
 from urika.core.compliance import require_api_key, scrub_oauth_env
 
 logger = logging.getLogger(__name__)
@@ -624,12 +630,25 @@ class ClaudeSDKRunner(AgentRunner):
     def _build_options(self, config: AgentConfig) -> ClaudeAgentOptions:
         """Translate AgentConfig to ClaudeAgentOptions."""
         # Layer 3 of the API-key safety net: scrub OAuth-related env
-        # vars from what we pass to the subprocess. Even if the user
-        # has CLAUDE_CODE_OAUTH_TOKEN in their shell, Urika must not
-        # authenticate via OAuth — only via ANTHROPIC_API_KEY (or a
-        # custom endpoint). We pass empty string values (not absence)
-        # so the subprocess overrides any parent-inherited values.
+        # vars from what we pass to the subprocess. In ``api_key`` mode
+        # (default) we strip CLAUDE_CODE_OAUTH_TOKEN-family vars even
+        # if the user has them in their shell — Urika authenticates via
+        # ANTHROPIC_API_KEY (or a custom endpoint), not OAuth. In
+        # ``subscription`` mode (opt-in, post-June-15-2026) the scrub
+        # preserves the OAuth tokens because they're the legitimate
+        # auth carrier; in turn we DROP any ANTHROPIC_API_KEY from the
+        # child env so the bundled ``claude`` CLI falls back to the
+        # OAuth token stored by ``claude login`` instead of preferring
+        # the api key.
         agent_env = scrub_oauth_env(config.env)
+        if _compliance._get_anthropic_auth_preference() == "subscription":
+            # Empty string (not pop) — the SDK merges env with
+            # os.environ, so a bare pop would let a parent-shell
+            # ANTHROPIC_API_KEY leak through to the spawned process.
+            # Writing "" forces an override at the SDK boundary, the
+            # same idiom scrub_oauth_env uses for OAuth tokens in
+            # api_key mode.
+            agent_env["ANTHROPIC_API_KEY"] = ""
         # SecurityPolicy enforcement (v0.4): wire the agent's
         # writable_dirs / readable_dirs / allowed_bash_prefixes /
         # blocked_bash_patterns into a real ``can_use_tool``

@@ -247,10 +247,10 @@ def _determine_next_experiment(
         try:
             import asyncio
 
-            from urika.agents.runner import get_runner
             from urika.agents.registry import AgentRegistry
+            from urika.agents.runner_routing import runner_for_agent
 
-            runner = get_runner()
+            runner = runner_for_agent("advisor_agent", project_path)
             registry = AgentRegistry()
             registry.discover()
             suggest_role = registry.get("advisor_agent")
@@ -538,9 +538,9 @@ def _run_advisor_first_for_experiment_impl(
 
     try:
         from urika.agents.registry import AgentRegistry
-        from urika.agents.runner import get_runner
+        from urika.agents.runner_routing import runner_for_agent
 
-        runner = get_runner()
+        runner = runner_for_agent("advisor_agent", project_path)
         registry = AgentRegistry()
         registry.discover()
         suggest_role = registry.get("advisor_agent")

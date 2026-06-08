@@ -235,13 +235,13 @@ def memory_curate(project: str | None, apply_changes: bool) -> None:
     import asyncio
     import threading
 
-    from urika.agents.runner import get_runner
+    from urika.agents.runner_routing import runner_for_agent
     from urika.core import memory_curator as _curator_mod
 
     name = _ensure_project(project)
     project_path, _ = _resolve_project(name)
 
-    runner = get_runner()
+    runner = runner_for_agent("memory_curator", project_path)
 
     # The CLI is also dispatched from the REPL/TUI ``/memory curate``
     # slash command (via ``click.Context.invoke``) which runs inside an

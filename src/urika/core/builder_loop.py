@@ -113,7 +113,7 @@ async def run_builder_loop(
     ``<project>/.urika/usage.json`` regardless of exit path.
     """
     from urika.agents.registry import AgentRegistry
-    from urika.agents.runner import get_runner
+    from urika.agents.runner_routing import runner_for_project
     from urika.core.builder_prompts import (
         build_planning_prompt,
         build_scoping_prompt,
@@ -124,7 +124,6 @@ async def run_builder_loop(
         parse_suggestions,
     )
 
-    runner = get_runner()
     registry = AgentRegistry()
     registry.discover()
 
@@ -138,6 +137,15 @@ async def run_builder_loop(
     project_dir = getattr(
         builder, "projects_dir", Path.home() / "urika-projects"
     ) / getattr(builder, "name", "")
+
+    # v0.7.0 Task 1.5: route via the project's runtime config (urika.toml
+    # may not exist yet during initial scoping — runner_for_project
+    # handles that gracefully and falls back to Claude). One runner is
+    # used for project_builder + advisor + planning calls below; per-
+    # agent fan-out during project creation is a future refactor (the
+    # mode is "configure your project", so the model strings aren't
+    # locked in yet).
+    runner = runner_for_project(project_dir)
 
     def _record_usage() -> None:
         if usage["calls"] == 0:

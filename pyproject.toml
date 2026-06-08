@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "urika"
-version = "0.6.0.1"
+version = "0.7.0"
 description = "Multi-agent scientific analysis platform"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -73,8 +73,27 @@ dl = [
 keyring = [
     "keyring>=24.0,<26.0",
 ]
+# v0.7.0 Phase 2: OpenAI Agents SDK adapter. The PyPI package is
+# ``openai-agents``; the import name is just ``agents``. The adapter
+# at ``urika.agents.adapters.openai_agents`` surfaces a clear
+# "extra not installed" error when this is absent, so the core
+# install stays slim and only users who route to gpt-*/o3-o5 models
+# need to install it.
+openai = [
+    "openai-agents>=0.4",
+]
+# v0.7.0 Phase 3: Google Agent Development Kit (ADK) adapter. The
+# PyPI package and import root are both ``google-adk`` /
+# ``google.adk``. The adapter at
+# ``urika.agents.adapters.google_adk`` surfaces a clear "extra not
+# installed" error when this is absent, so the core install stays
+# slim and only users who route to gemini-* models need to install
+# it.
+google = [
+    "google-adk>=1.0",
+]
 all = [
-    "urika[dl,keyring]",
+    "urika[dl,keyring,openai,google]",
 ]
 dev = [
     "urika[all]",

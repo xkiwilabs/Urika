@@ -380,7 +380,19 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
 
 
 def cmd_build_tool(session: ReplSession, args: str) -> None:
-    """Build a custom tool for the project."""
+    """Build a custom tool for the project.
+
+    v0.6.0 cross-surface parity: after a successful tool build, invoke
+    ``_maybe_auto_push`` so projects with ``[github] auto_push = true``
+    and ``"build-tool"`` in ``auto_push_after`` get backed up. Pre-fix
+    the REPL/TUI handler called ``_run_single_agent`` directly,
+    bypassing the CLI's ``urika build-tool`` Click command (which IS
+    where the hook lives) — so the hook never fired from inside the
+    REPL or TUI. The CLI's ``/run`` and ``/finalize`` slashes already
+    delegate via ``Context.invoke`` and inherit the hook for free; this
+    handler is the only one in the agent-slash family that bypasses
+    the CLI shell, so it needs the explicit call.
+    """
     instructions = args.strip()
     if not instructions:
         click.echo(
@@ -394,6 +406,13 @@ def cmd_build_tool(session: ReplSession, args: str) -> None:
 
     session.set_agent_active("build-tool")
     try:
-        _run_single_agent(session, "tool_builder", "", instructions)
+        text = _run_single_agent(session, "tool_builder", "", instructions)
+        # Only auto-push on a non-empty agent output — the CLI gates on
+        # ``result.success and result.text_output`` and we mirror that:
+        # ``_run_single_agent`` returns ``""`` on error/missing output.
+        if text:
+            from urika.cli.github import _maybe_auto_push
+
+            _maybe_auto_push(session.project_path, event="build-tool")
     finally:
         session.set_agent_idle()

@@ -12,8 +12,14 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from typing import TYPE_CHECKING
 
 import click
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from urika.agents.runner import AgentRunner
 
 from urika.cli._base import cli
 from urika.cli._helpers import (
@@ -66,6 +72,30 @@ def _update_repl_activity(event: str, detail: str) -> None:
             session.update_agent_activity(activity=detail)
     except Exception:
         pass
+
+
+def _resolve_runner(project_path: Path | str | None) -> AgentRunner:
+    """Resolve the AgentRunner for ``project_path``'s runtime config.
+
+    v0.7.0 Task 1.4 wiring: read the project's ``urika.toml`` and
+    route through :func:`urika.agents.runner_registry.runner_for` if a
+    model is configured. Falls back to the legacy
+    :func:`urika.agents.runner.get_runner` factory when no model is
+    set (preserves pre-v0.7.0 behavior).
+
+    v0.7.0 Task 1.5: now a thin wrapper around the shared
+    :func:`urika.agents.runner_routing.runner_for_project` helper —
+    same semantics, but the helper also catches ``ModuleNotFoundError``
+    from a missing-extra adapter and surfaces it as the friendly
+    :class:`~urika.agents.runner_routing.AdapterNotInstalledError`
+    with a ``pip install urika[<provider>]`` hint. Kept as a named
+    function here because it's referenced by name from two call
+    sites in this module + tests; new call sites should import the
+    helper directly.
+    """
+    from urika.agents.runner_routing import runner_for_project
+
+    return runner_for_project(project_path)
 
 
 @cli.command()
@@ -174,7 +204,7 @@ def run(
     # launch TS orchestrator in headless mode instead.
     # For now, both paths use the Python orchestrator.
     try:
-        from urika.agents.runner import get_runner
+        from urika.agents.runner import get_runner  # noqa: F401 -- SDK presence probe
     except ImportError:
         raise click.ClickException(
             "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
@@ -425,7 +455,7 @@ def run(
             signal.signal(signal.SIGTERM, _cleanup_meta)
 
         start_ms, start_iso = _agent_run_start()
-        sdk_runner = get_runner()
+        sdk_runner = _resolve_runner(project_path)
 
         try:
             if json_output:
@@ -820,7 +850,7 @@ def run(
 
     start_ms, start_iso = _agent_run_start()
 
-    sdk_runner = get_runner()
+    sdk_runner = _resolve_runner(project_path)
 
     # Panel already created and active from experiment selection above
     try:

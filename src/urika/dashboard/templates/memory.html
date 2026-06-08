@@ -118,6 +118,10 @@
       href="?show_archived={{ 'false' if show_archived else 'true' }}"
       class="toggle-archive"
     >{{ 'Hide archived' if show_archived else 'Show archived' }}</a>
+    <span class="text-muted" style="margin: 0 0.5rem;">·</span>
+    <a href="/projects/{{ project.name }}/memory/archive">Browse archive</a>
+    <span class="text-muted" style="margin: 0 0.5rem;">·</span>
+    <a href="/projects/{{ project.name }}/memory/diff">View diff</a>
   </div>
 
   <div class="page-actions">

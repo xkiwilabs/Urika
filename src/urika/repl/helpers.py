@@ -65,8 +65,8 @@ def _run_single_agent(
 ) -> str:
     """Run a single agent and display its output. Returns the text output."""
     try:
-        from urika.agents.runner import get_runner
         from urika.agents.registry import AgentRegistry
+        from urika.agents.runner_routing import runner_for_agent
         from urika.cli import _make_on_message
         from urika.cli_display import (
             Spinner,
@@ -75,7 +75,10 @@ def _run_single_agent(
             print_error,
         )
 
-        runner = get_runner()
+        # v0.7.0 Task 1.5: honour per-agent ``[runtime.models.<agent>]``
+        # overrides in the project's urika.toml. Falls back to the
+        # project default and finally to the legacy Claude runner.
+        runner = runner_for_agent(agent_name, session.project_path)
         registry = AgentRegistry()
         registry.discover()
 

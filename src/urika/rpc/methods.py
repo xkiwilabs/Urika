@@ -171,7 +171,7 @@ def _experiment_run(
     """
     import asyncio
 
-    from urika.agents.runner import get_runner
+    from urika.agents.runner_routing import runner_for_project
     from urika.orchestrator.loop import run_experiment
     from urika.orchestrator.pause import PauseController
 
@@ -181,7 +181,11 @@ def _experiment_run(
     instructions = params.get("instructions", "")
     resume = params.get("resume", False)
 
-    runner = get_runner()
+    # ``run_experiment`` is the orchestrator main loop — multiple
+    # agents under one runner. Route via the project default; the
+    # loop's per-agent routing inside the planning→task→evaluator
+    # sequence is wired separately by Task 1.4 inside the loop.
+    runner = runner_for_project(project_dir)
 
     # Create a PauseController that checks a flag file
     # The TUI can request a pause by calling experiment.pause RPC
@@ -288,7 +292,7 @@ def _agent_run(
     import asyncio
 
     from urika.agents.registry import AgentRegistry
-    from urika.agents.runner import get_runner
+    from urika.agents.runner_routing import runner_for_agent
 
     project_dir = _path(params)
     agent_name = params["agent_name"]
@@ -311,8 +315,11 @@ def _agent_run(
         experiment_id=experiment_id,
     )
 
-    # Get the runner (Claude SDK by default)
-    runner = get_runner()
+    # Resolve the runner from the project + per-agent override (v0.7.0
+    # Task 1.5). Falls back to the Claude default when no model is
+    # configured. Honours ``[runtime.models.<agent>]`` so mixed-provider
+    # users get the right adapter for ``agent_name``.
+    runner = runner_for_agent(agent_name, project_dir)
 
     # Notify progress
     if notify:

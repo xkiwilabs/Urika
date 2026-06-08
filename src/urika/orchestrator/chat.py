@@ -24,7 +24,7 @@ from urika.agents.config import (
     build_agent_env_for_endpoint,
 )
 from urika.agents.prompt import load_prompt
-from urika.agents.runner import get_runner
+from urika.agents.runner_routing import runner_for_agent
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,12 @@ class OrchestratorChat:
         """Switch to a new project. Clears conversation history."""
         self.project_dir = project_dir
         self.messages = []
+        # v0.7.0 Task 1.5: drop the cached runner so the new project's
+        # ``urika.toml`` (which may declare a different provider) is
+        # re-read on the next chat() turn. Without this, switching from
+        # a Claude project to a GPT project would silently keep the
+        # Claude adapter.
+        self._runner = None
 
     def get_messages(self) -> list[dict[str, Any]]:
         """Get the current conversation history."""
@@ -77,7 +83,13 @@ class OrchestratorChat:
         notify: optional callback for RPC notifications (TUI path).
         """
         if self._runner is None:
-            self._runner = get_runner()
+            # v0.7.0 Task 1.5: honour ``[runtime.models.orchestrator]``
+            # in the project's urika.toml. Falls back to the project
+            # default and finally to the legacy Claude runner. Lazily
+            # cached on first chat() turn so set_project() can swap
+            # projects without forcing a new runner allocation per
+            # message.
+            self._runner = runner_for_agent("orchestrator", self.project_dir)
 
         # Build the orchestrator config
         config = self._build_config()

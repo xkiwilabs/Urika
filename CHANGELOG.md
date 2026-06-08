@@ -5,6 +5,166 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] – 2026-06-15 (target)
+
+Multi-provider model adapters. The same Urika project can now run
+experiments against Anthropic, OpenAI, or Google models, with
+per-agent provider routing driven by the model string itself —
+``claude-*`` routes to the Claude Agent SDK, ``gpt-*`` / ``o3-*`` /
+``o4-*`` / ``o5-*`` routes to the OpenAI Agents SDK, ``gemini-*``
+routes to Google's Agent Development Kit. No central provider
+setting; each agent role can be on a different provider, mixed
+freely within a single ``urika.toml``.
+
+### Added
+
+- **OpenAI Agents SDK adapter + ``[openai]`` extra**
+  (``pip install urika[openai]``). New ``OpenAIAgentsRunner`` in
+  ``src/urika/agents/adapters/openai_agents.py`` translates
+  ``AgentConfig`` into the OpenAI Agents SDK's options shape,
+  streams messages, accumulates per-call cost via the shared
+  pricing table, and surfaces the standard ``AgentResult``
+  vocabulary (``tokens_in`` / ``tokens_out`` / ``cost_usd`` /
+  ``error_category``) so the orchestrator, leaderboard, and usage
+  tracker see identical shapes regardless of which provider ran.
+
+- **Google ADK adapter + ``[google]`` extra**
+  (``pip install urika[google]``). ``GoogleADKRunner`` in
+  ``src/urika/agents/adapters/google_adk.py`` mirrors the OpenAI
+  shape against Google's Agent Development Kit (``google-adk``).
+  ``GEMINI_API_KEY`` is registered in the vault's known-secrets
+  registry so ``urika config google`` and the dashboard Secrets tab
+  both surface it.
+
+- **``urika.agents.tools`` shared layer** — six canonical tools
+  (Bash / Read / Write / Grep / Glob / Edit) consumable by any
+  adapter, each enforced through the existing ``SecurityPolicy``
+  (``writable_dirs`` / ``readable_dirs`` / ``allowed_bash_prefixes`` /
+  ``blocked_bash_patterns``). Third-party adapters reuse this layer
+  by importing the tool wrappers directly — no re-implementing
+  permission logic per provider. The Claude adapter continues to
+  use its own SDK-native tool surface; OpenAI and Google adapters
+  wire these shared tools into their respective SDK tool registries.
+
+- **``urika.agents.pricing.cost_for()``** — single $-per-1M-token
+  table at ``src/urika/agents/pricing.py`` covering all three
+  providers (Anthropic Opus 4.7 / Sonnet 4.5, OpenAI GPT-5.4
+  family, Google Gemini 3 Pro / Flash). Both new adapters call
+  ``cost_for(model, tokens_in, tokens_out)`` so cost reporting is
+  uniform across the leaderboard, ``urika usage``, and the
+  dashboard Usage page. Gemini rates verified against
+  ai.google.dev/pricing on 2026-06-02 (≤200k-token tier).
+
+- **``urika.agents.runner_registry.runner_for()``** — model-prefix
+  routing. Callers with a model string in hand (the orchestrator,
+  the conversational ``OrchestratorChat``, any per-agent
+  configuration consumer) call ``runner_for(model)`` to get the
+  correct adapter. Lazy imports inside the function keep
+  not-yet-installed extras (``[openai]`` / ``[google]``) from
+  failing at collection time — the import error only surfaces if
+  the user actually picks a model that needs the missing extra.
+
+- **Anthropic subscription auth path** (opt-in via
+  ``urika config anthropic --mode subscription``). Legal after the
+  Anthropic Agent SDK announcement's June 15 2026 cutover — users
+  with a Pro / Max subscription can now authenticate the Claude
+  adapter via ``claude login`` (the Claude Code CLI's OAuth flow)
+  instead of an ``ANTHROPIC_API_KEY``. The default stays
+  ``api_key`` and the existing ``ANTHROPIC_API_KEY`` path is
+  unchanged — subscription mode is fully opt-in.
+
+- **``urika config anthropic|openai|google --mode <api_key|subscription>``**
+  — interactive auth setup per provider. ``api_key`` stores the
+  provider's key in the vault under the canonical secret name
+  (``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY`` / ``GEMINI_API_KEY``);
+  ``subscription`` (Anthropic only) writes the
+  ``[anthropic] auth = "subscription"`` toggle into
+  ``~/.urika/settings.toml`` after a one-line ``claude login``
+  reminder. OpenAI and Google subscription modes are reserved for
+  future provider announcements and currently raise a clear
+  "not yet supported by <provider>" error rather than silently
+  no-oping.
+
+- **``recommended_models_for(provider)``** — per-provider
+  reasoning + execution model defaults at
+  ``src/urika/core/recommended_models.py``. Returns a
+  ``{"reasoning": ..., "execution": ...}`` dict so the dashboard
+  Models-tab Provider filter (and the eventual provider-aware
+  CLI wizard) can surface the right pair of defaults for each
+  provider without hard-coding. The cost-saving "Opus for the
+  four reasoning agents, Sonnet 4.5 for the eight execution
+  agents" split from v0.4.0 remains the default for Anthropic;
+  OpenAI maps to ``gpt-5.4`` + ``gpt-5.4-mini``. Google is the
+  asymmetric case: ``gemini-3.5-flash`` for **both** reasoning and
+  execution. Reason: ``gemini-3.1-pro-preview`` requires a
+  billing-enabled Google AI account (free-tier rate limit = 0), so
+  recommending it as the default would block free-tier users at
+  first agent call. The Pro row stays in
+  ``urika.agents.pricing.PRICES`` and remains selectable from the
+  dashboard Models tab, so users with billing can still override
+  per-agent and get correct cost reporting.
+
+- **Dashboard Models tab Provider filter** — a three-way toggle
+  (Anthropic / OpenAI / Google) on ``/projects/{name}/models`` that
+  re-populates the per-agent model dropdowns from
+  ``recommended_models_for(provider)`` and that provider's known
+  model list. The default on first load remains Anthropic, so
+  existing projects render identically.
+
+- **Smoke harness flags** — ``--provider {anthropic|openai|google}``,
+  ``--mixed-providers``, and ``--anthropic-auth {api_key|subscription}``
+  on ``dev/scripts/smoke-v04-e2e-open.sh``. The operator-driven cut
+  criterion now exercises each provider end-to-end (a full project
+  build + run + finalize) plus a mixed-providers configuration
+  that pins different agents to different providers in one project.
+
+### Backward compatibility
+
+v0.7.0 is a strict superset of v0.6.x.
+``pip install --upgrade urika`` is sufficient — existing Claude SDK
+users need zero config changes. Specifically:
+
+- ``urika.toml`` schema is unchanged. Existing ``claude-*`` model
+  strings continue to route to the same ``ClaudeSDKRunner`` they
+  hit today; no migration step is required.
+- ``~/.urika/settings.toml`` gains an optional
+  ``[anthropic] auth = "api_key" | "subscription"`` key with a
+  default of ``"api_key"`` when absent. Pre-v0.7.0 settings files
+  are read unchanged.
+- The vault gains additive ``OPENAI_API_KEY`` and ``GEMINI_API_KEY``
+  entries in ``known_secrets``; pre-v0.7.0 vaults are unaffected
+  and continue to work without either key set.
+- The dashboard Models tab defaults to the Anthropic provider on
+  first load. Existing project pages render identically to v0.6.x;
+  the Provider filter is purely additive.
+
+### Known limitations
+
+- **Google ``gemini-3.1-pro-preview`` requires billing.** The Google
+  AI free tier has a rate limit of 0 for the Pro preview model, so
+  v0.7.0 defaults Google's reasoning + execution recommendations to
+  ``gemini-3.5-flash`` for both roles. Users with a billing-enabled
+  Google AI account can override per-agent in ``urika.toml``
+  (``[runtime.models.<agent>] model = "gemini-3.1-pro-preview"``) or
+  via the dashboard Models tab — the Pro row stays in
+  ``urika.agents.pricing.PRICES`` so cost reporting works for those
+  overrides.
+- **20 support-agent call sites still route via ``get_runner()``.**
+  ``cli/agents*.py``, ``repl/helpers.py``, and a handful of
+  dashboard chat endpoints hard-code the legacy
+  ``get_runner()`` factory instead of ``runner_for(model)``. The
+  experiment loop is fully migrated — mixed-provider users get
+  correct routing on the core planning → task → evaluator →
+  advisor cycle — but advisor / finalize / report / memory_curator
+  invocations silently fall back to Claude regardless of the
+  configured per-agent model. Tracked for a v0.7.1 hotfix.
+- **Anthropic subscription auth requires ``claude login`` first.**
+  Urika does not run the OAuth flow itself; the Claude Code CLI
+  owns that surface. ``urika config anthropic --mode subscription``
+  reminds the user to run ``claude login`` before the next agent
+  call, and ``urika config anthropic --test`` will detect a missing
+  subscription session and print the same hint.
+
 ## [0.6.0.1] - 2026-06-01
 
 Windows hotfix. Two pre-existing bugs in the v0.6.0 release were masked

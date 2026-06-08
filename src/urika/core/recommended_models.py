@@ -55,6 +55,58 @@ EXECUTION_AGENTS: tuple[str, ...] = (
 EXECUTION_AGENT_DEFAULT_MODEL = "claude-sonnet-4-5"
 
 
+# v0.7.0: per-provider reasoning/execution recommendations consumed
+# by the dashboard's Models-tab Provider filter and (eventually) the
+# CLI wizard's provider-aware "use recommended defaults" flow.
+# Adding a new provider here is purely additive — the Anthropic row
+# must stay in sync with ``EXECUTION_AGENT_DEFAULT_MODEL`` and with
+# the dashboard's ``KNOWN_CLOUD_MODELS``.
+# Note the per-provider asymmetry: Anthropic and OpenAI use the
+# reasoning/execution Pro/mini split, but Google recommends
+# ``gemini-3.5-flash`` for BOTH roles. Reason: ``gemini-3.1-pro-preview``
+# has a free-tier rate limit of 0 (it requires a billing-enabled Google
+# AI account), so recommending Pro as the default would block free-tier
+# users entirely at first agent call. Flash is accessible on the free
+# tier with rate limits, so it's the free-tier-friendly choice. Users
+# with billing can override per-agent to ``gemini-3.1-pro-preview`` —
+# its row stays in ``urika.agents.pricing.PRICES`` so cost reporting
+# works for those overrides.
+_RECOMMENDED_BY_PROVIDER: dict[str, dict[str, str]] = {
+    "anthropic": {"reasoning": "claude-opus-4-7", "execution": "claude-sonnet-4-5"},
+    "openai": {"reasoning": "gpt-5.4", "execution": "gpt-5.4-mini"},
+    "google": {"reasoning": "gemini-3.5-flash", "execution": "gemini-3.5-flash"},
+}
+
+
+def recommended_models_for(provider: str) -> dict[str, str]:
+    """Return the recommended reasoning + execution model pair for *provider*.
+
+    Public API the dashboard's Models-tab Provider filter (and the
+    v0.7.0+ CLI wizard's provider-aware "use recommended defaults"
+    flow) consume to populate model-suggestion dropdowns.
+
+    The returned dict always has exactly two keys:
+
+    - ``"reasoning"``: model id for the four reasoning agents
+      (planning, advisor, finalizer, project_builder).
+    - ``"execution"``: model id for the eight execution agents
+      (task, evaluator, report, presentation, tool_builder,
+      literature, data, project_summarizer).
+
+    A fresh copy is returned each call so callers can mutate the
+    dict without poisoning the module-level table.
+
+    Raises :class:`ValueError` for unknown providers — silent
+    fall-through to a default would let a typo (``"openi"``) end
+    up pinning every agent to Anthropic-only models on a non-
+    Anthropic provider.
+    """
+    try:
+        return dict(_RECOMMENDED_BY_PROVIDER[provider])
+    except KeyError as exc:
+        raise ValueError(f"unknown provider: {provider!r}") from exc
+
+
 def split_applies(default_model: str) -> bool:
     """True iff *default_model* is an Opus tier — split saves money.
 

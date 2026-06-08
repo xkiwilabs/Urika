@@ -148,7 +148,14 @@
                    :value bindings.
        Field names remain on the existing scheme (``model[<agent>]`` /
        ``endpoint[<agent>]``) — the project-settings API is unchanged. #}
-    <div class="tab-panel" x-show="active === 'models'" x-cloak>
+    {# v0.7.0 Task 4.4 — ``provider`` drives the Provider filter
+       <select> below; every model dropdown in this tab renders one
+       ``<option>`` per provider/model pair with an
+       ``x-show='provider === ...'`` clause. Default ``anthropic``
+       so existing project sessions render Anthropic options on first
+       load (matches pre-filter behaviour). #}
+    <div class="tab-panel" x-show="active === 'models'" x-cloak
+         x-data="{ provider: 'anthropic' }">
       {# Reset-to-recommended-defaults action. Sits OUTSIDE the main
          settings form because it has its own POST endpoint and writes
          back the whole [runtime.models] block atomically. The button
@@ -199,16 +206,40 @@
         </div>
       </div>
 
+      {# v0.7.0 Task 4.4 — Provider filter. Pure client-side filter
+         via Alpine x-show: every model dropdown below renders options
+         for all three providers, and switching this <select> reveals
+         only one provider's options at a time. Submitted form values
+         come from whichever <option> is selected inside each <select>. #}
+      {% if project_privacy_mode in ["open", "hybrid"] %}
+      <div class="form-row">
+        <label for="project-models-provider-select">Provider</label>
+        <select id="project-models-provider-select" x-model="provider">
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+          <option value="google">Google</option>
+        </select>
+        <span class="form-help">
+          Filters every cloud-model dropdown below to one provider's family.
+        </span>
+      </div>
+      {% endif %}
+
       <div class="form-row">
         <label for="runtime_model">Project-wide model override</label>
         {% if project_privacy_mode in ["open", "hybrid"] %}
-          {# Cloud project → dropdown of known Claude models. The
-             empty option means "inherit the global per-mode default". #}
+          {# Cloud project → dropdown of known cloud models, filtered
+             by the Provider <select> above. The empty option means
+             "inherit the global per-mode default" and stays visible
+             for every provider. #}
           <select id="runtime_model" name="runtime_model">
             <option value="" {% if not runtime_model %}selected{% endif %}>(inherit global default: {{ runtime_model_placeholder }})</option>
-            {% for m in known_cloud_models %}
-              <option value="{{ m }}"
-                      {% if m == runtime_model %}selected{% endif %}>{{ m }}</option>
+            {% for prov, models in known_cloud_models_by_provider.items() %}
+              {% for m in models %}
+                <option value="{{ m }}"
+                        x-show="provider === '{{ prov }}'"
+                        {% if m == runtime_model %}selected{% endif %}>{{ m }}</option>
+              {% endfor %}
             {% endfor %}
           </select>
         {% else %}
@@ -240,11 +271,16 @@
                 <input type="hidden" name="endpoint[{{ row.agent }}]" value="open">
               </td>
               <td>
+                {# v0.7.0 Task 4.4 — provider-filtered options. The
+                   inherit option stays visible across providers. #}
                 <select name="model[{{ row.agent }}]">
                   <option value="" {% if not row.model %}selected{% endif %}>(inherit{% if row.placeholder_model %}: {{ row.placeholder_model }}{% endif %})</option>
-                  {% for m in known_cloud_models %}
-                    <option value="{{ m }}"
-                            {% if m == row.model %}selected{% endif %}>{{ m }}</option>
+                  {% for prov, models in known_cloud_models_by_provider.items() %}
+                    {% for m in models %}
+                      <option value="{{ m }}"
+                              x-show="provider === '{{ prov }}'"
+                              {% if m == row.model %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
                   {% endfor %}
                 </select>
               </td>
@@ -360,11 +396,17 @@
               <td>
                 {# Cloud variant: free dropdown of known cloud models.
                    No name= — the hidden [model] input below carries it. #}
+                {# v0.7.0 Task 4.4 — provider-filtered options. Outer
+                   x-show hides the whole <select> when cat=private;
+                   inner per-option x-show filters by provider. #}
                 <select x-show="cat === 'open'" x-model="cloud_model">
                   <option value="" {% if not row.model %}selected{% endif %}>(inherit{% if row.placeholder_model %}: {{ row.placeholder_model }}{% endif %})</option>
-                  {% for m in known_cloud_models %}
-                    <option value="{{ m }}"
-                            {% if m == row.model %}selected{% endif %}>{{ m }}</option>
+                  {% for prov, models in known_cloud_models_by_provider.items() %}
+                    {% for m in models %}
+                      <option value="{{ m }}"
+                              x-show="provider === '{{ prov }}'"
+                              {% if m == row.model %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
                   {% endfor %}
                 </select>
                 {# Private variant: <select> of named private endpoints. #}

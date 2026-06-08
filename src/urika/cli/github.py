@@ -222,8 +222,21 @@ def github_pull(project: str | None) -> None:
 
 
 # ── auto-push helper ───────────────────────────────────────────────
-# Wired into the tail of ``urika run`` / ``urika finalize`` /
-# ``urika build-tool``. Honours ``[github] auto_push`` in
+# Call sites (kept honest — update both lists if you add another):
+#
+#   CLI:
+#     * ``urika run``        (cli/run.py — meta-orch + single-experiment)
+#     * ``urika finalize``   (cli/agents_finalize.py — gated on ``not draft``)
+#     * ``urika build-tool`` (cli/agents.py — gated on success + text)
+#
+#   REPL/TUI:
+#     * ``/run``        — inherits the CLI hook via ``Context.invoke``
+#     * ``/finalize``   — inherits the CLI hook via ``Context.invoke``
+#                          (also gated on ``not draft``)
+#     * ``/build-tool`` — explicit call in ``repl/cmd_agents.py``
+#                          (handler bypasses the CLI shell)
+#
+# Honours ``[github] auto_push`` and ``[github] auto_push_after`` in
 # ``urika.toml``. NEVER raises — auto-push failure must not break the
 # host command (the outer try/except is intentional defensive coding).
 
