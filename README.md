@@ -58,43 +58,65 @@ Set model strings per agent in `urika.toml` -- Urika routes each call to the rig
 
 ### Install Urika
 
-**Recommended: install from source** in a Python virtual environment. Urika is under active development with frequent updates.
-
-On Ubuntu 22.04+, Debian 12+, Fedora 38+, and recent macOS, system Python refuses `pip install` with `error: externally-managed-environment` (PEP 668), so a venv is the simplest path:
+**From PyPI** (v0.7.0 shipped 2026-06-08):
 
 ```bash
 python3 -m venv ~/.venvs/urika
 source ~/.venvs/urika/bin/activate    # Windows PowerShell: ~\.venvs\urika\Scripts\Activate.ps1
 
-git clone https://github.com/xkiwilabs/Urika.git
-cd Urika
-pip install -e ".[dev]"
-urika setup                     # check installation, detect hardware, optionally install DL
+pip install urika                     # core (Anthropic adapter only)
+pip install 'urika[openai]'           # + OpenAI Agents SDK adapter (gpt-*/o3-o5)
+pip install 'urika[google]'           # + Google ADK adapter (gemini-*)
+pip install 'urika[all]'              # all three providers
+urika setup                           # check install, detect hardware, optionally install DL
 ```
 
-To update: `cd Urika && git pull`.
+`pipx`, `conda`, and `uv` work too. Deep learning (`torch`, `transformers`) is optional: `pip install 'urika[dl]'`.
 
-**Alternative: install from PyPI** (pre-release — may lag behind source):
+On Ubuntu 22.04+, Debian 12+, Fedora 38+, and recent macOS, system Python refuses `pip install` with `error: externally-managed-environment` (PEP 668), so the venv above is the simplest path. See [Getting Started → Step 1](docs/01-getting-started.md#python-311-required) for per-OS install commands.
+
+**Upgrade from v0.6.x:**
 
 ```bash
-pip install urika
+pip install --upgrade urika           # strict superset — no config changes required
 ```
 
-`pipx`, `conda`, and `uv` work too. Deep learning (`torch`, `transformers`) is optional: `pip install "urika[dl]"`.
+Existing `urika.toml` and `~/.urika/settings.toml` work unchanged. v0.7.0 adds optional new keys (`[anthropic] auth`, `[runtime.models.<agent>] model`) with safe defaults — see [v0.7 Provider Guide](docs/v07-provider-guide.md) for mixing providers per agent role.
 
-### Set up API key
+**From source** (for active development):
 
-1. Get a key at [console.anthropic.com](https://console.anthropic.com) → Settings → API Keys.
-2. Set a monthly spend limit in Settings → Billing.
-3. Save the key (Urika is now installed, so the CLI is available):
+```bash
+git clone https://github.com/xkiwilabs/Urika.git
+cd Urika
+pip install -e '.[dev,all]'
+```
 
-   ```bash
-   urika config api-key             # interactive — saves to ~/.urika/secrets.env
-   urika config api-key --test      # verify the key works against api.anthropic.com
-   # or: export ANTHROPIC_API_KEY=sk-ant-...
-   ```
+### Set up API keys
 
-See [Getting Started](docs/01-getting-started.md) for the full walkthrough including verification, troubleshooting, and per-OS notes. See [Provider compliance](docs/20-security.md#provider-compliance) for the full Anthropic policy rationale.
+Get keys from your provider(s):
+
+- **Anthropic** — [console.anthropic.com](https://console.anthropic.com) → Settings → API Keys (set a monthly spend limit in Settings → Billing)
+- **OpenAI** — [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **Google** — [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) (enable billing for production rate limits; free tier is 5 RPM / 20 RPD on `gemini-3.5-flash`)
+
+Save them to the vault:
+
+```bash
+urika config api-key             # interactive Anthropic-specific wizard
+urika config api-key --test      # verify against api.anthropic.com
+
+urika config secret              # generic vault entry — enter OPENAI_API_KEY or GEMINI_API_KEY when prompted
+```
+
+Then pin the provider auth mode (post-June-15 2026, Anthropic supports subscription auth too):
+
+```bash
+urika config anthropic --mode api_key            # or --mode subscription
+urika config openai --mode api_key
+urika config google --mode api_key
+```
+
+See [Getting Started](docs/01-getting-started.md) for the full walkthrough including verification, troubleshooting, and per-OS notes. See [v0.7 Provider Guide](docs/v07-provider-guide.md) for the cross-provider routing model. See [Provider compliance](docs/20-security.md#provider-compliance) for the Anthropic / OpenAI / Google policy rationale.
 
 ## Quickstart
 
