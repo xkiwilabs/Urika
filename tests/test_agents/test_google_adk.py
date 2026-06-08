@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -138,7 +139,9 @@ class _FakePart:
 class _FakeContent:
     """Stand-in for ``google.genai.types.Content`` — list of parts."""
 
-    def __init__(self, role: str = "model", parts: list[_FakePart] | None = None) -> None:
+    def __init__(
+        self, role: str = "model", parts: list[_FakePart] | None = None
+    ) -> None:
         self.role = role
         self.parts = parts or []
 
@@ -151,7 +154,9 @@ class _FakeUsageMetadata:
     ``test_google_adk_real_imports.test_usage_metadata_token_field_names``).
     """
 
-    def __init__(self, prompt_token_count: int = 0, candidates_token_count: int = 0) -> None:
+    def __init__(
+        self, prompt_token_count: int = 0, candidates_token_count: int = 0
+    ) -> None:
         self.prompt_token_count = prompt_token_count
         self.candidates_token_count = candidates_token_count
 
@@ -374,3 +379,237 @@ def test_google_run_sdk_error_returned_not_raised(
 
     assert result.success is False
     assert "gemini api down" in (result.error or "")
+
+
+# ── RetryInfo-aware 429 retry handling ──────────────────────────────
+#
+# Free-tier Gemini accounts hit 5 RPM limits; the unmodified adapter
+# surfaces 429 as a hard failure after a single turn, pausing the
+# experiment. The retry loop wraps ``runner.run_async`` and parses the
+# ``retryDelay`` field that Gemini packs into its 429 response body so
+# we honor the server's hint rather than guessing. The "no accumulated
+# text" guard keeps retry safe — if the 429 fires mid-stream (rare;
+# ADK typically pauses streaming on error) we return the partial text
+# rather than re-doing work the model already produced.
+
+
+class _Rate429Runner:
+    """Throws RESOURCE_EXHAUSTED on the first attempt, succeeds on retry.
+
+    Mirrors a real Gemini 429 message shape including the inline JSON-y
+    ``retryDelay`` field — the adapter regex must parse this to honor
+    the server-suggested backoff window. Uses ``retryDelay: '0.01s'``
+    so the test stays fast even before we monkeypatch ``asyncio.sleep``.
+    """
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        self.app_name = app_name
+        self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
+        self.attempts = 0
+
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK
+        **_extra,
+    ):
+        self.attempts += 1
+        if self.attempts == 1:
+            raise RuntimeError(
+                "429 RESOURCE_EXHAUSTED: Quota exceeded. {'retryDelay': '0.01s'}"
+            )
+        yield _FakeAdkEvent(text="after retry")
+        yield _FakeAdkEvent(prompt_token_count=10, candidates_token_count=5)
+
+
+# Stash the runner instance so the test can introspect attempt count
+# without reaching into the adapter — pytest fixtures would be overkill
+# for this one assertion.
+_LAST_RUNNER_HOLDER: dict[str, Any] = {}
+
+
+def _holder_runner(cls: type) -> type:
+    """Wrap a fake-runner class so each construction stashes the instance.
+
+    The 429 tests need to assert the number of ``run_async`` attempts,
+    which lives on the runner instance. The adapter constructs the
+    runner internally so we capture it post-hoc via this wrapper.
+    """
+
+    class _Holder(cls):  # type: ignore[misc, valid-type]
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            _LAST_RUNNER_HOLDER["runner"] = self
+
+    _Holder.__name__ = f"_Holder_{cls.__name__}"
+    return _Holder
+
+
+def test_google_run_retries_on_429_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """First attempt 429s, second attempt succeeds — surface success.
+
+    Confirms the retry loop parses ``retryDelay`` from the exception
+    message, honors it via ``asyncio.sleep`` (monkeypatched to no-op
+    for test speed), and restarts ``runner.run_async`` from scratch.
+    The "no accumulated text yet" precondition is satisfied because
+    the fake raises before yielding any events.
+    """
+    _install_fake_adk(monkeypatch, _holder_runner(_Rate429Runner))
+    _real_sleep = asyncio.sleep
+    monkeypatch.setattr(
+        "asyncio.sleep",
+        lambda *a, **kw: _real_sleep(0),
+    )
+
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+    result = asyncio.run(runner.run(cfg, "user prompt"))
+
+    assert result.success is True, result.error
+    assert result.text_output == "after retry"
+    assert result.tokens_in == 10
+    assert result.tokens_out == 5
+    fake = _LAST_RUNNER_HOLDER["runner"]
+    assert fake.attempts == 2, "should retry exactly once before succeeding"
+
+
+class _Always429Runner:
+    """Always throws RESOURCE_EXHAUSTED — used to assert the retry cap."""
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        self.app_name = app_name
+        self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
+        self.attempts = 0
+
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK
+        **_extra,
+    ):
+        self.attempts += 1
+        raise RuntimeError(
+            "429 RESOURCE_EXHAUSTED: persistent quota issue. {'retryDelay': '0.01s'}"
+        )
+        yield  # pragma: no cover — make this a generator
+
+
+def test_google_run_429_retry_caps_at_max_attempts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When retries are exhausted, surface ``error_category='rate_limit'``.
+
+    Pins the cap (``_MAX_RETRIES``) — without an upper bound a flapping
+    server could pin the agent loop indefinitely. The expected attempt
+    count is read from the adapter module so test stays in sync if the
+    cap is tuned later.
+    """
+    _install_fake_adk(monkeypatch, _holder_runner(_Always429Runner))
+    _real_sleep = asyncio.sleep
+    monkeypatch.setattr(
+        "asyncio.sleep",
+        lambda *a, **kw: _real_sleep(0),
+    )
+
+    from urika.agents.adapters import google_adk as adapter_mod
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+    result = asyncio.run(runner.run(cfg, "user prompt"))
+
+    assert result.success is False
+    assert result.error_category == "rate_limit"
+    assert "RESOURCE_EXHAUSTED" in (result.error or "")
+    fake = _LAST_RUNNER_HOLDER["runner"]
+    assert fake.attempts == adapter_mod._MAX_RETRIES, (
+        f"expected exactly {adapter_mod._MAX_RETRIES} attempts, got {fake.attempts}"
+    )
+
+
+class _GenericFailRunner:
+    """Throws a non-429 error on every call — used to assert no retry."""
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        self.app_name = app_name
+        self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
+        self.attempts = 0
+
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK
+        **_extra,
+    ):
+        self.attempts += 1
+        raise RuntimeError("nope")
+        yield  # pragma: no cover — generator marker
+
+
+def test_google_run_non_429_error_not_retried(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Generic exceptions surface on the first attempt — no retry.
+
+    Retry is opt-in by error class. A network/transport bug or a
+    framework error from ADK shouldn't burn through three slow waits
+    before failing; the orchestrator's pause/resume logic handles
+    those without a backoff hint.
+    """
+    _install_fake_adk(monkeypatch, _holder_runner(_GenericFailRunner))
+
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+    result = asyncio.run(runner.run(cfg, "user prompt"))
+
+    assert result.success is False
+    assert "nope" in (result.error or "")
+    # error_category should NOT be rate_limit for non-429 failures.
+    assert result.error_category != "rate_limit"
+    fake = _LAST_RUNNER_HOLDER["runner"]
+    assert fake.attempts == 1, "non-429 errors should not be retried"

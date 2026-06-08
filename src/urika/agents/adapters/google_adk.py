@@ -25,12 +25,59 @@ in its ``try`` block and treats either ``ImportError`` as
 
 from __future__ import annotations
 
+import asyncio
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Callable
 
 from urika.agents.config import AgentConfig
 from urika.agents.runner import AgentResult, AgentRunner
+
+# ── 429 retry tunables ──────────────────────────────────────────────
+#
+# Free-tier Gemini (5 RPM) hits 429 every ~6th request in a sustained
+# run. The server-supplied ``retryDelay`` is usually ~15s but we honor
+# whatever it gives us up to a hard cap so a buggy hint can't pin the
+# agent loop. _MAX_RETRIES=3 was chosen so a flapping endpoint costs
+# at most ~45s before surfacing a structured failure; tune cautiously
+# (the unit tests pin on this attribute via ``adapter_mod._MAX_RETRIES``).
+_MAX_RETRIES = 3
+_MAX_RETRY_WAIT_S = 60.0
+_DEFAULT_RETRY_WAIT_S = 15.0
+_RETRY_DELAY_RE = re.compile(r"['\"]retryDelay['\"]:\s*['\"](\d+(?:\.\d+)?)s['\"]")
+
+
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """True if the exception looks like a Gemini 429 / RESOURCE_EXHAUSTED.
+
+    Substring match on ``str(exc)`` rather than an isinstance check —
+    the google-genai SDK wraps the underlying HTTP error in a chain of
+    exception classes that have shifted across releases, and the
+    user-facing message reliably carries both markers.
+    """
+    s = str(exc)
+    return "RESOURCE_EXHAUSTED" in s or "429" in s
+
+
+def _extract_retry_delay_s(exc: BaseException) -> float:
+    """Parse ``retryDelay`` from the 429 message; fall back + cap.
+
+    The 429 body Gemini returns includes a ``retryDelay`` field
+    (formatted as e.g. ``'15s'``) inside a JSON-y RetryInfo blob. The
+    SDK stringifies that into the exception message — we regex it out
+    rather than reaching for typed RetryInfo fields the SDK doesn't
+    surface. A missing/malformed value defaults to
+    ``_DEFAULT_RETRY_WAIT_S``; an obviously-broken value gets clipped
+    to ``_MAX_RETRY_WAIT_S`` so we never hang.
+    """
+    m = _RETRY_DELAY_RE.search(str(exc))
+    if m:
+        try:
+            return min(float(m.group(1)), _MAX_RETRY_WAIT_S)
+        except ValueError:
+            pass
+    return _DEFAULT_RETRY_WAIT_S
 
 
 class GoogleADKRunner(AgentRunner):
@@ -135,6 +182,21 @@ class GoogleADKRunner(AgentRunner):
           a decorator. If a future ADK release requires
           ``google.adk.tools.FunctionTool`` wrapping, that's the
           single spot to update.
+
+        **429 / RESOURCE_EXHAUSTED retry handling.** Free-tier Gemini
+        accounts hit a 5-RPM cap; rather than fail the experiment
+        after the first 429, the loop retries up to ``_MAX_RETRIES``
+        times honoring the server-supplied ``retryDelay`` field
+        (parsed from the exception message). Retry is *only* safe when
+        no events have yielded yet — once we have ``accumulated_text``
+        we surface the partial result rather than re-doing work the
+        model already did. In practice ADK pauses streaming on error
+        so the mid-stream case is rare, but the guard keeps the
+        behaviour correct without needing to reason about ADK
+        internals. When retries are exhausted, the failure surfaces
+        with ``error_category="rate_limit"`` so the orchestrator can
+        distinguish "free-tier saturated" from "config / transport"
+        problems.
         """
         from google.adk.agents import Agent
         from google.adk.runners import Runner
@@ -226,61 +288,81 @@ class GoogleADKRunner(AgentRunner):
         accumulated_text = ""
         in_tok = 0
         out_tok = 0
+        attempts = 0
 
-        try:
-            async for event in runner.run_async(
-                user_id="urika-user",
-                session_id=session_id,
-                new_message=user_message,
-            ):
-                # Real ADK events carry text on
-                # ``event.content.parts[].text`` (a ``types.Content``
-                # with a list of ``types.Part``) rather than a flat
-                # ``event.text`` attr. Walk parts defensively — some
-                # events (tool calls, usage-only finals) have no text.
-                content = getattr(event, "content", None)
-                if content is not None:
-                    for part in getattr(content, "parts", None) or []:
-                        text = getattr(part, "text", None)
-                        if text:
-                            accumulated_text += text
-                            if on_message is not None:
-                                # Fire per text-bearing part — the
-                                # stream model lets us offer parity
-                                # with the Claude adapter's per-message
-                                # callback that the OpenAI adapter
-                                # can't currently provide.
-                                try:
-                                    on_message(text)
-                                except Exception:  # noqa: BLE001 — user callback
-                                    # A misbehaving callback must not
-                                    # break the agent loop.
-                                    pass
+        # The retry loop wraps the event stream so that a 429 fired
+        # *before* any events yield can be transparently retried with
+        # the server-suggested ``retryDelay``. ``accumulated_text``
+        # acts as the safety interlock — once we have partial output,
+        # we surface what we got rather than re-doing work.
+        while True:
+            attempts += 1
+            try:
+                async for event in runner.run_async(
+                    user_id="urika-user",
+                    session_id=session_id,
+                    new_message=user_message,
+                ):
+                    # Real ADK events carry text on
+                    # ``event.content.parts[].text`` (a ``types.Content``
+                    # with a list of ``types.Part``) rather than a flat
+                    # ``event.text`` attr. Walk parts defensively —
+                    # some events (tool calls, usage-only finals) have
+                    # no text.
+                    content = getattr(event, "content", None)
+                    if content is not None:
+                        for part in getattr(content, "parts", None) or []:
+                            text = getattr(part, "text", None)
+                            if text:
+                                accumulated_text += text
+                                if on_message is not None:
+                                    # Fire per text-bearing part — the
+                                    # stream model lets us offer parity
+                                    # with the Claude adapter's
+                                    # per-message callback that the
+                                    # OpenAI adapter can't currently
+                                    # provide.
+                                    try:
+                                        on_message(text)
+                                    except Exception:  # noqa: BLE001 — user callback
+                                        # A misbehaving callback must
+                                        # not break the agent loop.
+                                        pass
 
-                # Usage tokens ride on ``event.usage_metadata`` with
-                # Google's standard ``prompt_token_count`` /
-                # ``candidates_token_count`` names. May appear on the
-                # trailing event only, or incrementally — keep
-                # updating so the latest non-zero value wins. The
-                # ``or in_tok`` guard avoids clobbering an earlier
-                # non-zero with a 0 on a tool-call event.
-                usage = getattr(event, "usage_metadata", None)
-                if usage is not None:
-                    in_tok = (
-                        getattr(usage, "prompt_token_count", in_tok) or in_tok
-                    )
-                    out_tok = (
-                        getattr(usage, "candidates_token_count", out_tok) or out_tok
-                    )
-        except Exception as exc:  # noqa: BLE001 — SDK boundary
-            return AgentResult(
-                success=False,
-                messages=[],
-                text_output=accumulated_text,
-                session_id=session_id,
-                error=str(exc),
-                model=model_name,
-            )
+                    # Usage tokens ride on ``event.usage_metadata``
+                    # with Google's standard ``prompt_token_count`` /
+                    # ``candidates_token_count`` names. May appear on
+                    # the trailing event only, or incrementally — keep
+                    # updating so the latest non-zero value wins. The
+                    # ``or in_tok`` guard avoids clobbering an earlier
+                    # non-zero with a 0 on a tool-call event.
+                    usage = getattr(event, "usage_metadata", None)
+                    if usage is not None:
+                        in_tok = getattr(usage, "prompt_token_count", in_tok) or in_tok
+                        out_tok = (
+                            getattr(usage, "candidates_token_count", out_tok) or out_tok
+                        )
+                break  # stream completed cleanly — exit retry loop
+            except Exception as exc:  # noqa: BLE001 — SDK boundary
+                # Only retry when (a) it's a 429-shaped error,
+                # (b) we haven't hit the cap, and (c) no text has
+                # yielded yet (mid-stream retry is unsafe).
+                if (
+                    _is_rate_limit_error(exc)
+                    and attempts < _MAX_RETRIES
+                    and not accumulated_text
+                ):
+                    await asyncio.sleep(_extract_retry_delay_s(exc))
+                    continue
+                return AgentResult(
+                    success=False,
+                    messages=[],
+                    text_output=accumulated_text,
+                    session_id=session_id,
+                    error=str(exc),
+                    error_category=("rate_limit" if _is_rate_limit_error(exc) else ""),
+                    model=model_name,
+                )
 
         cost = cost_for(model_name, in_tok, out_tok)
         return AgentResult(
