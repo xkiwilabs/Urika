@@ -362,6 +362,14 @@ class GoogleADKRunner(AgentRunner):
                 ):
                     await asyncio.sleep(_extract_retry_delay_s(exc))
                     continue
+                # Preserve any tokens accumulated from events before the
+                # failure (and the retries-exhausted branch's run-loop
+                # accumulator). Dropping these on the failure path turned
+                # real cost into 0 in the session log — v0.7.0 release
+                # blocker. ``cost_for`` handles unknown models (returns
+                # None) and 0/0 tokens (returns 0.0) cleanly, so the
+                # explicit call is safe in both the "fired before any
+                # events" and "fired mid-stream" cases.
                 return AgentResult(
                     success=False,
                     messages=[],
@@ -370,6 +378,9 @@ class GoogleADKRunner(AgentRunner):
                     error=str(exc),
                     error_category=("rate_limit" if _is_rate_limit_error(exc) else ""),
                     model=model_name,
+                    tokens_in=in_tok,
+                    tokens_out=out_tok,
+                    cost_usd=cost_for(model_name, in_tok, out_tok),
                 )
 
         cost = cost_for(model_name, in_tok, out_tok)

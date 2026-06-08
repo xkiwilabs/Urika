@@ -650,3 +650,90 @@ def test_google_run_non_429_error_not_retried(
     assert result.error_category != "rate_limit"
     fake = _LAST_RUNNER_HOLDER["runner"]
     assert fake.attempts == 1, "non-429 errors should not be retried"
+
+
+# ── Failure-path token + cost preservation (v0.7.0 release-blocker) ─
+#
+# The AgentResult defaults are tokens_in=0 / tokens_out=0 / cost_usd=None.
+# If the failure-path return omits these fields while events have
+# already accumulated real usage, the session log records 0 cost for
+# work that actually consumed tokens. Compare the Claude SDK adapter,
+# which threads ``tokens_in=tokens_in, tokens_out=tokens_out`` (and
+# friends) into every ``return AgentResult(success=False, ...)`` site.
+# The Google adapter must do the same: the exception handler around
+# ``runner.run_async`` covers both the non-retryable mid-stream error
+# AND the retries-exhausted branch, so a single fix point preserves
+# usage in both cases.
+
+
+class _AccumulateThenFailRunner:
+    """Yields two text+usage events, then throws on the third.
+
+    Mirrors the real ADK stream pattern where usage_metadata accumulates
+    incrementally across events. The exception fires AFTER the adapter
+    has already updated ``in_tok``/``out_tok`` from the trailing usage
+    event — those values must be preserved on the failure AgentResult.
+    """
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        self.app_name = app_name
+        self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
+
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK
+        **_extra,
+    ):
+        yield _FakeAdkEvent(text="partial ")
+        yield _FakeAdkEvent(
+            text="output",
+            prompt_token_count=100,
+            candidates_token_count=20,
+        )
+        raise RuntimeError("transport reset mid-stream")
+
+
+def test_google_run_failure_preserves_accumulated_tokens_cost(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Failure path must record real tokens/cost accumulated pre-failure.
+
+    Pre-fix the failure-path ``return AgentResult(success=False, ...)``
+    omitted ``tokens_in``/``tokens_out``/``cost_usd``, dropping real
+    work into 0 in the session log. Both the mid-stream exception path
+    AND the retries-exhausted path go through the same return site, so
+    this single test pins both.
+    """
+    _install_fake_adk(monkeypatch, _AccumulateThenFailRunner)
+
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+    result = asyncio.run(runner.run(cfg, "user prompt"))
+
+    assert result.success is False
+    assert "transport reset" in (result.error or "")
+    # Token + cost data accumulated pre-failure must be preserved.
+    assert result.tokens_in == 100, "tokens_in dropped on failure path"
+    assert result.tokens_out == 20, "tokens_out dropped on failure path"
+    assert result.cost_usd is not None and result.cost_usd > 0, (
+        "cost_usd not recomputed on failure path"
+    )
+    assert result.cost_usd == pytest.approx(cost_for("gemini-3.5-flash", 100, 20))
+    # Partial text should also survive (already worked pre-fix; pin it).
+    assert result.text_output == "partial output"

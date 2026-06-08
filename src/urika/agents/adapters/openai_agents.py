@@ -176,6 +176,14 @@ class OpenAIAgentsRunner(AgentRunner):
                 agent, prompt, max_turns=max_turns
             )
         except Exception as exc:  # noqa: BLE001 — SDK boundary
+            # The openai-agents SDK exposes ``RunResult.usage`` only on
+            # the success path — ``Runner.run`` is an all-or-nothing
+            # awaitable that doesn't surface partial usage when it
+            # throws. So tokens/cost are 0 / 0.0 here, but record them
+            # explicitly (matching the Claude + Google adapters' shape)
+            # so downstream consumers don't have to special-case
+            # AgentResult defaults vs. real measurements on the failure
+            # path. v0.7.0 release-blocker parity fix.
             return AgentResult(
                 success=False,
                 messages=[],
@@ -183,6 +191,9 @@ class OpenAIAgentsRunner(AgentRunner):
                 session_id="",
                 error=str(exc),
                 model=model_name,
+                tokens_in=0,
+                tokens_out=0,
+                cost_usd=cost_for(model_name, 0, 0),
             )
 
         # Usage attribute naming: the openai-agents SDK mirrors the

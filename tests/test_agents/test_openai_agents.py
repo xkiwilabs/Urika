@@ -188,3 +188,50 @@ def test_openai_run_sdk_error_returned_not_raised(
     assert result.success is False
     assert "openai api down" in (result.error or "")
     assert result.text_output == ""
+
+
+# ── Failure-path token + cost preservation (v0.7.0 release-blocker) ─
+#
+# Unlike the Google ADK adapter (event-stream), the openai-agents SDK
+# is an all-or-nothing awaited ``Runner.run`` — usage rides on the
+# success ``RunResult.usage``, and when ``Runner.run`` throws there is
+# no partial usage to recover from the SDK itself. The fix is therefore
+# defensive: every ``return AgentResult(success=False, ...)`` site
+# explicitly sets ``tokens_in=0``, ``tokens_out=0``, and
+# ``cost_usd=cost_for(...)`` so downstream consumers don't have to
+# distinguish "AgentResult default placeholder" from "real measurement
+# saying zero" — they get a uniform float on every adapter / outcome.
+
+
+def test_openai_run_failure_preserves_accumulated_tokens_cost(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Failure path returns explicit zeros + cost (not the None default).
+
+    The openai-agents SDK doesn't expose partial usage when
+    ``Runner.run`` throws (all-or-nothing awaitable), so accumulated
+    tokens are zero on the failure path. But the AgentResult still
+    needs to set the fields explicitly — pre-fix the failure return
+    omitted them, leaving ``cost_usd=None`` (the dataclass default)
+    while the success path produces a numeric ``cost_usd``. That
+    inconsistency tripped up usage-aggregation consumers that assumed
+    cost_usd was always a float once the run had executed.
+    """
+    _install_fake_agents(monkeypatch, _ExplodingRunner)
+
+    from urika.agents.adapters.openai_agents import OpenAIAgentsRunner
+
+    runner = OpenAIAgentsRunner()
+    cfg = _make_config(tmp_path)
+    result = asyncio.run(runner.run(cfg, "x"))
+
+    assert result.success is False
+    # Failure path must explicitly set numeric tokens/cost (not leave
+    # AgentResult defaults of ``cost_usd=None``).
+    assert result.tokens_in == 0, "tokens_in must be explicitly recorded"
+    assert result.tokens_out == 0, "tokens_out must be explicitly recorded"
+    assert result.cost_usd is not None, (
+        "cost_usd left at None default — failure path skipped the cost_for call"
+    )
+    assert result.cost_usd == pytest.approx(cost_for("gpt-5.4", 0, 0))
+    assert result.cost_usd == 0.0  # 0 tokens at any price card = 0.0
