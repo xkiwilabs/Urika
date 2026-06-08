@@ -1,20 +1,21 @@
 # Urika — Current Status
 
-**Date:** 2026-06-02
-**Version:** v0.7.0 (multi-provider adapters) READY for tag 2026-06-02;
+**Date:** 2026-06-08
+**Version:** v0.7.0 (multi-provider adapters) SHIPPED 2026-06-08;
 v0.6.0.1 (Windows hotfix) shipped 2026-06-01; v0.6.0 (GitHub
 auto-backup) shipped 2026-05-31; v0.5.0.2 (labbook run-record reader)
 2026-05-31; v0.5.0.1 (vault hotfix) 2026-05-31; v0.5.0 (memory
 deepening) 2026-05-31; v0.4.5.1 (hardening) 2026-05-26; v0.4.5
 (surface parity) 2026-05-17.
-**Branch:** `dev` at v0.7.0 release-prep tip (29 commits since
-`bfe19ea5` baseline). `main` on both `origin` and `public` still at
-v0.6.0.1 (tag `v0.6.0.1`); awaiting v0.7.0 release-to-main + tag.
-**Tests:** ~3854 collected; **3787 pass** in the unit suite
+**Branch:** `main` on both `origin` and `public` at `de4a86a0` and
+tagged `v0.7.0` (`0384afab`). `dev` is the working branch at the same
+release-equivalent state plus dev-only test/plan files.
+**Tests:** ~3870+ collected; **3854+ pass** in the unit suite
 (`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 3 skipped, 64
-integration deselected. Multi-provider operator smoke
-(`dev/scripts/smoke-v04-e2e-open.sh --provider {anthropic|openai|google}
---mixed-providers`) NOT yet run against real APIs — release-day step.
+integration deselected. Multi-provider operator smoke verified
+2026-06-08 against real Anthropic, OpenAI, and Google APIs.
+**Next focus:** v0.8.0 (output polish — PDF/LaTeX/Jupyter via Pandoc,
+model-card auto-generation) per the canonical roadmap.
 
 The active roadmap is **`dev/plans/2026-05-02-roadmap-to-v1.0.md`** —
 covers v0.4.0 → v1.0.0 with cut criteria, release contents, and
