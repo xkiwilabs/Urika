@@ -256,9 +256,17 @@ class GoogleADKRunner(AgentRunner):
         }
         tools = [tools_by_name[n] for n in ToolRegistry.for_role(config.name)]
 
+        # ADK's ``instruction`` field runs ``inject_session_state`` over
+        # the prompt and treats every literal ``{var}`` as a context
+        # variable to look up. Urika prompts routinely embed literal
+        # braces (code examples, JSON snippets, ``{method}`` references)
+        # which would raise ``KeyError: 'Context variable not found: ...'``.
+        # ``static_instruction`` bypasses the template substitution and
+        # passes the prompt through verbatim — the right channel for our
+        # static system prompts.
         agent = Agent(
             name=config.name,
-            instruction=config.system_prompt,
+            static_instruction=config.system_prompt,
             model=config.model,
             tools=tools,
         )

@@ -116,15 +116,18 @@ def test_google_runner_raises_clear_error_when_extra_missing(
 #   ``Part`` carrying ``.text``.
 # * ``Event.usage_metadata`` exposes ``prompt_token_count`` /
 #   ``candidates_token_count``.
-# * The ``Agent`` constructor uses ``instruction=`` (singular).
+# * The ``Agent`` constructor takes ``static_instruction=`` (we use
+#   ``static_instruction`` rather than ``instruction`` so the ADK
+#   template engine does not try to substitute literal ``{var}``
+#   patterns from our system prompts).
 
 
 class _FakeAdkAgent:
     """Stand-in for ``google.adk.agents.Agent`` — stores ctor args."""
 
-    def __init__(self, name, instruction, model, tools):
+    def __init__(self, name, static_instruction, model, tools):
         self.name = name
-        self.instruction = instruction
+        self.static_instruction = static_instruction
         self.model = model
         self.tools = tools
 
@@ -274,6 +277,40 @@ def _install_fake_adk(monkeypatch: pytest.MonkeyPatch, runner_cls: type) -> None
     monkeypatch.setitem(sys.modules, "google.adk.sessions", sessions_mod)
     monkeypatch.setitem(sys.modules, "google.genai", genai_mod)
     monkeypatch.setitem(sys.modules, "google.genai.types", types_mod)
+
+
+def test_google_agent_uses_static_instruction_kwarg(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Pins that ``Agent(static_instruction=...)`` is the kwarg.
+
+    The ADK's ``instruction`` field runs ``inject_session_state`` over
+    the prompt and treats every literal ``{var}`` pattern as a context
+    variable. Urika prompts routinely embed ``{method}`` / ``{result}``
+    in code examples; those would raise ``KeyError`` under
+    ``instruction=``. ``static_instruction=`` bypasses that substitution.
+
+    A regression on the kwarg name (e.g. someone "fixing" it back to
+    ``instruction``) fails here loudly.
+    """
+    _install_fake_adk(monkeypatch, _FakeAdkRunner)
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    # Prompt with literal { } patterns the ADK template engine would
+    # otherwise treat as substitution targets. ``_FakeAdkAgent.__init__``
+    # accepts ``static_instruction=`` (not ``instruction=``) — if the
+    # adapter regresses to ``instruction=``, the construction TypeErrors.
+    cfg.system_prompt = "Return JSON like {method: ..., result: ...}"
+    cfg.model = "gemini-3.5-flash"
+    result = asyncio.run(runner.run(cfg, "user prompt"))
+
+    assert result.success is True, result.error
+    # The literal {method}/{result} survived intact in the text_output
+    # path because the fake Runner echoes them via the Event stream —
+    # if any substitution happened, the assertion would not be the
+    # exact prompt content (this test only verifies wiring, not echo).
 
 
 def test_google_run_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

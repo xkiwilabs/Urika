@@ -38,14 +38,15 @@ from urika.agents.runner_registry import runner_for
 class _FakeAdkAgent:
     """Stand-in for ``google.adk.agents.Agent`` — stores ctor args.
 
-    Note the singular ``instruction=`` kwarg — that's the ADK's
-    constructor signature (the OpenAI Agents SDK uses ``instructions=``
-    plural). A regression on this keyword name is loud here.
+    Note the singular ``static_instruction=`` kwarg. The ADK's
+    ``instruction=`` field runs template substitution on literal ``{var}``
+    patterns; ``static_instruction=`` is the verbatim-passthrough variant
+    Urika uses (system prompts routinely contain ``{method}`` etc.).
     """
 
-    def __init__(self, name, instruction, model, tools):  # noqa: ANN001 — fake SDK
+    def __init__(self, name, static_instruction, model, tools):  # noqa: ANN001 — fake SDK
         self.name = name
-        self.instruction = instruction
+        self.static_instruction = static_instruction
         self.model = model
         self.tools = tools
 
