@@ -155,7 +155,9 @@ def create_app(
             origin = request.headers.get("origin")
             if origin is not None:
                 host = request.headers.get("host", "")
-                if urlparse(origin).netloc != host:
+                # Hostnames are case-insensitive (RFC 3986 §3.2.2);
+                # some clients send an upper/mixed-case Origin host.
+                if urlparse(origin).netloc.lower() != host.lower():
                     from starlette.responses import JSONResponse
 
                     return JSONResponse(

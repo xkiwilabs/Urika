@@ -54,6 +54,19 @@ def test_same_origin_post_allowed(tmp_project_dir: Path) -> None:
     assert r.status_code != 403
 
 
+def test_origin_guard_case_insensitive_host(tmp_project_dir: Path) -> None:
+    """Hostnames are case-insensitive (RFC 3986 §3.2.2) — an Origin of
+    ``http://TESTSERVER`` against a ``Host: testserver`` request is
+    same-origin and must NOT be rejected with 403."""
+    client = _client(tmp_project_dir)
+    r = client.post(
+        _MUTATING_ROUTE,
+        headers={"Origin": "http://TESTSERVER"},
+        data={"name": "FOO", "value": "bar"},
+    )
+    assert r.status_code != 403
+
+
 def test_post_without_origin_allowed(tmp_project_dir: Path) -> None:
     """A POST with no Origin header passes the guard (curl/server-side)."""
     client = _client(tmp_project_dir)
