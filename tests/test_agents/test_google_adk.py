@@ -999,3 +999,102 @@ def test_google_bash_wrapper_defaults_timeout_when_unset(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     assert _captured_bash_timeout(monkeypatch, tmp_path, None) == 600
+
+
+# ── aclose called on timeout (explicit-iteration cleanup) ───────────
+#
+# The inner while-loop now lives in a try/finally that calls
+# ``stream.aclose()`` on every exit path (clean, exception, timeout).
+# Without this, a timed-out HTTP stream is left open until GC — the
+# generator's teardown (which reaps open connections) never runs
+# promptly. This test drives a timeout and asserts that the stream's
+# ``aclose`` method was invoked.
+
+
+class _AcloseTrackingStream:
+    """Async-iterator that stalls after one event and records aclose calls.
+
+    Hand-rolled (not a plain async generator) so we can set
+    ``aclose_called`` on the instance. The adapter's finally-block must
+    call ``aclose()`` even when the underlying generator might be broken,
+    so this class exercises the normal path (``aclose`` succeeds).
+    """
+
+    def __init__(self) -> None:
+        self._yielded = False
+        self.aclose_called = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._yielded:
+            self._yielded = True
+            return _FakeAdkEvent(text="before stall")
+        # Stall indefinitely — will be interrupted by wait_for timeout.
+        await asyncio.sleep(10)
+        raise StopAsyncIteration  # pragma: no cover
+
+    async def aclose(self) -> None:
+        self.aclose_called = True
+
+
+_ACLOSE_STREAM_HOLDER: dict[str, Any] = {}
+
+
+class _AcloseTrackingRunner:
+    """Runner that installs an _AcloseTrackingStream and stashes it."""
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        self.app_name = app_name
+        self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
+
+    def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK
+        **_extra,
+    ) -> _AcloseTrackingStream:
+        stream = _AcloseTrackingStream()
+        _ACLOSE_STREAM_HOLDER["stream"] = stream
+        return stream
+
+
+def test_google_stream_aclose_called_on_timeout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Stream aclose() is called when wait_for times out.
+
+    The explicit ``__aiter__``/``__anext__`` iteration replaced an
+    ``async for`` loop; ``async for`` calls ``aclose()`` on the
+    generator implicitly. The try/finally added around the inner
+    while-loop must replicate that cleanup so timed-out HTTP streams
+    are torn down promptly rather than waiting for GC.
+    """
+    monkeypatch.setenv("URIKA_AGENT_STREAM_TIMEOUT", "0.05")
+    _install_fake_adk(monkeypatch, _AcloseTrackingRunner)
+
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+    result = asyncio.run(runner.run(cfg, "user prompt"))
+
+    assert result.success is False
+    assert result.error_category == "transient"
+    stream = _ACLOSE_STREAM_HOLDER.get("stream")
+    assert stream is not None, "stream was never created"
+    assert stream.aclose_called, "stream.aclose() was not called after timeout"

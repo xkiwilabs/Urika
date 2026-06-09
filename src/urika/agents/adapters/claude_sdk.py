@@ -22,6 +22,7 @@ from claude_agent_sdk import (
     query,
 )
 
+from urika.agents.adapters._common import agent_stream_timeout
 from urika.agents.config import AgentConfig
 from urika.agents.runner import AgentResult, AgentRunner
 
@@ -242,10 +243,7 @@ class ClaudeSDKRunner(AgentRunner):
         # min) is well above any active-thinking gap a healthy stream
         # produces — tool execution emits intermediate messages, so a
         # 10-min silence is the hang signature, not normal slow work.
-        try:
-            _stream_timeout = float(os.environ.get("URIKA_AGENT_STREAM_TIMEOUT", "600"))
-        except (TypeError, ValueError):
-            _stream_timeout = 600.0
+        _stream_timeout = agent_stream_timeout()
         _stream_iter = query(prompt=prompt_arg, options=options).__aiter__()
 
         async def _aclose_stream() -> None:

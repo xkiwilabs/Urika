@@ -26,12 +26,12 @@ in its ``try`` block and treats either ``ImportError`` as
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+from urika.agents.adapters._common import agent_stream_timeout, bash_timeout_seconds
 from urika.agents.config import AgentConfig
 from urika.agents.error_classify import classify_error
 from urika.agents.runner import AgentResult, AgentRunner
@@ -225,9 +225,8 @@ class GoogleADKRunner(AgentRunner):
         agent_env = scrub_oauth_env_for_subprocess(config.env)
         # Per-Bash-call wall-clock cap — the Claude adapter injects
         # ``max_method_seconds`` via ``can_use_tool``; here we thread
-        # it straight into the shared bash tool. 600s mirrors the bash
-        # tool's own default, passed explicitly for uniformity.
-        bash_timeout = config.max_method_seconds or 600
+        # it straight into the shared bash tool.
+        bash_timeout = bash_timeout_seconds(config.max_method_seconds)
 
         def _wrap(tool_result: Any) -> str:
             return (
@@ -320,7 +319,7 @@ class GoogleADKRunner(AgentRunner):
         # ``asyncio.TimeoutError`` instead of hanging the orchestrator
         # turn forever — a healthy long run that keeps yielding events
         # never trips it.
-        _stream_timeout = float(os.environ.get("URIKA_AGENT_STREAM_TIMEOUT", "600"))
+        _stream_timeout = agent_stream_timeout()
 
         # The retry loop wraps the event stream so that a 429 fired
         # *before* any events yield can be transparently retried with
@@ -339,52 +338,64 @@ class GoogleADKRunner(AgentRunner):
                     session_id=session_id,
                     new_message=user_message,
                 ).__aiter__()
-                while True:
-                    try:
-                        event = await asyncio.wait_for(
-                            stream.__anext__(), timeout=_stream_timeout
-                        )
-                    except StopAsyncIteration:
-                        break
-                    # Real ADK events carry text on
-                    # ``event.content.parts[].text`` (a ``types.Content``
-                    # with a list of ``types.Part``) rather than a flat
-                    # ``event.text`` attr. Walk parts defensively —
-                    # some events (tool calls, usage-only finals) have
-                    # no text.
-                    content = getattr(event, "content", None)
-                    if content is not None:
-                        for part in getattr(content, "parts", None) or []:
-                            text = getattr(part, "text", None)
-                            if text:
-                                accumulated_text += text
-                                if on_message is not None:
-                                    # Fire per text-bearing part — the
-                                    # stream model lets us offer parity
-                                    # with the Claude adapter's
-                                    # per-message callback that the
-                                    # OpenAI adapter can't currently
-                                    # provide.
-                                    try:
-                                        on_message(text)
-                                    except Exception:  # noqa: BLE001 — user callback
-                                        # A misbehaving callback must
-                                        # not break the agent loop.
-                                        pass
+                try:
+                    while True:
+                        try:
+                            event = await asyncio.wait_for(
+                                stream.__anext__(), timeout=_stream_timeout
+                            )
+                        except StopAsyncIteration:
+                            break
+                        # Real ADK events carry text on
+                        # ``event.content.parts[].text`` (a ``types.Content``
+                        # with a list of ``types.Part``) rather than a flat
+                        # ``event.text`` attr. Walk parts defensively —
+                        # some events (tool calls, usage-only finals) have
+                        # no text.
+                        content = getattr(event, "content", None)
+                        if content is not None:
+                            for part in getattr(content, "parts", None) or []:
+                                text = getattr(part, "text", None)
+                                if text:
+                                    accumulated_text += text
+                                    if on_message is not None:
+                                        # Fire per text-bearing part — the
+                                        # stream model lets us offer parity
+                                        # with the Claude adapter's
+                                        # per-message callback that the
+                                        # OpenAI adapter can't currently
+                                        # provide.
+                                        try:
+                                            on_message(text)
+                                        except Exception:  # noqa: BLE001 — user callback
+                                            # A misbehaving callback must
+                                            # not break the agent loop.
+                                            pass
 
-                    # Usage tokens ride on ``event.usage_metadata``
-                    # with Google's standard ``prompt_token_count`` /
-                    # ``candidates_token_count`` names. May appear on
-                    # the trailing event only, or incrementally — keep
-                    # updating so the latest non-zero value wins. The
-                    # ``or in_tok`` guard avoids clobbering an earlier
-                    # non-zero with a 0 on a tool-call event.
-                    usage = getattr(event, "usage_metadata", None)
-                    if usage is not None:
-                        in_tok = getattr(usage, "prompt_token_count", in_tok) or in_tok
-                        out_tok = (
-                            getattr(usage, "candidates_token_count", out_tok) or out_tok
-                        )
+                        # Usage tokens ride on ``event.usage_metadata``
+                        # with Google's standard ``prompt_token_count`` /
+                        # ``candidates_token_count`` names. May appear on
+                        # the trailing event only, or incrementally — keep
+                        # updating so the latest non-zero value wins. The
+                        # ``or in_tok`` guard avoids clobbering an earlier
+                        # non-zero with a 0 on a tool-call event.
+                        usage = getattr(event, "usage_metadata", None)
+                        if usage is not None:
+                            in_tok = (
+                                getattr(usage, "prompt_token_count", in_tok) or in_tok
+                            )
+                            out_tok = (
+                                getattr(usage, "candidates_token_count", out_tok)
+                                or out_tok
+                            )
+                finally:
+                    # The async-for this replaced closed the generator
+                    # implicitly; explicit iteration must do it by hand
+                    # or a timed-out stream defers HTTP teardown to GC.
+                    try:
+                        await stream.aclose()
+                    except Exception:  # noqa: BLE001 — best-effort cleanup
+                        pass
                 break  # stream completed cleanly — exit retry loop
             except Exception as exc:  # noqa: BLE001 — SDK boundary
                 # Only retry when (a) it's a 429-shaped error,

@@ -37,10 +37,10 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from typing import Any, Callable
 
+from urika.agents.adapters._common import agent_stream_timeout, bash_timeout_seconds
 from urika.agents.config import AgentConfig
 from urika.agents.error_classify import classify_error
 from urika.agents.runner import AgentResult, AgentRunner
@@ -130,9 +130,8 @@ class OpenAIAgentsRunner(AgentRunner):
         agent_env = scrub_oauth_env_for_subprocess(config.env)
         # Per-Bash-call wall-clock cap — the Claude adapter injects
         # ``max_method_seconds`` via ``can_use_tool``; here we thread
-        # it straight into the shared bash tool. 600s mirrors the bash
-        # tool's own default, passed explicitly for uniformity.
-        bash_timeout = config.max_method_seconds or 600
+        # it straight into the shared bash tool.
+        bash_timeout = bash_timeout_seconds(config.max_method_seconds)
 
         def _wrap(tool_result: Any) -> str:
             return (
@@ -192,7 +191,7 @@ class OpenAIAgentsRunner(AgentRunner):
         # Same wall-clock knob as the Claude adapter — a hung HTTP
         # stream inside ``Runner.run`` previously hung the whole
         # orchestrator turn forever (no per-call timeout in the SDK).
-        _stream_timeout = float(os.environ.get("URIKA_AGENT_STREAM_TIMEOUT", "600"))
+        _stream_timeout = agent_stream_timeout()
 
         try:
             result = await asyncio.wait_for(
