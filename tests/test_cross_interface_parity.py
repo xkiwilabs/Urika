@@ -1091,6 +1091,62 @@ class TestMemoryCuratorInvocationParity:
         assert seen == {"cli": True, "repl": True, "dashboard": True}
 
 
+# ── Provider auth-mode parity (v0.7.1 parity sweep) ─────────────────
+
+
+class TestProviderAuthModeParity:
+    """v0.7.0 shipped ``urika config anthropic|openai|google --mode ...``
+    for the CLI + dashboard; the v0.7.1 parity sweep adds the matching
+    REPL slash (``/config <provider> --mode ...``). The TUI inherits the
+    REPL command registry, so REPL parity = TUI parity.
+
+    Single source of truth for the provider set is
+    ``urika.cli.config_provider.PROVIDER_NAMES``; both surfaces dispatch
+    to the same ``run_config_<provider>`` handlers. These tests pin that
+    the REPL accepts exactly the CLI's provider set and lands on the
+    same handlers — adding a fourth provider to the CLI without wiring
+    the REPL slash fails here, not in a user's terminal.
+    """
+
+    def test_repl_dispatches_every_cli_provider(self, monkeypatch) -> None:
+        """For each provider the CLI recognises, ``/config <provider>
+        --mode api_key`` must dispatch to that provider's
+        ``run_config_*`` handler (the same functions the CLI calls)."""
+        from urika.cli.config_provider import PROVIDER_NAMES
+        from urika.repl.commands import cmd_config
+        from urika.repl.session import ReplSession
+
+        for provider in sorted(PROVIDER_NAMES):
+            calls: list[str] = []
+            for name in PROVIDER_NAMES:
+                monkeypatch.setattr(
+                    f"urika.cli.config_provider.run_config_{name}",
+                    lambda *a, _n=name: calls.append(_n),
+                )
+            cmd_config(ReplSession(), f"{provider} --mode api_key")
+            assert calls == [provider], (
+                f"REPL /config {provider} --mode api_key dispatched "
+                f"{calls!r}, expected [{provider!r}] — REPL provider "
+                f"routing drifted from the CLI's run_config_* handlers."
+            )
+
+    def test_repl_provider_set_matches_cli_provider_names(self) -> None:
+        """Every name in the CLI's ``PROVIDER_NAMES`` must appear in
+        the REPL handler source (string-presence pin, same style as
+        the pause-flag path checks)."""
+        import inspect
+
+        from urika.cli.config_provider import PROVIDER_NAMES
+        from urika.repl.commands import cmd_config
+
+        src = inspect.getsource(cmd_config)
+        for name in sorted(PROVIDER_NAMES):
+            assert f'"{name}"' in src, (
+                f"CLI provider {name!r} has no REPL /config route — "
+                f"v0.7.0 parity gap re-opened."
+            )
+
+
 # ── Memory CRUD path-shape parity (v0.5.0 Task 4.1) ─────────────────
 
 
