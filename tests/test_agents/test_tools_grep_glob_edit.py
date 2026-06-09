@@ -67,6 +67,21 @@ def test_glob_handles_absolute_pattern(tmp_path: Path):
     assert "other.txt" not in r.output
 
 
+def test_glob_absolute_denies_when_resolution_fails(tmp_path: Path, monkeypatch):
+    """When enforce_path_read returns (None, None) for an absolute pattern root,
+    the glob tool must deny rather than fall back to globbing the unresolved root.
+    """
+    import urika.agents.tools.glob as glob_module
+
+    monkeypatch.setattr(glob_module, "enforce_path_read", lambda p, s: (None, None))
+    policy = _policy(writable=[tmp_path], readable=[tmp_path])
+    abs_pattern = str(tmp_path / "*.csv")
+    result = glob_module.glob(abs_pattern, security=policy, project_dir=tmp_path)
+    assert result.ok is False
+    assert result.error is not None
+    assert "resolve" in result.error.lower()
+
+
 def test_edit_replaces_string(tmp_path: Path):
     target = tmp_path / "f.txt"
     target.write_text("alpha\nbeta\ngamma\n")
