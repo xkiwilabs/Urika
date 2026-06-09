@@ -996,9 +996,9 @@ def _config_api_key_interactive() -> None:
     start with ``sk-ant-`` and be plausibly long), and saves it to
     ``~/.urika/secrets.env`` as ``ANTHROPIC_API_KEY=...``.
 
-    Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK
-    clarification, Pro/Max OAuth tokens cannot authenticate the Agent
-    SDK — Urika requires an API key for any of its commands.
+    Sets up ``ANTHROPIC_API_KEY`` for ``api_key`` auth mode (the
+    default). Users on a Pro/Max subscription can instead switch to
+    subscription auth via ``urika config anthropic --mode subscription``.
     """
     from urika.cli_display import print_step, print_success, print_warning
     from urika.core.secrets import save_secret
@@ -1006,9 +1006,9 @@ def _config_api_key_interactive() -> None:
     click.echo()
     print_step("Anthropic API key setup")
     click.echo()
-    click.echo("  Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK")
-    click.echo("  clarification, Urika cannot use a Claude Pro/Max subscription to")
-    click.echo("  authenticate the Agent SDK. An API key is required.")
+    click.echo("  Urika is in `api_key` auth mode (the default), which requires")
+    click.echo("  ANTHROPIC_API_KEY. Alternatively, switch to subscription auth")
+    click.echo("  with `urika config anthropic --mode subscription`.")
     click.echo()
     click.echo("  Get a key at https://console.anthropic.com (Settings → API Keys).")
     click.echo()
@@ -1115,9 +1115,9 @@ def _print_api_key_test_result(key: str) -> bool:
             "  Cost: this test consumed ~8 input + up to 5 output tokens (~$0.0001)."
         )
         click.echo()
-        click.echo("  Urika will use this key for all commands. Your Pro/Max")
-        click.echo("  subscription is not used by Urika (per Anthropic's")
-        click.echo("  Consumer Terms §3.7).")
+        click.echo("  Urika will use this key for Anthropic calls (api_key mode).")
+        click.echo("  To use subscription auth instead, run:")
+        click.echo("    urika config anthropic --mode subscription")
         return True
 
     print_error(f"API key test failed: {message}")

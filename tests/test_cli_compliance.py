@@ -1,11 +1,11 @@
-"""Anthropic-compliance surfaces in the CLI.
+"""Auth-mode surfaces in the CLI.
 
-Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK
-clarification, Urika cannot use a Pro/Max OAuth token to authenticate
-the Agent SDK. ``ANTHROPIC_API_KEY`` is required.
+Urika defaults to ``api_key`` auth mode; since June 15 2026 subscription
+auth is also supported via ``urika config anthropic --mode subscription``.
 
-The CLI prints a one-time warning at startup when the key is unset (and
-``URIKA_ACK_API_KEY_REQUIRED`` is unset). It also exposes
+The CLI prints a one-time warning at startup when the key is unset in
+``api_key`` mode (and ``URIKA_ACK_API_KEY_REQUIRED`` is unset). The
+warning is suppressed in subscription mode. It also exposes
 ``urika config api-key`` as an interactive setup command that writes
 the key to ``~/.urika/secrets.env`` via ``urika.core.secrets.save_secret``.
 """
@@ -64,16 +64,21 @@ def test_warning_prints_when_api_key_missing(monkeypatch) -> None:
 
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("URIKA_ACK_API_KEY_REQUIRED", raising=False)
+    # Ensure we are in api_key mode (default) so the warning fires.
+    monkeypatch.setattr(
+        "urika.core.compliance._get_anthropic_auth_preference",
+        lambda: "api_key",
+    )
 
     buf = io.StringIO()
     _print_api_key_warning_if_needed(buf, is_interactive=True)
     output = buf.getvalue()
 
     assert "ANTHROPIC_API_KEY not set" in output
-    # Banner cites the Anthropic policy; the literal string crosses a
-    # line break so check tokens individually.
-    assert "Consumer" in output
-    assert "Agent SDK" in output
+    # Banner mentions both modes — check key tokens.
+    assert "urika config api-key" in output
+    assert "subscription" in output
+    assert "credit pool" in output
 
 
 def test_warning_silenced_when_not_interactive(monkeypatch) -> None:

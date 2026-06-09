@@ -62,11 +62,13 @@ def _is_interactive_stderr() -> bool:
 
 
 def _print_api_key_warning_if_needed(stream, is_interactive: bool) -> None:
-    """Print the Anthropic Consumer Terms §3.7 reminder if needed.
+    """Print the API-key reminder if needed.
 
     Conditions for printing:
       - ``ANTHROPIC_API_KEY`` is unset, AND
       - ``URIKA_ACK_API_KEY_REQUIRED`` is unset (user hasn't ack'd), AND
+      - Anthropic auth mode is NOT ``subscription`` (OAuth tokens are the
+        legitimate auth carrier there — no API key needed), AND
       - ``is_interactive`` is True (real TTY — the warning is for humans
         to see, not for log scrapers / JSON parsers / CliRunner.output).
 
@@ -86,14 +88,23 @@ def _print_api_key_warning_if_needed(stream, is_interactive: bool) -> None:
     ):
         return
 
+    # Suppress in subscription mode — OAuth tokens are the auth carrier.
+    try:
+        from urika.core.compliance import _get_anthropic_auth_preference
+
+        if _get_anthropic_auth_preference() == "subscription":
+            return
+    except Exception:
+        pass  # If compliance module fails to load, show the warning.
+
     stream.write(
         "\n"
         "  \033[33m⚠ ANTHROPIC_API_KEY not set\033[0m\n"
         "\n"
-        "  Urika requires an Anthropic API key. Per Anthropic's Consumer\n"
-        "  Terms (§3.7) and the April 2026 Agent SDK clarification, a\n"
-        "  Claude Pro/Max subscription cannot be used to authenticate the\n"
-        "  Claude Agent SDK that Urika depends on.\n"
+        "  ANTHROPIC_API_KEY is not set. Set one (`urika config api-key`)\n"
+        "  or switch to subscription auth (`urika config anthropic\n"
+        "  --mode subscription`); subscription Agent-SDK usage draws from\n"
+        "  your plan's monthly Agent credit pool.\n"
         "\n"
         "  Get a key:  https://console.anthropic.com (Settings → API Keys)\n"
         "  Save it:    urika config api-key   (interactive)\n"
@@ -175,12 +186,12 @@ def cli(ctx, classic: bool) -> None:
 
     migrate_settings()
 
-    # One-time compliance reminder: Anthropic Consumer Terms §3.7 + the
-    # April 2026 Agent SDK clarification prohibit using a Pro/Max
-    # subscription to authenticate the Claude Agent SDK that Urika
-    # depends on. We don't block — users may be running in private mode
-    # only or have already acknowledged the requirement — but we surface
-    # the missing key on every invocation until ack'd.
+    # One-time API-key reminder: surface when ANTHROPIC_API_KEY is unset
+    # and the user is in api_key auth mode (the default). Subscription
+    # mode users don't need an API key — the warning is suppressed there.
+    # We don't block — users may be running private-mode-only or have
+    # already acknowledged — but we surface it on every invocation until
+    # ack'd or switched to subscription mode.
     #
     # Pre-fix the warning leaked into ``CliRunner.result.output``
     # (which mixes stderr into stdout by default), polluting every

@@ -1,8 +1,8 @@
 """Tests for the API-key compliance safety net.
 
-See :mod:`urika.core.compliance` for the rationale: Anthropic's Consumer
-Terms §3.7 and the April 2026 Agent SDK clarification prohibit using a
-Pro/Max subscription to authenticate the Claude Agent SDK.
+See :mod:`urika.core.compliance` for the rationale: Urika defaults to
+``api_key`` auth mode; since June 15 2026 subscription auth is also
+supported as an opt-in via ``urika config anthropic --mode subscription``.
 """
 
 from __future__ import annotations
@@ -65,8 +65,11 @@ class TestRequireAPIKey:
 
         with pytest.raises(APIKeyRequiredError) as exc:
             require_api_key("claude-haiku-4-5", None)
-        assert "ANTHROPIC_API_KEY" in str(exc.value)
-        assert "Consumer Terms" in str(exc.value)
+        msg = str(exc.value)
+        assert "ANTHROPIC_API_KEY" in msg
+        assert "api_key` auth mode" in msg
+        assert "--mode subscription" in msg
+        assert "credit" in msg
 
     def test_silent_on_cloud_call_with_key(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")

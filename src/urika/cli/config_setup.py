@@ -403,7 +403,7 @@ def setup_command(json_output: bool) -> None:
     if os.environ.get("ANTHROPIC_API_KEY"):
         print_success("  ANTHROPIC_API_KEY is set")
     else:
-        print_warning("  ANTHROPIC_API_KEY not set — required (Consumer Terms §3.7).")
+        print_warning("  ANTHROPIC_API_KEY not set — required for api_key auth mode.")
         print_warning("  Run `urika config api-key` to set it interactively.")
 
     click.echo()

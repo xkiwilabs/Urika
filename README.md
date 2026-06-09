@@ -53,7 +53,7 @@ Set model strings per agent in `urika.toml` -- Urika routes each call to the rig
 ### Prerequisites
 
 1. **Python 3.11+** (required) — see [Getting Started → Step 1](docs/01-getting-started.md#python-311-required) for per-OS install commands.
-2. **Provider API key** (required) — at least one of Anthropic, OpenAI, or Google (set up in step 3 below). Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification, Claude Pro/Max subscription auth was not previously usable with the Claude Agent SDK; from June 15 2026 onward, subscription auth is supported as an opt-in mode via `urika config anthropic --mode subscription`. Default remains API-key auth across all three providers. See [Supported providers](#supported-providers) for the full matrix.
+2. **Provider API key** (required) — at least one of Anthropic, OpenAI, or Google (set up in step 3 below). For Anthropic, `api_key` auth mode (the default) requires an `ANTHROPIC_API_KEY`; subscription auth is also supported as an opt-in via `urika config anthropic --mode subscription` (since June 15 2026, Agent SDK workloads on Pro/Max draw from a separate monthly Agent credit pool). Default remains API-key auth across all three providers. See [Supported providers](#supported-providers) for the full matrix.
 3. **Claude Code CLI on PATH** *(recommended, not required)* — `npm install -g @anthropic-ai/claude-code`. The Claude Agent SDK ships its own bundled `claude` binary, so you can skip this and Urika will fall back to the bundled one. Install your own to use `claude-opus-4-7` or any future Anthropic model — the bundled binary lags. See [Getting Started → Claude Code CLI](docs/01-getting-started.md#claude-code-cli-recommended) for the why.
 
 ### Install Urika
