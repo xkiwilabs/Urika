@@ -1140,3 +1140,130 @@ class TestAdvisorContextSummaryInjection:
 
         assert result["status"] == "completed"
         assert result["turns"] == 1
+
+
+_EVAL_PROSE_ONLY = """\
+The results look promising overall, but I am not able to commit to a
+verdict in the requested structured format right now.
+"""
+
+
+class TestUnparseableEvaluatorHandling:
+    """Task 3.5 (v0.7.1): the loop must get LOUD when the evaluator
+    keeps producing unparseable output, and pause after 3 consecutive
+    unparseable turns instead of silently burning to max_turns."""
+
+    @pytest.mark.asyncio
+    async def test_pauses_after_three_consecutive_unparseable_turns(
+        self, tmp_path: Path
+    ) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        events: list[tuple[str, str]] = []
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_PROSE_ONLY],
+                "advisor_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(
+            project_dir,
+            exp_id,
+            runner,
+            max_turns=10,
+            on_progress=lambda event, detail: events.append((event, detail)),
+        )
+
+        assert result["status"] == "paused"
+        assert result["turns"] == 3
+        assert "unparseable" in result.get("error", "")
+        # Per-turn loud WARN result events were emitted.
+        warns = [d for e, d in events if e == "result" and "unparseable" in d]
+        assert len(warns) == 3
+        assert "(3 consecutive)" in warns[-1]
+        # Session state matches the returned status.
+        session = load_session(project_dir, exp_id)
+        assert session is not None
+        assert session.status == "paused"
+
+    @pytest.mark.asyncio
+    async def test_counter_resets_on_parseable_evaluation(self, tmp_path: Path) -> None:
+        """Two unparseable turns followed by valid JSON continue the
+        loop — the consecutive counter resets and no pause fires."""
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [
+                    _EVAL_PROSE_ONLY,
+                    _EVAL_PROSE_ONLY,
+                    _EVAL_CRITERIA_MET,
+                ],
+                "advisor_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=10)
+
+        assert result["status"] == "completed"
+        assert result["turns"] == 3
+
+
+class TestFailedAdvisorReviewWarning:
+    """Task 3.5 (v0.7.1): a failed advisor criteria review previously
+    completed the experiment in total silence. It still completes
+    (non-blocking by design) but now emits a loud warning event."""
+
+    @pytest.mark.asyncio
+    async def test_failed_review_warns_and_completes(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        events: list[tuple[str, str]] = []
+
+        class ReviewFailingRunner(AgentRunner):
+            """Criteria met on turn 1; the advisor (criteria review)
+            call returns success=False."""
+
+            async def run(
+                self, config: AgentConfig, prompt: str, *, on_message: object = None
+            ) -> AgentResult:
+                if config.name == "advisor_agent":
+                    return AgentResult(
+                        success=False,
+                        messages=[],
+                        text_output="",
+                        session_id="session-advisor-fail",
+                        error="advisor review blew up",
+                        error_category="transient",
+                    )
+                responses = {
+                    "planning_agent": _PLAN_OUTPUT,
+                    "task_agent": _TASK_OUTPUT,
+                    "evaluator": _EVAL_CRITERIA_MET,
+                }
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=responses.get(config.name, ""),
+                    session_id=f"session-{config.name}",
+                    num_turns=1,
+                    duration_ms=100,
+                )
+
+        result = await run_experiment(
+            project_dir,
+            exp_id,
+            ReviewFailingRunner(),
+            max_turns=5,
+            on_progress=lambda event, detail: events.append((event, detail)),
+        )
+
+        assert result["status"] == "completed"
+        warnings = [
+            d for e, d in events if e == "warning" and "criteria review failed" in d
+        ]
+        assert len(warnings) == 1
+        assert "advisor review blew up" in warnings[0]
+        assert "non-blocking" in warnings[0]

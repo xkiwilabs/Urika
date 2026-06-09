@@ -28,7 +28,7 @@ from urika.core.progress import append_run, load_progress
 from urika.core.session import (
     complete_session,
     fail_session,  # noqa: F401 — used indirectly via loop_criteria
-    pause_session,  # noqa: F401 — used indirectly via loop_criteria
+    pause_session,
     release_lock,
     resume_session,
     start_session,
@@ -160,6 +160,10 @@ async def run_experiment(
     _total_tokens_out = 0
     _total_cost_usd = 0.0
     _total_agent_calls = 0
+    # Consecutive turns where the evaluator produced no parseable
+    # criteria assessment (v0.7.1). At 3 the loop pauses instead of
+    # silently burning to max_turns with criteria "not met" every turn.
+    consecutive_unparseable = 0
 
     def _usage_dict(status: str, turns: int, **extra: Any) -> dict[str, Any]:
         return {
@@ -759,11 +763,42 @@ async def run_experiment(
                 # check is silently treated as "not met" and the loop
                 # runs to max_turns wondering why criteria never matched.
                 # Surface it (v0.4.4).
+                consecutive_unparseable += 1
                 progress(
                     "warning",
                     f"Turn {turn}: evaluator produced no parseable "
                     "criteria assessment — criteria treated as not met.",
                 )
+                progress(
+                    "result",
+                    f"WARN: evaluation unparseable ({consecutive_unparseable} "
+                    "consecutive) — criteria check skipped this turn",
+                )
+                if consecutive_unparseable >= 3:
+                    # Three turns of unparseable evaluator output means
+                    # something is structurally wrong (prompt drift, a
+                    # model that won't emit JSON) — pause loudly so the
+                    # user can intervene instead of burning to max_turns.
+                    try:
+                        pause_session(project_dir, experiment_id)
+                    except Exception as exc:
+                        logger.warning(
+                            "pause_session failed after unparseable "
+                            "evaluations: %s: %s",
+                            type(exc).__name__,
+                            exc,
+                        )
+                    progress("phase", f"Experiment paused after turn {turn}")
+                    return _usage_dict(
+                        "paused",
+                        turn,
+                        error=(
+                            "evaluator output unparseable for 3 consecutive "
+                            "turns — check the evaluator prompt/model"
+                        ),
+                    )
+            else:
+                consecutive_unparseable = 0
             if evaluation and evaluation.get("criteria_met"):
                 progress("result", "Criteria met!")
 
@@ -857,6 +892,12 @@ async def run_experiment(
                                 )
                                 # Don't complete — continue the loop
                                 continue
+                        else:
+                            progress(
+                                "warning",
+                                "Advisor criteria review failed (non-blocking, "
+                                f"completing anyway): {review_result.error}",
+                            )
 
                 complete_session(project_dir, experiment_id)
                 report_usage = await _generate_reports(
