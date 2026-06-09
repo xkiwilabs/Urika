@@ -79,6 +79,15 @@ def test_git_page_renders_for_initialised_project(initialised_project):
     assert "push now" in text or 'hx-post="/api/projects/proj/git/push"' in resp.text
 
 
+def test_git_page_has_pull_button_when_initialised(initialised_project):
+    """v0.7.1 parity sweep: the Git tab gained a Pull button next to
+    Push (the pull endpoint mirrors ``urika github pull``)."""
+    client, _proj, _remote = initialised_project
+    resp = client.get("/projects/proj/git")
+    assert resp.status_code == 200, resp.text
+    assert 'hx-post="/api/projects/proj/git/pull"' in resp.text
+
+
 def test_git_page_offers_init_when_not_initialised(plain_project):
     client, _proj = plain_project
     resp = client.get("/projects/proj/git")

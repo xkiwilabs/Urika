@@ -73,6 +73,16 @@
         hx-on::response-error="document.getElementById('git-push-feedback').textContent = 'Push failed: ' + (event.detail.xhr.responseText || event.detail.xhr.statusText);"
       >Push now</button>
       <span id="git-push-feedback" class="text-muted"></span>
+      <button
+        type="button"
+        class="btn btn--secondary"
+        hx-post="/api/projects/{{ project.name }}/git/pull"
+        hx-confirm="Fetch and fast-forward from origin? Refuses on divergence — Urika does not auto-merge."
+        hx-swap="none"
+        hx-on::after-request="if (event.detail.successful) { const r = JSON.parse(event.detail.xhr.responseText || '{}'); if (r.ok) { window.location.reload(); } else { document.getElementById('git-pull-feedback').textContent = 'Pull failed: ' + (r.error || 'unknown error'); } }"
+        hx-on::response-error="document.getElementById('git-pull-feedback').textContent = 'Pull failed: ' + (event.detail.xhr.responseText || event.detail.xhr.statusText);"
+      >Pull</button>
+      <span id="git-pull-feedback" class="text-muted"></span>
     </div>
 
     {% if recent %}

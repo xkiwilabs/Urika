@@ -1054,6 +1054,38 @@ async def api_git_init(name: str, request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "remote": str(remote)})
 
 
+@router.post("/projects/{name}/git/pull")
+async def api_git_pull(name: str, request: Request) -> JSONResponse:
+    """Fetch + fast-forward-only merge from origin (v0.7.1 parity sweep).
+
+    Mirrors ``urika github pull`` CLI semantics (the dashboard's Git tab
+    previously had no pull surface at all):
+
+    * 404 if the project name isn't registered.
+    * 409 with ``detail: "not a git repo"`` if the project exists but
+      hasn't been ``urika github init``'d yet.
+    * Otherwise call :func:`urika.core.git.pull` (the same helper the
+      CLI uses) and return ``{"ok": bool, "error": str|null}`` — same
+      envelope shape as ``/git/push``. A refused merge (divergence)
+      surfaces as ``ok: false`` with the verbatim git error so the Git
+      tab can render it inline; Urika does not auto-merge.
+
+    The CSRF middleware (v0.4.5.1) rejects cross-origin POSTs with 403
+    before this handler runs.
+    """
+    from urika.core import git
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not git.is_git_repo(summary.path):
+        raise HTTPException(status_code=409, detail="not a git repo")
+
+    pulled = git.pull(summary.path)
+    return JSONResponse({"ok": pulled.ok, "error": pulled.error})
+
+
 @router.post("/projects/{name}/memory/curate")
 async def api_memory_curate(name: str, request: Request) -> Response:
     """Run the memory curator (v0.5.0 T2.10).
