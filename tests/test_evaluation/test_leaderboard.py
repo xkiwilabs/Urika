@@ -29,6 +29,25 @@ class TestLoadLeaderboard:
         assert isinstance(data["ranking"], list)
 
 
+class TestLoadLeaderboardCorrupt:
+    """Task 1.3: corrupt leaderboard.json must not crash callers."""
+
+    def test_load_leaderboard_corrupt_returns_empty_and_preserves(
+        self, tmp_path: Path
+    ) -> None:
+        """Corrupt JSON → returns {"ranking": []}, .corrupt file preserved."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        lb_path = project_dir / "leaderboard.json"
+        lb_path.write_text("{not json", encoding="utf-8")
+
+        result = load_leaderboard(project_dir)
+        assert result == {"ranking": []}, f"expected empty ranking, got {result}"
+        assert not lb_path.exists(), "original corrupt file should be renamed away"
+        corrupt_path = project_dir / "leaderboard.json.corrupt"
+        assert corrupt_path.exists(), ".corrupt file should exist"
+
+
 class TestUpdateLeaderboard:
     """Tests for update_leaderboard."""
 

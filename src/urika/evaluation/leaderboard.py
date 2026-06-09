@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def load_leaderboard(project_dir: Path) -> dict[str, Any]:
@@ -18,7 +21,19 @@ def load_leaderboard(project_dir: Path) -> dict[str, Any]:
     if not lb_path.exists():
         return {"ranking": []}
 
-    data = json.loads(lb_path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(lb_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning(
+            "Corrupt leaderboard at %s (%s); preserving as .corrupt",
+            lb_path,
+            exc,
+        )
+        try:
+            lb_path.replace(lb_path.with_suffix(".json.corrupt"))
+        except OSError:
+            pass
+        return {"ranking": []}
 
     # Legacy format migration: rename "entries" -> "ranking"
     if "ranking" not in data and "entries" in data:
