@@ -26,12 +26,14 @@ in its ``try`` block and treats either ``ImportError`` as
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import uuid
 from pathlib import Path
 from typing import Any, Callable
 
 from urika.agents.config import AgentConfig
+from urika.agents.error_classify import classify_error
 from urika.agents.runner import AgentResult, AgentRunner
 
 # ── 429 retry tunables ──────────────────────────────────────────────
@@ -304,6 +306,12 @@ class GoogleADKRunner(AgentRunner):
         in_tok = 0
         out_tok = 0
         attempts = 0
+        # Same wall-clock knob as the Claude + OpenAI adapters. Applied
+        # per ``__anext__`` call so a stalled HTTP stream raises
+        # ``asyncio.TimeoutError`` instead of hanging the orchestrator
+        # turn forever — a healthy long run that keeps yielding events
+        # never trips it.
+        _stream_timeout = float(os.environ.get("URIKA_AGENT_STREAM_TIMEOUT", "600"))
 
         # The retry loop wraps the event stream so that a 429 fired
         # *before* any events yield can be transparently retried with
@@ -313,11 +321,22 @@ class GoogleADKRunner(AgentRunner):
         while True:
             attempts += 1
             try:
-                async for event in runner.run_async(
+                # Explicit ``__aiter__``/``__anext__`` iteration (rather
+                # than ``async for``) so each event fetch can be bounded
+                # by ``asyncio.wait_for`` — a stalled stream raises into
+                # the outer handler instead of hanging.
+                stream = runner.run_async(
                     user_id="urika-user",
                     session_id=session_id,
                     new_message=user_message,
-                ):
+                ).__aiter__()
+                while True:
+                    try:
+                        event = await asyncio.wait_for(
+                            stream.__anext__(), timeout=_stream_timeout
+                        )
+                    except StopAsyncIteration:
+                        break
                     # Real ADK events carry text on
                     # ``event.content.parts[].text`` (a ``types.Content``
                     # with a list of ``types.Part``) rather than a flat
@@ -369,6 +388,19 @@ class GoogleADKRunner(AgentRunner):
                 ):
                     await asyncio.sleep(_extract_retry_delay_s(exc))
                     continue
+                if isinstance(exc, asyncio.TimeoutError):
+                    error_text = (
+                        f"Google agent stream stalled for {_stream_timeout:.0f}s "
+                        "(set URIKA_AGENT_STREAM_TIMEOUT to adjust)"
+                    )
+                    category = "transient"
+                else:
+                    error_text = str(exc)
+                    category = (
+                        "rate_limit"
+                        if _is_rate_limit_error(exc)
+                        else classify_error(error_text)
+                    )
                 # Preserve any tokens accumulated from events before the
                 # failure (and the retries-exhausted branch's run-loop
                 # accumulator). Dropping these on the failure path turned
@@ -382,8 +414,8 @@ class GoogleADKRunner(AgentRunner):
                     messages=[],
                     text_output=accumulated_text,
                     session_id=session_id,
-                    error=str(exc),
-                    error_category=("rate_limit" if _is_rate_limit_error(exc) else ""),
+                    error=error_text,
+                    error_category=category,
                     model=model_name,
                     tokens_in=in_tok,
                     tokens_out=out_tok,

@@ -739,6 +739,132 @@ def test_google_run_failure_preserves_accumulated_tokens_cost(
     assert result.text_output == "partial output"
 
 
+# ── Task 3.3: stream-hang timeout + broader error categorization ────
+#
+# The ADK event stream has no per-event timeout — a stalled HTTP
+# stream previously hung the orchestrator turn forever. The adapter
+# now drives the stream via explicit ``__anext__`` wrapped in
+# ``asyncio.wait_for`` honoring ``URIKA_AGENT_STREAM_TIMEOUT`` (same
+# knob as the Claude + OpenAI adapters), and non-429 failures get
+# classified via the shared ``classify_error`` instead of "".
+
+
+class _StallAfterOneEventRunner:
+    """Yields one text+usage event, then stalls forever on the next."""
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        self.app_name = app_name
+        self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
+
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK
+        **_extra,
+    ):
+        yield _FakeAdkEvent(
+            text="pre-stall ",
+            prompt_token_count=50,
+            candidates_token_count=10,
+        )
+        await asyncio.sleep(10)  # simulate a hung HTTP stream
+        yield _FakeAdkEvent(text="never reached")  # pragma: no cover
+
+
+def test_google_stalled_stream_times_out_transient(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A stalled event stream surfaces a transient failure, not a hang.
+
+    Pre-stall accumulated text + tokens must be preserved on the
+    failure result (same preservation contract as the mid-stream
+    exception path pinned above).
+    """
+    monkeypatch.setenv("URIKA_AGENT_STREAM_TIMEOUT", "0.05")
+    _install_fake_adk(monkeypatch, _StallAfterOneEventRunner)
+
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+    result = asyncio.run(runner.run(cfg, "user prompt"))
+
+    assert result.success is False
+    assert result.error_category == "transient"
+    assert "stalled" in (result.error or "")
+    assert "URIKA_AGENT_STREAM_TIMEOUT" in (result.error or "")
+    # Pre-stall accumulated text + tokens preserved.
+    assert result.text_output == "pre-stall "
+    assert result.tokens_in == 50
+    assert result.tokens_out == 10
+    assert result.cost_usd == pytest.approx(cost_for("gemini-3.5-flash", 50, 10))
+
+
+class _AuthFailAdkRunner:
+    """Throws an auth-shaped error — used to assert classify_error wiring."""
+
+    def __init__(
+        self,
+        *,
+        app_name: str | None = None,
+        agent=None,  # noqa: ANN001 — fake SDK
+        session_service=None,  # noqa: ANN001 — fake SDK
+        auto_create_session: bool = False,
+        **_extra,
+    ) -> None:
+        self.app_name = app_name
+        self.agent = agent
+        self.session_service = session_service
+        self.auto_create_session = auto_create_session
+
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message=None,  # noqa: ANN001 — fake SDK
+        **_extra,
+    ):
+        raise RuntimeError("401 UNAUTHENTICATED: API key not valid")
+        yield  # pragma: no cover — generator marker
+
+
+def test_google_auth_error_categorized(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Non-429 SDK errors get a real category via shared classify_error.
+
+    Pre-Task-3.3 anything that wasn't 429-shaped surfaced with
+    ``error_category=""`` — the orchestrator's pause logic could not
+    distinguish an expired key from an unknown failure.
+    """
+    _install_fake_adk(monkeypatch, _AuthFailAdkRunner)
+
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+    result = asyncio.run(runner.run(cfg, "user prompt"))
+
+    assert result.success is False
+    assert result.error_category == "auth"
+    assert "API key not valid" in (result.error or "")
+
+
 # ── Task 2.2: scrub_oauth_env threaded into Google bash wrapper ──────────────
 #
 # The bash wrapper in ``_run_with_sdk`` must pass a scrub_oauth_env-cleaned
