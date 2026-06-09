@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from urika.knowledge.extractors import extract_pdf, extract_text, extract_url
 from urika.knowledge.models import KnowledgeEntry
+
+logger = logging.getLogger(__name__)
 
 _EXTENSION_TYPES: dict[str, str] = {
     ".pdf": "pdf",
@@ -27,11 +30,22 @@ class KnowledgeStore:
         self._load()
 
     def _load(self) -> None:
-        if self._index_path.exists():
+        if not self._index_path.exists():
+            return
+        try:
             data = json.loads(self._index_path.read_text(encoding="utf-8"))
-            self._entries = [
-                KnowledgeEntry.from_dict(e) for e in data.get("entries", [])
-            ]
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Corrupt knowledge index at %s (%s); preserving as .corrupt",
+                self._index_path,
+                exc,
+            )
+            try:
+                self._index_path.replace(self._index_path.with_suffix(".json.corrupt"))
+            except OSError:
+                pass
+            return
+        self._entries = [KnowledgeEntry.from_dict(e) for e in data.get("entries", [])]
 
     def _save(self) -> None:
         self._index_path.parent.mkdir(parents=True, exist_ok=True)
