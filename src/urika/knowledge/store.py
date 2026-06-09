@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from urika.core.json_io import load_json_or_preserve
 from urika.knowledge.extractors import extract_pdf, extract_text, extract_url
 from urika.knowledge.models import KnowledgeEntry
 
@@ -30,20 +31,8 @@ class KnowledgeStore:
         self._load()
 
     def _load(self) -> None:
-        if not self._index_path.exists():
-            return
-        try:
-            data = json.loads(self._index_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning(
-                "Corrupt knowledge index at %s (%s); preserving as .corrupt",
-                self._index_path,
-                exc,
-            )
-            try:
-                self._index_path.replace(self._index_path.with_suffix(".json.corrupt"))
-            except OSError:
-                pass
+        data = load_json_or_preserve(self._index_path, None)
+        if data is None:
             return
         self._entries = [KnowledgeEntry.from_dict(e) for e in data.get("entries", [])]
 

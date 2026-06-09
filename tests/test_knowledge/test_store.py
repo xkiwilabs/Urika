@@ -155,7 +155,7 @@ class TestKnowledgeStoreCorruptIndex:
     def test_store_corrupt_index_starts_empty_and_preserves(
         self, tmp_path: Path
     ) -> None:
-        """Corrupt index.json → store constructs with no entries, .corrupt preserved."""
+        """Corrupt index.json → store constructs with no entries, .corrupt-* preserved."""
         knowledge_dir = tmp_path / "knowledge"
         knowledge_dir.mkdir(parents=True)
         index_path = knowledge_dir / "index.json"
@@ -164,8 +164,8 @@ class TestKnowledgeStoreCorruptIndex:
         store = KnowledgeStore(tmp_path)
         assert store.list_all() == [], "store should start with no entries"
         assert not index_path.exists(), "original corrupt file should be renamed away"
-        corrupt_path = knowledge_dir / "index.json.corrupt"
-        assert corrupt_path.exists(), ".corrupt file should exist"
+        preserved = list(knowledge_dir.glob("index.json.corrupt-*"))
+        assert len(preserved) == 1, f"expected one .corrupt-* file, found: {preserved}"
 
 
 class TestKnowledgeStoreListGet:

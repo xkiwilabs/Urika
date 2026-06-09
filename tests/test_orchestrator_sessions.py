@@ -289,8 +289,8 @@ class TestCorruptSessionHandling:
         result = load_session(tmp_path, "sess-1")
         assert result is None
         assert not corrupt_file.exists(), "original should have been renamed away"
-        corrupt_path = sessions_dir / "sess-1.json.corrupt"
-        assert corrupt_path.exists(), ".corrupt file should exist"
+        preserved = list(sessions_dir.glob("sess-1.json.corrupt-*"))
+        assert len(preserved) == 1, f"expected one .corrupt-* file, found: {preserved}"
 
     def test_load_session_missing_returns_none(self, tmp_path: Path) -> None:
         """Missing session file → load_session returns None (no crash)."""
@@ -313,6 +313,17 @@ class TestCorruptSessionHandling:
         # Only the valid session should appear
         assert len(result) == 1
         assert result[0]["session_id"] == valid_session.session_id
+
+        # The corrupt file should have been preserved with a timestamped name
+        # that does NOT match *.json (so it won't be picked up by a subsequent scan)
+        assert not corrupt_file.exists(), "original corrupt file should be renamed away"
+        preserved = list(sessions_dir.glob("2026-01-01T00-00-00-dead.json.corrupt-*"))
+        assert len(preserved) == 1, f"expected one .corrupt-* file, found: {preserved}"
+        # Confirm the preserved file is NOT picked up by a fresh list_sessions scan
+        result2 = list_sessions(tmp_path)
+        assert len(result2) == 1, (
+            "preserved .corrupt-* file must not appear in list_sessions"
+        )
 
 
 class TestOrchestratorSessionDataclass:

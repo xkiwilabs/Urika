@@ -35,7 +35,7 @@ class TestLoadLeaderboardCorrupt:
     def test_load_leaderboard_corrupt_returns_empty_and_preserves(
         self, tmp_path: Path
     ) -> None:
-        """Corrupt JSON → returns {"ranking": []}, .corrupt file preserved."""
+        """Corrupt JSON → returns {"ranking": []}, .corrupt-* file preserved."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         lb_path = project_dir / "leaderboard.json"
@@ -44,8 +44,8 @@ class TestLoadLeaderboardCorrupt:
         result = load_leaderboard(project_dir)
         assert result == {"ranking": []}, f"expected empty ranking, got {result}"
         assert not lb_path.exists(), "original corrupt file should be renamed away"
-        corrupt_path = project_dir / "leaderboard.json.corrupt"
-        assert corrupt_path.exists(), ".corrupt file should exist"
+        preserved = list(project_dir.glob("leaderboard.json.corrupt-*"))
+        assert len(preserved) == 1, f"expected one .corrupt-* file, found: {preserved}"
 
 
 class TestUpdateLeaderboard:

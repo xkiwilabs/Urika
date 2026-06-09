@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from urika.core.json_io import load_json_or_preserve
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,21 +20,8 @@ def load_leaderboard(project_dir: Path) -> dict[str, Any]:
     rename "entries" to "ranking".
     """
     lb_path = project_dir / "leaderboard.json"
-    if not lb_path.exists():
-        return {"ranking": []}
-
-    try:
-        data = json.loads(lb_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.warning(
-            "Corrupt leaderboard at %s (%s); preserving as .corrupt",
-            lb_path,
-            exc,
-        )
-        try:
-            lb_path.replace(lb_path.with_suffix(".json.corrupt"))
-        except OSError:
-            pass
+    data = load_json_or_preserve(lb_path, None)
+    if data is None:
         return {"ranking": []}
 
     # Legacy format migration: rename "entries" -> "ranking"

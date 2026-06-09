@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import secrets
 from dataclasses import asdict, dataclass, field
@@ -11,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from urika.core.atomic_write import write_json_atomic
+from urika.core.json_io import load_json_or_preserve
 
 logger = logging.getLogger(__name__)
 
@@ -75,20 +75,8 @@ def save_session(project_dir: Path, session: OrchestratorSession) -> None:
 
 def load_session(project_dir: Path, session_id: str) -> OrchestratorSession | None:
     path = _sessions_dir(project_dir) / f"{session_id}.json"
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.warning(
-            "Corrupt orchestrator session at %s (%s); preserving as .corrupt",
-            path,
-            exc,
-        )
-        try:
-            path.replace(path.with_suffix(".json.corrupt"))
-        except OSError:
-            pass
+    data = load_json_or_preserve(path, None)
+    if data is None:
         return None
     return OrchestratorSession.from_dict(data)
 
@@ -98,8 +86,10 @@ def list_sessions(project_dir: Path, limit: int = 20) -> list[dict[str, Any]]:
     files = sorted(sessions_dir.glob("*.json"), reverse=True)[:limit]
     result = []
     for f in files:
+        data = load_json_or_preserve(f, None)
+        if data is None:
+            continue
         try:
-            data = json.loads(f.read_text(encoding="utf-8"))
             result.append(
                 {
                     "session_id": data["session_id"],
@@ -110,17 +100,6 @@ def list_sessions(project_dir: Path, limit: int = 20) -> list[dict[str, Any]]:
                     "has_older_summary": bool(data.get("older_summary")),
                 }
             )
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning(
-                "Corrupt orchestrator session at %s (%s); preserving as .corrupt",
-                f,
-                exc,
-            )
-            try:
-                f.replace(f.with_suffix(".json.corrupt"))
-            except OSError:
-                pass
-            continue
         except Exception:
             continue
     return result
