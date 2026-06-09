@@ -128,6 +128,11 @@ class OpenAIAgentsRunner(AgentRunner):
         project_dir: Path = config.cwd or Path.cwd()
 
         agent_env = scrub_oauth_env_for_subprocess(config.env)
+        # Per-Bash-call wall-clock cap — the Claude adapter injects
+        # ``max_method_seconds`` via ``can_use_tool``; here we thread
+        # it straight into the shared bash tool. 600s mirrors the bash
+        # tool's own default, passed explicitly for uniformity.
+        bash_timeout = config.max_method_seconds or 600
 
         def _wrap(tool_result: Any) -> str:
             return (
@@ -138,7 +143,11 @@ class OpenAIAgentsRunner(AgentRunner):
         def bash(cmd: str) -> str:
             return _wrap(
                 bash_tool(
-                    cmd, security=security, project_dir=project_dir, env=agent_env
+                    cmd,
+                    security=security,
+                    project_dir=project_dir,
+                    env=agent_env,
+                    timeout_seconds=bash_timeout,
                 )
             )
 

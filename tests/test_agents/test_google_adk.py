@@ -937,3 +937,65 @@ def test_google_bash_wrapper_uses_scrubbed_env(
     assert captured_kwargs["env"].get("CLAUDE_CODE_OAUTH_TOKEN") == "", (
         "CLAUDE_CODE_OAUTH_TOKEN was not scrubbed from the bash subprocess env"
     )
+
+
+# ── Task 3.4: bash wrapper honors max_method_seconds ────────────────
+#
+# ``AgentConfig.max_method_seconds`` is the per-Bash-call wall-clock
+# cap (the Claude adapter injects it via ``can_use_tool``). The Google
+# bash wrapper must thread it to ``bash_tool(timeout_seconds=...)`` so
+# a runaway script can't wedge an experiment; ``None`` falls back to
+# the bash tool's 600s default (passed explicitly for uniformity).
+
+
+def _captured_bash_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    max_method_seconds: int | None,
+) -> int:
+    """Run the adapter with a capturing bash_tool; return timeout_seconds."""
+    _install_fake_adk(monkeypatch, _AgentCapturingAdkRunner)
+
+    captured_kwargs: dict = {}
+
+    from urika.agents.tools import ToolResult
+    import urika.agents.tools.bash as bash_mod
+
+    def _fake_bash_tool(cmd: str, **kwargs):
+        captured_kwargs.update(kwargs)
+        return ToolResult(ok=True, output="ok", error=None, exit_code=0)
+
+    monkeypatch.setattr(bash_mod, "bash", _fake_bash_tool)
+
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+    cfg.max_method_seconds = max_method_seconds
+    asyncio.run(runner.run(cfg, "run bash"))
+
+    agent = _ADK_RUNNER_HOLDER.get("agent")
+    assert agent is not None, "runner was not called"
+    bash_wrapper = next(
+        (t for t in agent.tools if getattr(t, "__name__", "") == "bash"), None
+    )
+    assert bash_wrapper is not None, "bash tool not in agent.tools"
+    bash_wrapper("echo hi")
+
+    assert "timeout_seconds" in captured_kwargs, (
+        "timeout_seconds kwarg not threaded to bash_tool"
+    )
+    return captured_kwargs["timeout_seconds"]
+
+
+def test_google_bash_wrapper_honors_max_method_seconds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    assert _captured_bash_timeout(monkeypatch, tmp_path, 1800) == 1800
+
+
+def test_google_bash_wrapper_defaults_timeout_when_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    assert _captured_bash_timeout(monkeypatch, tmp_path, None) == 600
