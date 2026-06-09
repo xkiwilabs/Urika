@@ -419,6 +419,52 @@ def test_remove_env_key_keeps_0600(tmp_path, vault_module):
     assert "B=2" in body
 
 
+class TestKeyringBackendIndexWrite:
+    """Task 1.1: _index_write must use write_text_atomic with mode=0o600 and
+    explicit UTF-8 encoding so names with non-ASCII characters round-trip."""
+
+    def test_index_write_utf8_names(self, tmp_path, vault_module, monkeypatch):
+        """Names with non-ASCII chars must be written as UTF-8 bytes AND
+        write_text_atomic must be called with mode=0o600 (encoding+atomicity
+        contract, cross-platform)."""
+        kb = vault_module.KeyringBackend(index_path=tmp_path / "secrets-index.txt")
+
+        calls: list[dict] = []
+        real_atomic = vault_module.write_text_atomic
+
+        def _spy(path, text, mode=None, **kw):
+            calls.append({"path": path, "text": text, "mode": mode})
+            return real_atomic(path, text, mode=mode, **kw)
+
+        monkeypatch.setattr(vault_module, "write_text_atomic", _spy)
+
+        names = ["MY_KEY", "MŸ_SECRÉT"]
+        kb._index_write(names)
+
+        # write_text_atomic was called with mode=0o600
+        assert calls, "_index_write did not call write_text_atomic"
+        assert calls[-1]["mode"] == 0o600, (
+            f"expected mode=0o600, got {oct(calls[-1]['mode'])}"
+        )
+
+        # The raw bytes on disk contain the UTF-8 encoding of the non-ASCII name
+        raw_bytes = (tmp_path / "secrets-index.txt").read_bytes()
+        assert "MŸ_SECRÉT".encode("utf-8") in raw_bytes
+
+    def test_index_write_is_atomic_no_tmp_left(self, tmp_path, vault_module):
+        """After _index_write, no *.tmp.* files remain in the parent dir,
+        and the content is exactly 'A\\nB\\n' read with UTF-8."""
+        kb = vault_module.KeyringBackend(index_path=tmp_path / "secrets-index.txt")
+        kb._index_write(["A", "B"])
+
+        # No temp files lingering
+        tmp_files = list(tmp_path.glob("*.tmp.*"))
+        assert tmp_files == [], f"leftover tmp files: {tmp_files}"
+
+        content = (tmp_path / "secrets-index.txt").read_text(encoding="utf-8")
+        assert content == "A\nB\n"
+
+
 def test_remove_env_key_uses_atomic_write(tmp_path, vault_module, monkeypatch):
     """The removal path must go through write_text_atomic(..., mode=0o600)
     rather than a non-atomic write_text + chmod (the perms-window bug)."""
