@@ -221,6 +221,21 @@ def require_api_key(model: str | None, agent_env: Mapping[str, str] | None) -> N
     )
 
 
+def scrub_oauth_env_for_subprocess(
+    config_env: Mapping[str, str] | None,
+) -> dict[str, str]:
+    """Full subprocess environment: ``os.environ`` overlaid with the
+    agent's env, then scrubbed.
+
+    Shared by adapters whose function tools spawn local subprocesses
+    (OpenAI / Google bash wrappers) so the merge semantics can't drift
+    between adapters. The Claude adapter doesn't use this — its SDK
+    subprocess env is built separately and scrubbed via
+    :func:`scrub_oauth_env`.
+    """
+    return scrub_oauth_env({**os.environ, **(config_env or {})})
+
+
 def scrub_oauth_env(agent_env: Mapping[str, str] | None) -> dict[str, str]:
     """Return a copy of *agent_env* with parent-session leakage zeroed.
 

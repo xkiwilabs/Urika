@@ -36,7 +36,6 @@ Design notes:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Callable
 
@@ -114,7 +113,7 @@ class OpenAIAgentsRunner(AgentRunner):
         from urika.agents.tools.grep import grep as grep_tool
         from urika.agents.tools.read import read as read_tool
         from urika.agents.tools.write import write as write_tool
-        from urika.core.compliance import scrub_oauth_env
+        from urika.core.compliance import scrub_oauth_env_for_subprocess
 
         security = config.security
         # ``AgentConfig`` has no ``project_dir`` field — the SDK
@@ -125,12 +124,7 @@ class OpenAIAgentsRunner(AgentRunner):
         # the wrapper defensive.
         project_dir: Path = config.cwd or Path.cwd()
 
-        # Billing hygiene: strip OAuth tokens (and nested-session markers)
-        # from the environment passed to bash subprocesses. config.env holds
-        # per-agent overrides (endpoint keys, ANTHROPIC_BASE_URL, etc.);
-        # merge with os.environ first so the scrub also covers any OAuth vars
-        # that leaked into the parent-shell environment.
-        agent_env = scrub_oauth_env({**os.environ, **(config.env or {})})
+        agent_env = scrub_oauth_env_for_subprocess(config.env)
 
         def _wrap(tool_result: Any) -> str:
             return (

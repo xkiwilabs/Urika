@@ -202,3 +202,20 @@ class TestScrubOauthEnv:
         out = scrub_oauth_env(leaky_env)
         for var in _NESTED_SESSION_VARS:
             assert out[var] == "", f"{var} was not blanked"
+
+
+class TestScrubOauthEnvForSubprocess:
+    def test_merges_os_environ_scrubs_token_preserves_path_and_agent_var(
+        self, monkeypatch
+    ):
+        """scrub_oauth_env_for_subprocess merges os.environ + config_env,
+        blanks OAuth tokens that leaked into the parent shell, preserves
+        safe vars (PATH), and includes per-agent overrides.
+        """
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "leak")
+        from urika.core.compliance import scrub_oauth_env_for_subprocess
+
+        out = scrub_oauth_env_for_subprocess({"MY_AGENT_VAR": "x"})
+        assert out["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+        assert out.get("PATH") == __import__("os").environ.get("PATH")
+        assert out["MY_AGENT_VAR"] == "x"
