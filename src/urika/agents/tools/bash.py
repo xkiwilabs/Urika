@@ -49,6 +49,7 @@ def bash(
     security: SecurityPolicy,
     project_dir: Path,
     timeout_seconds: int = 600,
+    env: dict[str, str] | None = None,
 ) -> ToolResult:
     deny = enforce_bash(cmd, security)
     if deny is not None:
@@ -62,6 +63,7 @@ def bash(
             text=True,
             timeout=timeout_seconds,
             check=False,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return ToolResult(

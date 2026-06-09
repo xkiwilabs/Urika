@@ -26,6 +26,7 @@ in its ``try`` block and treats either ``ImportError`` as
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import uuid
 from pathlib import Path
@@ -211,6 +212,7 @@ class GoogleADKRunner(AgentRunner):
         from urika.agents.tools.grep import grep as grep_tool
         from urika.agents.tools.read import read as read_tool
         from urika.agents.tools.write import write as write_tool
+        from urika.core.compliance import scrub_oauth_env
 
         security = config.security
         # Tools that need a project root (bash, glob) fall back to
@@ -218,6 +220,13 @@ class GoogleADKRunner(AgentRunner):
         # vanishingly rare in agent runs but keeps the wrapper
         # defensive. Mirrors the OpenAI adapter's convention.
         project_dir: Path = config.cwd or Path.cwd()
+
+        # Billing hygiene: strip OAuth tokens (and nested-session markers)
+        # from the environment passed to bash subprocesses. config.env holds
+        # per-agent overrides (endpoint keys, ANTHROPIC_BASE_URL, etc.);
+        # merge with os.environ first so the scrub also covers any OAuth vars
+        # that leaked into the parent-shell environment.
+        agent_env = scrub_oauth_env({**os.environ, **(config.env or {})})
 
         def _wrap(tool_result: Any) -> str:
             return (
@@ -229,7 +238,11 @@ class GoogleADKRunner(AgentRunner):
         # release ships ``google.adk.tools.FunctionTool`` as a
         # required wrapper, decorate these in one swoop.
         def bash(cmd: str) -> str:
-            return _wrap(bash_tool(cmd, security=security, project_dir=project_dir))
+            return _wrap(
+                bash_tool(
+                    cmd, security=security, project_dir=project_dir, env=agent_env
+                )
+            )
 
         def read(path: str) -> str:
             return _wrap(read_tool(path, security=security))

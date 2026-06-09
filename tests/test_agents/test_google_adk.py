@@ -737,3 +737,77 @@ def test_google_run_failure_preserves_accumulated_tokens_cost(
     assert result.cost_usd == pytest.approx(cost_for("gemini-3.5-flash", 100, 20))
     # Partial text should also survive (already worked pre-fix; pin it).
     assert result.text_output == "partial output"
+
+
+# ── Task 2.2: scrub_oauth_env threaded into Google bash wrapper ──────────────
+#
+# The bash wrapper in ``_run_with_sdk`` must pass a scrub_oauth_env-cleaned
+# env to ``bash_tool`` so OAuth tokens from the parent shell do not leak
+# into agent subprocesses.  The fake runner stashes the Agent's tool list
+# so the test can invoke the bash wrapper directly and inspect ``env``.
+
+
+_ADK_RUNNER_HOLDER: dict = {}
+
+
+class _AgentCapturingAdkRunner(_FakeAdkRunner):
+    """Fake Runner that stashes the constructed Agent for inspection."""
+
+    def __init__(self, *, agent=None, **kwargs) -> None:
+        super().__init__(agent=agent, **kwargs)
+        _ADK_RUNNER_HOLDER["agent"] = agent
+
+
+def test_google_bash_wrapper_uses_scrubbed_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """bash wrapper passes a scrub_oauth_env-cleaned env to bash_tool.
+
+    A CLAUDE_CODE_OAUTH_TOKEN set in the parent shell must arrive at
+    bash_tool as an empty string (zeroed by scrub_oauth_env), not the
+    leaked value.
+
+    Strategy: install a runner that stashes the Agent's tool list, then
+    invoke the bash wrapper directly to capture the kwargs passed to
+    bash_tool.
+    """
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "leak")
+    _install_fake_adk(monkeypatch, _AgentCapturingAdkRunner)
+
+    captured_kwargs: dict = {}
+
+    from urika.agents.tools import ToolResult
+    import urika.agents.tools.bash as bash_mod
+
+    def _fake_bash_tool(cmd: str, **kwargs):
+        captured_kwargs.update(kwargs)
+        return ToolResult(ok=True, output="ok", error=None, exit_code=0)
+
+    monkeypatch.setattr(bash_mod, "bash", _fake_bash_tool)
+
+    from urika.agents.adapters.google_adk import GoogleADKRunner
+
+    runner = GoogleADKRunner()
+    cfg = _make_config(tmp_path)
+    cfg.model = "gemini-3.5-flash"
+
+    import asyncio
+
+    asyncio.run(runner.run(cfg, "run bash"))
+
+    # The fake runner stashed the Agent; tools is the list of plain Python
+    # functions. Locate the bash wrapper by name.
+    agent = _ADK_RUNNER_HOLDER.get("agent")
+    assert agent is not None, "runner was not called"
+    bash_wrapper = next(
+        (t for t in agent.tools if getattr(t, "__name__", "") == "bash"), None
+    )
+    assert bash_wrapper is not None, "bash tool not in agent.tools"
+
+    # Call the wrapper — it should invoke our fake_bash_tool with env=...
+    bash_wrapper("echo hi")
+
+    assert "env" in captured_kwargs, "env kwarg not threaded to bash_tool"
+    assert captured_kwargs["env"].get("CLAUDE_CODE_OAUTH_TOKEN") == "", (
+        "CLAUDE_CODE_OAUTH_TOKEN was not scrubbed from the bash subprocess env"
+    )

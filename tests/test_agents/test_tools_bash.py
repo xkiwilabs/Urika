@@ -90,3 +90,36 @@ def test_bash_truncates_huge_stdout(tmp_path: Path, monkeypatch):
     # Result must be capped at ~32 KB plus the truncation marker.
     assert len(result.output) < 40_000
     assert "truncated" in result.output
+
+
+def test_bash_env_override(tmp_path: Path):
+    """``env`` kwarg threads through to the subprocess — a custom env
+    var set in ``env`` is visible to the command.
+    """
+    import os
+
+    policy = _policy(allowed_bash=["printenv", "echo"], writable=[tmp_path])
+    custom_env = {**os.environ, "URIKA_TEST_VAR": "scrubbed-env-works"}
+    result = bash(
+        "printenv URIKA_TEST_VAR",
+        security=policy,
+        project_dir=tmp_path,
+        env=custom_env,
+    )
+    assert result.ok is True, result.error
+    assert result.output.strip() == "scrubbed-env-works"
+
+
+def test_bash_env_none_inherits(tmp_path: Path, monkeypatch):
+    """When ``env=None`` (the default), the subprocess inherits the
+    current process environment — pre-existing behaviour unchanged.
+    """
+    monkeypatch.setenv("URIKA_INHERIT_TEST", "inherited-value")
+    policy = _policy(allowed_bash=["printenv"], writable=[tmp_path])
+    result = bash(
+        "printenv URIKA_INHERIT_TEST",
+        security=policy,
+        project_dir=tmp_path,
+    )
+    assert result.ok is True, result.error
+    assert result.output.strip() == "inherited-value"

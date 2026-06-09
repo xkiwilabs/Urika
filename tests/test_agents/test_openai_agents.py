@@ -235,3 +235,79 @@ def test_openai_run_failure_preserves_accumulated_tokens_cost(
     )
     assert result.cost_usd == pytest.approx(cost_for("gpt-5.4", 0, 0))
     assert result.cost_usd == 0.0  # 0 tokens at any price card = 0.0
+
+
+# ── Task 2.2: scrub_oauth_env threaded into OpenAI bash wrapper ─────────────
+#
+# The bash wrapper in ``_run_with_sdk`` must pass a scrub_oauth_env-cleaned
+# env to ``bash_tool`` so OAuth tokens from the parent shell do not leak
+# into agent subprocesses.  The fake runner stashes the Agent's tool list
+# so the test can invoke the bash wrapper directly and inspect ``env``.
+
+
+class _ToolCapturingRunner:
+    """Fake Runner that stashes the constructed tools list for inspection.
+
+    The agent's tools are registered as function-tool wrappers; this runner
+    exposes them so tests can call them directly and assert on their kwargs.
+    """
+
+    captured_agent = None
+
+    @staticmethod
+    async def run(agent, prompt, max_turns=10):  # noqa: ANN001 — fake SDK
+        _ToolCapturingRunner.captured_agent = agent
+        return _FakeResult()
+
+
+def test_openai_bash_wrapper_uses_scrubbed_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """bash wrapper passes a scrub_oauth_env-cleaned env to bash_tool.
+
+    A CLAUDE_CODE_OAUTH_TOKEN set in the parent shell must arrive at
+    bash_tool as an empty string (zeroed by scrub_oauth_env), not the
+    leaked value.
+
+    Strategy: install a runner that stashes the Agent's tool list, then
+    invoke the bash wrapper directly to capture the kwargs passed to
+    bash_tool.
+    """
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "leak")
+    _install_fake_agents(monkeypatch, _ToolCapturingRunner)
+
+    captured_kwargs: dict = {}
+
+    from urika.agents.tools import ToolResult
+    import urika.agents.tools.bash as bash_mod
+
+    def _fake_bash_tool(cmd: str, **kwargs):
+        captured_kwargs.update(kwargs)
+        return ToolResult(ok=True, output="ok", error=None, exit_code=0)
+
+    monkeypatch.setattr(bash_mod, "bash", _fake_bash_tool)
+
+    from urika.agents.adapters.openai_agents import OpenAIAgentsRunner
+
+    runner = OpenAIAgentsRunner()
+    cfg = _make_config(tmp_path)
+    import asyncio
+
+    asyncio.run(runner.run(cfg, "run bash"))
+
+    # The fake runner stashed the Agent; the tools list is the registered
+    # wrappers.  Locate the bash wrapper by name.
+    agent = _ToolCapturingRunner.captured_agent
+    assert agent is not None, "runner was not called"
+    bash_wrapper = next(
+        (t for t in agent.tools if getattr(t, "__name__", "") == "bash"), None
+    )
+    assert bash_wrapper is not None, "bash tool not in agent.tools"
+
+    # Call the wrapper — it should invoke our fake_bash_tool with env=...
+    bash_wrapper("echo hi")
+
+    assert "env" in captured_kwargs, "env kwarg not threaded to bash_tool"
+    assert captured_kwargs["env"].get("CLAUDE_CODE_OAUTH_TOKEN") == "", (
+        "CLAUDE_CODE_OAUTH_TOKEN was not scrubbed from the bash subprocess env"
+    )
