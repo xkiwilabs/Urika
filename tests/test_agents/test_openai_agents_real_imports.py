@@ -18,33 +18,20 @@ Specifically pinned here:
   in the adapter).
 * ``agents.RunResult.final_output`` — the field the adapter reads for
   ``text_output``.
-* ``agents.RunResult.raw_responses`` — the correct path to per-call
-  usage data (see BUG note below).
+* ``agents.RunResult.raw_responses`` — the path the adapter reads for
+  per-call usage data (summed across responses).
 * ``agents.ModelResponse.usage`` — each raw response carries a
   ``Usage`` object.
 * ``agents.Usage`` fields ``input_tokens`` / ``output_tokens`` — the
   names the adapter assumes.
 
-LIVE BUG FOUND (openai-agents 0.17.4, v0.8.0 scope):
-  ``openai_agents.py`` line 245:
-      ``usage_obj = getattr(result, "usage", None)``
-  ``RunResult`` has NO ``usage`` attribute (confirmed via
-  ``RunResult.__dataclass_fields__``). The ``getattr`` always returns
-  ``None``, so ``in_tok`` and ``out_tok`` are always 0 for every
-  OpenAI agent run — usage/cost tracking is silently broken.
-
-  The correct path is to sum usage across the raw model responses:
-      ``sum(r.usage.input_tokens for r in result.raw_responses)``
-  (``result.raw_responses: list[ModelResponse]``, each with a
-  ``usage: Usage`` pydantic dataclass.)
-
-  The field names on ``agents.Usage`` ARE correct — the adapter's
-  ``"input_tokens"`` / ``"output_tokens"`` assumptions match the real
-  SDK. Only the container attribute (``result.usage`` vs.
-  ``result.raw_responses[i].usage``) is wrong.
-
-  The tests below pin the REAL field names and structure so any fix
-  to the adapter can be validated here.
+HISTORY (openai-agents 0.17.4, fixed post-v0.7.0): the adapter
+originally read ``getattr(result, "usage", None)`` — but ``RunResult``
+has NO ``usage`` attribute, so every successful OpenAI run silently
+recorded 0 tokens / $0. This module's structural tests caught it. The
+adapter now sums ``r.usage.input_tokens`` / ``r.usage.output_tokens``
+across ``result.raw_responses``; the tests below pin that read path
+against the real SDK.
 """
 
 from __future__ import annotations
@@ -142,38 +129,44 @@ def test_run_result_final_output() -> None:
     )
 
 
-def test_run_result_has_no_usage_field() -> None:
-    """Documents the LIVE BUG: adapter line 245 calls
-    ``getattr(result, 'usage', None)`` on a ``RunResult``, but
-    ``RunResult`` has NO ``usage`` field.
+def test_run_result_usage_read_path() -> None:
+    """Pins the adapter's usage read path against the real SDK.
 
-    This test asserts the BUG IS STILL PRESENT so it becomes a
-    regression gate: when the adapter is fixed to read
-    ``result.raw_responses[i].usage`` this test should be UPDATED to
-    reflect the corrected access pattern.
+    The adapter (``openai_agents.py``, success-path usage extraction)
+    sums ``response.usage.input_tokens`` / ``response.usage.output_tokens``
+    across ``result.raw_responses``. So:
 
-    The correct fix: sum ``r.usage.input_tokens`` and
-    ``r.usage.output_tokens`` across ``result.raw_responses``.
-    See :file:`src/urika/agents/adapters/openai_agents.py` line 245.
+    * ``RunResult`` must declare ``raw_responses`` as a dataclass field, and
+    * ``agents.Usage`` must declare ``input_tokens`` / ``output_tokens``.
+
+    HISTORY: pre-v0.7.1 the adapter read ``getattr(result, "usage", None)``
+    — ``RunResult`` has no ``usage`` field, so every successful OpenAI run
+    silently recorded 0 tokens / $0. This test originally pinned the bug's
+    presence ("RunResult has no usage field"); it now pins the fixed read
+    path instead.
     """
     import agents
 
-    fields = set(agents.RunResult.__dataclass_fields__.keys())
-    # BUG: this assertion confirms the adapter's getattr always returns None.
-    assert "usage" not in fields, (
-        "agents.RunResult now HAS a 'usage' field — the adapter bug may be "
-        "fixed upstream. Remove this test and add a test for the real "
-        "usage-sum path via result.raw_responses instead."
+    rr_fields = set(agents.RunResult.__dataclass_fields__.keys())
+    assert "raw_responses" in rr_fields, (
+        "agents.RunResult missing 'raw_responses' — the adapter's usage "
+        "extraction (summing per-response usage) reads this field"
+    )
+
+    usage_fields = set(agents.Usage.__pydantic_fields__.keys())
+    assert "input_tokens" in usage_fields and "output_tokens" in usage_fields, (
+        "agents.Usage missing input_tokens/output_tokens — the adapter's "
+        "usage extraction reads these off each raw_responses[i].usage"
     )
 
 
 def test_run_result_raw_responses_path() -> None:
-    """The CORRECT usage path: ``result.raw_responses`` is a list of
-    ``ModelResponse`` objects, each carrying a ``usage: Usage`` field.
+    """The usage path the adapter reads: ``result.raw_responses`` is a
+    list of ``ModelResponse`` objects, each carrying a ``usage: Usage``
+    field.
 
     Pins both the container field and the per-response usage attribute
-    so the adapter fix (summing usage across raw_responses) can be
-    validated here.
+    backing the adapter's usage-sum loop.
     """
     import agents
 
@@ -191,22 +184,17 @@ def test_run_result_raw_responses_path() -> None:
 
 
 def test_usage_field_names_on_usage_class() -> None:
-    """Adapter lines 246–247: reads ``input_tokens`` and ``output_tokens``
-    off the usage object.
+    """The adapter's usage-sum loop reads ``input_tokens`` and
+    ``output_tokens`` off each ``raw_responses[i].usage`` object.
 
     ``agents.Usage`` (a pydantic dataclass) must declare both fields.
-    These ARE correct in the installed SDK — the only bug is reaching
-    the Usage object via ``result.usage`` (which doesn't exist) instead
-    of ``result.raw_responses[i].usage``.
     """
     import agents
 
     usage_fields = set(agents.Usage.__pydantic_fields__.keys())
     assert "input_tokens" in usage_fields, (
-        "agents.Usage missing 'input_tokens' field — "
-        "adapter token-counting will break even after the raw_responses fix"
+        "agents.Usage missing 'input_tokens' field — adapter token-counting will break"
     )
     assert "output_tokens" in usage_fields, (
-        "agents.Usage missing 'output_tokens' field — "
-        "adapter token-counting will break even after the raw_responses fix"
+        "agents.Usage missing 'output_tokens' field — adapter token-counting will break"
     )

@@ -215,9 +215,10 @@ class OpenAIAgentsRunner(AgentRunner):
                 cost_usd=cost_for(model_name, 0, 0),
             )
         except Exception as exc:  # noqa: BLE001 — SDK boundary
-            # The openai-agents SDK exposes ``RunResult.usage`` only on
-            # the success path — ``Runner.run`` is an all-or-nothing
-            # awaitable that doesn't surface partial usage when it
+            # The openai-agents SDK exposes per-response usage (via
+            # ``RunResult.raw_responses``) only on the success path —
+            # ``Runner.run`` is an all-or-nothing awaitable that doesn't
+            # surface partial usage when it
             # throws. So tokens/cost are 0 / 0.0 here, but record them
             # explicitly (matching the Claude + Google adapters' shape)
             # so downstream consumers don't have to special-case
@@ -236,15 +237,18 @@ class OpenAIAgentsRunner(AgentRunner):
                 cost_usd=cost_for(model_name, 0, 0),
             )
 
-        # Usage attribute naming: the openai-agents SDK mirrors the
-        # Anthropic "input_tokens / output_tokens" convention in its
-        # ``RunResult.usage`` object (per the SDK's public examples).
-        # If the real SDK ships with ``prompt_tokens`` / ``completion_tokens``
-        # instead, this is the one spot to update — the rest of Urika
-        # only sees the flattened ``tokens_in`` / ``tokens_out``.
-        usage_obj = getattr(result, "usage", None)
-        in_tok = int(getattr(usage_obj, "input_tokens", 0) or 0)
-        out_tok = int(getattr(usage_obj, "output_tokens", 0) or 0)
+        # Usage lives on the per-model-response objects, NOT on
+        # RunResult itself — RunResult has no ``usage`` attribute
+        # (pinned by tests/test_agents/test_openai_agents_real_imports.py;
+        # pre-v0.7.1 this read getattr(result, "usage", None) and silently
+        # recorded 0 tokens / $0 for every successful OpenAI run).
+        in_tok = 0
+        out_tok = 0
+        for response in getattr(result, "raw_responses", None) or []:
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                in_tok += int(getattr(usage, "input_tokens", 0) or 0)
+                out_tok += int(getattr(usage, "output_tokens", 0) or 0)
         cost = cost_for(model_name, in_tok, out_tok)
 
         return AgentResult(

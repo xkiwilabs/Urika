@@ -7,8 +7,10 @@ that ship across Tasks 1.4, 2.1 and 2.2:
   adapter for a ``gpt-*`` model string,
 * :class:`~urika.agents.adapters.openai_agents.OpenAIAgentsRunner.run`
   translates an :class:`AgentConfig` into an SDK call,
-* the SDK's ``RunResult.usage`` is flattened into
-  :class:`AgentResult` ``tokens_in`` / ``tokens_out`` / ``cost_usd``.
+* the SDK's per-response usage (``RunResult.raw_responses[i].usage``
+  — ``RunResult`` itself has NO ``usage`` attribute) is summed and
+  flattened into :class:`AgentResult` ``tokens_in`` / ``tokens_out``
+  / ``cost_usd``.
 
 The existing :file:`test_openai_agents.py` covers the second + third
 hops with a hand-rolled fake module. This test goes one level higher
@@ -47,9 +49,17 @@ class _FakeUsage:
     output_tokens = 5
 
 
+class _FakeModelResponse:
+    """Stand-in for ``agents.ModelResponse`` — carries the usage object."""
+
+    usage = _FakeUsage()
+
+
 class _FakeResult:
     final_output = "ok"
-    usage = _FakeUsage()
+    # Real openai-agents shape: usage lives on each raw response, NOT
+    # on the RunResult itself.
+    raw_responses = [_FakeModelResponse()]
 
 
 class _FakeRunner:

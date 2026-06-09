@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -82,11 +83,11 @@ def test_openai_runner_raises_clear_error_when_extra_missing(
 # so these tests have no external dependency. The fake mimics the
 # three names the adapter touches: ``Agent`` (constructor stash),
 # ``Runner.run`` (async classmethod returning a result with
-# ``final_output`` + ``usage``), and ``function_tool`` (no-op
-# decorator). Adjust the fake's ``usage`` attribute names if the
-# real SDK ships with different field names — Task 2.2 implementer
-# mirrored the Anthropic "input_tokens / output_tokens" naming the
-# openai-agents SDK appears to follow, per its public examples.
+# ``final_output`` + ``raw_responses``), and ``function_tool`` (no-op
+# decorator). The fakes mirror the REAL openai-agents 0.17.4 shape
+# (pinned by test_openai_agents_real_imports.py): ``RunResult`` has NO
+# ``usage`` attribute — usage rides on each ``ModelResponse`` in
+# ``raw_responses``, as ``usage.input_tokens`` / ``usage.output_tokens``.
 
 
 class _FakeAgent:
@@ -99,16 +100,19 @@ class _FakeAgent:
         self.tools = tools
 
 
-class _FakeUsage:
-    def __init__(self, input_tokens: int, output_tokens: int) -> None:
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
+def _fake_response(input_tokens: int, output_tokens: int) -> SimpleNamespace:
+    """Fake ``agents.ModelResponse`` — usage rides on each raw response."""
+    return SimpleNamespace(
+        usage=SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
+    )
 
 
 class _FakeResult:
     def __init__(self) -> None:
         self.final_output = "the answer is 42"
-        self.usage = _FakeUsage(120, 30)
+        # Real SDK shape: NO ``usage`` attr on the result — per-response
+        # usage objects live in ``raw_responses``.
+        self.raw_responses = [_fake_response(120, 30)]
 
 
 class _FakeRunner:
@@ -161,6 +165,50 @@ def test_openai_run_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     assert result.model == "gpt-5.4"
 
 
+class _MultiResponseRunner:
+    """Fake Runner whose result carries TWO raw model responses.
+
+    A multi-turn agent run produces one ``ModelResponse`` per LLM call;
+    the adapter must SUM usage across all of them, not read just the
+    first (or — the pre-v0.7.1 bug — a nonexistent ``result.usage``).
+    """
+
+    @staticmethod
+    async def run(agent, prompt, max_turns=10):  # noqa: ANN001 — fake SDK
+        result = _FakeResult()
+        result.raw_responses = [
+            _fake_response(100, 20),
+            _fake_response(50, 10),
+        ]
+        return result
+
+
+def test_openai_usage_summed_across_raw_responses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Usage is summed across ALL entries in ``result.raw_responses``.
+
+    Regression test for the v0.7.0 live bug: the adapter read
+    ``getattr(result, "usage", None)`` but ``agents.RunResult`` has no
+    ``usage`` attribute (openai-agents 0.17.4), so every successful run
+    silently recorded 0 tokens / $0. Two responses of 100+50 in /
+    20+10 out must land as 150 / 30 with cost computed from the sums.
+    """
+    _install_fake_agents(monkeypatch, _MultiResponseRunner)
+
+    from urika.agents.adapters.openai_agents import OpenAIAgentsRunner
+
+    runner = OpenAIAgentsRunner()
+    cfg = _make_config(tmp_path)
+    result = asyncio.run(runner.run(cfg, "user question"))
+
+    assert result.success is True
+    assert result.tokens_in == 150
+    assert result.tokens_out == 30
+    assert result.cost_usd == pytest.approx(cost_for("gpt-5.4", 150, 30))
+    assert result.cost_usd is not None and result.cost_usd > 0
+
+
 class _ExplodingRunner:
     @staticmethod
     async def run(agent, prompt, max_turns=10):  # noqa: ANN001 — fake SDK
@@ -194,7 +242,8 @@ def test_openai_run_sdk_error_returned_not_raised(
 #
 # Unlike the Google ADK adapter (event-stream), the openai-agents SDK
 # is an all-or-nothing awaited ``Runner.run`` — usage rides on the
-# success ``RunResult.usage``, and when ``Runner.run`` throws there is
+# success result's ``raw_responses[i].usage``, and when ``Runner.run``
+# throws there is
 # no partial usage to recover from the SDK itself. The fix is therefore
 # defensive: every ``return AgentResult(success=False, ...)`` site
 # explicitly sets ``tokens_in=0``, ``tokens_out=0``, and
