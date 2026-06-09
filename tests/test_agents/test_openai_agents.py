@@ -237,6 +237,64 @@ def test_openai_run_failure_preserves_accumulated_tokens_cost(
     assert result.cost_usd == 0.0  # 0 tokens at any price card = 0.0
 
 
+# ── Task 3.2: stream timeout + error categorization ─────────────────
+#
+# ``Runner.run`` is an all-or-nothing awaitable — a hung HTTP stream
+# inside the SDK previously hung the whole orchestrator turn forever.
+# The adapter now wraps the call in ``asyncio.wait_for`` honoring the
+# same ``URIKA_AGENT_STREAM_TIMEOUT`` knob as the Claude adapter, and
+# classifies failure errors via the shared ``classify_error``.
+
+
+class _HangingRunner:
+    @staticmethod
+    async def run(agent, prompt, max_turns=10):  # noqa: ANN001 — fake SDK
+        await asyncio.sleep(10)
+        return _FakeResult()
+
+
+def test_runner_timeout_returns_transient(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A hung ``Runner.run`` times out and returns a transient failure."""
+    monkeypatch.setenv("URIKA_AGENT_STREAM_TIMEOUT", "0.05")
+    _install_fake_agents(monkeypatch, _HangingRunner)
+
+    from urika.agents.adapters.openai_agents import OpenAIAgentsRunner
+
+    runner = OpenAIAgentsRunner()
+    cfg = _make_config(tmp_path)
+    result = asyncio.run(runner.run(cfg, "x"))
+
+    assert result.success is False
+    assert result.error_category == "transient"
+    assert "timed out" in (result.error or "")
+    assert result.cost_usd == pytest.approx(cost_for("gpt-5.4", 0, 0))
+
+
+class _AuthErrorRunner:
+    @staticmethod
+    async def run(agent, prompt, max_turns=10):  # noqa: ANN001 — fake SDK
+        raise Exception("invalid x-api-key")  # noqa: TRY002 — fake SDK boundary
+
+
+def test_auth_error_categorized(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """SDK auth-shaped exceptions get error_category='auth'."""
+    _install_fake_agents(monkeypatch, _AuthErrorRunner)
+
+    from urika.agents.adapters.openai_agents import OpenAIAgentsRunner
+
+    runner = OpenAIAgentsRunner()
+    cfg = _make_config(tmp_path)
+    result = asyncio.run(runner.run(cfg, "x"))
+
+    assert result.success is False
+    assert result.error_category == "auth"
+    assert "invalid x-api-key" in (result.error or "")
+
+
 # ── Task 2.2: scrub_oauth_env threaded into OpenAI bash wrapper ─────────────
 #
 # The bash wrapper in ``_run_with_sdk`` must pass a scrub_oauth_env-cleaned

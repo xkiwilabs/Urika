@@ -36,10 +36,13 @@ Design notes:
 
 from __future__ import annotations
 
+import asyncio
+import os
 from pathlib import Path
 from typing import Any, Callable
 
 from urika.agents.config import AgentConfig
+from urika.agents.error_classify import classify_error
 from urika.agents.runner import AgentResult, AgentRunner
 
 
@@ -177,10 +180,31 @@ class OpenAIAgentsRunner(AgentRunner):
         )
         max_turns = config.max_turns
         model_name = config.model or ""
+        # Same wall-clock knob as the Claude adapter — a hung HTTP
+        # stream inside ``Runner.run`` previously hung the whole
+        # orchestrator turn forever (no per-call timeout in the SDK).
+        _stream_timeout = float(os.environ.get("URIKA_AGENT_STREAM_TIMEOUT", "600"))
 
         try:
-            result = await openai_agents_sdk.Runner.run(
-                agent, prompt, max_turns=max_turns
+            result = await asyncio.wait_for(
+                openai_agents_sdk.Runner.run(agent, prompt, max_turns=max_turns),
+                timeout=_stream_timeout,
+            )
+        except asyncio.TimeoutError:
+            return AgentResult(
+                success=False,
+                messages=[],
+                text_output="",
+                session_id="",
+                error=(
+                    f"OpenAI agent call timed out after {_stream_timeout:.0f}s "
+                    "(set URIKA_AGENT_STREAM_TIMEOUT to adjust)"
+                ),
+                error_category="transient",
+                model=model_name,
+                tokens_in=0,
+                tokens_out=0,
+                cost_usd=cost_for(model_name, 0, 0),
             )
         except Exception as exc:  # noqa: BLE001 — SDK boundary
             # The openai-agents SDK exposes ``RunResult.usage`` only on
@@ -197,6 +221,7 @@ class OpenAIAgentsRunner(AgentRunner):
                 text_output="",
                 session_id="",
                 error=str(exc),
+                error_category=classify_error(str(exc)),
                 model=model_name,
                 tokens_in=0,
                 tokens_out=0,
