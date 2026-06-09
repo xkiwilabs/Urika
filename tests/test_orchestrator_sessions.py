@@ -274,6 +274,47 @@ class TestPruneOldSessions:
         assert ids[1] not in surviving_ids
 
 
+class TestCorruptSessionHandling:
+    """Task 1.2: corrupt or missing session files must not crash callers."""
+
+    def test_load_session_corrupt_json_returns_none_and_preserves(
+        self, tmp_path: Path
+    ) -> None:
+        """Corrupt JSON → load_session returns None, original gone, .corrupt exists."""
+        sessions_dir = tmp_path / ".urika" / "sessions"
+        sessions_dir.mkdir(parents=True)
+        corrupt_file = sessions_dir / "sess-1.json"
+        corrupt_file.write_text('{"truncated": ', encoding="utf-8")
+
+        result = load_session(tmp_path, "sess-1")
+        assert result is None
+        assert not corrupt_file.exists(), "original should have been renamed away"
+        corrupt_path = sessions_dir / "sess-1.json.corrupt"
+        assert corrupt_path.exists(), ".corrupt file should exist"
+
+    def test_load_session_missing_returns_none(self, tmp_path: Path) -> None:
+        """Missing session file → load_session returns None (no crash)."""
+        result = load_session(tmp_path, "totally-missing-id")
+        assert result is None
+
+    def test_list_sessions_skips_corrupt(self, tmp_path: Path) -> None:
+        """One valid + one corrupt session → list_sessions returns only the valid one."""
+        # Create a valid session
+        valid_session = create_new_session()
+        valid_session.preview = "good session"
+        save_session(tmp_path, valid_session)
+
+        # Create a corrupt session file directly
+        sessions_dir = tmp_path / ".urika" / "sessions"
+        corrupt_file = sessions_dir / "2026-01-01T00-00-00-dead.json"
+        corrupt_file.write_text("{bad json", encoding="utf-8")
+
+        result = list_sessions(tmp_path)
+        # Only the valid session should appear
+        assert len(result) == 1
+        assert result[0]["session_id"] == valid_session.session_id
+
+
 class TestOrchestratorSessionDataclass:
     def test_to_dict_roundtrip(self) -> None:
         session = OrchestratorSession(

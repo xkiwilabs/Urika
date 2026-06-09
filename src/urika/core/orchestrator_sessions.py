@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from urika.core.atomic_write import write_json_atomic
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -74,7 +77,19 @@ def load_session(project_dir: Path, session_id: str) -> OrchestratorSession | No
     path = _sessions_dir(project_dir) / f"{session_id}.json"
     if not path.exists():
         return None
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning(
+            "Corrupt orchestrator session at %s (%s); preserving as .corrupt",
+            path,
+            exc,
+        )
+        try:
+            path.replace(path.with_suffix(".json.corrupt"))
+        except OSError:
+            pass
+        return None
     return OrchestratorSession.from_dict(data)
 
 
@@ -95,6 +110,17 @@ def list_sessions(project_dir: Path, limit: int = 20) -> list[dict[str, Any]]:
                     "has_older_summary": bool(data.get("older_summary")),
                 }
             )
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Corrupt orchestrator session at %s (%s); preserving as .corrupt",
+                f,
+                exc,
+            )
+            try:
+                f.replace(f.with_suffix(".json.corrupt"))
+            except OSError:
+                pass
+            continue
         except Exception:
             continue
     return result
