@@ -92,6 +92,18 @@ class TestRequireAPIKey:
 
         require_api_key("gpt-4", None)  # no raise
 
+    def test_silent_in_subscription_mode(self, monkeypatch):
+        """In subscription mode no API key is needed — require_api_key
+        must not raise even for a cloud Claude model with no key set."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(
+            "urika.core.compliance._get_anthropic_auth_preference",
+            lambda: "subscription",
+        )
+        from urika.core.compliance import require_api_key
+
+        require_api_key("claude-sonnet-4-6", None)  # no raise
+
 
 class TestScrubOauthEnv:
     def test_strips_oauth_token_var(self):

@@ -81,6 +81,28 @@ def test_warning_prints_when_api_key_missing(monkeypatch) -> None:
     assert "credit pool" in output
 
 
+def test_warning_silenced_when_subscription_mode(monkeypatch) -> None:
+    """In subscription mode the warning is suppressed even with no API key.
+
+    Subscription users authenticate via OAuth — there is no API key to
+    set. Showing the warning would be noise and actively misleading.
+    """
+    import io
+
+    from urika.cli._base import _print_api_key_warning_if_needed
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("URIKA_ACK_API_KEY_REQUIRED", raising=False)
+    monkeypatch.setattr(
+        "urika.core.compliance._get_anthropic_auth_preference",
+        lambda: "subscription",
+    )
+
+    buf = io.StringIO()
+    _print_api_key_warning_if_needed(buf, is_interactive=True)
+    assert buf.getvalue() == ""
+
+
 def test_warning_silenced_when_not_interactive(monkeypatch) -> None:
     """Even with no API key + no ack flag, suppress the warning when
     we're not on a TTY (CI, piped output, CliRunner, log scrapers).
