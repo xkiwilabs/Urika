@@ -1,0 +1,246 @@
+"""Tests for POST /api/projects/<name>/experiments/<exp_id>/plan.
+
+v0.7.1 parity sweep: the planning agent was reachable from CLI
+(``urika plan``), REPL, and TUI (``/plan``) but had no dashboard
+surface. Mirrors the evaluate endpoint tests: the spawn helper is
+stubbed via monkeypatch so tests never invoke a real ``urika plan``
+subprocess. We assert: (a) the spawn helper gets called with the right
+kwargs, (b) 404 for unknown projects, (c) 422 for unknown experiments,
+and (d) HX-Redirect when called from HTMX.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from urika.dashboard import runs as runs_module
+from urika.dashboard.app import create_app
+from urika.dashboard.routers import api as api_module
+
+
+def _make_project(tmp_path: Path, name: str = "alpha") -> Path:
+    proj = tmp_path / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n'
+    )
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "experiment.json").write_text("{}")
+    return proj
+
+
+@pytest.fixture
+def plan_client(tmp_path: Path, monkeypatch):
+    proj = _make_project(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+
+    spawn_calls: list[dict] = []
+
+    def fake_spawn(project_name, project_path, experiment_id, *, instructions="", **_):
+        spawn_calls.append(
+            {
+                "project_name": project_name,
+                "project_path": project_path,
+                "experiment_id": experiment_id,
+                "instructions": instructions,
+            }
+        )
+        exp_dir = project_path / "experiments" / experiment_id
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        (exp_dir / ".plan.lock").write_text("99999")
+        (exp_dir / "plan.log").write_text("Spawned\n")
+        return 99999
+
+    monkeypatch.setattr(runs_module, "spawn_plan", fake_spawn)
+    monkeypatch.setattr(api_module, "spawn_plan", fake_spawn)
+    app = create_app(project_root=tmp_path)
+    return TestClient(app), spawn_calls, proj
+
+
+def test_plan_post_started(plan_client):
+    client, spawn_calls, proj = plan_client
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/plan",
+        data={"instructions": "consider Bayesian approaches"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "started"
+    assert body["pid"] == 99999
+    assert body["experiment_id"] == "exp-001"
+    assert len(spawn_calls) == 1
+    assert spawn_calls[0]["project_name"] == "alpha"
+    assert spawn_calls[0]["project_path"] == proj
+    assert spawn_calls[0]["experiment_id"] == "exp-001"
+    assert spawn_calls[0]["instructions"] == "consider Bayesian approaches"
+
+
+def test_plan_post_blank_instructions_passes(plan_client):
+    client, spawn_calls, _ = plan_client
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/plan",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 200
+    assert spawn_calls[0]["instructions"] == ""
+
+
+def test_plan_post_404_unknown_project(plan_client):
+    client, spawn_calls, _ = plan_client
+    r = client.post(
+        "/api/projects/nonexistent/experiments/exp-001/plan",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 404
+    assert spawn_calls == []
+
+
+def test_plan_post_422_unknown_experiment(plan_client):
+    client, spawn_calls, _ = plan_client
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-999/plan",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 422
+    assert spawn_calls == []
+
+
+def test_plan_post_hx_request_emits_redirect_header(plan_client):
+    """When the request comes from HTMX, the response should redirect the
+    whole page to the experiment log so the user sees streaming output."""
+    client, spawn_calls, _ = plan_client
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/plan",
+        headers={"hx-request": "true"},
+        data={"instructions": ""},
+    )
+    assert r.status_code == 200
+    assert r.headers.get("hx-redirect", "").endswith(
+        "/projects/alpha/experiments/exp-001/log?type=plan"
+    )
+    assert len(spawn_calls) == 1
+
+
+# ---- Privacy pre-flight check ---------------------------------------------
+
+
+def _make_private_project(tmp_path: Path, name: str = "alpha") -> Path:
+    proj = tmp_path / name
+    proj.mkdir(parents=True)
+    (proj / "urika.toml").write_text(
+        f'[project]\nname = "{name}"\nquestion = "q"\nmode = "exploratory"\n'
+        f'description = ""\n\n[preferences]\naudience = "expert"\n\n'
+        f'[privacy]\nmode = "private"\n'
+    )
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "experiment.json").write_text("{}")
+    return proj
+
+
+def test_plan_post_private_mode_without_endpoint_returns_422(
+    tmp_path: Path, monkeypatch
+):
+    """Pre-flight gate: plan on a private-mode project with no
+    private endpoint must 422 before the spawn helper runs."""
+    proj = _make_private_project(tmp_path, "alpha")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    (home / "settings.toml").write_text("", encoding="utf-8")
+
+    spawn_calls: list[dict] = []
+
+    def fake_spawn(*a, **kw):
+        spawn_calls.append({"args": a, "kwargs": kw})
+        return 1234
+
+    monkeypatch.setattr(runs_module, "spawn_plan", fake_spawn)
+    monkeypatch.setattr(api_module, "spawn_plan", fake_spawn)
+
+    app = create_app(project_root=tmp_path)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/plan",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 422
+    assert spawn_calls == []
+
+
+# ---- Idempotent spawn: redirect to live log when already running ---------
+
+
+def test_plan_post_when_already_running_redirects_to_log(plan_client):
+    """HTMX POST while a plan is already running for this experiment
+    must NOT spawn a duplicate. Instead, redirect to the live log."""
+    import os
+
+    client, spawn_calls, proj = plan_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".plan.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/plan",
+        headers={"hx-request": "true"},
+        data={"instructions": ""},
+    )
+    assert r.status_code == 200
+    assert (
+        r.headers.get("hx-redirect")
+        == "/projects/alpha/experiments/exp-001/log?type=plan"
+    )
+    assert spawn_calls == []
+
+
+def test_plan_post_when_already_running_returns_409_without_hx(plan_client):
+    """Non-HTMX caller (curl, scripts) must get a 409 with a JSON body
+    so they can detect the duplicate explicitly instead of a 200."""
+    import os
+
+    client, spawn_calls, proj = plan_client
+    exp_dir = proj / "experiments" / "exp-001"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    (exp_dir / ".plan.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/plan",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["status"] == "already_running"
+    assert body["log_url"] == "/projects/alpha/experiments/exp-001/log?type=plan"
+    assert body["type"] == "plan"
+    assert spawn_calls == []
+
+
+def test_plan_post_other_experiment_running_does_not_block(plan_client):
+    """A live plan lock on a *different* experiment must NOT block
+    a fresh plan spawn for this experiment — locks are per-experiment."""
+    import os
+
+    client, spawn_calls, proj = plan_client
+    other = proj / "experiments" / "exp-OTHER"
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "experiment.json").write_text("{}")
+    (other / ".plan.lock").write_text(str(os.getpid()))
+
+    r = client.post(
+        "/api/projects/alpha/experiments/exp-001/plan",
+        data={"instructions": ""},
+    )
+    assert r.status_code == 200
+    assert len(spawn_calls) == 1

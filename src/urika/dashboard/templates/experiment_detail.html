@@ -126,6 +126,24 @@
       </div>
     </div>
 
+    <div class="artifact-row">
+      <div class="artifact-row-label">Planning</div>
+      <div class="artifact-row-actions">
+        {% set pl = running_by_exp.get(("plan", experiment.experiment_id)) %}
+        {% if pl %}
+          <a class="btn btn--secondary btn--running" href="{{ pl.log_url }}">
+            <span class="running-dot"></span>
+            Plan running… view log
+          </a>
+        {% else %}
+          <button type="button" class="btn btn--secondary"
+                  @click="$dispatch('open-modal', { id: 'plan' })">
+            Plan
+          </button>
+        {% endif %}
+      </div>
+    </div>
+
     {% if artifact_files %}
       <div class="artifact-row">
         <div class="artifact-row-label">Files</div>
@@ -294,6 +312,25 @@
         <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
         <button type="submit" class="btn btn--primary">Run evaluation</button>
         <span id="evaluate-feedback" class="text-muted"></span>
+      </div>
+    </form>
+  {% endcall %}
+
+  {% call modal('plan', 'Run planning agent') %}
+    <form
+      hx-post="/api/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/plan"
+      hx-target="#plan-feedback"
+      hx-swap="innerHTML"
+    >
+      <div class="form-row">
+        <label for="pl-instructions">Instructions (optional)</label>
+        <textarea id="pl-instructions" name="instructions" rows="3"
+                  placeholder="Guide the plan (e.g. 'consider Bayesian approaches')"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--ghost" @click="$dispatch('close-modal')">Cancel</button>
+        <button type="submit" class="btn btn--primary">Run planning</button>
+        <span id="plan-feedback" class="text-muted"></span>
       </div>
     </form>
   {% endcall %}

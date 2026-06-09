@@ -115,6 +115,37 @@ def test_spawn_evaluate_does_not_pass_json(monkeypatch, tmp_path):
     assert "--json" not in cmd
 
 
+def test_spawn_plan_does_not_pass_json(monkeypatch, tmp_path):
+    from urika.dashboard.runs import spawn_plan
+
+    (tmp_path / "experiments" / "exp-001").mkdir(parents=True)
+    cmd = _captured_argv(monkeypatch, spawn_plan, "alpha", tmp_path, "exp-001")
+    assert "--json" not in cmd
+
+
+def test_spawn_plan_passes_experiment_id_as_positional(monkeypatch, tmp_path):
+    """The CLI's ``urika plan`` command takes project + experiment_id as
+    positionals (experiment_id optional, defaulting to the latest); the
+    dashboard always supplies it explicitly so the subprocess targets
+    the experiment the user clicked."""
+    from urika.dashboard.runs import spawn_plan
+
+    (tmp_path / "experiments" / "exp-001").mkdir(parents=True)
+    cmd = _captured_argv(
+        monkeypatch,
+        spawn_plan,
+        "alpha",
+        tmp_path,
+        "exp-001",
+        instructions="consider Bayesian approaches",
+    )
+    assert "plan" in cmd
+    assert "alpha" in cmd
+    assert "exp-001" in cmd
+    assert "--instructions" in cmd
+    assert "consider Bayesian approaches" in cmd
+
+
 def test_spawn_present_does_not_pass_json(monkeypatch, tmp_path):
     from urika.dashboard.runs import spawn_present
 

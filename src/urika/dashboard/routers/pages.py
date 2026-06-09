@@ -2018,7 +2018,7 @@ def project_knowledge_entry(request: Request, name: str, entry_id: str) -> HTMLR
     return templates.TemplateResponse(request, "knowledge_entry.html", ctx)
 
 
-_EXPERIMENT_LOG_TYPES = {"run", "evaluate", "report", "present"}
+_EXPERIMENT_LOG_TYPES = {"run", "evaluate", "plan", "report", "present"}
 
 
 @router.get(
@@ -2040,8 +2040,8 @@ def project_experiment_log(
     that case and emits an ``event: status`` ``no_log`` event.
 
     ``type`` selects which log file the page tails — defaults to
-    ``run``. Allowed values are ``run``, ``evaluate``, ``report``,
-    ``present``. Unknown values silently fall back to ``run`` (we
+    ``run``. Allowed values are ``run``, ``evaluate``, ``plan``,
+    ``report``, ``present``. Unknown values silently fall back to ``run`` (we
     don't 422 on a flaky query string), and the allow-list also
     keeps untrusted input from leaking into the SSE stream URL.
     """

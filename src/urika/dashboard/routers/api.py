@@ -28,6 +28,7 @@ from urika.dashboard.runs import (
     spawn_evaluate,
     spawn_experiment_run,
     spawn_finalize,
+    spawn_plan,
     spawn_present,
     spawn_report,
     spawn_summarize,
@@ -3649,6 +3650,7 @@ _EXPERIMENT_LOG_TYPES: dict[str, tuple[str, str]] = {
     # type → (log_filename, lock_filename)
     "run": ("run.log", ".lock"),
     "evaluate": ("evaluate.log", ".evaluate.lock"),
+    "plan": ("plan.log", ".plan.lock"),
     "report": ("report.log", ".report.lock"),
     "present": ("present.log", ".present.lock"),
 }
@@ -3668,6 +3670,7 @@ async def api_run_stream(name: str, exp_id: str, request: Request, type: str = "
 
     * ``run`` → ``run.log`` + ``.lock``
     * ``evaluate`` → ``evaluate.log`` + ``.evaluate.lock``
+    * ``plan`` → ``plan.log`` + ``.plan.lock``
     * ``report`` → ``report.log`` + ``.report.lock``
     * ``present`` → ``present.log`` + ``.present.lock``
 
@@ -4164,6 +4167,59 @@ async def api_experiment_evaluate(name: str, exp_id: str, request: Request):
 
     if request.headers.get("hx-request") == "true":
         log_url = f"/projects/{name}/experiments/{exp_id}/log?type=evaluate"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
+    return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
+
+
+@router.post("/projects/{name}/experiments/{exp_id}/plan")
+async def api_experiment_plan(name: str, exp_id: str, request: Request):
+    """Spawn ``urika plan <project> <exp_id>`` for an experiment.
+
+    v0.7.1 parity sweep: the planning agent was reachable from CLI
+    (``urika plan``), REPL, and TUI (``/plan``) but had no dashboard
+    surface. Mirrors the ``/evaluate`` endpoint shape: validates
+    project + experiment, pulls the optional ``instructions`` form
+    field, and hands off to ``spawn_plan`` which Popens the CLI and
+    detaches a daemon thread to drain stdout into ``<exp>/plan.log``.
+    When called from HTMX, responds with an ``HX-Redirect`` to the
+    experiment's live log page so the user can watch the planner's
+    stream.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not (summary.path / "experiments" / exp_id).is_dir():
+        raise HTTPException(status_code=422, detail="Unknown experiment")
+
+    # If a plan run is already in flight for THIS experiment, redirect
+    # to its live log instead of spawning a duplicate. Different
+    # experiments don't block each other.
+    existing = _redirect_if_running(
+        name,
+        summary.path,
+        "plan",
+        request,
+        experiment_id=exp_id,
+    )
+    if existing is not None:
+        return existing
+
+    # Pre-flight privacy gate — same rule as /run, /evaluate, /present.
+    _validate_privacy_endpoint(summary.path)
+
+    body = await request.form()
+    instructions = (body.get("instructions") or "").strip()
+
+    pid = spawn_plan(
+        name,
+        summary.path,
+        exp_id,
+        instructions=instructions,
+    )
+
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/experiments/{exp_id}/log?type=plan"
         return Response(status_code=200, headers={"HX-Redirect": log_url})
     return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
 
