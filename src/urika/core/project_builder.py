@@ -111,6 +111,37 @@ class ProjectBuilder:
         """Store initial suggestions from the planning loop."""
         self._suggestions = suggestions
 
+    def set_refined_question(self, question: str) -> None:
+        """Replace the research question with the loop-refined version
+        (feasibility check / user rephrase in the interactive loop)."""
+        q = (question or "").strip()
+        if q:
+            self.question = q
+
+    def apply_research_intent(self) -> None:
+        """Re-apply research intent gathered by the interactive builder
+        loop to the on-disk project.
+
+        ``write_project()`` runs BEFORE the interactive loop in the
+        ``urika new`` flow (the loop's agents need the workspace and the
+        knowledge base on disk), so anything the loop learns afterwards
+        — e.g. a refined research question — would otherwise never reach
+        ``urika.toml``. Called best-effort from ``run_builder_loop``'s
+        ``finally``; a no-op when the project hasn't been written yet.
+        """
+        import tomllib
+
+        toml_path = self.projects_dir / self.name / "urika.toml"
+        if not toml_path.exists():
+            return
+        with open(toml_path, "rb") as f:
+            existing = tomllib.load(f)
+
+        project = existing.setdefault("project", {})
+        if self.question:
+            project["question"] = self.question
+        _write_toml(toml_path, existing)
+
     def add_task(self, task: dict[str, Any]) -> None:
         """Add a scoped task to the initial task list."""
         self._tasks.append(task)

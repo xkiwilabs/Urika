@@ -84,6 +84,49 @@ def build_scoping_prompt(
     return "\n".join(parts)
 
 
+def build_feasibility_prompt(
+    question: str,
+    data_summary: DataSummary | None,
+    scan_result: ScanResult,
+) -> str:
+    """Build a prompt asking the builder agent whether the research
+    question can plausibly be answered from the scanned data."""
+    parts = [
+        "## Research Question",
+        question,
+        "",
+    ]
+
+    if data_summary is not None:
+        parts.extend(
+            [
+                "## Available Data",
+                f"Rows: {data_summary.n_rows}, Columns: {data_summary.n_columns}",
+                f"Column names: {', '.join(str(c) for c in data_summary.columns)}",
+                f"Data types: {data_summary.dtypes}",
+                "",
+            ]
+        )
+
+    parts.extend(
+        [
+            "## Source Scan",
+            scan_result.summary(),
+            "",
+        ]
+    )
+
+    parts.append(
+        "Assess whether this research question can plausibly be answered "
+        "from this data. Respond with ONLY a JSON object:\n"
+        '{"answerable": true|false, "missing_variables": ["..."], '
+        '"concern": "one sentence, empty if none", '
+        '"suggested_refinement": "sharper phrasing of the question, '
+        'empty if the original is good"}'
+    )
+    return "\n".join(parts)
+
+
 def build_suggestion_prompt(
     description: str,
     data_summary: DataSummary | None,

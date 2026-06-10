@@ -115,6 +115,7 @@ async def run_builder_loop(
     from urika.agents.registry import AgentRegistry
     from urika.agents.runner_routing import runner_for_project
     from urika.core.builder_prompts import (
+        build_feasibility_prompt,
         build_planning_prompt,
         build_scoping_prompt,
         build_suggestion_prompt,
@@ -205,6 +206,20 @@ async def run_builder_loop(
         usage["calls"] += 1
         return r
 
+    def _builder_set(method: str, *args: Any) -> None:
+        """Best-effort push of loop-gathered research intent onto the
+        builder — the same duck-typed channel ``set_initial_suggestions``
+        uses in ``finally``. Adapter shims (e.g. the dashboard's) may not
+        implement every setter; the value simply doesn't persist on that
+        surface."""
+        fn = getattr(builder, method, None)
+        if not callable(fn):
+            return
+        try:
+            fn(*args)
+        except Exception as exc:
+            logger.warning("%s failed: %s", method, exc)
+
     # --- Early-exit guards ---
     builder_role = registry.get("project_builder")
     if builder_role is None:
@@ -252,6 +267,98 @@ async def run_builder_loop(
     )
 
     try:
+        # --- Phase 0: Question feasibility check (best-effort) ---
+        # One agent call sanity-checks the research question against the
+        # scanned data BEFORE the clarifying loop spends the user's time
+        # scoping an unanswerable question. Strictly best-effort: any
+        # agent or parse failure skips the step — feasibility must never
+        # block project creation.
+        feasibility: dict[str, Any] | None = None
+        if question:
+            emit(
+                BuilderEvent(
+                    "step",
+                    {"text": "Checking the research question against the data…"},
+                )
+            )
+            try:
+                feas_config = builder_role.build_config(project_dir=project_dir)
+                feas_result = await _run_agent(
+                    feas_config,
+                    build_feasibility_prompt(question, data_summary, scan_result),
+                )
+                if feas_result.success:
+                    for block in _extract_json_blocks(feas_result.text_output):
+                        if "answerable" in block:
+                            feasibility = block
+                            break
+            except Exception as exc:
+                logger.warning("Feasibility check failed: %s", exc)
+            if feasibility is None:
+                emit(
+                    BuilderEvent(
+                        "step",
+                        {"text": "Feasibility check inconclusive — continuing."},
+                    )
+                )
+
+        refinement = ""
+        if feasibility is not None:
+            refinement = str(feasibility.get("suggested_refinement") or "").strip()
+        if feasibility is not None and (
+            not feasibility.get("answerable", True) or refinement
+        ):
+            concern = str(feasibility.get("concern") or "").strip()
+            missing = [
+                str(v)
+                for v in (feasibility.get("missing_variables") or [])
+                if str(v).strip()
+            ]
+            lines: list[str] = []
+            if not feasibility.get("answerable", True):
+                lines.append(
+                    "The research question may not be answerable from this data."
+                )
+            if concern:
+                lines.append(concern)
+            if missing:
+                lines.append("Possibly missing variables: " + ", ".join(missing))
+            if refinement:
+                lines.append(f"Suggested refinement: {refinement}")
+
+            original_question = question
+            answer = (
+                await ask_user(
+                    BuilderQuestion(
+                        text="\n".join(lines),
+                        options=[
+                            "Keep my question",
+                            "Use the refined question",
+                            "Let me rephrase",
+                        ],
+                    )
+                )
+            ).strip()
+            low = answer.lower()
+            if low in ("2", "use the refined question") and refinement:
+                question = refinement
+            elif low in ("3", "let me rephrase"):
+                rephrased = (
+                    await ask_user(
+                        BuilderQuestion(text="Your refined research question")
+                    )
+                ).strip()
+                if rephrased and rephrased.lower() not in ("done", "skip"):
+                    question = rephrased
+            elif low in ("", "1", "keep my question", "done", "skip"):
+                pass
+            else:
+                # Anything else is free text — the user typed their own
+                # rephrasing directly instead of picking an option.
+                question = answer
+            if question != original_question:
+                _builder_set("set_refined_question", question)
+
         # --- Phase 1: Clarifying questions ---
         for _ in range(max_questions):
             prompt = build_scoping_prompt(
@@ -419,5 +526,11 @@ async def run_builder_loop(
                 builder.set_initial_suggestions(suggestions)
             except Exception as exc:
                 logger.warning("set_initial_suggestions failed: %s", exc)
+        # Persist loop-gathered research intent (refined question, …)
+        # onto the already-written project. In the CLI flow
+        # ``write_project()`` runs BEFORE this loop (the loop's agents
+        # need the workspace + knowledge base on disk), so without this
+        # re-apply the values would never reach urika.toml.
+        _builder_set("apply_research_intent")
         _record_usage()
         emit(BuilderEvent("done", {"suggestions": suggestions}))

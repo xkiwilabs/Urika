@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from urika.core.builder_prompts import (
+    build_feasibility_prompt,
     build_planning_prompt,
     build_scoping_prompt,
     build_suggestion_prompt,
@@ -88,3 +89,28 @@ class TestBuildPlanningPrompt:
     def test_includes_description(self) -> None:
         prompt = build_planning_prompt({}, "My research", None)
         assert "My research" in prompt
+
+
+class TestBuildFeasibilityPrompt:
+    def test_includes_question_scan_and_schema(self) -> None:
+        prompt = build_feasibility_prompt(
+            "Does X predict Y?", _make_summary(), _make_scan()
+        )
+        assert "## Research Question" in prompt
+        assert "Does X predict Y?" in prompt
+        assert "## Source Scan" in prompt
+        assert "Data files" in prompt
+        assert "Respond with ONLY a JSON object" in prompt
+        assert '"answerable"' in prompt
+        assert '"suggested_refinement"' in prompt
+
+    def test_includes_data_block(self) -> None:
+        prompt = build_feasibility_prompt("Q?", _make_summary(), _make_scan())
+        assert "## Available Data" in prompt
+        assert "Rows: 100, Columns: 5" in prompt
+        assert "Column names: x, y, z, group, target" in prompt
+        assert "Data types:" in prompt
+
+    def test_omits_data_block_when_no_summary(self) -> None:
+        prompt = build_feasibility_prompt("Q?", None, _make_scan())
+        assert "## Available Data" not in prompt
