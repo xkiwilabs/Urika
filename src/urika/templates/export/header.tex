@@ -1,0 +1,20 @@
+% Urika LaTeX export header — included via pandoc --include-in-header.
+% Kept minimal and dependency-light: geometry ships with every TeX
+% distribution; headings are patched through \@startsection so no
+% sectsty/titlesec (both live in texlive-latex-extra, which the
+% install hint does not require).
+\usepackage[margin=2.5cm]{geometry}
+
+% Sans-serif title + section headings, echoing the reveal.js deck
+% aesthetic while body text stays serif for print readability.
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+  {-3.5ex \@plus -1ex \@minus -.2ex}{2.3ex \@plus .2ex}%
+  {\normalfont\Large\bfseries\sffamily}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+  {-3.25ex \@plus -1ex \@minus -.2ex}{1.5ex \@plus .2ex}%
+  {\normalfont\large\bfseries\sffamily}}
+\renewcommand\subsubsection{\@startsection{subsubsection}{3}{\z@}%
+  {-3.25ex \@plus -1ex \@minus -.2ex}{1.5ex \@plus .2ex}%
+  {\normalfont\normalsize\bfseries\sffamily}}
+\makeatother

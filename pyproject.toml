@@ -94,6 +94,15 @@ openai = [
 google = [
     "google-adk>=1.0",
 ]
+# v0.9.0 Phase 3: pandoc-based PDF/LaTeX export (`urika report` /
+# `urika finalize` with `--format latex|pdf`). Deliberately pypandoc,
+# NOT pypandoc_binary — the _binary wheel bundles a fixed pandoc
+# build (heavy, version-pinned); most users already have a distro
+# pandoc, and core/export.py raises a distinct actionable ExportError
+# when the binary is absent (no magic downloads).
+export = [
+    "pypandoc>=1.13",
+]
 all = [
     "urika[dl,keyring,openai,google]",
 ]
