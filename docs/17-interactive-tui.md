@@ -169,6 +169,7 @@ These require a project to be loaded first. Running them without a project shows
 | `/config show` | Show current configuration (project or global). |
 | `/config global` | Configure global defaults (used for new projects). |
 | `/config global show` | Show global defaults. |
+| `/config anthropic\|openai\|google [--mode ...]` | Set a provider's auth mode, mirroring `urika config <provider>`: `/config anthropic --mode api_key\|subscription [--no-verify]`, `/config openai --mode api_key`, `/config google --mode api_key`. The bare form (`/config anthropic`) shows the current mode and how to change it — unlike the CLI, no `--mode` required to inspect. Subscription mode is Anthropic-only; OpenAI/Google reject it with an explanation. |
 | `/dashboard [--port PORT]` | Open the project dashboard in your browser. Use `/dashboard stop` to shut it down, or `/dashboard` again to restart with fresh content. See [Dashboard](18a-dashboard-pages.md) for pages, run launcher, and auth. |
 | `/pause` | Request a pause of the running experiment. The orchestrator pauses cleanly after the current subagent finishes its turn. Writes `<project>/.urika/pause_requested` (contents: `pause`). Resume with `/run` or `/resume`. |
 | `/stop` | Request an immediate stop of the running agent or experiment. Writes `<project>/.urika/pause_requested` (contents: `stop`); the orchestrator's pause controller picks it up at the next loop boundary. Use this when you want the run to end now rather than continue to the next experiment. |

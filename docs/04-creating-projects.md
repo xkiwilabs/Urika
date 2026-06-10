@@ -144,9 +144,19 @@ After collecting basic project information, the project builder agent runs an in
 
 Think of this as context engineering: Urika's agents are only as effective as the context they have. A project with a rich description, detailed answers about data collection methods and procedures, and a few relevant papers will produce dramatically better analysis than one with minimal context. The agent is helping you build that context in a structured way.
 
-The session has three phases:
+The session walks through the following steps. Every question is skippable -- type `done`, `skip`, or just press Enter to leave a preference unset and move on.
 
-### Phase 1: Clarifying questions (Project Builder agent)
+### Feasibility check (Project Builder agent)
+
+Before spending your time on clarifying questions, the builder makes one agent call to sanity-check your research question against the scanned data. If the question looks answerable as-is, this step passes silently. If the agent has a concern (e.g., a variable the question needs doesn't appear in the data), it explains the issue, lists any possibly missing variables, and may suggest a refined question. You then choose:
+
+1. **Keep my question**
+2. **Use the refined question**
+3. **Let me rephrase** -- you are prompted for "Your refined research question"
+
+(Typing anything else is treated as your own rephrasing directly.) This check is strictly best-effort: if the agent call fails or its output can't be parsed, you'll see "Feasibility check inconclusive — continuing." and project creation proceeds with your original question.
+
+### Clarifying questions (Project Builder agent)
 
 The project builder agent examines your data profile and project description, then asks clarifying questions (up to 10, but typically 3-6 depending on how much context is needed). The agent stops on its own when it has enough information. Examples:
 
@@ -157,19 +167,37 @@ The project builder agent examines your data profile and project description, th
 
 Answer each question, or type `done` to skip ahead.
 
-### Phase 2: Experiment suggestions (Advisor agent)
+### Research preferences
+
+Three fixed questions (no agent call) capture how you want the research conducted. Answer with the option number, the label, or skip:
+
+- **"Analysis approach preference"** -- Statistical testing (ANOVA, regression, hypothesis tests), Predictive modelling (accuracy-focused ML), Exploratory (patterns, clustering, visualization), or Mixed.
+- **"Model interpretability preference"** -- Highly interpretable (linear models, trees), Balanced (ensembles, GAMs), or Max performance (anything goes).
+- **"Any practical constraints? (time or compute budget, regulatory requirements, interpretability needs)"** -- pick "No constraints" or describe yours in free text.
+
+These are stored in `urika.toml` (see [Configuration](14a-project-config.md)) and seed the advisor and planning agent prompts, so the first experiments respect your stated approach.
+
+### Hypotheses (Project Builder agent)
+
+The builder proposes 1-4 testable hypotheses decomposing your research question, shown as a list ("Proposed hypotheses:"). Choose **Accept** or **Skip**, or type your own hypotheses directly (one per line). Like the feasibility check, this offer is best-effort and is silently skipped if the agent call fails.
+
+### Experiment suggestions (Advisor agent)
 
 Based on your answers, the advisor agent proposes a set of initial experiments -- typically 3-5 approaches ordered by complexity (e.g., "start with baseline linear models, then try ensemble methods").
 
-### Phase 3: Research plan (Planning agent)
+### Research plan (Planning agent)
 
 The planning agent takes the suggested experiments and produces a structured research plan, outlining the sequence of experiments and the rationale.
 
+### Success criteria co-draft
+
+The builder shows the proposed initial success criteria ("Proposed success criteria: ... Accept, or describe changes?"). Choose **Accept**, or choose **Describe changes** and explain what you'd change in plain language -- your amendments are recorded verbatim and passed to the evaluator alongside the criteria. (Typing your changes directly instead of picking an option also works.)
+
 ### Refinement
 
-After seeing the plan, you have three options:
-- **Looks good** -- proceed to create the project
-- **Refine** -- provide additional suggestions, and the agents will revise the plan
+Finally, "What would you like to do?" offers three options:
+- **Looks good — create the project** -- proceed to create the project
+- **Refine — I have suggestions** -- you are prompted for "Your suggestions", and the advisor and planning agents revise the experiments and plan
 - **Abort** -- cancel project creation
 
 The refinement loop continues until you are satisfied.

@@ -106,9 +106,15 @@ Reports are written as versioned markdown files (previous versions are backed up
 
 | File | Contents |
 |------|----------|
-| `notes.md` | Auto-generated from `progress.json`. Lists every run with metrics, parameters, hypothesis, observation, next step, and inline figures matched by method name. |
+| `notes.md` | Auto-generated from `progress.json`. Lists every run with metrics (plus plain-language interpretations), parameters, hypothesis, observation, next step, and inline figures matched to each run. |
 | `summary.md` | Experiment summary with a metrics comparison table, best run highlight, key observations, and embedded artifact figures. |
 | `narrative.md` | Agent-written narrative report. The report agent reads the experiment data and writes a coherent research narrative. |
+
+Three labbook behaviours are worth knowing about (all added in v0.8.0):
+
+- **Per-metric plain-language interpretations.** Task agents write one sentence per reported metric explaining what the value means for the research question, comparing against the success criterion where one is defined. The labbook renders it inline next to the value, e.g.: `r2=0.74 — Explains 74% of variance in the target; the criterion is ≥0.70, so this run meets it.` Runs recorded before v0.8.0 have no interpretations and render as plain `metric=value` pairs.
+- **Run-id figure matching.** Agents name figures `<run_id>-<description>.png` (e.g. `run-002-confusion-matrix.png`), and the labbook attaches figures to runs by that run-id prefix first. The older method-name substring match is kept as a fallback for figures without a run-id prefix, so pre-v0.8.0 artifacts still attach.
+- **Novice method explainers.** When the project's audience is `novice`, each method heading in `notes.md` (and the README) gains a one-line *"What this method does"* explainer in plain language, drawn from a built-in method glossary. Set the audience at project creation or in `urika.toml` — see [Configuration](14a-project-config.md).
 
 **Project-level reports** (stored in `projectbook/`):
 

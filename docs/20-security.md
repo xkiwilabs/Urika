@@ -75,80 +75,95 @@ Please report security issues privately to michael.j.richardson@mq.edu.au rather
 
 ## Provider compliance
 
-Urika is provider-agnostic by design — it routes agent calls through whichever model SDK the project's privacy mode and agent config specify. v0.4 ships with one fully-supported adapter (Anthropic's Claude Agent SDK); additional adapters can be added through the `urika.runners` Python entry-point group (see [Contributing an Adapter](../dev/contributing-an-adapter.md)). Each provider has its own terms of service and its own compliant authentication pattern. Urika's job is to enforce the right pattern per provider.
+Urika is provider-agnostic by design — it routes agent calls through whichever model SDK the project's privacy mode and agent config specify. As of v0.7.0 three adapters are first-class (Anthropic's Claude Agent SDK, the OpenAI Agents SDK, and Google's ADK); additional adapters can be added through the `urika.runners` Python entry-point group (see [Contributing an Adapter](contributing-an-adapter.md)). Each provider has its own terms of service and its own compliant authentication pattern. Urika's job is to enforce the right pattern per provider.
 
 ### Are we using the Anthropic SDK in a sanctioned way?
 
-Yes. Urika uses [`claude-agent-sdk-python`](https://github.com/anthropics/claude-agent-sdk-python), the official Anthropic Python wrapper, exactly as documented at [code.claude.com/docs/en/agent-sdk/overview](https://code.claude.com/docs/en/agent-sdk/overview). The SDK spawns the `claude` CLI as a subprocess; we set `ANTHROPIC_API_KEY` so the CLI uses metered API authentication; we actively scrub OAuth tokens from the subprocess environment to prevent any subscription leakage.
+Yes. Urika uses [`claude-agent-sdk-python`](https://github.com/anthropics/claude-agent-sdk-python), the official Anthropic Python wrapper, exactly as documented at [code.claude.com/docs/en/agent-sdk/overview](https://code.claude.com/docs/en/agent-sdk/overview). The SDK spawns the `claude` CLI as a subprocess, and Urika supports both auth patterns Anthropic sanctions: metered API authentication via `ANTHROPIC_API_KEY` (the default), and — since June 15 2026 — subscription authentication via the Claude CLI's own `claude login` OAuth flow (opt-in).
 
-The April 2026 enforcement targeted tools that *reverse-engineered* the OAuth flow to piggyback on subscription quotas (OpenClaw, NanoClaw, OpenCode). Urika does the opposite — uses the official SDK with metered API and blocks the OAuth path.
+The April 2026 enforcement targeted tools that *reverse-engineered* the OAuth flow to piggyback on subscription quotas (OpenClaw, NanoClaw, OpenCode). Urika does the opposite — it uses the official SDK, and in subscription mode the OAuth credential is the one the official CLI stores for itself; Urika never touches or replays it.
 
-### Anthropic's terms
+### Anthropic's terms: two auth modes
 
-Anthropic's [Consumer Terms of Service §3.7](https://www.anthropic.com/legal/consumer-terms)
-prohibits accessing Claude through automated or non-human means except via
-official API keys. The April 2026 Agent SDK clarification was explicit:
-"Using OAuth tokens obtained through Claude Free, Pro, or Max accounts in
-any other product, tool, or service — including the Agent SDK — is not
-permitted."
+Urika supports two Anthropic auth modes, configured via
+`[anthropic] auth` in `~/.urika/settings.toml` or
+`urika config anthropic --mode ...`:
 
-**What this means for Urika:**
+- **`api_key` (default)** — Urika calls `api.anthropic.com` using a
+  standard `ANTHROPIC_API_KEY`. This is the original mode and stays the
+  default, so existing users are never silently upgraded.
+- **`subscription` (opt-in)** — legal since June 15 2026, when
+  Anthropic's billing overhaul made Agent SDK workloads on Pro/Max
+  subscriptions generally available. Agent SDK usage draws from a
+  separate monthly **Agent credit pool** ($20 Pro / $100 Max-5x /
+  $200 Max-20x, no rollover); requests stop when the pool is exhausted
+  unless overage billing is enabled at API rates. Run `claude login`
+  once to authenticate, then `urika config anthropic --mode subscription`.
 
-- **Use an API key** (`ANTHROPIC_API_KEY`) for any `urika` command. This
-  is the only compliant path.
-- **A Pro / Max subscription does not authorise running Urika**, even for
-  development or testing. The subscription remains valid for direct
-  interactive use of Claude.ai or the `claude` CLI by a human.
-- Urika prints a one-time warning at startup when `ANTHROPIC_API_KEY` is
-  unset, and the dashboard's Settings page surfaces the same warning as
-  a banner.
+Historical note: prior to June 15 2026, Anthropic's
+[Consumer Terms of Service §3.7](https://www.anthropic.com/legal/consumer-terms)
+and the April 2026 Agent SDK clarification prohibited the subscription
+path ("Using OAuth tokens obtained through Claude Free, Pro, or Max
+accounts in any other product, tool, or service — including the Agent
+SDK — is not permitted"). Anthropic's May 13 2026 announcement legalised
+it from June 15 onward, and Urika's enforcement layers below were
+reframed accordingly.
 
-**For developers contributing to Urika:**
-
-- Editing the codebase from Claude Code (interactive coding) on a Pro/Max
-  plan is permitted — that's official tool, human-in-the-loop usage.
-- Running the test suite or any `urika` command requires an API key — the
-  test suite spawns Urika subprocesses which use the Agent SDK.
+**For developers contributing to Urika:** editing the codebase from
+Claude Code (interactive coding) on a Pro/Max plan is, as ever,
+ordinary human-in-the-loop usage. Running the test suite or any
+`urika` command spawns Agent SDK subprocesses, so it needs whichever
+auth mode you've configured — an `ANTHROPIC_API_KEY` in the default
+mode, or a `claude login` session in subscription mode.
 
 If you have questions about acceptable use, contact Anthropic.
 
 ### How Urika enforces this
 
-Urika's safety net is three layers deep — the Pro/Max subscription
-cannot be used even by accident:
+Urika's safety net is three layers deep. In `api_key` mode the goal is
+**billing hygiene** — a stray subscription credential must never
+silently route charges to your Agent credit pool; in `subscription`
+mode the OAuth credential is the legitimate auth carrier and is left
+alone:
 
-1. **CLI startup warning.** When `ANTHROPIC_API_KEY` is unset, every
-   `urika` invocation prints a yellow warning at startup pointing to
-   `urika config api-key`. Dismiss permanently with
-   `URIKA_ACK_API_KEY_REQUIRED=1`.
+1. **CLI startup warning.** In `api_key` mode, when `ANTHROPIC_API_KEY`
+   is unset, every `urika` invocation prints a yellow warning at
+   startup pointing to `urika config api-key`. Dismiss permanently with
+   `URIKA_ACK_API_KEY_REQUIRED=1`. Suppressed entirely in
+   `subscription` mode (no API key is expected there).
 
-2. **Pre-spawn refusal.** Before spawning a Claude Agent SDK
-   subprocess, Urika checks that an API key is configured. If no key
-   is found and the agent is bound for `api.anthropic.com`, the run
-   aborts with `APIKeyRequiredError` and a remediation hint.
+2. **Pre-spawn refusal** (`api_key` mode only). Before spawning a
+   Claude Agent SDK subprocess, Urika checks that an API key is
+   configured. If no key is found and the agent is bound for
+   `api.anthropic.com`, the run aborts with `APIKeyRequiredError` and a
+   remediation hint. In `subscription` mode this check passes silently —
+   the bundled CLI picks up its stored OAuth token from `claude login`.
 
-3. **OAuth env scrubbing.** Even if the user has
-   `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_AUTH_TOKEN` set in their
-   shell, Urika scrubs both variables (sets them to empty) in the
-   environment passed to the spawned subprocess. The Claude CLI then
-   has no OAuth credential available — it must use the API key or
-   fail loudly.
+3. **OAuth env scrubbing.** In `api_key` mode, Urika zeroes
+   `CLAUDE_CODE_OAUTH_TOKEN` and the rest of the OAuth-token family in
+   the environment passed to the spawned subprocess, so a stray
+   parent-shell OAuth token cannot silently route charges to your
+   subscription credit pool — the CLI must use the API key or fail
+   loudly. In `subscription` mode the OAuth-token family is preserved
+   (it is the legitimate credential). Nested-session markers (the env
+   vars Claude Code sets in terminals it owns, which would make the
+   spawned CLI refuse to launch) are always zeroed regardless of mode.
 
 The pre-spawn check is exempt for:
 - Agents configured with `ANTHROPIC_BASE_URL` (going to a private
   inference endpoint, not Anthropic's cloud).
-- Models that don't start with `claude` (a future multi-provider
-  runtime routes them to a different SDK).
+- Models that don't start with `claude` (routed to a non-Anthropic
+  provider via the multi-provider runtime).
+- Users in `subscription` auth mode.
 
 Source: `src/urika/core/compliance.py`.
 
-### Other providers (planned)
+### Other providers
 
-When OpenAI, Google ADK, and PI adapters land, the same compliance pattern applies:
+The same compliance pattern applies per provider:
 
-- **OpenAI** (planned) — uses [`openai-agents-python`](https://github.com/openai/openai-agents-python), pure HTTP, no CLI. Requires `OPENAI_API_KEY`. OpenAI's Usage Policies and API Terms of Service govern programmatic use.
-- **Google ADK** (planned) — uses Google's Agent Development Kit, pure Python. Requires `GOOGLE_API_KEY` or service-account credentials. Governed by Google Cloud's Generative AI Acceptable Use Policy.
-- **PI** (planned) — uses PI's runtime; specifics TBD.
+- **OpenAI** — uses [`openai-agents-python`](https://github.com/openai/openai-agents-python), pure HTTP, no CLI. Requires `OPENAI_API_KEY`; ChatGPT Plus subscriptions are a separate product and are rejected by `urika config openai --mode subscription`. OpenAI's Usage Policies and API Terms of Service govern programmatic use.
+- **Google** — uses Google's Agent Development Kit, pure Python. Requires `GEMINI_API_KEY`; Google AI Pro/Ultra subscriptions are rejected (Google's Terms of Service forbid third-party SDK use). Governed by Google's Generative AI terms.
 - **Local / private endpoints** — direct HTTP via `ANTHROPIC_BASE_URL` to Ollama / vLLM / LiteLLM. No cloud-provider CLI or API key needed; governed only by your local infrastructure's security posture.
 
-Each adapter will surface its own per-provider compliance check — same shape as `require_api_key()` for Anthropic, scoped to whichever credentials and runtime that provider expects.
+Each adapter surfaces its own per-provider compliance check — same shape as `require_api_key()` for Anthropic, scoped to whichever credentials and runtime that provider expects.

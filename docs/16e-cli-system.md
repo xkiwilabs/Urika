@@ -183,6 +183,32 @@ urika config secret              # interactive — enter a custom name
 
 Names referenced by `[privacy.endpoints.<n>].api_key_env` are auto-discovered and offered as suggestions.
 
+#### `urika config anthropic|openai|google`
+
+Set the auth mode for a cloud LLM provider. Writes `[<provider>] auth = "<mode>"` to `~/.urika/settings.toml`, preserving all other sections. `--mode` is required on the CLI (the REPL/TUI `/config <provider>` form shows the current mode instead — see [Interactive TUI](17-interactive-tui.md)).
+
+```
+urika config anthropic --mode <api_key|subscription> [--no-verify]
+urika config openai --mode api_key
+urika config google --mode api_key
+```
+
+| Provider | Accepted modes | Notes |
+|----------|----------------|-------|
+| `anthropic` | `api_key` (default), `subscription` | `subscription` prints a reminder to run `claude login`, then probes `claude --version` and warns on stderr if the CLI is missing (skip the probe with `--no-verify`; useful in bootstrap scripts). `api_key` prints a hint pointing at `urika config api-key`. |
+| `openai` | `api_key` only | `--mode subscription` is rejected up-front with a usage error — ChatGPT Plus is a separate product from the API. Points you at `urika config secret` to store `OPENAI_API_KEY`. |
+| `google` | `api_key` only | `--mode subscription` is rejected up-front — Google AI Pro/Ultra Terms of Service forbid third-party SDK use. Points you at `urika config secret` to store `GEMINI_API_KEY`. |
+
+**Examples:**
+
+```bash
+urika config anthropic --mode subscription    # opt in to Pro/Max subscription auth
+urika config anthropic --mode api_key         # back to the default API-key mode
+urika config openai --mode api_key            # record OpenAI API-key mode
+```
+
+See [How Urika enforces this](20-security.md#how-urika-enforces-this) for what each Anthropic auth mode changes at runtime.
+
 
 ### `urika notifications`
 
