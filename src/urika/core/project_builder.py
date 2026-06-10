@@ -43,6 +43,12 @@ class ProjectBuilder:
         self.privacy_mode: str = "open"
         self.private_endpoint_url: str = ""
         self.private_endpoint_key_env: str = ""
+        # Research intent gathered by the interactive builder loop —
+        # empty means the user skipped (or a non-interactive path).
+        self.hypotheses: list[str] = []
+        self.analysis_approach: str = ""
+        self.interpretability_level: str = ""
+        self.constraints: dict[str, str] = {}
         self._scan_result: ScanResult | None = None
         self._data_summary: DataSummary | None = None
         self._suggestions: dict[str, Any] | None = None
@@ -118,6 +124,20 @@ class ProjectBuilder:
         if q:
             self.question = q
 
+    def set_research_preferences(
+        self, analysis_approach: str = "", interpretability_level: str = ""
+    ) -> None:
+        """Store the user's analysis/interpretability preferences from
+        the interactive loop's fixed elicitation questions."""
+        if analysis_approach:
+            self.analysis_approach = analysis_approach
+        if interpretability_level:
+            self.interpretability_level = interpretability_level
+
+    def set_hypotheses(self, hypotheses: list[str]) -> None:
+        """Store user-approved hypotheses from the interactive loop."""
+        self.hypotheses = [str(h).strip() for h in hypotheses if str(h).strip()]
+
     def apply_research_intent(self) -> None:
         """Re-apply research intent gathered by the interactive builder
         loop to the on-disk project.
@@ -140,6 +160,14 @@ class ProjectBuilder:
         project = existing.setdefault("project", {})
         if self.question:
             project["question"] = self.question
+        if self.hypotheses:
+            project["hypotheses"] = self.hypotheses
+        if self.analysis_approach:
+            project["analysis_approach"] = self.analysis_approach
+        if self.interpretability_level:
+            project["interpretability_level"] = self.interpretability_level
+        if self.constraints:
+            project["constraints"] = self.constraints
         _write_toml(toml_path, existing)
 
     def add_task(self, task: dict[str, Any]) -> None:
@@ -159,6 +187,10 @@ class ProjectBuilder:
             mode=self.mode,
             description=self.description,
             data_paths=data_paths,
+            hypotheses=self.hypotheses,
+            analysis_approach=self.analysis_approach,
+            interpretability_level=self.interpretability_level,
+            constraints=self.constraints,
         )
         create_project_workspace(project_dir, config)
 

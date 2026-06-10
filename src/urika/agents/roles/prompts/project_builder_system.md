@@ -59,6 +59,7 @@ Ask about these topics (in priority order) if the user's description does not al
 - **Data splitting**: How should data be split for evaluation (by participant, by condition, by trial, random)?
 - **Success criteria**: What would a good result look like (accuracy threshold, effect size, statistical significance)?
 - **Domain knowledge**: Are there known relevant papers, established methods, or prior findings to be aware of?
+- **Practical constraints**: time/compute budget, regulatory or interpretability requirements (e.g. results must be explainable in a paper).
 - **Analytical preferences**: Any preferred or required methods (e.g., "must use mixed models" or "start simple")?
 
 ## Rules

@@ -91,6 +91,49 @@ class TestBuildPlanningPrompt:
         assert "My research" in prompt
 
 
+class TestResearchIntentSections:
+    """Optional preferences/hypotheses kwargs on the suggestion +
+    planning prompt builders."""
+
+    def test_suggestion_prompt_includes_intent_blocks(self) -> None:
+        prompt = build_suggestion_prompt(
+            "desc",
+            None,
+            {},
+            preferences={
+                "analysis_approach": "statistical",
+                "interpretability_level": "balanced",
+            },
+            hypotheses=["H1: x predicts y"],
+        )
+        assert "## Analysis Preferences" in prompt
+        assert "Approach: statistical" in prompt
+        assert "Interpretability: balanced" in prompt
+        assert "## Hypotheses" in prompt
+        assert "- H1: x predicts y" in prompt
+
+    def test_planning_prompt_includes_intent_blocks(self) -> None:
+        prompt = build_planning_prompt(
+            {},
+            "desc",
+            None,
+            preferences={"analysis_approach": "predictive"},
+            hypotheses=["H1: x"],
+        )
+        assert "## Analysis Preferences" in prompt
+        assert "Approach: predictive" in prompt
+        assert "- H1: x" in prompt
+
+    def test_blocks_absent_when_empty(self) -> None:
+        for prompt in (
+            build_suggestion_prompt("desc", None, {}),
+            build_suggestion_prompt("desc", None, {}, preferences={}, hypotheses=[]),
+            build_planning_prompt({}, "desc", None),
+        ):
+            assert "## Analysis Preferences" not in prompt
+            assert "## Hypotheses" not in prompt
+
+
 class TestBuildFeasibilityPrompt:
     def test_includes_question_scan_and_schema(self) -> None:
         prompt = build_feasibility_prompt(

@@ -79,6 +79,29 @@ class BuilderQuestion:
 AskUser = Callable[[BuilderQuestion], Awaitable[str]]
 Emit = Callable[[BuilderEvent], None]
 
+# Answers that mean "skip this question" — mirrors the Phase 1
+# clarifying-loop vocabulary ("done") plus the obvious synonyms.
+_SKIP_ANSWERS = {"", "done", "skip"}
+
+
+def _match_option(answer: str, options: list[tuple[str, str]]) -> str:
+    """Map a free-form answer onto one of ``options`` (value, label) pairs.
+
+    Accepts the 1-based number, the stored value, the full label, or an
+    unambiguous label prefix. Anything unrecognised — including the skip
+    vocabulary — returns ``""`` (the preference stays unset). Callers
+    render the labels; users may type a number, the label, or anything."""
+    a = answer.strip().lower()
+    if a in _SKIP_ANSWERS:
+        return ""
+    for i, (value, label) in enumerate(options, 1):
+        if a == str(i) or a == value or a == label.lower():
+            return value
+    prefix_matches = [v for v, label in options if label.lower().startswith(a)]
+    if len(prefix_matches) == 1:
+        return prefix_matches[0]
+    return ""
+
 
 class BuilderAborted(Exception):
     """Raised by ``ask_user`` (or by the loop on a terminal "Abort")
@@ -405,6 +428,101 @@ async def run_builder_loop(
             answers[question_text] = answer
             context += f"Q: {question_text}\nA: {answer}\n\n"
 
+        # --- Preference elicitation (fixed questions — no agent call) ---
+        # Skippable the same way Phase 1 answers are: "done" / "skip" /
+        # empty leaves the preference unset and the prompts unchanged.
+        approach_options = [
+            (
+                "statistical",
+                "Statistical testing (ANOVA, regression, hypothesis tests)",
+            ),
+            ("predictive", "Predictive modelling (accuracy-focused ML)"),
+            ("exploratory", "Exploratory (patterns, clustering, visualization)"),
+            ("mixed", "Mixed"),
+        ]
+        approach_answer = await ask_user(
+            BuilderQuestion(
+                text="Analysis approach preference",
+                options=[label for _, label in approach_options],
+            )
+        )
+        analysis_approach = _match_option(approach_answer, approach_options)
+
+        interp_options = [
+            ("interpretable", "Highly interpretable (linear models, trees)"),
+            ("balanced", "Balanced (ensembles, GAMs)"),
+            ("max_performance", "Max performance (anything goes)"),
+        ]
+        interp_answer = await ask_user(
+            BuilderQuestion(
+                text="Model interpretability preference",
+                options=[label for _, label in interp_options],
+            )
+        )
+        interpretability = _match_option(interp_answer, interp_options)
+        if analysis_approach or interpretability:
+            _builder_set(
+                "set_research_preferences", analysis_approach, interpretability
+            )
+
+        # --- Hypothesis decomposition offer (best-effort) ---
+        # One agent call proposing 1-4 testable hypotheses; agent or parse
+        # failure skips the offer silently — like the feasibility check,
+        # this must never block project creation.
+        hypotheses: list[str] = []
+        proposed_hypotheses: list[str] = []
+        try:
+            hyp_parts = ["## Research Question", question, ""]
+            if context:
+                hyp_parts.extend(["## Previous Answers", context, ""])
+            hyp_parts.append(
+                "Propose 1-4 testable hypotheses decomposing this research "
+                "question. Respond with ONLY "
+                '{"hypotheses": ["H1: ...", "H2: ..."]}'
+            )
+            hyp_config = builder_role.build_config(project_dir=project_dir)
+            hyp_result = await _run_agent(hyp_config, "\n".join(hyp_parts))
+            if hyp_result.success:
+                for block in _extract_json_blocks(hyp_result.text_output):
+                    if "hypotheses" in block:
+                        proposed_hypotheses = [
+                            str(h).strip()
+                            for h in (block.get("hypotheses") or [])
+                            if str(h).strip()
+                        ]
+                        break
+        except Exception as exc:
+            logger.warning("Hypothesis proposal failed: %s", exc)
+        if proposed_hypotheses:
+            listing = "\n".join(f"- {h}" for h in proposed_hypotheses)
+            hyp_answer = (
+                await ask_user(
+                    BuilderQuestion(
+                        text=f"Proposed hypotheses:\n{listing}",
+                        options=["Accept", "Skip"],
+                    )
+                )
+            ).strip()
+            low = hyp_answer.lower()
+            if low in ("1", "accept"):
+                hypotheses = proposed_hypotheses
+            elif low == "2" or low in _SKIP_ANSWERS:
+                hypotheses = []
+            else:
+                # Free text — the user wrote their own hypotheses,
+                # one per line.
+                hypotheses = [
+                    ln.strip() for ln in hyp_answer.splitlines() if ln.strip()
+                ]
+            if hypotheses:
+                _builder_set("set_hypotheses", hypotheses)
+
+        preferences: dict[str, str] = {}
+        if analysis_approach:
+            preferences["analysis_approach"] = analysis_approach
+        if interpretability:
+            preferences["interpretability_level"] = interpretability
+
         # --- Phase 2: Advisor ---
         emit(
             BuilderEvent(
@@ -419,7 +537,13 @@ async def run_builder_loop(
             )
             return None
 
-        suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
+        suggest_prompt = build_suggestion_prompt(
+            description,
+            data_summary,
+            answers,
+            preferences=preferences or None,
+            hypotheses=hypotheses or None,
+        )
         suggest_config = suggest_role.build_config(
             project_dir=project_dir, experiment_id=""
         )
@@ -453,7 +577,11 @@ async def run_builder_loop(
             return suggestions
 
         plan_prompt = build_planning_prompt(
-            suggestions or {}, description, data_summary
+            suggestions or {},
+            description,
+            data_summary,
+            preferences=preferences or None,
+            hypotheses=hypotheses or None,
         )
         plan_config = plan_role.build_config(project_dir=project_dir, experiment_id="")
         plan_result = await _run_agent(plan_config, plan_prompt)
@@ -508,7 +636,11 @@ async def run_builder_loop(
                 )
             )
             plan_prompt = build_planning_prompt(
-                suggestions or {}, description, data_summary
+                suggestions or {},
+                description,
+                data_summary,
+                preferences=preferences or None,
+                hypotheses=hypotheses or None,
             )
             plan_result = await _run_agent(plan_config, plan_prompt)
             if plan_result.success:
@@ -526,8 +658,9 @@ async def run_builder_loop(
                 builder.set_initial_suggestions(suggestions)
             except Exception as exc:
                 logger.warning("set_initial_suggestions failed: %s", exc)
-        # Persist loop-gathered research intent (refined question, …)
-        # onto the already-written project. In the CLI flow
+        # Persist loop-gathered research intent (refined question,
+        # preferences, hypotheses) onto the already-written project. In
+        # the CLI flow
         # ``write_project()`` runs BEFORE this loop (the loop's agents
         # need the workspace + knowledge base on disk), so without this
         # re-apply the values would never reach urika.toml.

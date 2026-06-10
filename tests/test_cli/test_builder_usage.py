@@ -64,6 +64,11 @@ def test_builder_loop_records_usage(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("urika.agents.runner.get_runner", lambda: fake)
     # Phase 4 user-refinement menu → "Looks good — create the project".
     monkeypatch.setattr(pn, "_prompt_numbered", lambda *a, **k: "Looks good — create")
+    # Free-text asks (clarifying answers, preference elicitation) →
+    # "done" (skip) everywhere; the fake runner isn't prompt-aware, so
+    # the feasibility call eats its first "ready" reply and the next
+    # project_builder round's raw text is treated as a question.
+    monkeypatch.setattr("urika.cli_helpers.interactive_prompt", lambda *a, **k: "done")
     # Stub the scan/profile inputs so build_scoping_prompt is happy.
     from urika.core.source_scanner import ScanResult
 

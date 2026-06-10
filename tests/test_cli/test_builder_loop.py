@@ -90,6 +90,9 @@ def _run(monkeypatch, projects_dir: Path, runner: _ScriptedRunner) -> _Builder:
 
     monkeypatch.setattr("urika.agents.runner.get_runner", lambda: runner)
     monkeypatch.setattr(pn, "_prompt_numbered", lambda *a, **k: "Looks good — create")
+    # The preference-elicitation / criteria questions reach the CLI via
+    # interactive_prompt — answer "done" (skip) everywhere.
+    monkeypatch.setattr("urika.cli_helpers.interactive_prompt", lambda *a, **k: "done")
     builder = _Builder(projects_dir, "myproj")
     pn._run_builder_agent_loop(
         builder,
@@ -213,8 +216,8 @@ def test_builder_loop_handles_clarifying_questions(tmp_path: Path, monkeypatch) 
         "Q?",
         extra_profiles=None,
     )
-    # feasibility + question round + ready round.
-    assert runner.calls.count("project_builder") == 3
+    # feasibility + question round + ready round + hypotheses offer.
+    assert runner.calls.count("project_builder") == 4
 
 
 # ---------------------------------------------------------------------------
@@ -427,3 +430,137 @@ class TestFeasibilityCheck:
         _, project_dir, asked = _drive_core_loop(monkeypatch, tmp_path, runner)
         assert not any(q.options == _REFINEMENT_OPTIONS for q in asked)
         assert _project_block(project_dir)["question"] == "Q?"
+
+
+_APPROACH_OPTIONS = [
+    "Statistical testing (ANOVA, regression, hypothesis tests)",
+    "Predictive modelling (accuracy-focused ML)",
+    "Exploratory (patterns, clustering, visualization)",
+    "Mixed",
+]
+
+_INTERP_OPTIONS = [
+    "Highly interpretable (linear models, trees)",
+    "Balanced (ensembles, GAMs)",
+    "Max performance (anything goes)",
+]
+
+_HYPOTHESES_JSON = (
+    '```json\n{"hypotheses": ["H1: velocity predicts choice", '
+    '"H2: accuracy declines with speed"]}\n```'
+)
+
+
+class TestPreferenceElicitation:
+    def test_fixed_questions_present_spec_options(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, _, asked = _drive_core_loop(monkeypatch, tmp_path, runner)
+        approach_qs = [q for q in asked if q.text == "Analysis approach preference"]
+        interp_qs = [q for q in asked if q.text == "Model interpretability preference"]
+        assert len(approach_qs) == 1 and approach_qs[0].options == _APPROACH_OPTIONS
+        assert len(interp_qs) == 1 and interp_qs[0].options == _INTERP_OPTIONS
+
+    def test_selected_preferences_land_in_toml_and_advisor_prompt(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch,
+            tmp_path,
+            runner,
+            [
+                "Statistical testing (ANOVA, regression, hypothesis tests)",
+                "Highly interpretable (linear models, trees)",
+            ],
+        )
+        block = _project_block(project_dir)
+        assert block["analysis_approach"] == "statistical"
+        assert block["interpretability_level"] == "interpretable"
+        advisor = runner.advisor_prompts()[0]
+        assert "## Analysis Preferences" in advisor
+        assert "Approach: statistical" in advisor
+        assert "Interpretability: interpretable" in advisor
+
+    def test_numeric_answers_map_to_values(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, project_dir, _ = _drive_core_loop(monkeypatch, tmp_path, runner, ["2", "3"])
+        block = _project_block(project_dir)
+        assert block["analysis_approach"] == "predictive"
+        assert block["interpretability_level"] == "max_performance"
+
+    def test_skipped_preferences_stay_empty(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch, tmp_path, runner, ["done", "skip"]
+        )
+        block = _project_block(project_dir)
+        assert "analysis_approach" not in block
+        assert "interpretability_level" not in block
+        advisor = runner.advisor_prompts()[0]
+        assert "## Analysis Preferences" not in advisor
+        planning = runner.planning_prompts()[0]
+        assert "## Analysis Preferences" not in planning
+
+
+class TestHypothesesOffer:
+    def test_accepted_hypotheses_land_in_toml_and_planning_prompt(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner(hypotheses_text=_HYPOTHESES_JSON)
+        _, project_dir, asked = _drive_core_loop(
+            monkeypatch, tmp_path, runner, ["done", "done", "Accept"]
+        )
+        hyp_qs = [q for q in asked if q.options == ["Accept", "Skip"]]
+        assert len(hyp_qs) == 1
+        assert "H1: velocity predicts choice" in hyp_qs[0].text
+        block = _project_block(project_dir)
+        assert block["hypotheses"] == [
+            "H1: velocity predicts choice",
+            "H2: accuracy declines with speed",
+        ]
+        planning = runner.planning_prompts()[0]
+        assert "## Hypotheses" in planning
+        assert "- H1: velocity predicts choice" in planning
+        advisor = runner.advisor_prompts()[0]
+        assert "## Hypotheses" in advisor
+
+    def test_freetext_replaces_with_user_hypotheses(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner(hypotheses_text=_HYPOTHESES_JSON)
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch,
+            tmp_path,
+            runner,
+            ["done", "done", "H1: my own idea\nH2: a second idea"],
+        )
+        assert _project_block(project_dir)["hypotheses"] == [
+            "H1: my own idea",
+            "H2: a second idea",
+        ]
+
+    def test_skip_leaves_no_hypotheses(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner(hypotheses_text=_HYPOTHESES_JSON)
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch, tmp_path, runner, ["done", "done", "Skip"]
+        )
+        assert "hypotheses" not in _project_block(project_dir)
+        assert "## Hypotheses" not in runner.planning_prompts()[0]
+
+    def test_agent_garbage_skips_offer_silently(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner(hypotheses_text="no json here")
+        builder, project_dir, asked = _drive_core_loop(monkeypatch, tmp_path, runner)
+        assert not any(q.options == ["Accept", "Skip"] for q in asked)
+        assert "hypotheses" not in _project_block(project_dir)
+        # Loop still completed.
+        assert builder._suggestions
