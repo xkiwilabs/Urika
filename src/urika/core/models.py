@@ -138,6 +138,12 @@ class RunRecord:
     # applicable. Written by the task agent; rendered in the labbook.
     # Legacy records (pre-v0.8) have no such key and load as {}.
     metric_interpretation: dict[str, str] = field(default_factory=dict)
+    # Confidence interval per reported metric (keyed by metric name) —
+    # value shape {"value", "ci_lower", "ci_upper", "confidence"}.
+    # Written by the task agent (bootstrap or analytic); rendered in
+    # the labbook and quoted by the report agent. Legacy records
+    # (pre-v0.9) have no such key and load as {}.
+    metrics_with_uncertainty: dict[str, dict] = field(default_factory=dict)
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -153,6 +159,7 @@ class RunRecord:
             "next_step": self.next_step,
             "artifacts": self.artifacts,
             "metric_interpretation": self.metric_interpretation,
+            "metrics_with_uncertainty": self.metrics_with_uncertainty,
             "timestamp": self.timestamp,
         }
 
@@ -168,6 +175,7 @@ class RunRecord:
             next_step=d.get("next_step", ""),
             artifacts=d.get("artifacts", []),
             metric_interpretation=d.get("metric_interpretation", {}),
+            metrics_with_uncertainty=d.get("metrics_with_uncertainty", {}),
             timestamp=d.get("timestamp", ""),
         )
 

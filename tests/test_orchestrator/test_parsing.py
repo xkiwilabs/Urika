@@ -67,6 +67,54 @@ class TestParseRunRecords:
         assert len(records) == 1
         assert records[0].metric_interpretation == {}
 
+    def test_metrics_with_uncertainty_passes_through(self) -> None:
+        text = """Results:
+```json
+{
+    "run_id": "run-001",
+    "method": "linear_regression",
+    "params": {},
+    "metrics": {"r2": 0.75},
+    "metrics_with_uncertainty": {
+        "r2": {
+            "value": 0.75,
+            "ci_lower": 0.72,
+            "ci_upper": 0.78,
+            "confidence": 0.95
+        }
+    }
+}
+```
+"""
+        records = parse_run_records(text)
+        assert len(records) == 1
+        assert records[0].metrics_with_uncertainty == {
+            "r2": {
+                "value": 0.75,
+                "ci_lower": 0.72,
+                "ci_upper": 0.78,
+                "confidence": 0.95,
+            }
+        }
+
+    def test_non_dict_metrics_with_uncertainty_dropped(self) -> None:
+        """A malformed (non-dict) metrics_with_uncertainty doesn't kill
+        the record — it is dropped and the record parses normally."""
+        text = """Results:
+```json
+{
+    "run_id": "run-001",
+    "method": "linear_regression",
+    "params": {},
+    "metrics": {"r2": 0.75},
+    "metrics_with_uncertainty": "0.72 to 0.78"
+}
+```
+"""
+        records = parse_run_records(text)
+        assert len(records) == 1
+        assert records[0].metrics_with_uncertainty == {}
+
     def test_multiple_runs(self) -> None:
         text = """First run:
 ```json

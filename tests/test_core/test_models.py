@@ -314,3 +314,45 @@ class TestRunRecord:
         }
         run = RunRecord.from_dict(d)
         assert run.metric_interpretation == {}
+
+    def test_metrics_with_uncertainty_default_empty(self) -> None:
+        run = RunRecord(
+            run_id="run-001",
+            method="linear_regression",
+            params={},
+            metrics={"r2": 0.5},
+        )
+        assert run.metrics_with_uncertainty == {}
+
+    def test_metrics_with_uncertainty_roundtrips(self) -> None:
+        uncertainty = {
+            "r2": {
+                "value": 0.75,
+                "ci_lower": 0.72,
+                "ci_upper": 0.78,
+                "confidence": 0.95,
+            }
+        }
+        run = RunRecord(
+            run_id="run-001",
+            method="linear_regression",
+            params={},
+            metrics={"r2": 0.75},
+            metrics_with_uncertainty=uncertainty,
+        )
+        d = run.to_dict()
+        assert d["metrics_with_uncertainty"] == uncertainty
+        restored = RunRecord.from_dict(d)
+        assert restored.metrics_with_uncertainty == uncertainty
+
+    def test_legacy_dict_without_metrics_with_uncertainty_loads(self) -> None:
+        """Pre-v0.9 run records (no metrics_with_uncertainty key) load fine."""
+        d = {
+            "run_id": "run-001",
+            "method": "linear_regression",
+            "params": {},
+            "metrics": {"r2": 0.5},
+            "timestamp": "2026-03-05T10:00:00+00:00",
+        }
+        run = RunRecord.from_dict(d)
+        assert run.metrics_with_uncertainty == {}

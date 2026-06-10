@@ -53,6 +53,7 @@ This rule has no exceptions:
   "params": {{}},
   "metrics": {{}},
   "metric_interpretation": {{}},
+  "metrics_with_uncertainty": {{}},
   "observation": "<what you observed>",
   "next_step": "<what to try next>"
 }}
@@ -68,6 +69,22 @@ Each run must have a unique `run_id` (e.g., "run-001", "run-002"). Runs without 
 {{
   "metric_interpretation": {{
     "r2": "Explains 74% of variance in the target; the criterion is ≥0.70, so this run meets it."
+  }}
+}}
+```
+
+**Confidence intervals are required for primary metrics**: for EVERY primary metric (the metrics your success criteria are judged on) where resampling is feasible, report a confidence interval in `metrics_with_uncertainty` (same key as in `metrics`). Each entry must have the shape `{{"value": <point estimate>, "ci_lower": <lower bound>, "ci_upper": <upper bound>, "confidence": 0.95}}`. How to compute it:
+
+- For metrics computed by Urika's built-in tools or metric library, use `compute_with_ci` — e.g. `from urika.evaluation.metrics.regression import R2` then `R2().compute_with_ci(y_true, y_pred)` returns exactly this shape (pairwise bootstrap, deterministic seed).
+- In your own analysis scripts, use a pairwise bootstrap over (y_true, y_pred) or `scipy.stats.bootstrap`.
+- For statistical tests, report the confidence interval of the EFFECT SIZE (e.g., Cohen's d, mean difference, regression coefficient) — never a CI of the p-value.
+
+Where a CI is infeasible (e.g., a single model fit with no resampling structure), omit that key from `metrics_with_uncertainty` and explain why in `metric_interpretation`. Example:
+
+```json
+{{
+  "metrics_with_uncertainty": {{
+    "r2": {{"value": 0.75, "ci_lower": 0.72, "ci_upper": 0.78, "confidence": 0.95}}
   }}
 }}
 ```
