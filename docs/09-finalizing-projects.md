@@ -12,6 +12,8 @@ Finalization takes everything learned across all experiments and produces output
 3. **Presentation Agent** -- reads the findings and creates a final reveal.js presentation
 4. **README update** -- updates the project README with the final findings summary
 
+Between steps 1 and 2, a **deterministic artifacts** step (pure code, no agent call, no API cost) generates per-method model cards, the `projectbook/METRICS.md` metrics glossary, and the `projectbook/reproduce.ipynb` Jupyter notebook from the findings the Finalizer just wrote. These generators only render data that exists on disk -- they never invent content -- and a failure in any of them never blocks the rest of the sequence.
+
 
 ## When to finalize
 
@@ -41,6 +43,15 @@ urika:my-project> /finalize
 
 Both commands run the full finalization sequence.
 
+### Exporting the final report to LaTeX or PDF
+
+```bash
+urika finalize my-project --format latex
+urika finalize my-project --format pdf
+```
+
+`--format latex|pdf` runs the normal markdown flow first, then converts the written `projectbook/final-report.md` (or `projectbook/draft/report.md` under `--draft`) with pandoc -- the agents stay format-agnostic and the markdown is always written and kept. Requires the `export` extra (`pip install 'urika[export]'`) plus a `pandoc` binary; PDF additionally needs a LaTeX engine. The same flag exists on `urika report` and the `/report` and `/finalize` slash commands. See [CLI: Agents](16d-cli-agents.md#urika-finalize) for the exact requirements and error messages.
+
 
 ## What finalization produces
 
@@ -66,6 +77,22 @@ Each script is:
 ### Methods README (`methods/README.md`)
 
 Describes each final method: its role (prediction, interpretation, robustness), when to use it, expected inputs and outputs, and key metrics achieved.
+
+### Model cards (`methods/<name>_model_card.md`)
+
+One model card per final method, generated deterministically from artifacts the agents already wrote (findings.json, run records, the data profile, the project config). Each card documents:
+
+- **Intended use** -- the research question and project mode
+- **Training data** -- data paths plus rows/columns from the data profile
+- **Metrics** -- key metrics from the run record matched by `run_id`, including confidence intervals where the run recorded them
+- **Assumptions and caveats** -- from the evaluator's `assumptions_detail` in the experiment's persisted evaluation (`experiments/<id>/labbook/evaluation.json`, written by the orchestrator loop each time an evaluation parses), falling back to the `limitations` in findings.json
+- **Known limitations** -- from findings.json
+
+Sections without recorded data render "Not recorded for this run." -- the generator never invents content. When the project audience is `novice`, each card also includes the plain-language method explainer.
+
+### Metrics glossary (`projectbook/METRICS.md`)
+
+A plain-language glossary covering every metric name observed across the project's runs: what the metric means, its range, how to read it, the ranking direction, and the observed range and best value across runs (with confidence intervals where recorded). Built-in entries cover ~15 common metrics (R², RMSE, MAE, accuracy, precision, recall, F1, AUC, p-value, Cohen's d, ...) with alias and suffix matching; unknown metrics are listed as project-specific with their observed values.
 
 ### Requirements (`requirements.txt`)
 
@@ -126,6 +153,10 @@ python methods/final_interpretive_analysis.py --data data/scores.csv
 
 This means anyone with Python installed can reproduce the analysis, regardless of whether they have Urika or access to the same AI models.
 
+### Reproduce notebook (`projectbook/reproduce.ipynb`)
+
+A Jupyter notebook assembled by pure code from the finalization artifacts: a title cell with the research question and answer, a setup cell, and one markdown-plus-code section per final method embedding the **literal contents** of its standalone script (if a script is missing on disk, the notebook notes it instead of inventing code). Each method section quotes the key metrics, including confidence intervals where the run recorded them, and a closing cell points at `METRICS.md` and the model cards. The notebook is validated with `nbformat.validate` before writing. Run it from the project root so the relative data paths inside the method scripts resolve.
+
 
 ## Output file summary
 
@@ -133,12 +164,16 @@ This means anyone with Python installed can reproduce the analysis, regardless o
 |------|-------------|
 | `methods/final_*.py` | Standalone Python scripts for each final method |
 | `methods/README.md` | Description of each method, usage, and metrics |
+| `methods/<name>_model_card.md` | Model card per final method (deterministic, v0.9.0+) |
 | `requirements.txt` | Python package dependencies |
 | `reproduce.sh` | Reproduction script for Linux/macOS |
 | `reproduce.bat` | Reproduction script for Windows |
 | `projectbook/findings.json` | Structured findings summary (JSON) |
 | `projectbook/figures/` | Best figures from experiments |
 | `projectbook/final-report.md` | Comprehensive final report (markdown) |
+| `projectbook/final-report.tex` / `.pdf` | LaTeX/PDF export of the final report (only with `--format latex|pdf`) |
+| `projectbook/METRICS.md` | Plain-language metrics glossary (deterministic, v0.9.0+) |
+| `projectbook/reproduce.ipynb` | Jupyter reproduce notebook (deterministic, v0.9.0+) |
 | `projectbook/final-presentation/` | Final reveal.js presentation |
 | `README.md` | Updated project README with findings |
 
@@ -188,6 +223,7 @@ urika:my-project> /finalize --draft focus on preliminary findings
 | Standalone method scripts (`methods/final_*.py`) | Not meaningful until methods are finalized |
 | `requirements.txt` | Tied to standalone scripts |
 | `reproduce.sh` / `reproduce.bat` | Tied to standalone scripts |
+| Model cards, `METRICS.md`, `reproduce.ipynb` | Tied to final methods, which don't exist yet |
 | `README.md` update | The project is not finished yet |
 
 ### Draft output summary

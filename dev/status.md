@@ -131,7 +131,7 @@ backup ships before the multi-provider work):
 | **v0.6.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | SHIPPED 2026-05-31 |
 | **v0.7.0** | Multi-provider model adapters (OpenAI Agents SDK + others) | SHIPPED 2026-06-08 |
 | **v0.8.0** | Review-driven hardening + research-goal builder pipeline + output comprehensibility | SHIPPED 2026-06-10 |
-| **v0.9.0** | Output polish — exports (PDF/LaTeX/Jupyter via Pandoc), model-card auto-generation | **NEXT** |
+| **v0.9.0** | Output polish — exports (PDF/LaTeX/Jupyter via Pandoc), model-card auto-generation | **on dev** |
 | **v0.10.0** | Pre-1.0 hardening — `urika upgrade` migration, builder-session persistence, agent-subprocess env isolation, accessibility pass (templates cut 2026-06-10) | planned |
 | **v1.0.0rc1** | Feature freeze + API audit + migration guide | planned |
 | **v1.0.0rc2** | RC feedback fixes only | planned |
