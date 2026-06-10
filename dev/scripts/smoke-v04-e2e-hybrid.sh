@@ -143,7 +143,8 @@ step "7. urika run --max-experiments 2 --budget 3.00"
 if run_step_with_timeout "autonomous 2 experiments" 5400 \
      urika run "$PROJ" --max-experiments 2 --max-turns ${URIKA_SMOKE_MAX_TURNS_HYBRID} --budget 3.00 --auto -q
 then
-  verify_min_experiments "autonomous run started >=2 experiments" "$PROJ_DIR" 2
+  verify_min_experiments "autonomous run started >=2 experiments" "$PROJ_DIR" 2 \
+    "$URIKA_E2E_LOG_DIR/autonomous_2_experiments.log"
   verify_each_experiment_did_work "every experiment recorded >=1 run" "$PROJ_DIR"
   verify_methods_consistent "methods/leaderboard still consistent after 2 experiments" "$PROJ_DIR"
   verify_no_early_exit_markers "autonomous run — no 'no further experiments to suggest'" \

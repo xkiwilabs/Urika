@@ -441,7 +441,21 @@ if ct < n:
 # directories. Catches the meta-loop bailing with 0 (or 1) experiments
 # when the advisor's suggestions block doesn't parse.
 verify_min_experiments() {
-  local desc="$1"; local proj_dir="$2"; local n="$3"
+  local desc="$1"; local proj_dir="$2"; local n="$3"; local log="${4:-}"
+  # The advisor legitimately stops the meta loop early when existing
+  # experiments already satisfy the project criteria ("no further
+  # experiments to suggest"). Counting dirs alone flagged that CORRECT
+  # behavior as a failure (seen 2026-06-10: exp-001 met all
+  # confirmatory criteria with 3 converging methods, advisor declined
+  # a 2nd experiment). When the caller passes the autonomous log and
+  # it shows the advisor declined, accept the lower count — the
+  # companion verify_each_experiment_did_work assertion still requires
+  # the experiments that DID run to have recorded real runs. v0.8.0.
+  if [[ -n "$log" && -f "$log" ]] \
+       && grep -qi "no further experiments to suggest" "$log"; then
+    ok "$desc (advisor declined: criteria already satisfied)"
+    return 0
+  fi
   PROJ_DIR="$proj_dir" N="$n" _verify_py "$desc" '
 import os, sys
 root = os.path.join(os.environ["PROJ_DIR"], "experiments")

@@ -239,7 +239,8 @@ then
   # experiment finishes — but the meta loop must at least *start* a
   # second experiment. "0 or 1 experiment dirs after --max-experiments 2"
   # is the advisor-parse-miss bail (HIGH-3), not a budget pause.
-  verify_min_experiments "autonomous run started >=2 experiments" "$PROJ_DIR" 2
+  verify_min_experiments "autonomous run started >=2 experiments" "$PROJ_DIR" 2 \
+    "$URIKA_E2E_LOG_DIR/autonomous_2_experiments.log"
   verify_each_experiment_did_work "every experiment recorded >=1 run" "$PROJ_DIR"
   verify_methods_consistent "methods/leaderboard still consistent after 2 experiments" "$PROJ_DIR"
   verify_no_early_exit_markers "autonomous run — no early-exit markers in log" \
