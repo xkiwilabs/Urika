@@ -130,9 +130,11 @@ def build_feasibility_prompt(
 def _research_intent_parts(
     preferences: dict | None,
     hypotheses: list[str] | None,
+    constraints: dict | None = None,
 ) -> list[str]:
-    """Shared ``## Analysis Preferences`` / ``## Hypotheses`` sections for
-    the suggestion + planning prompts. Empty when the user skipped both."""
+    """Shared ``## Analysis Preferences`` / ``## Hypotheses`` /
+    ``## Practical Constraints`` sections for the suggestion + planning
+    prompts. Empty when the user skipped them all."""
     parts: list[str] = []
     prefs = preferences or {}
     approach = str(prefs.get("analysis_approach") or "").strip()
@@ -148,6 +150,11 @@ def _research_intent_parts(
         parts.append("## Hypotheses")
         parts.extend(f"- {h}" for h in hypotheses)
         parts.append("")
+    notes = str((constraints or {}).get("notes") or "").strip()
+    if notes:
+        parts.append("## Practical Constraints")
+        parts.append(notes)
+        parts.append("")
     return parts
 
 
@@ -158,6 +165,7 @@ def build_suggestion_prompt(
     *,
     preferences: dict | None = None,
     hypotheses: list[str] | None = None,
+    constraints: dict | None = None,
 ) -> str:
     """Build a prompt for the suggestion agent to propose initial approaches."""
     parts = [
@@ -183,7 +191,7 @@ def build_suggestion_prompt(
             parts.append(f"A: {a}")
             parts.append("")
 
-    parts.extend(_research_intent_parts(preferences, hypotheses))
+    parts.extend(_research_intent_parts(preferences, hypotheses, constraints))
 
     parts.append(
         "Based on the above, propose 2-3 initial analytical approaches as suggestions."
@@ -198,6 +206,7 @@ def build_planning_prompt(
     *,
     preferences: dict | None = None,
     hypotheses: list[str] | None = None,
+    constraints: dict | None = None,
 ) -> str:
     """Build a prompt for the planning agent to create an initial method plan."""
     import json
@@ -221,7 +230,7 @@ def build_planning_prompt(
             ]
         )
 
-    parts.extend(_research_intent_parts(preferences, hypotheses))
+    parts.extend(_research_intent_parts(preferences, hypotheses, constraints))
 
     parts.append("Design a detailed initial method plan based on these suggestions.")
     return "\n".join(parts)

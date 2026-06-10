@@ -147,9 +147,9 @@ class _ScriptedRunner:
     """Role- and prompt-dispatched fake runner (mirrors the CLI
     builder-loop test pattern). Feasibility + hypothesis prompts get
     empty replies (best-effort steps skip silently); scoping signals
-    ready immediately, so the loop's four fixed ``ask_user`` rounds
-    (approach, interpretability, criteria, terminal choice) are the
-    only questions."""
+    ready immediately, so the loop's five fixed ``ask_user`` rounds
+    (approach, interpretability, constraints, criteria, terminal
+    choice) are the only questions."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -245,10 +245,10 @@ def _await_question(prev_text: str | None) -> str:
 
 
 def _drive_to_completion(client: TestClient) -> list[str]:
-    """Answer the loop's four fixed questions and wait for done.
+    """Answer the loop's five fixed questions and wait for done.
     Returns the question texts seen, in order."""
     seen: list[str] = []
-    answers = ["done", "done", "Accept", "Looks good — create the project"]
+    answers = ["done", "done", "done", "Accept", "Looks good — create the project"]
     prev: str | None = None
     for ans in answers:
         prev = _await_question(prev)
@@ -284,8 +284,9 @@ class TestBuilderEndpoints:
         self, wizard_env
     ) -> None:
         """Drive the FULL loop through the endpoints: feasibility (skipped),
-        scoping (ready), preferences, hypotheses (skipped), advisor,
-        planning, criteria co-draft, terminal accept — then assert the
+        scoping (ready), preferences, constraints (skipped), hypotheses
+        (skipped), advisor, planning, criteria co-draft, terminal accept
+        — then assert the
         SSE stream replays question/agent_text/done events and the
         on-disk artifacts match the CLI path."""
         client, project_dir, runner = wizard_env
@@ -294,8 +295,9 @@ class TestBuilderEndpoints:
         seen = _drive_to_completion(client)
         assert seen[0] == "Analysis approach preference"
         assert seen[1] == "Model interpretability preference"
-        assert "Proposed success criteria" in seen[2]
-        assert seen[3] == "What would you like to do?"
+        assert seen[2].startswith("Any practical constraints?")
+        assert "Proposed success criteria" in seen[3]
+        assert seen[4] == "What would you like to do?"
 
         # All three agent roles ran.
         assert "advisor_agent" in runner.calls
@@ -312,7 +314,7 @@ class TestBuilderEndpoints:
             if line.startswith("data: ")
         ]
         kinds = [e["kind"] for e in events]
-        assert kinds.count("question") == 4
+        assert kinds.count("question") == 5
         assert "agent_text" in kinds
         assert kinds[-1] == "done"
         done = events[-1]

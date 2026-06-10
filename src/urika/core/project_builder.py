@@ -148,6 +148,12 @@ class ProjectBuilder:
         if interpretability_level:
             self.interpretability_level = interpretability_level
 
+    def set_constraints(self, constraints: dict[str, str]) -> None:
+        """Store practical constraints from the interactive loop's fixed
+        elicitation question."""
+        if constraints:
+            self.constraints = dict(constraints)
+
     def set_hypotheses(self, hypotheses: list[str]) -> None:
         """Store user-approved hypotheses from the interactive loop."""
         self.hypotheses = [str(h).strip() for h in hypotheses if str(h).strip()]

@@ -409,28 +409,15 @@ async def api_create_project(request: Request):
 #   3. When the loop wants a user answer, it emits a ``question`` event
 #      carrying the question text + (for menus) options. The wizard
 #      POSTs back to ``/projects/{name}/builder/answer``.
-#   4. On user cancel or window close, the wizard POSTs to
-#      ``/projects/{name}/builder/abort`` which cancels the background
-#      task and trashes the partial workspace.
+#   4. Only the wizard's explicit Abort button POSTs to
+#      ``/projects/{name}/builder/abort``, which cancels the background
+#      task and trashes the partial workspace. Closing the window does
+#      NOT abort — the session survives disconnect so the wizard can
+#      re-attach.
 #
 # Concurrency: one builder session per project at a time (keyed by
 # project name in ``builder_sessions``). A second ``start`` returns 409
 # until the first is done or aborted.
-
-
-def _persist_builder_suggestions(project_dir: Path, suggestions: dict | None) -> None:
-    """Mirror what ``ProjectBuilder.write_project`` does for the
-    suggestions slot — writes them to
-    ``<project_dir>/suggestions/initial.json`` so the rest of the
-    project-startup machinery picks them up the same way the CLI
-    path produces. No-op for falsy suggestions."""
-    if not suggestions:
-        return
-    suggestions_dir = project_dir / "suggestions"
-    suggestions_dir.mkdir(exist_ok=True)
-    (suggestions_dir / "initial.json").write_text(
-        json.dumps(suggestions, indent=2) + "\n", encoding="utf-8"
-    )
 
 
 class _DashboardBuilderShim(ProjectBuilder):
@@ -585,9 +572,9 @@ async def api_builder_start(name: str):
                 extra_profiles=extra_profiles,
             )
             session.final_suggestions = suggestions
-            # Persist to disk in the dashboard path (CLI path's
-            # ProjectBuilder.write_project handles this for ``urika new``).
-            _persist_builder_suggestions(summary.path, suggestions)
+            # On-disk persistence (suggestions/initial.json) happens in
+            # the loop's ``finally`` via ``apply_research_intent()`` on
+            # the shim — same flush point as the CLI path.
         except BuilderAborted:
             session.aborted = True
         except asyncio.CancelledError:
@@ -697,7 +684,9 @@ async def api_builder_answer(name: str, request: Request):
 @router.post("/projects/{name}/builder/abort")
 async def api_builder_abort(name: str):
     """Cancel the in-flight builder session and trash the partial
-    project. The wizard calls this on user cancel or window close."""
+    project. Only invoked by the wizard's explicit abort button —
+    never on window close. Sessions survive a disconnect so the
+    wizard can re-attach to a still-running loop."""
     from urika.core.project_delete import trash_project
     from urika.dashboard import builder_sessions
 

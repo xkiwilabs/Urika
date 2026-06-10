@@ -169,7 +169,12 @@ def test_builder_loop_handles_clarifying_questions(tmp_path: Path, monkeypatch) 
     projects_dir, project_dir = _make_project(tmp_path)
 
     class _QRunner(_ScriptedRunner):
+        def __init__(self) -> None:
+            super().__init__()
+            self.prompts: list[tuple[str, str]] = []
+
         async def run(self, config, prompt, *, on_message=None):  # noqa: ANN001
+            self.prompts.append((config.name, prompt))
             self.calls.append(config.name)
             if config.name == "project_builder":
                 # Dispatch on prompt content — the role now also receives
@@ -216,8 +221,13 @@ def test_builder_loop_handles_clarifying_questions(tmp_path: Path, monkeypatch) 
         "Q?",
         extra_profiles=None,
     )
-    # feasibility + question round + ready round + hypotheses offer.
-    assert runner.calls.count("project_builder") == 4
+    # Pin prompt content instead of a brittle call count: the builder
+    # role saw the feasibility prompt and the hypotheses prompt exactly
+    # once each (the clarifying rounds are already pinned by the
+    # advisor-prompt assertion above).
+    pb_prompts = [p for name, p in runner.prompts if name == "project_builder"]
+    assert sum("Assess whether this research question" in p for p in pb_prompts) == 1
+    assert sum("Propose 1-4 testable hypotheses" in p for p in pb_prompts) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -508,13 +518,58 @@ class TestPreferenceElicitation:
         assert "## Analysis Preferences" not in planning
 
 
+class TestConstraintsElicitation:
+    _QUESTION = (
+        "Any practical constraints? (time or compute budget, "
+        "regulatory requirements, interpretability needs)"
+    )
+
+    def test_fixed_question_presents_no_constraints_option(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, _, asked = _drive_core_loop(monkeypatch, tmp_path, runner)
+        constraint_qs = [q for q in asked if q.text == self._QUESTION]
+        assert len(constraint_qs) == 1
+        assert constraint_qs[0].options == ["No constraints"]
+
+    def test_freetext_constraints_land_in_toml_and_prompts(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        notes = "Results needed within two weeks; laptop-only compute"
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch, tmp_path, runner, ["done", "done", notes]
+        )
+        block = _project_block(project_dir)
+        assert block["constraints"] == {"notes": notes}
+        advisor = runner.advisor_prompts()[0]
+        assert "## Practical Constraints" in advisor
+        assert notes in advisor
+        planning = runner.planning_prompts()[0]
+        assert "## Practical Constraints" in planning
+        assert notes in planning
+
+    @pytest.mark.parametrize("answer", ["No constraints", "1", "done", "skip"])
+    def test_no_constraints_or_skip_leaves_field_absent(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home, answer: str
+    ) -> None:
+        runner = _IntentRunner()
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch, tmp_path, runner, ["done", "done", answer]
+        )
+        assert "constraints" not in _project_block(project_dir)
+        assert "## Practical Constraints" not in runner.advisor_prompts()[0]
+        assert "## Practical Constraints" not in runner.planning_prompts()[0]
+
+
 class TestHypothesesOffer:
     def test_accepted_hypotheses_land_in_toml_and_planning_prompt(
         self, tmp_path: Path, monkeypatch, tmp_urika_home
     ) -> None:
         runner = _IntentRunner(hypotheses_text=_HYPOTHESES_JSON)
         _, project_dir, asked = _drive_core_loop(
-            monkeypatch, tmp_path, runner, ["done", "done", "Accept"]
+            monkeypatch, tmp_path, runner, ["done", "done", "done", "Accept"]
         )
         hyp_qs = [q for q in asked if q.options == ["Accept", "Skip"]]
         assert len(hyp_qs) == 1
@@ -538,7 +593,7 @@ class TestHypothesesOffer:
             monkeypatch,
             tmp_path,
             runner,
-            ["done", "done", "H1: my own idea\nH2: a second idea"],
+            ["done", "done", "done", "H1: my own idea\nH2: a second idea"],
         )
         assert _project_block(project_dir)["hypotheses"] == [
             "H1: my own idea",
@@ -550,7 +605,7 @@ class TestHypothesesOffer:
     ) -> None:
         runner = _IntentRunner(hypotheses_text=_HYPOTHESES_JSON)
         _, project_dir, _ = _drive_core_loop(
-            monkeypatch, tmp_path, runner, ["done", "done", "Skip"]
+            monkeypatch, tmp_path, runner, ["done", "done", "done", "Skip"]
         )
         assert "hypotheses" not in _project_block(project_dir)
         assert "## Hypotheses" not in runner.planning_prompts()[0]
@@ -583,7 +638,7 @@ class TestCriteriaCoDrafting:
     ) -> None:
         runner = _IntentRunner()
         _, _, asked = _drive_core_loop(
-            monkeypatch, tmp_path, runner, ["done", "done", "Accept"]
+            monkeypatch, tmp_path, runner, ["done", "done", "done", "Accept"]
         )
         crit_qs = [q for q in asked if q.options == ["Accept", "Describe changes"]]
         assert len(crit_qs) == 1
@@ -596,7 +651,7 @@ class TestCriteriaCoDrafting:
     ) -> None:
         runner = _IntentRunner()
         _, project_dir, _ = _drive_core_loop(
-            monkeypatch, tmp_path, runner, ["done", "done", "Accept"]
+            monkeypatch, tmp_path, runner, ["done", "done", "done", "Accept"]
         )
         latest, history = self._latest_criteria(project_dir)
         assert latest.criteria == self._PROPOSAL
@@ -612,7 +667,13 @@ class TestCriteriaCoDrafting:
             monkeypatch,
             tmp_path,
             runner,
-            ["done", "done", "Describe changes", "also require cross-validation"],
+            [
+                "done",
+                "done",
+                "done",
+                "Describe changes",
+                "also require cross-validation",
+            ],
         )
         latest, history = self._latest_criteria(project_dir)
         assert latest.criteria["user_amendments"] == "also require cross-validation"
@@ -626,7 +687,10 @@ class TestCriteriaCoDrafting:
     ) -> None:
         runner = _IntentRunner()
         _, project_dir, _ = _drive_core_loop(
-            monkeypatch, tmp_path, runner, ["done", "done", "at least 3 approaches"]
+            monkeypatch,
+            tmp_path,
+            runner,
+            ["done", "done", "done", "at least 3 approaches"],
         )
         latest, _ = self._latest_criteria(project_dir)
         assert latest.criteria["user_amendments"] == "at least 3 approaches"

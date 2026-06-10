@@ -465,6 +465,24 @@ async def run_builder_loop(
                 "set_research_preferences", analysis_approach, interpretability
             )
 
+        constraints: dict[str, str] = {}
+        constraints_answer = (
+            await ask_user(
+                BuilderQuestion(
+                    text=(
+                        "Any practical constraints? (time or compute budget, "
+                        "regulatory requirements, interpretability needs)"
+                    ),
+                    options=["No constraints"],
+                )
+            )
+        ).strip()
+        low = constraints_answer.lower()
+        if low not in _SKIP_ANSWERS and low not in ("1", "no constraints"):
+            # Free text — the user described their constraints directly.
+            constraints = {"notes": constraints_answer}
+            _builder_set("set_constraints", constraints)
+
         # --- Hypothesis decomposition offer (best-effort) ---
         # One agent call proposing 1-4 testable hypotheses; agent or parse
         # failure skips the offer silently — like the feasibility check,
@@ -543,6 +561,7 @@ async def run_builder_loop(
             answers,
             preferences=preferences or None,
             hypotheses=hypotheses or None,
+            constraints=constraints or None,
         )
         suggest_config = suggest_role.build_config(
             project_dir=project_dir, experiment_id=""
@@ -582,6 +601,7 @@ async def run_builder_loop(
             data_summary,
             preferences=preferences or None,
             hypotheses=hypotheses or None,
+            constraints=constraints or None,
         )
         plan_config = plan_role.build_config(project_dir=project_dir, experiment_id="")
         plan_result = await _run_agent(plan_config, plan_prompt)
@@ -685,6 +705,7 @@ async def run_builder_loop(
                 data_summary,
                 preferences=preferences or None,
                 hypotheses=hypotheses or None,
+                constraints=constraints or None,
             )
             plan_result = await _run_agent(plan_config, plan_prompt)
             if plan_result.success:
