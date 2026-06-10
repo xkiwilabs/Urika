@@ -56,6 +56,10 @@ class IMetric(ABC):
         take the percentile interval of the resampled values. Deterministic
         for a given ``seed``.
 
+        Percentile intervals can undercover for skewed statistics near a
+        boundary (e.g. R² or AUC near 1.0); BCa would be more accurate there
+        but is not implemented.
+
         Concrete on the ABC so every metric inherits it — subclasses only
         implement :meth:`compute`.
 
@@ -73,9 +77,12 @@ class IMetric(ABC):
 
         Raises:
             ValueError: If inputs have fewer than 3 elements or mismatched
-                lengths, or if more than 20% of resamples fail inside
-                :meth:`compute` (data too degenerate for a bootstrap CI).
+                lengths, if ``n_boot`` is less than 1, or if more than 20%
+                of resamples fail inside :meth:`compute` (data too degenerate
+                for a bootstrap CI).
         """
+        if n_boot < 1:
+            raise ValueError("n_boot must be >= 1")
         y_true = np.asarray(y_true)
         y_pred = np.asarray(y_pred)
         if len(y_true) != len(y_pred):
@@ -99,7 +106,12 @@ class IMetric(ABC):
             except Exception:
                 # Degenerate resamples (e.g. a single-class y_true for
                 # AUC, zero variance for R²) are skipped — but if they
-                # dominate, the interval would be meaningless.
+                # dominate, the interval would be meaningless.  Even when
+                # failures are a minority, skipping them can bias the
+                # interval if failures are non-random: e.g. single-class
+                # resamples for AUC cluster at one end of the distribution,
+                # so the surviving resamples systematically misrepresent
+                # the tail that matters most.
                 failures += 1
         if failures > 0.2 * n_boot:
             raise ValueError(

@@ -73,7 +73,7 @@ Each run must have a unique `run_id` (e.g., "run-001", "run-002"). Runs without 
 }}
 ```
 
-**Confidence intervals are required for primary metrics**: for EVERY primary metric (the metrics your success criteria are judged on) where resampling is feasible, report a confidence interval in `metrics_with_uncertainty` (same key as in `metrics`). Each entry must have the shape `{{"value": <point estimate>, "ci_lower": <lower bound>, "ci_upper": <upper bound>, "confidence": 0.95}}`. How to compute it:
+**Confidence intervals are required for primary metrics**: for EVERY primary metric (the metrics your success criteria are judged on) where resampling is feasible, report a confidence interval in `metrics_with_uncertainty` (same key as in `metrics`). Each entry must have the shape `{{"value": <point estimate>, "ci_lower": <lower bound>, "ci_upper": <upper bound>, "confidence": <level, e.g. 0.95>}}`. How to compute it:
 
 - For metrics computed by Urika's built-in tools or metric library, use `compute_with_ci` — e.g. `from urika.evaluation.metrics.regression import R2` then `R2().compute_with_ci(y_true, y_pred)` returns exactly this shape (pairwise bootstrap, deterministic seed).
 - In your own analysis scripts, use a pairwise bootstrap over (y_true, y_pred) or `scipy.stats.bootstrap`.
@@ -88,6 +88,8 @@ Where a CI is infeasible (e.g., a single model fit with no resampling structure)
   }}
 }}
 ```
+
+(Use the actual confidence level you computed, e.g. 0.90 or 0.99; do not hardcode 0.95 if you used a different level.)
 
 4. **Iterate** — Try variations of parameters or methods to improve results.
 

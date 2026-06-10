@@ -94,6 +94,14 @@ class TestComputeWithCi:
         with pytest.raises(ValueError, match="at least 3"):
             R2().compute_with_ci(np.array([1.0, 2.0]), np.array([1.0, 2.0]))
 
+    def test_n_boot_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="n_boot must be >= 1"):
+            R2().compute_with_ci(
+                np.array([1.0, 2.0, 3.0, 4.0]),
+                np.array([1.1, 2.1, 3.1, 4.1]),
+                n_boot=0,
+            )
+
     def test_inherited_by_all_metrics(self) -> None:
         """compute_with_ci is concrete on the ABC — every metric has it."""
         from urika.evaluation.metrics.registry import MetricRegistry
