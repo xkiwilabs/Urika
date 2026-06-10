@@ -22,6 +22,13 @@ class ProjectConfig:
     data_paths: list[str] = field(default_factory=list)
     success_criteria: dict[str, Any] = field(default_factory=dict)
     audience: str = "standard"
+    # Research-intent fields — gathered by the interactive builder loop.
+    # Empty means the user skipped (every project created before these
+    # existed loads with these defaults).
+    hypotheses: list[str] = field(default_factory=list)
+    analysis_approach: str = ""  # "" | statistical | predictive | exploratory | mixed
+    interpretability_level: str = ""  # "" | interpretable | balanced | max_performance
+    constraints: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
@@ -45,6 +52,14 @@ class ProjectConfig:
             d["project"]["data_paths"] = self.data_paths
         if self.success_criteria:
             d["project"]["success_criteria"] = self.success_criteria
+        if self.hypotheses:
+            d["project"]["hypotheses"] = self.hypotheses
+        if self.analysis_approach:
+            d["project"]["analysis_approach"] = self.analysis_approach
+        if self.interpretability_level:
+            d["project"]["interpretability_level"] = self.interpretability_level
+        if self.constraints:
+            d["project"]["constraints"] = self.constraints
         d["preferences"] = {"audience": self.audience}
         return d
 
@@ -60,6 +75,10 @@ class ProjectConfig:
             data_paths=p.get("data_paths", []),
             success_criteria=p.get("success_criteria", {}),
             audience=d.get("preferences", {}).get("audience", "standard"),
+            hypotheses=p.get("hypotheses", []),
+            analysis_approach=p.get("analysis_approach", ""),
+            interpretability_level=p.get("interpretability_level", ""),
+            constraints=p.get("constraints", {}),
         )
 
 

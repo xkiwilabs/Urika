@@ -153,6 +153,65 @@ class TestProjectConfig:
         d = config.to_toml_dict()
         assert d["preferences"]["audience"] == "expert"
 
+    def test_research_intent_roundtrips_via_toml(self) -> None:
+        """All four research-intent fields survive a to/from TOML round-trip."""
+        config = ProjectConfig(
+            name="test",
+            question="Q?",
+            mode="confirmatory",
+            hypotheses=["H1: A predicts B", "H2: effect is stronger in group X"],
+            analysis_approach="statistical",
+            interpretability_level="interpretable",
+            constraints={"interpretability": "results must be explainable in a paper"},
+        )
+        d = config.to_toml_dict()
+        restored = ProjectConfig.from_toml_dict(d)
+        assert restored.hypotheses == config.hypotheses
+        assert restored.analysis_approach == "statistical"
+        assert restored.interpretability_level == "interpretable"
+        assert restored.constraints == config.constraints
+
+    def test_research_intent_in_project_block(self) -> None:
+        config = ProjectConfig(
+            name="test",
+            question="Q?",
+            mode="exploratory",
+            hypotheses=["H1: x"],
+            analysis_approach="mixed",
+            interpretability_level="balanced",
+            constraints={"time": "one week"},
+        )
+        d = config.to_toml_dict()
+        assert d["project"]["hypotheses"] == ["H1: x"]
+        assert d["project"]["analysis_approach"] == "mixed"
+        assert d["project"]["interpretability_level"] == "balanced"
+        assert d["project"]["constraints"] == {"time": "one week"}
+
+    def test_research_intent_omitted_when_empty(self) -> None:
+        """Empty research-intent fields don't pollute urika.toml — matches
+        the omit-when-empty style of data_paths / success_criteria."""
+        d = ProjectConfig(name="test", question="Q?", mode="exploratory").to_toml_dict()
+        assert "hypotheses" not in d["project"]
+        assert "analysis_approach" not in d["project"]
+        assert "interpretability_level" not in d["project"]
+        assert "constraints" not in d["project"]
+
+    def test_research_intent_defaults_on_legacy_toml(self) -> None:
+        """Pre-v0.8 urika.toml files without research-intent keys load
+        with empty defaults rather than raising."""
+        d = {
+            "project": {
+                "name": "legacy",
+                "question": "Q?",
+                "mode": "exploratory",
+            }
+        }
+        config = ProjectConfig.from_toml_dict(d)
+        assert config.hypotheses == []
+        assert config.analysis_approach == ""
+        assert config.interpretability_level == ""
+        assert config.constraints == {}
+
 
 class TestExperimentConfig:
     def test_create(self) -> None:
