@@ -6,14 +6,35 @@ from pathlib import Path
 from typing import Any
 
 from urika.core.experiment import list_experiments, load_experiment
+from urika.core.method_glossary import explain_method
+from urika.core.models import ProjectConfig
 from urika.core.progress import load_progress
 from urika.evaluation.ranking import LOWER_IS_BETTER, select_best_run
 
 
-def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
+def _project_audience(project_dir: Path, config: ProjectConfig | None = None) -> str:
+    """Resolve the project audience: a caller-provided config wins,
+    otherwise read urika.toml. Anything unreadable → "standard"."""
+    if config is not None:
+        return config.audience
+    try:
+        from urika.core.workspace import load_project_config
+
+        return load_project_config(project_dir).audience
+    except Exception:
+        return "standard"
+
+
+def update_experiment_notes(
+    project_dir: Path,
+    experiment_id: str,
+    *,
+    config: ProjectConfig | None = None,
+) -> None:
     """Regenerate the experiment's notes.md from progress.json runs."""
     exp = load_experiment(project_dir, experiment_id)
     progress = load_progress(project_dir, experiment_id)
+    audience = _project_audience(project_dir, config)
 
     lines = [
         f"# Experiment: {exp.name}",
@@ -31,6 +52,12 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
         method = run.get("method", "unknown")
         lines.append(f"## {run_id}: {method}")
         lines.append("")
+
+        if audience == "novice":
+            explainer = explain_method(method)
+            if explainer:
+                lines.append(f"*What this method does:* {explainer}")
+                lines.append("")
 
         metrics = run.get("metrics", {})
         if metrics:

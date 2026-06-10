@@ -221,3 +221,52 @@ def test_write_readme_with_methods_includes_summary(tmp_path: Path) -> None:
     body = (tmp_path / "README.md").read_text(encoding="utf-8")
     # Mentions at least one method name.
     assert "linear" in body or "ridge" in body
+
+
+# ── audience-aware README (novice intro) ───────────────────────
+
+
+def _write_toml(tmp_path: Path, audience: str | None) -> None:
+    body = (
+        '[project]\nname = "demo"\nquestion = "Does X predict Y?"\n'
+        'mode = "exploratory"\n'
+    )
+    if audience is not None:
+        body += f'\n[preferences]\naudience = "{audience}"\n'
+    (tmp_path / "urika.toml").write_text(body, encoding="utf-8")
+
+
+def test_novice_readme_gains_how_to_read_section(tmp_path: Path) -> None:
+    _write_toml(tmp_path, "novice")
+    write_readme(tmp_path)
+    body = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert "## How to read these results" in body
+
+
+def test_standard_readme_has_no_novice_intro(tmp_path: Path) -> None:
+    _write_toml(tmp_path, "standard")
+    write_readme(tmp_path)
+    body = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert "How to read these results" not in body
+
+
+def test_unset_audience_readme_identical_across_builds(tmp_path: Path) -> None:
+    """No [preferences] section at all (legacy project) → no novice
+    content, and two identical fixtures produce identical bytes."""
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    for d in (a, b):
+        d.mkdir()
+        _write_toml(d, None)
+        write_readme(d)
+    body_a = (a / "README.md").read_text(encoding="utf-8")
+    body_b = (b / "README.md").read_text(encoding="utf-8")
+    assert body_a == body_b
+    assert "How to read these results" not in body_a
+
+
+def test_expert_readme_has_no_novice_intro(tmp_path: Path) -> None:
+    _write_toml(tmp_path, "expert")
+    write_readme(tmp_path)
+    body = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert "How to read these results" not in body

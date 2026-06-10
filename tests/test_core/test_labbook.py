@@ -384,3 +384,81 @@ class TestBestRunLogic:
         ).read_text()
         # Best run is run-002 (lowest rmse) even though its r2 is the worst
         assert "Best run**: run-002 (method_b)" in summary
+
+
+class TestNoviceAudienceExplainers:
+    def _make_project(self, base: Path, audience: str) -> Path:
+        d = base / f"proj-{audience}"
+        config = ProjectConfig(
+            name="aud-project",
+            question="What predicts Y?",
+            mode="exploratory",
+            audience=audience,
+        )
+        create_project_workspace(d, config)
+        return d
+
+    def _add_run(self, project_dir: Path, method: str = "linear_regression") -> str:
+        exp = create_experiment(project_dir, name="Baseline", hypothesis="h")
+        append_run(
+            project_dir,
+            exp.experiment_id,
+            RunRecord(
+                run_id="run-001",
+                method=method,
+                params={},
+                metrics={"r2": 0.5},
+            ),
+        )
+        return exp.experiment_id
+
+    def test_novice_notes_include_method_explainer(self, tmp_path: Path) -> None:
+        from urika.core.method_glossary import METHOD_GLOSSARY
+
+        proj = self._make_project(tmp_path, "novice")
+        eid = self._add_run(proj)
+        update_experiment_notes(proj, eid)
+        notes = (proj / "experiments" / eid / "labbook" / "notes.md").read_text(
+            encoding="utf-8"
+        )
+        assert (
+            f"*What this method does:* {METHOD_GLOSSARY['linear_regression']}" in notes
+        )
+
+    def test_novice_notes_skip_unknown_methods(self, tmp_path: Path) -> None:
+        proj = self._make_project(tmp_path, "novice")
+        eid = self._add_run(proj, method="quantum_widget_net")
+        update_experiment_notes(proj, eid)
+        notes = (proj / "experiments" / eid / "labbook" / "notes.md").read_text(
+            encoding="utf-8"
+        )
+        assert "What this method does" not in notes
+
+    def test_standard_notes_identical_across_builds_and_no_explainer(
+        self, tmp_path: Path
+    ) -> None:
+        """Standard audience output is unchanged: no explainer lines, and
+        two identical fixtures produce byte-identical notes."""
+        notes: list[str] = []
+        for sub in ("one", "two"):
+            base = tmp_path / sub
+            base.mkdir()
+            proj = self._make_project(base, "standard")
+            eid = self._add_run(proj)
+            update_experiment_notes(proj, eid)
+            notes.append(
+                (proj / "experiments" / eid / "labbook" / "notes.md").read_text(
+                    encoding="utf-8"
+                )
+            )
+        assert notes[0] == notes[1]
+        assert "What this method does" not in notes[0]
+
+    def test_expert_notes_have_no_explainer(self, tmp_path: Path) -> None:
+        proj = self._make_project(tmp_path, "expert")
+        eid = self._add_run(proj)
+        update_experiment_notes(proj, eid)
+        notes = (proj / "experiments" / eid / "labbook" / "notes.md").read_text(
+            encoding="utf-8"
+        )
+        assert "What this method does" not in notes

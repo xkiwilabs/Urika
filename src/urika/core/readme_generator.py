@@ -16,6 +16,18 @@ from urika.core.progress import load_progress
 from urika.core.workspace import load_project_config
 from urika.evaluation.ranking import select_best_run
 
+_NOVICE_INTRO = (
+    "Each experiment below tried one or more analytical methods on this "
+    "project's dataset. Metrics are numeric scores measuring how well a "
+    "method answered the research question — for scores like R² or "
+    "accuracy higher is better, while for error measures like RMSE lower "
+    "is better. The best run is the one whose primary metric beats the "
+    "others and, where the project defines a success criterion, meets "
+    "that target. For the full detail behind any experiment, follow its "
+    "link to the labbook summary, which records every run, its settings, "
+    "its observations, and its figures."
+)
+
 
 def generate_readme(project_dir: Path, summary: str = "") -> str:
     """Generate README.md content for a project.
@@ -42,6 +54,12 @@ def generate_readme(project_dir: Path, summary: str = "") -> str:
         parts.append(f"{config.description}\n")
     else:
         parts.append(f"Mode: {config.mode}\n")
+
+    # Novice audience: a plain-language primer on reading the README.
+    # Standard/expert projects get byte-identical output to before.
+    if config.audience == "novice":
+        parts.append("## How to read these results\n")
+        parts.append(_NOVICE_INTRO + "\n")
 
     # Current Status (agent-written or default)
     parts.append("## Current Status\n")
