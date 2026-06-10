@@ -275,6 +275,32 @@ class TestInlineFigureLinking:
         # Run-id match wins outright — no method-name fallback mixing
         assert "neural_net_overview.png" not in notes
 
+    def test_run_id_boundary_does_not_claim_longer_id(self, project_dir: Path) -> None:
+        """run-1 must NOT claim run-10-*.png (boundary-aware match)."""
+        exp = create_experiment(project_dir, name="Boundary", hypothesis="h")
+        eid = exp.experiment_id
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-1",
+                method="linear_regression",
+                params={},
+                metrics={"r2": 0.7},
+            ),
+        )
+        artifacts = project_dir / "experiments" / eid / "artifacts"
+        (artifacts / "run-1-scatter.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (artifacts / "run-10-hist.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        update_experiment_notes(project_dir, eid)
+        notes = (project_dir / "experiments" / eid / "labbook" / "notes.md").read_text(
+            encoding="utf-8"
+        )
+
+        assert "(../artifacts/run-1-scatter.png)" in notes
+        assert "run-10-hist.png" not in notes
+
     def test_method_name_fallback_when_no_run_id_figure(
         self, project_dir: Path
     ) -> None:

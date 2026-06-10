@@ -129,7 +129,7 @@ Produce a single JSON block with per-layer assessment:
 }}
 ```
 
-The `assessment` object should only include layers that are present in the criteria. Omit layers that are not defined. For each layer:
+The `assessment` object should only include layers that are present in the criteria. Omit layers that are not defined. Exception: when a `method_validity` layer is present, always include `assumptions_detail` — even if the project's criteria do not enumerate it. For each layer:
 
 - **threshold**: Report `primary_met`, `primary_value`, `primary_target`. Optionally include `secondary_met`, `secondary_value`, `secondary_target` and `other` results if those are defined.
 - **quality**: Report each defined check as `true`/`false`.

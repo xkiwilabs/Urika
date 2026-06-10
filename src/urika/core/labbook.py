@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -79,10 +80,11 @@ def update_experiment_notes(
         # attach to that run first; the method-name substring heuristic is
         # only the fallback when no run-id-tagged figure exists for the run.
         run_id_lower = str(run_id).lower()
+        _run_id_pat = re.compile(re.escape(run_id_lower) + r"(?!\d)")
         matched = [
             fpath
             for fname, fpath in figure_names.items()
-            if run.get("run_id") and run_id_lower in fname
+            if run.get("run_id") and _run_id_pat.search(fname)
         ]
         if not matched:
             method_lower = run["method"].lower()

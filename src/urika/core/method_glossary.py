@@ -16,6 +16,20 @@ from __future__ import annotations
 
 import re
 
+_ALIASES: dict[str, str] = {
+    "xgboost": "gradient_boosting",
+    "lightgbm": "gradient_boosting",
+    "lgbm": "gradient_boosting",
+    "gbm": "gradient_boosting",
+    "ols": "linear_regression",
+    "anova": "one_way_anova",
+    "ttest": "paired_t_test",
+    "kmeans": "cluster_analysis",
+    "ridge": "regularized_regression",
+    "lasso": "regularized_regression",
+    "elastic_net": "regularized_regression",
+}
+
 METHOD_GLOSSARY: dict[str, str] = {
     "cluster_analysis": (
         "Groups observations so members of the same cluster are more "
@@ -164,6 +178,8 @@ def explain_method(name: str) -> str | None:
     key = re.sub(r"[\s\-]+", "_", name.strip().lower())
     if key in METHOD_GLOSSARY:
         return METHOD_GLOSSARY[key]
+    if key in _ALIASES:
+        return METHOD_GLOSSARY[_ALIASES[key]]
     candidates = [k for k in METHOD_GLOSSARY if k in key or key in k]
     if not candidates:
         return None

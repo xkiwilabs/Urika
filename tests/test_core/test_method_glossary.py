@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urika.core.method_glossary import METHOD_GLOSSARY, explain_method
+from urika.core.method_glossary import METHOD_GLOSSARY, explain_method, _ALIASES
 
 
 class TestGlossaryContents:
@@ -70,3 +70,38 @@ class TestExplainMethod:
 
     def test_empty_returns_none(self) -> None:
         assert explain_method("") is None
+
+
+class TestAliasLookup:
+    def test_xgboost_returns_gradient_boosting(self) -> None:
+        assert explain_method("xgboost") == METHOD_GLOSSARY["gradient_boosting"]
+
+    def test_xgboost_case_insensitive(self) -> None:
+        assert explain_method("XGBoost") == METHOD_GLOSSARY["gradient_boosting"]
+
+    def test_ridge_returns_regularized_regression(self) -> None:
+        assert explain_method("ridge") == METHOD_GLOSSARY["regularized_regression"]
+
+    def test_lasso_returns_regularized_regression(self) -> None:
+        assert explain_method("lasso") == METHOD_GLOSSARY["regularized_regression"]
+
+    def test_elastic_net_returns_regularized_regression(self) -> None:
+        assert (
+            explain_method("elastic_net") == METHOD_GLOSSARY["regularized_regression"]
+        )
+
+    def test_unknown_still_none(self) -> None:
+        assert explain_method("quantum_annealing_net") is None
+
+    def test_random_forest_classifier_exact_wins_over_alias(self) -> None:
+        """Alias pass must not break exact/fuzzy precedence."""
+        result = explain_method("random_forest_classifier")
+        assert result == METHOD_GLOSSARY["random_forest_classifier"]
+        assert result != METHOD_GLOSSARY["random_forest"]
+
+    def test_all_alias_targets_exist_in_glossary(self) -> None:
+        """Every alias points to a real glossary key."""
+        for alias, target in _ALIASES.items():
+            assert target in METHOD_GLOSSARY, (
+                f"alias {alias!r} maps to {target!r} which is not in METHOD_GLOSSARY"
+            )
