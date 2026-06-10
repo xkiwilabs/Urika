@@ -12,6 +12,7 @@ The recognised lock shapes are:
 |---|---|
 | `experiments/<id>/.lock` | run (experiment orchestrator) |
 | `experiments/<id>/.evaluate.lock` | evaluate |
+| `experiments/<id>/.plan.lock` | plan (planning agent, v0.8.0) |
 | `experiments/<id>/.report.lock` | report |
 | `experiments/<id>/.present.lock` | present |
 | `projectbook/.finalize.lock` | finalize |
@@ -22,7 +23,7 @@ Each PID lock contains the subprocess PID. `urika.dashboard.active_ops.list_acti
 
 Three surfaces read from this list:
 
-**Idempotent spawn endpoints.** Every `POST` that spawns a subprocess (`/run`, `/finalize`, `/summarize`, `/experiments/<id>/evaluate`, `/experiments/<id>/report`, `/present`, `/tools/build`) checks for an existing live op of the same kind first. If one exists:
+**Idempotent spawn endpoints.** Every `POST` that spawns a subprocess (`/run`, `/finalize`, `/summarize`, `/experiments/<id>/evaluate`, `/experiments/<id>/plan`, `/experiments/<id>/report`, `/present`, `/tools/build`) checks for an existing live op of the same kind first. If one exists:
 - HTMX request → 200 + `HX-Redirect` to the running op's log URL (the user lands on the live stream they were going to see anyway).
 - Plain HTTP → 409 with `{"status": "already_running", "log_url": ..., "type": ...}` (curl / scripts can detect duplicates).
 
@@ -46,6 +47,10 @@ When a stream ends, log pages fetch a small artifact-existence probe:
 - Project-level ops use the new `GET /api/projects/<n>/artifacts/projectbook` returning `{has_summary, has_report, has_presentation, has_findings}`.
 
 The probe response unhides whichever "view the result" buttons are relevant — "View summary" after summarize, "View report" / "Open presentation ↗" / "View findings" after finalize, "Back to tools" after build-tool. Failed runs that wrote partial output still surface whatever DID land on disk; everything else stays hidden.
+
+### Builder wizard sessions (not lockfile-based)
+
+The interactive builder wizard (v0.8.0 — see [Pages → Interactive builder wizard](18a-dashboard-pages.md#interactive-builder-wizard)) is the one running operation that is *not* tracked by a lock file: the builder loop runs as a background asyncio task inside the dashboard process itself, keyed by project name. One builder session per project at a time — a second `POST .../builder/start` returns 409 until the first finishes or is aborted. Sessions deliberately survive SSE disconnects (closing the tab does not abort; reloading `/projects/<name>/builder` re-attaches), so the only ways a session ends are: the loop completing, the wizard's explicit Abort button (which also moves the partial project to `~/.urika/trash/`), or a dashboard restart.
 
 
 ## Project deletion (Danger zone)

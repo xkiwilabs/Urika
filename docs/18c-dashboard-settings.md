@@ -14,7 +14,7 @@ Two settings pages share the same tabbed form pattern. Tabs are a small Alpine.j
   - **Notifications**: per-channel **Inherit / Enabled / Disabled** radios (slack, email, desktop) plus an editable extra-recipients list. Same inheritance pattern as Privacy.
 - **Global settings** (`/settings`) — writes to `~/.urika/settings.toml` and seeds new projects. Four tabs:
   - **Privacy**: default privacy mode for new projects.
-  - **Models**: default per-agent model assignments. Same Anthropic / OpenAI / Google Provider filter as the project Models tab; the per-agent defaults seeded here flow into every newly-created project's `urika.toml`.
+  - **Models**: default per-agent model assignments. Same Anthropic / OpenAI / Google Provider filter as the project Models tab; the per-agent defaults seeded here flow into every newly-created project's `urika.toml`. The tab also carries a **provider auth-mode toggle** — a per-provider dropdown (API key vs Subscription for Anthropic; API key only for OpenAI / Google) with its own Save button that POSTs to `POST /api/settings/provider-auth`, writing `[<provider>] auth` to `~/.urika/settings.toml` outside the main settings PUT (so a partial save here can't clobber other tabs). Subscription mode for OpenAI / Google is rejected server-side with the same explanation as `urika config openai|google --mode subscription`. Cross-surface parity with `urika config <provider> --mode ...` — see [CLI System](16e-cli-system.md#urika-config-anthropicopenaigoogle).
   - **Preferences**: default audience, max turns, theme preference.
   - **Notifications**: default notification configuration.
 

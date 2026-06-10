@@ -264,7 +264,13 @@ issue much faster to act on.
 
 ## Recently shipped
 
-**v0.7 — multi-provider adapters** (current release)
+**v0.8 — research scoping + output polish** (current release)
+- Project builder now scopes real research intent: feasibility check on your research question, analysis-approach / interpretability / constraints preferences, hypotheses decomposition, and co-drafted success criteria — all persisted in `urika.toml` and fed to the agents
+- Dashboard interactive builder wizard: the New Project modal's "Run interactive setup" checkbox opens the same agent Q&A loop `urika new` runs in a terminal, streamed live in the browser
+- Plain-language results: one-sentence interpretation per metric in the labbook, novice-audience method explainers, and run-id traceability (`run-003-residuals.png`-style figure names; every number in `findings.json` traces to its run record)
+- Adapter hardening: OpenAI $0-usage accounting bug fixed, stream timeouts + error categorization now uniform across Anthropic / OpenAI / Google
+
+**v0.7 — multi-provider adapters**
 - OpenAI Agents SDK adapter + `[openai]` extra (`pip install urika[openai]`)
 - Google Agent Development Kit adapter + `[google]` extra (`pip install urika[google]`)
 - Model-prefix routing (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google) — mix providers per agent in the same project
@@ -277,22 +283,17 @@ issue much faster to act on.
 - Dashboard Git tab with remote URL, last push, recent commits
 - Researcher-safe `.gitignore` template with managed-block markers
 
-**v0.5 — smarter project memory**
-- `memory_curator` agent organises captured memory, merges duplicates, flags contradictions (`urika memory curate`)
-- Browse archived / superseded entries (`urika memory archive`) + see how memory evolved (`urika memory diff`)
-- Dashboard Memory page with full CRUD + Curate / Apply UI
-
 ## Coming next
 
 Planned features on the road to **v1.0.0**. Bug-fix hotfixes
 (`v0.x.y`) ship in between as issues are reported.
 
-**v0.8 — publication-ready output**
+**Publication-ready output**
 - Export reports as PDF or LaTeX
 - Export the final pipeline as a runnable Jupyter notebook
 - Auto-generated model cards (assumptions, data, intended use, limitations) per finalised method
 
-**v0.9 — UX polish**
+**UX polish**
 - Project templates: `urika new --template behavioral|timeseries|imaging|nlp|ml-baseline` with seeded criteria, recommended tools, and sample knowledge — skips the interactive wizard for common research shapes
 - Dashboard accessibility pass: keyboard navigation, focus states, ARIA labels, light/dark contrast audit
 
