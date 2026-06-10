@@ -242,6 +242,37 @@ class TestParseEvaluation:
         result = parse_evaluation(text)
         assert result is None
 
+    def test_assumptions_detail_passes_through(self) -> None:
+        """Unknown keys — like method_validity.assumptions_detail —
+        survive parsing untouched (the whole block is returned)."""
+        text = """Evaluation:
+```json
+{
+    "criteria_met": false,
+    "assessment": {
+        "method_validity": {
+            "appropriate_test": true,
+            "assumptions_checked": true,
+            "assumptions_detail": [
+                {
+                    "name": "normality of residuals",
+                    "test": "Shapiro-Wilk on residuals",
+                    "result": "W=0.97, p=0.21 — no violation detected",
+                    "implication": "p-values from the t-tests are trustworthy"
+                }
+            ]
+        }
+    }
+}
+```
+"""
+        result = parse_evaluation(text)
+        assert result is not None
+        detail = result["assessment"]["method_validity"]["assumptions_detail"]
+        assert detail[0]["name"] == "normality of residuals"
+        assert detail[0]["test"] == "Shapiro-Wilk on residuals"
+        assert "implication" in detail[0]
+
     def test_returns_none_for_non_evaluation_json(self) -> None:
         text = """Some other JSON:
 ```json
