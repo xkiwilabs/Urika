@@ -243,6 +243,65 @@ class TestInlineFigureLinking:
             "![Ridge regression plot](../artifacts/ridge_regression_plot.png)" in notes
         )
 
+    def test_run_id_figures_matched_first(self, project_dir: Path) -> None:
+        """Figures tagged with the run_id attach to that run, and the
+        method-name substring heuristic is NOT consulted when a
+        run-id-tagged figure exists."""
+        exp = create_experiment(project_dir, name="Tagged", hypothesis="h")
+        eid = exp.experiment_id
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-002",
+                method="neural_net",
+                params={},
+                metrics={"r2": 0.8},
+            ),
+        )
+        artifacts = project_dir / "experiments" / eid / "artifacts"
+        (artifacts / "run-002-scatter.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (artifacts / "neural-misc.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        # Would match the old method-name substring heuristic:
+        (artifacts / "neural_net_overview.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        update_experiment_notes(project_dir, eid)
+        notes = (project_dir / "experiments" / eid / "labbook" / "notes.md").read_text(
+            encoding="utf-8"
+        )
+
+        assert "(../artifacts/run-002-scatter.png)" in notes
+        assert "neural-misc.png" not in notes
+        # Run-id match wins outright — no method-name fallback mixing
+        assert "neural_net_overview.png" not in notes
+
+    def test_method_name_fallback_when_no_run_id_figure(
+        self, project_dir: Path
+    ) -> None:
+        """Backward compat: with no run-id-tagged figure, the method-name
+        substring match still links figures."""
+        exp = create_experiment(project_dir, name="Fallback", hypothesis="h")
+        eid = exp.experiment_id
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-001",
+                method="neural_net",
+                params={},
+                metrics={"r2": 0.8},
+            ),
+        )
+        artifacts = project_dir / "experiments" / eid / "artifacts"
+        (artifacts / "neural_net_overview.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        update_experiment_notes(project_dir, eid)
+        notes = (project_dir / "experiments" / eid / "labbook" / "notes.md").read_text(
+            encoding="utf-8"
+        )
+
+        assert "(../artifacts/neural_net_overview.png)" in notes
+
     def test_summary_embeds_figures_section(
         self, project_dir: Path, experiment_with_runs: str
     ) -> None:

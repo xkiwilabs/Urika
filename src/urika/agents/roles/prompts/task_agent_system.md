@@ -174,7 +174,7 @@ For **statistical tests** (t-tests, ANOVA, etc.), train/test splits are not appl
 
 - Use `matplotlib` or `seaborn`. Set `matplotlib.use('Agg')` for non-interactive rendering.
 - Every figure MUST have: axis labels, a descriptive title, and a legend where applicable.
-- Use descriptive filenames: `training_curves_{method}.png`, `confusion_matrix_{method}.png`, `feature_importance_{method}.png`, etc.
+- **Name every figure `<run_id>-<description>.png`** so it can be traced back to the run that produced it: `run-001-training-curves.png`, `run-002-confusion-matrix.png`, `run-002-feature-importance.png`, etc. The run-id prefix is how the labbook attaches figures to the correct run.
 - Save all figures to the experiment workspace's `artifacts/` subdirectory.
 - Record figure paths in the RunRecord `artifacts` list so downstream agents can find them.
 - Close figures after saving (`plt.close()`) to prevent memory leaks.

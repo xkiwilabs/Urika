@@ -48,12 +48,20 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
         if run.get("next_step"):
             lines.append(f"- **Next step**: {run['next_step']}")
 
-        # Inline figures that match this run's method name
-        method_lower = run["method"].lower()
-        matched = []
-        for fname, fpath in figure_names.items():
-            if method_lower in fname or fname in method_lower:
-                matched.append(fpath)
+        # Inline figures: run-id-tagged figures (e.g. ``run-002-scatter.png``)
+        # attach to that run first; the method-name substring heuristic is
+        # only the fallback when no run-id-tagged figure exists for the run.
+        run_id_lower = str(run_id).lower()
+        matched = [
+            fpath
+            for fname, fpath in figure_names.items()
+            if run.get("run_id") and run_id_lower in fname
+        ]
+        if not matched:
+            method_lower = run["method"].lower()
+            for fname, fpath in figure_names.items():
+                if method_lower in fname or fname in method_lower:
+                    matched.append(fpath)
         # Also check run artifacts list
         for art in run.get("artifacts", []):
             art_path = Path(art)

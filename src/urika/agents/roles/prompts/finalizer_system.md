@@ -96,6 +96,8 @@ Write `{project_dir}/projectbook/findings.json` — a structured summary that Re
       "name": "<method name>",
       "role": "<primary_prediction|interpretation|robustness|subgroup>",
       "script": "methods/final_<name>.py",
+      "run_id": "<run id whose metrics are quoted, e.g. run-003>",
+      "experiment_id": "<experiment id that run belongs to>",
       "key_metrics": {{}},
       "summary": "<one sentence describing the method and key result>"
     }}
@@ -114,9 +116,14 @@ Write `{project_dir}/projectbook/findings.json` — a structured summary that Re
   "progression": "<narrative of how the research evolved experiment by experiment>",
   "limitations": ["<limitation 1>", "<limitation 2>"],
   "future_work": ["<suggestion 1>", "<suggestion 2>"],
-  "selected_figures": ["<relative path to best figure 1>", "<relative path to best figure 2>"]
+  "selected_figures": [
+    {{"path": "<relative path to best figure 1>", "run_id": "<run that produced it>"}},
+    {{"path": "<relative path to best figure 2>", "run_id": "<run that produced it>"}}
+  ]
 }}
 ```
+
+**Run-ID traceability is mandatory.** Every entry in `final_methods` MUST include `"run_id"` and `"experiment_id"` naming the exact run whose metrics are quoted in `key_metrics` — a reader must be able to trace every quoted number back to the `progress.json` run record it came from. Every entry in `selected_figures` MUST include the `"run_id"` of the run that produced the figure (use the run-id prefix in the figure filename where present, e.g. `run-003-residuals.png`).
 
 ## Step 8: Copy best figures
 

@@ -35,6 +35,8 @@ _FINDINGS = {
         {
             "name": "ridge",
             "script": "methods/final_ridge.py",
+            "run_id": "run-001",
+            "experiment_id": "exp-001-baseline",
             "key_metrics": {"r2": 0.41},
         }
     ],
