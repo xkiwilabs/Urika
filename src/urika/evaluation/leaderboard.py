@@ -3,9 +3,20 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from urika.core.json_io import load_json_or_preserve
+from urika.evaluation.ranking import select_best_run
+
+logger = logging.getLogger(__name__)
+
+# The leaderboard artifact (leaderboard.json) keeps its historical
+# "higher_is_better"/"lower_is_better" strings; ranking speaks
+# "higher"/"lower".
+_DIRECTION_WORDS = {"higher_is_better": "higher", "lower_is_better": "lower"}
 
 
 def load_leaderboard(project_dir: Path) -> dict[str, Any]:
@@ -15,10 +26,9 @@ def load_leaderboard(project_dir: Path) -> dict[str, Any]:
     rename "entries" to "ranking".
     """
     lb_path = project_dir / "leaderboard.json"
-    if not lb_path.exists():
+    data = load_json_or_preserve(lb_path, None)
+    if data is None:
         return {"ranking": []}
-
-    data = json.loads(lb_path.read_text(encoding="utf-8"))
 
     # Legacy format migration: rename "entries" -> "ranking"
     if "ranking" not in data and "entries" in data:
@@ -50,28 +60,8 @@ def update_leaderboard(
     data = load_leaderboard(project_dir)
     ranking: list[dict[str, Any]] = data["ranking"]
 
-    new_value = metrics[primary_metric]
-
-    # Find existing entry for this method
-    existing_idx: int | None = None
-    for i, entry in enumerate(ranking):
-        if entry["method"] == method:
-            existing_idx = i
-            break
-
-    if existing_idx is not None:
-        old_value = ranking[existing_idx]["metrics"][primary_metric]
-        should_update = False
-        if direction == "higher_is_better" and new_value > old_value:
-            should_update = True
-        elif direction == "lower_is_better" and new_value < old_value:
-            should_update = True
-
-        if not should_update:
-            return
-
-        # Remove old entry so we can insert the new one
-        ranking.pop(existing_idx)
+    if primary_metric not in metrics:
+        raise KeyError(primary_metric)
 
     new_entry: dict[str, Any] = {
         "rank": 0,  # Will be set after sorting
@@ -81,6 +71,32 @@ def update_leaderboard(
         "params": params,
         "experiment_id": experiment_id,
     }
+
+    # Find existing entry for this method
+    existing_idx: int | None = None
+    for i, entry in enumerate(ranking):
+        if entry["method"] == method:
+            existing_idx = i
+            break
+
+    if existing_idx is not None:
+        existing = ranking[existing_idx]
+        word = _DIRECTION_WORDS.get(direction)
+        # Best-per-method via the canonical comparison; the existing
+        # entry comes first so ties keep the incumbent (strict
+        # improvement required, as before). Unknown direction strings
+        # historically meant "never update".
+        best = (
+            select_best_run([existing, new_entry], primary_metric, direction=word)
+            if word is not None
+            else existing
+        )
+        if best is not new_entry:
+            return
+
+        # Remove old entry so we can insert the new one
+        ranking.pop(existing_idx)
+
     ranking.append(new_entry)
 
     # Sort by primary metric (respecting direction)

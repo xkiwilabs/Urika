@@ -32,7 +32,12 @@ def glob(pattern: str, *, security: SecurityPolicy, project_dir: Path) -> ToolRe
         resolved, err = enforce_path_read(str(root), security)
         if err is not None:
             return ToolResult(ok=False, output="", error=err)
-        search_root = resolved or root
+        if resolved is None:
+            # _resolve_safe contract: unresolvable paths MUST deny.
+            return ToolResult(
+                ok=False, output="", error=f"could not resolve path: {root}"
+            )
+        search_root = resolved
     else:
         _, err = enforce_path_read(str(project_dir), security)
         if err is not None:

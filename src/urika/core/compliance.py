@@ -1,41 +1,49 @@
-"""Compliance helpers for Anthropic Consumer Terms §3.7.
+"""Compliance and auth-hygiene helpers for Urika's Anthropic adapter.
 
-Urika depends on the Claude Agent SDK. Pre-v0.7.0 (pre-June-15 2026),
-Anthropic's Consumer Terms (§3.7) and the April 2026 Agent SDK
-clarification flatly prohibited using a Claude Pro/Max subscription to
-authenticate the Agent SDK. Anthropic's May 13 2026 announcement
-legalised that path on or after June 15 2026, so v0.7.0 adds an opt-in
-``subscription`` mode (via ``[anthropic] auth = "subscription"`` in
-``~/.urika/settings.toml``). The default remains ``api_key`` — Urika
-never silently upgrades a user to subscription mode.
+Urika depends on the Claude Agent SDK and supports two Anthropic auth
+modes (configured via ``[anthropic] auth`` in ``~/.urika/settings.toml``
+or ``urika config anthropic --mode ...``):
+
+* ``api_key`` (default) — Urika calls ``api.anthropic.com`` using a
+  standard ``ANTHROPIC_API_KEY``.  This is the original mode and stays
+  the default so existing users are never silently upgraded.
+* ``subscription`` — opt-in since June 15 2026, when Anthropic's
+  billing overhaul made Agent SDK workloads on Pro/Max subscriptions
+  generally available.  Agent SDK usage draws from a separate monthly
+  Agent credit pool ($20 Pro / $100 Max-5x / $200 Max-20x, no
+  rollover); requests stop when the pool is exhausted unless overage
+  billing is enabled at API rates.  (Historical note: prior to June 15
+  2026, Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK
+  clarification prohibited this path; Anthropic's May 13 2026
+  announcement legalised it from that date onward.)
 
 Urika enforces auth via three layers of defense:
 
 1. CLI startup warning (``cli/_base.py``) when ``ANTHROPIC_API_KEY`` is
    unset — soft, non-blocking, runs for every command. Suppressed in
-   subscription mode.
+   subscription mode (OAuth tokens are the legitimate auth carrier there)
+   and when the user sets ``URIKA_ACK_API_KEY_REQUIRED``.
 2. Pre-spawn refusal in the SDK adapter (``require_api_key`` in this
    module) — raises :class:`APIKeyRequiredError` before any Claude Code
    subprocess is spawned for an Anthropic-cloud-bound agent. In
    subscription mode this branch returns silently; the bundled CLI
    will pick up its stored OAuth token from ``claude login``.
-3. OAuth env scrubbing (``scrub_oauth_env`` in this module) — in
-   ``api_key`` mode (default) zeroes ``CLAUDE_CODE_OAUTH_TOKEN`` and
-   ``ANTHROPIC_AUTH_TOKEN`` in the environment passed to the spawned
-   subprocess so Claude Code cannot silently fall back to subscription
-   OAuth even if those vars exist in the parent shell. In
-   ``subscription`` mode the OAuth-token family is preserved (those
-   tokens are now the legitimate auth carrier) but nested-session
-   markers are still zeroed.
+3. OAuth env scrubbing (``scrub_oauth_env`` in this module) — **billing
+   hygiene** in ``api_key`` mode: zeroes ``CLAUDE_CODE_OAUTH_TOKEN`` and
+   related vars in the environment passed to the spawned subprocess so
+   a stray parent-shell OAuth token cannot silently route charges to
+   the user's subscription credit pool.  (In subscription mode the
+   OAuth-token family is the legitimate auth carrier and is preserved;
+   nested-session markers are always zeroed regardless of mode.)
 
 The pre-spawn check is exempt for:
 
 - Agents with ``ANTHROPIC_BASE_URL`` set in their env (going to a
   private inference endpoint such as Ollama, vLLM, or a self-hosted
   proxy — not Anthropic's cloud).
-- Models whose name does not start with ``claude`` (a future
-  multi-provider runtime would route them to a different SDK).
-- Users in ``subscription`` auth mode (opt-in, post-June-15-2026).
+- Models whose name does not start with ``claude`` (routed to a
+  non-Anthropic provider via the multi-provider runtime).
+- Users in ``subscription`` auth mode.
 """
 
 from __future__ import annotations
@@ -46,10 +54,11 @@ from typing import Mapping
 
 # OAuth-class env vars: anything that can authenticate the spawned
 # ``claude`` subprocess against api.anthropic.com via a Pro/Max
-# subscription. ANY of these leaking into the spawned env would let the
-# subprocess re-mint an access token (refresh tokens) or pick up a
-# parent-shell access token directly. Urika must not let cloud calls
-# auth via Pro/Max OAuth (Anthropic Consumer Terms §3.7).
+# subscription.  In ``api_key`` mode (billing hygiene) ANY of these
+# leaking into the spawned env would let the subprocess silently route
+# charges to the user's subscription credit pool.  (Historical provenance:
+# pre-June-15-2026, leaking these also violated Anthropic Consumer Terms
+# §3.7; the billing-hygiene rationale is now the operative one.)
 #
 # Pre-v0.4.2 this constant was defined but never referenced — only
 # ``CLAUDE_CODE_OAUTH_TOKEN`` and ``ANTHROPIC_AUTH_TOKEN`` were
@@ -176,9 +185,8 @@ def require_api_key(model: str | None, agent_env: Mapping[str, str] | None) -> N
 
     1. Not an Anthropic-cloud call (private endpoint or non-claude
        model) → return.
-    2. User opted into ``subscription`` auth mode (post-June-15-2026
-       legitimate per Anthropic's May 13 2026 announcement) → return;
-       the bundled CLI will authenticate via the OAuth token stored
+    2. User opted into ``subscription`` auth mode → return; the
+       bundled CLI will authenticate via the OAuth token stored
        by ``claude login``.
     3. API key already present in agent env or process env → return.
 
@@ -193,20 +201,39 @@ def require_api_key(model: str | None, agent_env: Mapping[str, str] | None) -> N
         return
     raise APIKeyRequiredError(
         "ANTHROPIC_API_KEY is not set, and this agent is configured to "
-        "call api.anthropic.com. Urika refuses to authenticate the "
-        "Claude Agent SDK via a Pro/Max subscription per Anthropic's "
-        "Consumer Terms §3.7 and the April 2026 Agent SDK clarification.\n"
+        "call api.anthropic.com. Urika is in `api_key` auth mode "
+        "(the default), which requires an API key.\n"
         "\n"
-        "Fix:\n"
+        "Fix — pick one:\n"
         "  (a) Run `urika config api-key` for interactive setup, or\n"
         "      `export ANTHROPIC_API_KEY=sk-ant-...`.\n"
-        "  (b) Configure a private endpoint (set ANTHROPIC_BASE_URL on\n"
-        "      the agent or switch the project to mode=private).\n"
-        "  (c) On or after June 15 2026, opt into subscription auth\n"
-        "      with `urika config anthropic` (writes\n"
-        '      `[anthropic] auth = "subscription"` to\n'
-        "      ~/.urika/settings.toml)."
+        "  (b) Switch to subscription auth: `urika config anthropic "
+        "--mode subscription`.\n"
+        "      Note: since June 15 2026, Agent SDK workloads on a "
+        "Pro/Max subscription\n"
+        "      draw from a separate monthly Agent credit pool "
+        "($20-$200 by plan, no\n"
+        "      rollover); requests stop when it runs out unless "
+        "overage billing is enabled.\n"
+        "  (c) Configure a private endpoint (set ANTHROPIC_BASE_URL on "
+        "the agent or\n"
+        "      switch the project to mode=private)."
     )
+
+
+def scrub_oauth_env_for_subprocess(
+    config_env: Mapping[str, str] | None,
+) -> dict[str, str]:
+    """Full subprocess environment: ``os.environ`` overlaid with the
+    agent's env, then scrubbed.
+
+    Shared by adapters whose function tools spawn local subprocesses
+    (OpenAI / Google bash wrappers) so the merge semantics can't drift
+    between adapters. The Claude adapter doesn't use this — its SDK
+    subprocess env is built separately and scrubbed via
+    :func:`scrub_oauth_env`.
+    """
+    return scrub_oauth_env({**os.environ, **(config_env or {})})
 
 
 def scrub_oauth_env(agent_env: Mapping[str, str] | None) -> dict[str, str]:
@@ -215,12 +242,13 @@ def scrub_oauth_env(agent_env: Mapping[str, str] | None) -> dict[str, str]:
     Two classes of vars get blanked when not already set:
 
     1. OAuth tokens (``CLAUDE_CODE_OAUTH_TOKEN``, ``ANTHROPIC_AUTH_TOKEN``)
-       — in ``api_key`` mode (default) Urika must not let the spawned
-       ``claude`` subprocess authenticate via a Pro/Max OAuth token
-       leaked from the parent shell (Anthropic Consumer Terms §3.7).
-       In ``subscription`` mode (opt-in, post-June-15-2026 per
-       Anthropic's May 13 2026 announcement) the OAuth-token family
-       is the legitimate auth carrier and is preserved verbatim.
+       — **billing hygiene** in ``api_key`` mode (default): prevents a
+       stray parent-shell OAuth token from silently routing charges to
+       the user's subscription credit pool via the spawned subprocess.
+       (Historical note: prior to June 15 2026, leaking these also
+       violated Anthropic Consumer Terms §3.7.)  In ``subscription``
+       mode (opt-in) the OAuth-token family is the legitimate auth
+       carrier and is preserved verbatim.
     2. Claude Code session markers (``CLAUDECODE``, ``CLAUDE_CODE_SSE_PORT``,
        ``CLAUDE_CODE_ENTRYPOINT``, ``CLAUDE_CODE_EXECPATH``) — set when
        Urika itself is launched from a terminal owned by the Claude Code
@@ -250,13 +278,13 @@ def scrub_oauth_env(agent_env: Mapping[str, str] | None) -> dict[str, str]:
     """
     out = dict(agent_env or {})
     subscription_mode = _get_anthropic_auth_preference() == "subscription"
-    # OAuth/identity tokens: in api_key mode (default) they have no
-    # legitimate use in a Urika-spawned subprocess — always zero them.
-    # In subscription mode they ARE the auth carrier the bundled CLI
-    # needs; preserve them verbatim. ANTHROPIC_AUTH_TOKEN is the
-    # standard Bearer-auth header for OpenAI-compatible private
-    # endpoints and MUST be preserved when deliberately set in
-    # api_key mode too; only blank-on-absent there.
+    # OAuth/identity tokens: billing hygiene in api_key mode (default) —
+    # zero them so a parent-shell OAuth token cannot silently route
+    # charges to the user's subscription credit pool. In subscription
+    # mode they ARE the auth carrier the bundled CLI needs; preserve
+    # verbatim. ANTHROPIC_AUTH_TOKEN is the standard Bearer-auth header
+    # for OpenAI-compatible private endpoints and MUST be preserved when
+    # deliberately set in api_key mode too; only blank-on-absent there.
     if not subscription_mode:
         for var in _OAUTH_TOKEN_VARS:
             out[var] = ""

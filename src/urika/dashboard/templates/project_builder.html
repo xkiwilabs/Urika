@@ -18,8 +18,8 @@
   <p class="text-muted">
     The project builder agent will ask clarifying questions to scope this
     project, suggest experiments, and draft an initial plan. Closing this
-    page or clicking Abort will discard the partial project (moved to
-    trash).
+    page does not abort — reopen the wizard to re-attach. Clicking Abort
+    discards this project entirely (recoverable from trash).
   </p>
 
   <div id="builder-status" class="text-muted" style="margin-top: var(--space-3);">Connecting…</div>
@@ -48,7 +48,7 @@
   </div>
 
   <div style="margin-top: var(--space-4);">
-    <button id="builder-abort" class="btn btn--secondary">Abort and trash project</button>
+    <button id="builder-abort" class="btn btn--secondary">Abort and discard this project</button>
   </div>
 </div>
 
@@ -145,7 +145,7 @@
   });
 
   abortBtn.addEventListener("click", function () {
-    if (!confirm("Abort the builder and move this project to trash?")) return;
+    if (!confirm("Abort the builder and discard this project? The entire project scaffold will be moved to trash (recoverable).")) return;
     abortBtn.disabled = true;
     fetch("/api/projects/" + encodeURIComponent(projectName) + "/builder/abort", { method: "POST" })
       .then(function () { window.location.href = "/projects"; })

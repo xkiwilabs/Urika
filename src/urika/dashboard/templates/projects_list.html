@@ -163,9 +163,45 @@
         <textarea id="np-instructions" name="instructions" rows="3"
                   placeholder="Steer the project_builder agent — e.g. 'focus on time-series methods'"></textarea>
         <span class="form-help">
-          Captured for a future asynchronous builder-agent pass.
-          The synchronous create flow does scan + profile + knowledge
-          ingestion non-interactively and skips the agent scoping loop.
+          Stashed to the project for the builder agent. The create
+          step itself does scan + profile + knowledge ingestion
+          non-interactively; tick "Run interactive setup" below to
+          continue into the agent Q&amp;A wizard.
+        </span>
+      </div>
+
+      {# Interactive setup wizard — parity with the agent scoping loop
+         ``urika new`` runs in a TTY. When ticked, the create response
+         redirects to /projects/{name}/builder, which drives the
+         builder Q&A loop over SSE (questions, suggestions, plan,
+         criteria co-draft, refine/accept). #}
+      <div class="form-row form-row--inline">
+        <label>
+          <input id="np-interactive" type="checkbox" name="interactive"
+                 value="true" checked>
+          Run interactive setup (agent Q&amp;A wizard)
+        </label>
+        <span class="form-help" style="font-size: 0.85em; flex-basis: 100%;">
+          Opens the setup wizard after the workspace is created: the
+          project builder asks clarifying questions, suggests
+          experiments, and co-drafts success criteria — same flow as
+          <code>urika new</code>. Uses agent calls (costs tokens).
+        </span>
+      </div>
+
+      <div class="form-row form-row--inline">
+        <label>
+          <input id="np-web-search" type="checkbox" name="web_search" value="true">
+          Allow agents to search the web for relevant papers
+        </label>
+        <label>
+          <input id="np-use-venv" type="checkbox" name="use_venv" value="true">
+          Create isolated environment (.venv)
+        </label>
+        <span class="form-help" style="font-size: 0.85em; flex-basis: 100%;">
+          Web search is ignored (forced off) in private privacy mode.
+          An isolated environment prevents package conflicts between
+          projects — use one if agents will pip install large packages.
         </span>
       </div>
 

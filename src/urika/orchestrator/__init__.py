@@ -9,6 +9,7 @@ from urika.orchestrator.parsing import (
     parse_method_plan,
     parse_run_records,
     parse_suggestions,
+    read_disk_run_records,
     read_labbook_run_records,
 )
 
@@ -19,6 +20,7 @@ __all__ = [
     "parse_method_plan",
     "parse_run_records",
     "parse_suggestions",
+    "read_disk_run_records",
     "read_labbook_run_records",
     "run_experiment",
     "run_project",

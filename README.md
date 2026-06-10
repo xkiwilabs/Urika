@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/header.png?v=0.7.0" alt="Urika" width="580">
+  <img src="docs/assets/header.png?v=0.8.0" alt="Urika" width="580">
 </p>
 
 <p align="center">
@@ -53,7 +53,7 @@ Set model strings per agent in `urika.toml` -- Urika routes each call to the rig
 ### Prerequisites
 
 1. **Python 3.11+** (required) — see [Getting Started → Step 1](docs/01-getting-started.md#python-311-required) for per-OS install commands.
-2. **Provider API key** (required) — at least one of Anthropic, OpenAI, or Google (set up in step 3 below). Per Anthropic's Consumer Terms §3.7 and the April 2026 Agent SDK clarification, Claude Pro/Max subscription auth was not previously usable with the Claude Agent SDK; from June 15 2026 onward, subscription auth is supported as an opt-in mode via `urika config anthropic --mode subscription`. Default remains API-key auth across all three providers. See [Supported providers](#supported-providers) for the full matrix.
+2. **Provider API key** (required) — at least one of Anthropic, OpenAI, or Google (set up in step 3 below). For Anthropic, `api_key` auth mode (the default) requires an `ANTHROPIC_API_KEY`; subscription auth is also supported as an opt-in via `urika config anthropic --mode subscription` (since June 15 2026, Agent SDK workloads on Pro/Max draw from a separate monthly Agent credit pool). Default remains API-key auth across all three providers. See [Supported providers](#supported-providers) for the full matrix.
 3. **Claude Code CLI on PATH** *(recommended, not required)* — `npm install -g @anthropic-ai/claude-code`. The Claude Agent SDK ships its own bundled `claude` binary, so you can skip this and Urika will fall back to the bundled one. Install your own to use `claude-opus-4-7` or any future Anthropic model — the bundled binary lags. See [Getting Started → Claude Code CLI](docs/01-getting-started.md#claude-code-cli-recommended) for the why.
 
 ### Install Urika
@@ -264,7 +264,13 @@ issue much faster to act on.
 
 ## Recently shipped
 
-**v0.7 — multi-provider adapters** (current release)
+**v0.8 — research scoping + output polish** (current release)
+- Project builder now scopes real research intent: feasibility check on your research question, analysis-approach / interpretability / constraints preferences, hypotheses decomposition, and co-drafted success criteria — all persisted in `urika.toml` and fed to the agents
+- Dashboard interactive builder wizard: the New Project modal's "Run interactive setup" checkbox opens the same agent Q&A loop `urika new` runs in a terminal, streamed live in the browser
+- Plain-language results: one-sentence interpretation per metric in the labbook, novice-audience method explainers, and run-id traceability (`run-003-residuals.png`-style figure names; every number in `findings.json` traces to its run record)
+- Adapter hardening: OpenAI $0-usage accounting bug fixed, stream timeouts + error categorization now uniform across Anthropic / OpenAI / Google
+
+**v0.7 — multi-provider adapters**
 - OpenAI Agents SDK adapter + `[openai]` extra (`pip install urika[openai]`)
 - Google Agent Development Kit adapter + `[google]` extra (`pip install urika[google]`)
 - Model-prefix routing (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google) — mix providers per agent in the same project
@@ -277,22 +283,17 @@ issue much faster to act on.
 - Dashboard Git tab with remote URL, last push, recent commits
 - Researcher-safe `.gitignore` template with managed-block markers
 
-**v0.5 — smarter project memory**
-- `memory_curator` agent organises captured memory, merges duplicates, flags contradictions (`urika memory curate`)
-- Browse archived / superseded entries (`urika memory archive`) + see how memory evolved (`urika memory diff`)
-- Dashboard Memory page with full CRUD + Curate / Apply UI
-
 ## Coming next
 
 Planned features on the road to **v1.0.0**. Bug-fix hotfixes
 (`v0.x.y`) ship in between as issues are reported.
 
-**v0.8 — publication-ready output**
+**Publication-ready output**
 - Export reports as PDF or LaTeX
 - Export the final pipeline as a runnable Jupyter notebook
 - Auto-generated model cards (assumptions, data, intended use, limitations) per finalised method
 
-**v0.9 — UX polish**
+**UX polish**
 - Project templates: `urika new --template behavioral|timeseries|imaging|nlp|ml-baseline` with seeded criteria, recommended tools, and sample knowledge — skips the interactive wizard for common research shapes
 - Dashboard accessibility pass: keyboard navigation, focus states, ARIA labels, light/dark contrast audit
 

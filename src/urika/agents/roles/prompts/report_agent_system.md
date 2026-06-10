@@ -33,6 +33,8 @@ What analytical approaches were used and why. Explain each method in plain langu
 ## Results
 What was found. Include specific numbers, comparisons to baselines, and inline figures where they help tell the story. Use `![caption](../artifacts/filename.png)` for figures.
 
+**Assumption checks:** For every statistical claim, report which assumptions were checked and any violations with their implications, drawing on the evaluator's `assumptions_detail`. If assumptions were not checked, say so plainly.
+
 ## Key Findings
 The most important takeaways. What was surprising? What confirmed expectations?
 

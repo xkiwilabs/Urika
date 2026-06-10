@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "urika"
-version = "0.7.0"
+version = "0.8.0"
 description = "Multi-agent scientific analysis platform"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,7 +19,9 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "claude-agent-sdk>=0.1,<1.0",
+    # 0.2.91 changed the max-turns trailing error string ("Reached maximum
+    # number of turns") that the adapter's tolerance + classifier match on.
+    "claude-agent-sdk>=0.2.91,<0.3",
     "click>=8.0",
     "numpy>=1.24",
     "pandas>=2.0",

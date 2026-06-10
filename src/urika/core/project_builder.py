@@ -15,6 +15,19 @@ from urika.core.workspace import _write_toml, create_project_workspace
 from urika.data.models import DataSummary
 
 
+def default_initial_criteria() -> dict[str, Any]:
+    """The seed criteria every new project starts from.
+
+    Single source of truth for ``write_project`` / ``enrich_workspace``
+    (non-interactive paths keep these verbatim) and the base proposal
+    for the interactive loop's criteria co-draft step."""
+    return {
+        "type": "exploratory",
+        "quality": {"min_approaches": 2},
+        "completeness": ["establish baselines"],
+    }
+
+
 class ProjectBuilder:
     """Orchestrates interactive project setup.
 
@@ -43,9 +56,16 @@ class ProjectBuilder:
         self.privacy_mode: str = "open"
         self.private_endpoint_url: str = ""
         self.private_endpoint_key_env: str = ""
+        # Research intent gathered by the interactive builder loop —
+        # empty means the user skipped (or a non-interactive path).
+        self.hypotheses: list[str] = []
+        self.analysis_approach: str = ""
+        self.interpretability_level: str = ""
+        self.constraints: dict[str, str] = {}
         self._scan_result: ScanResult | None = None
         self._data_summary: DataSummary | None = None
         self._suggestions: dict[str, Any] | None = None
+        self._initial_criteria: dict[str, Any] | None = None
         self._tasks: list[dict[str, Any]] = []
 
     def scan(self) -> ScanResult:
@@ -111,9 +131,116 @@ class ProjectBuilder:
         """Store initial suggestions from the planning loop."""
         self._suggestions = suggestions
 
+    def set_refined_question(self, question: str) -> None:
+        """Replace the research question with the loop-refined version
+        (feasibility check / user rephrase in the interactive loop)."""
+        q = (question or "").strip()
+        if q:
+            self.question = q
+
+    def set_research_preferences(
+        self, analysis_approach: str = "", interpretability_level: str = ""
+    ) -> None:
+        """Store the user's analysis/interpretability preferences from
+        the interactive loop's fixed elicitation questions."""
+        if analysis_approach:
+            self.analysis_approach = analysis_approach
+        if interpretability_level:
+            self.interpretability_level = interpretability_level
+
+    def set_constraints(self, constraints: dict[str, str]) -> None:
+        """Store practical constraints from the interactive loop's fixed
+        elicitation question."""
+        if constraints:
+            self.constraints = dict(constraints)
+
+    def set_hypotheses(self, hypotheses: list[str]) -> None:
+        """Store user-approved hypotheses from the interactive loop."""
+        self.hypotheses = [str(h).strip() for h in hypotheses if str(h).strip()]
+
+    def set_initial_criteria(self, criteria: dict[str, Any]) -> None:
+        """Store the user-approved success criteria from the interactive
+        loop's co-draft step."""
+        if criteria:
+            self._initial_criteria = dict(criteria)
+
+    def apply_research_intent(self) -> None:
+        """Re-apply research intent gathered by the interactive builder
+        loop to the on-disk project.
+
+        ``write_project()`` runs BEFORE the interactive loop in the
+        ``urika new`` flow (the loop's agents need the workspace and the
+        knowledge base on disk), so anything the loop learns afterwards
+        — refined question, preferences, hypotheses, co-drafted criteria,
+        advisor suggestions — would otherwise never reach ``urika.toml``
+        / ``criteria.json`` / ``suggestions/initial.json``.
+        Called best-effort from ``run_builder_loop``'s ``finally``; a
+        no-op when the project hasn't been written yet.
+        """
+        import tomllib
+
+        toml_path = self.projects_dir / self.name / "urika.toml"
+        if not toml_path.exists():
+            return
+        with open(toml_path, "rb") as f:
+            existing = tomllib.load(f)
+
+        project = existing.setdefault("project", {})
+        if self.question:
+            project["question"] = self.question
+        if self.hypotheses:
+            project["hypotheses"] = self.hypotheses
+        if self.analysis_approach:
+            project["analysis_approach"] = self.analysis_approach
+        if self.interpretability_level:
+            project["interpretability_level"] = self.interpretability_level
+        if self.constraints:
+            project["constraints"] = self.constraints
+        _write_toml(toml_path, existing)
+
+        # Seed the user-approved criteria from the co-draft step.
+        # write_project() already appended the hardcoded defaults before
+        # the loop ran, so only append a new version when the co-draft
+        # actually changed them (an unchanged "Accept" must not produce
+        # a duplicate version).
+        if self._initial_criteria:
+            from urika.core.criteria import append_criteria, load_criteria
+
+            project_dir = self.projects_dir / self.name
+            latest = load_criteria(project_dir)
+            if latest is None or latest.criteria != self._initial_criteria:
+                append_criteria(
+                    project_dir,
+                    self._initial_criteria,
+                    set_by="project_builder",
+                    turn=0,
+                    rationale="User-approved success criteria (builder co-draft)",
+                )
+
+        # Flush the advisor suggestions captured by the loop.
+        # ``write_project()`` (which ran before the loop) only writes
+        # ``suggestions/initial.json`` when ``_suggestions`` was already
+        # set — which it never is on the interactive path — yet
+        # ``cli/project_new`` reads that file for the "run the first
+        # planned experiment" offer right after the loop returns.
+        self._write_suggestions(self.projects_dir / self.name)
+
     def add_task(self, task: dict[str, Any]) -> None:
         """Add a scoped task to the initial task list."""
         self._tasks.append(task)
+
+    def _write_suggestions(self, project_dir: Path) -> None:
+        """Write ``_suggestions`` to ``suggestions/initial.json``.
+        No-op when empty. Shared by ``write_project`` (non-interactive
+        path) and ``apply_research_intent`` (interactive-loop flush)."""
+        if not self._suggestions:
+            return
+        suggestions_dir = project_dir / "suggestions"
+        suggestions_dir.mkdir(exist_ok=True)
+        (suggestions_dir / "initial.json").write_text(
+            json.dumps(self._suggestions, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     def write_project(self) -> Path:
         """Write the project to disk and return the project directory."""
@@ -128,6 +255,10 @@ class ProjectBuilder:
             mode=self.mode,
             description=self.description,
             data_paths=data_paths,
+            hypotheses=self.hypotheses,
+            analysis_approach=self.analysis_approach,
+            interpretability_level=self.interpretability_level,
+            constraints=self.constraints,
         )
         create_project_workspace(project_dir, config)
 
@@ -204,13 +335,7 @@ class ProjectBuilder:
             create_project_venv(project_dir)
 
         # Write initial suggestions if set
-        if self._suggestions:
-            suggestions_dir = project_dir / "suggestions"
-            suggestions_dir.mkdir(exist_ok=True)
-            (suggestions_dir / "initial.json").write_text(
-                json.dumps(self._suggestions, indent=2) + "\n",
-                encoding="utf-8",
-            )
+        self._write_suggestions(project_dir)
 
         # Write initial tasks if any
         if self._tasks:
@@ -221,14 +346,12 @@ class ProjectBuilder:
                 encoding="utf-8",
             )
 
-        # Seed initial criteria
+        # Seed initial criteria — the co-drafted version when the
+        # interactive loop already ran (set_initial_criteria), the
+        # hardcoded defaults otherwise (JSON mode, dashboard scaffold).
         from urika.core.criteria import append_criteria
 
-        initial_criteria = {
-            "type": "exploratory",
-            "quality": {"min_approaches": 2},
-            "completeness": ["establish baselines"],
-        }
+        initial_criteria = self._initial_criteria or default_initial_criteria()
         append_criteria(
             project_dir,
             initial_criteria,
@@ -399,11 +522,7 @@ def enrich_workspace(
         if not load_criteria_history(project_dir):
             append_criteria(
                 project_dir,
-                {
-                    "type": "exploratory",
-                    "quality": {"min_approaches": 2},
-                    "completeness": ["establish baselines"],
-                },
+                default_initial_criteria(),
                 set_by="project_builder",
                 turn=0,
                 rationale="Initial project criteria",

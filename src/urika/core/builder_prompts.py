@@ -84,10 +84,88 @@ def build_scoping_prompt(
     return "\n".join(parts)
 
 
+def build_feasibility_prompt(
+    question: str,
+    data_summary: DataSummary | None,
+    scan_result: ScanResult,
+) -> str:
+    """Build a prompt asking the builder agent whether the research
+    question can plausibly be answered from the scanned data."""
+    parts = [
+        "## Research Question",
+        question,
+        "",
+    ]
+
+    if data_summary is not None:
+        parts.extend(
+            [
+                "## Available Data",
+                f"Rows: {data_summary.n_rows}, Columns: {data_summary.n_columns}",
+                f"Column names: {', '.join(str(c) for c in data_summary.columns)}",
+                f"Data types: {data_summary.dtypes}",
+                "",
+            ]
+        )
+
+    parts.extend(
+        [
+            "## Source Scan",
+            scan_result.summary(),
+            "",
+        ]
+    )
+
+    parts.append(
+        "Assess whether this research question can plausibly be answered "
+        "from this data. Respond with ONLY a JSON object:\n"
+        '{"answerable": true|false, "missing_variables": ["..."], '
+        '"concern": "one sentence, empty if none", '
+        '"suggested_refinement": "sharper phrasing of the question, '
+        'empty if the original is good"}'
+    )
+    return "\n".join(parts)
+
+
+def _research_intent_parts(
+    preferences: dict | None,
+    hypotheses: list[str] | None,
+    constraints: dict | None = None,
+) -> list[str]:
+    """Shared ``## Analysis Preferences`` / ``## Hypotheses`` /
+    ``## Practical Constraints`` sections for the suggestion + planning
+    prompts. Empty when the user skipped them all."""
+    parts: list[str] = []
+    prefs = preferences or {}
+    approach = str(prefs.get("analysis_approach") or "").strip()
+    interpretability = str(prefs.get("interpretability_level") or "").strip()
+    if approach or interpretability:
+        parts.append("## Analysis Preferences")
+        if approach:
+            parts.append(f"Approach: {approach}")
+        if interpretability:
+            parts.append(f"Interpretability: {interpretability}")
+        parts.append("")
+    if hypotheses:
+        parts.append("## Hypotheses")
+        parts.extend(f"- {h}" for h in hypotheses)
+        parts.append("")
+    notes = str((constraints or {}).get("notes") or "").strip()
+    if notes:
+        parts.append("## Practical Constraints")
+        parts.append(notes)
+        parts.append("")
+    return parts
+
+
 def build_suggestion_prompt(
     description: str,
     data_summary: DataSummary | None,
     answers: dict[str, str],
+    *,
+    preferences: dict | None = None,
+    hypotheses: list[str] | None = None,
+    constraints: dict | None = None,
 ) -> str:
     """Build a prompt for the suggestion agent to propose initial approaches."""
     parts = [
@@ -113,6 +191,8 @@ def build_suggestion_prompt(
             parts.append(f"A: {a}")
             parts.append("")
 
+    parts.extend(_research_intent_parts(preferences, hypotheses, constraints))
+
     parts.append(
         "Based on the above, propose 2-3 initial analytical approaches as suggestions."
     )
@@ -123,6 +203,10 @@ def build_planning_prompt(
     suggestions: dict[str, Any],
     description: str,
     data_summary: DataSummary | None,
+    *,
+    preferences: dict | None = None,
+    hypotheses: list[str] | None = None,
+    constraints: dict | None = None,
 ) -> str:
     """Build a prompt for the planning agent to create an initial method plan."""
     import json
@@ -145,6 +229,8 @@ def build_planning_prompt(
                 "",
             ]
         )
+
+    parts.extend(_research_intent_parts(preferences, hypotheses, constraints))
 
     parts.append("Design a detailed initial method plan based on these suggestions.")
     return "\n".join(parts)

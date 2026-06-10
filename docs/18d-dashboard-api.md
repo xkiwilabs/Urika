@@ -27,9 +27,18 @@ The dashboard's HTMX/fetch endpoints (server-rendered pages above are the only t
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/projects` | Create a new project — runs `urika new --json --non-interactive`. |
+| `POST /api/projects` | Create a new project — scaffolds the workspace and runs the non-interactive enrichment pass (scan, profile, knowledge ingest). With `interactive=true`, the response redirects to the builder wizard instead of the project home. |
+| `POST /api/projects/<n>/builder/start` | Kick off the interactive builder loop for an existing project as a background task. Returns 202 + `{"session_id": ...}`; 409 if a session is already active for the project. |
+| `GET  /api/projects/<n>/builder/stream` | SSE stream of builder events (`{"kind": ..., "payload": ...}`), including `question` events when the loop wants an answer. Closes after the `done` event. |
+| `POST /api/projects/<n>/builder/answer` | Resolve the currently-pending builder question with the user's answer. 400 if no question is pending; 409 if the session already finished or the question was already answered. |
+| `POST /api/projects/<n>/builder/abort` | Cancel the in-flight builder session and move the partial project to trash. Returns `{"ok": true, "trash_path": ...}`. |
 | `DELETE /api/projects/<n>` | Move the project to `~/.urika/trash/` and unregister it. 422 if a `.lock` file exists. |
 | `POST /api/projects/<n>/run` | Spawn an experiment run. |
+| `POST /api/projects/<n>/experiments/<id>/plan` | Spawn the planning agent (`urika plan`) for an experiment, with an optional `instructions` form field. HX-Redirects to the plan live log. |
+| `GET  /api/projects/<n>/git/status` | JSON snapshot of the project's git state; `{"initialized": false, ...}` when not yet a repo. |
+| `POST /api/projects/<n>/git/init` | Initialise the project's git repo and attach an existing remote (`remote=<URL>`; `--create` is CLI-only). |
+| `POST /api/projects/<n>/git/push` | Stage everything, secret-scan, then commit + push. Returns `{"ok": bool, "error": str\|null}`. |
+| `POST /api/projects/<n>/git/pull` | Fetch + fast-forward-only merge from origin. 409 if the project isn't a git repo; a refused merge (divergence) returns `{"ok": false, "error": ...}` — same envelope as `/git/push`. |
 | `GET  /api/projects/<n>/runs/<id>/stream` | SSE stream of the run log, including `event: prompt` for mid-run questions. |
 | `POST /api/projects/<n>/runs/<exp>/respond` | Answer a mid-run interactive prompt. |
 | `POST /api/projects/<n>/runs/<exp>/stop` | Send SIGTERM to a running experiment. |

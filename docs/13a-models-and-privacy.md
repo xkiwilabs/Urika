@@ -19,26 +19,33 @@ Urika routes each call to the right adapter using the **model prefix**: `claude-
 
 Additional backends can be plugged in through the `urika.runners` Python entry-point group — see [Contributing an Adapter](contributing-an-adapter.md).
 
-> **Important: Urika requires an Anthropic API key for cloud (open) Anthropic use.**
+> **Important: Anthropic cloud use needs either an API key (default) or an opt-in subscription mode.**
 >
-> Anthropic's [Consumer Terms (§3.7)](https://www.anthropic.com/legal/consumer-terms)
-> previously prohibited using a Claude Pro/Max subscription to authenticate
-> the Claude Agent SDK. As of June 15 2026 Anthropic permits subscription
-> auth as an opt-in mode (`urika config anthropic --mode subscription`).
-> The default remains API-key auth — set `ANTHROPIC_API_KEY` (e.g. via
-> `urika config api-key`) for any mode that talks to Anthropic's API.
+> **API-key auth is the default** — set `ANTHROPIC_API_KEY` (e.g. via
+> `urika config api-key`) and you're done; nothing changes for existing
+> users. **Subscription auth is strictly opt-in**: since June 15 2026
+> Anthropic permits authenticating the Agent SDK with a Pro/Max
+> subscription (usage draws from a separate monthly Agent credit pool).
+> Enable it with `urika config anthropic --mode subscription` and run
+> `claude login` once — Urika never switches modes for you.
+> (Anthropic's [Consumer Terms (§3.7)](https://www.anthropic.com/legal/consumer-terms)
+> prohibited the subscription path before that date.)
 > Only **private mode** (local models or an institutional endpoint) can
-> run without an API key. OpenAI and Google are API-key-only today.
-> See [Provider compliance](20-security.md#provider-compliance) for the
+> run without either. OpenAI and Google are API-key-only today.
+> See [How Urika enforces this](20-security.md#how-urika-enforces-this)
+> for what each mode enforces at runtime, and
+> [Provider compliance](20-security.md#provider-compliance) for the
 > full rationale.
 
-**Per-mode requirements at a glance:**
+**Per-mode requirements at a glance (in the default `api_key` auth mode):**
 
 | Mode | Needs `ANTHROPIC_API_KEY`? |
 |---|---|
 | Open (default — all agents on Claude API) | Yes |
 | Hybrid (cloud agents + private data agent) | Yes (cloud-side agents call the Claude API) |
 | Private (all agents local / institutional) | No (provided no agent uses the `open` endpoint) |
+
+With `urika config anthropic --mode subscription`, the "Yes" rows are satisfied by a `claude login` session instead of an API key.
 
 ### Per-project model configuration
 

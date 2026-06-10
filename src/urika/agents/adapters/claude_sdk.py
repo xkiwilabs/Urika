@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import time
 from typing import Any, Callable
 
@@ -23,8 +22,11 @@ from claude_agent_sdk import (
     query,
 )
 
+from urika.agents.adapters._common import agent_stream_timeout
 from urika.agents.config import AgentConfig
 from urika.agents.runner import AgentResult, AgentRunner
+
+from urika.agents.error_classify import classify_error as _classify_error
 
 # Import the module (not the names) for the auth-preference helper so
 # tests that monkeypatch ``urika.core.compliance._get_anthropic_auth_preference``
@@ -101,89 +103,6 @@ logging.getLogger("claude_agent_sdk._internal.query").addFilter(
     _SuppressTrailingCliExit()
 )
 
-# Patterns to detect actionable API errors from stderr / error messages.
-_RATE_LIMIT_PATTERNS = [
-    re.compile(r"rate.?limit", re.IGNORECASE),
-    re.compile(r"429", re.IGNORECASE),
-    re.compile(r"too many requests", re.IGNORECASE),
-    re.compile(r"overloaded", re.IGNORECASE),
-    re.compile(r"capacity", re.IGNORECASE),
-]
-_AUTH_PATTERNS = [
-    re.compile(r"auth", re.IGNORECASE),
-    re.compile(r"401", re.IGNORECASE),
-    re.compile(r"api.?key", re.IGNORECASE),
-    re.compile(r"not.?logged.?in", re.IGNORECASE),
-    re.compile(r"login", re.IGNORECASE),
-    re.compile(r"unauthorized", re.IGNORECASE),
-    re.compile(r"invalid.*key", re.IGNORECASE),
-]
-_BILLING_PATTERNS = [
-    re.compile(r"billing", re.IGNORECASE),
-    re.compile(r"credit", re.IGNORECASE),
-    re.compile(r"payment", re.IGNORECASE),
-    re.compile(r"subscription", re.IGNORECASE),
-    re.compile(r"quota", re.IGNORECASE),
-]
-# Transient network/server errors that should pause-and-resume rather
-# than fail the experiment outright. Pre-v0.3.2 a 5xx or a connection
-# blip mid-loop killed a multi-hour autonomous run.
-_TRANSIENT_PATTERNS = [
-    re.compile(r"\b5\d\d\b"),
-    re.compile(r"connection.{0,3}reset", re.IGNORECASE),
-    re.compile(r"connection.{0,3}refused", re.IGNORECASE),
-    re.compile(r"connection.{0,3}aborted", re.IGNORECASE),
-    re.compile(r"timeout", re.IGNORECASE),
-    re.compile(r"timed.?out", re.IGNORECASE),
-    re.compile(r"temporarily.{0,3}unavailable", re.IGNORECASE),
-    re.compile(r"service.{0,3}unavailable", re.IGNORECASE),
-    re.compile(r"bad.?gateway", re.IGNORECASE),
-    re.compile(r"gateway.{0,3}timeout", re.IGNORECASE),
-    # SDK message-relay weirdness seen against local endpoints: the
-    # transport surfaces ``Exception("Claude Code returned an error in
-    # error result: success")`` — a ResultMessage flagged is_error with
-    # a bogus error string. Not a real API error; pause-and-resume.
-    re.compile(r"returned an error in error result", re.IGNORECASE),
-    re.compile(r"fatal error in message reader", re.IGNORECASE),
-]
-# Configuration errors that need user action to fix but shouldn't
-# look like generic failures in the dashboard. Treated as a separate
-# category so the UI can render an actionable hint.
-_CONFIG_PATTERNS = [
-    re.compile(r"MissingPrivateEndpointError", re.IGNORECASE),
-    re.compile(r"APIKeyRequiredError", re.IGNORECASE),
-    re.compile(r"private.{0,3}endpoint.{0,30}configured", re.IGNORECASE),
-]
-
-
-def _classify_error(error_text: str) -> str:
-    """Classify an SDK error into a user-friendly category.
-
-    Returns one of: ``"rate_limit"``, ``"auth"``, ``"billing"``,
-    ``"transient"``, ``"config"``, ``"unknown"``.
-
-    The ``"transient"`` and ``"config"`` categories were added in
-    v0.3.2 — pre-v0.3.2 a 5xx mid-loop or a missing-endpoint config
-    error fell into ``"unknown"`` and silently failed the experiment.
-    The orchestrator loop's pause path treats both as pausable.
-    """
-    for pat in _CONFIG_PATTERNS:
-        if pat.search(error_text):
-            return "config"
-    for pat in _RATE_LIMIT_PATTERNS:
-        if pat.search(error_text):
-            return "rate_limit"
-    for pat in _AUTH_PATTERNS:
-        if pat.search(error_text):
-            return "auth"
-    for pat in _BILLING_PATTERNS:
-        if pat.search(error_text):
-            return "billing"
-    for pat in _TRANSIENT_PATTERNS:
-        if pat.search(error_text):
-            return "transient"
-    return "unknown"
-
 
 def _friendly_error(category: str, raw: str) -> str:
     """Build a user-friendly error message based on category."""
@@ -221,6 +140,14 @@ def _friendly_error(category: str, raw: str) -> str:
             "or invalid.\n"
             "  Check ``urika config`` (CLI) or the dashboard's Privacy / "
             "Models tab.\n"
+            f"  Detail: {raw}"
+        )
+    if category == "max_turns":
+        return (
+            "Agent hit its turn limit before producing output — consider "
+            "raising the role's max_turns.\n"
+            "  The experiment has been paused and can be resumed.\n"
+            "  Run: /resume  (or 'urika run --resume' from CLI)\n"
             f"  Detail: {raw}"
         )
     return raw
@@ -324,10 +251,7 @@ class ClaudeSDKRunner(AgentRunner):
         # min) is well above any active-thinking gap a healthy stream
         # produces — tool execution emits intermediate messages, so a
         # 10-min silence is the hang signature, not normal slow work.
-        try:
-            _stream_timeout = float(os.environ.get("URIKA_AGENT_STREAM_TIMEOUT", "600"))
-        except (TypeError, ValueError):
-            _stream_timeout = 600.0
+        _stream_timeout = agent_stream_timeout()
         _stream_iter = query(prompt=prompt_arg, options=options).__aiter__()
 
         async def _aclose_stream() -> None:
@@ -532,10 +456,19 @@ class ClaudeSDKRunner(AgentRunner):
             # errors raise different exception strings (auth, billing,
             # rate-limit) that don't match this signature, so they
             # still propagate as failures via the path below.
+            # claude-agent-sdk 0.2.91 changed the trailing error for
+            # max-turns exhaustion: _internal/query.py now raises
+            # ``Exception("Claude Code returned an error result:
+            # Reached maximum number of turns (N)")`` instead of a
+            # ProcessError whose str contained "Command failed with
+            # exit code". Same tolerance rationale as case 3 above —
+            # the agent's tool calls already wrote real work to disk
+            # before the cap was hit — so both strings fire it.
             got_content = bool(text_parts) or bool(messages)
-            trailing_exit_after_success = (
-                num_turns > 0 or got_content
-            ) and "Command failed with exit code" in str(exc)
+            trailing_exit_after_success = (num_turns > 0 or got_content) and (
+                "Command failed with exit code" in str(exc)
+                or "Reached maximum number of turns" in str(exc)
+            )
             if trailing_exit_after_success:
                 logger.debug(
                     "Tolerating trailing CLI exit after successful stream "
@@ -574,7 +507,13 @@ class ClaudeSDKRunner(AgentRunner):
                 # Pause-and-resume beats hard-failing the experiment.
                 category = "transient"
             error_detail = _friendly_error(category, raw_detail)
-            logger.exception("Agent SDK error [%s]", category)
+            if category == "max_turns":
+                # Turn-cap exhaustion with no content at all is routine
+                # (the cap is per-role config, not a malfunction) — a
+                # single-line warning, not a scary traceback.
+                logger.warning("Agent SDK error [max_turns]: %s", exc)
+            else:
+                logger.exception("Agent SDK error [%s]", category)
             _emit_trace(False)
             return AgentResult(
                 success=False,

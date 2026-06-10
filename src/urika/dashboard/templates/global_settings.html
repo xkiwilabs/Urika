@@ -90,12 +90,14 @@
 </style>
 
 {# ---- Compliance banner --------------------------------------------- #}
-{# Anthropic Consumer Terms §3.7 + April 2026 Agent SDK clarification:
-   Urika requires ANTHROPIC_API_KEY. Show a banner whenever the dashboard
-   process can't see the env var. The Privacy tab is where the user adds
-   endpoints (and references API key env-var names); for the actual key
-   value they need to either run `urika config api-key` or export the
-   variable. #}
+{# Two Anthropic auth modes are supported:
+   - api_key (default): ANTHROPIC_API_KEY is required. Show a banner
+     whenever the dashboard process can't see the env var.
+   - subscription (opt-in, post-June-15-2026): OAuth tokens are the
+     auth carrier; no API key needed. Banner is suppressed entirely.
+   The Privacy tab is where the user adds endpoints (and references API
+   key env-var names); for the actual key value they need to either run
+   `urika config api-key` or export the variable. #}
 {% if api_key_configured %}
 {# Positive companion to the unset-key banner. Confirms Urika sees a
    key AND lets the user verify it actually works against
@@ -121,18 +123,12 @@
 </div>
 {% endif %}
 
-{% if not api_key_configured %}
+{% if not api_key_configured and not anthropic_subscription_mode %}
 <div class="compliance-banner" role="alert">
   <h3>⚠ ANTHROPIC_API_KEY not set</h3>
   <p>
-    Urika requires an Anthropic API key. Per Anthropic's
-    <a href="https://www.anthropic.com/legal/consumer-terms"
-       target="_blank" rel="noopener">Consumer Terms (§3.7)</a>
-    and the April 2026 Agent SDK clarification, a Claude Pro/Max
-    subscription cannot be used to authenticate the Claude Agent SDK
-    that Urika depends on.
-  </p>
-  <p>
+    In <strong>api_key mode</strong> (the default), Urika requires
+    <code>ANTHROPIC_API_KEY</code> to authenticate the Claude Agent SDK.
     Get a key at
     <a href="https://console.anthropic.com" target="_blank"
        rel="noopener">console.anthropic.com</a>
@@ -141,6 +137,12 @@
     <code>ANTHROPIC_API_KEY</code> in your shell. The Privacy tab below
     lets you reference per-endpoint key env-vars; the Anthropic key
     itself lives in <code>~/.urika/secrets.env</code>.
+  </p>
+  <p>
+    Alternatively, if you have a Claude Pro or Max plan, switch to
+    subscription mode — Agent SDK usage then draws from your plan's
+    monthly Agent credit pool:<br>
+    <code>urika config anthropic --mode subscription</code>
   </p>
 </div>
 {% endif %}

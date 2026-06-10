@@ -27,6 +27,11 @@ Evaluate every layer that is present in the criteria. Skip layers that are absen
 Is the analysis approach appropriate for the data and research question? Check:
 - `appropriate_test`: Was the right statistical/ML method used?
 - `assumptions_checked`: Were required assumptions (e.g., normality, homoscedasticity) verified?
+- `assumptions_detail`: In addition to the boolean, list EVERY assumption relevant to the methods used in this experiment (e.g., normality of residuals, homoscedasticity, independence of observations, linearity, no multicollinearity, equal variances, stationarity — whichever apply). For each assumption report:
+  - `name`: the assumption
+  - `test`: what was checked and how (the diagnostic test or figure used), or `"not checked"` if no run verified it
+  - `result`: what the check showed (or `"unknown"` if not checked)
+  - `implication`: what a violation of this assumption would mean for the conclusions drawn from these results
 
 ### `parameter_adequacy`
 Are model parameters justified and stable? Check:
@@ -103,6 +108,18 @@ Produce a single JSON block with per-layer assessment:
     "threshold": {{"primary_met": false, "primary_value": 0.60, "primary_target": 0.75}},
     "quality": {{"cross_validation": true, "min_approaches": false}},
     "completeness": {{"establish baselines": true, "test nonlinear models": false}},
+    "method_validity": {{
+      "appropriate_test": true,
+      "assumptions_checked": false,
+      "assumptions_detail": [
+        {{
+          "name": "normality of residuals",
+          "test": "not checked",
+          "result": "unknown",
+          "implication": "if residuals are non-normal, the reported p-values may be unreliable"
+        }}
+      ]
+    }},
     "diagnostics": {{"figures_produced": 0, "diagnostics_adequate": false}}
   }},
   "best_metrics": {{}},
@@ -112,12 +129,12 @@ Produce a single JSON block with per-layer assessment:
 }}
 ```
 
-The `assessment` object should only include layers that are present in the criteria. Omit layers that are not defined. For each layer:
+The `assessment` object should only include layers that are present in the criteria. Omit layers that are not defined. Exception: when a `method_validity` layer is present, always include `assumptions_detail` — even if the project's criteria do not enumerate it. For each layer:
 
 - **threshold**: Report `primary_met`, `primary_value`, `primary_target`. Optionally include `secondary_met`, `secondary_value`, `secondary_target` and `other` results if those are defined.
 - **quality**: Report each defined check as `true`/`false`.
 - **completeness**: Report each listed item as `true`/`false`.
-- **method_validity**: Report each defined check as `true`/`false`.
+- **method_validity**: Report each defined check as `true`/`false`, plus the `assumptions_detail` list described above (one entry per assumption relevant to the methods used — including assumptions that were NOT checked).
 - **parameter_adequacy**: Report each defined check as `true`/`false`.
 - **comparative**: Report `baseline_exceeded` (`true`/`false`), `improvement`, and `required`.
 

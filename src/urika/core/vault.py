@@ -362,11 +362,8 @@ class KeyringBackend:
 
     def _index_write(self, names: list[str]) -> None:
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
-        self.index_path.write_text("\n".join(names) + ("\n" if names else ""))
-        try:
-            self.index_path.chmod(0o600)
-        except Exception:
-            pass
+        body = "\n".join(names) + ("\n" if names else "")
+        write_text_atomic(self.index_path, body, mode=0o600)
 
 
 @lru_cache(maxsize=1)

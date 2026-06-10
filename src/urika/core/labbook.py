@@ -2,17 +2,40 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 from urika.core.experiment import list_experiments, load_experiment
+from urika.core.method_glossary import explain_method
+from urika.core.models import ProjectConfig
 from urika.core.progress import load_progress
+from urika.evaluation.ranking import LOWER_IS_BETTER, select_best_run
 
 
-def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
+def _project_audience(project_dir: Path, config: ProjectConfig | None = None) -> str:
+    """Resolve the project audience: a caller-provided config wins,
+    otherwise read urika.toml. Anything unreadable → "standard"."""
+    if config is not None:
+        return config.audience
+    try:
+        from urika.core.workspace import load_project_config
+
+        return load_project_config(project_dir).audience
+    except Exception:
+        return "standard"
+
+
+def update_experiment_notes(
+    project_dir: Path,
+    experiment_id: str,
+    *,
+    config: ProjectConfig | None = None,
+) -> None:
     """Regenerate the experiment's notes.md from progress.json runs."""
     exp = load_experiment(project_dir, experiment_id)
     progress = load_progress(project_dir, experiment_id)
+    audience = _project_audience(project_dir, config)
 
     lines = [
         f"# Experiment: {exp.name}",
@@ -31,10 +54,15 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
         lines.append(f"## {run_id}: {method}")
         lines.append("")
 
+        if audience == "novice":
+            explainer = explain_method(method)
+            if explainer:
+                lines.append(f"*What this method does:* {explainer}")
+                lines.append("")
+
         metrics = run.get("metrics", {})
         if metrics:
-            metric_strs = [f"{k}={v}" for k, v in metrics.items()]
-            lines.append(f"**Metrics**: {', '.join(metric_strs)}")
+            lines.append(f"**Metrics**: {_format_metrics_with_interpretation(run)}")
 
         params = run.get("params", {})
         if params:
@@ -48,12 +76,21 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
         if run.get("next_step"):
             lines.append(f"- **Next step**: {run['next_step']}")
 
-        # Inline figures that match this run's method name
-        method_lower = run["method"].lower()
-        matched = []
-        for fname, fpath in figure_names.items():
-            if method_lower in fname or fname in method_lower:
-                matched.append(fpath)
+        # Inline figures: run-id-tagged figures (e.g. ``run-002-scatter.png``)
+        # attach to that run first; the method-name substring heuristic is
+        # only the fallback when no run-id-tagged figure exists for the run.
+        run_id_lower = str(run_id).lower()
+        _run_id_pat = re.compile(re.escape(run_id_lower) + r"(?!\d)")
+        matched = [
+            fpath
+            for fname, fpath in figure_names.items()
+            if run.get("run_id") and _run_id_pat.search(fname)
+        ]
+        if not matched:
+            method_lower = run["method"].lower()
+            for fname, fpath in figure_names.items():
+                if method_lower in fname or fname in method_lower:
+                    matched.append(fpath)
         # Also check run artifacts list
         for art in run.get("artifacts", []):
             art_path = Path(art)
@@ -96,10 +133,9 @@ def generate_experiment_summary(project_dir: Path, experiment_id: str) -> None:
         best = _find_best_run(runs)
         if best:
             lines.append(f"**Best run**: {best['run_id']} ({best['method']})")
-            metrics_str = ", ".join(
-                f"{k}={v}" for k, v in best.get("metrics", {}).items()
+            lines.append(
+                f"**Best metrics**: {_format_metrics_with_interpretation(best)}"
             )
-            lines.append(f"**Best metrics**: {metrics_str}")
             lines.append("")
 
         metric_names = _all_metric_names(runs)
@@ -275,15 +311,12 @@ def generate_key_findings(project_dir: Path) -> None:
             best_exp_name, best_run = all_runs[0]
             if best_run.get("metrics"):
                 first_metric = next(iter(best_run["metrics"]))
-                lower_better = first_metric in _LOWER_IS_BETTER
-                for exp_name, run in all_runs:
-                    default = float("inf") if lower_better else float("-inf")
-                    run_val = run.get("metrics", {}).get(first_metric, default)
-                    best_val = best_run["metrics"].get(first_metric, default)
-                    if lower_better and run_val < best_val:
-                        best_exp_name, best_run = exp_name, run
-                    elif not lower_better and run_val > best_val:
-                        best_exp_name, best_run = exp_name, run
+                picked = select_best_run((run for _, run in all_runs), first_metric)
+                if picked is not None:
+                    for exp_name, run in all_runs:
+                        if run is picked:
+                            best_exp_name, best_run = exp_name, run
+                            break
 
                 metrics_str = ", ".join(
                     f"{k}={v}" for k, v in best_run["metrics"].items()
@@ -320,27 +353,19 @@ def generate_key_findings(project_dir: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-_LOWER_IS_BETTER = {
-    "rmse",
-    "mse",
-    "mae",
-    "mape",
-    "loss",
-    "error",
-    "brier_score",
-    "log_loss",
-    "sse",
-    "residual",
-    "p_value",
-    "aic",
-    "bic",
-    "deviance",
-    "perplexity",
-}
+# Backwards-compat alias: cli/run_planning.py and tests import this name.
+# The canonical set lives in urika.evaluation.ranking.
+_LOWER_IS_BETTER = LOWER_IS_BETTER
 
 
 def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Find the best run by the first metric, respecting metric direction."""
+    """Find the best run by the first metric, respecting metric direction.
+
+    First-metric-only is this function's historical contract (the first
+    metric of the first run with metrics drives the comparison); the
+    direction inference and comparison itself delegate to
+    ``urika.evaluation.ranking``.
+    """
     if not runs:
         return None
 
@@ -349,9 +374,23 @@ def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
 
     first_metric = next(iter(valid[0]["metrics"]))
-    if first_metric in _LOWER_IS_BETTER:
-        return min(valid, key=lambda r: r["metrics"].get(first_metric, float("inf")))
-    return max(valid, key=lambda r: r["metrics"].get(first_metric, float("-inf")))
+    return select_best_run(valid, first_metric)
+
+
+def _format_metrics_with_interpretation(run: dict[str, Any]) -> str:
+    """Format a run's metrics as ``k=v`` pairs, appending the run's
+    plain-language interpretation where one exists for the metric:
+    ``r2=0.74 — Explains 74% of variance...``.
+
+    Runs without ``metric_interpretation`` (every record pre-v0.8)
+    render exactly as before: ``k=v, k=v``.
+    """
+    interpretations = run.get("metric_interpretation") or {}
+    parts: list[str] = []
+    for k, v in run.get("metrics", {}).items():
+        interp = interpretations.get(k, "") if isinstance(interpretations, dict) else ""
+        parts.append(f"{k}={v} — {interp}" if interp else f"{k}={v}")
+    return ", ".join(parts)
 
 
 def _all_metric_names(runs: list[dict[str, Any]]) -> list[str]:

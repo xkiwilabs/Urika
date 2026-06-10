@@ -179,10 +179,11 @@ must enforce in your tool dispatcher.
 overrides. Look for the keys your provider recognises
 (`OPENAI_BASE_URL`, `OPENAI_API_KEY`, etc.). The Claude adapter
 uses `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` and scrubs
-OAuth/session-marker vars via `urika.core.compliance.scrub_oauth_env`
-— other providers can ignore that scrub helper but should apply
-their own equivalent (zero out any OAuth-style envs that could
-let the SDK auth via subscription instead of the metered API).
+OAuth/session-marker vars via `urika.core.compliance.scrub_oauth_env`.
+If your adapter's function tools spawn local subprocesses (a Bash
+tool), build their environment with
+`urika.core.compliance.scrub_oauth_env_for_subprocess(config.env)` —
+see the shared-plumbing section below.
 
 ## 6. Cost / token accounting
 
@@ -218,23 +219,89 @@ orchestrator loop's `_PAUSABLE_ERRORS` set treats `rate_limit` /
 `billing` / `transient` / `config` as resumable; others fail the
 experiment.
 
-The reference classifier `urika.agents.adapters.claude_sdk._classify_error`
-shows the regex patterns; adapt for your provider's error strings.
+Use the shared classifier — don't write your own regexes:
 
-## 8. Testing
+```python
+from urika.agents.error_classify import classify_error
+
+error_category = classify_error(str(exc))
+```
+
+`classify_error` returns one of `"rate_limit"`, `"auth"`,
+`"billing"`, `"transient"`, `"config"`, or `"unknown"` (extracted
+verbatim from the Claude adapter in v0.8.0 so all adapters classify
+identically). If your provider has error strings the shared patterns
+miss, extend `src/urika/agents/error_classify.py` rather than
+forking the logic per adapter.
+
+## 8. Shared plumbing: timeouts and env hygiene
+
+Three shared contracts keep adapter behavior uniform; new adapters
+must use them rather than inventing their own knobs.
+`src/urika/agents/adapters/openai_agents.py` is the reference
+implementation for all three.
+
+**Stream timeout** — wrap your SDK's streaming iteration so a hung
+stream fails as `transient` instead of blocking the orchestrator
+forever:
+
+```python
+from urika.agents.adapters._common import agent_stream_timeout
+
+timeout = agent_stream_timeout()  # seconds of allowed stream silence
+```
+
+The value is read at call time from the `URIKA_AGENT_STREAM_TIMEOUT`
+env var (default `600`; an invalid value silently falls back to 600
+so a bad setting can't crash the adapter at runtime).
+
+**Bash tool timeout** — if your adapter wires the shared Bash tool
+(or its own equivalent), cap each command with:
+
+```python
+from urika.agents.adapters._common import bash_timeout_seconds
+
+timeout = bash_timeout_seconds(config.max_method_seconds)  # cap, else 600
+```
+
+This is how the project's `max_method_seconds` setting reaches your
+provider's execution loop.
+
+**Subprocess env hygiene** — any function tool that spawns a local
+subprocess must build its environment with:
+
+```python
+from urika.core.compliance import scrub_oauth_env_for_subprocess
+
+env = scrub_oauth_env_for_subprocess(config.env)
+```
+
+This overlays `os.environ` with the agent's env and scrubs
+OAuth-token and Claude-Code-session-marker vars per the user's
+Anthropic auth mode (billing hygiene in `api_key` mode; the token
+family is preserved in `subscription` mode). Using the shared helper
+means the merge semantics can't drift between adapters.
+
+## 9. Testing
 
 Mirror `tests/test_agents/test_claude_sdk_adapter.py`:
 
 - `_build_options` (or your equivalent) maps `AgentConfig` fields
   correctly.
 - Token / cost accumulation across multi-`ResultMessage` streams.
-- Error classification round-trip through `_classify_error`.
+- Error classification round-trip through `classify_error`.
 - Permission callback integrates with the SDK.
 
 Plus an integration-style test that exercises the actual SDK with
-a mocked transport (record-replay or HTTP fixture).
+a mocked transport (record-replay or HTTP fixture), AND a
+real-imports structural test that imports the actual SDK (no mocks)
+and pins the attribute/signature surface your adapter relies on —
+see `tests/test_agents/test_openai_agents_real_imports.py`. Mock-based
+unit tests can't catch SDK signature drift; the v0.7.0 smoke
+iterations caught several such bugs post-merge that a structural
+test would have failed in CI.
 
-## 9. Wire into the CLI / dashboard
+## 10. Wire into the CLI / dashboard
 
 Once the adapter is wired into ``runner_for()``:
 
@@ -260,10 +327,12 @@ Once the adapter is wired into ``runner_for()``:
 - `src/urika/agents/config.py` — `AgentConfig`, `SecurityPolicy`
 - `src/urika/agents/tools/` — shared Bash / Read / Write / Grep / Glob / Edit layer
 - `src/urika/agents/pricing.py` — shared `cost_for()` + `PRICES` table
+- `src/urika/agents/error_classify.py` — shared `classify_error()` categories
+- `src/urika/agents/adapters/_common.py` — shared `agent_stream_timeout()` + `bash_timeout_seconds()`
 - `src/urika/agents/adapters/claude_sdk.py` — Anthropic reference adapter
 - `src/urika/agents/adapters/openai_agents.py` — OpenAI reference adapter
 - `src/urika/agents/adapters/google_adk.py` — Google reference adapter
 - `src/urika/agents/permission.py` — permission decisions
 - `src/urika/core/recommended_models.py` — per-provider recommended defaults
-- `src/urika/core/compliance.py` — OAuth / session env scrubbing
-  (Anthropic-specific; other providers bring their own)
+- `src/urika/core/compliance.py` — OAuth / session env scrubbing,
+  incl. `scrub_oauth_env_for_subprocess()` for bash-spawning tools

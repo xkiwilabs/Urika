@@ -497,6 +497,44 @@ def spawn_evaluate(
     return _spawn_detached(cmd, env, log_path, lock_path)
 
 
+def spawn_plan(
+    project_name: str,
+    project_path: Path,
+    experiment_id: str,
+    *,
+    instructions: str = "",
+    executable: str | None = None,
+) -> int:
+    """Spawn ``urika plan <project> <experiment_id>`` as a subprocess.
+
+    Writes the PID to ``<exp>/.plan.lock`` and detaches the subprocess
+    so its stdout/stderr go directly to ``<exp>/plan.log``. The lock is
+    removed when the subprocess exits. Returns the PID.
+
+    The CLI's ``urika plan`` takes the experiment ID as an optional
+    positional (defaulting to the latest experiment); the dashboard
+    always passes it explicitly so the agent plans against the
+    experiment the user clicked. Like the evaluator, the planning
+    agent does not produce a dedicated artifact file — the dashboard
+    tails ``plan.log`` so the user can watch the agent's work.
+    """
+    exp_dir = project_path / "experiments" / experiment_id
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    log_path = exp_dir / "plan.log"
+    lock_path = exp_dir / ".plan.lock"
+
+    cmd = _python_cmd(executable) + [
+        "plan",
+        project_name,
+        experiment_id,
+    ]
+    if instructions:
+        cmd.extend(["--instructions", instructions])
+
+    env = _build_env()
+    return _spawn_detached(cmd, env, log_path, lock_path)
+
+
 def spawn_summarize(
     project_name: str,
     project_path: Path,

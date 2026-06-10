@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 
 from urika.core.experiment import create_experiment
 from urika.core.models import VALID_AUDIENCES, VALID_MODES, ProjectConfig
+from urika.core.project_builder import ProjectBuilder
 from urika.core.registry import ProjectRegistry
 from urika.core.revisions import record_revision, update_project_field
 from urika.core.settings import load_settings, save_settings
@@ -28,6 +29,7 @@ from urika.dashboard.runs import (
     spawn_evaluate,
     spawn_experiment_run,
     spawn_finalize,
+    spawn_plan,
     spawn_present,
     spawn_report,
     spawn_summarize,
@@ -54,6 +56,9 @@ _KNOWN_AGENTS = {
     "project_summarizer",
 }
 _VALID_ENDPOINTS = {"open", "private"}  # 'inherit' means "no override".
+
+# Checkbox / boolean form-field vocabulary.
+_TRUTHY = {"true", "1", "yes", "on"}
 
 # Finalize CLI accepts a wider audience set than core/models VALID_AUDIENCES.
 # See ``src/urika/cli/agents_finalize.py`` --audience choices.
@@ -99,9 +104,12 @@ async def api_create_project(request: Request):
     initial criteria, and regenerate README.md.
 
     The interactive scoping agent loop that ``urika new`` runs in a
-    TTY is deliberately skipped — there's no stdin in an HTTP handler.
-    Free-text builder instructions are stashed to disk for a future
-    background-builder integration.
+    TTY is not run inline — there's no stdin in an HTTP handler.
+    Instead, when the modal's ``interactive`` box is ticked the
+    response redirects to ``/projects/{name}/builder``, whose wizard
+    drives the same loop via the builder/start|stream|answer|abort
+    endpoints below. Free-text builder instructions are stashed to
+    disk alongside.
     """
     body = await request.form()
     name = (body.get("name") or "").strip()
@@ -255,6 +263,38 @@ async def api_create_project(request: Request):
                 ep_block["api_key_env"] = chosen_endpoint["api_key_env"]
         _write_toml(toml_path, data)
 
+    # web_search / use_venv — cross-surface parity with the CLI's
+    # interactive prompts (``urika new`` asks both; see
+    # ``cli/project_new.py``). Semantics mirror
+    # ``ProjectBuilder.write_project``:
+    #   * ``[preferences].web_search`` is ALWAYS written (False when
+    #     the box is unchecked), and forced False in private mode —
+    #     the CLI never even asks in private mode.
+    #   * ``[environment].venv = true`` is only written when the box
+    #     is ticked, and the project venv is created alongside.
+    web_search = (body.get("web_search") or "").strip().lower() in _TRUTHY
+    if privacy_mode == "private":
+        web_search = False
+    use_venv = (body.get("use_venv") or "").strip().lower() in _TRUTHY
+    toml_path = project_dir / "urika.toml"
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+    data.setdefault("preferences", {})["web_search"] = web_search
+    if use_venv:
+        data.setdefault("environment", {})["venv"] = True
+    _write_toml(toml_path, data)
+    if use_venv:
+        # Best-effort: a venv-creation failure must not orphan the
+        # already-written project (same non-fatal posture as the
+        # GitHub auto-create below). The [environment].venv flag is
+        # already persisted, so ``urika venv create`` can retry.
+        try:
+            from urika.core.venv import create_project_venv
+
+            create_project_venv(project_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Project venv creation failed for %s: %s", name, exc)
+
     # Seed the new project's [notifications].channels list from the
     # global per-channel ``auto_enable`` flags. Channels with
     # ``auto_enable=true`` start ON for new projects; the rest stay
@@ -334,9 +374,19 @@ async def api_create_project(request: Request):
             if result.install_hint:
                 github_result["install_hint"] = result.install_hint
 
+    # Interactive setup: when the modal's "Run interactive setup"
+    # box is ticked, land the user on the wizard page
+    # (``/projects/{name}/builder``) instead of the project home. The
+    # wizard runs the same builder agent Q&A loop ``urika new`` does
+    # in a TTY (see the builder/start|stream|answer|abort endpoints
+    # below).
+    interactive = (body.get("interactive") or "").strip().lower() in _TRUTHY
     if request.headers.get("hx-request") == "true":
-        return Response(status_code=201, headers={"HX-Redirect": f"/projects/{name}"})
+        target = f"/projects/{name}/builder" if interactive else f"/projects/{name}"
+        return Response(status_code=201, headers={"HX-Redirect": target})
     payload: dict[str, Any] = {"name": name, "path": str(project_dir)}
+    if interactive:
+        payload["builder_url"] = f"/projects/{name}/builder"
     if github_result is not None:
         payload["github"] = github_result
     return JSONResponse(payload, status_code=201)
@@ -359,46 +409,44 @@ async def api_create_project(request: Request):
 #   3. When the loop wants a user answer, it emits a ``question`` event
 #      carrying the question text + (for menus) options. The wizard
 #      POSTs back to ``/projects/{name}/builder/answer``.
-#   4. On user cancel or window close, the wizard POSTs to
-#      ``/projects/{name}/builder/abort`` which cancels the background
-#      task and trashes the partial workspace.
+#   4. Only the wizard's explicit Abort button POSTs to
+#      ``/projects/{name}/builder/abort``, which cancels the background
+#      task and trashes the partial workspace. Closing the window does
+#      NOT abort — the session survives disconnect so the wizard can
+#      re-attach.
 #
 # Concurrency: one builder session per project at a time (keyed by
 # project name in ``builder_sessions``). A second ``start`` returns 409
 # until the first is done or aborted.
 
 
-def _persist_builder_suggestions(project_dir: Path, suggestions: dict | None) -> None:
-    """Mirror what ``ProjectBuilder.write_project`` does for the
-    suggestions slot — writes them to
-    ``<project_dir>/suggestions/initial.json`` so the rest of the
-    project-startup machinery picks them up the same way the CLI
-    path produces. No-op for falsy suggestions."""
-    if not suggestions:
-        return
-    suggestions_dir = project_dir / "suggestions"
-    suggestions_dir.mkdir(exist_ok=True)
-    (suggestions_dir / "initial.json").write_text(
-        json.dumps(suggestions, indent=2) + "\n", encoding="utf-8"
-    )
+class _DashboardBuilderShim(ProjectBuilder):
+    """A real :class:`ProjectBuilder` pointed at an already-written
+    workspace. ``run_builder_loop`` pushes loop-gathered research
+    intent (refined question, preferences, hypotheses, co-drafted
+    criteria, advisor suggestions) onto the builder via duck-typed
+    setters and re-applies it to disk through
+    ``apply_research_intent()`` — so the dashboard surface persists
+    exactly what the CLI path does.
 
+    Pre-7.5 this was a hand-rolled shim that only implemented
+    ``set_initial_suggestions``; the intent setters were silently
+    dropped on the dashboard surface.
 
-class _DashboardBuilderShim:
-    """Minimal ``ProjectBuilder``-shaped object that the runtime-
-    agnostic ``run_builder_loop`` core uses for ``.name`` /
-    ``.projects_dir`` lookups and the ``set_initial_suggestions``
-    callback. The CLI path uses a real ``ProjectBuilder``; here the
-    workspace already exists on disk so we just need somewhere to
-    park the final suggestions until they're flushed by the
-    endpoint's ``done`` handler."""
+    ``question`` starts empty on purpose: ``apply_research_intent``
+    only overwrites ``[project].question`` when the question is
+    non-empty, i.e. when the loop's feasibility step actually refined
+    it. The on-disk question is otherwise left untouched."""
 
     def __init__(self, name: str, projects_dir: Path) -> None:
-        self.name = name
-        self.projects_dir = projects_dir
-        self._suggestions: dict | None = None
-
-    def set_initial_suggestions(self, suggestions: dict) -> None:
-        self._suggestions = suggestions
+        super().__init__(
+            name=name,
+            source_path=None,
+            projects_dir=projects_dir,
+            description="",
+            question="",
+            mode="exploratory",
+        )
 
 
 @router.post("/projects/{name}/builder/start")
@@ -524,9 +572,9 @@ async def api_builder_start(name: str):
                 extra_profiles=extra_profiles,
             )
             session.final_suggestions = suggestions
-            # Persist to disk in the dashboard path (CLI path's
-            # ProjectBuilder.write_project handles this for ``urika new``).
-            _persist_builder_suggestions(summary.path, suggestions)
+            # On-disk persistence (suggestions/initial.json) happens in
+            # the loop's ``finally`` via ``apply_research_intent()`` on
+            # the shim — same flush point as the CLI path.
         except BuilderAborted:
             session.aborted = True
         except asyncio.CancelledError:
@@ -567,13 +615,30 @@ async def api_builder_stream(name: str, request: Request):
             status_code=404, detail="No builder session for this project"
         )
 
+    def _synthetic_done() -> str:
+        # A finished session whose queue was already drained by an
+        # earlier consumer (e.g. the wizard page reloaded after
+        # completion) would otherwise heartbeat forever. Re-emit the
+        # terminal event so the re-attached client closes cleanly.
+        payload = {
+            "kind": "done",
+            "payload": {"suggestions": session.final_suggestions},
+        }
+        return f"event: builder\ndata: {json.dumps(payload)}\n\n"
+
     async def event_stream():
         while True:
             if await request.is_disconnected():
                 return
+            if session.done and session.events.empty():
+                yield _synthetic_done()
+                return
             try:
                 event = await asyncio.wait_for(session.events.get(), timeout=2.0)
             except asyncio.TimeoutError:
+                if session.done and session.events.empty():
+                    yield _synthetic_done()
+                    return
                 # Periodic heartbeat so intermediate proxies don't
                 # idle-close the SSE connection.
                 yield ": heartbeat\n\n"
@@ -597,6 +662,8 @@ async def api_builder_answer(name: str, request: Request):
         raise HTTPException(
             status_code=404, detail="No builder session for this project"
         )
+    if session.done or session.aborted:
+        raise HTTPException(status_code=409, detail="Builder session already finished")
     if session.pending_question is None:
         raise HTTPException(status_code=400, detail="No pending question")
 
@@ -617,7 +684,9 @@ async def api_builder_answer(name: str, request: Request):
 @router.post("/projects/{name}/builder/abort")
 async def api_builder_abort(name: str):
     """Cancel the in-flight builder session and trash the partial
-    project. The wizard calls this on user cancel or window close."""
+    project. Only invoked by the wizard's explicit abort button —
+    never on window close. Sessions survive a disconnect so the
+    wizard can re-attach to a still-running loop."""
     from urika.core.project_delete import trash_project
     from urika.dashboard import builder_sessions
 
@@ -1051,6 +1120,38 @@ async def api_git_init(name: str, request: Request) -> JSONResponse:
     git.add_remote(summary.path, str(remote))
     git.commit_all(summary.path, message="urika: initial project state")
     return JSONResponse({"ok": True, "remote": str(remote)})
+
+
+@router.post("/projects/{name}/git/pull")
+async def api_git_pull(name: str, request: Request) -> JSONResponse:
+    """Fetch + fast-forward-only merge from origin (v0.7.1 parity sweep).
+
+    Mirrors ``urika github pull`` CLI semantics (the dashboard's Git tab
+    previously had no pull surface at all):
+
+    * 404 if the project name isn't registered.
+    * 409 with ``detail: "not a git repo"`` if the project exists but
+      hasn't been ``urika github init``'d yet.
+    * Otherwise call :func:`urika.core.git.pull` (the same helper the
+      CLI uses) and return ``{"ok": bool, "error": str|null}`` — same
+      envelope shape as ``/git/push``. A refused merge (divergence)
+      surfaces as ``ok: false`` with the verbatim git error so the Git
+      tab can render it inline; Urika does not auto-merge.
+
+    The CSRF middleware (v0.4.5.1) rejects cross-origin POSTs with 403
+    before this handler runs.
+    """
+    from urika.core import git
+
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not git.is_git_repo(summary.path):
+        raise HTTPException(status_code=409, detail="not a git repo")
+
+    pulled = git.pull(summary.path)
+    return JSONResponse({"ok": pulled.ok, "error": pulled.error})
 
 
 @router.post("/projects/{name}/memory/curate")
@@ -3649,6 +3750,7 @@ _EXPERIMENT_LOG_TYPES: dict[str, tuple[str, str]] = {
     # type → (log_filename, lock_filename)
     "run": ("run.log", ".lock"),
     "evaluate": ("evaluate.log", ".evaluate.lock"),
+    "plan": ("plan.log", ".plan.lock"),
     "report": ("report.log", ".report.lock"),
     "present": ("present.log", ".present.lock"),
 }
@@ -3668,6 +3770,7 @@ async def api_run_stream(name: str, exp_id: str, request: Request, type: str = "
 
     * ``run`` → ``run.log`` + ``.lock``
     * ``evaluate`` → ``evaluate.log`` + ``.evaluate.lock``
+    * ``plan`` → ``plan.log`` + ``.plan.lock``
     * ``report`` → ``report.log`` + ``.report.lock``
     * ``present`` → ``present.log`` + ``.present.lock``
 
@@ -4164,6 +4267,59 @@ async def api_experiment_evaluate(name: str, exp_id: str, request: Request):
 
     if request.headers.get("hx-request") == "true":
         log_url = f"/projects/{name}/experiments/{exp_id}/log?type=evaluate"
+        return Response(status_code=200, headers={"HX-Redirect": log_url})
+    return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
+
+
+@router.post("/projects/{name}/experiments/{exp_id}/plan")
+async def api_experiment_plan(name: str, exp_id: str, request: Request):
+    """Spawn ``urika plan <project> <exp_id>`` for an experiment.
+
+    v0.7.1 parity sweep: the planning agent was reachable from CLI
+    (``urika plan``), REPL, and TUI (``/plan``) but had no dashboard
+    surface. Mirrors the ``/evaluate`` endpoint shape: validates
+    project + experiment, pulls the optional ``instructions`` form
+    field, and hands off to ``spawn_plan`` which Popens the CLI and
+    detaches a daemon thread to drain stdout into ``<exp>/plan.log``.
+    When called from HTMX, responds with an ``HX-Redirect`` to the
+    experiment's live log page so the user can watch the planner's
+    stream.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    if not (summary.path / "experiments" / exp_id).is_dir():
+        raise HTTPException(status_code=422, detail="Unknown experiment")
+
+    # If a plan run is already in flight for THIS experiment, redirect
+    # to its live log instead of spawning a duplicate. Different
+    # experiments don't block each other.
+    existing = _redirect_if_running(
+        name,
+        summary.path,
+        "plan",
+        request,
+        experiment_id=exp_id,
+    )
+    if existing is not None:
+        return existing
+
+    # Pre-flight privacy gate — same rule as /run, /evaluate, /present.
+    _validate_privacy_endpoint(summary.path)
+
+    body = await request.form()
+    instructions = (body.get("instructions") or "").strip()
+
+    pid = spawn_plan(
+        name,
+        summary.path,
+        exp_id,
+        instructions=instructions,
+    )
+
+    if request.headers.get("hx-request") == "true":
+        log_url = f"/projects/{name}/experiments/{exp_id}/log?type=plan"
         return Response(status_code=200, headers={"HX-Redirect": log_url})
     return JSONResponse({"status": "started", "pid": pid, "experiment_id": exp_id})
 

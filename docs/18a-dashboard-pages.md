@@ -39,8 +39,9 @@ The dashboard is a multi-page app. Each route is a server-rendered Jinja templat
 |-------|-------------|
 | `/projects` | Registered projects with mode, question, recent activity. |
 | `/projects/<name>` | Project home: summary card, recent experiments, final outputs. |
+| `/projects/<name>/builder` | Interactive builder wizard (v0.8.0): SSE-driven agent Q&A that scopes a freshly created project — same loop as `urika new` in a terminal (see below). |
 | `/projects/<name>/experiments` | All experiments for the project, with status and run counts. |
-| `/projects/<name>/experiments/<id>` | Experiment detail: hypotheses, runs, report/presentation viewers, files. |
+| `/projects/<name>/experiments/<id>` | Experiment detail: hypotheses, runs, report/presentation viewers, files. Includes a **Plan** button (v0.8.0) that opens a modal with an optional instructions field and spawns the planning agent — parity with `urika plan` / the TUI's `/plan`. |
 | `/projects/<name>/experiments/<id>/report` | Rendered experiment report (`report.md` → HTML). |
 | `/projects/<name>/experiments/<id>/presentation` | Rendered experiment presentation (reveal.js). |
 | `/projects/<name>/experiments/<id>/files/<path>` | Single experiment artifact viewer (text, image, or download). |
@@ -51,7 +52,7 @@ The dashboard is a multi-page app. Each route is a server-rendered Jinja templat
 | `/projects/<name>/knowledge` | Knowledge base entries for the project, with an "+ Add knowledge" button (see below). |
 | `/projects/<name>/knowledge/<id>` | A single knowledge entry. |
 | `/projects/<name>/memory` | Project memory entries (v0.5.0): list / add / edit / delete via the CRUD API at `/api/projects/<name>/memory`, plus **Curate** (dry-run) and **Apply** controls that wire to the `memory_curator` agent. `?show_archived=true` toggles the archived-snapshot list below the live entries. |
-| `/projects/<name>/git` | Git tab (v0.6.0): branch / remote / dirty count / last commit panel, recent-commits list with `urika-event:` chips, and a "Push now" button when initialised. When not yet a git repo, shows an "Initialise" form that POSTs to `/api/projects/<name>/git/init`. Sidebar entry between Methods and Criteria. |
+| `/projects/<name>/git` | Git tab (v0.6.0): branch / remote / dirty count / last commit panel, recent-commits list with `urika-event:` chips, and "Push now" / "Pull" buttons when initialised (pull added in v0.8.0 — fetch + fast-forward-only merge, refuses on divergence). When not yet a git repo, shows an "Initialise" form that POSTs to `/api/projects/<name>/git/init`. Sidebar entry between Methods and Criteria. |
 | `/projects/<name>/tools` | Registered tools listing (read-only viewer for the project tool registry). |
 | `/projects/<name>/criteria` | Versioned success-criteria viewer (read-only). |
 | `/projects/<name>/advisor` | Advisor chat panel — persistent transcript per project (see below). |
@@ -77,10 +78,21 @@ Run launching lives behind the **+ New experiment** modal on the experiments lis
 
 Two modal dialogs open in-place from the relevant list pages. Both share the same `modal()` Jinja primitive — a small accessible dialog with a backdrop, an Alpine `x-data` toggle, and a labelled close button.
 
-- **+ New project** lives in the top-right of `/projects`. It opens a modal with the same questions the interactive `urika new` CLI asks: project name, dataset path, research question, mode, audience. Submitting POSTs to `POST /api/projects` (see below), which runs `urika new --json --non-interactive` as a subprocess and, on success, redirects the browser to the new project's home page.
+- **+ New project** lives in the top-right of `/projects`. It opens a modal with the same questions the interactive `urika new` CLI asks: project name, dataset path, research question, mode, audience. Two checkboxes mirror the CLI's prompts (v0.8.0): **Web search** writes `[preferences].web_search` (always written, forced off in private mode — the CLI never even asks there), and **Isolated environment** writes `[environment].venv = true` and creates the project venv alongside (a venv-creation failure is non-fatal; the flag is already persisted so `urika venv create` can retry). Submitting POSTs to `POST /api/projects` (see below), which scaffolds the workspace and, on success, redirects the browser to the new project's home page — unless **Run interactive setup (agent Q&A wizard)** is ticked, in which case the redirect lands on the builder wizard at `/projects/<name>/builder` instead.
 - **+ New experiment** lives in the top-right of `/projects/<name>/experiments`. The modal carries forward the fields from the old `/run` form — experiment name, hypothesis, mode, audience, max turns, and additional instructions — and posts to `POST /api/projects/<name>/run`. On success the response is an HTMX redirect to the live log page.
 
 If an experiment is already running (a `.lock` file exists under any `experiments/<id>/`), the New Experiment button is hidden in favour of a "View live log" link so two sessions can't accidentally launch concurrent runs. Same guard as before — only the surface changed.
+
+### Interactive builder wizard
+
+`/projects/<name>/builder` (v0.8.0) runs the same agent-guided scoping loop that `urika new` runs in a terminal — feasibility check, clarifying questions, research-preference questions, hypotheses offer, advisor suggestions, plan, success-criteria co-draft, and the final refine/accept menu (see [Creating Projects](04-creating-projects.md) for what each step asks). The wizard page:
+
+1. POSTs to `POST /api/projects/<name>/builder/start` on load, which kicks off the builder loop as a background task against the already-scaffolded workspace (409 if a builder session is already active for the project).
+2. Opens an `EventSource` on `GET /api/projects/<name>/builder/stream` and renders each builder event (progress steps, agent phases, tool use, agent output) chronologically.
+3. When the loop wants an answer, the stream emits a `question` event carrying the question text and (for menus) options; the wizard renders it as a free-text turn or a button row and POSTs the answer to `POST /api/projects/<name>/builder/answer`.
+4. Only the wizard's explicit **Abort** button POSTs to `POST /api/projects/<name>/builder/abort`, which cancels the loop and moves the partial project to `~/.urika/trash/`. **Closing the window does not abort** — the session survives a disconnect, and reloading the wizard page re-attaches to the still-running loop (a finished session re-emits its terminal event so a re-attached page closes cleanly).
+
+Everything the loop gathers (refined question, preferences, hypotheses, co-drafted criteria, advisor suggestions) persists to the project's `urika.toml` / `criteria.json` / `suggestions/initial.json` exactly as the CLI path does.
 
 ### Live log
 

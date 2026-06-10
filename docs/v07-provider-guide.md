@@ -144,14 +144,13 @@ The dashboard Models tab has a Provider filter that pre-populates
 the per-agent dropdowns with each provider's recommended models —
 the equivalent of the TOML above without hand-writing the keys.
 
-**Caveat (v0.7.0 only):** the experiment loop is fully migrated to
-per-agent routing, but ~20 support-agent call sites (`urika
-advisor`, `urika finalize`, `urika report`, the memory curator,
-some REPL chat paths) still hard-code the legacy `get_runner()`
-factory. Until v0.7.1 hotfixes those, mixed-provider users get
-correct routing on the planning → task → evaluator → advisor
-cycle but silent Claude fallback on the standalone advisor /
-finalize / report / curate commands.
+**Note on routing completeness:** This caveat was written
+mid-development-cycle and was already obsolete at release. The
+rewire commits (4f5d4d83, 1b82daf2, 4d1c090d) are all ancestors
+of the v0.7.0 tag. Every agent invocation surface in v0.7.0+
+routes per-agent via ``runner_for(model)``; the only remaining
+``get_runner`` call at the tag was a cosmetic REPL footer label
+with no routing effect.
 
 ## Cost reporting differences
 
@@ -174,3 +173,24 @@ against [ai.google.dev/pricing](https://ai.google.dev/pricing) on
 2026-06-02. Both Gemini rows quote the ≤200k-token tier — Google
 charges more for prompts above that threshold, so cost estimates
 under-report for very long-context calls.
+
+## v0.8.0 updates
+
+Three provider-level fixes landed in v0.8.0:
+
+- **OpenAI usage accounting fixed.** v0.7.0 read usage from an
+  attribute the openai-agents SDK's `RunResult` doesn't have, so
+  every OpenAI run recorded 0 tokens / $0.00. Usage is now summed
+  from the per-response objects in `RunResult.raw_responses`, so
+  `urika usage`, the leaderboard, and the dashboard Usage page show
+  real OpenAI costs.
+- **Stream timeouts + error categorization are now uniform.** All
+  three adapters share one error classifier
+  (`rate_limit` / `auth` / `billing` / `transient` / `config` /
+  `unknown`), and the OpenAI and Google streams gain the same
+  silence timeout the Claude adapter had (`URIKA_AGENT_STREAM_TIMEOUT`
+  env var, default 600 s) — a hung SDK stream fails as `transient`
+  and the run pauses instead of blocking forever.
+- **`max_method_seconds` honored everywhere.** The OpenAI and Google
+  bash tool wrappers now cap each command at the project's
+  `max_method_seconds` setting (previously Claude-only).

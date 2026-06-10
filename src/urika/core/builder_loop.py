@@ -79,6 +79,29 @@ class BuilderQuestion:
 AskUser = Callable[[BuilderQuestion], Awaitable[str]]
 Emit = Callable[[BuilderEvent], None]
 
+# Answers that mean "skip this question" — mirrors the Phase 1
+# clarifying-loop vocabulary ("done") plus the obvious synonyms.
+_SKIP_ANSWERS = {"", "done", "skip"}
+
+
+def _match_option(answer: str, options: list[tuple[str, str]]) -> str:
+    """Map a free-form answer onto one of ``options`` (value, label) pairs.
+
+    Accepts the 1-based number, the stored value, the full label, or an
+    unambiguous label prefix. Anything unrecognised — including the skip
+    vocabulary — returns ``""`` (the preference stays unset). Callers
+    render the labels; users may type a number, the label, or anything."""
+    a = answer.strip().lower()
+    if a in _SKIP_ANSWERS:
+        return ""
+    for i, (value, label) in enumerate(options, 1):
+        if a == str(i) or a == value or a == label.lower():
+            return value
+    prefix_matches = [v for v, label in options if label.lower().startswith(a)]
+    if len(prefix_matches) == 1:
+        return prefix_matches[0]
+    return ""
+
 
 class BuilderAborted(Exception):
     """Raised by ``ask_user`` (or by the loop on a terminal "Abort")
@@ -115,6 +138,7 @@ async def run_builder_loop(
     from urika.agents.registry import AgentRegistry
     from urika.agents.runner_routing import runner_for_project
     from urika.core.builder_prompts import (
+        build_feasibility_prompt,
         build_planning_prompt,
         build_scoping_prompt,
         build_suggestion_prompt,
@@ -205,6 +229,20 @@ async def run_builder_loop(
         usage["calls"] += 1
         return r
 
+    def _builder_set(method: str, *args: Any) -> None:
+        """Best-effort push of loop-gathered research intent onto the
+        builder — the same duck-typed channel ``set_initial_suggestions``
+        uses in ``finally``. Adapter shims (e.g. the dashboard's) may not
+        implement every setter; the value simply doesn't persist on that
+        surface."""
+        fn = getattr(builder, method, None)
+        if not callable(fn):
+            return
+        try:
+            fn(*args)
+        except Exception as exc:
+            logger.warning("%s failed: %s", method, exc)
+
     # --- Early-exit guards ---
     builder_role = registry.get("project_builder")
     if builder_role is None:
@@ -252,6 +290,98 @@ async def run_builder_loop(
     )
 
     try:
+        # --- Phase 0: Question feasibility check (best-effort) ---
+        # One agent call sanity-checks the research question against the
+        # scanned data BEFORE the clarifying loop spends the user's time
+        # scoping an unanswerable question. Strictly best-effort: any
+        # agent or parse failure skips the step — feasibility must never
+        # block project creation.
+        feasibility: dict[str, Any] | None = None
+        if question:
+            emit(
+                BuilderEvent(
+                    "step",
+                    {"text": "Checking the research question against the data…"},
+                )
+            )
+            try:
+                feas_config = builder_role.build_config(project_dir=project_dir)
+                feas_result = await _run_agent(
+                    feas_config,
+                    build_feasibility_prompt(question, data_summary, scan_result),
+                )
+                if feas_result.success:
+                    for block in _extract_json_blocks(feas_result.text_output):
+                        if "answerable" in block:
+                            feasibility = block
+                            break
+            except Exception as exc:
+                logger.warning("Feasibility check failed: %s", exc)
+            if feasibility is None:
+                emit(
+                    BuilderEvent(
+                        "step",
+                        {"text": "Feasibility check inconclusive — continuing."},
+                    )
+                )
+
+        refinement = ""
+        if feasibility is not None:
+            refinement = str(feasibility.get("suggested_refinement") or "").strip()
+        if feasibility is not None and (
+            not feasibility.get("answerable", True) or refinement
+        ):
+            concern = str(feasibility.get("concern") or "").strip()
+            missing = [
+                str(v)
+                for v in (feasibility.get("missing_variables") or [])
+                if str(v).strip()
+            ]
+            lines: list[str] = []
+            if not feasibility.get("answerable", True):
+                lines.append(
+                    "The research question may not be answerable from this data."
+                )
+            if concern:
+                lines.append(concern)
+            if missing:
+                lines.append("Possibly missing variables: " + ", ".join(missing))
+            if refinement:
+                lines.append(f"Suggested refinement: {refinement}")
+
+            original_question = question
+            answer = (
+                await ask_user(
+                    BuilderQuestion(
+                        text="\n".join(lines),
+                        options=[
+                            "Keep my question",
+                            "Use the refined question",
+                            "Let me rephrase",
+                        ],
+                    )
+                )
+            ).strip()
+            low = answer.lower()
+            if low in ("2", "use the refined question") and refinement:
+                question = refinement
+            elif low in ("3", "let me rephrase"):
+                rephrased = (
+                    await ask_user(
+                        BuilderQuestion(text="Your refined research question")
+                    )
+                ).strip()
+                if rephrased and rephrased.lower() not in ("done", "skip"):
+                    question = rephrased
+            elif low in ("", "1", "keep my question", "done", "skip"):
+                pass
+            else:
+                # Anything else is free text — the user typed their own
+                # rephrasing directly instead of picking an option.
+                question = answer
+            if question != original_question:
+                _builder_set("set_refined_question", question)
+
         # --- Phase 1: Clarifying questions ---
         for _ in range(max_questions):
             prompt = build_scoping_prompt(
@@ -298,6 +428,119 @@ async def run_builder_loop(
             answers[question_text] = answer
             context += f"Q: {question_text}\nA: {answer}\n\n"
 
+        # --- Preference elicitation (fixed questions — no agent call) ---
+        # Skippable the same way Phase 1 answers are: "done" / "skip" /
+        # empty leaves the preference unset and the prompts unchanged.
+        approach_options = [
+            (
+                "statistical",
+                "Statistical testing (ANOVA, regression, hypothesis tests)",
+            ),
+            ("predictive", "Predictive modelling (accuracy-focused ML)"),
+            ("exploratory", "Exploratory (patterns, clustering, visualization)"),
+            ("mixed", "Mixed"),
+        ]
+        approach_answer = await ask_user(
+            BuilderQuestion(
+                text="Analysis approach preference",
+                options=[label for _, label in approach_options],
+            )
+        )
+        analysis_approach = _match_option(approach_answer, approach_options)
+
+        interp_options = [
+            ("interpretable", "Highly interpretable (linear models, trees)"),
+            ("balanced", "Balanced (ensembles, GAMs)"),
+            ("max_performance", "Max performance (anything goes)"),
+        ]
+        interp_answer = await ask_user(
+            BuilderQuestion(
+                text="Model interpretability preference",
+                options=[label for _, label in interp_options],
+            )
+        )
+        interpretability = _match_option(interp_answer, interp_options)
+        if analysis_approach or interpretability:
+            _builder_set(
+                "set_research_preferences", analysis_approach, interpretability
+            )
+
+        constraints: dict[str, str] = {}
+        constraints_answer = (
+            await ask_user(
+                BuilderQuestion(
+                    text=(
+                        "Any practical constraints? (time or compute budget, "
+                        "regulatory requirements, interpretability needs)"
+                    ),
+                    options=["No constraints"],
+                )
+            )
+        ).strip()
+        low = constraints_answer.lower()
+        if low not in _SKIP_ANSWERS and low not in ("1", "no constraints"):
+            # Free text — the user described their constraints directly.
+            constraints = {"notes": constraints_answer}
+            _builder_set("set_constraints", constraints)
+
+        # --- Hypothesis decomposition offer (best-effort) ---
+        # One agent call proposing 1-4 testable hypotheses; agent or parse
+        # failure skips the offer silently — like the feasibility check,
+        # this must never block project creation.
+        hypotheses: list[str] = []
+        proposed_hypotheses: list[str] = []
+        try:
+            hyp_parts = ["## Research Question", question, ""]
+            if context:
+                hyp_parts.extend(["## Previous Answers", context, ""])
+            hyp_parts.append(
+                "Propose 1-4 testable hypotheses decomposing this research "
+                "question. Respond with ONLY "
+                '{"hypotheses": ["H1: ...", "H2: ..."]}'
+            )
+            hyp_config = builder_role.build_config(project_dir=project_dir)
+            hyp_result = await _run_agent(hyp_config, "\n".join(hyp_parts))
+            if hyp_result.success:
+                for block in _extract_json_blocks(hyp_result.text_output):
+                    if "hypotheses" in block:
+                        proposed_hypotheses = [
+                            str(h).strip()
+                            for h in (block.get("hypotheses") or [])
+                            if str(h).strip()
+                        ]
+                        break
+        except Exception as exc:
+            logger.warning("Hypothesis proposal failed: %s", exc)
+        if proposed_hypotheses:
+            listing = "\n".join(f"- {h}" for h in proposed_hypotheses)
+            hyp_answer = (
+                await ask_user(
+                    BuilderQuestion(
+                        text=f"Proposed hypotheses:\n{listing}",
+                        options=["Accept", "Skip"],
+                    )
+                )
+            ).strip()
+            low = hyp_answer.lower()
+            if low in ("1", "accept"):
+                hypotheses = proposed_hypotheses
+            elif low == "2" or low in _SKIP_ANSWERS:
+                hypotheses = []
+            else:
+                # Free text — the user wrote their own hypotheses,
+                # one per line.
+                hypotheses = [
+                    ln.strip() for ln in hyp_answer.splitlines() if ln.strip()
+                ]
+            if hypotheses:
+                _builder_set("set_hypotheses", hypotheses)
+
+        preferences: dict[str, str] = {}
+        if analysis_approach:
+            preferences["analysis_approach"] = analysis_approach
+        if interpretability:
+            preferences["interpretability_level"] = interpretability
+
         # --- Phase 2: Advisor ---
         emit(
             BuilderEvent(
@@ -312,7 +555,14 @@ async def run_builder_loop(
             )
             return None
 
-        suggest_prompt = build_suggestion_prompt(description, data_summary, answers)
+        suggest_prompt = build_suggestion_prompt(
+            description,
+            data_summary,
+            answers,
+            preferences=preferences or None,
+            hypotheses=hypotheses or None,
+            constraints=constraints or None,
+        )
         suggest_config = suggest_role.build_config(
             project_dir=project_dir, experiment_id=""
         )
@@ -346,7 +596,12 @@ async def run_builder_loop(
             return suggestions
 
         plan_prompt = build_planning_prompt(
-            suggestions or {}, description, data_summary
+            suggestions or {},
+            description,
+            data_summary,
+            preferences=preferences or None,
+            hypotheses=hypotheses or None,
+            constraints=constraints or None,
         )
         plan_config = plan_role.build_config(project_dir=project_dir, experiment_id="")
         plan_result = await _run_agent(plan_config, plan_prompt)
@@ -360,6 +615,50 @@ async def run_builder_loop(
             return suggestions
 
         emit(BuilderEvent("agent_text", {"text": plan_result.text_output}))
+
+        # --- Criteria co-draft ---
+        # Offer the seed criteria for amendment before the final menu.
+        # Free-text changes land verbatim as a ``user_amendments`` key —
+        # the evaluator receives criteria as-is, so amendments reach it
+        # without any numeric parsing on our side.
+        from urika.core.project_builder import default_initial_criteria
+
+        proposed_criteria = default_initial_criteria()
+        rendered_lines = []
+        for crit_key, crit_value in proposed_criteria.items():
+            if isinstance(crit_value, dict):
+                rendered = ", ".join(f"{k} = {v}" for k, v in crit_value.items())
+            elif isinstance(crit_value, list):
+                rendered = ", ".join(str(v) for v in crit_value)
+            else:
+                rendered = str(crit_value)
+            rendered_lines.append(f"- {crit_key}: {rendered}")
+        crit_answer = (
+            await ask_user(
+                BuilderQuestion(
+                    text=(
+                        "Proposed success criteria:\n"
+                        + "\n".join(rendered_lines)
+                        + "\nAccept, or describe changes?"
+                    ),
+                    options=["Accept", "Describe changes"],
+                )
+            )
+        ).strip()
+        final_criteria = dict(proposed_criteria)
+        low = crit_answer.lower()
+        if low in ("1", "accept") or low in _SKIP_ANSWERS:
+            pass
+        elif low in ("2", "describe changes"):
+            changes = (
+                await ask_user(BuilderQuestion(text="Describe the changes"))
+            ).strip()
+            if changes and changes.lower() not in _SKIP_ANSWERS:
+                final_criteria["user_amendments"] = changes
+        else:
+            # Free text — the user described their changes directly.
+            final_criteria["user_amendments"] = crit_answer
+        _builder_set("set_initial_criteria", final_criteria)
 
         # --- Phase 4: User refinement loop ---
         while True:
@@ -401,7 +700,12 @@ async def run_builder_loop(
                 )
             )
             plan_prompt = build_planning_prompt(
-                suggestions or {}, description, data_summary
+                suggestions or {},
+                description,
+                data_summary,
+                preferences=preferences or None,
+                hypotheses=hypotheses or None,
+                constraints=constraints or None,
             )
             plan_result = await _run_agent(plan_config, plan_prompt)
             if plan_result.success:
@@ -419,5 +723,12 @@ async def run_builder_loop(
                 builder.set_initial_suggestions(suggestions)
             except Exception as exc:
                 logger.warning("set_initial_suggestions failed: %s", exc)
+        # Persist loop-gathered research intent (refined question,
+        # preferences, hypotheses, co-drafted criteria) onto the
+        # already-written project. In the CLI flow
+        # ``write_project()`` runs BEFORE this loop (the loop's agents
+        # need the workspace + knowledge base on disk), so without this
+        # re-apply the values would never reach urika.toml.
+        _builder_set("apply_research_intent")
         _record_usage()
         emit(BuilderEvent("done", {"suggestions": suggestions}))

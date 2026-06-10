@@ -5,11 +5,11 @@ Used by both ``urika config api-key --test`` (CLI) and the dashboard's
 on the stdlib (``urllib``) so the test still works even when the
 ``anthropic`` SDK install is broken.
 
-Per Anthropic Consumer Terms §3.7 and the April 2026 Agent SDK
-clarification, Urika authenticates the Agent SDK with an API key —
-NOT a Pro/Max OAuth token. Verifying the key here lets users confirm
+Urika defaults to ``api_key`` auth mode, which authenticates the Agent
+SDK with an API key. Verifying the key here lets users confirm
 that (a) the key is set, (b) Anthropic accepts it, and (c) Urika will
-authenticate via this key rather than a subscription.
+authenticate via this key (``api_key`` mode) rather than subscription
+OAuth.
 """
 
 from __future__ import annotations

@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 from urika.agents.runner import AgentResult
 from urika.core.session import fail_session, pause_session
+from urika.evaluation.ranking import LOWER_IS_BETTER
 
 logger = logging.getLogger(__name__)
 
@@ -73,26 +74,9 @@ def _is_recoverable_failure(category: str | None) -> bool:
     return (category or "") not in _FATAL_ERROR_CATEGORIES
 
 
-# Metrics where lower values are better (errors, losses, p-values).
-# Shared with loop_display._print_run_summary so the "best" calculation
-# matches the primary-metric direction detection.
-_LOWER_IS_BETTER = {
-    "rmse",
-    "mse",
-    "mae",
-    "mape",
-    "loss",
-    "error",
-    "brier_score",
-    "log_loss",
-    "sse",
-    "residual",
-    "p_value",
-    "aic",
-    "bic",
-    "deviance",
-    "perplexity",
-}
+# Canonical set lives in urika.evaluation.ranking; re-exported here for
+# loop.py and loop_display.py consumers that do `in _LOWER_IS_BETTER` checks.
+_LOWER_IS_BETTER = LOWER_IS_BETTER
 
 
 def _check_result(

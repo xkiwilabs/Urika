@@ -142,6 +142,10 @@ def _record_from_block(block: dict[str, Any]) -> RunRecord | None:
             block.get("run_id"),
         )
         return None
+    interpretation = block.get("metric_interpretation", {})
+    if not isinstance(interpretation, dict):
+        # Malformed interpretation never blocks the record itself.
+        interpretation = {}
     return RunRecord(
         run_id=block["run_id"],
         method=block["method"],
@@ -151,6 +155,7 @@ def _record_from_block(block: dict[str, Any]) -> RunRecord | None:
         observation=block.get("observation", ""),
         next_step=block.get("next_step", ""),
         artifacts=block.get("artifacts", []),
+        metric_interpretation=interpretation,
     )
 
 
@@ -171,6 +176,47 @@ def parse_run_records(text: str) -> list[RunRecord]:
     return records
 
 
+def _read_run_record_files(directory: Path, source: str) -> list[RunRecord]:
+    """Enumerate ``<directory>/run-*.json`` files as RunRecords.
+
+    Shared scan for the labbook (documented-primary) and artifacts
+    (tolerance) locations. Malformed JSON files and records missing
+    required fields are skipped with a warning (same validation as
+    :func:`parse_run_records` via :func:`_record_from_block`) — this is
+    what keeps an agent's own ``run-002-results.json`` analysis output
+    from being mistaken for a run record. Returns ``[]`` when
+    ``directory`` doesn't exist. Records are sorted by filename so
+    ``run-001-*`` lands before ``run-002-*``.
+    """
+    if not directory.is_dir():
+        return []
+    records: list[RunRecord] = []
+    for path in sorted(directory.glob("run-*.json")):
+        try:
+            block = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Skipping malformed %s record %s: %s: %s",
+                source,
+                path.name,
+                type(exc).__name__,
+                exc,
+            )
+            continue
+        if not isinstance(block, dict):
+            logger.warning(
+                "Skipping %s record %s: top-level JSON is %s, not object",
+                source,
+                path.name,
+                type(block).__name__,
+            )
+            continue
+        record = _record_from_block(block)
+        if record is not None:
+            records.append(record)
+    return records
+
+
 def read_labbook_run_records(experiment_dir: Path) -> list[RunRecord]:
     """Enumerate ``<experiment_dir>/labbook/run-*.json`` files as RunRecords.
 
@@ -179,8 +225,8 @@ def read_labbook_run_records(experiment_dir: Path) -> list[RunRecord]:
     the orchestrator only scanned the agent's text output for
     ```json blocks — so a tools-only agent produced no leaderboard
     update despite writing real records to disk. The loop now merges
-    text-parsed records with the on-disk records this function returns
-    (see :mod:`urika.orchestrator.loop` for the call site).
+    text-parsed records with the on-disk records (see
+    :func:`read_disk_run_records` and :mod:`urika.orchestrator.loop`).
 
     Returns:
         Records sorted by filename so ``run-001-*`` lands before
@@ -188,31 +234,38 @@ def read_labbook_run_records(experiment_dir: Path) -> list[RunRecord]:
         fields are skipped (same validation as :func:`parse_run_records`).
         Returns ``[]`` when ``<experiment_dir>/labbook`` doesn't exist.
     """
-    labbook = experiment_dir / "labbook"
-    if not labbook.is_dir():
-        return []
-    records: list[RunRecord] = []
-    for path in sorted(labbook.glob("run-*.json")):
-        try:
-            block = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.warning(
-                "Skipping malformed labbook record %s: %s: %s",
-                path.name,
-                type(exc).__name__,
-                exc,
-            )
-            continue
-        if not isinstance(block, dict):
-            logger.warning(
-                "Skipping labbook record %s: top-level JSON is %s, not object",
-                path.name,
-                type(block).__name__,
-            )
-            continue
-        record = _record_from_block(block)
-        if record is not None:
+    return _read_run_record_files(experiment_dir / "labbook", "labbook")
+
+
+def read_disk_run_records(experiment_dir: Path) -> list[RunRecord]:
+    """Enumerate on-disk run records from labbook/ AND artifacts/.
+
+    ``<experiment_dir>/labbook/run-*.json`` is the documented-primary
+    location (the task_agent prompt instructs the agent to write each
+    RunRecord there as it completes). The ``artifacts/run-*.json`` scan
+    is a tolerance for agents that put records there instead — the
+    2026-06-10 real-API smoke saw a Haiku task agent write perfectly
+    valid records to ``artifacts/run-001-runrecord.json`` (a reasonable
+    reading of "Outputs go to artifacts/") with no labbook files and no
+    inline JSON block, so 0 runs were recorded despite real work on
+    disk.
+
+    Both locations get the same validation as the labbook scan, which
+    is what keeps an agent's own analysis outputs (e.g.
+    ``artifacts/run-002-results.json`` without run_id/method/metrics)
+    out of the leaderboard.
+
+    Returns:
+        Labbook records first (filename-sorted), then artifacts records
+        (filename-sorted), deduplicated by ``run_id`` — the labbook copy
+        wins when both locations carry the same run.
+    """
+    records = read_labbook_run_records(experiment_dir)
+    seen_ids = {r.run_id for r in records}
+    for record in _read_run_record_files(experiment_dir / "artifacts", "artifacts"):
+        if record.run_id not in seen_ids:
             records.append(record)
+            seen_ids.add(record.run_id)
     return records
 
 

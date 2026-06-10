@@ -28,6 +28,25 @@ data_paths = ["/home/user/data/participants.csv"]
 | `description` | string | no | Longer description of the project goals |
 | `data_paths` | list of strings | no | Paths to the dataset files |
 | `success_criteria` | table | no | Initial success criteria (typically set by project_builder) |
+| `hypotheses` | list of strings | no | Testable hypotheses decomposing the research question (v0.8.0) |
+| `analysis_approach` | string | no | `"statistical"`, `"predictive"`, `"exploratory"`, or `"mixed"` (v0.8.0) |
+| `interpretability_level` | string | no | `"interpretable"`, `"balanced"`, or `"max_performance"` (v0.8.0) |
+| `constraints` | inline table | no | Practical constraints as free-text notes (v0.8.0) |
+
+**Research-intent keys (v0.8.0):** the last four keys are written by the interactive builder session during `urika new` (see [Creating Projects](04-creating-projects.md)) and seed the advisor and planning agent prompts so the first experiments respect your stated approach. They live inline under `[project]`:
+
+```toml
+[project]
+name = "dht-target-selection"
+question = "Which features best predict DHT target selection accuracy?"
+mode = "exploratory"
+hypotheses = ["H1: Movement-time features predict selection accuracy better than demographic features", "H2: The feature-accuracy relationship is non-linear"]
+analysis_approach = "statistical"
+interpretability_level = "interpretable"
+constraints = {notes = "Results feed an ethics report due in 6 weeks; models must be explainable to a non-technical panel"}
+```
+
+A key that is absent means the user skipped that question — every project created before v0.8.0 loads unchanged with empty defaults. You can also add or edit them by hand; agents pick them up on the next invocation.
 
 **Modes:**
 

@@ -17,7 +17,7 @@ from urika.core.project_delete import _is_active_run_lock, _pid_is_alive
 class ActiveOp:
     """A running agent operation, located by its lock file."""
 
-    type: str  # "run" | "evaluate" | "report" | "present" |
+    type: str  # "run" | "evaluate" | "plan" | "report" | "present" |
     # "summarize" | "finalize" | "build_tool" | "advisor"
     project_name: str
     experiment_id: str | None  # None for project-level ops
@@ -40,6 +40,7 @@ _EXPERIMENT_LEVEL_LOCKS: tuple[tuple[str, str, str | None], ...] = (
     # (lock filename within experiments/<id>/, op type, log query type or
     # None for the bare run lock).
     (".evaluate.lock", "evaluate", "evaluate"),
+    (".plan.lock", "plan", "plan"),
     (".report.lock", "report", "report"),
     (".present.lock", "present", "present"),
     (".lock", "run", None),  # bare .lock is the experiment run; check last

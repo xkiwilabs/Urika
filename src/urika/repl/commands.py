@@ -442,7 +442,7 @@ def cmd_copy(session: ReplSession, args: str) -> None:
     )
 
 
-@command("config", description="Configure privacy mode and models")
+@command("config", description="Configure privacy mode, models, and provider auth")
 def cmd_config(session: ReplSession, args: str) -> None:
     """Dispatch to ``urika config``.
 
@@ -458,6 +458,11 @@ def cmd_config(session: ReplSession, args: str) -> None:
                                           ``true`` when unset)
         /config auto-capture --enable  → set [memory] auto_capture = true
         /config auto-capture --disable → set [memory] auto_capture = false
+        /config anthropic              → show current Anthropic auth mode
+        /config anthropic --mode api_key|subscription [--no-verify]
+                                       → set Anthropic auth mode
+        /config openai --mode api_key  → set OpenAI auth mode
+        /config google --mode api_key  → set Google auth mode
     """
     from urika.cli import config_command
 
@@ -495,6 +500,66 @@ def cmd_config(session: ReplSession, args: str) -> None:
             _config_auto_capture(enable)
         finally:
             sys.argv = saved
+        return
+
+    # ── /config anthropic|openai|google [--mode api_key|subscription] ──
+    # v0.7.1 parity sweep: provider auth modes shipped in v0.7.0 for
+    # CLI + dashboard only; REPL/TUI users had to hand-edit
+    # ~/.urika/settings.toml.
+    if head in ("anthropic", "openai", "google"):
+        from urika.cli.config_provider import (
+            run_config_anthropic,
+            run_config_google,
+            run_config_openai,
+        )
+
+        mode: str | None = None
+        no_verify = False
+        toks = parts[1:]
+        i = 0
+        while i < len(toks):
+            if toks[i] == "--mode" and i + 1 < len(toks):
+                mode = toks[i + 1]
+                i += 2
+                continue
+            if toks[i] == "--no-verify":
+                no_verify = True
+            i += 1
+        if mode is None:
+            # The CLI requires --mode; in the REPL a bare
+            # ``/config <provider>`` shows the current mode instead.
+            # Mirrors how compliance reads ``[<provider>].auth`` from
+            # ``~/.urika/settings.toml`` with the "api_key" safe
+            # default (compliance._get_anthropic_auth_preference).
+            from urika.core.settings import load_settings
+
+            try:
+                section = load_settings().get(head)
+            except Exception:
+                section = None
+            current = "api_key"
+            if isinstance(section, dict) and section.get("auth") in (
+                "api_key",
+                "subscription",
+            ):
+                current = section["auth"]
+            click.echo(f"  {head} auth mode: {current}")
+            click.echo(f"  Change with: /config {head} --mode api_key|subscription")
+            return
+        if mode not in ("api_key", "subscription"):
+            click.echo("  --mode must be api_key or subscription")
+            return
+        try:
+            if head == "anthropic":
+                run_config_anthropic(mode, no_verify)
+            elif head == "openai":
+                run_config_openai(mode)
+            else:  # head == "google"
+                run_config_google(mode)
+        except click.UsageError as exc:
+            # run_config_openai/google reject subscription mode with a
+            # UsageError — echo it instead of crashing the REPL loop.
+            click.echo(f"  {exc.format_message()}")
         return
 
     arg = raw.lstrip("-")
