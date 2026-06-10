@@ -230,3 +230,40 @@ async def test_finalize_draft_mode_writes_to_draft_dir(project_dir: Path):
     assert (project_dir / "projectbook" / "draft" / "findings.json").exists()
     assert not (project_dir / "projectbook" / "final-report.md").exists()
     assert not (project_dir / "README.md").exists()
+    assert not (project_dir / "methods" / "ridge_model_card.md").exists(), (
+        "draft mode must not generate model cards — there are no final methods yet"
+    )
+
+
+@pytest.mark.asyncio
+async def test_finalize_writes_model_cards(project_dir: Path):
+    """After the finalizer writes findings.json, the deterministic
+    model-card generator runs in the same sequence and writes one card
+    per final method."""
+    runner = _RoleRunner(project_dir)
+    await finalize_project(project_dir, runner, audience="expert")
+    card = project_dir / "methods" / "ridge_model_card.md"
+    assert card.exists(), "finalize must generate a model card per final method"
+    body = card.read_text(encoding="utf-8")
+    assert "r2=0.41" in body
+    assert "Does X predict Y?" in body
+
+
+@pytest.mark.asyncio
+async def test_finalize_survives_model_card_failure(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Model-card generation is best-effort — an exception must not
+    block the rest of the finalize sequence."""
+    import urika.core.model_cards as model_cards
+
+    def _boom(*args: object, **kwargs: object) -> list[Path]:
+        raise RuntimeError("card generator exploded")
+
+    monkeypatch.setattr(model_cards, "generate_model_cards", _boom)
+    runner = _RoleRunner(project_dir)
+    result = await finalize_project(project_dir, runner, audience="expert")
+    assert result == {"success": True}
+    assert (project_dir / "projectbook" / "final-report.md").exists(), (
+        "the report step must still run after a model-card failure"
+    )

@@ -81,6 +81,22 @@ async def finalize_project(
     if not result.success:
         return {"error": result.error}
 
+    # Step 1b: Deterministic artifacts from the findings.json the
+    # finalizer just wrote — model cards per final method. Pure code,
+    # no agent call. Best-effort: a failure here logs + emits a
+    # progress event but never blocks the rest of the finalize
+    # sequence. Skipped in draft mode (no final methods exist yet).
+    if not draft:
+        try:
+            from urika.core.model_cards import generate_model_cards
+
+            card_paths = generate_model_cards(project_dir, audience=audience)
+            if card_paths:
+                progress("result", f"Model cards written ({len(card_paths)})")
+        except Exception as exc:
+            logger.warning("Model card generation failed: %s", exc)
+            progress("result", "Model card generation failed — continuing")
+
     # Step 2: Report Agent — write report from findings.json
     report_label = "draft progress report" if draft else "final report"
     progress("agent", f"Report agent — writing {report_label}")
