@@ -7,6 +7,7 @@ from typing import Any
 
 from urika.core.experiment import list_experiments, load_experiment
 from urika.core.progress import load_progress
+from urika.evaluation.ranking import LOWER_IS_BETTER, select_best_run
 
 
 def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
@@ -275,15 +276,12 @@ def generate_key_findings(project_dir: Path) -> None:
             best_exp_name, best_run = all_runs[0]
             if best_run.get("metrics"):
                 first_metric = next(iter(best_run["metrics"]))
-                lower_better = first_metric in _LOWER_IS_BETTER
-                for exp_name, run in all_runs:
-                    default = float("inf") if lower_better else float("-inf")
-                    run_val = run.get("metrics", {}).get(first_metric, default)
-                    best_val = best_run["metrics"].get(first_metric, default)
-                    if lower_better and run_val < best_val:
-                        best_exp_name, best_run = exp_name, run
-                    elif not lower_better and run_val > best_val:
-                        best_exp_name, best_run = exp_name, run
+                picked = select_best_run((run for _, run in all_runs), first_metric)
+                if picked is not None:
+                    for exp_name, run in all_runs:
+                        if run is picked:
+                            best_exp_name, best_run = exp_name, run
+                            break
 
                 metrics_str = ", ".join(
                     f"{k}={v}" for k, v in best_run["metrics"].items()
@@ -320,27 +318,19 @@ def generate_key_findings(project_dir: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-_LOWER_IS_BETTER = {
-    "rmse",
-    "mse",
-    "mae",
-    "mape",
-    "loss",
-    "error",
-    "brier_score",
-    "log_loss",
-    "sse",
-    "residual",
-    "p_value",
-    "aic",
-    "bic",
-    "deviance",
-    "perplexity",
-}
+# Backwards-compat alias: cli/run_planning.py and tests import this name.
+# The canonical set lives in urika.evaluation.ranking.
+_LOWER_IS_BETTER = LOWER_IS_BETTER
 
 
 def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Find the best run by the first metric, respecting metric direction."""
+    """Find the best run by the first metric, respecting metric direction.
+
+    First-metric-only is this function's historical contract (the first
+    metric of the first run with metrics drives the comparison); the
+    direction inference and comparison itself delegate to
+    ``urika.evaluation.ranking``.
+    """
     if not runs:
         return None
 
@@ -349,9 +339,7 @@ def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
 
     first_metric = next(iter(valid[0]["metrics"]))
-    if first_metric in _LOWER_IS_BETTER:
-        return min(valid, key=lambda r: r["metrics"].get(first_metric, float("inf")))
-    return max(valid, key=lambda r: r["metrics"].get(first_metric, float("-inf")))
+    return select_best_run(valid, first_metric)
 
 
 def _all_metric_names(runs: list[dict[str, Any]]) -> list[str]:

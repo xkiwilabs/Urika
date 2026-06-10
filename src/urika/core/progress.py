@@ -10,6 +10,7 @@ from typing import Any
 from urika.core.atomic_write import write_json_atomic
 from urika.core.filelock import locked_json_update
 from urika.core.models import RunRecord
+from urika.evaluation.ranking import select_best_run
 
 logger = logging.getLogger(__name__)
 
@@ -65,16 +66,10 @@ def get_best_run(
     """
     data = load_progress(project_dir, experiment_id)
     runs = data.get("runs", [])
-    if not runs:
-        return None
-
-    valid = [r for r in runs if metric in r.get("metrics", {})]
-    if not valid:
-        return None
-
-    if direction == "higher":
-        return max(valid, key=lambda r: r["metrics"][metric])
-    return min(valid, key=lambda r: r["metrics"][metric])
+    # Historical contract: any direction other than "higher" means "lower".
+    return select_best_run(
+        runs, metric, direction="higher" if direction == "higher" else "lower"
+    )
 
 
 def update_experiment_status(

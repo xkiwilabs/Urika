@@ -14,6 +14,7 @@ from typing import Any
 from urika.core.experiment import list_experiments
 from urika.core.progress import load_progress
 from urika.core.workspace import load_project_config
+from urika.evaluation.ranking import select_best_run
 
 
 def generate_readme(project_dir: Path, summary: str = "") -> str:
@@ -198,12 +199,15 @@ def _get_key_finding(runs: list[dict[str, Any]]) -> str:
 def _get_best_metric(
     methods: list[dict[str, Any]], metric: str, direction: str
 ) -> float | None:
-    """Get the best value for a metric across all methods."""
-    values = []
-    for m in methods:
-        val = m.get("metrics", {}).get(metric)
-        if isinstance(val, (int, float)):
-            values.append(val)
-    if not values:
+    """Get the best value for a metric across all methods.
+
+    The pick delegates to ``urika.evaluation.ranking``; the caller then
+    compares the value against the criteria threshold. Historical
+    contract: any direction other than "higher" means "lower".
+    """
+    best = select_best_run(
+        methods, metric, direction="higher" if direction == "higher" else "lower"
+    )
+    if best is None:
         return None
-    return max(values) if direction == "higher" else min(values)
+    return best["metrics"][metric]
