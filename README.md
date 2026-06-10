@@ -22,17 +22,18 @@ As of v0.7.0, Urika supports the **Claude Agent SDK** (Anthropic), **OpenAI Agen
 
 **Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/13a-models-and-privacy.md).
 
-## Three interfaces
+## Four interfaces
 
-Urika has three first-class interfaces — CLI, TUI, and dashboard. They share the same project state on disk, so anything you do in one shows up in the others.
+Urika has four first-class interfaces — TUI (default), classic REPL, CLI, and dashboard. They share the same project state on disk, so anything you do in one shows up in the others.
 
 | Interface | Command | When to use |
 |-----------|---------|-------------|
-| **CLI** | `urika <command>` | Scripting, batch jobs, CI, remote sessions, `--json` output for tooling |
 | **TUI** | `urika` | Exploratory orchestrator chat, watching a run with rich activity feedback, slash commands with tab completion |
+| **REPL** | `urika --classic` | Plain prompt_toolkit fallback with the same slash commands — for terminals where the TUI misbehaves, SSH, or screen readers |
+| **CLI** | `urika <command>` | Scripting, batch jobs, CI, remote sessions, `--json` output for tooling |
 | **Dashboard** | `urika dashboard [project]` | Monitoring long runs, sharing results in a browser, settings forms, sessions tab |
 
-See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-task cheat sheet across all three.
+See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-task cheat sheet across all four.
 
 ## Supported providers
 
