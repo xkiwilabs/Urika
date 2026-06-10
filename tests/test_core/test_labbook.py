@@ -164,6 +164,144 @@ class TestMetricInterpretation:
         assert "**Best metrics**: r2=0.73, rmse=0.14" in summary
 
 
+class TestMetricsWithUncertainty:
+    def test_format_helper_no_uncertainty_is_byte_identical(self) -> None:
+        """Pin: runs without metrics_with_uncertainty render exactly as
+        before this field existed — interpretation-only and plain forms."""
+        from urika.core.labbook import _format_metrics_with_interpretation
+
+        plain = {"metrics": {"r2": 0.72, "rmse": 0.15}}
+        assert _format_metrics_with_interpretation(plain) == "r2=0.72, rmse=0.15"
+
+        with_interp = {
+            "metrics": {"r2": 0.74, "rmse": 0.15},
+            "metric_interpretation": {"r2": "Explains 74% of variance."},
+        }
+        assert (
+            _format_metrics_with_interpretation(with_interp)
+            == "r2=0.74 — Explains 74% of variance., rmse=0.15"
+        )
+
+    def test_format_helper_renders_ci(self) -> None:
+        from urika.core.labbook import _format_metrics_with_interpretation
+
+        run = {
+            "metrics": {"r2": 0.75},
+            "metrics_with_uncertainty": {
+                "r2": {
+                    "value": 0.75,
+                    "ci_lower": 0.72,
+                    "ci_upper": 0.78,
+                    "confidence": 0.95,
+                }
+            },
+        }
+        assert _format_metrics_with_interpretation(run) == "r2=0.75 [95% CI 0.72–0.78]"
+
+    def test_format_helper_renders_ci_and_interpretation(self) -> None:
+        from urika.core.labbook import _format_metrics_with_interpretation
+
+        run = {
+            "metrics": {"r2": 0.75},
+            "metric_interpretation": {"r2": "Explains 75% of variance."},
+            "metrics_with_uncertainty": {
+                "r2": {
+                    "value": 0.75,
+                    "ci_lower": 0.72,
+                    "ci_upper": 0.78,
+                    "confidence": 0.95,
+                }
+            },
+        }
+        assert (
+            _format_metrics_with_interpretation(run)
+            == "r2=0.75 [95% CI 0.72–0.78] — Explains 75% of variance."
+        )
+
+    def test_format_helper_malformed_uncertainty_renders_plain(self) -> None:
+        """Non-dict entries or entries missing bounds never break rendering."""
+        from urika.core.labbook import _format_metrics_with_interpretation
+
+        run = {
+            "metrics": {"r2": 0.75, "rmse": 0.15},
+            "metrics_with_uncertainty": {
+                "r2": "0.72 to 0.78",
+                "rmse": {"value": 0.15},
+            },
+        }
+        assert _format_metrics_with_interpretation(run) == "r2=0.75, rmse=0.15"
+
+    def test_notes_render_ci_when_present(self, project_dir: Path) -> None:
+        exp = create_experiment(project_dir, name="CI", hypothesis="h")
+        eid = exp.experiment_id
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-001",
+                method="linear_regression",
+                params={},
+                metrics={"r2": 0.75, "rmse": 0.15},
+                metrics_with_uncertainty={
+                    "r2": {
+                        "value": 0.75,
+                        "ci_lower": 0.72,
+                        "ci_upper": 0.78,
+                        "confidence": 0.95,
+                    }
+                },
+            ),
+        )
+
+        update_experiment_notes(project_dir, eid)
+        notes = (project_dir / "experiments" / eid / "labbook" / "notes.md").read_text(
+            encoding="utf-8"
+        )
+        assert "r2=0.75 [95% CI 0.72–0.78]" in notes
+        # rmse has no uncertainty — rendered plain
+        assert "rmse=0.15" in notes
+        assert "rmse=0.15 [" not in notes
+
+    def test_notes_unchanged_without_uncertainty(
+        self, project_dir: Path, experiment_with_runs: str
+    ) -> None:
+        """Runs without metrics_with_uncertainty render exactly as before."""
+        update_experiment_notes(project_dir, experiment_with_runs)
+        notes = (
+            project_dir / "experiments" / experiment_with_runs / "labbook" / "notes.md"
+        ).read_text(encoding="utf-8")
+        assert "**Metrics**: r2=0.72, rmse=0.15" in notes
+        assert "CI" not in notes
+
+    def test_summary_best_run_renders_ci(self, project_dir: Path) -> None:
+        exp = create_experiment(project_dir, name="CI", hypothesis="h")
+        eid = exp.experiment_id
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-001",
+                method="linear_regression",
+                params={},
+                metrics={"r2": 0.75},
+                metrics_with_uncertainty={
+                    "r2": {
+                        "value": 0.75,
+                        "ci_lower": 0.72,
+                        "ci_upper": 0.78,
+                        "confidence": 0.95,
+                    }
+                },
+            ),
+        )
+
+        generate_experiment_summary(project_dir, eid)
+        summary = (
+            project_dir / "experiments" / eid / "labbook" / "summary.md"
+        ).read_text(encoding="utf-8")
+        assert "r2=0.75 [95% CI 0.72–0.78]" in summary
+
+
 class TestGenerateExperimentSummary:
     def test_generates_summary(
         self, project_dir: Path, experiment_with_runs: str
