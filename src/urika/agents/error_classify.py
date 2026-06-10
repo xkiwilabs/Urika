@@ -61,19 +61,30 @@ _CONFIG_PATTERNS = [
     re.compile(r"APIKeyRequiredError", re.IGNORECASE),
     re.compile(r"private.{0,3}endpoint.{0,30}configured", re.IGNORECASE),
 ]
+# Per-role turn-cap exhaustion. claude-agent-sdk 0.2.91 surfaces this
+# as ``Exception("Claude Code returned an error result: Reached maximum
+# number of turns (N)")`` — previously a ProcessError whose str
+# contained "Command failed with exit code". Checked FIRST so a turn
+# count in the message can't be mis-binned by a broader pattern.
+_MAX_TURNS_PATTERNS = [re.compile(r"maximum number of turns", re.IGNORECASE)]
 
 
 def classify_error(error_text: str) -> str:
     """Classify an SDK error into a user-friendly category.
 
-    Returns one of: ``"rate_limit"``, ``"auth"``, ``"billing"``,
-    ``"transient"``, ``"config"``, ``"unknown"``.
+    Returns one of: ``"max_turns"``, ``"rate_limit"``, ``"auth"``,
+    ``"billing"``, ``"transient"``, ``"config"``, ``"unknown"``.
 
     The ``"transient"`` and ``"config"`` categories were added in
     v0.3.2 — pre-v0.3.2 a 5xx mid-loop or a missing-endpoint config
     error fell into ``"unknown"`` and silently failed the experiment.
     The orchestrator loop's pause path treats both as pausable.
+    ``"max_turns"`` was added for claude-agent-sdk 0.2.91's new
+    max-turns error string; it is also pausable.
     """
+    for pat in _MAX_TURNS_PATTERNS:
+        if pat.search(error_text):
+            return "max_turns"
     for pat in _CONFIG_PATTERNS:
         if pat.search(error_text):
             return "config"

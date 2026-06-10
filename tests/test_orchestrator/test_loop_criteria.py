@@ -34,7 +34,7 @@ from urika.orchestrator.loop_criteria import (
 
 @pytest.mark.parametrize(
     "category",
-    ["", None, "unknown", "rate_limit", "transient", "billing", "config"],
+    ["", None, "unknown", "rate_limit", "transient", "billing", "config", "max_turns"],
 )
 def test_recoverable_categories(category) -> None:
     assert _is_recoverable_failure(category) is True

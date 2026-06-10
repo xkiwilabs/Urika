@@ -21,3 +21,18 @@ class TestClassifyError:
 
     def test_unknown_empty(self):
         assert classify_error("") == "unknown"
+
+    def test_max_turns(self):
+        # claude-agent-sdk 0.2.91 surfaces max-turns exhaustion as a
+        # generic Exception with this message (previously a ProcessError
+        # whose str contained "Command failed with exit code").
+        assert (
+            classify_error(
+                "Claude Code returned an error result: "
+                "Reached maximum number of turns (20)"
+            )
+            == "max_turns"
+        )
+
+    def test_max_turns_case_insensitive(self):
+        assert classify_error("reached MAXIMUM NUMBER OF TURNS (5)") == "max_turns"

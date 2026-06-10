@@ -582,6 +582,96 @@ class TestTrailingExitTolerance:
         assert "partial work product" in result.text_output
         assert result.num_turns == 15
 
+    @pytest.mark.asyncio
+    async def test_sdk_0291_max_turns_string_after_content_is_tolerated(
+        self, read_only_config: AgentConfig, monkeypatch
+    ) -> None:
+        """Regression: claude-agent-sdk 0.2.91 changed its trailing
+        error — ``_internal/query.py`` now raises ``Exception("Claude
+        Code returned an error result: Reached maximum number of turns
+        (N)")`` instead of a ProcessError whose str contained "Command
+        failed with exit code". The deliberate tolerance from commit
+        8d8d951e (max-turns exhaustion after real work was written to
+        disk is success) must also fire on the new string.
+        """
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _fake_query(*_args, **_kwargs):
+            yield _FakeAssistantMessage("work product written to disk")
+            raise Exception(
+                "Claude Code returned an error result: "
+                "Reached maximum number of turns (20)"
+            )
+
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.AssistantMessage",
+            _FakeAssistantMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.ResultMessage",
+            _FakeResultMessage,
+        )
+        monkeypatch.setattr(
+            "urika.agents.adapters.claude_sdk.TextBlock", _FakeTextBlock
+        )
+
+        runner = ClaudeSDKRunner()
+        result = await runner.run(read_only_config, "hello")
+
+        assert result.success is True, (
+            "SDK 0.2.91 max-turns error string after streamed content "
+            "must be tolerated like the old 'Command failed with exit "
+            "code' string"
+        )
+        assert result.text_output == "work product written to disk"
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_sdk_0291_max_turns_without_content_fails_friendly(
+        self, read_only_config: AgentConfig, monkeypatch, caplog
+    ) -> None:
+        """Max-turns exhaustion with NO streamed content is a genuine
+        failure — but it should be classified ``max_turns`` and logged
+        as a friendly single-line warning, not an "unknown" category
+        with a scary ``logger.exception`` traceback.
+        """
+        import logging
+
+        read_only_config.model = "claude-haiku-4-5"
+        read_only_config.env = {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+        async def _fake_query(*_args, **_kwargs):
+            if False:  # pragma: no cover — async-gen typing
+                yield None
+            raise Exception(
+                "Claude Code returned an error result: "
+                "Reached maximum number of turns (20)"
+            )
+
+        monkeypatch.setattr("urika.agents.adapters.claude_sdk.query", _fake_query)
+
+        runner = ClaudeSDKRunner()
+        with caplog.at_level(logging.DEBUG, logger="urika.agents.adapters.claude_sdk"):
+            result = await runner.run(read_only_config, "hello")
+
+        assert result.success is False
+        assert result.error_category == "max_turns"
+        assert "turn limit" in result.error
+        assert "max_turns" in result.error
+        # Friendly single-line warning, no traceback.
+        adapter_records = [
+            r for r in caplog.records if r.name == "urika.agents.adapters.claude_sdk"
+        ]
+        assert adapter_records, "expected a log record for the failure"
+        assert all(r.exc_info is None for r in adapter_records), (
+            "max_turns failures must not be logged with a traceback"
+        )
+        assert all(r.levelno <= logging.WARNING for r in adapter_records), (
+            "max_turns failures must log at WARNING, not ERROR"
+        )
+
     def test_sdk_logger_filter_drops_fatal_message_reader_line(self) -> None:
         """The SDK's own ``logger.error('Fatal error in message reader: ...')``
         call is suppressed by our adapter-installed filter so it

@@ -142,6 +142,14 @@ def _friendly_error(category: str, raw: str) -> str:
             "Models tab.\n"
             f"  Detail: {raw}"
         )
+    if category == "max_turns":
+        return (
+            "Agent hit its turn limit before producing output — consider "
+            "raising the role's max_turns.\n"
+            "  The experiment has been paused and can be resumed.\n"
+            "  Run: /resume  (or 'urika run --resume' from CLI)\n"
+            f"  Detail: {raw}"
+        )
     return raw
 
 
@@ -448,10 +456,19 @@ class ClaudeSDKRunner(AgentRunner):
             # errors raise different exception strings (auth, billing,
             # rate-limit) that don't match this signature, so they
             # still propagate as failures via the path below.
+            # claude-agent-sdk 0.2.91 changed the trailing error for
+            # max-turns exhaustion: _internal/query.py now raises
+            # ``Exception("Claude Code returned an error result:
+            # Reached maximum number of turns (N)")`` instead of a
+            # ProcessError whose str contained "Command failed with
+            # exit code". Same tolerance rationale as case 3 above —
+            # the agent's tool calls already wrote real work to disk
+            # before the cap was hit — so both strings fire it.
             got_content = bool(text_parts) or bool(messages)
-            trailing_exit_after_success = (
-                num_turns > 0 or got_content
-            ) and "Command failed with exit code" in str(exc)
+            trailing_exit_after_success = (num_turns > 0 or got_content) and (
+                "Command failed with exit code" in str(exc)
+                or "Reached maximum number of turns" in str(exc)
+            )
             if trailing_exit_after_success:
                 logger.debug(
                     "Tolerating trailing CLI exit after successful stream "
@@ -490,7 +507,13 @@ class ClaudeSDKRunner(AgentRunner):
                 # Pause-and-resume beats hard-failing the experiment.
                 category = "transient"
             error_detail = _friendly_error(category, raw_detail)
-            logger.exception("Agent SDK error [%s]", category)
+            if category == "max_turns":
+                # Turn-cap exhaustion with no content at all is routine
+                # (the cap is per-role config, not a malfunction) — a
+                # single-line warning, not a scary traceback.
+                logger.warning("Agent SDK error [max_turns]: %s", exc)
+            else:
+                logger.exception("Agent SDK error [%s]", category)
             _emit_trace(False)
             return AgentResult(
                 success=False,
