@@ -119,10 +119,10 @@ def test_agent_override_beats_project_default(tmp_path):
 
     project = _write_toml(
         tmp_path,
-        '[runtime]\n'
+        "[runtime]\n"
         'model = "claude-opus-4-7"\n'
-        '\n'
-        '[runtime.models.advisor_agent]\n'
+        "\n"
+        "[runtime.models.advisor_agent]\n"
         'model = "gpt-5.4"\n',
     )
     runner = runner_for_agent("advisor_agent", project)
@@ -203,10 +203,10 @@ def test_claude_routing_honours_get_runner_patch(monkeypatch, tmp_path):
 
     project2 = _write_toml(
         tmp_path / "p2-host",
-        '[runtime]\n'
+        "[runtime]\n"
         'model = "claude-opus-4-7"\n'
-        '\n'
-        '[runtime.models.advisor_agent]\n'
+        "\n"
+        "[runtime.models.advisor_agent]\n"
         'model = "claude-sonnet-4-5"\n',
     )
     assert runner_for_agent("advisor_agent", project2) is sentinel

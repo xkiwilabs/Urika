@@ -61,7 +61,9 @@ class _FakePart:
 class _FakeContent:
     """Stand-in for ``google.genai.types.Content``."""
 
-    def __init__(self, role: str = "model", parts: list[_FakePart] | None = None) -> None:
+    def __init__(
+        self, role: str = "model", parts: list[_FakePart] | None = None
+    ) -> None:
         self.role = role
         self.parts = parts or []
 
@@ -69,7 +71,9 @@ class _FakeContent:
 class _FakeUsageMetadata:
     """Stand-in for ``GenerateContentResponseUsageMetadata``."""
 
-    def __init__(self, prompt_token_count: int = 0, candidates_token_count: int = 0) -> None:
+    def __init__(
+        self, prompt_token_count: int = 0, candidates_token_count: int = 0
+    ) -> None:
         self.prompt_token_count = prompt_token_count
         self.candidates_token_count = candidates_token_count
 

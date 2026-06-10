@@ -126,7 +126,9 @@ def test_no_temp_files_left_on_success(tmp_path: Path) -> None:
     assert siblings == []
 
 
-def test_atomic_replace_retries_on_windows_permissionerror(monkeypatch, tmp_path: Path) -> None:
+def test_atomic_replace_retries_on_windows_permissionerror(
+    monkeypatch, tmp_path: Path
+) -> None:
     """On Windows, os.replace can transiently fail with WinError 5 under
     concurrent contention. Our wrapper retries with brief backoff.
     """
@@ -152,7 +154,9 @@ def test_atomic_replace_retries_on_windows_permissionerror(monkeypatch, tmp_path
     assert calls["n"] == 3
 
 
-def test_atomic_replace_propagates_after_exhausted_retries(monkeypatch, tmp_path: Path) -> None:
+def test_atomic_replace_propagates_after_exhausted_retries(
+    monkeypatch, tmp_path: Path
+) -> None:
     from urika.core import atomic_write as aw
 
     monkeypatch.setattr(aw, "_IS_WINDOWS", True)
