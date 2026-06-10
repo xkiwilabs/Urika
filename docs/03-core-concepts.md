@@ -35,6 +35,8 @@ A run is a single method execution with specific parameters inside an experiment
 - **observation** -- what was learned
 - **next_step** -- what should be tried next
 - **artifacts** -- paths to generated files (plots, models, etc.)
+- **metric_interpretation** -- one plain-language sentence per reported metric, including comparison to the success criterion where applicable
+- **metrics_with_uncertainty** -- confidence interval per reported metric (`value`, `ci_lower`, `ci_upper`, `confidence`)
 
 Runs are recorded in `progress.json` and are append-only.
 
@@ -101,7 +103,7 @@ urika tools --project my-study    # includes project-specific tools created by t
 
 ## Agents
 
-Urika uses twelve specialized agent roles, each with a distinct responsibility. All agents run on the Claude Agent SDK.
+Urika uses thirteen specialized agent roles, each with a distinct responsibility. Agents run on the Claude Agent SDK by default; OpenAI and Google models can be assigned per agent (see the provider guide).
 
 ### Project Builder
 
@@ -150,6 +152,10 @@ Consolidates all research into polished, standalone deliverables. Selects the be
 ### Project Summarizer
 
 Read-only agent that produces a comprehensive project status summary by reading project files, the projectbook, and experiment records. Exposed via the `urika summarize` command.
+
+### Memory Curator
+
+Reviews the project's memory directory and proposes merge, archive, and flag actions to keep it lean and current. Emit-only — it has no filesystem access; proposed changes are applied separately after review. Runs in dry-run mode by default, dispatched manually (`urika memory curate`) or automatically once per session when memory exceeds its soft cap.
 
 ## The orchestrator loop
 

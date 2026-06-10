@@ -3,7 +3,7 @@
 | Guide | Description |
 |-------|-------------|
 | [01 Getting Started](01-getting-started.md) | Installation, requirements, API key setup, quickstart |
-| [02 Interfaces Overview](02-interfaces-overview.md) | CLI, TUI, and dashboard as three peer interfaces — when to use which |
+| [02 Interfaces Overview](02-interfaces-overview.md) | TUI, REPL, CLI, and dashboard as four peer interfaces — when to use which |
 | [03 Core Concepts](03-core-concepts.md) | Projects, experiments, runs, methods, tools, agents |
 | [04 Creating Projects](04-creating-projects.md) | `urika new`, data scanning, profiling, knowledge ingestion |
 | [05 Prompts and Context](05-prompts-and-context.md) | Writing effective descriptions, instructions, knowledge ingestion |
@@ -12,7 +12,7 @@
 | [08 Viewing Results](08-viewing-results.md) | Reports, presentations, leaderboard, usage stats |
 | [09 Finalizing Projects](09-finalizing-projects.md) | Finalization sequence, standalone methods, reproducibility |
 | [10 Knowledge Pipeline](10-knowledge-pipeline.md) | Ingesting papers and PDFs, searching |
-| [11 Agent System](11-agent-system.md) | All 12 agent roles, orchestrator, security boundaries |
+| [11 Agent System](11-agent-system.md) | All 13 agent roles, orchestrator, security boundaries |
 | [12a Tools Overview](12a-tools-overview.md) | Philosophy, ITool / ToolResult API, registry, project-specific tools |
 | [12b Tools Catalogue](12b-tools-catalogue.md) | Per-category reference for all 24 built-in tools |
 | [13a Models and Privacy](13a-models-and-privacy.md) | Privacy modes, hybrid architecture, per-agent endpoint assignment |

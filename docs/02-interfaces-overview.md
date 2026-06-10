@@ -1,8 +1,8 @@
 # Interfaces Overview
 
-Urika has three first-class interfaces — CLI, TUI, and dashboard. They share the same project state on disk, so anything you do in one shows up in the others. Pick the one that matches the moment.
+Urika has four first-class interfaces — TUI, classic REPL, CLI, and dashboard. They share the same project state on disk, so anything you do in one shows up in the others. Pick the one that matches the moment.
 
-## Three interfaces, one set of commands
+## Four interfaces, one set of commands
 
 ### CLI — `urika <command>`
 
@@ -34,6 +34,18 @@ When to reach for it: thinking through approach with the advisor, watching a run
 
 See [Interactive TUI](17-interactive-tui.md).
 
+### Classic REPL — `urika --classic`
+
+A plain prompt_toolkit prompt with the same slash commands as the TUI — both surfaces share one command registry, so anything that works in the TUI works here. No full-screen redrawing, just a prompt and scrolling output.
+
+```bash
+urika --classic
+> /run
+> /results
+```
+
+When to reach for it: terminals where Textual misbehaves, SSH sessions over flaky connections, screen readers — anywhere a plain scrolling prompt beats a full-screen layout.
+
 ### Dashboard — `urika dashboard [PROJECT]`
 
 For watching long runs, reviewing results visually, and editing settings through forms. FastAPI + HTMX + Alpine. By default the server picks a free port and prints the URL on startup; override with `--port`. Read-friendly: experiment timelines, leaderboards, log streams, advisor chat, sessions, knowledge browser, methods catalogue.
@@ -48,11 +60,11 @@ When to reach for it: monitoring an autonomous run, sharing results with a colla
 
 See [Dashboard](18a-dashboard-pages.md).
 
-## Common tasks across all three
+## Common tasks across all four
 
-The cheat sheet — every common task with its CLI / TUI / dashboard equivalent.
+The cheat sheet — every common task with its CLI / TUI / REPL / dashboard equivalent. The TUI and classic REPL share one slash-command registry, so they get a single column: every `/command` works identically in both.
 
-| Task                    | CLI                              | TUI                       | Dashboard                  |
+| Task                    | CLI                              | TUI / REPL                | Dashboard                  |
 |-------------------------|----------------------------------|---------------------------|----------------------------|
 | Create a project        | `urika new my-study --data X`    | `/new`                    | + New project (modal)      |
 | Run an experiment       | `urika run my-study`             | `/run`                    | + New experiment (modal)   |
@@ -73,9 +85,9 @@ The cheat sheet — every common task with its CLI / TUI / dashboard equivalent.
 
 ## How they interoperate
 
-All three read and write the same files under `<project>/`:
+All four read and write the same files under `<project>/`:
 
-- Experiments live at `experiments/<id>/`. Anyone reading them sees the same data — CLI, TUI, dashboard.
+- Experiments live at `experiments/<id>/`. Anyone reading them sees the same data — CLI, TUI, REPL, dashboard.
 - Settings are split: per-project in `urika.toml`, global in `~/.urika/settings.toml`.
 - Credentials live in `~/.urika/secrets.env` (or shell env vars).
 - Chat sessions are written by REPL/TUI orchestrator chat to `<project>/.urika/sessions/<id>.json`. The dashboard reads them read-only via the Sessions tab.
@@ -86,7 +98,7 @@ This means you can fluidly mix: start a run from the CLI, watch it from the dash
 ## When to use which (rules of thumb)
 
 - **Scripting? CLI.** Plain `urika run` with `--json` is the only thing you need.
-- **Exploring?** TUI. Free-text orchestrator chat is what you want.
+- **Exploring?** TUI. Free-text orchestrator chat is what you want. If Textual fights your terminal, `urika --classic` gives you the same commands in a plain prompt.
 - **Long-running multi-experiment runs?** Start from CLI or TUI, monitor from dashboard. The dashboard's log streaming + per-agent footer is purpose-built for this.
 - **Onboarding a collaborator?** Dashboard. Browser-shareable, no terminal required.
 - **Configuring credentials?** Dashboard or `urika notifications`. Either works; dashboard has the **Send test notification** button for instant feedback.

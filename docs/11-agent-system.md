@@ -1,6 +1,6 @@
 # Agent System
 
-Urika uses a multi-agent architecture where twelve specialized agents collaborate through a structured experiment loop. Each agent has a defined role, specific tool access, and security boundaries that control what it can read and write.
+Urika uses a multi-agent architecture where thirteen specialized agents collaborate through a structured experiment loop. Each agent has a defined role, specific tool access, and security boundaries that control what it can read and write.
 
 
 ## Architecture Overview
@@ -218,6 +218,23 @@ Produces a comprehensive project status summary. Reads project configuration, th
 | Privacy | Respects the project's privacy mode; defaults to the open endpoint since the task is summarisation rather than raw-data access |
 | Inputs | Project files, projectbook, experiments, methods, criteria |
 | Outputs | `projectbook/summary.md` (written by the CLI from the agent's narrative) |
+
+---
+
+### 13. Memory Curator
+
+**Name:** `memory_curator`
+
+Reviews the project's memory directory (`memory/`) and proposes `merge`, `archive`, and flag (`flag_stale` / `flag_contradiction`) decisions to keep memory lean and current. The curator is **emit-only**: the current memory contents are handed to it in the user message, and it returns a single JSON object of proposed decisions. It has no tool or filesystem access at all — applying decisions is a separate, user-reviewed step (`urika memory curate --apply` or the dashboard's Curate/Apply UI).
+
+Dispatched two ways: manually via `urika memory curate` (dry-run by default), or automatically — at most once per session — when project memory crosses its soft cap. The auto-trigger is also dry-run by default; nothing is changed without an explicit apply.
+
+| Property | Value |
+|----------|-------|
+| Tools | None (emit-only — memory contents arrive in the prompt) |
+| Writable dirs | None |
+| Max turns | 3 |
+| Outputs | JSON decision list, applied separately after user review |
 
 
 ## The Orchestrator
