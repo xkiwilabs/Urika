@@ -446,12 +446,15 @@ class TestPresentCommand:
             ) as mock_pres,
         ):
             mock_get_runner.return_value = MagicMock()
-            mock_pres.return_value = {
-                "tokens_in": 50,
-                "tokens_out": 150,
-                "cost_usd": 0.005,
-                "agent_calls": 1,
-            }
+            mock_pres.return_value = (
+                _project_dir / "experiments" / _exp_id / "presentation" / "index.html",
+                {
+                    "tokens_in": 50,
+                    "tokens_out": 150,
+                    "cost_usd": 0.005,
+                    "agent_calls": 1,
+                },
+            )
             result = runner.invoke(
                 cli, ["present", "test-proj", "--json"], env=urika_env
             )
@@ -489,12 +492,15 @@ class TestPresentCommand:
             ) as mock_pres,
         ):
             mock_get_runner.return_value = MagicMock()
-            mock_pres.return_value = {
-                "tokens_in": 0,
-                "tokens_out": 0,
-                "cost_usd": 0,
-                "agent_calls": 0,
-            }
+            mock_pres.return_value = (
+                project_dir / "experiments" / exp_id / "presentation" / "index.html",
+                {
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "cost_usd": 0,
+                    "agent_calls": 0,
+                },
+            )
             result = runner.invoke(
                 cli, ["present", "test-proj", "--json"], env=urika_env
             )
@@ -518,12 +524,15 @@ class TestPresentCommand:
             ) as mock_pres,
         ):
             mock_get_runner.return_value = MagicMock()
-            mock_pres.return_value = {
-                "tokens_in": 0,
-                "tokens_out": 0,
-                "cost_usd": 0,
-                "agent_calls": 0,
-            }
+            mock_pres.return_value = (
+                project_dir / "experiments" / exp_id / "presentation" / "index.html",
+                {
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "cost_usd": 0,
+                    "agent_calls": 0,
+                },
+            )
             result = runner.invoke(
                 cli, ["present", "test-proj", "--json"], env=urika_env
             )
@@ -531,6 +540,73 @@ class TestPresentCommand:
         data = _extract_json(result.output)
         assert exp_id in data["path"]
         assert "presentation" in data["path"]
+
+    def test_present_failed_generation_exits_nonzero(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """Regression: `urika present` printed "Saved to
+        projectbook/presentation/index.html" UNCONDITIONALLY — even
+        when the presentation agent produced no parseable slide deck
+        and nothing was written. A failed generation must exit
+        non-zero with an honest error and no success line.
+        """
+        _create_project_with_experiment(runner, urika_env)
+        with (
+            patch("urika.agents.runner.get_runner") as mock_get_runner,
+            patch(
+                "urika.orchestrator.loop._generate_presentation",
+                new_callable=AsyncMock,
+            ) as mock_pres,
+        ):
+            mock_get_runner.return_value = MagicMock()
+            mock_pres.return_value = (
+                None,
+                {
+                    "tokens_in": 50,
+                    "tokens_out": 150,
+                    "cost_usd": 0.005,
+                    "agent_calls": 1,
+                },
+            )
+            result = runner.invoke(
+                cli,
+                ["present", "test-proj", "--experiment", "project"],
+                env=urika_env,
+            )
+        assert result.exit_code != 0, result.output
+        assert "Saved to" not in result.output
+        assert "no parseable slide deck" in result.output
+
+    def test_present_failed_experiment_generation_exits_nonzero(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        """Same honesty for the single-experiment branch."""
+        _project_dir, exp_id = _create_project_with_experiment(runner, urika_env)
+        with (
+            patch("urika.agents.runner.get_runner") as mock_get_runner,
+            patch(
+                "urika.orchestrator.loop._generate_presentation",
+                new_callable=AsyncMock,
+            ) as mock_pres,
+        ):
+            mock_get_runner.return_value = MagicMock()
+            mock_pres.return_value = (
+                None,
+                {
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "cost_usd": 0.0,
+                    "agent_calls": 1,
+                },
+            )
+            result = runner.invoke(
+                cli,
+                ["present", "test-proj", "--experiment", exp_id],
+                env=urika_env,
+            )
+        assert result.exit_code != 0, result.output
+        assert "Saved to" not in result.output
+        assert "no parseable slide deck" in result.output
 
 
 # ---------------------------------------------------------------------------

@@ -171,7 +171,7 @@ async def _generate_reports(
     # Generate presentation slide deck
     if runner is not None:
         try:
-            pres_usage = await _generate_presentation(
+            _pres_path, pres_usage = await _generate_presentation(
                 project_dir,
                 experiment_id,
                 runner,
@@ -179,6 +179,12 @@ async def _generate_reports(
                 on_message,
                 audience=audience,
             )
+            if _pres_path is None:
+                logger.warning(
+                    "Presentation agent produced no slide deck for "
+                    "experiment %s — nothing was written",
+                    experiment_id or "<project>",
+                )
             _usage["tokens_in"] += pres_usage.get("tokens_in", 0)
             _usage["tokens_out"] += pres_usage.get("tokens_out", 0)
             _usage["cost_usd"] += pres_usage.get("cost_usd", 0.0)
@@ -197,10 +203,15 @@ async def _generate_presentation(
     on_message: Callable[..., Any] | None = None,
     instructions: str = "",
     audience: str = "expert",
-) -> dict[str, int | float]:
+) -> tuple[Path | None, dict[str, int | float]]:
     """Generate a reveal.js presentation from experiment results.
 
-    Returns a dict with usage totals: tokens_in, tokens_out, cost_usd, agent_calls.
+    Returns ``(index_path, usage)`` — the written ``index.html`` path
+    (``None`` when the agent failed or produced no parseable slide
+    deck, in which case nothing was written) and a dict with usage
+    totals: tokens_in, tokens_out, cost_usd, agent_calls. Pre-fix this
+    returned only usage, so callers could not tell failure from
+    success and reported success unconditionally.
     """
     import tomllib
 
@@ -218,14 +229,23 @@ async def _generate_presentation(
 
     pres_role = registry.get("presentation_agent")
     if pres_role is None:
-        return _empty_usage
+        return None, _empty_usage
 
     progress("agent", "Presentation agent — creating slide deck")
 
     config = pres_role.build_config(
         project_dir=project_dir, experiment_id=experiment_id, audience=audience
     )
-    prompt = f"Create a presentation for experiment {experiment_id}."
+    if experiment_id:
+        prompt = f"Create a presentation for experiment {experiment_id}."
+    else:
+        # An empty experiment_id used to render "…for experiment ." —
+        # cheap models answered with a clarifying question and emitted
+        # no slides. Be explicit about the project-level scope.
+        prompt = (
+            "Create a project-level presentation summarizing all "
+            "experiments in this project."
+        )
     if instructions:
         prompt = f"User instructions: {instructions}\n\n{prompt}"
     result = await runner.run(
@@ -241,11 +261,16 @@ async def _generate_presentation(
     }
 
     if not result.success:
-        return _pres_usage
+        progress("result", "Presentation agent failed — no slide deck written")
+        return None, _pres_usage
 
     slide_data = parse_slide_json(result.text_output)
     if slide_data is None:
-        return _pres_usage
+        progress(
+            "result",
+            "Presentation agent produced no parseable slide deck — nothing was written",
+        )
+        return None, _pres_usage
 
     # Read theme preference
     theme = "light"
@@ -299,7 +324,7 @@ async def _generate_presentation(
                             )
 
     progress("result", f"Presentation saved to {output_dir}/index.html")
-    return _pres_usage
+    return output_dir / "index.html", _pres_usage
 
 
 async def _async_generate_summary(

@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from urika.orchestrator.loop_finalize import _generate_reports
+from urika.orchestrator.loop_finalize import _generate_presentation, _generate_reports
 
 
 @pytest.fixture
@@ -178,6 +178,152 @@ async def test_generate_reports_writes_experiment_narrative_and_calls_presentati
         f"expected >=3 agent calls (README, experiment narrative, "
         f"presentation); got {runner.run.call_count}"
     )
+
+
+def _mock_pres_runner(text_output: str) -> MagicMock:
+    """A runner whose presentation agent returns ``text_output``."""
+    runner = MagicMock()
+    runner.run = AsyncMock(
+        return_value=MagicMock(
+            success=True,
+            text_output=text_output,
+            tokens_in=10,
+            tokens_out=5,
+            cost_usd=0.001,
+        )
+    )
+    return runner
+
+
+@pytest.mark.asyncio
+async def test_generate_presentation_unparseable_output_returns_none(
+    project_dir: Path,
+):
+    """Regression: when the agent emits no parseable slide JSON (e.g.
+    a cheap model asking a clarifying question), ``_generate_presentation``
+    used to return only usage totals — callers could not tell that no
+    deck was written and printed success anyway. It must now return a
+    falsy output path alongside usage, and write no index.html.
+    """
+    runner = _mock_pres_runner("Could you clarify which experiment you mean?")
+
+    path, usage = await _generate_presentation(
+        project_dir, "exp-001", runner, lambda *a, **k: None
+    )
+
+    assert path is None, "no parseable slide deck must yield a falsy path"
+    assert not (
+        project_dir / "experiments" / "exp-001" / "presentation" / "index.html"
+    ).exists()
+    # Usage is still propagated — tokens were spent even on failure.
+    assert usage["tokens_in"] == 10
+    assert usage["agent_calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_presentation_failed_run_returns_none(
+    project_dir: Path,
+):
+    """An unsuccessful agent run also yields a falsy path + usage."""
+    runner = MagicMock()
+    runner.run = AsyncMock(
+        return_value=MagicMock(
+            success=False,
+            text_output="",
+            tokens_in=3,
+            tokens_out=0,
+            cost_usd=0.0,
+        )
+    )
+
+    path, usage = await _generate_presentation(
+        project_dir, "exp-001", runner, lambda *a, **k: None
+    )
+
+    assert path is None
+    assert usage["tokens_in"] == 3
+
+
+@pytest.mark.asyncio
+async def test_generate_presentation_success_returns_index_path(
+    project_dir: Path,
+):
+    """Pin the new return contract: on success the real index.html
+    path is returned (and exists on disk)."""
+    slide_payload = (
+        "Here is the deck:\n```json\n"
+        '{"title": "T", "subtitle": "S", "slides": '
+        '[{"title": "S1", "bullets": ["a"]}]}\n'
+        "```\n"
+    )
+    runner = _mock_pres_runner(slide_payload)
+
+    path, _usage = await _generate_presentation(
+        project_dir, "exp-001", runner, lambda *a, **k: None
+    )
+
+    expected = project_dir / "experiments" / "exp-001" / "presentation" / "index.html"
+    assert path == expected
+    assert expected.exists()
+
+
+@pytest.mark.asyncio
+async def test_generate_presentation_project_level_prompt_is_unambiguous(
+    project_dir: Path,
+):
+    """Regression: with an empty experiment_id the prompt read
+    "Create a presentation for experiment ." — cheap models answered
+    with a clarifying question and emitted no slides. Project-level
+    calls must use an explicit project-level sentence.
+    """
+    prompts: list[str] = []
+
+    async def fake_run(config, prompt, on_message=None):
+        prompts.append(prompt)
+        return MagicMock(
+            success=True,
+            text_output="no slides",
+            tokens_in=0,
+            tokens_out=0,
+            cost_usd=0.0,
+        )
+
+    runner = MagicMock()
+    runner.run = AsyncMock(side_effect=fake_run)
+
+    await _generate_presentation(project_dir, "", runner, lambda *a, **k: None)
+
+    assert len(prompts) == 1
+    assert (
+        "Create a project-level presentation summarizing all experiments "
+        "in this project." in prompts[0]
+    )
+    assert "for experiment ." not in prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_generate_presentation_experiment_prompt_unchanged(
+    project_dir: Path,
+):
+    """The experiment-specific sentence stays as-is for non-empty ids."""
+    prompts: list[str] = []
+
+    async def fake_run(config, prompt, on_message=None):
+        prompts.append(prompt)
+        return MagicMock(
+            success=True,
+            text_output="no slides",
+            tokens_in=0,
+            tokens_out=0,
+            cost_usd=0.0,
+        )
+
+    runner = MagicMock()
+    runner.run = AsyncMock(side_effect=fake_run)
+
+    await _generate_presentation(project_dir, "exp-001", runner, lambda *a, **k: None)
+
+    assert "Create a presentation for experiment exp-001." in prompts[0]
 
 
 @pytest.mark.asyncio

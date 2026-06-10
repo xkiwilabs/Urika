@@ -53,7 +53,7 @@ def present(
     audience: str | None = None,
 ) -> None:
     """Generate a presentation for an experiment."""
-    from urika.cli_display import Spinner, print_agent, print_success
+    from urika.cli_display import Spinner, print_agent, print_error, print_success
 
     project = _ensure_project(project)
     project_path, _config = _resolve_project(project)
@@ -128,15 +128,26 @@ def present(
     _pres_tokens_out = 0
     _pres_cost = 0.0
     _pres_calls = 0
+    # Honest failure reporting: pre-fix the success line was printed
+    # unconditionally even when the presentation agent produced no
+    # parseable slide deck and nothing was written. A failure now
+    # exits non-zero (after usage recording — tokens were still spent).
+    _no_deck_msg = (
+        "Presentation agent produced no parseable slide deck — nothing "
+        "was written. Re-run `urika present` (optionally with "
+        "--instructions) to try again."
+    )
+    _failure_msg: str | None = None
 
     try:
         if choice.startswith("All"):
             # Generate presentation for each experiment
+            _failed_exps: list[str] = []
             for exp in experiments:
                 if not json_output:
                     print_agent("presentation_agent")
                 with Spinner("Creating slides"):
-                    _pu = asyncio.run(
+                    _path, _pu = asyncio.run(
                         _generate_presentation(
                             project_path,
                             exp.experiment_id,
@@ -151,22 +162,27 @@ def present(
                     _pres_tokens_out += _pu.get("tokens_out", 0)
                     _pres_cost += _pu.get("cost_usd", 0.0)
                     _pres_calls += _pu.get("agent_calls", 0)
-                if not json_output:
-                    print_success(
-                        f"Saved to experiments/{exp.experiment_id}/presentation/index.html"
-                    )
-            if json_output:
+                if _path is None:
+                    _failed_exps.append(exp.experiment_id)
+                    if not json_output:
+                        print_error(f"No slide deck written for {exp.experiment_id}")
+                elif not json_output:
+                    print_success(f"Saved to {_path.relative_to(project_path)}")
+            if _failed_exps:
+                _failure_msg = f"{_no_deck_msg} (failed: {', '.join(_failed_exps)})"
+            elif json_output:
                 from urika.cli_helpers import output_json
 
                 output_json({"path": str(project_path / "experiments")})
                 return
-            print_success("All presentations generated")
+            else:
+                print_success("All presentations generated")
         elif choice.startswith("Project"):
             # Project-level presentation
             if not json_output:
                 print_agent("presentation_agent")
             with Spinner("Creating slides"):
-                _pu = asyncio.run(
+                _path, _pu = asyncio.run(
                     _generate_presentation(
                         project_path,
                         "",
@@ -181,20 +197,22 @@ def present(
                 _pres_tokens_out += _pu.get("tokens_out", 0)
                 _pres_cost += _pu.get("cost_usd", 0.0)
                 _pres_calls += _pu.get("agent_calls", 0)
-            pres_path = project_path / "projectbook" / "presentation" / "index.html"
-            if json_output:
+            if _path is None:
+                _failure_msg = _no_deck_msg
+            elif json_output:
                 from urika.cli_helpers import output_json
 
-                output_json({"path": str(pres_path)})
+                output_json({"path": str(_path)})
                 return
-            print_success("Saved to projectbook/presentation/index.html")
+            else:
+                print_success(f"Saved to {_path.relative_to(project_path)}")
         else:
             # Single experiment
             exp_id = choice.split(" [")[0]
             if not json_output:
                 print_agent("presentation_agent")
             with Spinner("Creating slides"):
-                _pu = asyncio.run(
+                _path, _pu = asyncio.run(
                     _generate_presentation(
                         project_path,
                         exp_id,
@@ -209,15 +227,15 @@ def present(
                 _pres_tokens_out += _pu.get("tokens_out", 0)
                 _pres_cost += _pu.get("cost_usd", 0.0)
                 _pres_calls += _pu.get("agent_calls", 0)
-            pres_path = (
-                project_path / "experiments" / exp_id / "presentation" / "index.html"
-            )
-            if json_output:
+            if _path is None:
+                _failure_msg = _no_deck_msg
+            elif json_output:
                 from urika.cli_helpers import output_json
 
-                output_json({"path": str(pres_path)})
+                output_json({"path": str(_path)})
                 return
-            print_success(f"Saved to experiments/{exp_id}/presentation/index.html")
+            else:
+                print_success(f"Saved to {_path.relative_to(project_path)}")
     except KeyboardInterrupt:
         click.echo("\n  Presentation stopped.")
         click.echo("  Re-run with: urika present [--instructions '...']")
@@ -240,3 +258,8 @@ def present(
         )
     except Exception:
         pass
+
+    if _failure_msg is not None:
+        # Mirror the CLI's standard failure exit (non-zero via click),
+        # but only after usage was recorded — the tokens were spent.
+        raise click.ClickException(_failure_msg)
