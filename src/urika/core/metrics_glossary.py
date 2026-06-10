@@ -307,6 +307,18 @@ _ALIASES: dict[str, str] = {
 
 _NO_NUMERIC = "No numeric values were recorded for this metric."
 
+# Signed-magnitude effect sizes: the ranking direction ("higher") is a
+# tie-break convenience, not an interpretation — d = -0.8 is as large
+# an effect as d = +0.8. These never render "Higher is better."
+_SIGNED_MAGNITUDE = {"cohens_d"}
+
+
+def _is_signed_magnitude(entry: dict[str, str]) -> bool:
+    """True when *entry* is the glossary entry of a signed-magnitude
+    metric (identity check — ``lookup_metric`` returns the canonical
+    dict for aliases and suffixed variants too)."""
+    return any(entry is METRIC_GLOSSARY[key] for key in _SIGNED_MAGNITUDE)
+
 
 def lookup_metric(name: str) -> dict[str, str] | None:
     """The :data:`METRIC_GLOSSARY` entry for a metric name, or None.
@@ -434,9 +446,16 @@ def _render_section(name: str, runs: list[dict[str, Any]]) -> list[str]:
     lines.append("")
     lines.append(f"**How to read.** {entry['how_to_read']}")
     lines.append("")
-    lines.append(
-        f"**Direction.** {'Higher' if direction == 'higher' else 'Lower'} is better."
-    )
+    if _is_signed_magnitude(entry):
+        lines.append(
+            "**Direction.** Magnitude matters; the sign indicates "
+            "direction of the effect."
+        )
+    else:
+        lines.append(
+            f"**Direction.** "
+            f"{'Higher' if direction == 'higher' else 'Lower'} is better."
+        )
     lines.append("")
     if values:
         observed = (

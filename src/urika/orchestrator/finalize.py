@@ -128,6 +128,11 @@ async def finalize_project(
                 "Structure: Abstract, Introduction, Methods, Results, Discussion, "
                 "Reproducibility, References."
             )
+        report_prompt += (
+            " For assumption checks, each experiment's latest evaluator "
+            "assessment (including assumptions_detail) is persisted at "
+            "experiments/<experiment_id>/labbook/evaluation.json."
+        )
         # Inject project memory + the rolling advisor-history summary
         # via the shared ``format_report_context`` helper (mirrors
         # planning and advisor — same heading text, same loader). The

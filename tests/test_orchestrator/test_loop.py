@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -1210,6 +1211,80 @@ class TestUnparseableEvaluatorHandling:
 
         assert result["status"] == "completed"
         assert result["turns"] == 3
+
+
+class TestEvaluationPersistence:
+    """A parseable evaluation is persisted (overwrite-latest) to
+    ``experiments/<exp>/labbook/evaluation.json`` with provenance
+    (turn + experiment_id) so model cards and the report agent can
+    read ``assumptions_detail`` from disk."""
+
+    def _eval_path(self, project_dir: Path, exp_id: str) -> Path:
+        return project_dir / "experiments" / exp_id / "labbook" / "evaluation.json"
+
+    @pytest.mark.asyncio
+    async def test_parseable_evaluation_written_to_labbook(
+        self, tmp_path: Path
+    ) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_MET],
+                "advisor_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "completed"
+        path = self._eval_path(project_dir, exp_id)
+        assert path.exists()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data["turn"] == 1
+        assert data["experiment_id"] == exp_id
+        assert data["evaluation"]["criteria_met"] is True
+
+    @pytest.mark.asyncio
+    async def test_latest_evaluation_overwrites_previous_turn(
+        self, tmp_path: Path
+    ) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_CRITERIA_NOT_MET, _EVAL_CRITERIA_MET],
+                "advisor_agent": [_SUGGESTION],
+            }
+        )
+
+        result = await run_experiment(project_dir, exp_id, runner, max_turns=5)
+
+        assert result["status"] == "completed"
+        assert result["turns"] == 2
+        data = json.loads(
+            self._eval_path(project_dir, exp_id).read_text(encoding="utf-8")
+        )
+        assert data["turn"] == 2
+        assert data["evaluation"]["criteria_met"] is True
+
+    @pytest.mark.asyncio
+    async def test_unparseable_evaluation_writes_nothing(self, tmp_path: Path) -> None:
+        project_dir, exp_id = _setup_project(tmp_path)
+        runner = FakeRunner(
+            {
+                "planning_agent": [_PLAN_OUTPUT],
+                "task_agent": [_TASK_OUTPUT],
+                "evaluator": [_EVAL_PROSE_ONLY],
+                "advisor_agent": [_SUGGESTION],
+            }
+        )
+
+        await run_experiment(project_dir, exp_id, runner, max_turns=2)
+
+        assert not self._eval_path(project_dir, exp_id).exists()
 
 
 class TestFailedAdvisorReviewWarning:

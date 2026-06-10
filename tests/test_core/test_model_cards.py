@@ -6,10 +6,14 @@ core contract: every section is filled ONLY with data that actually
 exists on disk; anything missing renders as "Not recorded for this
 run." — the generator never invents content.
 
-Note: the evaluator's ``assumptions_detail`` is never persisted to
-disk (it lives only in the in-memory ``parse_evaluation`` result), so
-the assumptions/caveats section is sourced from findings.json
-``limitations`` — pinned here.
+The assumptions/caveats section draws on two on-disk sources: the
+per-experiment latest evaluation at
+``experiments/<exp>/labbook/evaluation.json`` (the orchestrator loop
+persists each parseable ``parse_evaluation`` result there, including
+``assessment.method_validity.assumptions_detail``) rendered first with
+an explicit per-experiment-latest provenance line, then findings.json
+``limitations``. Missing/corrupt evaluation.json falls back to
+limitations alone — pinned here.
 """
 
 from __future__ import annotations
@@ -248,3 +252,98 @@ class TestGenerateModelCards:
         )
         paths = generate_model_cards(project_dir)
         assert paths == [project_dir / "methods" / "ridge_model_card.md"]
+
+
+_EVALUATION = {
+    "turn": 3,
+    "experiment_id": "exp-001-baseline",
+    "evaluation": {
+        "criteria_met": False,
+        "assessment": {
+            "method_validity": {
+                "appropriate_test": True,
+                "assumptions_checked": False,
+                "assumptions_detail": [
+                    {
+                        "name": "normality of residuals",
+                        "test": "not checked",
+                        "result": "unknown",
+                        "implication": "reported p-values may be unreliable",
+                    },
+                    {
+                        "name": "homoscedasticity",
+                        "test": "Breusch-Pagan",
+                        "result": "passed (p=0.41)",
+                        "implication": "no correction needed",
+                    },
+                ],
+            }
+        },
+    },
+}
+
+_PROVENANCE_LINE = (
+    "From the latest evaluation of experiment exp-001-baseline "
+    "(may post-date this specific run):"
+)
+
+
+class TestAssumptionsFromEvaluation:
+    """The assumptions section consumes the persisted per-experiment
+    latest evaluation (``labbook/evaluation.json``) when present —
+    rendered above findings.json limitations with an explicit
+    per-experiment-latest provenance line (never claimed per-run)."""
+
+    def _labbook(self, project_dir: Path) -> Path:
+        labbook = project_dir / "experiments" / "exp-001-baseline" / "labbook"
+        labbook.mkdir(exist_ok=True)
+        return labbook
+
+    def test_assumptions_detail_rendered_with_provenance(
+        self, project_dir: Path
+    ) -> None:
+        (self._labbook(project_dir) / "evaluation.json").write_text(
+            json.dumps(_EVALUATION), encoding="utf-8"
+        )
+        (path,) = generate_model_cards(project_dir)
+        body = path.read_text(encoding="utf-8")
+        assert _PROVENANCE_LINE in body
+        # Each entry renders name/test/result/implication.
+        assert "normality of residuals" in body
+        assert "not checked" in body
+        assert "reported p-values may be unreliable" in body
+        assert "homoscedasticity" in body
+        assert "Breusch-Pagan" in body
+        assert "passed (p=0.41)" in body
+        # findings.json limitations still render, BELOW the detail.
+        assert "Small sample (n=40)." in body
+        assert body.index("normality of residuals") < body.index("Small sample (n=40).")
+
+    def test_corrupt_evaluation_falls_back_to_limitations(
+        self, project_dir: Path
+    ) -> None:
+        (self._labbook(project_dir) / "evaluation.json").write_text(
+            "{not json", encoding="utf-8"
+        )
+        (path,) = generate_model_cards(project_dir)
+        body = path.read_text(encoding="utf-8")
+        assert "Small sample (n=40)." in body
+        assert "From the latest evaluation" not in body
+
+    def test_missing_evaluation_keeps_current_fallback(self, project_dir: Path) -> None:
+        (path,) = generate_model_cards(project_dir)
+        body = path.read_text(encoding="utf-8")
+        assert "Small sample (n=40)." in body
+        assert "From the latest evaluation" not in body
+
+    def test_evaluation_without_assumptions_detail_is_ignored(
+        self, project_dir: Path
+    ) -> None:
+        (self._labbook(project_dir) / "evaluation.json").write_text(
+            json.dumps({"turn": 1, "evaluation": {"criteria_met": True}}),
+            encoding="utf-8",
+        )
+        (path,) = generate_model_cards(project_dir)
+        body = path.read_text(encoding="utf-8")
+        assert "Small sample (n=40)." in body
+        assert "From the latest evaluation" not in body

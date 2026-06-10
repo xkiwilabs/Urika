@@ -804,6 +804,39 @@ async def run_experiment(
                     )
             else:
                 consecutive_unparseable = 0
+                # Persist the latest parsed evaluation for this
+                # experiment (overwrite-latest semantics) so downstream
+                # consumers — model cards, the report agent — can read
+                # ``assessment.method_validity.assumptions_detail``
+                # from disk instead of it dying with this process.
+                try:
+                    from urika.core.atomic_write import write_text_atomic
+
+                    write_text_atomic(
+                        project_dir
+                        / "experiments"
+                        / experiment_id
+                        / "labbook"
+                        / "evaluation.json",
+                        json.dumps(
+                            {
+                                "turn": turn,
+                                "experiment_id": experiment_id,
+                                "evaluation": evaluation,
+                            },
+                            indent=2,
+                        )
+                        + "\n",
+                    )
+                except Exception as exc:
+                    # Non-fatal — evaluation persistence must never
+                    # affect the loop itself.
+                    logger.warning(
+                        "Could not persist evaluation.json for %s: %s: %s",
+                        experiment_id,
+                        type(exc).__name__,
+                        exc,
+                    )
             if evaluation and evaluation.get("criteria_met"):
                 progress("result", "Criteria met!")
 

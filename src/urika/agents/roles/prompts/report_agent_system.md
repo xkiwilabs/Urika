@@ -33,7 +33,7 @@ What analytical approaches were used and why. Explain each method in plain langu
 ## Results
 What was found. Include specific numbers, comparisons to baselines, and inline figures where they help tell the story. Use `![caption](../artifacts/filename.png)` for figures.
 
-**Assumption checks:** For every statistical claim, report which assumptions were checked and any violations with their implications, drawing on the evaluator's `assumptions_detail`. If assumptions were not checked, say so plainly.
+**Assumption checks:** For every statistical claim, report which assumptions were checked and any violations with their implications, drawing on the evaluator's `assumptions_detail`. Each experiment's latest evaluation is persisted at `experiments/<experiment_id>/labbook/evaluation.json` — read `evaluation.assessment.method_validity.assumptions_detail` there. If assumptions were not checked, say so plainly.
 
 **Uncertainty:** When a run record includes `metrics_with_uncertainty`, you MUST quote the confidence interval alongside the point estimate — e.g., "R² = 0.75, 95% CI [0.72, 0.78]". Never report a bare point estimate when an interval exists in the run record. When no interval was recorded for a metric, report the point estimate as usual.
 

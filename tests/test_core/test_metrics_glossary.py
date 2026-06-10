@@ -130,6 +130,32 @@ class TestWriteMetricsGlossary:
         assert "Lower is better" in section
         assert "error" in section.lower()  # rmse definition applies
 
+    def test_cohens_d_direction_is_signed_magnitude(self, tmp_path: Path) -> None:
+        """Signed-magnitude metrics (Cohen's d) must not claim "Higher
+        is better" — the sign encodes direction, not quality."""
+        proj = tmp_path / "signed"
+        proj.mkdir()
+        _write_progress(
+            proj,
+            "exp-001",
+            [
+                {
+                    "run_id": "run-001",
+                    "method": "paired_t_test",
+                    "params": {},
+                    "metrics": {"cohens_d": 0.5},
+                }
+            ],
+        )
+        body = write_metrics_glossary(proj).read_text(encoding="utf-8")
+        section = _section(body, "cohens_d")
+        assert (
+            "**Direction.** Magnitude matters; the sign indicates "
+            "direction of the effect." in section
+        )
+        assert "Higher is better" not in section
+        assert "Lower is better" not in section
+
     def test_no_runs_returns_none(self, tmp_path: Path) -> None:
         proj = tmp_path / "empty"
         proj.mkdir()
