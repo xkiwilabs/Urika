@@ -96,6 +96,15 @@ async def finalize_project(
         except Exception as exc:
             logger.warning("Model card generation failed: %s", exc)
             progress("result", "Model card generation failed — continuing")
+        try:
+            from urika.core.metrics_glossary import write_metrics_glossary
+
+            glossary_path = write_metrics_glossary(project_dir)
+            if glossary_path is not None:
+                progress("result", "Metrics glossary written (projectbook/METRICS.md)")
+        except Exception as exc:
+            logger.warning("Metrics glossary generation failed: %s", exc)
+            progress("result", "Metrics glossary generation failed — continuing")
 
     # Step 2: Report Agent — write report from findings.json
     report_label = "draft progress report" if draft else "final report"

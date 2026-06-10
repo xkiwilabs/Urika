@@ -233,6 +233,9 @@ async def test_finalize_draft_mode_writes_to_draft_dir(project_dir: Path):
     assert not (project_dir / "methods" / "ridge_model_card.md").exists(), (
         "draft mode must not generate model cards — there are no final methods yet"
     )
+    assert not (project_dir / "projectbook" / "METRICS.md").exists(), (
+        "draft mode must not generate the metrics glossary"
+    )
 
 
 @pytest.mark.asyncio
@@ -247,6 +250,38 @@ async def test_finalize_writes_model_cards(project_dir: Path):
     body = card.read_text(encoding="utf-8")
     assert "r2=0.41" in body
     assert "Does X predict Y?" in body
+
+
+@pytest.mark.asyncio
+async def test_finalize_writes_metrics_glossary(project_dir: Path):
+    """The deterministic METRICS.md generator runs in the same
+    finalize sequence as the model cards."""
+    runner = _RoleRunner(project_dir)
+    await finalize_project(project_dir, runner, audience="expert")
+    glossary = project_dir / "projectbook" / "METRICS.md"
+    assert glossary.exists(), "finalize must generate projectbook/METRICS.md"
+    body = glossary.read_text(encoding="utf-8")
+    assert "## r2" in body  # the fixture's recorded run carries r2
+
+
+@pytest.mark.asyncio
+async def test_finalize_survives_metrics_glossary_failure(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """METRICS.md generation is best-effort — an exception must not
+    block the rest of the finalize sequence."""
+    import urika.core.metrics_glossary as metrics_glossary
+
+    def _boom(*args: object, **kwargs: object) -> Path | None:
+        raise RuntimeError("glossary generator exploded")
+
+    monkeypatch.setattr(metrics_glossary, "write_metrics_glossary", _boom)
+    runner = _RoleRunner(project_dir)
+    result = await finalize_project(project_dir, runner, audience="expert")
+    assert result == {"success": True}
+    assert (project_dir / "projectbook" / "final-report.md").exists(), (
+        "the report step must still run after a metrics-glossary failure"
+    )
 
 
 @pytest.mark.asyncio
