@@ -144,14 +144,13 @@ The dashboard Models tab has a Provider filter that pre-populates
 the per-agent dropdowns with each provider's recommended models —
 the equivalent of the TOML above without hand-writing the keys.
 
-**Caveat (v0.7.0 only, resolved):** v0.7.0 shipped with ~20
-support-agent call sites (`urika advisor`, `urika finalize`,
-`urika report`, the memory curator, some REPL chat paths) still
-hard-coding the legacy Claude-default factory, so mixed-provider
-users saw silent Claude fallback on those standalone commands.
-These have since been rewired through per-agent routing — on
-current releases every agent invocation surface routes by the
-configured model string.
+**Note on routing completeness:** This caveat was written
+mid-development-cycle and was already obsolete at release. The
+rewire commits (4f5d4d83, 1b82daf2, 4d1c090d) are all ancestors
+of the v0.7.0 tag. Every agent invocation surface in v0.7.0+
+routes per-agent via ``runner_for(model)``; the only remaining
+``get_runner`` call at the tag was a cosmetic REPL footer label
+with no routing effect.
 
 ## Cost reporting differences
 

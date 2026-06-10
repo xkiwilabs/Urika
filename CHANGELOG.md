@@ -5,7 +5,7 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] - 2026-06-10
+## [0.8.0] – 2026-06-10
 
 Research scoping + output polish. The interactive project builder now
 elicits genuine research intent (feasibility check, analysis-approach
@@ -197,7 +197,7 @@ records, and the figure-naming convention only affects newly generated
 artifacts — old method-name-matched figures still attach via the
 fallback heuristic.
 
-## [0.7.0] – 2026-06-15 (target)
+## [0.7.0] – 2026-06-08
 
 Multi-provider model adapters. The same Urika project can now run
 experiments against Anthropic, OpenAI, or Google models, with

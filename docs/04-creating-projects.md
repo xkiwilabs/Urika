@@ -144,7 +144,7 @@ After collecting basic project information, the project builder agent runs an in
 
 Think of this as context engineering: Urika's agents are only as effective as the context they have. A project with a rich description, detailed answers about data collection methods and procedures, and a few relevant papers will produce dramatically better analysis than one with minimal context. The agent is helping you build that context in a structured way.
 
-The session walks through the following steps. Every question is skippable -- type `done`, `skip`, or just press Enter to leave a preference unset and move on.
+The session walks through the following steps. In the clarifying-questions phase, type `done` to end the question loop early (plain Enter or `skip` are recorded as your answer there). In the later preference, hypotheses, and criteria phases, `done`, `skip`, or plain Enter all skip the current item and leave it unset.
 
 ### Feasibility check (Project Builder agent)
 

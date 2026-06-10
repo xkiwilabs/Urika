@@ -127,8 +127,8 @@ backup ships before the multi-provider work):
 | Release | Focus | Status |
 |---|---|---|
 | **v0.5.0** | Project memory deepening — advisor+report inject; curator agent + dry-run auto-trigger; archive + mtime diff; dashboard memory page; auto_capture toggle; cross-surface parity tests | SHIPPED 2026-05-31 |
-| **v0.6.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | **NEXT** |
-| **v0.7.0** | Multi-provider model adapters (OpenAI Agents SDK + others) | planned |
+| **v0.6.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | SHIPPED 2026-05-31 |
+| **v0.7.0** | Multi-provider model adapters (OpenAI Agents SDK + others) | SHIPPED 2026-06-08 |
 | **v0.8.0** | Review-driven hardening + research-goal builder pipeline + output comprehensibility | **on dev, unreleased** |
 | **v0.9.0+** | Output polish — exports (PDF/LaTeX/Jupyter via Pandoc), model-card auto-generation + UX polish (templates + accessibility + i18n stubs) — roadmap renumber pending | planned |
 | **v1.0.0rc1** | Feature freeze + API audit + migration guide | planned |
