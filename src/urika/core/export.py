@@ -111,13 +111,20 @@ def export_markdown(md_path: Path, fmt: str, out_dir: Path | None = None) -> Pat
 
     out_path = target_dir / f"{md_path.stem}.pdf"
     _version_existing(out_path)
+    # Pandoc defaults to pdflatex. Conda-only environments typically
+    # have tectonic (self-contained, conda-forge) instead of a texlive
+    # install — fall back to it when pdflatex is absent so the conda
+    # path works out of the box.
+    pdf_args = list(extra_args)
+    if shutil.which("pdflatex") is None and shutil.which("tectonic") is not None:
+        pdf_args.append("--pdf-engine=tectonic")
     try:
         pypandoc.convert_file(
             str(md_path),
             to="pdf",
             format="markdown",
             outputfile=str(out_path),
-            extra_args=extra_args,
+            extra_args=pdf_args,
         )
     except (RuntimeError, OSError) as exc:
         # pandoc's "pdflatex not found" (or any other pdf-stage error)

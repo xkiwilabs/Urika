@@ -159,6 +159,34 @@ class TestPdfExport:
         (call,) = calls
         assert call["outputfile"] == str(out)
 
+    def test_tectonic_fallback_when_pdflatex_absent(
+        self, md_path: Path, monkeypatch
+    ) -> None:
+        """Conda-only boxes have tectonic, not pdflatex — pandoc must
+        be pointed at it explicitly or the PDF stage fails."""
+        import urika.core.export as export_mod
+
+        calls = _install_fake_pypandoc(monkeypatch)
+        monkeypatch.setattr(
+            export_mod.shutil,
+            "which",
+            lambda name: "/usr/bin/tectonic" if name == "tectonic" else None,
+        )
+        export_markdown(md_path, "pdf")
+        (call,) = calls
+        assert "--pdf-engine=tectonic" in call["extra_args"]
+
+    def test_no_engine_override_when_pdflatex_present(
+        self, md_path: Path, monkeypatch
+    ) -> None:
+        import urika.core.export as export_mod
+
+        calls = _install_fake_pypandoc(monkeypatch)
+        monkeypatch.setattr(export_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+        export_markdown(md_path, "pdf")
+        (call,) = calls
+        assert not any("--pdf-engine" in a for a in call["extra_args"])
+
     def test_existing_pdf_is_versioned_binary_safely(
         self, md_path: Path, monkeypatch
     ) -> None:
