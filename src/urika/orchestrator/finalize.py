@@ -105,6 +105,18 @@ async def finalize_project(
         except Exception as exc:
             logger.warning("Metrics glossary generation failed: %s", exc)
             progress("result", "Metrics glossary generation failed — continuing")
+        try:
+            from urika.core.notebook_export import write_reproduce_notebook
+
+            notebook_path = write_reproduce_notebook(project_dir)
+            if notebook_path is not None:
+                progress(
+                    "result",
+                    "Reproduce notebook written (projectbook/reproduce.ipynb)",
+                )
+        except Exception as exc:
+            logger.warning("Reproduce notebook generation failed: %s", exc)
+            progress("result", "Reproduce notebook generation failed — continuing")
 
     # Step 2: Report Agent — write report from findings.json
     report_label = "draft progress report" if draft else "final report"

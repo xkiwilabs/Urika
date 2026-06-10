@@ -236,6 +236,9 @@ async def test_finalize_draft_mode_writes_to_draft_dir(project_dir: Path):
     assert not (project_dir / "projectbook" / "METRICS.md").exists(), (
         "draft mode must not generate the metrics glossary"
     )
+    assert not (project_dir / "projectbook" / "reproduce.ipynb").exists(), (
+        "draft mode must not generate the reproduce notebook"
+    )
 
 
 @pytest.mark.asyncio
@@ -262,6 +265,43 @@ async def test_finalize_writes_metrics_glossary(project_dir: Path):
     assert glossary.exists(), "finalize must generate projectbook/METRICS.md"
     body = glossary.read_text(encoding="utf-8")
     assert "## r2" in body  # the fixture's recorded run carries r2
+
+
+@pytest.mark.asyncio
+async def test_finalize_writes_reproduce_notebook(project_dir: Path):
+    """The deterministic reproduce.ipynb generator runs in the same
+    Step-1b spot as model cards and METRICS.md."""
+    nbformat = pytest.importorskip("nbformat")
+    runner = _RoleRunner(project_dir)
+    await finalize_project(project_dir, runner, audience="expert")
+    notebook = project_dir / "projectbook" / "reproduce.ipynb"
+    assert notebook.exists(), "finalize must generate projectbook/reproduce.ipynb"
+    nb = nbformat.read(notebook, as_version=4)
+    nbformat.validate(nb)
+    code_sources = [c.source for c in nb.cells if c.cell_type == "code"]
+    assert any("import numpy" in s for s in code_sources), (
+        "the finalizer's method script must be embedded verbatim"
+    )
+
+
+@pytest.mark.asyncio
+async def test_finalize_survives_reproduce_notebook_failure(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Notebook generation is best-effort — an exception must not
+    block the rest of the finalize sequence."""
+    import urika.core.notebook_export as notebook_export
+
+    def _boom(*args: object, **kwargs: object) -> Path | None:
+        raise RuntimeError("notebook generator exploded")
+
+    monkeypatch.setattr(notebook_export, "write_reproduce_notebook", _boom)
+    runner = _RoleRunner(project_dir)
+    result = await finalize_project(project_dir, runner, audience="expert")
+    assert result == {"success": True}
+    assert (project_dir / "projectbook" / "final-report.md").exists(), (
+        "the report step must still run after a notebook failure"
+    )
 
 
 @pytest.mark.asyncio
