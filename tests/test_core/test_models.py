@@ -274,3 +274,43 @@ class TestRunRecord:
         run = RunRecord.from_dict(d)
         assert run.run_id == "run-001"
         assert run.metrics == {"r2": 0.5}
+
+    def test_metric_interpretation_default_empty(self) -> None:
+        run = RunRecord(
+            run_id="run-001",
+            method="linear_regression",
+            params={},
+            metrics={"r2": 0.5},
+        )
+        assert run.metric_interpretation == {}
+
+    def test_metric_interpretation_roundtrips(self) -> None:
+        interp = {
+            "r2": (
+                "Explains 74% of variance in the target; the criterion "
+                "is ≥0.70, so this run meets it."
+            )
+        }
+        run = RunRecord(
+            run_id="run-001",
+            method="linear_regression",
+            params={},
+            metrics={"r2": 0.74},
+            metric_interpretation=interp,
+        )
+        d = run.to_dict()
+        assert d["metric_interpretation"] == interp
+        restored = RunRecord.from_dict(d)
+        assert restored.metric_interpretation == interp
+
+    def test_legacy_dict_without_metric_interpretation_loads(self) -> None:
+        """Pre-v0.8 run records (no metric_interpretation key) load fine."""
+        d = {
+            "run_id": "run-001",
+            "method": "linear_regression",
+            "params": {},
+            "metrics": {"r2": 0.5},
+            "timestamp": "2026-03-05T10:00:00+00:00",
+        }
+        run = RunRecord.from_dict(d)
+        assert run.metric_interpretation == {}

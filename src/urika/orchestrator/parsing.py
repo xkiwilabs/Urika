@@ -142,6 +142,10 @@ def _record_from_block(block: dict[str, Any]) -> RunRecord | None:
             block.get("run_id"),
         )
         return None
+    interpretation = block.get("metric_interpretation", {})
+    if not isinstance(interpretation, dict):
+        # Malformed interpretation never blocks the record itself.
+        interpretation = {}
     return RunRecord(
         run_id=block["run_id"],
         method=block["method"],
@@ -151,6 +155,7 @@ def _record_from_block(block: dict[str, Any]) -> RunRecord | None:
         observation=block.get("observation", ""),
         next_step=block.get("next_step", ""),
         artifacts=block.get("artifacts", []),
+        metric_interpretation=interpretation,
     )
 
 

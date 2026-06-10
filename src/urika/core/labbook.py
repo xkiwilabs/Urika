@@ -34,8 +34,7 @@ def update_experiment_notes(project_dir: Path, experiment_id: str) -> None:
 
         metrics = run.get("metrics", {})
         if metrics:
-            metric_strs = [f"{k}={v}" for k, v in metrics.items()]
-            lines.append(f"**Metrics**: {', '.join(metric_strs)}")
+            lines.append(f"**Metrics**: {_format_metrics_with_interpretation(run)}")
 
         params = run.get("params", {})
         if params:
@@ -97,10 +96,9 @@ def generate_experiment_summary(project_dir: Path, experiment_id: str) -> None:
         best = _find_best_run(runs)
         if best:
             lines.append(f"**Best run**: {best['run_id']} ({best['method']})")
-            metrics_str = ", ".join(
-                f"{k}={v}" for k, v in best.get("metrics", {}).items()
+            lines.append(
+                f"**Best metrics**: {_format_metrics_with_interpretation(best)}"
             )
-            lines.append(f"**Best metrics**: {metrics_str}")
             lines.append("")
 
         metric_names = _all_metric_names(runs)
@@ -340,6 +338,22 @@ def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
 
     first_metric = next(iter(valid[0]["metrics"]))
     return select_best_run(valid, first_metric)
+
+
+def _format_metrics_with_interpretation(run: dict[str, Any]) -> str:
+    """Format a run's metrics as ``k=v`` pairs, appending the run's
+    plain-language interpretation where one exists for the metric:
+    ``r2=0.74 — Explains 74% of variance...``.
+
+    Runs without ``metric_interpretation`` (every record pre-v0.8)
+    render exactly as before: ``k=v, k=v``.
+    """
+    interpretations = run.get("metric_interpretation") or {}
+    parts: list[str] = []
+    for k, v in run.get("metrics", {}).items():
+        interp = interpretations.get(k, "") if isinstance(interpretations, dict) else ""
+        parts.append(f"{k}={v} — {interp}" if interp else f"{k}={v}")
+    return ", ".join(parts)
 
 
 def _all_metric_names(runs: list[dict[str, Any]]) -> list[str]:

@@ -29,6 +29,44 @@ class TestParseRunRecords:
         assert records[0].metrics == {"rmse": 0.42, "r2": 0.87}
         assert records[0].params == {"alpha": 0.1}
 
+    def test_metric_interpretation_passes_through(self) -> None:
+        text = """Results:
+```json
+{
+    "run_id": "run-001",
+    "method": "linear_regression",
+    "params": {},
+    "metrics": {"r2": 0.74},
+    "metric_interpretation": {
+        "r2": "Explains 74% of variance; criterion is >=0.70, so met."
+    }
+}
+```
+"""
+        records = parse_run_records(text)
+        assert len(records) == 1
+        assert records[0].metric_interpretation == {
+            "r2": "Explains 74% of variance; criterion is >=0.70, so met."
+        }
+
+    def test_non_dict_metric_interpretation_dropped(self) -> None:
+        """A malformed (non-dict) metric_interpretation doesn't kill the
+        record — it is dropped and the record parses normally."""
+        text = """Results:
+```json
+{
+    "run_id": "run-001",
+    "method": "linear_regression",
+    "params": {},
+    "metrics": {"r2": 0.74},
+    "metric_interpretation": "great fit"
+}
+```
+"""
+        records = parse_run_records(text)
+        assert len(records) == 1
+        assert records[0].metric_interpretation == {}
+
     def test_multiple_runs(self) -> None:
         text = """First run:
 ```json

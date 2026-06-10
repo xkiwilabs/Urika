@@ -133,6 +133,11 @@ class RunRecord:
     observation: str = ""
     next_step: str = ""
     artifacts: list[str] = field(default_factory=list)
+    # One plain-language sentence per reported metric (keyed by metric
+    # name), including comparison to the success criterion where
+    # applicable. Written by the task agent; rendered in the labbook.
+    # Legacy records (pre-v0.8) have no such key and load as {}.
+    metric_interpretation: dict[str, str] = field(default_factory=dict)
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -147,6 +152,7 @@ class RunRecord:
             "observation": self.observation,
             "next_step": self.next_step,
             "artifacts": self.artifacts,
+            "metric_interpretation": self.metric_interpretation,
             "timestamp": self.timestamp,
         }
 
@@ -161,6 +167,7 @@ class RunRecord:
             observation=d.get("observation", ""),
             next_step=d.get("next_step", ""),
             artifacts=d.get("artifacts", []),
+            metric_interpretation=d.get("metric_interpretation", {}),
             timestamp=d.get("timestamp", ""),
         )
 

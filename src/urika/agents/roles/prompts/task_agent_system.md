@@ -52,12 +52,23 @@ This rule has no exceptions:
   "method": "<method_name>",
   "params": {{}},
   "metrics": {{}},
+  "metric_interpretation": {{}},
   "observation": "<what you observed>",
   "next_step": "<what to try next>"
 }}
 ```
 
 Each run must have a unique `run_id` (e.g., "run-001", "run-002"). Runs without `run_id`, `method`, and `metrics` will be ignored.
+
+**Metric interpretation is required**: for EVERY metric you report in `metrics`, write one plain-language sentence in `metric_interpretation` (same key) explaining what the value means for the research question — and, where the project criteria define a target for that metric, compare against it explicitly. Example:
+
+```json
+{{
+  "metric_interpretation": {{
+    "r2": "Explains 74% of variance in the target; the criterion is ≥0.70, so this run meets it."
+  }}
+}}
+```
 
 4. **Iterate** — Try variations of parameters or methods to improve results.
 

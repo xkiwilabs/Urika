@@ -88,6 +88,82 @@ class TestUpdateExperimentNotes:
         assert "0.72" in content
 
 
+class TestMetricInterpretation:
+    def test_notes_append_interpretation_when_present(self, project_dir: Path) -> None:
+        exp = create_experiment(project_dir, name="Interp", hypothesis="h")
+        eid = exp.experiment_id
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-001",
+                method="linear_regression",
+                params={},
+                metrics={"r2": 0.74, "rmse": 0.15},
+                metric_interpretation={
+                    "r2": (
+                        "Explains 74% of variance in the target; the "
+                        "criterion is ≥0.70, so this run meets it."
+                    )
+                },
+            ),
+        )
+
+        update_experiment_notes(project_dir, eid)
+        notes = (project_dir / "experiments" / eid / "labbook" / "notes.md").read_text(
+            encoding="utf-8"
+        )
+        assert "r2=0.74 — Explains 74% of variance in the target" in notes
+        # rmse has no interpretation — rendered plain
+        assert "rmse=0.15" in notes
+        assert "rmse=0.15 —" not in notes
+
+    def test_notes_unchanged_without_interpretation(
+        self, project_dir: Path, experiment_with_runs: str
+    ) -> None:
+        """Runs without metric_interpretation render exactly as before."""
+        update_experiment_notes(project_dir, experiment_with_runs)
+        notes = (
+            project_dir / "experiments" / experiment_with_runs / "labbook" / "notes.md"
+        ).read_text(encoding="utf-8")
+        assert "**Metrics**: r2=0.72, rmse=0.15" in notes
+        assert "—" not in notes
+
+    def test_summary_best_run_appends_interpretation(self, project_dir: Path) -> None:
+        exp = create_experiment(project_dir, name="Interp", hypothesis="h")
+        eid = exp.experiment_id
+        append_run(
+            project_dir,
+            eid,
+            RunRecord(
+                run_id="run-001",
+                method="linear_regression",
+                params={},
+                metrics={"r2": 0.74},
+                metric_interpretation={"r2": "Explains 74% of variance."},
+            ),
+        )
+
+        generate_experiment_summary(project_dir, eid)
+        summary = (
+            project_dir / "experiments" / eid / "labbook" / "summary.md"
+        ).read_text(encoding="utf-8")
+        assert "r2=0.74 — Explains 74% of variance." in summary
+
+    def test_summary_unchanged_without_interpretation(
+        self, project_dir: Path, experiment_with_runs: str
+    ) -> None:
+        generate_experiment_summary(project_dir, experiment_with_runs)
+        summary = (
+            project_dir
+            / "experiments"
+            / experiment_with_runs
+            / "labbook"
+            / "summary.md"
+        ).read_text(encoding="utf-8")
+        assert "**Best metrics**: r2=0.73, rmse=0.14" in summary
+
+
 class TestGenerateExperimentSummary:
     def test_generates_summary(
         self, project_dir: Path, experiment_with_runs: str
