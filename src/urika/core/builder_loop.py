@@ -596,6 +596,50 @@ async def run_builder_loop(
 
         emit(BuilderEvent("agent_text", {"text": plan_result.text_output}))
 
+        # --- Criteria co-draft ---
+        # Offer the seed criteria for amendment before the final menu.
+        # Free-text changes land verbatim as a ``user_amendments`` key —
+        # the evaluator receives criteria as-is, so amendments reach it
+        # without any numeric parsing on our side.
+        from urika.core.project_builder import default_initial_criteria
+
+        proposed_criteria = default_initial_criteria()
+        rendered_lines = []
+        for crit_key, crit_value in proposed_criteria.items():
+            if isinstance(crit_value, dict):
+                rendered = ", ".join(f"{k} = {v}" for k, v in crit_value.items())
+            elif isinstance(crit_value, list):
+                rendered = ", ".join(str(v) for v in crit_value)
+            else:
+                rendered = str(crit_value)
+            rendered_lines.append(f"- {crit_key}: {rendered}")
+        crit_answer = (
+            await ask_user(
+                BuilderQuestion(
+                    text=(
+                        "Proposed success criteria:\n"
+                        + "\n".join(rendered_lines)
+                        + "\nAccept, or describe changes?"
+                    ),
+                    options=["Accept", "Describe changes"],
+                )
+            )
+        ).strip()
+        final_criteria = dict(proposed_criteria)
+        low = crit_answer.lower()
+        if low in ("1", "accept") or low in _SKIP_ANSWERS:
+            pass
+        elif low in ("2", "describe changes"):
+            changes = (
+                await ask_user(BuilderQuestion(text="Describe the changes"))
+            ).strip()
+            if changes and changes.lower() not in _SKIP_ANSWERS:
+                final_criteria["user_amendments"] = changes
+        else:
+            # Free text — the user described their changes directly.
+            final_criteria["user_amendments"] = crit_answer
+        _builder_set("set_initial_criteria", final_criteria)
+
         # --- Phase 4: User refinement loop ---
         while True:
             choice = await ask_user(
@@ -659,8 +703,8 @@ async def run_builder_loop(
             except Exception as exc:
                 logger.warning("set_initial_suggestions failed: %s", exc)
         # Persist loop-gathered research intent (refined question,
-        # preferences, hypotheses) onto the already-written project. In
-        # the CLI flow
+        # preferences, hypotheses, co-drafted criteria) onto the
+        # already-written project. In the CLI flow
         # ``write_project()`` runs BEFORE this loop (the loop's agents
         # need the workspace + knowledge base on disk), so without this
         # re-apply the values would never reach urika.toml.

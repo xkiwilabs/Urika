@@ -564,3 +564,87 @@ class TestHypothesesOffer:
         assert "hypotheses" not in _project_block(project_dir)
         # Loop still completed.
         assert builder._suggestions
+
+
+class TestCriteriaCoDrafting:
+    _PROPOSAL = {
+        "type": "exploratory",
+        "quality": {"min_approaches": 2},
+        "completeness": ["establish baselines"],
+    }
+
+    def _latest_criteria(self, project_dir: Path):
+        from urika.core.criteria import load_criteria, load_criteria_history
+
+        return load_criteria(project_dir), load_criteria_history(project_dir)
+
+    def test_proposal_rendered_with_accept_option(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, _, asked = _drive_core_loop(
+            monkeypatch, tmp_path, runner, ["done", "done", "Accept"]
+        )
+        crit_qs = [q for q in asked if q.options == ["Accept", "Describe changes"]]
+        assert len(crit_qs) == 1
+        assert "Proposed success criteria" in crit_qs[0].text
+        assert "min_approaches" in crit_qs[0].text
+        assert "establish baselines" in crit_qs[0].text
+
+    def test_accept_equals_proposal(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch, tmp_path, runner, ["done", "done", "Accept"]
+        )
+        latest, history = self._latest_criteria(project_dir)
+        assert latest.criteria == self._PROPOSAL
+        # Accepting the unchanged proposal must not append a duplicate
+        # version on top of write_project()'s hardcoded seed.
+        assert len(history) == 1
+
+    def test_describe_changes_appends_user_amendments(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch,
+            tmp_path,
+            runner,
+            ["done", "done", "Describe changes", "also require cross-validation"],
+        )
+        latest, history = self._latest_criteria(project_dir)
+        assert latest.criteria["user_amendments"] == "also require cross-validation"
+        # Everything else from the proposal survives verbatim — the
+        # evaluator receives criteria as-is, amendments included.
+        assert latest.criteria["quality"] == {"min_approaches": 2}
+        assert len(history) == 2
+
+    def test_freetext_becomes_amendments_directly(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        runner = _IntentRunner()
+        _, project_dir, _ = _drive_core_loop(
+            monkeypatch, tmp_path, runner, ["done", "done", "at least 3 approaches"]
+        )
+        latest, _ = self._latest_criteria(project_dir)
+        assert latest.criteria["user_amendments"] == "at least 3 approaches"
+
+    def test_non_interactive_path_keeps_hardcoded_defaults(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        """write_project() without any loop interaction (JSON mode,
+        dashboard scaffold) seeds the unchanged hardcoded criteria."""
+        from urika.core.criteria import load_criteria
+        from urika.core.project_builder import ProjectBuilder
+
+        builder = ProjectBuilder(
+            name="plainproj",
+            source_path=None,
+            projects_dir=tmp_path / "projects",
+            question="Q?",
+            mode="confirmatory",
+        )
+        project_dir = builder.write_project()
+        assert load_criteria(project_dir).criteria == self._PROPOSAL
