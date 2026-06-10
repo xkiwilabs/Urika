@@ -781,6 +781,247 @@ class TestFinalizeCommand:
 
 
 # ---------------------------------------------------------------------------
+# --format on finalize (v0.9.0 export)
+# ---------------------------------------------------------------------------
+
+
+class TestFinalizeFormatOption:
+    """``urika finalize --format latex|pdf`` post-processes the
+    final-report.md the report agent wrote. Markdown stays the default
+    (no export call at all); ExportError keeps the markdown artifact,
+    says so, and exits non-zero."""
+
+    def _invoke(
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+        args: list[str],
+        *,
+        export_side_effect=None,
+        write_report: bool = True,
+    ):
+        project_dir, _exp_id = _create_project_with_experiment(runner, urika_env)
+        report_md = project_dir / "projectbook" / "final-report.md"
+        if write_report:
+            report_md.parent.mkdir(exist_ok=True)
+            report_md.write_text("# Final Report\n\nR²=0.41.\n", encoding="utf-8")
+        with (
+            patch("urika.agents.runner.get_runner") as mock_get_runner,
+            patch(
+                "urika.orchestrator.finalize.finalize_project",
+                new_callable=AsyncMock,
+            ) as mock_fin,
+            patch("urika.agents.config.load_runtime_config") as mock_rc,
+            patch("urika.core.export.export_markdown") as mock_export,
+        ):
+            mock_get_runner.return_value = MagicMock()
+            mock_rc.return_value = MagicMock(privacy_mode="open")
+            mock_fin.return_value = {
+                "success": True,
+                "tokens_in": 0,
+                "tokens_out": 0,
+                "cost_usd": 0,
+                "agent_calls": 0,
+            }
+            if export_side_effect is not None:
+                mock_export.side_effect = export_side_effect
+            else:
+                mock_export.side_effect = lambda p, fmt, out_dir=None: Path(
+                    p
+                ).with_suffix(".tex" if fmt == "latex" else ".pdf")
+            result = runner.invoke(cli, ["finalize", "test-proj", *args], env=urika_env)
+        return project_dir, result, mock_export
+
+    def test_default_markdown_never_calls_export(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _project_dir, result, mock_export = self._invoke(runner, urika_env, ["--json"])
+        assert result.exit_code == 0, result.output
+        mock_export.assert_not_called()
+
+    def test_format_latex_exports_final_report(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        project_dir, result, mock_export = self._invoke(
+            runner, urika_env, ["--format", "latex", "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        report_md = project_dir / "projectbook" / "final-report.md"
+        mock_export.assert_called_once_with(report_md, "latex")
+        data = json.loads(result.output)
+        assert data["export_path"].endswith("final-report.tex")
+
+    def test_format_pdf_exports_final_report_plain(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        project_dir, result, mock_export = self._invoke(
+            runner, urika_env, ["--format", "pdf"]
+        )
+        assert result.exit_code == 0, result.output
+        report_md = project_dir / "projectbook" / "final-report.md"
+        mock_export.assert_called_once_with(report_md, "pdf")
+        assert "final-report.pdf" in result.output
+
+    def test_export_error_keeps_markdown_and_exits_nonzero(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        from urika.core.export import ExportError
+
+        project_dir, result, _mock_export = self._invoke(
+            runner,
+            urika_env,
+            ["--format", "pdf"],
+            export_side_effect=ExportError(
+                "PDF/LaTeX export needs the export extra: pip install 'urika[export]'"
+            ),
+        )
+        assert result.exit_code != 0
+        combined = (result.output or "") + (
+            result.stderr if result.stderr_bytes else ""
+        )
+        assert "urika[export]" in combined
+        assert "kept" in combined, "the error must say the markdown was retained"
+        assert (project_dir / "projectbook" / "final-report.md").exists()
+
+    def test_format_with_no_report_written_is_a_clean_no_op(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _project_dir, result, mock_export = self._invoke(
+            runner, urika_env, ["--format", "latex"], write_report=False
+        )
+        assert result.exit_code == 0, result.output
+        mock_export.assert_not_called()
+        assert "Nothing to export" in result.output
+
+    def test_invalid_format_rejected_by_click(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli, ["finalize", "test-proj", "--format", "docx"], env=urika_env
+        )
+        assert result.exit_code != 0
+        combined = (result.output or "") + (
+            result.stderr if result.stderr_bytes else ""
+        )
+        assert "Invalid value" in combined
+
+
+# ---------------------------------------------------------------------------
+# --format on report (v0.9.0 export)
+# ---------------------------------------------------------------------------
+
+
+class TestReportFormatOption:
+    """``urika report --format latex|pdf`` post-processes the
+    narrative.md actually written by the report agent."""
+
+    def _invoke(
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+        extra_args: list[str],
+        *,
+        narrative: str = "# Narrative\n\nFindings prose.\n",
+        export_side_effect=None,
+    ):
+        project_dir, exp_id = _create_project_with_experiment(runner, urika_env)
+        with (
+            patch(
+                "urika.cli.agents_report._run_report_agent",
+                return_value=narrative,
+            ),
+            patch("urika.core.export.export_markdown") as mock_export,
+        ):
+            if export_side_effect is not None:
+                mock_export.side_effect = export_side_effect
+            else:
+                mock_export.side_effect = lambda p, fmt, out_dir=None: Path(
+                    p
+                ).with_suffix(".tex" if fmt == "latex" else ".pdf")
+            result = runner.invoke(
+                cli,
+                ["report", "test-proj", "--experiment", exp_id, *extra_args],
+                env=urika_env,
+            )
+        return project_dir, exp_id, result, mock_export
+
+    def test_default_markdown_never_calls_export(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _proj, _exp, result, mock_export = self._invoke(runner, urika_env, [])
+        assert result.exit_code == 0, result.output
+        mock_export.assert_not_called()
+
+    def test_format_latex_exports_written_narrative(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        proj, exp_id, result, mock_export = self._invoke(
+            runner, urika_env, ["--format", "latex"]
+        )
+        assert result.exit_code == 0, result.output
+        narrative_md = proj / "experiments" / exp_id / "labbook" / "narrative.md"
+        mock_export.assert_called_once_with(narrative_md, "latex")
+        assert "narrative.tex" in result.output
+
+    def test_format_pdf_exports_written_narrative(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        proj, exp_id, result, mock_export = self._invoke(
+            runner, urika_env, ["--format", "pdf"]
+        )
+        assert result.exit_code == 0, result.output
+        narrative_md = proj / "experiments" / exp_id / "labbook" / "narrative.md"
+        mock_export.assert_called_once_with(narrative_md, "pdf")
+
+    def test_export_error_keeps_markdown_and_exits_nonzero(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        from urika.core.export import ExportError
+
+        proj, exp_id, result, _mock_export = self._invoke(
+            runner,
+            urika_env,
+            ["--format", "pdf"],
+            export_side_effect=ExportError(
+                "PDF needs a LaTeX engine (e.g. texlive: sudo apt install "
+                "texlive-latex-recommended); `--format latex` works without one."
+            ),
+        )
+        assert result.exit_code != 0
+        combined = (result.output or "") + (
+            result.stderr if result.stderr_bytes else ""
+        )
+        assert "LaTeX engine" in combined
+        assert "kept" in combined, "the error must say the markdown was retained"
+        narrative_md = proj / "experiments" / exp_id / "labbook" / "narrative.md"
+        assert narrative_md.exists(), (
+            "the markdown narrative must survive an export failure"
+        )
+
+    def test_format_with_no_narrative_is_a_clean_no_op(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        _proj, _exp, result, mock_export = self._invoke(
+            runner, urika_env, ["--format", "latex"], narrative=""
+        )
+        assert result.exit_code == 0, result.output
+        mock_export.assert_not_called()
+        assert "Nothing to export" in result.output
+
+    def test_invalid_format_rejected_by_click(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        result = runner.invoke(
+            cli, ["report", "test-proj", "--format", "docx"], env=urika_env
+        )
+        assert result.exit_code != 0
+        combined = (result.output or "") + (
+            result.stderr if result.stderr_bytes else ""
+        )
+        assert "Invalid value" in combined
+
+
+# ---------------------------------------------------------------------------
 # Build-tool
 # ---------------------------------------------------------------------------
 

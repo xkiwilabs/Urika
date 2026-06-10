@@ -7,6 +7,7 @@ this module registers the @cli.command decorator for ``finalize``.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import click
 
@@ -14,9 +15,37 @@ from urika.cli._base import cli
 from urika.cli._helpers import (
     _agent_run_start,
     _ensure_project,
+    _export_written_artifact,
     _resolve_project,
 )
 from urika.core.errors import ConfigError
+
+
+def _maybe_export_report(
+    project_path: Path, output_format: str, draft: bool, json_output: bool
+) -> Path | None:
+    """v0.9.0 ``--format``: post-process the markdown report the
+    finalize sequence wrote (``projectbook/final-report.md``, or
+    ``projectbook/draft/report.md`` under ``--draft``).
+
+    Returns the exported path, or None when the format is markdown or
+    no report was written (the report agent's output is only persisted
+    when it looks like a real report). On ExportError the underlying
+    helper raises ``click.ClickException`` — non-zero exit, markdown
+    artifact kept, and the message says so.
+    """
+    if output_format == "markdown":
+        return None
+    report_md = (
+        project_path
+        / "projectbook"
+        / ("draft/report.md" if draft else "final-report.md")
+    )
+    if not report_md.exists():
+        if not json_output:
+            click.echo(f"  Nothing to export — {report_md.name} was not written.")
+        return None
+    return _export_written_artifact(report_md, output_format)
 
 
 @cli.command()
@@ -39,12 +68,21 @@ from urika.core.errors import ConfigError
     default=False,
     help="Interim summary — outputs to projectbook/draft/, doesn't overwrite final outputs.",
 )
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["markdown", "latex", "pdf"]),
+    default="markdown",
+    help="Report format — latex/pdf post-process the written markdown "
+    "(requires urika[export] + pandoc; pdf also needs a TeX engine).",
+)
 def finalize(
     project: str | None,
     instructions: str,
     json_output: bool,
     audience: str | None = None,
     draft: bool = False,
+    output_format: str = "markdown",
 ) -> None:
     """Finalize the project — produce polished methods, report, and presentation."""
     import time
@@ -199,6 +237,12 @@ def finalize(
     if json_output:
         from urika.cli_helpers import output_json
 
+        if result.get("success"):
+            export_path = _maybe_export_report(
+                project_path, output_format, draft, json_output=True
+            )
+            if export_path is not None:
+                result["export_path"] = str(export_path)
         output_json(result)
         return
 
@@ -227,5 +271,14 @@ def finalize(
             from urika.cli.github import _maybe_auto_push
 
             _maybe_auto_push(project_path, event="finalize")
+
+        # v0.9.0 --format: export AFTER the auto-push so the markdown
+        # backup still lands even when the export environment is
+        # broken (the ClickException below exits non-zero either way).
+        export_path = _maybe_export_report(
+            project_path, output_format, draft, json_output=False
+        )
+        if export_path is not None:
+            click.echo(f"  Exported:      {export_path}")
     else:
         print_error(f"Finalization failed: {result.get('error', 'unknown')}")

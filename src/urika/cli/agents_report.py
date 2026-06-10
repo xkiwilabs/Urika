@@ -14,6 +14,7 @@ import click
 from urika.cli._base import cli
 from urika.cli._helpers import (
     _ensure_project,
+    _export_written_artifact,
     _make_on_message,
     _prompt_numbered,
     _resolve_project,
@@ -107,12 +108,21 @@ def _run_report_agent(
     default=None,
     help="Output audience level (default: standard).",
 )
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["markdown", "latex", "pdf"]),
+    default="markdown",
+    help="Narrative format — latex/pdf post-process the written markdown "
+    "(requires urika[export] + pandoc; pdf also needs a TeX engine).",
+)
 def report(
     project: str,
     experiment_id: str | None,
     instructions: str,
     json_output: bool = False,
     audience: str | None = None,
+    output_format: str = "markdown",
 ) -> None:
     """Generate labbook reports."""
     from urika.core.labbook import (
@@ -171,6 +181,20 @@ def report(
                 else:
                     experiment_id = choice.split(" [")[0]
 
+    # v0.9.0 --format: latex/pdf post-process the markdown narrative
+    # the report agent writes below — the agent itself stays
+    # format-agnostic and the .md is always written first (and kept).
+    def _maybe_export(narrative_path: Path) -> None:
+        if output_format == "markdown":
+            return
+        exported = _export_written_artifact(narrative_path, output_format)
+        if not json_output:
+            click.echo(f"Exported: {exported}")
+
+    def _nothing_to_export() -> None:
+        if output_format != "markdown" and not json_output:
+            click.echo("Nothing to export — the report agent produced no narrative.")
+
     try:
         if experiment_id == "all":
             # Generate reports for each experiment
@@ -202,6 +226,7 @@ def report(
                     write_versioned(narrative_path, narrative + "\n")
                     if not json_output:
                         click.echo(f"Generated: {narrative_path}")
+                    _maybe_export(narrative_path)
             if json_output:
                 from urika.cli_helpers import output_json
 
@@ -247,6 +272,9 @@ def report(
                 narrative_path = project_path / "projectbook" / "narrative.md"
                 narrative_path.parent.mkdir(parents=True, exist_ok=True)
                 write_versioned(narrative_path, narrative + "\n")
+                _maybe_export(narrative_path)
+            else:
+                _nothing_to_export()
 
             if json_output:
                 from urika.cli_helpers import output_json
@@ -297,6 +325,9 @@ def report(
             )
             narrative_path.parent.mkdir(parents=True, exist_ok=True)
             write_versioned(narrative_path, narrative + "\n")
+            _maybe_export(narrative_path)
+        else:
+            _nothing_to_export()
 
         if json_output:
             from urika.cli_helpers import output_json
