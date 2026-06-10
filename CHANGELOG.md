@@ -130,6 +130,22 @@ providers, and a fix for the OpenAI $0-usage accounting bug.
 
 ### Fixed
 
+- **Turn-cap exhaustion no longer fails experiments on claude-agent-sdk
+  0.2.91+.** The SDK changed its trailing error to ``"Claude Code
+  returned an error result: Reached maximum number of turns (N)"``,
+  which escaped the adapter's deliberate max-turns-with-content
+  tolerance — routine turn-cap exhaustion surfaced as paused
+  experiments, failed finalizes, and raw tracebacks. The tolerance now
+  matches the new string, errors classify as a friendly ``max_turns``
+  category, and ``claude-agent-sdk`` is pinned to ``>=0.2.91,<0.3``.
+- **``urika present`` no longer claims success when no deck was
+  written.** Project-level presentations sent the agent the prompt
+  "Create a presentation for experiment ." (empty id), and the CLI
+  printed "Saved to projectbook/presentation/index.html"
+  unconditionally even when the agent produced no parseable slide
+  JSON. The project-level prompt is now explicit, and the CLI reports
+  the real output path on success or a clear error (non-zero exit) on
+  failure.
 - **OpenAI adapter recorded $0 for every run.** The openai-agents
   SDK's ``RunResult`` has no ``usage`` attribute — usage lives on the
   per-model-response objects in ``RunResult.raw_responses``. The
