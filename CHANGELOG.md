@@ -5,6 +5,198 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-06-10
+
+Research scoping + output polish. The interactive project builder now
+elicits genuine research intent (feasibility check, analysis-approach
+and interpretability preferences, hypotheses, constraints, co-drafted
+success criteria) and persists it on ``ProjectConfig``; the dashboard
+gains a full interactive builder wizard with the same loop; and the
+generated artifacts (labbook, README, findings.json) gain
+plain-language metric interpretations, run-id traceability, and
+novice-audience method explainers. Underneath, the v0.7.0 adapters got
+a hardening pass: shared error classification, stream timeouts on all
+providers, and a fix for the OpenAI $0-usage accounting bug.
+
+### Added
+
+- **Builder research-goal pipeline** — the interactive ``urika new``
+  loop (``urika.core.builder_loop.run_builder_loop``) now runs a
+  research-question **feasibility check** before the clarifying
+  questions (one agent call sanity-checks the question against the
+  scanned data; if it flags a concern, the user picks between "Keep my
+  question", "Use the refined question", or "Let me rephrase" —
+  strictly best-effort, any agent/parse failure skips the step), asks
+  fixed **analysis-approach** (statistical / predictive / exploratory /
+  mixed) and **interpretability** (interpretable / balanced /
+  max_performance) preference questions plus a free-text
+  **constraints** question (time/compute budget, regulatory
+  requirements), offers an agent-proposed **hypotheses decomposition**
+  (1–4 testable hypotheses; accept, skip, or write your own), and
+  **co-drafts the initial success criteria** with the user before the
+  final refine/accept menu (free-text changes land verbatim as a
+  ``user_amendments`` key the evaluator sees as-is). Everything
+  gathered is skippable — "done" / "skip" / empty leaves the
+  preference unset.
+
+- **Research-intent fields on ``ProjectConfig``** — four new optional
+  fields serialised under ``[project]`` in ``urika.toml``:
+  ``hypotheses`` (list of strings), ``analysis_approach``,
+  ``interpretability_level``, and ``constraints`` (string table).
+  Empty means the user skipped; every pre-v0.8.0 project loads
+  unchanged with the defaults. The builder seeds the advisor and
+  planning agent prompts from these fields so the first experiments
+  respect the user's stated approach.
+
+- **Dashboard interactive builder wizard** — the New Project modal's
+  "Interactive setup" checkbox now redirects into a full wizard page
+  driven by the same ``run_builder_loop`` core as the CLI: SSE-streamed
+  agent progress, Q&A turns (``POST /api/projects/{name}/builder/start``,
+  ``GET .../builder/stream``, ``POST .../builder/answer``,
+  ``POST .../builder/abort``), re-attach on page reload, and
+  abort-discards-the-project-to-trash semantics. The modal also gains
+  ``web_search`` and ``use_venv`` fields matching the CLI flags.
+
+- **Dashboard planning agent + git pull** — ``POST
+  /api/projects/{name}/experiments/{exp_id}/plan`` exposes the
+  planning agent from the experiment page (parity with
+  CLI/REPL/TUI ``plan``), and ``POST /api/projects/{name}/git/pull``
+  plus Init/Pull buttons on the Git tab round out the v0.6.0 surface.
+
+- **REPL/TUI ``/config <provider> --mode``** — ``/config
+  anthropic|openai|google [--mode api_key|subscription] [--no-verify]``
+  closes the v0.7.0 parity gap (provider auth modes shipped CLI-only).
+  The bare form ``/config anthropic`` shows the current mode instead
+  of requiring ``--mode`` like the CLI does.
+
+- **Plain-language metric interpretation** — task agents now write one
+  sentence per reported metric into the new
+  ``RunRecord.metric_interpretation`` dict (keyed by metric name,
+  comparing against the success criterion where one is defined), and
+  the labbook renders it inline: ``r2=0.74 — Explains 74% of variance
+  in the target; the criterion is ≥0.70, so this run meets it.``
+  Legacy records load with ``{}`` and render exactly as before.
+
+- **Audience-aware labbook + README** — when the project audience is
+  ``novice``, each method heading in experiment notes and the README
+  gains a one-line "What this method does" explainer from the new
+  ``urika.core.method_glossary`` (covers the 24 built-in tools, with
+  fuzzy matching for agent-written variants like
+  ``random_forest_tuned`` and library-name aliases).
+
+- **Run-id traceability** — task agents name every figure
+  ``<run_id>-<description>.png`` (e.g. ``run-002-confusion-matrix.png``)
+  and the labbook attaches figures to runs by run-id prefix first,
+  falling back to the old method-name substring heuristic only when no
+  run-id-tagged figure exists. ``findings.json`` entries in
+  ``final_methods`` must now carry ``run_id`` + ``experiment_id`` for
+  every quoted metric, and ``selected_figures`` entries carry the
+  producing ``run_id`` — every number in the final report traces back
+  to a ``progress.json`` run record.
+
+- **Evaluator ``assumptions_detail``** — the evaluator's
+  ``method_validity`` assessment now lists every assumption relevant
+  to the methods used (name / test / result / implication), including
+  assumptions that were **not** checked, and the report agent is
+  instructed to surface assumption checks and violations for every
+  statistical claim.
+
+- **Shared adapter error classification + stream timeouts** —
+  ``urika.agents.error_classify.classify_error`` (extracted verbatim
+  from the Claude adapter) now classifies errors identically across
+  Claude, OpenAI, and Google adapters into ``rate_limit`` / ``auth`` /
+  ``billing`` / ``transient`` / ``config`` / ``unknown``. OpenAI and
+  Google streams gain a silence timeout (``URIKA_AGENT_STREAM_TIMEOUT``
+  env var, default 600 s) so a hung SDK stream fails as ``transient``
+  instead of blocking forever, and their bash tool wrappers honor the
+  project's ``max_method_seconds`` cap via the shared
+  ``bash_timeout_seconds`` helper. OpenAI/Google bash subprocesses are
+  also spawned with a ``scrub_oauth_env``-cleaned environment.
+
+- **Corrupt-JSON tolerance** — new ``urika.core.json_io``
+  (``load_json_or_preserve``) gives the orchestrator session store,
+  leaderboard, and knowledge index the same crash-mid-write tolerance
+  ``advisor_memory`` has had since v0.4.2: a corrupt file is preserved
+  as ``<name>.corrupt-<unix-ts>`` (never clobbering an earlier copy)
+  and the caller gets a fresh fallback instead of a crash.
+
+- **Canonical best-run selection** — new
+  ``urika.evaluation.ranking.select_best_run`` is the single source of
+  truth for "best run". Pre-v0.8.0, four call sites (labbook,
+  progress, leaderboard, readme_generator) implemented their own logic
+  and could disagree in user-visible artifacts — the README naming one
+  best method while the labbook named another. All four now delegate
+  to ranking, sharing one ``LOWER_IS_BETTER`` direction table.
+
+### Fixed
+
+- **OpenAI adapter recorded $0 for every run.** The openai-agents
+  SDK's ``RunResult`` has no ``usage`` attribute — usage lives on the
+  per-model-response objects in ``RunResult.raw_responses``. The
+  adapter read ``getattr(result, "usage", None)`` and silently
+  recorded 0 tokens / $0.00 for every successful OpenAI run. Usage is
+  now summed across ``raw_responses``, and a real-imports structural
+  test pins the SDK surface so this class of drift fails CI.
+- **Suffix metrics ranked in the wrong direction.**
+  ``metric_direction`` is now suffix-aware: ``val_rmse`` / ``test_loss``
+  / ``mean_squared_error`` rank like their base metric (lower is
+  better) instead of defaulting to higher-is-better.
+- **Orchestrator pauses after 3 consecutive unparseable evaluations.**
+  Previously an evaluator that never emitted parseable JSON (prompt
+  drift, a model that won't emit JSON) burned silently to
+  ``max_turns`` with criteria "not met" every turn; the loop now
+  warns per-turn and pauses loudly at 3 so the user can intervene.
+- **Failed advisor criteria review now warns.** When the
+  pre-completion advisor review errors, the loop completes anyway but
+  surfaces a non-blocking warning instead of staying silent.
+- **``suggestions/initial.json`` flushed after the interactive
+  builder.** On the interactive ``urika new`` path, ``write_project()``
+  runs *before* the builder loop, so the advisor suggestions the loop
+  produced never reached disk — yet the post-loop "run the first
+  planned experiment" offer reads that file.
+  ``apply_research_intent()`` now flushes the captured suggestions
+  once, after the loop completes.
+- **Glob tool denies on unresolvable paths.** When path resolution
+  failed, the glob tool fell back to globbing the unresolved root
+  instead of honoring the ``_resolve_safe`` deny-on-unresolvable
+  contract (the v0.7.0 fix covered the resolution-error branch but not
+  the ``resolved is None`` branch).
+- **Vault keyring index written atomically with explicit utf-8.** The
+  KeyringBackend's name index used a bare ``write_text`` (platform
+  default encoding, non-atomic) — a crash mid-write could corrupt the
+  index, and non-ASCII secret names broke on Windows ``cp1252``.
+- **Dashboard origin guard compares hosts case-insensitively.**
+  Hostnames are case-insensitive (RFC 3986 §3.2.2); some clients send
+  an upper/mixed-case ``Origin`` host, which the CSRF origin check
+  rejected as a mismatch.
+
+### Changed
+
+- **Anthropic auth messaging refreshed for the June 15 2026
+  subscription credit-pool policy.** Both auth modes are now
+  first-class: ``api_key`` stays the default; ``subscription`` is the
+  opt-in path legalised by Anthropic's billing overhaul (Agent SDK
+  usage draws from a separate monthly Agent credit pool — $20 Pro /
+  $100 Max-5x / $200 Max-20x, no rollover, optional overage at API
+  rates). The enforcement layers are reframed accordingly: the
+  startup warning is suppressed in subscription mode, the pre-spawn
+  ``require_api_key`` refusal applies in ``api_key`` mode only, and
+  OAuth-token scrubbing is now **billing hygiene** in ``api_key`` mode
+  (a stray parent-shell OAuth token must not silently route charges to
+  the subscription credit pool) while subscription mode preserves the
+  OAuth-token family as the legitimate auth carrier. Nested-session
+  markers are always scrubbed regardless of mode.
+
+### Compatibility
+
+v0.8.0 is a strict superset of v0.7.0;
+``pip install --upgrade urika`` is sufficient. The four new
+``[project]`` keys in ``urika.toml`` are optional with empty defaults,
+``RunRecord.metric_interpretation`` defaults to ``{}`` for legacy
+records, and the figure-naming convention only affects newly generated
+artifacts — old method-name-matched figures still attach via the
+fallback heuristic.
+
 ## [0.7.0] – 2026-06-15 (target)
 
 Multi-provider model adapters. The same Urika project can now run
