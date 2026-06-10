@@ -270,6 +270,32 @@ if run_step_with_timeout "report" 600 urika report "$PROJ"; then
   verify_artifact "projectbook/results-summary.md" "$PROJ_DIR/projectbook/results-summary.md"
 fi
 
+# === 9b. urika report --format latex (v0.9.0, pandoc-gated) ==========
+# Exercises the pypandoc/pandoc export path end-to-end: re-runs the
+# report agent for the latest experiment and post-processes the
+# narrative it writes into labbook/narrative.tex. Gated on BOTH the
+# pypandoc package (the urika[export] extra) and a pandoc binary on
+# PATH — when either is absent the export path raises a deliberate
+# actionable ExportError (unit-tested in tests/test_core/test_export.py),
+# so the smoke skips cleanly rather than asserting the failure mode.
+step "9b. urika report --format latex (pandoc-gated)"
+if python3 -c "import pypandoc" >/dev/null 2>&1 \
+     && command -v pandoc >/dev/null 2>&1; then
+  if [[ -n "${LATEST_EXP:-}" ]]; then
+    if run_step_with_timeout "report latex" 600 \
+         urika report "$PROJ" --experiment "$LATEST_EXP" --format latex
+    then
+      verify_artifact_contains "narrative.tex is a standalone LaTeX doc" \
+        "$PROJ_DIR/experiments/$LATEST_EXP/labbook/narrative.tex" \
+        '\\documentclass'
+    fi
+  else
+    fail "report latex skipped — could not resolve experiment ID"
+  fi
+else
+  log "▸ SKIP: LaTeX export check (pypandoc and/or pandoc binary not available)"
+fi
+
 # === 10. urika present (project-level) ===============================
 step "10. urika present --experiment project"
 if run_step_with_timeout "present project" 900 \
@@ -309,6 +335,15 @@ if run_step_with_timeout "finalize" 1500 urika finalize "$PROJ"; then
   # — these are the only guard on the agent-written reproducibility
   # artifacts; existence alone proves nothing.
   verify_finalize_artifacts_real "finalize reproducibility artifacts" "$PROJ_DIR"
+  # v0.9.0 output-polish artifacts — written by finalize's best-effort
+  # hooks (orchestrator/finalize.py), so a silent hook failure only
+  # shows up here.
+  verify_notebook_valid "projectbook/reproduce.ipynb validates (nbformat)" \
+    "$PROJ_DIR/projectbook/reproduce.ipynb"
+  verify_notebook_executes "reproduce.ipynb executes on a fresh kernel" \
+    "$PROJ_DIR/projectbook/reproduce.ipynb" "$PROJ_DIR"
+  verify_file_nonempty "projectbook/METRICS.md" "$PROJ_DIR/projectbook/METRICS.md"
+  verify_model_cards_present ">=1 model card written" "$PROJ_DIR"
 fi
 
 # === 12. Cleanup (optional) ==========================================

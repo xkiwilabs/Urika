@@ -611,6 +611,90 @@ for f in finals:
   fi
 }
 
+# --- v0.9.0 output-polish artifact checks ---------------------------
+#
+# `urika finalize` now also writes, via best-effort hooks in
+# orchestrator/finalize.py (a hook failure logs a progress event but
+# never blocks finalize — so the smoke is the only end-to-end guard
+# that they actually fired):
+#   - projectbook/reproduce.ipynb   (core/notebook_export.py)
+#   - projectbook/METRICS.md        (core/metrics_glossary.py)
+#   - methods/<name>_model_card.md  (core/model_cards.py, one per
+#                                    findings.json final method)
+
+# Generic non-empty check (existence alone proves nothing for the
+# deterministic v0.9.0 artifacts either).
+verify_file_nonempty() {
+  local desc="$1"; local path="$2"
+  if [[ -s "$path" ]]; then ok "artifact non-empty: $desc"
+  else fail "artifact missing/empty: $desc ($path)"
+  fi
+}
+
+# reproduce.ipynb must exist AND be a structurally valid v4 notebook
+# per nbformat.validate. nbformat is a core urika dependency as of
+# v0.9.0 (pinned in pyproject), so no import gating is needed here.
+verify_notebook_valid() {
+  local desc="$1"; local path="$2"
+  if [[ ! -f "$path" ]]; then
+    fail "$desc — notebook missing: $path"
+    return 1
+  fi
+  NB_PATH="$path" _verify_py "$desc" '
+import os
+import nbformat
+nb = nbformat.read(os.environ["NB_PATH"], as_version=4)
+nbformat.validate(nb)
+'
+}
+
+# Execute reproduce.ipynb on a fresh kernel, from the project root
+# (the notebook setup cell documents that working directory — the
+# embedded method scripts use project-relative data paths). Gated on
+# nbclient importability: nbclient is NOT a urika dependency, so skip
+# cleanly when absent — unit tests + verify_notebook_valid still cover
+# structural validity, only end-to-end execution is deferred.
+verify_notebook_executes() {
+  local desc="$1"; local path="$2"; local workdir="$3"
+  if ! python3 -c "import nbclient" >/dev/null 2>&1; then
+    log "▸ SKIP: $desc (nbclient not installed)"
+    return 0
+  fi
+  if [[ ! -f "$path" ]]; then
+    fail "$desc — notebook missing: $path"
+    return 1
+  fi
+  NB_PATH="$path" NB_WORKDIR="$workdir" _verify_py "$desc" '
+import os
+import nbclient
+import nbformat
+nb = nbformat.read(os.environ["NB_PATH"], as_version=4)
+nbclient.NotebookClient(
+    nb,
+    timeout=600,
+    kernel_name="python3",
+    resources={"metadata": {"path": os.environ["NB_WORKDIR"]}},
+).execute()
+'
+}
+
+# At least one model card must have been written with real content.
+# (One card per findings.json final method; the smoke already asserts
+# findings.json names >=1 final method, so zero cards means the
+# finalize hook silently failed.)
+verify_model_cards_present() {
+  local desc="$1"; local proj_dir="$2"
+  local found=0 card
+  for card in "$proj_dir"/methods/*_model_card.md; do
+    [[ -s "$card" ]] && found=$((found+1))
+  done
+  if (( found >= 1 )); then
+    ok "$desc (${found} card(s))"
+  else
+    fail "$desc — no non-empty methods/*_model_card.md in $proj_dir"
+  fi
+}
+
 # Diagnostic figures must have been produced by the task agent. A run
 # that reports metrics but never draws a plot is "incomplete" per the
 # task_agent prompt — surface that.
