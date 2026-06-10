@@ -18,7 +18,7 @@ integration deselected. Multi-provider operator smoke verified
 Pandoc + model-card auto-generation). v0.8.0 (review-driven hardening
 + research-goal builder pipeline + output comprehensibility) SHIPPED
 2026-06-10; the roadmap was renumbered the same day (output polish →
-v0.9.0, templates + accessibility → v0.10.0).
+v0.9.0; v0.10.0 re-scoped to pre-1.0 hardening — templates cut).
 
 The active roadmap is **`dev/plans/2026-05-02-roadmap-to-v1.0.md`** —
 covers v0.4.0 → v1.0.0 with cut criteria, release contents, and
@@ -132,7 +132,7 @@ backup ships before the multi-provider work):
 | **v0.7.0** | Multi-provider model adapters (OpenAI Agents SDK + others) | SHIPPED 2026-06-08 |
 | **v0.8.0** | Review-driven hardening + research-goal builder pipeline + output comprehensibility | SHIPPED 2026-06-10 |
 | **v0.9.0** | Output polish — exports (PDF/LaTeX/Jupyter via Pandoc), model-card auto-generation | **NEXT** |
-| **v0.10.0** | UX polish — project templates + accessibility pass | planned |
+| **v0.10.0** | Pre-1.0 hardening — `urika upgrade` migration, builder-session persistence, agent-subprocess env isolation, accessibility pass (templates cut 2026-06-10) | planned |
 | **v1.0.0rc1** | Feature freeze + API audit + migration guide | planned |
 | **v1.0.0rc2** | RC feedback fixes only | planned |
 | **v1.0.0** | OFFICIAL RELEASE — API stability commitment | planned |

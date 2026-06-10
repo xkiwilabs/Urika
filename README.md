@@ -293,8 +293,9 @@ Planned features on the road to **v1.0.0**. Bug-fix hotfixes
 - Export the final pipeline as a runnable Jupyter notebook
 - Auto-generated model cards (assumptions, data, intended use, limitations) per finalised method
 
-**v0.10 — UX polish**
-- Project templates: `urika new --template behavioral|timeseries|imaging|nlp|ml-baseline` with seeded criteria, recommended tools, and sample knowledge — skips the interactive wizard for common research shapes
+**v0.10 — pre-1.0 hardening**
+- `urika upgrade`: one-command, idempotent migration of older projects to the current file formats
+- Dashboard builder-wizard sessions survive a server restart (resume scoping where you left off)
 - Dashboard accessibility pass: keyboard navigation, focus states, ARIA labels, light/dark contrast audit
 
 **v1.0 — first stable release**

@@ -1,9 +1,13 @@
 # Roadmap: v0.4.0 → v1.0.0
 
 **Authored:** 2026-05-02 (day v0.4.0 shipped to PyPI).
-**Last revised:** 2026-06-10 (renumbered after the review-driven
-hardening + research-scoping release consumed the v0.8.0 slot:
-output polish → v0.9.0, UX polish → v0.10.0, RC cuts from v0.10.0.
+**Last revised:** 2026-06-10 (two same-day revisions: renumbered
+after the review-driven hardening + research-scoping release consumed
+the v0.8.0 slot — output polish → v0.9.0, UX polish → v0.10.0; then
+**project templates cut entirely** (the v0.8.0 research-scoping
+builder covers the pain point they targeted) and v0.10.0 re-scoped to
+pre-1.0 hardening: `urika upgrade` migration, builder-session
+persistence, agent-subprocess env isolation, accessibility pass.
 Original 2026-05-02 revision compacted to the 8-week v1.0 target.)
 **Status:** Active — supersedes
 `dev/archive/plans/v0.4-shipped/2026-04-30-v0.4-roadmap.md`.
@@ -318,44 +322,71 @@ a paper, a poster, a thesis chapter.
    `methods/<method>_model_card.md` (Hugging Face template
    adapted) describing assumptions, data used, train/test split,
    intended use, and known limitations. ~1 day.
+4. **Uncertainty reporting** *(added 2026-06-10 — publication-ready
+   output must report uncertainty)* — `IMetric.compute_with_ci()`
+   (bootstrap default), `RunRecord` carries optional
+   `metrics_with_uncertainty`, reports/labbook render
+   "R²=0.75 [95% CI 0.72–0.78]". Builds directly on v0.8.0's
+   `metric_interpretation` + `assumptions_detail` plumbing. ~2 days.
+5. **`projectbook/METRICS.md` glossary** *(added 2026-06-10)* —
+   finalizer emits a per-project metrics glossary (range,
+   interpretation, observed values across runs), reusing
+   `core/method_glossary.py` patterns. ~0.5 day.
 
 **Cut criterion:** Every export format produces a valid file that
 opens in its target reader (Acrobat / Overleaf / JupyterLab).
 The Jupyter notebook runs end-to-end on a fresh kernel without
 errors. Model cards exist for every finalized method in a real
-test project.
+test project. At least one metric in the e2e smoke project renders
+with a confidence interval in report + labbook.
 
 ---
 
-## v0.10.0 — UX polish (target: ~5 days; was v0.9.0 pre-renumber)
+## v0.10.0 — pre-1.0 hardening + accessibility (target: ~1 week; re-scoped 2026-06-10)
 
-**Reordered + scope-changed 2026-05-04:** project templates moved
-here from v0.6 (they're UX polish, not blocking new use cases);
-i18n string-extraction stubs cut entirely (no demand surfaced;
-defer to v1.x if a translation contributor appears). Last release
-before feature freeze. The system is desktop-finished; mobile
-responsiveness is *not* a 1.0 goal (the mobile use case is "check
-on a long-running run while away from my desk", which is already
-covered by Slack/Telegram notifications shipped in v0.3).
+**Re-scoped 2026-06-10:** project templates CUT (see "Cut from
+1.0" below — the v0.8.0 research-scoping builder already solves
+the "don't make me answer 10 questions" pain they targeted, with
+real elicitation instead of canned defaults). The freed time goes
+to the work v1.0's own promises require but nothing had scheduled,
+plus the loose ends the v0.8.0 release validation surfaced. Last
+release before feature freeze. i18n stubs remain cut (2026-05-04);
+mobile responsiveness remains a non-goal.
 
 **Ships:**
 
-1. **Project templates** — `urika new --template
-   behavioral|timeseries|imaging|nlp|ml-baseline` with seeded
-   criteria, recommended tools, sample knowledge entries, and a
-   `data-description.md` skeleton. Skips the interactive wizard
-   for common research shapes — instead of asking the user 10
-   questions, the template applies sensible defaults for that
-   domain (e.g., behavioural defaults to ANOVA + post-hoc + effect
-   sizes; timeseries defaults to RMSE on a held-out future window).
-   ~3 days.
-2. **Accessibility pass** — keyboard navigation through every
+1. **`urika upgrade`** — idempotent auto-migration of v0.x
+   projects (urika.toml, criteria.json, methods.json,
+   progress.json, findings.json, memory). **Required by v1.0
+   promise 2** ("v0.x projects upgrade via `urika upgrade`") and
+   must land before the rc1 feature freeze. Seed the migration
+   corpus from the existing `tests/test_smoke/test_backwards_compat.py`
+   fixtures (v0.3.0/v0.3.x/v0.4.0 trees). ~2.5 days.
+2. **Builder-session persistence** — dashboard wizard Q&A
+   sessions currently live in memory; a server restart drops the
+   transcript mid-scoping. Persist to `<project>/.urika/builder/`
+   so the wizard's existing re-attach path survives restarts.
+   ~1.5 days.
+3. **Agent-subprocess environment isolation** — the spawned agent
+   CLI currently inherits the operator's global Claude Code
+   plugins/hooks (observed 2026-06-10: a SessionStart hook leaked
+   skill instructions into a task-agent transcript and burned
+   turns). Scrub/neutralise plugin + hook context for agent
+   workers the same way nested-session markers are scrubbed.
+   ~1 day.
+4. **Accessibility pass** — keyboard navigation through every
    form, focus states, ARIA labels on icon-only buttons,
    colour-contrast audit of light + dark themes. ~2 days.
+5. **CI housekeeping** — migrate off the deprecated
+   starlette/httpx TestClient shim before it breaks CI. ~0.5 day.
 
-**Cut criterion:** All 5 templates produce valid project trees
-that pass `urika status` and `urika inspect` without warnings.
-axe-core / WAVE accessibility audit returns zero P0/P1 issues.
+**Cut criterion:** A real v0.4-era project tree upgrades via
+`urika upgrade` and passes `urika status` / `inspect` / `run`
+without warnings; running `urika upgrade` twice is a no-op. A
+dashboard-wizard session survives a server restart and completes.
+An agent-worker transcript on a plugin-laden operator machine
+contains zero plugin/hook content. axe-core / WAVE audit returns
+zero P0/P1 issues.
 
 **Explicitly NOT in v1.0:** mobile-responsive dashboard. The phone
 use case is the notification (Slack/Telegram inline-keyboard
@@ -382,8 +413,11 @@ merge until v1.0.0 ships.
 - **CHANGELOG → migration guide** — extract every "Fixed" /
   "Added" / "Changed" entry from v0.4.0 forward into a
   user-facing upgrade guide.
-- **Test matrix expansion** — pytest on Linux + macOS + Windows
-  via GitHub Actions, Python 3.11 + 3.12.
+- **Test matrix verification** — the 6-job Linux/macOS/Windows ×
+  3.11/3.12 matrix has been green since v0.4.3; rc1 verifies it
+  against the rc tag and adds the real-API e2e smoke as a
+  release-gated job (the v0.8.0 release validation showed the
+  cheap smoke catches real bugs the unit suite can't).
 
 **Cut criterion:** Tester pool (4–6 people) installs rc1 from
 PyPI, runs through the getting-started + 3-experiment flow on
@@ -436,6 +470,16 @@ breaking changes go in v2.x with a deprecation cycle.
 
 Documented here so they don't accidentally creep back in:
 
+- **Project templates** (`urika new --template behavioral|...`).
+  Cut 2026-06-10: the v0.8.0 research-scoping builder (feasibility
+  check, preference/hypotheses/constraints elicitation, criteria
+  co-drafting) solves the same "scope my project quickly and
+  sensibly" problem with real elicitation rather than canned
+  domain defaults — and the canned defaults risked anchoring users
+  to the wrong analysis. Revisit post-1.0 only if users ask for
+  one-command non-interactive starts; the likely v1.1 shape is
+  saved answer-profiles for the existing builder, not static
+  templates.
 - **Plugin / extension system** (`urika.tools` / `urika.agents`
   entry points). API commitment problem — once you advertise a
   plugin API you can't break it without v2. Wait for real-world
@@ -482,16 +526,22 @@ Week 1.5   v0.5.0    memory phases 2–4            SHIPPED ✅ 2026-05-31
 Week 3     v0.6.0    GitHub auto-backup           SHIPPED ✅ 2026-05-31 (order swapped 05-04)
 Week 4     v0.7.0    multi-provider adapters      SHIPPED ✅ 2026-06-08
 Week 5     v0.8.0    review hardening + scoping   SHIPPED ✅ 2026-06-10 (unplanned insertion)
-Week 5.5   v0.9.0    PDF/LaTeX/Jupyter export + model cards   ← NEXT
-Week 6.5   v0.10.0   templates + accessibility
-Week 7     v1.0.0rc1 feature freeze + API audit
-Week 7.3   v1.0.0rc2 RC feedback fixes only
-Week 7.5   v1.0.0    OFFICIAL RELEASE 🎉
+Week 5.5   v0.9.0    PDF/LaTeX/Jupyter export + model cards + CIs   ← NEXT (~2 wks)
+Week 7.5   v0.10.0   urika upgrade + wizard persistence + env isolation + a11y (~1 wk)
+Week 8.5   v1.0.0rc1 feature freeze + API audit + migration guide
+Week 9     v1.0.0rc2 RC feedback fixes only
+Week 9.5   v1.0.0    OFFICIAL RELEASE 🎉
 ```
 
-**Total: ~33 dev-days over ~7.5 weeks** (~4–5 dev-days per week
-sustained). Mobile dashboard explicitly cut — the phone use case
-is the notification, not the browser. v0.7 includes optional
+(Weeks re-baselined 2026-06-10 from the v0.8.0 ship date; at the
+~4–5 dev-days/week cadence that puts v1.0.0 around mid-July 2026.
+Templates cut; `urika upgrade` + pre-1.0 hardening take the slot.)
+
+**Remaining from v0.8.0: ~18 dev-days over ~4 weeks** (~4–5
+dev-days per week sustained). Mobile dashboard and project
+templates explicitly cut — the phone use case is the notification,
+not the browser, and the scoping use case is the v0.8.0 builder,
+not canned defaults. v0.6 includes optional
 `--create` shell-out to the `gh` CLI for one-command repo
 creation; Urika never manages GitHub credentials directly.
 
