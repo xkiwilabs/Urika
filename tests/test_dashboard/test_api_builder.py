@@ -444,3 +444,42 @@ class TestBuilderEndpointsAuth:
             headers={"Authorization": "Bearer secret-token"},
         )
         assert r.status_code == 404
+
+
+# ── 3. Wizard page markup ──────────────────────────────────────────
+
+
+class TestBuilderWizardPage:
+    def test_wizard_page_renders_qa_panel_markup(
+        self, client_with_projects: TestClient
+    ) -> None:
+        """``GET /projects/{name}/builder`` renders the SSE-driven Q&A
+        panel: event log, answer composer (button row + free-text),
+        abort control, and the start/stream/answer endpoint wiring."""
+        r = client_with_projects.get("/projects/alpha/builder")
+        assert r.status_code == 200
+        body = r.text
+        for element_id in (
+            "builder-log",
+            "builder-composer",
+            "builder-question-text",
+            "builder-choices",
+            "builder-freetext-row",
+            "builder-answer-input",
+            "builder-abort",
+            "builder-completion",
+        ):
+            assert f'id="{element_id}"' in body, f"missing wizard element: {element_id}"
+        for endpoint in (
+            "/builder/start",
+            "/builder/stream",
+            "/builder/answer",
+            "/builder/abort",
+        ):
+            assert endpoint in body, f"wizard JS must call {endpoint}"
+        assert "EventSource" in body
+
+    def test_wizard_page_unknown_project_404(
+        self, client_with_projects: TestClient
+    ) -> None:
+        assert client_with_projects.get("/projects/nope/builder").status_code == 404

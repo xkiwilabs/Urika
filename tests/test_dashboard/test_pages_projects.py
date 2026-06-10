@@ -64,6 +64,25 @@ def test_projects_list_has_new_project_button_and_modal(
     assert ">expert<" in body
 
 
+def test_new_project_modal_has_wizard_and_cli_parity_fields(
+    client_with_projects: TestClient,
+):
+    """The modal carries the interactive-wizard opt-in (checked by
+    default — parity with ``urika new``'s TTY default) plus the
+    web_search / use_venv checkboxes the CLI prompts for."""
+    body = client_with_projects.get("/projects").text
+    for field_name in ("interactive", "web_search", "use_venv"):
+        assert f'name="{field_name}"' in body, f"missing form field: {field_name}"
+    # Interactive setup defaults ON, mirroring the CLI's TTY behavior
+    # (the agent scoping loop runs by default in ``urika new``).
+    assert 'id="np-interactive"' in body
+    import re
+
+    assert re.search(r'name="interactive"[^>]*checked', body), (
+        "interactive checkbox should default to checked"
+    )
+
+
 def test_projects_list_renders_search_and_sort(client_with_projects: TestClient):
     r = client_with_projects.get("/projects")
     body = r.text

@@ -57,6 +57,9 @@ _KNOWN_AGENTS = {
 }
 _VALID_ENDPOINTS = {"open", "private"}  # 'inherit' means "no override".
 
+# Checkbox / boolean form-field vocabulary.
+_TRUTHY = {"true", "1", "yes", "on"}
+
 # Finalize CLI accepts a wider audience set than core/models VALID_AUDIENCES.
 # See ``src/urika/cli/agents_finalize.py`` --audience choices.
 _FINALIZE_AUDIENCES = {"novice", "standard", "expert"}
@@ -101,9 +104,12 @@ async def api_create_project(request: Request):
     initial criteria, and regenerate README.md.
 
     The interactive scoping agent loop that ``urika new`` runs in a
-    TTY is deliberately skipped — there's no stdin in an HTTP handler.
-    Free-text builder instructions are stashed to disk for a future
-    background-builder integration.
+    TTY is not run inline — there's no stdin in an HTTP handler.
+    Instead, when the modal's ``interactive`` box is ticked the
+    response redirects to ``/projects/{name}/builder``, whose wizard
+    drives the same loop via the builder/start|stream|answer|abort
+    endpoints below. Free-text builder instructions are stashed to
+    disk alongside.
     """
     body = await request.form()
     name = (body.get("name") or "").strip()
@@ -257,6 +263,38 @@ async def api_create_project(request: Request):
                 ep_block["api_key_env"] = chosen_endpoint["api_key_env"]
         _write_toml(toml_path, data)
 
+    # web_search / use_venv — cross-surface parity with the CLI's
+    # interactive prompts (``urika new`` asks both; see
+    # ``cli/project_new.py``). Semantics mirror
+    # ``ProjectBuilder.write_project``:
+    #   * ``[preferences].web_search`` is ALWAYS written (False when
+    #     the box is unchecked), and forced False in private mode —
+    #     the CLI never even asks in private mode.
+    #   * ``[environment].venv = true`` is only written when the box
+    #     is ticked, and the project venv is created alongside.
+    web_search = (body.get("web_search") or "").strip().lower() in _TRUTHY
+    if privacy_mode == "private":
+        web_search = False
+    use_venv = (body.get("use_venv") or "").strip().lower() in _TRUTHY
+    toml_path = project_dir / "urika.toml"
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+    data.setdefault("preferences", {})["web_search"] = web_search
+    if use_venv:
+        data.setdefault("environment", {})["venv"] = True
+    _write_toml(toml_path, data)
+    if use_venv:
+        # Best-effort: a venv-creation failure must not orphan the
+        # already-written project (same non-fatal posture as the
+        # GitHub auto-create below). The [environment].venv flag is
+        # already persisted, so ``urika venv create`` can retry.
+        try:
+            from urika.core.venv import create_project_venv
+
+            create_project_venv(project_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Project venv creation failed for %s: %s", name, exc)
+
     # Seed the new project's [notifications].channels list from the
     # global per-channel ``auto_enable`` flags. Channels with
     # ``auto_enable=true`` start ON for new projects; the rest stay
@@ -336,9 +374,19 @@ async def api_create_project(request: Request):
             if result.install_hint:
                 github_result["install_hint"] = result.install_hint
 
+    # Interactive setup: when the modal's "Run interactive setup"
+    # box is ticked, land the user on the wizard page
+    # (``/projects/{name}/builder``) instead of the project home. The
+    # wizard runs the same builder agent Q&A loop ``urika new`` does
+    # in a TTY (see the builder/start|stream|answer|abort endpoints
+    # below).
+    interactive = (body.get("interactive") or "").strip().lower() in _TRUTHY
     if request.headers.get("hx-request") == "true":
-        return Response(status_code=201, headers={"HX-Redirect": f"/projects/{name}"})
+        target = f"/projects/{name}/builder" if interactive else f"/projects/{name}"
+        return Response(status_code=201, headers={"HX-Redirect": target})
     payload: dict[str, Any] = {"name": name, "path": str(project_dir)}
+    if interactive:
+        payload["builder_url"] = f"/projects/{name}/builder"
     if github_result is not None:
         payload["github"] = github_result
     return JSONResponse(payload, status_code=201)

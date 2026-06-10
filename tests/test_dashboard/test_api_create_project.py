@@ -784,6 +784,190 @@ def test_create_project_with_blank_data_paths_string(create_client, tmp_path):
     assert (proj / "README.md").exists()
 
 
+# ---- web_search / use_venv (CLI parity) -------------------------------------
+
+
+def test_create_project_web_search_checked_lands_in_preferences(create_client):
+    """``web_search=true`` writes ``[preferences].web_search = true`` —
+    same key ``ProjectBuilder.write_project`` writes for ``urika new``."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "ws-on",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "web_search": "true",
+        },
+    )
+    assert r.status_code == 201, r.text
+    proj_toml = tomllib.loads(
+        (projects_root / "ws-on" / "urika.toml").read_text(encoding="utf-8")
+    )
+    assert proj_toml["preferences"]["web_search"] is True
+
+
+def test_create_project_web_search_default_false_is_written(create_client):
+    """The CLI path ALWAYS writes the key (False when declined); the
+    dashboard must match so downstream readers see an explicit value."""
+    client, projects_root = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "ws-off",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+        },
+    )
+    assert r.status_code == 201
+    proj_toml = tomllib.loads(
+        (projects_root / "ws-off" / "urika.toml").read_text(encoding="utf-8")
+    )
+    assert proj_toml["preferences"]["web_search"] is False
+
+
+def test_create_project_private_mode_forces_web_search_off(tmp_path: Path, monkeypatch):
+    """CLI parity: in private mode ``urika new`` never even asks the
+    web-search question (forced False). A ticked box must not leak
+    web search into a private project."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text("{}")
+    projects_root = tmp_path / "projects"
+    projects_root.mkdir()
+    (home / "settings.toml").write_text(
+        f"projects_root = '{projects_root}'\n"
+        "[privacy.endpoints.private]\n"
+        'base_url = "http://localhost:11434"\n',
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "ws-priv",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "privacy_mode": "private",
+            "web_search": "true",
+        },
+    )
+    assert r.status_code == 201, r.text
+    proj_toml = tomllib.loads(
+        (projects_root / "ws-priv" / "urika.toml").read_text(encoding="utf-8")
+    )
+    assert proj_toml["preferences"]["web_search"] is False
+
+
+def test_create_project_use_venv_writes_flag_and_creates_venv(
+    create_client, monkeypatch
+):
+    """``use_venv=true`` writes ``[environment].venv = true`` and calls
+    ``create_project_venv`` — mirroring ``ProjectBuilder.write_project``."""
+    client, projects_root = create_client
+    created: list[Path] = []
+    monkeypatch.setattr(
+        "urika.core.venv.create_project_venv", lambda p: created.append(p) or p
+    )
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "venv-on",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "use_venv": "true",
+        },
+    )
+    assert r.status_code == 201, r.text
+    proj_toml = tomllib.loads(
+        (projects_root / "venv-on" / "urika.toml").read_text(encoding="utf-8")
+    )
+    assert proj_toml["environment"]["venv"] is True
+    assert created == [projects_root / "venv-on"]
+
+
+def test_create_project_no_use_venv_no_environment_block(create_client, monkeypatch):
+    client, projects_root = create_client
+    created: list[Path] = []
+    monkeypatch.setattr(
+        "urika.core.venv.create_project_venv", lambda p: created.append(p) or p
+    )
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "venv-off",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+        },
+    )
+    assert r.status_code == 201
+    proj_toml = tomllib.loads(
+        (projects_root / "venv-off" / "urika.toml").read_text(encoding="utf-8")
+    )
+    assert "environment" not in proj_toml
+    assert created == []
+
+
+# ---- Interactive wizard handoff ---------------------------------------------
+
+
+def test_create_project_interactive_htmx_redirects_to_wizard(create_client):
+    """With ``interactive=true``, the HTMX response redirects to the
+    builder wizard page instead of the project home."""
+    client, _ = create_client
+    r = client.post(
+        "/api/projects",
+        headers={"hx-request": "true"},
+        data={
+            "name": "wiz-proj",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "interactive": "true",
+        },
+    )
+    assert r.status_code == 201
+    assert r.headers.get("hx-redirect") == "/projects/wiz-proj/builder"
+
+
+def test_create_project_non_interactive_htmx_redirects_to_home(create_client):
+    client, _ = create_client
+    r = client.post(
+        "/api/projects",
+        headers={"hx-request": "true"},
+        data={
+            "name": "plain-proj",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+        },
+    )
+    assert r.status_code == 201
+    assert r.headers.get("hx-redirect") == "/projects/plain-proj"
+
+
+def test_create_project_interactive_json_carries_builder_url(create_client):
+    client, _ = create_client
+    r = client.post(
+        "/api/projects",
+        data={
+            "name": "wiz-json",
+            "question": "Q?",
+            "mode": "exploratory",
+            "audience": "expert",
+            "interactive": "true",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["builder_url"] == "/projects/wiz-json/builder"
+
+
 def test_create_project_duplicate_name_returns_409(create_client):
     """A second create with the same name fails after the registry sees it."""
     client, _ = create_client
