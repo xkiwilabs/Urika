@@ -11,7 +11,9 @@ in ``agents/roles/prompts/finalizer_system.md`` (venv → activate →
 it end to end, asserting it exits 0 and the method produced its output.
 
 Catches the day the reproduce.sh template (or the assumption that a
-``final_*.py`` is runnable as ``python methods/final_x.py --data ...``)
+``final_*.py`` is runnable as ``python methods/final_x.py`` with zero
+arguments — flag defaults point at the project data, per the prompt's
+zero-argument requirement)
 breaks. Marked ``integration`` because it spawns a subprocess and
 builds a venv (~few seconds); uses a stdlib-only method + an empty
 requirements.txt so it needs no network.
@@ -53,7 +55,7 @@ from pathlib import Path
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", required=True)
+    ap.add_argument("--data", default="data/x.csv")
     args = ap.parse_args()
     rows = list(csv.DictReader(open(args.data)))
     ys = [float(r["y"]) for r in rows]
@@ -97,8 +99,8 @@ def test_finalizer_reproduce_sh_template_runs(tmp_path: Path) -> None:
     # "one line per final method" placeholder for our one method.
     body = _reproduce_sh_template_body()
     body = body.replace(
-        "# python methods/final_<name>.py --data data/...",
-        "python methods/final_demo.py --data data/x.csv",
+        "# python methods/final_<name>.py",
+        "python methods/final_demo.py",
     )
     (proj / "reproduce.sh").write_text(body)
 

@@ -6,9 +6,10 @@ finalizer already wrote. Core contracts pinned here:
 
 - structure: title md cell (question + answer), setup code cell
   (commented ``%pip install -r requirements.txt`` + sys.path note),
-  one md cell + one code cell per final method (the code cell is the
-  LITERAL script file contents), closing md cell pointing at
-  METRICS.md and the model cards;
+  one md cell + one code cell per final method (the code cell is an
+  argv-neutralizing ``sys.argv`` preamble followed by the LITERAL
+  script file contents), closing md cell pointing at METRICS.md and
+  the model cards;
 - a missing script file degrades to an md note WITHOUT a code cell —
   the generator never invents code;
 - the notebook passes ``nbformat.validate`` before it is written and
@@ -32,7 +33,28 @@ import pytest
 
 from urika.core.notebook_export import write_reproduce_notebook
 
-_SCRIPT = "import math\n\nprint('r2 =', round(0.41 * math.e / math.e, 2))\n"
+# Mirrors real finalizer output: an argparse CLI script whose --data
+# flag has a working default relative to the project root. Inside a
+# Jupyter kernel argparse would otherwise parse ipykernel's own argv
+# (-f <connection file> ...) and die with SystemExit: 2 — the embedded
+# cell's sys.argv preamble is what makes this runnable.
+_SCRIPT = '''\
+"""Synthetic stand-in for a finalizer standalone method script."""
+
+import argparse
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data", default="data/xy.csv")
+    args = parser.parse_args()
+    with open(args.data, encoding="utf-8") as fh:
+        print("r2 =", fh.read().strip())
+
+
+if __name__ == "__main__":
+    main()
+'''
 
 _FINDINGS = {
     "question": "Does X predict Y?",
@@ -84,6 +106,8 @@ def project_dir(tmp_path: Path) -> Path:
     )
     (proj / "methods").mkdir()
     (proj / "methods" / "final_ridge.py").write_text(_SCRIPT, encoding="utf-8")
+    (proj / "data").mkdir()
+    (proj / "data" / "xy.csv").write_text("0.41\n", encoding="utf-8")
     return proj
 
 
@@ -133,11 +157,30 @@ class TestWriteReproduceNotebook:
         )
         assert "Ridge regression predicts Y from X" in method_md
 
-    def test_method_code_cell_is_literal_script(self, project_dir: Path) -> None:
+    def test_method_code_cell_ends_with_literal_script(self, project_dir: Path) -> None:
         nb = _read(write_reproduce_notebook(project_dir))
         code_sources = [c.source for c in nb.cells if c.cell_type == "code"]
-        assert any(_SCRIPT.strip() == s.strip() for s in code_sources), (
-            "the method code cell must carry the script file contents verbatim"
+        assert any(s.strip().endswith(_SCRIPT.strip()) for s in code_sources), (
+            "the method code cell must carry the script file contents verbatim "
+            "(below the argv preamble)"
+        )
+
+    def test_method_code_cell_starts_with_argv_preamble(
+        self, project_dir: Path
+    ) -> None:
+        """The embedded cell must neutralize Jupyter's own argv before
+        the script body runs — real finalizer scripts are argparse CLIs
+        and would otherwise exit with SystemExit: 2 inside ipykernel."""
+        nb = _read(write_reproduce_notebook(project_dir))
+        cell = next(
+            c.source
+            for c in nb.cells
+            if c.cell_type == "code" and _SCRIPT.strip() in c.source
+        )
+        preamble, _, _ = cell.partition(_SCRIPT.strip())
+        assert "import sys" in preamble
+        assert 'sys.argv = ["final_ridge.py"]' in preamble, (
+            "sys.argv must be reset to just the script's own filename"
         )
 
     def test_missing_script_noted_without_code_cell(self, project_dir: Path) -> None:
@@ -191,7 +234,12 @@ class TestWriteReproduceNotebook:
 @pytest.mark.integration
 def test_notebook_executes_end_to_end(project_dir: Path) -> None:
     """Execution check on a fresh kernel — gated on nbclient (installed
-    in the dev env per the v0.9.0 plan; skipped cleanly elsewhere)."""
+    in the dev env per the v0.9.0 plan; skipped cleanly elsewhere).
+
+    The embedded script is an argparse CLI with a ``__main__`` guard,
+    mirroring real finalizer output. Without the cell's sys.argv
+    preamble argparse would parse ipykernel's argv and raise
+    SystemExit: 2, so this test fails if the preamble is dropped."""
     nbclient = pytest.importorskip("nbclient")
     pytest.importorskip("ipykernel")
 

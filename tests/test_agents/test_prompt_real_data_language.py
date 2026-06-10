@@ -46,6 +46,23 @@ def test_finalizer_prompt_says_real_data() -> None:
     )
 
 
+def test_finalizer_prompt_requires_zero_argument_scripts() -> None:
+    """reproduce.sh and reproduce.ipynb execute the final method
+    scripts WITHOUT arguments, so every final_*.py must run with zero
+    command-line arguments (flags allowed, but each needs a working
+    default pointing at the project's real data)."""
+    body = _read("finalizer").lower()
+    assert "zero command-line arguments" in body
+    assert "working default" in body
+    assert "without arguments" in body, (
+        "the prompt must say WHY: reproduce.sh / reproduce.ipynb run "
+        "the scripts without arguments"
+    )
+    assert "--data <path>" not in body, (
+        "the prompt must not model an invocation that requires arguments"
+    )
+
+
 # ── report_agent ───────────────────────────────────────────────
 
 

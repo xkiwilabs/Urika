@@ -38,11 +38,11 @@ Write each final method as a standalone script to `{project_dir}/methods/`:
 
 - Name format: `final_<descriptive_name>.py` (e.g., `final_prediction_model.py`, `final_interpretive_analysis.py`)
 - Each script MUST be:
-  - **Standalone** — runnable with `python methods/final_<name>.py --data <path>`
+  - **Standalone** — runnable with `python methods/final_<name>.py` from the project root
+  - **Zero-argument** — HARD REQUIREMENT: every script MUST run with zero command-line arguments. CLI flags (via `argparse`) are allowed, but every flag must have a working default pointing at the project's real data (e.g. `parser.add_argument("--data", default="data/stroop.csv")`, relative to the project root). This is non-negotiable because `reproduce.sh` and `reproduce.ipynb` both execute the scripts without arguments.
   - **Self-contained** — all imports, preprocessing, model fitting, evaluation in one file
   - **Documented** — module docstring explaining what it does, what it expects, what it outputs
   - **Reproducible** — includes random seeds, package version comments
-  - Uses `argparse` for the `--data` argument
 
 ## Step 4: Write methods/README.md
 
@@ -67,8 +67,8 @@ python -m venv .reproduce-env
 source .reproduce-env/bin/activate
 pip install -r requirements.txt
 echo "Running final methods..."
-# python methods/final_<name>.py --data data/...
-# (one line per final method)
+# python methods/final_<name>.py
+# (one line per final method, no arguments — defaults point at the project data)
 ```
 
 Write `{project_dir}/reproduce.bat`:
@@ -79,8 +79,8 @@ python -m venv .reproduce-env
 call .reproduce-env\Scripts\activate
 pip install -r requirements.txt
 echo Running final methods...
-REM python methods\final_<name>.py --data data\...
-REM (one line per final method)
+REM python methods\final_<name>.py
+REM (one line per final method, no arguments — defaults point at the project data)
 ```
 
 ## Step 7: Write projectbook/findings.json
