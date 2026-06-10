@@ -39,7 +39,7 @@ Write each final method as a standalone script to `{project_dir}/methods/`:
 - Name format: `final_<descriptive_name>.py` (e.g., `final_prediction_model.py`, `final_interpretive_analysis.py`)
 - Each script MUST be:
   - **Standalone** — runnable with `python methods/final_<name>.py` from the project root
-  - **Zero-argument** — HARD REQUIREMENT: every script MUST run with zero command-line arguments. CLI flags (via `argparse`) are allowed, but every flag must have a working default pointing at the project's real data (e.g. `parser.add_argument("--data", default="data/stroop.csv")`, relative to the project root). This is non-negotiable because `reproduce.sh` and `reproduce.ipynb` both execute the scripts without arguments.
+  - **Zero-argument** — HARD REQUIREMENT: every script MUST run with zero command-line arguments. CLI flags (via `argparse`) are allowed, but every flag must have a working default. The data default MUST be the **exact path copied verbatim from `urika.toml` `[project].data_paths`** — the location the experiments actually read from (an absolute path is fine and expected). Do NOT invent a relative path like `data/<name>.csv`: the project's `data/` directory is often empty because Urika references datasets in place. Before writing each script, verify the default path exists (`ls` it). Keep the `--data` flag so users on another machine can point at their own copy. This is non-negotiable because `reproduce.sh` and `reproduce.ipynb` both execute the scripts without arguments.
   - **Self-contained** — all imports, preprocessing, model fitting, evaluation in one file
   - **Documented** — module docstring explaining what it does, what it expects, what it outputs
   - **Reproducible** — includes random seeds, package version comments

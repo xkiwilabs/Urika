@@ -61,6 +61,18 @@ def test_finalizer_prompt_requires_zero_argument_scripts() -> None:
     assert "--data <path>" not in body, (
         "the prompt must not model an invocation that requires arguments"
     )
+    # The 2026-06-11 smoke caught the finalizer inventing a relative
+    # data/<name>.csv default (copied from the prompt's own old
+    # example) when the project's data/ dir was empty — datasets are
+    # referenced in place via urika.toml data_paths, so the default
+    # must be that exact path.
+    assert "data_paths" in body and "verbatim" in body, (
+        "data defaults must be copied verbatim from urika.toml "
+        "[project].data_paths, not invented as relative data/ paths"
+    )
+    assert 'default="data/stroop.csv"' not in body, (
+        "the prompt must not model an invented relative data path"
+    )
 
 
 # ── report_agent ───────────────────────────────────────────────
