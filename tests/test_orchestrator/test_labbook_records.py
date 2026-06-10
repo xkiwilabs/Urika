@@ -115,3 +115,135 @@ def test_read_labbook_ignores_non_run_files(tmp_path):
 
     records = read_labbook_run_records(exp)
     assert [r.run_id for r in records] == ["r1"]
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0.x: artifacts/ fallback scan (durable run-record contract).
+#
+# The 2026-06-10 real-API smoke showed a Haiku task agent writing perfectly
+# valid run records to ``artifacts/run-001-runrecord.json`` (a reasonable
+# reading of "Outputs go to artifacts/") with no inline JSON block and no
+# labbook files — 0 runs recorded despite 3 method scripts + 22 figures on
+# disk. ``labbook/`` stays the documented-primary location; the artifacts/
+# scan is a tolerance for agents that put records there.
+# ---------------------------------------------------------------------------
+
+
+def _seed_artifacts(exp_dir: Path, name: str, record: dict) -> Path:
+    (exp_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+    path = exp_dir / "artifacts" / name
+    path.write_text(json.dumps(record), encoding="utf-8")
+    return path
+
+
+def test_read_disk_discovers_artifacts_runrecord(tmp_path):
+    """A valid run record under artifacts/ is discovered."""
+    from urika.orchestrator.parsing import read_disk_run_records
+
+    exp = tmp_path / "exp"
+    _seed_artifacts(
+        exp,
+        "run-001-runrecord.json",
+        {
+            "run_id": "run-001",
+            "method": "ridge-regression",
+            "params": {"alpha": 1.0},
+            "metrics": {"r2": 0.74},
+        },
+    )
+
+    records = read_disk_run_records(exp)
+    assert [r.run_id for r in records] == ["run-001"]
+    assert records[0].method == "ridge-regression"
+    assert records[0].metrics == {"r2": 0.74}
+
+
+def test_read_disk_ignores_artifacts_files_without_required_keys(tmp_path):
+    """An agent's own analysis output (e.g. run-002-results.json) that lacks
+    run_id/method/metrics is NOT mistaken for a run record."""
+    from urika.orchestrator.parsing import read_disk_run_records
+
+    exp = tmp_path / "exp"
+    _seed_artifacts(
+        exp,
+        "run-002-results.json",
+        {"coefficients": [0.1, 0.2], "r2": 0.74, "n_obs": 1200},
+    )
+    _seed_artifacts(
+        exp,
+        "run-001-runrecord.json",
+        {"run_id": "run-001", "method": "m", "metrics": {"r2": 0.7}},
+    )
+
+    records = read_disk_run_records(exp)
+    assert [r.run_id for r in records] == ["run-001"]
+
+
+def test_read_disk_dedup_same_run_id_labbook_wins(tmp_path):
+    """When the same run_id appears in both labbook/ and artifacts/, the
+    labbook copy (documented-primary location) wins."""
+    from urika.orchestrator.parsing import read_disk_run_records
+
+    exp = tmp_path / "exp"
+    _seed(
+        exp,
+        "run-001.json",
+        {
+            "run_id": "run-001",
+            "method": "labbook-copy",
+            "metrics": {"r2": 0.8},
+        },
+    )
+    _seed_artifacts(
+        exp,
+        "run-001-runrecord.json",
+        {
+            "run_id": "run-001",
+            "method": "artifacts-copy",
+            "metrics": {"r2": 0.1},
+        },
+    )
+
+    records = read_disk_run_records(exp)
+    assert len(records) == 1
+    assert records[0].method == "labbook-copy"
+
+
+def test_read_disk_merges_labbook_and_artifacts(tmp_path):
+    """Distinct run_ids from both locations all land, labbook first."""
+    from urika.orchestrator.parsing import read_disk_run_records
+
+    exp = tmp_path / "exp"
+    _seed(exp, "run-001.json", {"run_id": "run-001", "method": "a", "metrics": {}})
+    _seed_artifacts(
+        exp,
+        "run-002-runrecord.json",
+        {"run_id": "run-002", "method": "b", "metrics": {}},
+    )
+
+    records = read_disk_run_records(exp)
+    assert [r.run_id for r in records] == ["run-001", "run-002"]
+
+
+def test_read_disk_ignores_malformed_artifacts_json(tmp_path):
+    from urika.orchestrator.parsing import read_disk_run_records
+
+    exp = tmp_path / "exp"
+    (exp / "artifacts").mkdir(parents=True)
+    (exp / "artifacts" / "run-001-broken.json").write_text("{not valid json")
+    _seed_artifacts(
+        exp,
+        "run-002-runrecord.json",
+        {"run_id": "run-002", "method": "m", "metrics": {}},
+    )
+
+    records = read_disk_run_records(exp)
+    assert [r.run_id for r in records] == ["run-002"]
+
+
+def test_read_disk_empty_when_neither_dir_exists(tmp_path):
+    from urika.orchestrator.parsing import read_disk_run_records
+
+    assert read_disk_run_records(tmp_path / "nonexistent") == []
+    (tmp_path / "exp").mkdir()  # exists but no labbook/ or artifacts/
+    assert read_disk_run_records(tmp_path / "exp") == []

@@ -60,6 +60,8 @@ This rule has no exceptions:
 
 Each run must have a unique `run_id` (e.g., "run-001", "run-002"). Runs without `run_id`, `method`, and `metrics` will be ignored.
 
+**Also save each RunRecord to disk as you complete it**: write the same JSON object to `<experiment workspace>/labbook/run-<NNN>.json` (e.g. `labbook/run-001.json`) immediately after each run finishes — do not wait until your final message. The runtime reads these files even if your session ends early; the JSON block in your final message is a summary convenience, the file is the durable record.
+
 **Metric interpretation is required**: for EVERY metric you report in `metrics`, write one plain-language sentence in `metric_interpretation` (same key) explaining what the value means for the research question — and, where the project criteria define a target for that metric, compare against it explicitly. Example:
 
 ```json
@@ -80,6 +82,7 @@ Before writing any new method, read `{project_dir}/methods.json` to see what met
 
 - **Analysis scripts** (the method pipeline code) go to the `methods/` subdirectory of the current experiment workspace. Give each script a descriptive name that reflects what it does (e.g., `conditional_logit_full_features.py`, `lightgbm_lambdarank_enriched18.py`, `ridge_regression_pca_reduced.py`).
 - **Outputs** (plots, result JSONs, intermediate data, model files) go to the `artifacts/` subdirectory of the current experiment workspace.
+- **RunRecords** go to the `labbook/` subdirectory of the current experiment workspace, one file per run: `labbook/run-<NNN>.json` (e.g. `labbook/run-002.json`). Write each file as soon as its run finishes (see step 3 above).
 - **Only write inside the current experiment workspace** — do not modify files elsewhere in the project.
 - Read any file in the project directory for context.
 

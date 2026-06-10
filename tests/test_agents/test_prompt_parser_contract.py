@@ -83,6 +83,31 @@ def test_task_agent_run_record_example_parses() -> None:
     assert isinstance(r.params, dict)
 
 
+def test_task_agent_prompt_instructs_durable_labbook_write() -> None:
+    """The prompt must tell the agent to persist each RunRecord to
+    ``labbook/run-<NNN>.json`` as it completes.
+
+    The orchestrator's on-disk fallback (``read_disk_run_records``) only
+    works if agents actually write the files — the 2026-06-10 real-API
+    smoke recorded 0 runs because the prompt never asked for them. The
+    File Rules section must agree, so an agent reconciling the two
+    sections doesn't conclude labbook/ is off-limits.
+    """
+    prompt = _rendered_prompt("task_agent")
+    assert "labbook/run-001.json" in prompt, (
+        "task_agent prompt no longer shows the labbook/run-<NNN>.json "
+        "example path — the durable run-record instruction has drifted"
+    )
+    assert "save each RunRecord to disk" in prompt.lower() or (
+        "Also save each RunRecord to disk" in prompt
+    ), "task_agent prompt lost the durable-write instruction"
+    # File Rules must list labbook/ as writable for run records.
+    assert prompt.count("labbook/run-") >= 2, (
+        "labbook run-record path should appear in both the Record "
+        "instruction and the File Rules section"
+    )
+
+
 def test_evaluator_example_parses() -> None:
     prompt = _rendered_prompt("evaluator")
     example = _first_json_block(prompt)
