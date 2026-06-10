@@ -288,12 +288,12 @@ issue much faster to act on.
 Planned features on the road to **v1.0.0**. Bug-fix hotfixes
 (`v0.x.y`) ship in between as issues are reported.
 
-**Publication-ready output**
+**v0.9 — publication-ready output**
 - Export reports as PDF or LaTeX
 - Export the final pipeline as a runnable Jupyter notebook
 - Auto-generated model cards (assumptions, data, intended use, limitations) per finalised method
 
-**UX polish**
+**v0.10 — UX polish**
 - Project templates: `urika new --template behavioral|timeseries|imaging|nlp|ml-baseline` with seeded criteria, recommended tools, and sample knowledge — skips the interactive wizard for common research shapes
 - Dashboard accessibility pass: keyboard navigation, focus states, ARIA labels, light/dark contrast audit
 

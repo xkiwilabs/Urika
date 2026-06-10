@@ -1,8 +1,10 @@
 # Roadmap: v0.4.0 → v1.0.0
 
 **Authored:** 2026-05-02 (day v0.4.0 shipped to PyPI).
-**Last revised:** 2026-05-02 (compacted to 8-week v1.0 target after
-review).
+**Last revised:** 2026-06-10 (renumbered after the review-driven
+hardening + research-scoping release consumed the v0.8.0 slot:
+output polish → v0.9.0, UX polish → v0.10.0, RC cuts from v0.10.0.
+Original 2026-05-02 revision compacted to the 8-week v1.0 target.)
 **Status:** Active — supersedes
 `dev/archive/plans/v0.4-shipped/2026-04-30-v0.4-roadmap.md`.
 **Total horizon:** ~8 weeks working calendar to v1.0.0.
@@ -20,8 +22,9 @@ The discipline:
   budget is folded into the first 1–2 days of the next minor. Works
   because each release's scope is small enough that v0.5 bugs are
   unlikely to masquerade as v0.6 features.
-- **Feature freeze starts at v1.0.0rc1.** Anything not in v0.9.0
-  rolls to v1.1+. The RC cycle is bug-fix only.
+- **Feature freeze starts at v1.0.0rc1.** Anything not in v0.10.0
+  (was v0.9.0 pre-renumber) rolls to v1.1+. The RC cycle is bug-fix
+  only.
 - **Cut criteria are hard.** Every release has a verification list
   it must satisfy before shipping. Calendar dates are *targets*, not
   deadlines. v1.0.0 by week 8 is irrelevant if v1.0.0 has known
@@ -271,10 +274,33 @@ records correct usage / cost per backend.
 
 ---
 
-## v0.8.0 — output polish (target: ~1.5 weeks, week 5.5)
+## v0.8.0 — review hardening + research scoping (SHIPPED 2026-06-10)
 
-**Focus:** Make Urika's outputs publication-ready. v0.4–0.7 prove
-the agents do good science; v0.8 makes the artifacts shippable to
+**Inserted 2026-06-10, unplanned.** A comprehensive codebase review
+(bugs, cross-surface parity, agent outcomes, test suite) turned into
+a ~58-commit release that consumed the v0.8.0 slot: corrupt-JSON
+tolerance, OpenAI/Google adapter parity (timeouts, error categories,
+scrub, max_method_seconds), structural real-import SDK tests (caught
+a live OpenAI $0-usage bug), surface parity (REPL provider auth,
+dashboard plan agent + git pull), canonical best-run selection,
+builder research-goal pipeline (feasibility check, preferences /
+hypotheses / constraints elicitation, criteria co-drafting, dashboard
+wizard), output comprehensibility (metric interpretation,
+assumptions_detail, run-id traceability, audience-aware labbook),
+June-15-2026 subscription credit-pool policy refresh, and three
+release-gate smoke fixes (SDK 0.2.91 max-turns tolerance + pin,
+`urika present` honesty, durable run-record contract). Tag `v0.8.0`
+at `b912b939`; full detail in `CHANGELOG.md` and
+`dev/plans/2026-06-10-v0.7.1-review-hardening-and-v0.8-foundations.md`.
+Downstream releases renumbered: output polish → v0.9.0, UX polish →
+v0.10.0.
+
+---
+
+## v0.9.0 — output polish (target: ~1.5 weeks; was v0.8.0 pre-renumber)
+
+**Focus:** Make Urika's outputs publication-ready. v0.4–0.8 prove
+the agents do good science; v0.9 makes the artifacts shippable to
 a paper, a poster, a thesis chapter.
 
 **Ships:**
@@ -301,7 +327,7 @@ test project.
 
 ---
 
-## v0.9.0 — UX polish (target: ~5 days, week 6.5)
+## v0.10.0 — UX polish (target: ~5 days; was v0.9.0 pre-renumber)
 
 **Reordered + scope-changed 2026-05-04:** project templates moved
 here from v0.6 (they're UX polish, not blocking new use cases);
@@ -342,13 +368,13 @@ actions instead of a responsive dashboard.
 
 ## v1.0.0rc1 — first release candidate (target: ~3 days, week 7.5)
 
-**Focus:** Cut a release-candidate from `v0.9.0` and start the RC
+**Focus:** Cut a release-candidate from `v0.10.0` and start the RC
 cycle. **Feature freeze is hard from this point** — no new features
 merge until v1.0.0 ships.
 
 **Ships:**
 
-- Same code as v0.9.0, with `version = "1.0.0rc1"` in
+- Same code as v0.10.0, with `version = "1.0.0rc1"` in
   `pyproject.toml`.
 - **Final API audit** — every public function in `urika.core.*`,
   `urika.agents.*`, `urika.tools.*` reviewed. Stable API gets a
@@ -450,13 +476,14 @@ Per the cross-cutting feature audit:
 ## Calendar at a glance
 
 ```
-Week 0     v0.4.0    SHIPPED ✅
-Week 0.5   v0.4.1    bug-fix hotfix (5 items)
-Week 1.5   v0.5.0    memory phases 2–4
-Week 3     v0.6.0    OpenAI adapter + project templates
-Week 4     v0.7.0    GitHub auto-backup
-Week 5.5   v0.8.0    PDF/LaTeX/Jupyter export + model cards
-Week 6.5   v0.9.0    accessibility + i18n stubs
+Week 0     v0.4.0    SHIPPED ✅ 2026-05-02
+Week 0.5   v0.4.x    hotfix/hardening train       SHIPPED ✅ (…v0.4.5.1)
+Week 1.5   v0.5.0    memory phases 2–4            SHIPPED ✅ 2026-05-31
+Week 3     v0.6.0    GitHub auto-backup           SHIPPED ✅ 2026-05-31 (order swapped 05-04)
+Week 4     v0.7.0    multi-provider adapters      SHIPPED ✅ 2026-06-08
+Week 5     v0.8.0    review hardening + scoping   SHIPPED ✅ 2026-06-10 (unplanned insertion)
+Week 5.5   v0.9.0    PDF/LaTeX/Jupyter export + model cards   ← NEXT
+Week 6.5   v0.10.0   templates + accessibility
 Week 7     v1.0.0rc1 feature freeze + API audit
 Week 7.3   v1.0.0rc2 RC feedback fixes only
 Week 7.5   v1.0.0    OFFICIAL RELEASE 🎉
