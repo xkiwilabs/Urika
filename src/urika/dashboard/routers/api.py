@@ -580,13 +580,30 @@ async def api_builder_stream(name: str, request: Request):
             status_code=404, detail="No builder session for this project"
         )
 
+    def _synthetic_done() -> str:
+        # A finished session whose queue was already drained by an
+        # earlier consumer (e.g. the wizard page reloaded after
+        # completion) would otherwise heartbeat forever. Re-emit the
+        # terminal event so the re-attached client closes cleanly.
+        payload = {
+            "kind": "done",
+            "payload": {"suggestions": session.final_suggestions},
+        }
+        return f"event: builder\ndata: {json.dumps(payload)}\n\n"
+
     async def event_stream():
         while True:
             if await request.is_disconnected():
                 return
+            if session.done and session.events.empty():
+                yield _synthetic_done()
+                return
             try:
                 event = await asyncio.wait_for(session.events.get(), timeout=2.0)
             except asyncio.TimeoutError:
+                if session.done and session.events.empty():
+                    yield _synthetic_done()
+                    return
                 # Periodic heartbeat so intermediate proxies don't
                 # idle-close the SSE connection.
                 yield ": heartbeat\n\n"
@@ -610,6 +627,8 @@ async def api_builder_answer(name: str, request: Request):
         raise HTTPException(
             status_code=404, detail="No builder session for this project"
         )
+    if session.done or session.aborted:
+        raise HTTPException(status_code=409, detail="Builder session already finished")
     if session.pending_question is None:
         raise HTTPException(status_code=400, detail="No pending question")
 
