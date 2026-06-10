@@ -130,6 +130,14 @@ providers, and a fix for the OpenAI $0-usage accounting bug.
 
 ### Fixed
 
+- **Run records are now durable even when the task agent's final
+  message is cut short.** The task-agent prompt now instructs writing
+  each RunRecord to ``labbook/run-<NNN>.json`` as soon as the run
+  finishes (the final-message JSON block becomes a summary
+  convenience), and the orchestrator's on-disk discovery additionally
+  scans ``artifacts/run-*.json`` as a tolerance — previously an agent
+  that saved records outside ``labbook/`` produced a "0 runs recorded"
+  failure despite real work on disk.
 - **Turn-cap exhaustion no longer fails experiments on claude-agent-sdk
   0.2.91+.** The SDK changed its trailing error to ``"Claude Code
   returned an error result: Reached maximum number of turns (N)"``,
