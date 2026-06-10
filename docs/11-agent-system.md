@@ -351,7 +351,7 @@ Each agent's behavior is configured through:
 - **Max turns** -- maximum number of tool-use turns per invocation
 - **Working directory** -- set to the project directory
 
-Each adapter — `ClaudeSDKRunner` for Anthropic, `OpenAIAgentsRunner` for OpenAI, `GoogleADKRunner` for Google — translates these configurations into its SDK-native parameter shape and handles execution, streaming, and result parsing. The orchestrator picks the right adapter per-agent via `runner_for(model)`, so the same configuration block works regardless of which provider the model string targets. See the [v0.7 Provider Guide](v07-provider-guide.md) for how routing decisions are made.
+Each adapter — `ClaudeSDKRunner` for Anthropic, `OpenAIAgentsRunner` for OpenAI, `GoogleADKRunner` for Google — translates these configurations into its SDK-native parameter shape and handles execution, streaming, and result parsing. The orchestrator picks the right adapter per-agent via `runner_for(model)`, so the same configuration block works regardless of which provider the model string targets. See the [Provider Guide](13c-providers-and-models.md) for how routing decisions are made.
 
 ---
 
