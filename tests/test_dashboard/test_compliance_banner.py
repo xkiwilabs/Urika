@@ -1,23 +1,29 @@
 """Compliance banner on the global Settings page.
 
-The banner surfaces when ``ANTHROPIC_API_KEY`` is unset in the dashboard
-process environment, citing Anthropic Consumer Terms §3.7 and the April
-2026 Agent SDK clarification. It hides when the key is configured.
+The banner surfaces when ``ANTHROPIC_API_KEY`` is unset in api_key mode
+(the default auth mode). It is suppressed in subscription mode (where
+OAuth tokens are the auth carrier) and when the key is already set.
 """
 
 from __future__ import annotations
 
 
 def test_banner_renders_when_api_key_unset(settings_client, monkeypatch):
-    """No ANTHROPIC_API_KEY → compliance banner appears on /settings."""
+    """No ANTHROPIC_API_KEY + api_key mode → compliance banner appears on /settings."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     # Stub load_secrets so the page render doesn't pull from the dev's
     # real ~/.urika/secrets.env on disk and re-populate the env var.
     monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+    monkeypatch.setattr(
+        "urika.core.compliance._get_anthropic_auth_preference",
+        lambda: "api_key",
+    )
 
     body = settings_client.get("/settings").text
     assert "ANTHROPIC_API_KEY not set" in body
-    assert "Consumer Terms" in body
+    # Updated wording: mentions api_key mode and the subscription alternative.
+    assert "api_key mode" in body
+    assert "subscription" in body
     # Banner links to the canonical sources / setup paths.
     assert "console.anthropic.com" in body
     assert "urika config api-key" in body

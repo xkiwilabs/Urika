@@ -1298,12 +1298,24 @@ def global_settings(request: Request) -> HTMLResponse:
     openai_auth = (s.get("openai", {}) or {}).get("auth", "api_key")
     google_auth = (s.get("google", {}) or {}).get("auth", "api_key")
 
+    # Compliance banner suppression. The banner warns about a missing
+    # ANTHROPIC_API_KEY; in subscription mode the key is not needed
+    # (OAuth tokens are the auth carrier) so the banner must not show.
+    try:
+        from urika.core.compliance import _get_anthropic_auth_preference
+
+        anthropic_subscription_mode = _get_anthropic_auth_preference() == "subscription"
+    except Exception:
+        anthropic_subscription_mode = False
+
     return templates.TemplateResponse(
         request,
         "global_settings.html",
         {
             # Compliance banner state.
             "api_key_configured": api_key_configured,
+            # Suppress the missing-key banner in subscription mode.
+            "anthropic_subscription_mode": anthropic_subscription_mode,
             # Provider auth-mode (Models tab — v0.7.0 parity).
             "anthropic_auth": anthropic_auth,
             "openai_auth": openai_auth,

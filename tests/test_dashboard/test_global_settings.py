@@ -2029,3 +2029,46 @@ def test_endpoint_negative_limit_rejected_with_422(settings_client):
     )
     assert r.status_code == 422
     assert "context_window" in r.text
+
+
+# ---- Compliance banner — two-mode auth (v0.8.0) ----------------------------
+
+
+def test_compliance_banner_present_in_api_key_mode_without_key(
+    settings_client, monkeypatch
+):
+    """The compliance banner is shown in api_key mode when ANTHROPIC_API_KEY
+    is absent. The new wording mentions api_key mode and the subscription
+    alternative; the old §3.7 wording is gone."""
+    # Ensure the key is absent and auth mode is api_key (the default).
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+    monkeypatch.setattr(
+        "urika.core.compliance._get_anthropic_auth_preference",
+        lambda: "api_key",
+    )
+    body = settings_client.get("/settings").text
+    # The banner <div role="alert"> must be present.
+    assert 'role="alert"' in body
+    assert "ANTHROPIC_API_KEY not set" in body
+    # Updated wording: mentions api_key mode and subscription alternative.
+    assert "api_key mode" in body
+    assert "subscription" in body
+    # Old §3.7 / Consumer Terms language is no longer in the banner.
+    assert "§3.7" not in body
+    assert "Consumer Terms" not in body
+
+
+def test_compliance_banner_absent_in_subscription_mode(settings_client, monkeypatch):
+    """The compliance banner must NOT appear when the auth mode is
+    subscription — no API key is required in that mode."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("urika.core.secrets.load_secrets", lambda: None)
+    monkeypatch.setattr(
+        "urika.core.compliance._get_anthropic_auth_preference",
+        lambda: "subscription",
+    )
+    body = settings_client.get("/settings").text
+    # The banner alert div must not be present (CSS class stays in <style>).
+    assert 'role="alert"' not in body
+    assert "ANTHROPIC_API_KEY not set" not in body

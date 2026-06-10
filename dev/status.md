@@ -14,8 +14,10 @@ release-equivalent state plus dev-only test/plan files.
 (`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 3 skipped, 64
 integration deselected. Multi-provider operator smoke verified
 2026-06-08 against real Anthropic, OpenAI, and Google APIs.
-**Next focus:** v0.8.0 (output polish — PDF/LaTeX/Jupyter via Pandoc,
-model-card auto-generation) per the canonical roadmap.
+**Next focus:** v0.8.0 (review-driven hardening + research-goal builder
+pipeline + output comprehensibility) — on `dev`, unreleased. The
+PDF/LaTeX/Jupyter output-polish milestone moves to a later release
+(roadmap renumber pending) per the canonical roadmap.
 
 The active roadmap is **`dev/plans/2026-05-02-roadmap-to-v1.0.md`** —
 covers v0.4.0 → v1.0.0 with cut criteria, release contents, and
@@ -127,8 +129,8 @@ backup ships before the multi-provider work):
 | **v0.5.0** | Project memory deepening — advisor+report inject; curator agent + dry-run auto-trigger; archive + mtime diff; dashboard memory page; auto_capture toggle; cross-surface parity tests | SHIPPED 2026-05-31 |
 | **v0.6.0** | GitHub auto-backup (`urika github init --create` shells out to `gh` for one-command repo creation; manual `--remote URL` path also supported; opt-in auto-push hook on event triggers; project-creation wizard offers auto-create; dashboard Git tab) | **NEXT** |
 | **v0.7.0** | Multi-provider model adapters (OpenAI Agents SDK + others) | planned |
-| **v0.8.0** | Output polish — exports (PDF/LaTeX/Jupyter via Pandoc), model-card auto-generation | planned |
-| **v0.9.0** | UX polish — project templates + accessibility audit + i18n string-extraction stubs | planned |
+| **v0.8.0** | Review-driven hardening + research-goal builder pipeline + output comprehensibility | **on dev, unreleased** |
+| **v0.9.0+** | Output polish — exports (PDF/LaTeX/Jupyter via Pandoc), model-card auto-generation + UX polish (templates + accessibility + i18n stubs) — roadmap renumber pending | planned |
 | **v1.0.0rc1** | Feature freeze + API audit + migration guide | planned |
 | **v1.0.0rc2** | RC feedback fixes only | planned |
 | **v1.0.0** | OFFICIAL RELEASE — API stability commitment | planned |
