@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 
 from urika.core.experiment import create_experiment
 from urika.core.models import VALID_AUDIENCES, VALID_MODES, ProjectConfig
+from urika.core.project_builder import ProjectBuilder
 from urika.core.registry import ProjectRegistry
 from urika.core.revisions import record_revision, update_project_field
 from urika.core.settings import load_settings, save_settings
@@ -384,22 +385,33 @@ def _persist_builder_suggestions(project_dir: Path, suggestions: dict | None) ->
     )
 
 
-class _DashboardBuilderShim:
-    """Minimal ``ProjectBuilder``-shaped object that the runtime-
-    agnostic ``run_builder_loop`` core uses for ``.name`` /
-    ``.projects_dir`` lookups and the ``set_initial_suggestions``
-    callback. The CLI path uses a real ``ProjectBuilder``; here the
-    workspace already exists on disk so we just need somewhere to
-    park the final suggestions until they're flushed by the
-    endpoint's ``done`` handler."""
+class _DashboardBuilderShim(ProjectBuilder):
+    """A real :class:`ProjectBuilder` pointed at an already-written
+    workspace. ``run_builder_loop`` pushes loop-gathered research
+    intent (refined question, preferences, hypotheses, co-drafted
+    criteria, advisor suggestions) onto the builder via duck-typed
+    setters and re-applies it to disk through
+    ``apply_research_intent()`` — so the dashboard surface persists
+    exactly what the CLI path does.
+
+    Pre-7.5 this was a hand-rolled shim that only implemented
+    ``set_initial_suggestions``; the intent setters were silently
+    dropped on the dashboard surface.
+
+    ``question`` starts empty on purpose: ``apply_research_intent``
+    only overwrites ``[project].question`` when the question is
+    non-empty, i.e. when the loop's feasibility step actually refined
+    it. The on-disk question is otherwise left untouched."""
 
     def __init__(self, name: str, projects_dir: Path) -> None:
-        self.name = name
-        self.projects_dir = projects_dir
-        self._suggestions: dict | None = None
-
-    def set_initial_suggestions(self, suggestions: dict) -> None:
-        self._suggestions = suggestions
+        super().__init__(
+            name=name,
+            source_path=None,
+            projects_dir=projects_dir,
+            description="",
+            question="",
+            mode="exploratory",
+        )
 
 
 @router.post("/projects/{name}/builder/start")

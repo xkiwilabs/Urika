@@ -648,3 +648,44 @@ class TestCriteriaCoDrafting:
         )
         project_dir = builder.write_project()
         assert load_criteria(project_dir).criteria == self._PROPOSAL
+
+
+class TestSuggestionsFlush:
+    """``suggestions/initial.json`` must exist after the interactive
+    loop. In the CLI flow ``write_project()`` runs BEFORE the loop and
+    used to be the only writer of that file, so the interactive path
+    never produced it — yet ``cli/project_new`` reads it for the
+    "run first experiment" offer. ``apply_research_intent()`` (the
+    loop's post-run re-apply hook) is the flush point."""
+
+    def test_interactive_loop_writes_suggestions_initial_json(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        import json
+
+        runner = _IntentRunner()
+        builder, project_dir, _ = _drive_core_loop(monkeypatch, tmp_path, runner)
+        assert builder._suggestions, "advisor suggestions were captured on the builder"
+        suggestions_path = project_dir / "suggestions" / "initial.json"
+        assert suggestions_path.exists(), (
+            "interactive loop must flush suggestions/initial.json "
+            "(write_project ran before the loop, so nothing else writes it)"
+        )
+        sdata = json.loads(suggestions_path.read_text(encoding="utf-8"))
+        assert sdata["suggestions"][0]["name"] == "rf-baseline"
+
+    def test_apply_research_intent_without_suggestions_writes_nothing(
+        self, tmp_path: Path, monkeypatch, tmp_urika_home
+    ) -> None:
+        from urika.core.project_builder import ProjectBuilder
+
+        builder = ProjectBuilder(
+            name="nosugg",
+            source_path=None,
+            projects_dir=tmp_path / "projects",
+            question="Q?",
+            mode="exploratory",
+        )
+        project_dir = builder.write_project()
+        builder.apply_research_intent()
+        assert not (project_dir / "suggestions" / "initial.json").exists()

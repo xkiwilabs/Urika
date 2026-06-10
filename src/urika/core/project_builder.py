@@ -165,8 +165,9 @@ class ProjectBuilder:
         ``write_project()`` runs BEFORE the interactive loop in the
         ``urika new`` flow (the loop's agents need the workspace and the
         knowledge base on disk), so anything the loop learns afterwards
-        — refined question, preferences, hypotheses, co-drafted criteria
-        — would otherwise never reach ``urika.toml`` / ``criteria.json``.
+        — refined question, preferences, hypotheses, co-drafted criteria,
+        advisor suggestions — would otherwise never reach ``urika.toml``
+        / ``criteria.json`` / ``suggestions/initial.json``.
         Called best-effort from ``run_builder_loop``'s ``finally``; a
         no-op when the project hasn't been written yet.
         """
@@ -210,9 +211,30 @@ class ProjectBuilder:
                     rationale="User-approved success criteria (builder co-draft)",
                 )
 
+        # Flush the advisor suggestions captured by the loop.
+        # ``write_project()`` (which ran before the loop) only writes
+        # ``suggestions/initial.json`` when ``_suggestions`` was already
+        # set — which it never is on the interactive path — yet
+        # ``cli/project_new`` reads that file for the "run the first
+        # planned experiment" offer right after the loop returns.
+        self._write_suggestions(self.projects_dir / self.name)
+
     def add_task(self, task: dict[str, Any]) -> None:
         """Add a scoped task to the initial task list."""
         self._tasks.append(task)
+
+    def _write_suggestions(self, project_dir: Path) -> None:
+        """Write ``_suggestions`` to ``suggestions/initial.json``.
+        No-op when empty. Shared by ``write_project`` (non-interactive
+        path) and ``apply_research_intent`` (interactive-loop flush)."""
+        if not self._suggestions:
+            return
+        suggestions_dir = project_dir / "suggestions"
+        suggestions_dir.mkdir(exist_ok=True)
+        (suggestions_dir / "initial.json").write_text(
+            json.dumps(self._suggestions, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     def write_project(self) -> Path:
         """Write the project to disk and return the project directory."""
@@ -307,13 +329,7 @@ class ProjectBuilder:
             create_project_venv(project_dir)
 
         # Write initial suggestions if set
-        if self._suggestions:
-            suggestions_dir = project_dir / "suggestions"
-            suggestions_dir.mkdir(exist_ok=True)
-            (suggestions_dir / "initial.json").write_text(
-                json.dumps(self._suggestions, indent=2) + "\n",
-                encoding="utf-8",
-            )
+        self._write_suggestions(project_dir)
 
         # Write initial tasks if any
         if self._tasks:
