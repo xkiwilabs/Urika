@@ -110,6 +110,20 @@ records and the labbook output is byte-identical for runs without
 intervals. ``--format`` defaults to ``markdown`` (today's behavior);
 the ``export`` extra is only needed for latex/pdf.
 
+### Fixed
+
+- **Dashboard now opens itself in your browser.** The default launch
+  generates a per-session auth token; previously it suppressed the
+  browser auto-open and printed a long tokenized URL for you to
+  copy-paste by hand — and opening the dashboard without that exact
+  token (a bookmark, or a terminal click that dropped ``?token=``)
+  returned a raw ``{"detail":"Invalid or missing token"}`` JSON error
+  page. ``urika dashboard`` now auto-opens the tokenized URL (which
+  authenticates and pins the cookie), keeps printing it as an
+  SSH/headless fallback, and serves a friendly HTML "access token
+  required" page for browser navigations that hit a stale/missing
+  token (HTMX/XHR and ``curl`` still get the JSON 401).
+
 ## [0.8.0] – 2026-06-10
 
 Research scoping + output polish. The interactive project builder now

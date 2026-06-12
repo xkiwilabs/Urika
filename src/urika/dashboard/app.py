@@ -183,7 +183,14 @@ def create_app(
         }
         if exc.status_code == 401 and is_browser_nav:
             return HTMLResponse(_AUTH_401_HTML, status_code=401)
-        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        # Preserve any headers the exception carries (e.g. a 405's
+        # ``Allow`` or a 401's ``WWW-Authenticate``) — Starlette's
+        # default handler forwards them, so this replacement must too.
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+            headers=dict(exc.headers) if exc.headers else None,
+        )
 
     # /healthz is registered before the authenticated routers so it
     # never picks up the Bearer requirement. Health probes don't carry
