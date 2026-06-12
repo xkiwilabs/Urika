@@ -112,6 +112,18 @@ the ``export`` extra is only needed for latex/pdf.
 
 ### Fixed
 
+- **Project-level presentations now show their figures.** Whole-project
+  reveal.js decks (``urika present <project>`` and the final
+  presentation from ``urika finalize``) rendered every figure as a
+  "Figure missing" placeholder, while experiment-level decks were fine.
+  The renderer could only resolve a figure against a single
+  experiment's directory; project-level decks span every experiment's
+  ``artifacts/``. It now resolves figures across the whole project —
+  by bare filename or ``<experiment_id>/artifacts/<file>`` — copying
+  each with a collision-safe name (a figure referenced by an
+  unresolvable path still shows the visible placeholder). Adds a
+  path-traversal guard so a deck can never pull a file from outside
+  the project.
 - **Dashboard now opens itself in your browser.** The default launch
   generates a per-session auth token; previously it suppressed the
   browser auto-open and printed a long tokenized URL for you to
