@@ -293,35 +293,18 @@ async def _generate_presentation(
             experiment_dir=experiment_dir,
         )
     else:
-        # Project-level presentation — gather figures from all experiments
+        # Project-level presentation — figures live across many experiments.
+        # The renderer resolves each referenced figure from project_dir and
+        # copies exactly the ones the slides reference, with collision-free
+        # names, so the <img> tags and copied files always agree.
         output_dir = project_dir / "projectbook" / "presentation"
         render_presentation(
             slide_data,
             output_dir,
             theme=theme,
             experiment_dir=None,
+            project_dir=project_dir,
         )
-        # Copy figures from all experiments into presentation/figures/
-        import shutil
-
-        pres_figures = output_dir / "figures"
-        pres_figures.mkdir(exist_ok=True)
-        experiments_dir = project_dir / "experiments"
-        if experiments_dir.exists():
-            for exp_dir in sorted(experiments_dir.iterdir()):
-                artifacts = exp_dir / "artifacts"
-                if artifacts.is_dir():
-                    for fig in artifacts.iterdir():
-                        if fig.is_file() and fig.suffix.lower() in (
-                            ".png",
-                            ".jpg",
-                            ".jpeg",
-                            ".svg",
-                            ".gif",
-                        ):
-                            shutil.copy2(
-                                fig, pres_figures / f"{exp_dir.name}_{fig.name}"
-                            )
 
     progress("result", f"Presentation saved to {output_dir}/index.html")
     return output_dir / "index.html", _pres_usage

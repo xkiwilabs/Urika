@@ -228,9 +228,20 @@ async def finalize_project(
                     except Exception as exc:
                         logger.warning("Presentation theme loading failed: %s", exc)
                 output_dir = project_dir / pres_rel
-                render_presentation(slide_data, output_dir, theme=theme)
+                # The renderer resolves project-level figures across all
+                # experiments (and projectbook/figures) from project_dir and
+                # copies exactly the referenced ones with collision-free names.
+                render_presentation(
+                    slide_data,
+                    output_dir,
+                    theme=theme,
+                    project_dir=project_dir,
+                )
 
-                # Copy project-level figures into the presentation directory
+                # Belt-and-braces figure copies. The renderer already searches
+                # projectbook/figures, but draft mode keeps its figures in a
+                # separate dir that the renderer also resolves; copying here is
+                # harmless and keeps draft decks self-contained.
                 import shutil
 
                 pres_figures = output_dir / "figures"
@@ -247,25 +258,6 @@ async def finalize_project(
                     for fig in project_figures.iterdir():
                         if fig.is_file():
                             shutil.copy2(fig, pres_figures / fig.name)
-
-                # Copy experiment-level figures with experiment prefix
-                experiments_dir = project_dir / "experiments"
-                if experiments_dir.exists():
-                    for exp_dir in sorted(experiments_dir.iterdir()):
-                        artifacts = exp_dir / "artifacts"
-                        if artifacts.is_dir():
-                            for fig in artifacts.iterdir():
-                                if fig.is_file() and fig.suffix.lower() in (
-                                    ".png",
-                                    ".jpg",
-                                    ".jpeg",
-                                    ".svg",
-                                    ".gif",
-                                ):
-                                    shutil.copy2(
-                                        fig,
-                                        pres_figures / f"{exp_dir.name}_{fig.name}",
-                                    )
 
                 progress("result", f"{pres_label.capitalize()} saved")
 

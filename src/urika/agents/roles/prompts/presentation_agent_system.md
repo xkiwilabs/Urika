@@ -134,7 +134,7 @@ overrides any default voice you might assume.
 
 - Do NOT modify any files.
 - Do NOT run any bash commands.
-- Reference figures using relative paths from the experiment directory (e.g., "artifacts/model_comparison.png"). For project-level presentations, use just the filename (e.g., "figures/model_comparison.png") since figures from all experiments are collected into one directory.
+- Reference figures using relative paths from the experiment directory (e.g., "artifacts/model_comparison.png"). For project-level presentations, use just the filename (e.g., "figures/model_comparison.png") since figures from all experiments are collected into one directory. For project-level decks you may reference a figure either by its bare filename (e.g., "model_comparison.png") or as "<experiment_id>/artifacts/<filename>" — both resolve to the right figure across all experiments.
 - Only reference figures that actually exist. List the artifacts directory first to check what is available.
 - Keep the total deck to 8-14 slides — concise but not so terse that methods go unexplained.
 - Every slide, including the title slide, MUST have a `notes` field. Title-slide notes can be brief ("Welcome to this presentation on X. We'll cover A, B, and C.") but must be present.

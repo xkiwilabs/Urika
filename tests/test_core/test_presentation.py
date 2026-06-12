@@ -279,6 +279,162 @@ class TestMissingFigurePlaceholder:
         assert "figure-missing" not in html
 
 
+class TestProjectLevelFigures:
+    """Project-level decks have no single ``experiment_dir`` — figures live
+    across many ``experiments/<id>/artifacts/`` dirs. The renderer must
+    resolve them from ``project_dir`` and copy with collision-free names.
+    """
+
+    def _make_project(self, tmp_path: Path) -> Path:
+        proj = tmp_path / "proj"
+        exp1 = proj / "experiments" / "exp-001" / "artifacts"
+        exp2 = proj / "experiments" / "exp-002" / "artifacts"
+        exp1.mkdir(parents=True)
+        exp2.mkdir(parents=True)
+        # Same basename in two experiments — must NOT clobber each other.
+        (exp1 / "run-001-foo.png").write_bytes(b"\x89PNG\r\n\x1a\n-one")
+        (exp2 / "run-001-foo.png").write_bytes(b"\x89PNG\r\n\x1a\n-two")
+        return proj
+
+    def test_project_relative_path_resolves(self, tmp_path: Path) -> None:
+        proj = self._make_project(tmp_path)
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "figure",
+                    "title": "R",
+                    "figure": "exp-001/artifacts/run-001-foo.png",
+                    "figure_caption": "cap",
+                },
+            ],
+        }
+        out = render_presentation(
+            data, tmp_path / "deck", experiment_dir=None, project_dir=proj
+        )
+        html = (out / "index.html").read_text(encoding="utf-8")
+        assert "figure-missing" not in html
+        # The emitted <img> filename must match a real file in figures/.
+        import re
+
+        m = re.search(r'<img src="figures/([^"]+)"', html)
+        assert m is not None, html
+        assert (out / "figures" / m.group(1)).exists()
+
+    def test_bare_filename_resolves(self, tmp_path: Path) -> None:
+        proj = self._make_project(tmp_path)
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "figure",
+                    "title": "R",
+                    "figure": "run-001-foo.png",
+                    "figure_caption": "cap",
+                },
+            ],
+        }
+        out = render_presentation(
+            data, tmp_path / "deck", experiment_dir=None, project_dir=proj
+        )
+        html = (out / "index.html").read_text(encoding="utf-8")
+        assert "figure-missing" not in html
+        import re
+
+        m = re.search(r'<img src="figures/([^"]+)"', html)
+        assert m is not None, html
+        assert (out / "figures" / m.group(1)).exists()
+
+    def test_same_basename_two_experiments_no_clobber(self, tmp_path: Path) -> None:
+        proj = self._make_project(tmp_path)
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "figure",
+                    "title": "A",
+                    "figure": "exp-001/artifacts/run-001-foo.png",
+                    "figure_caption": "a",
+                },
+                {
+                    "type": "figure",
+                    "title": "B",
+                    "figure": "exp-002/artifacts/run-001-foo.png",
+                    "figure_caption": "b",
+                },
+            ],
+        }
+        out = render_presentation(
+            data, tmp_path / "deck", experiment_dir=None, project_dir=proj
+        )
+        html = (out / "index.html").read_text(encoding="utf-8")
+        assert "figure-missing" not in html
+        import re
+
+        names = re.findall(r'<img src="figures/([^"]+)"', html)
+        assert len(names) == 2, html
+        # Two distinct destination files — no clobber.
+        assert names[0] != names[1], names
+        for n in names:
+            assert (out / "figures" / n).exists()
+        # And the two files carry different bytes (the right source each).
+        b0 = (out / "figures" / names[0]).read_bytes()
+        b1 = (out / "figures" / names[1]).read_bytes()
+        assert b0 != b1
+
+    def test_traversal_path_is_rejected(self, tmp_path: Path) -> None:
+        proj = self._make_project(tmp_path)
+        # A secret file outside the project that an agent path tries to grab.
+        secret = tmp_path / "secret.txt"
+        secret.write_text("top secret")
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "figure",
+                    "title": "R",
+                    "figure": "../../secret.txt",
+                    "figure_caption": "cap",
+                },
+            ],
+        }
+        out = render_presentation(
+            data, tmp_path / "deck", experiment_dir=None, project_dir=proj
+        )
+        html = (out / "index.html").read_text(encoding="utf-8")
+        assert "figure-missing" in html
+        # Nothing copied out.
+        figures = out / "figures"
+        if figures.exists():
+            assert not (figures / "secret.txt").exists()
+            assert list(figures.iterdir()) == []
+
+    def test_truly_missing_project_figure_is_placeholder(self, tmp_path: Path) -> None:
+        proj = self._make_project(tmp_path)
+        data = {
+            "title": "T",
+            "subtitle": "",
+            "slides": [
+                {
+                    "type": "figure",
+                    "title": "R",
+                    "figure": "run-999-absent.png",
+                    "figure_caption": "cap",
+                },
+            ],
+        }
+        out = render_presentation(
+            data, tmp_path / "deck", experiment_dir=None, project_dir=proj
+        )
+        html = (out / "index.html").read_text(encoding="utf-8")
+        assert "figure-missing" in html
+        assert "run-999-absent.png" in html
+
+
 class TestExplainerSlide:
     def test_explainer_slide_type(self, tmp_path: Path) -> None:
         data = {
