@@ -153,17 +153,23 @@ def dashboard(
         open_path=open_path,
         auth_token=auth_token,
         no_auth=no_auth,
-        open_browser=not generated,
+        open_browser=True,
     )
     host = "127.0.0.1"
     if generated:
         click.secho(
-            "  Dashboard auth enabled. Open this URL (token included):",
+            "  Dashboard auth enabled — opening it in your browser.",
             fg="yellow",
         )
+        # The launcher auto-opens the tokenized URL itself; this printed
+        # line is a copy-paste fallback for headless/no-browser setups.
         # The token rides in the URL for first-load UX; it then moves to an
         # httponly cookie. Acceptable for a loopback single-user dashboard
         # (token can persist in browser history) — not a network-exposed default.
+        click.echo(
+            "  If it doesn't open automatically, paste this URL "
+            "(it carries your one-time access token):"
+        )
         click.echo(f"  http://{host}:{used_port}{open_path}?token={auth_token}")
     else:
         click.echo(f"  Listening on http://{host}:{used_port}{open_path}")

@@ -88,3 +88,55 @@ def test_dashboard_explicit_token_is_used(captured) -> None:
     result = runner.invoke(cli, ["dashboard", "--auth-token", "my-explicit-token"])
     assert result.exit_code == 0, result.output
     assert captured.get("auth_token") == "my-explicit-token"
+
+
+@pytest.fixture
+def captured_launch(monkeypatch):
+    """Patch ``start_dashboard_server`` to capture the kwargs the
+    ``dashboard`` command passes (esp. ``open_browser``), without
+    actually spinning a server thread or opening a browser."""
+    box: dict = {}
+
+    def fake_start(**kwargs):
+        box.update(kwargs)
+        return _FakeServer(), object(), kwargs.get("port") or 54321
+
+    import urika.cli.config as config_module
+
+    # The CLI imports start_dashboard_server lazily inside the command;
+    # patch it at its source module so the lazy import resolves to ours.
+    import urika.tui.dashboard_launcher as launcher
+
+    monkeypatch.setattr(launcher, "start_dashboard_server", fake_start)
+    monkeypatch.setattr(
+        config_module,
+        "_resolve_project",
+        lambda name: (None, None),
+        raising=False,
+    )
+    return box
+
+
+def test_dashboard_default_launch_opens_browser(captured_launch) -> None:
+    """Behaviour change (v0.7.x): the default generated-token launch now
+    auto-opens the browser (``open_browser=True``). Previously it passed
+    ``open_browser=not generated`` (i.e. False for the default case),
+    which forced the user to copy-paste the tokenized URL. The launcher
+    appends the ``?token=`` itself, so auto-open lands on an authed page.
+    """
+    runner = CliRunner()
+    result = runner.invoke(cli, ["dashboard"])
+    assert result.exit_code == 0, result.output
+    assert captured_launch.get("open_browser") is True
+    # The tokenized URL is still printed as a fallback.
+    token = captured_launch.get("auth_token")
+    assert token
+    assert f"token={token}" in result.output
+
+
+def test_dashboard_no_auth_launch_opens_browser(captured_launch) -> None:
+    """The --no-auth path also opens the browser (it always did)."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["dashboard", "--no-auth"])
+    assert result.exit_code == 0, result.output
+    assert captured_launch.get("open_browser") is True
