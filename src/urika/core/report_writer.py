@@ -54,3 +54,51 @@ def extract_report_markdown(text: str | None) -> str | None:
             body = "\n".join(lines[i:]).strip()
             return body if len(body) >= 500 else None
     return None
+
+
+# Narration openers — an agent describing what it's doing rather than
+# producing the deliverable. Used to reject chatter from artifacts that
+# are legitimately short/heading-less prose (e.g. project summaries),
+# where extract_report_markdown's heading requirement is too strict.
+_NARRATION_OPENERS = (
+    "i'll ",
+    "i will ",
+    "let me ",
+    "i have written",
+    "i've written",
+    "i have successfully",
+    "i've successfully",
+    "successfully written",
+    "successfully wrote",
+    "let me check if the file",
+    "let me start by",
+    "let me read",
+    "here is the",
+    "here's the",
+    "now let me",
+    "i'll now",
+    "i am going to",
+    "i'm going to",
+    "sure,",
+    "certainly,",
+    "of course,",
+)
+
+
+def looks_like_narration(text: str | None) -> bool:
+    """True if *text* looks like agent chatter (describing that it wrote/did
+    something) rather than the deliverable itself. Heuristic: the first
+    non-blank line opens with a narration phrase, or the head contains a
+    strong "successfully wrote/written" marker."""
+    if not text:
+        return False
+    s = text.strip()
+    first = next((ln.strip().lower() for ln in s.splitlines() if ln.strip()), "")
+    if any(first.startswith(op) for op in _NARRATION_OPENERS):
+        return True
+    head = s[:600].lower()
+    return (
+        "successfully written" in head
+        or "successfully wrote" in head
+        or "i have successfully" in head
+    )

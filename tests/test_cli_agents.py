@@ -1491,3 +1491,58 @@ class TestSummarizeCommand:
         project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
         summary_path = project_dir / "projectbook" / "summary.md"
         assert not summary_path.exists()
+
+    def test_summarize_narration_not_written(
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+    ) -> None:
+        """If the summarizer NARRATES instead of producing a summary, the
+        chatter must not clobber summary.md and the user gets a clear skip
+        message."""
+        _create_project(runner, urika_env)
+        with _agent_mocks(
+            _mock_agent_result(
+                text_output=(
+                    "I'll summarize the current state of this project.\n"
+                    "Let me read the relevant files first."
+                )
+            )
+        ):
+            result = runner.invoke(
+                cli,
+                ["summarize", "test-proj"],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        assert "looked like agent narration" in result.output
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        summary_path = project_dir / "projectbook" / "summary.md"
+        assert not summary_path.exists()
+
+    def test_summarize_real_summary_is_written(
+        self,
+        runner: CliRunner,
+        urika_env: dict[str, str],
+    ) -> None:
+        """A genuine prose summary (no narration opener) is persisted."""
+        _create_project(runner, urika_env)
+        with _agent_mocks(
+            _mock_agent_result(
+                text_output=(
+                    "This project explored the Stroop effect across "
+                    "3 experiments, with the best model reaching R2=0.85."
+                )
+            )
+        ):
+            result = runner.invoke(
+                cli,
+                ["summarize", "test-proj"],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        project_dir = Path(urika_env["URIKA_PROJECTS_DIR"]) / "test-proj"
+        summary_path = project_dir / "projectbook" / "summary.md"
+        assert summary_path.exists()
+        content = summary_path.read_text(encoding="utf-8")
+        assert "Stroop effect" in content

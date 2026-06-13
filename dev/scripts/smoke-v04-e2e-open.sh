@@ -266,8 +266,12 @@ fi
 # during `urika run`, not by `urika report` itself.
 step "9. urika report (project-level)"
 if run_step_with_timeout "report" 600 urika report "$PROJ"; then
-  verify_artifact "projectbook/key-findings.md" "$PROJ_DIR/projectbook/key-findings.md"
-  verify_artifact "projectbook/results-summary.md" "$PROJ_DIR/projectbook/results-summary.md"
+  # key-findings.md / results-summary.md are DETERMINISTIC (templated from
+  # progress.json + config by core/labbook.py — not agent-written), so
+  # there's no narration risk; verify_markdown_report with min_sections=1
+  # is still a cheap correctness check (leading heading + content).
+  verify_markdown_report "projectbook/key-findings.md is a real report" "$PROJ_DIR/projectbook/key-findings.md" 1
+  verify_markdown_report "projectbook/results-summary.md is a real report" "$PROJ_DIR/projectbook/results-summary.md" 1
 fi
 
 # === 9b. urika report --format latex (v0.9.0, pandoc-gated) ==========
@@ -307,6 +311,12 @@ then
   verify_artifact_any "presentation index.html" \
     "$PROJ_DIR/projectbook/presentation/index.html" \
     "$PROJ_DIR/projectbook/final-presentation/index.html"
+  # Assert the deck actually rendered (slides + figures), not an empty
+  # shell. Resolve whichever index.html the present path produced.
+  _present_index="$PROJ_DIR/projectbook/presentation/index.html"
+  [[ -s "$_present_index" ]] || _present_index="$PROJ_DIR/projectbook/final-presentation/index.html"
+  verify_presentation_rendered "presentation deck is rendered (slides + figures)" \
+    "$_present_index"
 fi
 
 # === 11. urika finalize ==============================================
@@ -315,15 +325,7 @@ fi
 #   - requirements.txt -> project root
 #   - reproduce.sh     -> project root
 #   - README.md        -> project root (regenerated from findings)
-#
-# final-report.md (projectbook/final-report.md) is best-effort: the
-# orchestrator writes it only when the report agent's output meets a
-# heading / length threshold. If the agent burns its turns trying to
-# Write the file directly (it has no write tools — read-only role),
-# the orchestrator falls back to "report generated" without writing.
-# This is a known issue tracked for a follow-up release; the
-# narrative.md from the post-criteria sequence is the authoritative
-# project narrative.
+#   - final-report.md  -> projectbook/final-report.md (agent narrative)
 step "11. urika finalize"
 if run_step_with_timeout "finalize" 1500 urika finalize "$PROJ"; then
   verify_artifact "projectbook/findings.json"  "$PROJ_DIR/projectbook/findings.json"
@@ -344,6 +346,8 @@ if run_step_with_timeout "finalize" 1500 urika finalize "$PROJ"; then
     "$PROJ_DIR/projectbook/reproduce.ipynb" "$PROJ_DIR"
   verify_file_nonempty "projectbook/METRICS.md" "$PROJ_DIR/projectbook/METRICS.md"
   verify_model_cards_present ">=1 model card written" "$PROJ_DIR"
+  verify_markdown_report "projectbook/final-report.md is a real report (heading, sections, no narration)" \
+    "$PROJ_DIR/projectbook/final-report.md" 2
 fi
 
 # === 12. Cleanup (optional) ==========================================

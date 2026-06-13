@@ -350,6 +350,57 @@ verify_artifact_any() {
   fail "artifact missing: $desc (none of: $*)"
 }
 
+# Agent-written PROSE needs more than existence/size: a read-only report
+# agent can leave its NARRATION ("I'll write a report... I successfully
+# wrote...") in the file instead of the report. These assert the artifact
+# is actually a report. (Added after a ~3900-byte narration blob landed in
+# projectbook/final-report.md and passed every existence/size check.)
+_NARRATION_MARKERS='I.?ll write|I.?ll now|Let me |I have successfully|I.?ve successfully|successfully written|successfully wrote|Let me check if the file|Here.?s (the|a)|Let me read|Let me start by|I am going to|I.?m going to'
+
+# <desc> <path> [min_sections=2]
+verify_markdown_report() {
+  local desc="$1"; local path="$2"; local min_sections="${3:-2}"
+  if [[ ! -s "$path" ]]; then fail "$desc — missing/empty: $path"; return 1; fi
+  local first; first="$(grep -m1 -E '\S' "$path" || true)"
+  if [[ ! "$first" =~ ^#+[[:space:]] ]]; then
+    fail "$desc — first non-blank line is not a markdown heading" "got: ${first:0:80}"; return 1
+  fi
+  local hit; hit="$(grep -m1 -iE "$_NARRATION_MARKERS" "$path" || true)"
+  if [[ -n "$hit" ]]; then
+    fail "$desc — contains agent narration, not a report" "marker: ${hit:0:90}"; return 1
+  fi
+  local n; n="$(grep -cE '^#+[[:space:]]' "$path" || true)"
+  if (( n < min_sections )); then fail "$desc — only $n heading(s) (expected >=$min_sections)"; return 1; fi
+  ok "$desc ($n sections, no narration)"
+}
+
+# Weaker: non-empty + leading heading + no chatter (for short docs)
+# <desc> <path>
+verify_markdown_not_chatter() {
+  local desc="$1"; local path="$2"
+  if [[ ! -s "$path" ]]; then fail "$desc — missing/empty: $path"; return 1; fi
+  local first; first="$(grep -m1 -E '\S' "$path" || true)"
+  if [[ ! "$first" =~ ^#+[[:space:]] ]]; then
+    fail "$desc — first non-blank line is not a markdown heading" "got: ${first:0:80}"; return 1
+  fi
+  local hit; hit="$(grep -m1 -iE "$_NARRATION_MARKERS" "$path" || true)"
+  if [[ -n "$hit" ]]; then fail "$desc — contains agent narration" "marker: ${hit:0:90}"; return 1; fi
+  ok "$desc"
+}
+
+# Presentation must be a RENDERED deck, not an empty shell.
+# <desc> <path>
+verify_presentation_rendered() {
+  local desc="$1"; local path="$2"
+  if [[ ! -s "$path" ]]; then fail "$desc — missing/empty: $path"; return 1; fi
+  local slides imgs
+  slides="$(grep -coE '<section[ >]' "$path" || true)"
+  imgs="$(grep -coE '<img[ >]' "$path" || true)"
+  if (( slides < 1 )); then fail "$desc — no <section> slides ($path)"; return 1; fi
+  if (( imgs < 1 )); then fail "$desc — $slides slides but 0 <img> figures" "$path"; return 1; fi
+  ok "$desc ($slides slides, $imgs figures)"
+}
+
 # --- "did real work" assertions ------------------------------------
 #
 # The existence checks above only prove a command didn't crash and

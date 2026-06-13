@@ -8,7 +8,10 @@ must be rejected so it never gets written over a real report.
 
 from __future__ import annotations
 
-from urika.core.report_writer import extract_report_markdown
+from urika.core.report_writer import (
+    extract_report_markdown,
+    looks_like_narration,
+)
 
 # A real narration blob captured in the wild: prose first, a markdown
 # heading only LATER in the text (so the weak "count('\n#') >= 2" guard
@@ -57,3 +60,37 @@ def test_short_string_is_rejected() -> None:
 
 def test_none_is_rejected() -> None:
     assert extract_report_markdown(None) is None
+
+
+# ---------------------------------------------------------------------------
+# looks_like_narration — a lighter guard for legitimately short/heading-less
+# prose (e.g. project summaries) where extract_report_markdown's heading +
+# 500-char requirements are too strict.
+# ---------------------------------------------------------------------------
+
+
+def test_narration_opener_is_narration() -> None:
+    assert looks_like_narration("I'll summarize the project...\nLet me read the files.")
+
+
+def test_real_summary_is_not_narration() -> None:
+    assert not looks_like_narration(
+        "This project explored the Stroop effect across 3 experiments..."
+    )
+
+
+def test_real_narration_blob_is_narration() -> None:
+    assert looks_like_narration(_NARRATION)
+
+
+def test_heading_led_report_is_not_narration() -> None:
+    assert not looks_like_narration(_REAL_REPORT)
+
+
+def test_none_is_not_narration() -> None:
+    assert not looks_like_narration(None)
+
+
+def test_empty_is_not_narration() -> None:
+    assert not looks_like_narration("")
+    assert not looks_like_narration("   \n  ")
