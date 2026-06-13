@@ -29,6 +29,7 @@ def render_presentation(
     *,
     theme: str = "light",
     experiment_dir: Path | None = None,
+    project_dir: Path | None = None,
 ) -> Path:
     """Render slide data into an HTML presentation.
 
@@ -36,7 +37,10 @@ def render_presentation(
         slide_data: Parsed slide JSON with title, subtitle, slides array.
         output_dir: Where to write the presentation files.
         theme: "light" or "dark".
-        experiment_dir: Experiment directory for resolving figure paths.
+        experiment_dir: Experiment directory for resolving figure paths
+            (experiment-level decks).
+        project_dir: Project root for resolving figures that live across many
+            ``experiments/<id>/artifacts/`` dirs (project-level decks).
 
     Returns:
         Path to the output directory.
@@ -72,9 +76,13 @@ def render_presentation(
         if slide_type == "stat":
             slides_html += _render_stat_slide(slide)
         elif slide_type == "figure":
-            slides_html += _render_figure_slide(slide, figures_dir, experiment_dir)
+            slides_html += _render_figure_slide(
+                slide, figures_dir, experiment_dir, project_dir
+            )
         elif slide_type == "figure-text":
-            slides_html += _render_two_col_slide(slide, figures_dir, experiment_dir)
+            slides_html += _render_two_col_slide(
+                slide, figures_dir, experiment_dir, project_dir
+            )
         elif slide_type == "explainer":
             slides_html += _render_explainer_slide(slide)
         else:
@@ -163,26 +171,108 @@ def _render_stat_slide(slide: dict[str, Any]) -> str:
 """
 
 
+def _is_within(child: Path, parent: Path) -> bool:
+    """True if ``child`` resolves to a path inside ``parent`` (or equal)."""
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _resolve_figure_source(
+    figure_path: str,
+    experiment_dir: Path | None,
+    project_dir: Path | None,
+) -> tuple[Path, str] | None:
+    """Resolve a slide's figure reference to (source_path, dest_name).
+
+    Returns ``None`` if no safe source can be found. The dest name is chosen
+    to be collision-free across experiments so two experiments with the same
+    figure basename don't clobber each other in the shared ``figures/`` dir.
+
+    A resolved source is rejected (treated as missing) if it escapes the
+    boundary dir it was resolved under — this stops an agent-supplied path
+    like ``../../etc/passwd`` from copying a file into a shareable deck.
+    """
+    if not figure_path:
+        return None
+    basename = Path(figure_path).name
+
+    # 1. Experiment-level: unchanged behavior — dest name is the basename.
+    if experiment_dir:
+        src = experiment_dir / figure_path
+        if src.is_file() and _is_within(src, experiment_dir):
+            return src, basename
+
+    # 2. Project-level resolution across many experiments.
+    if project_dir:
+        # 2a. Project-relative path. Two layouts are accepted: a path already
+        # rooted at the project (projectbook/figures/x.png) and one rooted at
+        # an experiment id (exp-001/artifacts/x.png) which lives under
+        # experiments/. Trying both keeps same-basename figures from different
+        # experiments distinct via their experiment-id prefix.
+        for base in (project_dir, project_dir / "experiments"):
+            src = base / figure_path
+            if src.is_file() and _is_within(src, project_dir):
+                return src, _project_dest_name(src, project_dir, basename)
+
+        # 2b. Basename search across experiment artifacts (deterministic).
+        experiments_dir = project_dir / "experiments"
+        if experiments_dir.is_dir():
+            for exp_dir in sorted(experiments_dir.iterdir()):
+                candidate = exp_dir / "artifacts" / basename
+                if candidate.is_file() and _is_within(candidate, project_dir):
+                    return candidate, _project_dest_name(
+                        candidate, project_dir, basename
+                    )
+
+        # 2c. Then the collected projectbook/figures dir (dest = basename).
+        candidate = project_dir / "projectbook" / "figures" / basename
+        if candidate.is_file() and _is_within(candidate, project_dir):
+            return candidate, basename
+
+    return None
+
+
+def _project_dest_name(src: Path, project_dir: Path, basename: str) -> str:
+    """Collision-free destination name for a project-level figure source.
+
+    Figures under ``experiments/<exp>/artifacts/`` get an ``<exp>_`` prefix so
+    two experiments sharing a basename land as distinct files. Anything else
+    (e.g. projectbook/figures) keeps its basename.
+    """
+    try:
+        rel = src.resolve().relative_to((project_dir / "experiments").resolve())
+        exp_name = rel.parts[0]
+        return f"{exp_name}_{basename}"
+    except (ValueError, OSError):
+        return basename
+
+
 def _copy_figure_or_placeholder(
     figure_path: str,
     figures_dir: Path,
     experiment_dir: Path | None,
     caption: str,
+    project_dir: Path | None = None,
 ) -> str:
     """Try to copy the figure to the output; return an <img> tag if it landed,
-    or a visible ``figure-missing`` placeholder if the source doesn't exist.
+    or a visible ``figure-missing`` placeholder if no source can be resolved.
 
     The placeholder shows the intended path so the presenter can see exactly
     which reference failed — silently emitting a broken <img> used to mean
     the problem only became obvious when the deck was opened.
+
+    This function controls BOTH the copy and the emitted ``<img src>`` so they
+    always agree on the filename.
     """
-    fig_name = Path(figure_path).name
-    if experiment_dir and figure_path:
-        src = experiment_dir / figure_path
-        if src.exists():
-            figures_dir.mkdir(exist_ok=True)
-            shutil.copy2(src, figures_dir / fig_name)
-            return f'<img src="figures/{_escape(fig_name)}" alt="{_escape(caption)}">'
+    resolved = _resolve_figure_source(figure_path, experiment_dir, project_dir)
+    if resolved is not None:
+        src, dest_name = resolved
+        figures_dir.mkdir(exist_ok=True)
+        shutil.copy2(src, figures_dir / dest_name)
+        return f'<img src="figures/{_escape(dest_name)}" alt="{_escape(caption)}">'
     return f'<div class="figure-missing">Figure missing: {_escape(figure_path)}</div>'
 
 
@@ -190,6 +280,7 @@ def _render_figure_slide(
     slide: dict[str, Any],
     figures_dir: Path,
     experiment_dir: Path | None,
+    project_dir: Path | None = None,
 ) -> str:
     """Render a figure slide, copying the image to the output."""
     title = slide.get("title", "")
@@ -198,7 +289,7 @@ def _render_figure_slide(
     bullets = slide.get("bullets", [])
 
     fig_html = _copy_figure_or_placeholder(
-        figure_path, figures_dir, experiment_dir, caption
+        figure_path, figures_dir, experiment_dir, caption, project_dir
     )
     cap = f'<p class="caption">{_escape(caption)}</p>' if caption else ""
     items = ""
@@ -225,6 +316,7 @@ def _render_two_col_slide(
     slide: dict[str, Any],
     figures_dir: Path,
     experiment_dir: Path | None,
+    project_dir: Path | None = None,
 ) -> str:
     """Render a two-column slide: figure left, text right."""
     title = slide.get("title", "")
@@ -234,7 +326,7 @@ def _render_two_col_slide(
     bottom = slide.get("bottom_text", "")
 
     fig_html = _copy_figure_or_placeholder(
-        figure_path, figures_dir, experiment_dir, caption
+        figure_path, figures_dir, experiment_dir, caption, project_dir
     )
     cap = f'<p class="caption">{_escape(caption)}</p>' if caption else ""
     items = ""

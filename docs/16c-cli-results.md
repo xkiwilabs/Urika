@@ -84,6 +84,8 @@ urika report [PROJECT] [--experiment ID]
 |--------|-------------|
 | `--experiment ID` | Generate report for a specific experiment |
 | `--audience [novice\|standard\|expert]` | Control explanation depth (default: standard) |
+| `--instructions TEXT` | Guide the report (e.g., "focus on feature importance findings") |
+| `--format [markdown\|latex\|pdf]` | Narrative format (default: markdown). `latex`/`pdf` post-process the written `narrative.md` with pandoc -- the markdown is always written first and kept. Requires the export extra (`pip install 'urika[export]'`) plus a `pandoc` binary; `pdf` also needs a LaTeX engine. See [`urika finalize`](16d-cli-agents.md#urika-finalize) for the per-dependency error messages |
 
 When no experiment is specified, you are prompted to choose: a specific experiment, all experiments, or project-level reports.
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "urika"
-version = "0.8.0"
+version = "0.9.0"
 description = "Multi-agent scientific analysis platform"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,6 +41,12 @@ dependencies = [
     "imbalanced-learn>=0.11",
     # Knowledge pipeline (PDF ingestion)
     "pypdf>=4.0",
+    # Reproduce notebook (projectbook/reproduce.ipynb, written by
+    # `urika finalize` via core/notebook_export.py). nbformat is often
+    # present transitively (nbconvert/nbclient/jupyter pull it in) but
+    # Urika builds and validates notebooks directly, so the dependency
+    # must be explicit, not inherited by accident.
+    "nbformat>=5.9",
     # Dashboard (markdown rendering)
     "markdown>=3.5",
     # Notifications (Slack, Telegram)
@@ -93,6 +99,15 @@ openai = [
 # it.
 google = [
     "google-adk>=1.0",
+]
+# v0.9.0 Phase 3: pandoc-based PDF/LaTeX export (`urika report` /
+# `urika finalize` with `--format latex|pdf`). Deliberately pypandoc,
+# NOT pypandoc_binary — the _binary wheel bundles a fixed pandoc
+# build (heavy, version-pinned); most users already have a distro
+# pandoc, and core/export.py raises a distinct actionable ExportError
+# when the binary is absent (no magic downloads).
+export = [
+    "pypandoc>=1.13",
 ]
 all = [
     "urika[dl,keyring,openai,google]",

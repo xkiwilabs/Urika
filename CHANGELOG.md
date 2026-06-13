@@ -5,6 +5,137 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] – 2026-06-13
+
+Publication-ready outputs. Finalized projects now ship with
+per-method model cards, a plain-language metrics glossary, and a
+runnable Jupyter reproduce notebook — all generated deterministically
+by pure code from artifacts the agents already wrote (no extra API
+cost). Reports and the final report can be exported to LaTeX or PDF
+via pandoc, and metrics gain bootstrap confidence intervals that flow
+from the run record into the labbook, reports, model cards, and the
+notebook.
+
+### Added
+
+- **Bootstrap confidence intervals on metrics** —
+  ``IMetric.compute_with_ci`` (concrete method on the metric ABC in
+  ``urika.evaluation.metrics.base``, inherited by every metric)
+  computes a pairwise bootstrap-percentile interval over
+  ``(y_true, y_pred)`` resamples: deterministic for a given seed,
+  ``ValueError`` on short/mismatched inputs or when >20% of resamples
+  fail, with a documented caveat that percentile intervals can
+  undercover near a boundary (R²/AUC ≈ 1.0). Run records carry the
+  intervals in the new ``RunRecord.metrics_with_uncertainty`` field
+  (``{"value", "ci_lower", "ci_upper", "confidence"}`` per metric;
+  legacy records load with ``{}``), the task agent is instructed to
+  report a CI for every primary metric where resampling is feasible
+  (and the CI of the effect size — not the p-value — for statistical
+  tests), the labbook renders them inline
+  (``r2=0.75 [95% CI 0.72–0.78] — <interpretation>``), and the report
+  agent must quote the interval whenever one exists — never a bare
+  point estimate.
+
+- **Deterministic model cards per finalized method** — ``urika
+  finalize`` now writes ``methods/<name>_model_card.md`` for every
+  ``final_methods[]`` entry in findings.json
+  (``urika.core.model_cards``, versioned via ``write_versioned``):
+  intended use (research question + mode), training data (paths +
+  shape from the data profile), metrics incl. CIs from the run record
+  matched by ``run_id``, assumptions from the evaluator's persisted
+  ``assumptions_detail`` (falling back to findings.json
+  ``limitations``), and known limitations. Sections without recorded
+  data render "Not recorded for this run." — the generator never
+  invents content. Novice audience adds the method-glossary explainer
+  line. Pure code, no agent call; best-effort (a failure never blocks
+  finalize).
+
+- **Per-project ``projectbook/METRICS.md`` glossary** —
+  ``urika.core.metrics_glossary`` (same finalize hook) writes one
+  section per metric name observed across the project's runs:
+  plain-language definition, range, and how-to-read from a ~15-entry
+  static glossary (r2, rmse, mse, mae, accuracy, precision, recall,
+  f1, auc, p_value, cohens_d, log_loss, silhouette, aic, bic — with
+  alias and suffix matching; unknown metrics render as
+  "project-specific" with observed values only), ranking direction
+  (signed-magnitude effect sizes like Cohen's d say so instead of
+  "higher is better"), observed range + best value across runs, and
+  CIs when recorded.
+
+- **Persisted evaluations** — the orchestrator loop now writes each
+  experiment's latest parsed evaluation to
+  ``experiments/<id>/labbook/evaluation.json`` (overwrite-latest,
+  atomic, non-fatal on failure), so the evaluator's
+  ``assumptions_detail`` survives the process and reaches the model
+  cards and the report agent (whose prompt now points at the on-disk
+  path) instead of dying with the run.
+
+- **PDF/LaTeX export** — new ``export`` extra
+  (``pip install 'urika[export]'`` → pypandoc; deliberately not
+  ``pypandoc_binary`` — no bundled pandoc, no magic downloads) and a
+  ``--format markdown|latex|pdf`` option on ``urika report`` and
+  ``urika finalize`` (and the REPL/TUI ``/report`` + ``/finalize``
+  slashes). Markdown stays the default and the agents stay
+  format-agnostic: latex/pdf post-process the markdown artifact the
+  normal flow just wrote (``urika.core.export.export_markdown``,
+  pandoc with a small margins/sans-headings header include and the
+  project on the resource path so relative figure links resolve).
+  Three distinct actionable errors: pypandoc missing → install the
+  extra; pandoc binary missing → distro install hint (apt/brew/choco);
+  PDF without a TeX engine → texlive hint plus the note that
+  ``--format latex`` works without one. On any export failure the
+  command exits non-zero but the markdown artifact stays in place
+  (and the message says so).
+
+- **Jupyter reproduce notebook** — ``urika finalize`` writes
+  ``projectbook/reproduce.ipynb`` (``urika.core.notebook_export``;
+  ``nbformat`` is now an explicit core dependency): title cell with
+  the research question + answer, a setup cell, and one
+  markdown-plus-code section per final method embedding the LITERAL
+  contents of its standalone script (a missing script degrades to a
+  note — the generator never invents code), with key metrics incl.
+  CIs and a closing pointer to METRICS.md and the model cards. The
+  notebook is validated with ``nbformat.validate`` before writing;
+  an execution test on a fresh kernel is gated on ``nbclient``
+  availability (in both the unit suite and the e2e smoke).
+
+### Compatibility
+
+v0.9.0 is a strict superset of v0.8.0;
+``pip install --upgrade urika`` is sufficient. The new artifacts
+(model cards, METRICS.md, reproduce.ipynb, evaluation.json) appear on
+the next ``urika finalize`` / ``urika run``;
+``RunRecord.metrics_with_uncertainty`` defaults to ``{}`` for legacy
+records and the labbook output is byte-identical for runs without
+intervals. ``--format`` defaults to ``markdown`` (today's behavior);
+the ``export`` extra is only needed for latex/pdf.
+
+### Fixed
+
+- **Project-level presentations now show their figures.** Whole-project
+  reveal.js decks (``urika present <project>`` and the final
+  presentation from ``urika finalize``) rendered every figure as a
+  "Figure missing" placeholder, while experiment-level decks were fine.
+  The renderer could only resolve a figure against a single
+  experiment's directory; project-level decks span every experiment's
+  ``artifacts/``. It now resolves figures across the whole project —
+  by bare filename or ``<experiment_id>/artifacts/<file>`` — copying
+  each with a collision-safe name (a figure referenced by an
+  unresolvable path still shows the visible placeholder). Adds a
+  path-traversal guard so a deck can never pull a file from outside
+  the project.
+- **Dashboard now opens itself in your browser.** The default launch
+  generates a per-session auth token; previously it suppressed the
+  browser auto-open and printed a long tokenized URL for you to
+  copy-paste by hand — and opening the dashboard without that exact
+  token (a bookmark, or a terminal click that dropped ``?token=``)
+  returned a raw ``{"detail":"Invalid or missing token"}`` JSON error
+  page. ``urika dashboard`` now auto-opens the tokenized URL (which
+  authenticates and pins the cookie), keeps printing it as an
+  SSH/headless fallback, and serves a friendly HTML "access token
+  required" page for browser navigations that hit a stale/missing
+  token (HTMX/XHR and ``curl`` still get the JSON 401).
+
 ## [0.8.0] – 2026-06-10
 
 Research scoping + output polish. The interactive project builder now

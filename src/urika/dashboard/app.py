@@ -24,6 +24,69 @@ _TEMPLATES_DIR = _PKG_DIR / "templates"
 _STATIC_DIR = _PKG_DIR / "static"
 
 
+# Standalone friendly page shown when a top-level browser navigation hits
+# a 401 (stale bookmark, a link that dropped ``?token=``, partial copy).
+# It deliberately carries NO token (the handler doesn't have it and leaking
+# it would defeat the auth) and uses only inline styles — the /static mount
+# is itself auth-gated, so external assets wouldn't load on this page.
+_AUTH_401_HTML = """\
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Access token required · Urika</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0d1117;
+    color: #c9d1d9;
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, Helvetica, Arial, sans-serif;
+  }
+  .card {
+    max-width: 30rem;
+    margin: 1.5rem;
+    padding: 2rem 2.25rem;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  }
+  h1 { margin: 0 0 0.75rem; font-size: 1.35rem; color: #f0f6fc; }
+  p { margin: 0 0 0.9rem; }
+  code {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 0.15rem 0.45rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #79c0ff;
+  }
+  .muted { color: #8b949e; font-size: 0.9rem; margin-bottom: 0; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Access token required</h1>
+    <p>This dashboard is protected by a one-time access token, and the
+       request didn't carry a valid one.</p>
+    <p>Each <code>urika dashboard</code> launch mints a <strong>fresh</strong>
+       token, so a bookmarked or previously copied URL is now stale.</p>
+    <p>Re-run <code>urika dashboard</code> in your terminal and open the
+       URL it prints &mdash; that link includes the current token.</p>
+    <p class="muted">Urika &middot; loopback dashboard</p>
+  </main>
+</body>
+</html>
+"""
+
+
 def _make_auth_dependency(expected: str):
     """Build a FastAPI dependency that requires a matching token.
 
@@ -102,6 +165,32 @@ def create_app(
         _version = "dev"
     app.state.templates.env.globals["urika_version"] = _version
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    from starlette.responses import HTMLResponse, JSONResponse
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _auth_html_handler(request, exc):  # noqa: ANN001
+        # Browser navigations to a 401 (stale/bookmarked URL, or a
+        # link that dropped the ?token=) should see a readable page,
+        # not a raw JSON error. Each `urika dashboard` launch mints a
+        # NEW token, so yesterday's bookmark is always stale — this is
+        # a recurring footgun without a friendly page. Non-HTML clients
+        # (HTMX/Alpine XHR, curl, RPC) keep the JSON contract.
+        accept = request.headers.get("accept", "")
+        is_browser_nav = "text/html" in accept and "hx-request" not in {
+            k.lower() for k in request.headers
+        }
+        if exc.status_code == 401 and is_browser_nav:
+            return HTMLResponse(_AUTH_401_HTML, status_code=401)
+        # Preserve any headers the exception carries (e.g. a 405's
+        # ``Allow`` or a 401's ``WWW-Authenticate``) — Starlette's
+        # default handler forwards them, so this replacement must too.
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+            headers=dict(exc.headers) if exc.headers else None,
+        )
 
     # /healthz is registered before the authenticated routers so it
     # never picks up the Bearer requirement. Health probes don't carry

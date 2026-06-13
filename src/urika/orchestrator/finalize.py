@@ -81,6 +81,43 @@ async def finalize_project(
     if not result.success:
         return {"error": result.error}
 
+    # Step 1b: Deterministic artifacts from the findings.json the
+    # finalizer just wrote — model cards per final method. Pure code,
+    # no agent call. Best-effort: a failure here logs + emits a
+    # progress event but never blocks the rest of the finalize
+    # sequence. Skipped in draft mode (no final methods exist yet).
+    if not draft:
+        try:
+            from urika.core.model_cards import generate_model_cards
+
+            card_paths = generate_model_cards(project_dir, audience=audience)
+            if card_paths:
+                progress("result", f"Model cards written ({len(card_paths)})")
+        except Exception as exc:
+            logger.warning("Model card generation failed: %s", exc)
+            progress("result", "Model card generation failed — continuing")
+        try:
+            from urika.core.metrics_glossary import write_metrics_glossary
+
+            glossary_path = write_metrics_glossary(project_dir)
+            if glossary_path is not None:
+                progress("result", "Metrics glossary written (projectbook/METRICS.md)")
+        except Exception as exc:
+            logger.warning("Metrics glossary generation failed: %s", exc)
+            progress("result", "Metrics glossary generation failed — continuing")
+        try:
+            from urika.core.notebook_export import write_reproduce_notebook
+
+            notebook_path = write_reproduce_notebook(project_dir)
+            if notebook_path is not None:
+                progress(
+                    "result",
+                    "Reproduce notebook written (projectbook/reproduce.ipynb)",
+                )
+        except Exception as exc:
+            logger.warning("Reproduce notebook generation failed: %s", exc)
+            progress("result", "Reproduce notebook generation failed — continuing")
+
     # Step 2: Report Agent — write report from findings.json
     report_label = "draft progress report" if draft else "final report"
     progress("agent", f"Report agent — writing {report_label}")
@@ -103,6 +140,11 @@ async def finalize_project(
                 "Structure: Abstract, Introduction, Methods, Results, Discussion, "
                 "Reproducibility, References."
             )
+        report_prompt += (
+            " For assumption checks, each experiment's latest evaluator "
+            "assessment (including assumptions_detail) is persisted at "
+            "experiments/<experiment_id>/labbook/evaluation.json."
+        )
         # Inject project memory + the rolling advisor-history summary
         # via the shared ``format_report_context`` helper (mirrors
         # planning and advisor — same heading text, same loader). The
@@ -186,9 +228,20 @@ async def finalize_project(
                     except Exception as exc:
                         logger.warning("Presentation theme loading failed: %s", exc)
                 output_dir = project_dir / pres_rel
-                render_presentation(slide_data, output_dir, theme=theme)
+                # The renderer resolves project-level figures across all
+                # experiments (and projectbook/figures) from project_dir and
+                # copies exactly the referenced ones with collision-free names.
+                render_presentation(
+                    slide_data,
+                    output_dir,
+                    theme=theme,
+                    project_dir=project_dir,
+                )
 
-                # Copy project-level figures into the presentation directory
+                # Belt-and-braces figure copies. The renderer already searches
+                # projectbook/figures, but draft mode keeps its figures in a
+                # separate dir that the renderer also resolves; copying here is
+                # harmless and keeps draft decks self-contained.
                 import shutil
 
                 pres_figures = output_dir / "figures"
@@ -205,25 +258,6 @@ async def finalize_project(
                     for fig in project_figures.iterdir():
                         if fig.is_file():
                             shutil.copy2(fig, pres_figures / fig.name)
-
-                # Copy experiment-level figures with experiment prefix
-                experiments_dir = project_dir / "experiments"
-                if experiments_dir.exists():
-                    for exp_dir in sorted(experiments_dir.iterdir()):
-                        artifacts = exp_dir / "artifacts"
-                        if artifacts.is_dir():
-                            for fig in artifacts.iterdir():
-                                if fig.is_file() and fig.suffix.lower() in (
-                                    ".png",
-                                    ".jpg",
-                                    ".jpeg",
-                                    ".svg",
-                                    ".gif",
-                                ):
-                                    shutil.copy2(
-                                        fig,
-                                        pres_figures / f"{exp_dir.name}_{fig.name}",
-                                    )
 
                 progress("result", f"{pres_label.capitalize()} saved")
 

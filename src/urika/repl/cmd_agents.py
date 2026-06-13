@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import click
 
 from urika.cli_display import _C
@@ -13,6 +15,46 @@ from urika.repl.helpers import (
     _get_audience,
     _file_link,
 )
+
+
+def _parse_format_flag(raw: str) -> tuple[str, str]:
+    """Split a ``--format <fmt>`` flag out of slash-command args.
+
+    v0.9.0 export parity: the CLI gets ``--format`` via Click; the
+    /report and /finalize slashes parse it out of the free-form args
+    the same way /finalize already handles ``--draft``. Returns
+    ``(remaining_args, fmt)`` with fmt defaulting to ``"markdown"``;
+    raises ValueError on a missing or unknown value so callers print
+    usage instead of silently exporting nothing.
+    """
+    match = re.search(r"--format(?:[=\s]+(\S+))?", raw)
+    if not match:
+        return raw.strip(), "markdown"
+    fmt = match.group(1) or ""
+    if fmt not in ("markdown", "latex", "pdf"):
+        raise ValueError(f"--format must be markdown|latex|pdf, got {fmt!r}")
+    remaining = (raw[: match.start()] + raw[match.end() :]).strip()
+    return remaining, fmt
+
+
+def _maybe_export_narrative(path, output_format: str) -> None:
+    """Export a just-written markdown narrative to latex/pdf.
+
+    REPL mirror of the CLI's ``_export_written_artifact``: on
+    ExportError the markdown stays in place and the message says so —
+    echoed rather than raised, so the REPL loop keeps running.
+    """
+    if output_format == "markdown":
+        return
+    from urika.core.export import ExportError, export_markdown
+
+    try:
+        out = export_markdown(path, output_format)
+    except ExportError as exc:
+        click.echo(f"  ✗ {exc}")
+        click.echo(f"    The markdown artifact was kept at {path}.")
+        return
+    click.echo(f"  ✓ Exported: {_file_link(out)}")
 
 
 def cmd_advisor(session: ReplSession, args: str) -> None:
@@ -167,6 +209,13 @@ def cmd_plan(session: ReplSession, args: str) -> None:
 
 def cmd_report(session: ReplSession, args: str) -> None:
     """Generate reports."""
+    try:
+        args, output_format = _parse_format_flag(args)
+    except ValueError as exc:
+        click.echo(f"  ✗ {exc}")
+        click.echo("  Usage: /report [experiment] [--format markdown|latex|pdf]")
+        return
+
     exp_choice = _pick_experiment(session, args, allow_all=True)
     if exp_choice is None:
         return
@@ -215,6 +264,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                     )
                     narrative_path.parent.mkdir(parents=True, exist_ok=True)
                     write_versioned(narrative_path, text + "\n")
+                    _maybe_export_narrative(narrative_path, output_format)
             click.echo("  \u2713 All experiment reports updated")
         elif exp_choice == "project":
             # Project-level reports
@@ -241,6 +291,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                 write_versioned(narrative_path, text + "\n")
                 link = _file_link(narrative_path, "projectbook/narrative.md")
                 click.echo(f"  \u2713 Project narrative: {link}")
+                _maybe_export_narrative(narrative_path, output_format)
                 readme_link = _file_link(
                     session.project_path / "README.md", "README.md"
                 )
@@ -289,6 +340,7 @@ def cmd_report(session: ReplSession, args: str) -> None:
                     f"experiments/{exp_choice}/labbook/narrative.md",
                 )
                 click.echo(f"  \u2713 Narrative: {link}")
+                _maybe_export_narrative(narrative_path, output_format)
     finally:
         session.set_agent_idle()
 
@@ -355,6 +407,14 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
     import os
 
     raw = args.strip()
+    try:
+        raw, output_format = _parse_format_flag(raw)
+    except ValueError as exc:
+        click.echo(f"  ✗ {exc}")
+        click.echo(
+            "  Usage: /finalize [--draft] [--format markdown|latex|pdf] [instructions]"
+        )
+        return
     draft = False
     if "--draft" in raw:
         draft = True
@@ -373,6 +433,7 @@ def cmd_finalize(session: ReplSession, args: str) -> None:
             instructions=instructions,
             audience=audience,
             draft=draft,
+            output_format=output_format,
         )
     finally:
         session.set_agent_idle()

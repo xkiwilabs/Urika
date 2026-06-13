@@ -83,6 +83,7 @@ urika finalize [PROJECT] [OPTIONS]
 | `--instructions TEXT` | Optional instructions for the finalizer agent (e.g., "focus on the random forest method") |
 | `--audience [novice\|standard\|expert]` | Control explanation depth in reports and presentations (default: standard) |
 | `--draft` | Interim summary -- outputs to `projectbook/draft/`, does not overwrite final outputs or write standalone scripts |
+| `--format [markdown\|latex\|pdf]` | Report format (default: markdown). `latex`/`pdf` run the normal markdown flow first, then convert the written `projectbook/final-report.md` (or `projectbook/draft/report.md` under `--draft`) with pandoc |
 
 **Examples:**
 
@@ -91,7 +92,16 @@ urika finalize my-project
 urika finalize my-project --instructions "emphasize the ensemble methods"
 urika finalize my-project --draft
 urika finalize my-project --draft --audience novice
+urika finalize my-project --format pdf
 ```
+
+**Export requirements (`--format latex|pdf`):** the export extra (`pip install 'urika[export]'`) plus a `pandoc` binary on PATH; `pdf` additionally needs a LaTeX engine. Each missing piece fails with its own actionable error and a non-zero exit, but the markdown artifact is always written first and kept:
+
+| Missing | Error says |
+|---------|-----------|
+| pypandoc (the Python package) | install the export extra: `pip install 'urika[export]'` |
+| `pandoc` binary | install it from your package manager (`apt install pandoc` / `brew install pandoc` / `choco install pandoc`) |
+| LaTeX engine (PDF only) | install one (e.g. `apt install texlive-latex-recommended`) -- `--format latex` works without one |
 
 See [Finalizing Projects](09-finalizing-projects.md) for details on what is produced, including draft mode.
 

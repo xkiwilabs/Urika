@@ -379,18 +379,45 @@ def _find_best_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 def _format_metrics_with_interpretation(run: dict[str, Any]) -> str:
     """Format a run's metrics as ``k=v`` pairs, appending the run's
-    plain-language interpretation where one exists for the metric:
-    ``r2=0.74 — Explains 74% of variance...``.
+    confidence interval and plain-language interpretation where they
+    exist for the metric:
+    ``r2=0.75 [95% CI 0.72–0.78] — Explains 75% of variance...``.
 
-    Runs without ``metric_interpretation`` (every record pre-v0.8)
-    render exactly as before: ``k=v, k=v``.
+    Runs without ``metrics_with_uncertainty`` (every record pre-v0.9)
+    and without ``metric_interpretation`` (pre-v0.8) render exactly
+    as before: ``k=v, k=v``.
     """
     interpretations = run.get("metric_interpretation") or {}
+    uncertainty = run.get("metrics_with_uncertainty") or {}
     parts: list[str] = []
     for k, v in run.get("metrics", {}).items():
+        part = f"{k}={v}"
+        entry = uncertainty.get(k) if isinstance(uncertainty, dict) else None
+        ci = _format_ci(entry) if isinstance(entry, dict) else ""
+        if ci:
+            part = f"{part} {ci}"
         interp = interpretations.get(k, "") if isinstance(interpretations, dict) else ""
-        parts.append(f"{k}={v} — {interp}" if interp else f"{k}={v}")
+        if interp:
+            part = f"{part} — {interp}"
+        parts.append(part)
     return ", ".join(parts)
+
+
+def _format_ci(entry: dict[str, Any]) -> str:
+    """Render one ``metrics_with_uncertainty`` entry as
+    ``[95% CI 0.72–0.78]``. Malformed entries (missing/non-numeric
+    bounds) render as "" so they never break the labbook.
+    """
+    try:
+        lower = float(entry["ci_lower"])
+        upper = float(entry["ci_upper"])
+    except (KeyError, TypeError, ValueError):
+        return ""
+    try:
+        pct = f"{float(entry.get('confidence', 0.95)) * 100:g}"
+    except (TypeError, ValueError):
+        pct = "95"
+    return f"[{pct}% CI {lower:.3g}–{upper:.3g}]"
 
 
 def _all_metric_names(runs: list[dict[str, Any]]) -> list[str]:

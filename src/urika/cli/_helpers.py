@@ -100,6 +100,25 @@ def _record_agent_usage(
         pass
 
 
+def _export_written_artifact(md_path: Path, output_format: str) -> Path:
+    """Post-process an already-written markdown artifact to latex/pdf.
+
+    v0.9.0 ``--format``: agents stay format-agnostic — export is a
+    pure function over the markdown they wrote
+    (:func:`urika.core.export.export_markdown`). On :class:`ExportError`
+    this raises ``click.ClickException`` (non-zero exit) whose message
+    says explicitly that the markdown artifact was kept in place.
+    """
+    from urika.core.export import ExportError, export_markdown
+
+    try:
+        return export_markdown(md_path, output_format)
+    except ExportError as exc:
+        raise click.ClickException(
+            f"{exc}\nThe markdown artifact was kept at {md_path}."
+        )
+
+
 def _sanitize_project_name(name: str) -> str:
     """Sanitize a project name so it is safe to use as a directory name.
 

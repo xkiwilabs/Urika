@@ -146,6 +146,10 @@ def _record_from_block(block: dict[str, Any]) -> RunRecord | None:
     if not isinstance(interpretation, dict):
         # Malformed interpretation never blocks the record itself.
         interpretation = {}
+    uncertainty = block.get("metrics_with_uncertainty", {})
+    if not isinstance(uncertainty, dict):
+        # Malformed uncertainty never blocks the record itself.
+        uncertainty = {}
     return RunRecord(
         run_id=block["run_id"],
         method=block["method"],
@@ -156,6 +160,7 @@ def _record_from_block(block: dict[str, Any]) -> RunRecord | None:
         next_step=block.get("next_step", ""),
         artifacts=block.get("artifacts", []),
         metric_interpretation=interpretation,
+        metrics_with_uncertainty=uncertainty,
     )
 
 

@@ -202,17 +202,21 @@ urika setup
 
 This checks installed packages by category, detects your hardware (CPU cores, RAM, GPU), and verifies your Claude authentication. If deep learning packages are missing, it offers to install them with automatic GPU detection.
 
-### Optional: deep learning
+### Optional extras
 
-The only optional install group is `[dl]` for deep learning (~2 GB download):
+Two optional install groups you may want up front: `[dl]` for deep learning (~2 GB download) and `[export]` for PDF/LaTeX report export:
 
 ```bash
 pip install "urika[dl]"         # + deep learning (torch, transformers, etc.)
+pip install "urika[export]"     # + PDF/LaTeX export for reports (pypandoc)
 ```
 
 | Group | Packages | What it adds |
 |-------|----------|-------------|
 | `[dl]` | torch, transformers, sentence-transformers, torchvision, torchaudio, timm | Neural networks, LLM fine-tuning, text embeddings, image/audio models |
+| `[export]` | pypandoc | `--format latex\|pdf` on `urika report` and `urika finalize`. Also needs the `pandoc` binary from your package manager (apt/brew/choco); PDF additionally needs a LaTeX engine (e.g. texlive) |
+
+(The `[openai]` and `[google]` extras for non-Anthropic model providers are covered in [Models and Privacy](13a-models-and-privacy.md).)
 
 You can also install deep learning packages interactively via `urika setup`, which detects whether you have an NVIDIA GPU and installs the appropriate CPU or CUDA variant.
 

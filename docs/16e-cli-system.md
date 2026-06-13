@@ -389,7 +389,7 @@ urika github pull   [PROJECT]
 
 The `[github] auto_push = true` opt-in hook in `urika.toml` runs the same scan → commit → push sequence at the tail of `urika run`, `urika finalize`, and `urika build-tool` (the default `auto_push_after` set). Wrapped in defensive `try/except` so auto-push failure can never break the host command.
 
-See [GitHub Backup](22-github-backup.md) for the full guide — secret-scanner pattern list, `.gitignore` template, `urika new --github / --no-github / --public` flags at project-creation time, the `[preferences] github_auto_create` global default, the dashboard Git tab, and the `urika-event:` trailer format.
+See [GitHub Backup](09b-github-backup.md) for the full guide — secret-scanner pattern list, `.gitignore` template, `urika new --github / --no-github / --public` flags at project-creation time, the `[preferences] github_auto_create` global default, the dashboard Git tab, and the `urika-event:` trailer format.
 
 ---
 

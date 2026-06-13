@@ -1,9 +1,10 @@
-# v0.7 Provider Guide
+# Providers and Models
 
-Urika v0.7.0 ships adapters for **Anthropic**, **OpenAI**, and
-**Google**. You can pick one provider for the whole project or
-mix-and-match per agent role. This guide answers the three
-questions most users hit first.
+Urika ships adapters for **Anthropic**, **OpenAI**, and
+**Google** (multi-provider support shipped in v0.7.0). You can
+pick one provider for the whole project or mix-and-match per
+agent role. This guide answers the three questions most users
+hit first.
 
 ## Which provider should I pick?
 

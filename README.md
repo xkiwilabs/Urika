@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/header.png?v=0.8.0" alt="Urika" width="580">
+  <img src="docs/assets/header.png?v=0.9.0" alt="Urika" width="580">
 </p>
 
 <p align="center">
@@ -22,17 +22,18 @@ As of v0.7.0, Urika supports the **Claude Agent SDK** (Anthropic), **OpenAI Agen
 
 **Runs on Linux, macOS, and Windows 11.** For local/private model setups (Ollama, vLLM, LiteLLM), see [Models & Privacy](docs/13a-models-and-privacy.md).
 
-## Three interfaces
+## Four interfaces
 
-Urika has three first-class interfaces — CLI, TUI, and dashboard. They share the same project state on disk, so anything you do in one shows up in the others.
+Urika has four first-class interfaces — TUI (default), classic REPL, CLI, and dashboard. They share the same project state on disk, so anything you do in one shows up in the others.
 
 | Interface | Command | When to use |
 |-----------|---------|-------------|
-| **CLI** | `urika <command>` | Scripting, batch jobs, CI, remote sessions, `--json` output for tooling |
 | **TUI** | `urika` | Exploratory orchestrator chat, watching a run with rich activity feedback, slash commands with tab completion |
+| **REPL** | `urika --classic` | Plain prompt_toolkit fallback with the same slash commands — for terminals where the TUI misbehaves, SSH, or screen readers |
+| **CLI** | `urika <command>` | Scripting, batch jobs, CI, remote sessions, `--json` output for tooling |
 | **Dashboard** | `urika dashboard [project]` | Monitoring long runs, sharing results in a browser, settings forms, sessions tab |
 
-See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-task cheat sheet across all three.
+See [Interfaces Overview](docs/02-interfaces-overview.md) for a full task-by-task cheat sheet across all four.
 
 ## Supported providers
 
@@ -44,7 +45,7 @@ As of v0.7.0, Urika ships adapters for three model providers. Pick one for the w
 | OpenAI | `openai-agents` | `gpt-5.4` | `gpt-5.4-mini` | API key |
 | Google | `google-adk` | `gemini-3.5-flash` | `gemini-3.5-flash` | API key |
 
-Set model strings per agent in `urika.toml` -- Urika routes each call to the right adapter based on the model prefix (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google). Mix providers across agent roles for cost or quality trade-offs (e.g. Opus for the planner, GPT-5.4-mini for the task agent, Gemini Flash for the report). See [v0.7 Provider Guide](docs/v07-provider-guide.md) for the full decision rubric and auth setup per provider.
+Set model strings per agent in `urika.toml` -- Urika routes each call to the right adapter based on the model prefix (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google). Mix providers across agent roles for cost or quality trade-offs (e.g. Opus for the planner, GPT-5.4-mini for the task agent, Gemini Flash for the report). See [Provider Guide](docs/13c-providers-and-models.md) for the full decision rubric and auth setup per provider.
 
 > **Why Google has no Pro/Flash split.** `gemini-3.1-pro-preview` requires a billing-enabled Google AI account (free-tier rate limit = 0), so v0.7.0 recommends `gemini-3.5-flash` for both reasoning and execution roles to keep onboarding friction-free for free-tier users. Users with billing can override per-agent to Pro and cost reporting works correctly (`urika.agents.pricing.PRICES` carries the row).
 
@@ -81,7 +82,7 @@ On Ubuntu 22.04+, Debian 12+, Fedora 38+, and recent macOS, system Python refuse
 pip install --upgrade urika           # strict superset — no config changes required
 ```
 
-Existing `urika.toml` and `~/.urika/settings.toml` work unchanged. v0.7.0 adds optional new keys (`[anthropic] auth`, `[runtime.models.<agent>] model`) with safe defaults — see [v0.7 Provider Guide](docs/v07-provider-guide.md) for mixing providers per agent role.
+Existing `urika.toml` and `~/.urika/settings.toml` work unchanged. v0.7.0 adds optional new keys (`[anthropic] auth`, `[runtime.models.<agent>] model`) with safe defaults — see [Provider Guide](docs/13c-providers-and-models.md) for mixing providers per agent role.
 
 **From source** (for active development):
 
@@ -116,7 +117,7 @@ urika config openai --mode api_key
 urika config google --mode api_key
 ```
 
-See [Getting Started](docs/01-getting-started.md) for the full walkthrough including verification, troubleshooting, and per-OS notes. See [v0.7 Provider Guide](docs/v07-provider-guide.md) for the cross-provider routing model. See [Provider compliance](docs/20-security.md#provider-compliance) for the Anthropic / OpenAI / Google policy rationale.
+See [Getting Started](docs/01-getting-started.md) for the full walkthrough including verification, troubleshooting, and per-OS notes. See [Provider Guide](docs/13c-providers-and-models.md) for the cross-provider routing model. See [Provider compliance](docs/20-security.md#provider-compliance) for the Anthropic / OpenAI / Google policy rationale.
 
 ## Quickstart
 
@@ -251,8 +252,8 @@ See [Models and Privacy](docs/13a-models-and-privacy.md) for configuration detai
 | [Notifications — Channels](docs/19a-notifications-channels.md) | Email, Slack, Telegram setup walkthroughs |
 | [Notifications — Remote](docs/19b-notifications-remote.md) | Remote `/commands`, what gets notified, troubleshooting, caveats |
 | [Security Model](docs/20-security.md) | Agent-generated code, permission boundaries, secrets, dashboard auth |
-| [GitHub Backup](docs/22-github-backup.md) | `urika github` commands, pre-commit secret scanner, opt-in auto-push hook |
-| [v0.7 Provider Guide](docs/v07-provider-guide.md) | Choosing between Anthropic / OpenAI / Google, auth setup per provider, mixing providers per agent |
+| [GitHub Backup](docs/09b-github-backup.md) | `urika github` commands, pre-commit secret scanner, opt-in auto-push hook |
+| [Provider Guide](docs/13c-providers-and-models.md) | Choosing between Anthropic / OpenAI / Google, auth setup per provider, mixing providers per agent |
 
 ## Reporting bugs and requesting features
 
@@ -275,10 +276,10 @@ issue much faster to act on.
 - Google Agent Development Kit adapter + `[google]` extra (`pip install urika[google]`)
 - Model-prefix routing (`claude-*` → Anthropic, `gpt-*` / `o3-*` / `o4-*` / `o5-*` → OpenAI, `gemini-*` → Google) — mix providers per agent in the same project
 - Anthropic subscription auth path (`urika config anthropic --mode subscription`), API-key path unchanged
-- Setup: `urika config anthropic|openai|google --mode api_key` then `urika config api-key` (Anthropic) or `urika config secret` (OpenAI / Google) — see the [v0.7 Provider Guide](docs/v07-provider-guide.md) for the full decision rubric.
+- Setup: `urika config anthropic|openai|google --mode api_key` then `urika config api-key` (Anthropic) or `urika config secret` (OpenAI / Google) — see the [Provider Guide](docs/13c-providers-and-models.md) for the full decision rubric.
 
 **v0.6 — GitHub backup**
-- One-command setup of a git repo per project + opt-in auto-push after every successful `urika run` / `finalize` / `build-tool` — see the [GitHub Backup guide](docs/22-github-backup.md)
+- One-command setup of a git repo per project + opt-in auto-push after every successful `urika run` / `finalize` / `build-tool` — see the [GitHub Backup guide](docs/09b-github-backup.md)
 - Pre-commit secret scanner (Anthropic, OpenAI, GitHub PAT/OAuth, AWS shapes) blocks leaks before they reach the remote
 - Dashboard Git tab with remote URL, last push, recent commits
 - Researcher-safe `.gitignore` template with managed-block markers
@@ -288,13 +289,14 @@ issue much faster to act on.
 Planned features on the road to **v1.0.0**. Bug-fix hotfixes
 (`v0.x.y`) ship in between as issues are reported.
 
-**Publication-ready output**
+**v0.9 — publication-ready output**
 - Export reports as PDF or LaTeX
 - Export the final pipeline as a runnable Jupyter notebook
 - Auto-generated model cards (assumptions, data, intended use, limitations) per finalised method
 
-**UX polish**
-- Project templates: `urika new --template behavioral|timeseries|imaging|nlp|ml-baseline` with seeded criteria, recommended tools, and sample knowledge — skips the interactive wizard for common research shapes
+**v0.10 — pre-1.0 hardening**
+- `urika upgrade`: one-command, idempotent migration of older projects to the current file formats
+- Dashboard builder-wizard sessions survive a server restart (resume scoping where you left off)
 - Dashboard accessibility pass: keyboard navigation, focus states, ARIA labels, light/dark contrast audit
 
 **v1.0 — first stable release**
