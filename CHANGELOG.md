@@ -5,6 +5,18 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Dashboard now shows the "Final report" link for finalized
+  projects.** ``urika finalize`` writes the project report to
+  ``projectbook/final-report.md``, but the dashboard only looked for
+  ``report.md`` / ``narrative.md`` — so finalized projects showed no
+  report link and the report route 404'd even though the report
+  existed. The dashboard now recognizes ``final-report.md`` (preferred)
+  with ``report.md`` / ``narrative.md`` kept as fallbacks.
+
 ## [0.9.0] – 2026-06-13
 
 Publication-ready outputs. Finalized projects now ship with
