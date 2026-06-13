@@ -1,7 +1,8 @@
 # Urika — Current Status
 
 **Date:** 2026-06-13
-**Version:** v0.9.0 (output polish) SHIPPED 2026-06-13; v0.8.0
+**Version:** v0.9.1 (report-integrity hotfix) SHIPPED 2026-06-13;
+v0.9.0 (output polish) 2026-06-13; v0.8.0
 (review hardening + research scoping) shipped 2026-06-10; v0.7.0
 (multi-provider adapters) 2026-06-08; v0.6.0.1 (Windows hotfix)
 2026-06-01; v0.6.0 (GitHub auto-backup) 2026-05-31; v0.5.x (memory
