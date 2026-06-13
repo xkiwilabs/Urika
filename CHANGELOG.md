@@ -5,7 +5,13 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.1] – 2026-06-13
+
+Hotfix: report integrity + dashboard report link. Finalized projects
+sometimes wrote the report agent's narration into the final report
+instead of the report itself, and the dashboard couldn't find the
+report it had written. Both fixed, with the release smoke hardened to
+assert reports are actually reports.
 
 ### Fixed
 
@@ -25,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now asserts reports are actually reports (leading heading, sections,
   no chatter) and presentations are rendered decks — gaps that let this
   pass every prior smoke run.
+- **`reproduce.ipynb` runs to completion on a fresh kernel.** Finalizer
+  method scripts are CLIs that end with ``sys.exit(0)``; in a notebook
+  that raised ``SystemExit`` and aborted the kernel. The generated
+  notebook now softens a clean (0/None) exit to a no-op while still
+  surfacing real failures.
 - **Dashboard now shows the "Final report" link for finalized
   projects.** ``urika finalize`` writes the project report to
   ``projectbook/final-report.md``, but the dashboard only looked for
