@@ -45,7 +45,11 @@ def extract_report_markdown(text: str | None) -> str | None:
     if len(s) < 500:
         return None
     lines = s.splitlines()
-    for i, line in enumerate(lines[:3]):
+    # Scan the first few lines for the leading heading. A compliant
+    # report starts at line 0; we tolerate a short (1-2 line + blank)
+    # preamble before rejecting as narration — captured narration
+    # always runs 4+ prose lines before any heading.
+    for i, line in enumerate(lines[:5]):
         if line.lstrip().startswith("#"):
             body = "\n".join(lines[i:]).strip()
             return body if len(body) >= 500 else None
