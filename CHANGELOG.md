@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reports no longer contain the agent's narration instead of the
+  report.** The report agent is read-only (no Write tool), but the
+  finalize/narrative prompts told it to "write a report at
+  ``projectbook/final-report.md``". Unable to write, it would sometimes
+  narrate ("I'll write a comprehensive report… I have successfully
+  written…") and the orchestrator wrote that narration to the file,
+  burying the real report. The prompts now tell the agent its reply IS
+  the report (it has no file tools), and every report/narrative write
+  site (finalize, experiment narratives, ``urika report`` CLI + REPL,
+  and ``urika summarize``) validates the output with a shared guard
+  that rejects narration and preserves the previous report. A
+  long-latent bug (present since v0.3, masked by a weaker heuristic
+  that newer models' longer narration slipped past). The release smoke
+  now asserts reports are actually reports (leading heading, sections,
+  no chatter) and presentations are rendered decks — gaps that let this
+  pass every prior smoke run.
 - **Dashboard now shows the "Final report" link for finalized
   projects.** ``urika finalize`` writes the project report to
   ``projectbook/final-report.md``, but the dashboard only looked for
