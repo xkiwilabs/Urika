@@ -258,10 +258,15 @@ def project_home(request: Request, name: str) -> HTMLResponse:
     book = summary.path / "projectbook"
     final_outputs = {
         "has_findings": (book / "findings.json").exists(),
-        # Either the finalize flow's report.md OR the report-agent's
-        # narrative.md (written at the end of every run). The view
-        # route picks whichever exists.
-        "has_report": (book / "report.md").exists() or (book / "narrative.md").exists(),
+        # The finalize flow's final-report.md (preferred — what
+        # ``urika finalize`` actually writes), the legacy report.md, OR
+        # the report-agent's narrative.md (written at the end of every
+        # run). The view route picks whichever exists, in that order.
+        "has_report": (
+            (book / "final-report.md").exists()
+            or (book / "report.md").exists()
+            or (book / "narrative.md").exists()
+        ),
         # Project-level presentations are written to one of two
         # directories depending on which command produced them:
         #
@@ -378,7 +383,7 @@ def project_findings(request: Request, name: str) -> HTMLResponse:
 
 @router.get("/projects/{name}/projectbook/report", response_class=HTMLResponse)
 def projectbook_report(name: str, request: Request) -> HTMLResponse:
-    """Render the project-level final report at ``projectbook/report.md``.
+    """Render the project-level final report at ``projectbook/final-report.md``.
 
     Reuses ``report_view.html`` with an empty ``experiment_id`` and a
     ``title_override`` so the breadcrumb chain ends at the project,
@@ -388,12 +393,21 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
     summary = load_project_summary(name, registry)
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
-    # Prefer the finalize flow's polished report.md; fall back to the
-    # report-agent's narrative.md (written at the end of every
-    # ``urika run``). Whichever exists is what we render.
+    # Prefer the finalize flow's polished final-report.md (what
+    # ``urika finalize`` writes); fall back to the legacy report.md, then
+    # to the report-agent's narrative.md (written at the end of every
+    # ``urika run``). Whichever exists first is what we render.
     book = summary.path / "projectbook"
     report_path = next(
-        (p for p in (book / "report.md", book / "narrative.md") if p.exists()),
+        (
+            p
+            for p in (
+                book / "final-report.md",
+                book / "report.md",
+                book / "narrative.md",
+            )
+            if p.exists()
+        ),
         None,
     )
     if report_path is None:
@@ -553,7 +567,7 @@ def projectbook_asset(name: str, rest: str) -> FileResponse:
     """Serve arbitrary files under ``<project>/projectbook/<rest>``.
 
     Powers the figures and artifacts referenced from the project-level
-    final report (``projectbook/report.md``).  Common subpaths:
+    final report (``projectbook/final-report.md``).  Common subpaths:
     ``figures/foo.png``, ``artifacts/foo.csv``.
 
     Path-traversal protection: rejects ``..`` segments and ensures the

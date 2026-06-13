@@ -1449,6 +1449,76 @@ def test_projectbook_report_404_unknown_project(client_with_runs):
     assert r.status_code == 404
 
 
+def test_projectbook_report_renders_final_report_md(client_with_runs):
+    """Regression: ``urika finalize`` writes the project-level report to
+    ``projectbook/final-report.md`` (see
+    src/urika/orchestrator/finalize.py / cli/agents_finalize.py), NOT
+    ``report.md`` or ``narrative.md``. The dashboard must recognise that
+    filename — otherwise the Final report link is hidden and the route
+    404s even though the report was generated."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "final-report.md").write_text(
+        "# Finalized write-up\n\nThe finalize report body.", encoding="utf-8"
+    )
+    # No report.md / narrative.md — only the actual finalize output.
+    r = client_with_runs.get("/projects/alpha/projectbook/report")
+    assert r.status_code == 200
+    assert "<h1>Finalized write-up</h1>" in r.text
+    assert "The finalize report body." in r.text
+
+
+def test_project_home_has_report_true_for_final_report_md_only(client_with_runs):
+    """The Final report card/link must surface when only the finalize
+    output ``final-report.md`` is on disk (no report.md / narrative.md)."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "findings.json").write_text("{}")
+    (book / "final-report.md").write_text("# Final report", encoding="utf-8")
+    r = client_with_runs.get("/projects/alpha")
+    assert r.status_code == 200
+    body = r.text
+    assert "Final outputs" in body
+    assert "/projects/alpha/projectbook/report" in body or "Final report" in body
+
+
+def test_projectbook_report_renders_narrative_md_fallback(client_with_runs):
+    """Fallback contract: when only the report-agent's narrative.md
+    exists (the end-of-run project-level report), the route still
+    renders it."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "narrative.md").write_text(
+        "# Narrative report\n\nfrom the report agent.", encoding="utf-8"
+    )
+    r = client_with_runs.get("/projects/alpha/projectbook/report")
+    assert r.status_code == 200
+    assert "<h1>Narrative report</h1>" in r.text
+    assert "from the report agent." in r.text
+
+
+def test_projectbook_report_prefers_final_report_over_legacy(client_with_runs):
+    """Candidate precedence: ``final-report.md`` (what finalize writes)
+    wins over the legacy ``report.md`` and the report-agent fallback
+    ``narrative.md`` when more than one is present — it's the latest
+    authoritative finalize output."""
+    proj = client_with_runs.app.state.project_root / "alpha"
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "final-report.md").write_text("# Finalized winner", encoding="utf-8")
+    (book / "report.md").write_text("# Legacy report", encoding="utf-8")
+    (book / "narrative.md").write_text("# Narrative", encoding="utf-8")
+    r = client_with_runs.get("/projects/alpha/projectbook/report")
+    assert r.status_code == 200
+    body = r.text
+    assert "Finalized winner" in body
+    assert "Legacy report" not in body
+    assert "Narrative" not in body
+
+
 def test_projectbook_presentation_serves_html(client_with_runs):
     proj = client_with_runs.app.state.project_root / "alpha"
     book = proj / "projectbook"
