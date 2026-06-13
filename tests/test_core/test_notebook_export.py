@@ -42,6 +42,7 @@ _SCRIPT = '''\
 """Synthetic stand-in for a finalizer standalone method script."""
 
 import argparse
+import sys
 
 
 def main() -> None:
@@ -50,6 +51,10 @@ def main() -> None:
     args = parser.parse_args()
     with open(args.data, encoding="utf-8") as fh:
         print("r2 =", fh.read().strip())
+    # Real finalizer CLIs end with a clean exit; in a notebook this
+    # raises SystemExit(0) and aborts the kernel unless the preamble
+    # softens it. Mirror that here so the execution test catches it.
+    sys.exit(0)
 
 
 if __name__ == "__main__":
@@ -181,6 +186,11 @@ class TestWriteReproduceNotebook:
         assert "import sys" in preamble
         assert 'sys.argv = ["final_ridge.py"]' in preamble, (
             "sys.argv must be reset to just the script's own filename"
+        )
+        # A finalizer CLI's clean sys.exit(0) must not abort the kernel.
+        assert "sys.exit = _soft_exit" in preamble, (
+            "preamble must soften sys.exit(0) so a script's clean exit "
+            "doesn't raise SystemExit and fail the notebook cell"
         )
 
     def test_missing_script_noted_without_code_cell(self, project_dir: Path) -> None:
