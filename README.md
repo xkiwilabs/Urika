@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/header.png?v=0.9.0" alt="Urika" width="580">
+  <img src="docs/assets/header.png?v=0.9.1" alt="Urika" width="580">
 </p>
 
 <p align="center">

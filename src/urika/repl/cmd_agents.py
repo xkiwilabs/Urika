@@ -249,10 +249,15 @@ def cmd_report(session: ReplSession, args: str) -> None:
                     session,
                     "report_agent",
                     exp.experiment_id,
-                    f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                    f"Write a detailed narrative report for experiment "
+                    f"{exp.experiment_id}. Output only the report markdown "
+                    "beginning with a # heading.",
                     audience=audience,
                 )
-                if text:
+                from urika.core.report_writer import extract_report_markdown
+
+                body = extract_report_markdown(text)
+                if body is not None:
                     from urika.core.report_writer import write_versioned
 
                     narrative_path = (
@@ -263,8 +268,13 @@ def cmd_report(session: ReplSession, args: str) -> None:
                         / "narrative.md"
                     )
                     narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                    write_versioned(narrative_path, text + "\n")
+                    write_versioned(narrative_path, body + "\n")
                     _maybe_export_narrative(narrative_path, output_format)
+                else:
+                    click.echo(
+                        f"  {exp.experiment_id}: report agent returned no "
+                        "usable report content \u2014 nothing written"
+                    )
             click.echo("  \u2713 All experiment reports updated")
         elif exp_choice == "project":
             # Project-level reports
@@ -280,15 +290,20 @@ def cmd_report(session: ReplSession, args: str) -> None:
                 session,
                 "report_agent",
                 "",
-                "Write a project-level narrative report covering all experiments and the research progression.",
+                "Write a project-level narrative report covering all experiments "
+                "and the research progression. Output only the report markdown "
+                "beginning with a # heading.",
                 audience=audience,
             )
-            if text:
+            from urika.core.report_writer import extract_report_markdown
+
+            body = extract_report_markdown(text)
+            if body is not None:
                 from urika.core.report_writer import write_versioned
 
                 narrative_path = session.project_path / "projectbook" / "narrative.md"
                 narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                write_versioned(narrative_path, text + "\n")
+                write_versioned(narrative_path, body + "\n")
                 link = _file_link(narrative_path, "projectbook/narrative.md")
                 click.echo(f"  \u2713 Project narrative: {link}")
                 _maybe_export_narrative(narrative_path, output_format)
@@ -296,6 +311,11 @@ def cmd_report(session: ReplSession, args: str) -> None:
                     session.project_path / "README.md", "README.md"
                 )
                 click.echo(f"  \u2713 README: {readme_link}")
+            else:
+                click.echo(
+                    "  Report agent returned no usable report content "
+                    "\u2014 nothing written"
+                )
         else:
             click.echo(f"  {_C.BLUE}Generating report for {exp_choice}...{_C.RESET}")
             try:
@@ -320,10 +340,14 @@ def cmd_report(session: ReplSession, args: str) -> None:
                 session,
                 "report_agent",
                 exp_choice,
-                f"Write a detailed narrative report for experiment {exp_choice}.",
+                f"Write a detailed narrative report for experiment {exp_choice}. "
+                "Output only the report markdown beginning with a # heading.",
                 audience=audience,
             )
-            if text:
+            from urika.core.report_writer import extract_report_markdown
+
+            body = extract_report_markdown(text)
+            if body is not None:
                 from urika.core.report_writer import write_versioned
 
                 narrative_path = (
@@ -334,13 +358,18 @@ def cmd_report(session: ReplSession, args: str) -> None:
                     / "narrative.md"
                 )
                 narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                write_versioned(narrative_path, text + "\n")
+                write_versioned(narrative_path, body + "\n")
                 link = _file_link(
                     narrative_path,
                     f"experiments/{exp_choice}/labbook/narrative.md",
                 )
                 click.echo(f"  \u2713 Narrative: {link}")
                 _maybe_export_narrative(narrative_path, output_format)
+            else:
+                click.echo(
+                    "  Report agent returned no usable report content "
+                    "\u2014 nothing written"
+                )
     finally:
         session.set_agent_idle()
 

@@ -5,6 +5,45 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] – 2026-06-13
+
+Hotfix: report integrity + dashboard report link. Finalized projects
+sometimes wrote the report agent's narration into the final report
+instead of the report itself, and the dashboard couldn't find the
+report it had written. Both fixed, with the release smoke hardened to
+assert reports are actually reports.
+
+### Fixed
+
+- **Reports no longer contain the agent's narration instead of the
+  report.** The report agent is read-only (no Write tool), but the
+  finalize/narrative prompts told it to "write a report at
+  ``projectbook/final-report.md``". Unable to write, it would sometimes
+  narrate ("I'll write a comprehensive report… I have successfully
+  written…") and the orchestrator wrote that narration to the file,
+  burying the real report. The prompts now tell the agent its reply IS
+  the report (it has no file tools), and every report/narrative write
+  site (finalize, experiment narratives, ``urika report`` CLI + REPL,
+  and ``urika summarize``) validates the output with a shared guard
+  that rejects narration and preserves the previous report. A
+  long-latent bug (present since v0.3, masked by a weaker heuristic
+  that newer models' longer narration slipped past). The release smoke
+  now asserts reports are actually reports (leading heading, sections,
+  no chatter) and presentations are rendered decks — gaps that let this
+  pass every prior smoke run.
+- **`reproduce.ipynb` runs to completion on a fresh kernel.** Finalizer
+  method scripts are CLIs that end with ``sys.exit(0)``; in a notebook
+  that raised ``SystemExit`` and aborted the kernel. The generated
+  notebook now softens a clean (0/None) exit to a no-op while still
+  surfacing real failures.
+- **Dashboard now shows the "Final report" link for finalized
+  projects.** ``urika finalize`` writes the project report to
+  ``projectbook/final-report.md``, but the dashboard only looked for
+  ``report.md`` / ``narrative.md`` — so finalized projects showed no
+  report link and the report route 404'd even though the report
+  existed. The dashboard now recognizes ``final-report.md`` (preferred)
+  with ``report.md`` / ``narrative.md`` kept as fallbacks.
+
 ## [0.9.0] – 2026-06-13
 
 Publication-ready outputs. Finalized projects now ship with

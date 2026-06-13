@@ -107,9 +107,13 @@ async def _generate_reports(
                 # same heading text, same underlying loader, so memory
                 # writes are symmetrically read by all three roles).
                 # Closes the read-side loop for report.
-                report_prompt = (
-                    format_audience_context(audience)
-                    + f"Write a detailed narrative report for experiment {experiment_id}."
+                report_prompt = format_audience_context(audience) + (
+                    f"Produce a narrative report for experiment {experiment_id} "
+                    "as your response. Output ONLY the report as markdown — you "
+                    "have no file-writing tools, so your reply IS the report. "
+                    "Do not write any files. Begin directly with the report "
+                    'title as a `# ` heading — no preamble, no "I\'ll write…", '
+                    "no closing remarks."
                 )
                 try:
                     from urika.agents.roles.report_agent import (
@@ -128,25 +132,36 @@ async def _generate_reports(
                     on_message=on_message,
                 )
                 _track(result)
-                if result.success and result.text_output:
-                    content = result.text_output.strip()
-                    # Only write if the output looks like actual report content
-                    # (has markdown headings and is substantial), not agent narration
-                    if len(content) > 500 and content.count("\n#") >= 2:
-                        from urika.core.report_writer import write_versioned
+                # The report agent has no Write tool — its reply IS the
+                # narrative. Reject narration ("I'll write…", "Let me
+                # read…") so it never clobbers a real narrative.
+                from urika.core.report_writer import (
+                    extract_report_markdown,
+                    write_versioned,
+                )
 
-                        narrative_path = (
-                            project_dir
-                            / "experiments"
-                            / experiment_id
-                            / "labbook"
-                            / "narrative.md"
-                        )
-                        narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                        write_versioned(narrative_path, content + "\n")
-                        progress("result", "Experiment narrative written")
-                    else:
-                        progress("result", "Experiment narrative generated")
+                body = (
+                    extract_report_markdown(result.text_output)
+                    if result.success
+                    else None
+                )
+                if body is not None:
+                    narrative_path = (
+                        project_dir
+                        / "experiments"
+                        / experiment_id
+                        / "labbook"
+                        / "narrative.md"
+                    )
+                    narrative_path.parent.mkdir(parents=True, exist_ok=True)
+                    write_versioned(narrative_path, body + "\n")
+                    progress("result", "Experiment narrative written")
+                elif result.success:
+                    progress(
+                        "result",
+                        "Experiment narrative: agent returned no usable "
+                        "report — kept previous",
+                    )
         except Exception as exc:
             logger.warning("Experiment narrative generation failed: %s", exc)
 

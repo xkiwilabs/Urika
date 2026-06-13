@@ -559,7 +559,18 @@ def summarize(project: str | None, instructions: str | None, json_output: bool) 
     # dashboard can detect prior state and flip the "Summarize" button label
     # to "Re-summarize". Failures (disk full, locked path) are swallowed so
     # they never break the CLI flow.
-    if result.success and result.text_output:
+    #
+    # Guard against agent narration ("I'll summarize... I have written...")
+    # clobbering a real prior summary. Summaries are legitimately short,
+    # heading-less prose, so we use the lighter looks_like_narration rejecter
+    # rather than extract_report_markdown's heading + length requirements.
+    from urika.core.report_writer import looks_like_narration
+
+    if (
+        result.success
+        and result.text_output
+        and not looks_like_narration(result.text_output)
+    ):
         try:
             book_dir = project_path / "projectbook"
             book_dir.mkdir(parents=True, exist_ok=True)
@@ -568,6 +579,11 @@ def summarize(project: str | None, instructions: str | None, json_output: bool) 
             )
         except OSError:
             pass
+    elif result.success and result.text_output and not json_output:
+        click.echo(
+            "  summarizer returned no usable summary (looked like agent "
+            "narration) — nothing written"
+        )
 
     if json_output:
         from urika.cli_helpers import output_json

@@ -197,5 +197,13 @@ def _script_source(project_dir: Path, entry: dict[str, Any]) -> str | None:
         "import sys\n\n"
         f'sys.argv = ["{path.name}"]'
         "  # neutralize Jupyter's own argv for argparse-based scripts\n\n"
+        "# Finalizer scripts are CLIs that end with sys.exit(0) on success;\n"
+        "# in a notebook that raises SystemExit and aborts the kernel. Make a\n"
+        "# clean (0/None) exit a no-op while still surfacing real failures.\n"
+        "_real_exit = sys.exit\n"
+        "def _soft_exit(code=0):\n"
+        "    if code not in (0, None):\n"
+        "        _real_exit(code)\n"
+        "sys.exit = _soft_exit\n\n"
     )
     return preamble + body
