@@ -59,7 +59,7 @@ def recorder(monkeypatch) -> list:
                 "kwargs": kw,
             }
         )
-        return "# Stub report\n\nSome content.\n"
+        return "# Stub report\n\n" + ("Some report content. " * 40) + "\n"
 
     monkeypatch.setattr("urika.repl.cmd_agents._run_single_agent", _fake)
     return calls

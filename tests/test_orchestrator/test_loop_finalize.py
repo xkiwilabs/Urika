@@ -180,6 +180,49 @@ async def test_generate_reports_writes_experiment_narrative_and_calls_presentati
     )
 
 
+@pytest.mark.asyncio
+async def test_generate_reports_rejects_narration_for_experiment_narrative(
+    project_dir: Path,
+):
+    """Regression: the report agent (no Write tool) sometimes NARRATES
+    instead of returning the report. That prose carries markdown headings
+    later in the text, so the old ``count("\\n#") >= 2`` guard let it
+    clobber narrative.md. The narration guard must reject it; an existing
+    narrative is kept untouched."""
+    narration = (
+        "I'll write a detailed narrative for this experiment.\n"
+        "Let me read the progress and methods files first.\n"
+        + ("Now composing the narrative carefully. " * 12)
+        + "\n\n## Overview\n\n"
+        + ("This experiment fit several models. " * 12)
+        + "\nI have successfully written the narrative.\n"
+    )
+    runner = MagicMock()
+    runner.run = AsyncMock(
+        return_value=MagicMock(
+            success=True,
+            text_output=narration,
+            tokens_in=10,
+            tokens_out=5,
+            cost_usd=0.001,
+        )
+    )
+
+    exp_narrative = project_dir / "experiments" / "exp-001" / "labbook" / "narrative.md"
+    exp_narrative.write_text("# Prior Narrative\n\nKept.\n", encoding="utf-8")
+
+    await _generate_reports(
+        project_dir,
+        "exp-001",
+        lambda *a, **k: None,
+        runner=runner,
+        on_message=None,
+        audience="expert",
+    )
+
+    assert exp_narrative.read_text(encoding="utf-8") == "# Prior Narrative\n\nKept.\n"
+
+
 def _mock_pres_runner(text_output: str) -> MagicMock:
     """A runner whose presentation agent returns ``text_output``."""
     runner = MagicMock()

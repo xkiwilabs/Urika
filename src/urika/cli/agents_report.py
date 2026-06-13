@@ -208,11 +208,16 @@ def report(
                 narrative = _run_report_agent(
                     project_path,
                     exp.experiment_id,
-                    f"Write a detailed narrative report for experiment {exp.experiment_id}.",
+                    f"Write a detailed narrative report for experiment "
+                    f"{exp.experiment_id}. Output only the report markdown "
+                    "beginning with a # heading.",
                     instructions=instructions,
                     audience=audience,
                 )
-                if narrative:
+                from urika.core.report_writer import extract_report_markdown
+
+                body = extract_report_markdown(narrative)
+                if body is not None:
                     from urika.core.report_writer import write_versioned
 
                     narrative_path = (
@@ -223,10 +228,15 @@ def report(
                         / "narrative.md"
                     )
                     narrative_path.parent.mkdir(parents=True, exist_ok=True)
-                    write_versioned(narrative_path, narrative + "\n")
+                    write_versioned(narrative_path, body + "\n")
                     if not json_output:
                         click.echo(f"Generated: {narrative_path}")
                     _maybe_export(narrative_path)
+                elif not json_output:
+                    click.echo(
+                        f"  {exp.experiment_id}: report agent returned no "
+                        "usable report content — nothing written"
+                    )
             if json_output:
                 from urika.cli_helpers import output_json
 
@@ -262,11 +272,15 @@ def report(
                 project_path,
                 "",
                 "Write a project-level narrative report covering all experiments "
-                "and the research progression.",
+                "and the research progression. Output only the report markdown "
+                "beginning with a # heading.",
                 instructions=instructions,
                 audience=audience,
             )
-            if narrative:
+            from urika.core.report_writer import extract_report_markdown
+
+            narrative = extract_report_markdown(narrative)
+            if narrative is not None:
                 from urika.core.report_writer import write_versioned
 
                 narrative_path = project_path / "projectbook" / "narrative.md"
@@ -274,6 +288,11 @@ def report(
                 write_versioned(narrative_path, narrative + "\n")
                 _maybe_export(narrative_path)
             else:
+                if not json_output:
+                    click.echo(
+                        "Report agent returned no usable report content "
+                        "— nothing written."
+                    )
                 _nothing_to_export()
 
             if json_output:
@@ -309,11 +328,15 @@ def report(
         narrative = _run_report_agent(
             project_path,
             experiment_id,
-            f"Write a detailed narrative report for experiment {experiment_id}.",
+            f"Write a detailed narrative report for experiment {experiment_id}. "
+            "Output only the report markdown beginning with a # heading.",
             instructions=instructions,
             audience=audience,
         )
-        if narrative:
+        from urika.core.report_writer import extract_report_markdown
+
+        narrative = extract_report_markdown(narrative)
+        if narrative is not None:
             from urika.core.report_writer import write_versioned
 
             narrative_path = (
@@ -327,6 +350,10 @@ def report(
             write_versioned(narrative_path, narrative + "\n")
             _maybe_export(narrative_path)
         else:
+            if not json_output:
+                click.echo(
+                    "Report agent returned no usable report content — nothing written."
+                )
             _nothing_to_export()
 
         if json_output:

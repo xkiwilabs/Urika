@@ -921,7 +921,7 @@ class TestReportFormatOption:
         urika_env: dict[str, str],
         extra_args: list[str],
         *,
-        narrative: str = "# Narrative\n\nFindings prose.\n",
+        narrative: str = "# Narrative\n\n" + ("Findings prose. " * 60) + "\n",
         export_side_effect=None,
     ):
         project_dir, exp_id = _create_project_with_experiment(runner, urika_env)
@@ -1019,6 +1019,65 @@ class TestReportFormatOption:
             result.stderr if result.stderr_bytes else ""
         )
         assert "Invalid value" in combined
+
+
+# ---------------------------------------------------------------------------
+# report narration guard
+# ---------------------------------------------------------------------------
+
+
+class TestReportNarrationGuard:
+    """The report agent has no Write tool — its reply IS the report. When
+    it NARRATES instead ("I'll write… I have successfully written…"), that
+    prose must not be written as narrative.md."""
+
+    _NARRATION = (
+        "I'll write a detailed narrative report for this experiment.\n"
+        "Let me read the progress and methods files first.\n"
+        + ("Now composing the narrative carefully. " * 12)
+        + "\n\n## Overview\n\n"
+        + ("This experiment fit several models. " * 12)
+        + "\nI have successfully written the narrative.\n"
+    )
+    _REAL = "# Narrative\n\n" + ("Findings prose. " * 60) + "\n"
+
+    def test_narration_return_writes_nothing(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        project_dir, exp_id = _create_project_with_experiment(runner, urika_env)
+        with patch(
+            "urika.cli.agents_report._run_report_agent",
+            return_value=self._NARRATION,
+        ):
+            result = runner.invoke(
+                cli,
+                ["report", "test-proj", "--experiment", exp_id],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        narrative_md = project_dir / "experiments" / exp_id / "labbook" / "narrative.md"
+        assert not narrative_md.exists(), (
+            "narration that isn't a real report must not be written"
+        )
+        assert "no usable report content" in result.output
+
+    def test_real_report_return_is_written(
+        self, runner: CliRunner, urika_env: dict[str, str]
+    ) -> None:
+        project_dir, exp_id = _create_project_with_experiment(runner, urika_env)
+        with patch(
+            "urika.cli.agents_report._run_report_agent",
+            return_value=self._REAL,
+        ):
+            result = runner.invoke(
+                cli,
+                ["report", "test-proj", "--experiment", exp_id],
+                env=urika_env,
+            )
+        assert result.exit_code == 0, result.output
+        narrative_md = project_dir / "experiments" / exp_id / "labbook" / "narrative.md"
+        assert narrative_md.exists()
+        assert narrative_md.read_text(encoding="utf-8").startswith("# Narrative")
 
 
 # ---------------------------------------------------------------------------

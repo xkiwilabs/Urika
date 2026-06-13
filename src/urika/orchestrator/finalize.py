@@ -9,6 +9,7 @@ from typing import Any, Callable
 from urika.agents.audience import format_audience_context
 from urika.agents.registry import AgentRegistry
 from urika.agents.runner import AgentRunner
+from urika.core.report_writer import extract_report_markdown, write_versioned
 
 logger = logging.getLogger(__name__)
 
@@ -128,17 +129,29 @@ async def finalize_project(
         )
         if draft:
             report_prompt = (
-                f"Read {findings_rel} and write an interim progress report "
-                f"at {report_rel}. Include figures from {figures_rel}. "
-                "Structure: Summary of Progress, Methods Explored, Current Best Results, "
-                "Open Questions, Next Steps."
+                f"Read {findings_rel} and produce an interim progress report. "
+                f"Output ONLY the report as GitHub-flavored markdown — your "
+                f"response becomes {report_rel} verbatim. Do NOT attempt to "
+                "write any files; you have no file-writing tools, so your reply "
+                "IS the report. Begin directly with the report title as a "
+                'top-level `# ` heading — no preamble, no "I\'ll write…", no '
+                "closing remarks. Reference figures with relative paths like "
+                f"`figures/<name>.png` (they live in {figures_rel}). "
+                "Structure: Summary of Progress, Methods Explored, "
+                "Current Best Results, Open Questions, Next Steps."
             )
         else:
             report_prompt = (
-                "Read projectbook/findings.json and write a comprehensive final report "
-                "at projectbook/final-report.md. Include figures from projectbook/figures/. "
-                "Structure: Abstract, Introduction, Methods, Results, Discussion, "
-                "Reproducibility, References."
+                "Read projectbook/findings.json and produce a comprehensive "
+                "final report. Output ONLY the report as GitHub-flavored "
+                "markdown — your response becomes projectbook/final-report.md "
+                "verbatim. Do NOT attempt to write any files; you have no "
+                "file-writing tools, so your reply IS the report. Begin directly "
+                "with the report title as a top-level `# ` heading — no preamble, "
+                'no "I\'ll write…", no closing remarks. Reference figures with '
+                "relative paths like `figures/<name>.png` (they live in "
+                "projectbook/figures/). Structure: Abstract, Introduction, "
+                "Methods, Results, Discussion, Reproducibility, References."
             )
         report_prompt += (
             " For assumption checks, each experiment's latest evaluator "
@@ -165,21 +178,26 @@ async def finalize_project(
             final_report_input,
             on_message=on_message,
         )
-        if report_result.success and report_result.text_output:
-            content = report_result.text_output.strip()
-            # Only write if the output looks like actual report content
-            # (has markdown headings and is substantial), not agent narration
-            if len(content) > 500 and content.count("\n#") >= 2:
-                from urika.core.report_writer import write_versioned
-
-                report_path = project_dir / report_rel
-                report_path.parent.mkdir(parents=True, exist_ok=True)
-                write_versioned(report_path, content + "\n")
-                progress("result", f"{report_label.capitalize()} written")
-            else:
-                progress("result", f"{report_label.capitalize()} generated")
+        # The report agent has no Write tool — its reply IS the report.
+        # Reject narration ("I'll write…", "Let me read…") so it never
+        # clobbers a real report; only a markdown-leading, substantial
+        # body is written.
+        body = (
+            extract_report_markdown(report_result.text_output)
+            if report_result.success
+            else None
+        )
+        if body is not None:
+            report_path = project_dir / report_rel
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            write_versioned(report_path, body + "\n")
+            progress("result", f"{report_label.capitalize()} written")
         elif report_result.success:
-            progress("result", f"{report_label.capitalize()} generated")
+            progress(
+                "result",
+                f"{report_label.capitalize()}: agent returned no usable "
+                "report — previous report kept",
+            )
         else:
             progress("result", f"{report_label.capitalize()} generation failed")
 

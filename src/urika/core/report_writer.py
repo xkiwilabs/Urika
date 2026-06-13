@@ -27,3 +27,26 @@ def write_versioned(path: Path, content: str) -> Path:
 
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def extract_report_markdown(text: str | None) -> str | None:
+    """Return the report markdown from a report-agent response, or None
+    if the response is narration rather than a report.
+
+    The report agent has no file-writing tools — its reply IS the
+    report and must begin (within the first few lines) with a markdown
+    heading. Narration ("I'll write...", "Let me read...", "I have
+    successfully written...") begins with prose and is rejected so it
+    never gets written over a real report.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    if len(s) < 500:
+        return None
+    lines = s.splitlines()
+    for i, line in enumerate(lines[:3]):
+        if line.lstrip().startswith("#"):
+            body = "\n".join(lines[i:]).strip()
+            return body if len(body) >= 500 else None
+    return None

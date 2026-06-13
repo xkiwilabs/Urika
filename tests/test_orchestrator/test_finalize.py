@@ -182,6 +182,68 @@ async def test_finalize_skips_final_report_when_output_too_short(project_dir: Pa
 
 
 @pytest.mark.asyncio
+async def test_finalize_rejects_long_narration_with_late_heading(project_dir: Path):
+    """Regression: the report agent (no Write tool) sometimes NARRATES
+    ("I'll write… Let me read… I have successfully written…"). That prose
+    contains markdown headings *later* in the text, so the old
+    ``content.count("\\n#") >= 2`` guard let it clobber final-report.md.
+    The narration guard must reject it; an existing report stays intact."""
+
+    narration = (
+        "I'll write a comprehensive final report for your project.\n"
+        "Let me start by reading all the necessary project files.\n"
+        "Now let me read the evaluation files for each experiment.\n"
+        + ("I will now compose the report carefully. " * 12)
+        + "\n\n## Report Structure\n\n"
+        + ("The report covers the abstract and methods. " * 12)
+        + "\nI have successfully written the report.\n"
+    )
+
+    class _NarrationRunner(_RoleRunner):
+        async def run(self, config, prompt, *, on_message=None):  # type: ignore[override]
+            if config.name == "report_agent":
+                self.calls.append(config.name)
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output=narration,
+                    session_id="s",
+                    num_turns=1,
+                    duration_ms=1,
+                )
+            return await super().run(config, prompt, on_message=on_message)
+
+    report = project_dir / "projectbook" / "final-report.md"
+    report.write_text("# Prior Real Report\n\nKept.\n", encoding="utf-8")
+    runner = _NarrationRunner(project_dir)
+    await finalize_project(project_dir, runner, audience="expert")
+    # Long narration with a *late* heading must NOT overwrite the report.
+    assert report.read_text(encoding="utf-8") == "# Prior Real Report\n\nKept.\n"
+
+
+@pytest.mark.asyncio
+async def test_finalize_final_report_prompt_pins_response_is_report(project_dir: Path):
+    """Pin the new prompt: it must tell the agent its reply IS the report
+    and must NOT tell it to write the file at a path."""
+    prompts: list[str] = []
+
+    class _PromptCapturingRunner(_RoleRunner):
+        async def run(self, config, prompt, *, on_message=None):  # type: ignore[override]
+            if config.name == "report_agent":
+                prompts.append(prompt)
+            return await super().run(config, prompt, on_message=on_message)
+
+    runner = _PromptCapturingRunner(project_dir)
+    await finalize_project(project_dir, runner, audience="expert")
+    assert len(prompts) == 1
+    p = prompts[0]
+    assert "your reply IS the report" in p
+    assert "Output ONLY" in p
+    assert "`# ` heading" in p
+    assert "write a comprehensive final report at projectbook/final-report.md" not in p
+
+
+@pytest.mark.asyncio
 async def test_finalize_renders_presentation_from_slide_json(project_dir: Path):
     runner = _RoleRunner(project_dir)
     await finalize_project(project_dir, runner, audience="expert")

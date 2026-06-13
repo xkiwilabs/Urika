@@ -18,7 +18,7 @@ Write a clear, detailed narrative report that helps researchers understand what 
 3. **Read** the methods registry at `{project_dir}/methods.json` for method details.
 4. **Read** the criteria at `{project_dir}/criteria.json` for success thresholds.
 5. **List** figures in the experiment workspace's `artifacts/` subdirectory and reference relevant ones inline.
-6. **Write** a coherent narrative report in markdown.
+6. **Produce** a coherent narrative report in markdown **as your response** — you have no file-writing tools, so your reply IS the report. Begin with the report title as a `# ` heading; output only the report, with no preamble or sign-off.
 
 ## Report Structure
 
