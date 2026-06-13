@@ -1,24 +1,22 @@
 # Urika — Current Status
 
-**Date:** 2026-06-08
-**Version:** v0.7.0 (multi-provider adapters) SHIPPED 2026-06-08;
-v0.6.0.1 (Windows hotfix) shipped 2026-06-01; v0.6.0 (GitHub
-auto-backup) shipped 2026-05-31; v0.5.0.2 (labbook run-record reader)
-2026-05-31; v0.5.0.1 (vault hotfix) 2026-05-31; v0.5.0 (memory
-deepening) 2026-05-31; v0.4.5.1 (hardening) 2026-05-26; v0.4.5
-(surface parity) 2026-05-17.
-**Branch:** `main` on both `origin` and `public` at `de4a86a0` and
-tagged `v0.7.0` (`0384afab`). `dev` is the working branch at the same
-release-equivalent state plus dev-only test/plan files.
-**Tests:** ~3870+ collected; **3854+ pass** in the unit suite
-(`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 3 skipped, 64
-integration deselected. Multi-provider operator smoke verified
-2026-06-08 against real Anthropic, OpenAI, and Google APIs.
-**Next focus:** v0.9.0 (output polish — PDF/LaTeX/Jupyter export via
-Pandoc + model-card auto-generation). v0.8.0 (review-driven hardening
-+ research-goal builder pipeline + output comprehensibility) SHIPPED
-2026-06-10; the roadmap was renumbered the same day (output polish →
-v0.9.0; v0.10.0 re-scoped to pre-1.0 hardening — templates cut).
+**Date:** 2026-06-13
+**Version:** v0.9.0 (output polish) SHIPPED 2026-06-13; v0.8.0
+(review hardening + research scoping) shipped 2026-06-10; v0.7.0
+(multi-provider adapters) 2026-06-08; v0.6.0.1 (Windows hotfix)
+2026-06-01; v0.6.0 (GitHub auto-backup) 2026-05-31; v0.5.x (memory
+deepening) 2026-05-31; v0.4.5.1 (hardening) 2026-05-26.
+**Branch:** `main` on both `origin` and `public` tagged `v0.9.0`.
+`dev` is the working branch at the same release-equivalent state plus
+dev-only test/plan files.
+**Tests:** ~4285 collected; **4218 pass** in the unit suite
+(`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 1 skipped, 66
+integration deselected. v0.9.0 release gated by a cheap real-API
+smoke (45/45) on 2026-06-11.
+**Next focus:** v0.10.0 pre-1.0 hardening (`urika upgrade` migration,
+builder-session persistence, agent-subprocess env isolation,
+accessibility pass — project templates cut 2026-06-10), then the
+v1.0.0rc cycle. Canonical roadmap renumbered 2026-06-10.
 
 The active roadmap is **`dev/plans/2026-05-02-roadmap-to-v1.0.md`** —
 covers v0.4.0 → v1.0.0 with cut criteria, release contents, and
