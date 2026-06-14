@@ -33,9 +33,10 @@
         type="text"
         class="list-search"
         placeholder="Search projects…"
+        aria-label="Search projects"
         x-model.debounce.150ms="filter"
       >
-      <select class="list-sort" x-model="sort">
+      <select class="list-sort" x-model="sort" aria-label="Sort projects">
         <option value="recent">Recent activity</option>
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
@@ -247,7 +248,7 @@
            endpoint name is posted as ``private_endpoint_name``;
            the server resolves it. #}
         <template x-if="(pmode === 'private' || pmode === 'hybrid') && {{ private_endpoints | tojson }}.length > 0">
-          <select name="private_endpoint_name" style="margin-left: 0.5rem;">
+          <select name="private_endpoint_name" aria-label="Private endpoint" style="margin-left: 0.5rem;">
             {% for ep in private_endpoints %}
               <option value="{{ ep.name }}">
                 {{ ep.name }} ({{ ep.base_url }})

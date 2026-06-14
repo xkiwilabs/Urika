@@ -75,8 +75,8 @@
     {# ---- Basics tab ---------------------------------------------------- #}
     <div class="tab-panel" x-show="active === 'basics'">
       <div class="form-row">
-        <label>Project name</label>
-        <input type="text" value="{{ project.name }}" disabled>
+        <label for="project-name-display">Project name</label>
+        <input id="project-name-display" type="text" value="{{ project.name }}" disabled>
         <span class="form-help">Project name is immutable.</span>
       </div>
 
@@ -273,7 +273,7 @@
               <td>
                 {# v0.7.0 Task 4.4 — provider-filtered options. The
                    inherit option stays visible across providers. #}
-                <select name="model[{{ row.agent }}]">
+                <select name="model[{{ row.agent }}]" aria-label="Model for {{ row.agent }}">
                   <option value="" {% if not row.model %}selected{% endif %}>(inherit{% if row.placeholder_model %}: {{ row.placeholder_model }}{% endif %})</option>
                   {% for prov, models in known_cloud_models_by_provider.items() %}
                     {% for m in models %}
@@ -308,7 +308,7 @@
                 <td><code>{{ row.agent }}</code></td>
                 <td><span>private</span></td>
                 <td>
-                  <select x-model="ep">
+                  <select x-model="ep" aria-label="Endpoint for {{ row.agent }}">
                     {% for opt in private_endpoint_options %}
                       <option value="{{ opt.name }}"
                               {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
@@ -384,7 +384,7 @@
                 {# UI category select — NOT submitted directly (no name=).
                    data_agent: only "private" + disabled (locked).
                    tool_builder + others: both options. #}
-                <select x-model="cat" {% if is_locked %}disabled{% endif %}>
+                <select x-model="cat" aria-label="Endpoint category for {{ row.agent }}" {% if is_locked %}disabled{% endif %}>
                   {% if not is_locked %}
                     <option value="open" {% if initial_cat == "open" %}selected{% endif %}>open</option>
                   {% endif %}
@@ -399,7 +399,8 @@
                 {# v0.7.0 Task 4.4 — provider-filtered options. Outer
                    x-show hides the whole <select> when cat=private;
                    inner per-option x-show filters by provider. #}
-                <select x-show="cat === 'open'" x-model="cloud_model">
+                <select x-show="cat === 'open'" x-model="cloud_model"
+                        aria-label="Cloud model for {{ row.agent }}">
                   <option value="" {% if not row.model %}selected{% endif %}>(inherit{% if row.placeholder_model %}: {{ row.placeholder_model }}{% endif %})</option>
                   {% for prov, models in known_cloud_models_by_provider.items() %}
                     {% for m in models %}
@@ -410,7 +411,8 @@
                   {% endfor %}
                 </select>
                 {# Private variant: <select> of named private endpoints. #}
-                <select x-show="cat === 'private'" x-cloak x-model="ep">
+                <select x-show="cat === 'private'" x-cloak x-model="ep"
+                        aria-label="Private endpoint for {{ row.agent }}">
                   {% for opt in private_endpoint_options %}
                     <option value="{{ opt.name }}"
                             {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
@@ -823,6 +825,7 @@
                  :disabled="formMode !== 'add'"
                  pattern="[A-Z][A-Z0-9_]*"
                  title="Uppercase letters, digits, underscores only"
+                 aria-label="Secret name"
                  placeholder="e.g. HUGGINGFACE_HUB_TOKEN">
           <small class="form-help">
             Same name your agent / tool reads via
@@ -835,6 +838,7 @@
             <input :type="showValue ? 'text' : 'password'"
                    x-model="form.value"
                    style="flex: 1;"
+                   aria-label="Secret value"
                    placeholder="(leave blank to keep existing value)">
             <button type="button" class="btn btn--ghost"
                     @click="showValue = !showValue">
@@ -845,6 +849,7 @@
         <div class="form-row">
           <label>Description (optional)</label>
           <input type="text" x-model="form.description"
+                 aria-label="Secret description"
                  placeholder="What is this for?">
         </div>
         <div class="form-actions">
@@ -1249,6 +1254,7 @@ function projectSecretsTab(projectName) {
         type="text"
         class="input"
         placeholder="Type the project name to confirm"
+        aria-label="Type the project name to confirm deletion"
         x-model="typed"
         style="font: inherit; padding: 0.4rem;"
       >

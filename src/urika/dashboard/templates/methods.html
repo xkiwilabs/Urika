@@ -47,7 +47,9 @@
         {% endfor %}
       </select>
     </label>
-    <button class="btn btn--ghost" @click="desc = !desc; sortRows()" x-text="desc ? '↓' : '↑'"></button>
+    <button class="btn btn--ghost" @click="desc = !desc; sortRows()"
+            :aria-label="desc ? 'Sort descending' : 'Sort ascending'"
+            x-text="desc ? '↓' : '↑'"></button>
   </div>
 
   <ul class="list" id="methods-list">

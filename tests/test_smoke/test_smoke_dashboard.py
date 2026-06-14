@@ -27,9 +27,11 @@ so the whole file runs in <15s.
 
 from __future__ import annotations
 
+import os
 import socket
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -554,3 +556,93 @@ class TestRunFlow:
         )
         # And it must NOT have claimed completion.
         assert "completed" not in page.locator("#log-status").inner_text().lower()
+
+
+# ── 6. Live axe-core WCAG 2 A/AA audit (v0.10.0 accessibility pass) ──
+#
+# Injects axe-core into key dashboard pages in BOTH themes and asserts zero
+# serious/critical WCAG 2.0 A/AA violations. axe-core ships as a JS bundle in
+# node_modules, not pip — so this is a best-effort gate: it runs when the
+# bundle is discoverable (URIKA_AXE_CORE_JS env var, or any local
+# node_modules/axe-core/axe.min.js), and skips cleanly otherwise. The static
+# render-time a11y checks in tests/test_dashboard/test_accessibility.py pin
+# the structural wins unconditionally; this is the authoritative live confirm.
+
+
+def _find_axe_core() -> Path | None:
+    env = os.environ.get("URIKA_AXE_CORE_JS")
+    if env and Path(env).is_file():
+        return Path(env)
+    # Common locations: repo-local node_modules, then a broad home search.
+    repo_local = (
+        Path(__file__).resolve().parents[2] / "node_modules" / "axe-core" / "axe.min.js"
+    )
+    if repo_local.is_file():
+        return repo_local
+    home = Path.home()
+    try:
+        return next(home.glob("**/node_modules/axe-core/axe.min.js"))
+    except (StopIteration, OSError):
+        return None
+
+
+_AXE_PATH = _find_axe_core()
+
+
+@pytest.mark.skipif(
+    _AXE_PATH is None,
+    reason="axe-core bundle not found (set URIKA_AXE_CORE_JS or install axe-core)",
+)
+class TestAxeWcagAudit:
+    _PAGES = (
+        "/projects",
+        "/projects/{name}",
+        "/projects/{name}/experiments",
+        "/projects/{name}/settings",
+        "/settings",
+        "/projects/{name}/advisor",
+        "/projects/{name}/methods",
+    )
+
+    def _audit_page(self, page, url: str) -> list[dict]:
+        page.goto(url, wait_until="networkidle")
+        page.wait_for_timeout(150)  # let Alpine sync html+body data-theme
+        page.add_script_tag(content=_AXE_PATH.read_text())
+        return page.evaluate(
+            """async () => {
+                const r = await axe.run(document, {
+                    runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa'] },
+                });
+                return r.violations
+                    .filter(v => v.impact === 'serious' || v.impact === 'critical')
+                    .map(v => ({
+                        id: v.id,
+                        impact: v.impact,
+                        target: (v.nodes[0] || {}).target || [],
+                        message: ((v.nodes[0] || {}).any || [{}])[0].message || '',
+                    }));
+            }"""
+        )
+
+    @pytest.mark.parametrize("theme", ["dark", "light"])
+    def test_no_serious_wcag_violations(
+        self, project_with_data, browser, theme
+    ) -> None:
+        base_url, name, _ = project_with_data
+        context = browser.new_context()
+        # Set the theme BEFORE any page script runs (real-world path: Alpine
+        # reads localStorage at x-init and syncs <html>+<body> data-theme).
+        context.add_init_script(f"localStorage.setItem('urika-theme', '{theme}');")
+        page = context.new_page()
+        try:
+            failures: list[str] = []
+            for tmpl in self._PAGES:
+                url = base_url + tmpl.format(name=name)
+                for v in self._audit_page(page, url):
+                    failures.append(
+                        f"{theme} {url}: [{v['impact']}] {v['id']} "
+                        f"@ {' '.join(v['target'])} — {v['message'][:120]}"
+                    )
+            assert failures == [], "axe-core WCAG violations:\n" + "\n".join(failures)
+        finally:
+            context.close()
