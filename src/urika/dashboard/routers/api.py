@@ -64,6 +64,11 @@ _TRUTHY = {"true", "1", "yes", "on"}
 # See ``src/urika/cli/agents_finalize.py`` --audience choices.
 _FINALIZE_AUDIENCES = {"novice", "standard", "expert"}
 
+# Finalize CLI ``--format`` choices (v0.9.0). markdown is the default /
+# no-op; latex/pdf post-process the written report via the export extra.
+# See ``src/urika/cli/agents_finalize.py`` --format choices.
+_FINALIZE_FORMATS = {"markdown", "latex", "pdf"}
+
 router = APIRouter(prefix="/api", tags=["api"])
 
 
@@ -4003,14 +4008,16 @@ async def api_project_finalize(name: str, request: Request):
     """Spawn ``urika finalize <project> --json`` for a project.
 
     Mirrors the ``/run`` endpoint shape: validates the project exists,
-    pulls form fields (instructions, audience), and hands off to
-    ``spawn_finalize`` which Popens the CLI and detaches a daemon thread
-    to drain its stdout into ``projectbook/finalize.log``. Returns JSON
-    with the spawned PID.
+    pulls form fields (instructions, audience, draft, format), and hands
+    off to ``spawn_finalize`` which Popens the CLI and detaches a daemon
+    thread to drain its stdout into ``projectbook/finalize.log``. Returns
+    JSON with the spawned PID.
 
     ``audience`` follows the finalize CLI allow-list
     (``{"novice", "standard", "expert"}``), which differs from the core
-    ``VALID_AUDIENCES`` set.
+    ``VALID_AUDIENCES`` set. ``format`` follows the finalize CLI
+    ``--format`` allow-list (``{"markdown", "latex", "pdf"}``); markdown
+    is the default and threads through as a no-op.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -4022,10 +4029,16 @@ async def api_project_finalize(name: str, request: Request):
     audience_raw = (body.get("audience") or "").strip()
     audience = audience_raw or None
     draft = bool(body.get("draft"))
+    output_format = (body.get("format") or "markdown").strip() or "markdown"
     if audience and audience not in _FINALIZE_AUDIENCES:
         raise HTTPException(
             status_code=422,
             detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
+        )
+    if output_format not in _FINALIZE_FORMATS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"format must be one of {sorted(_FINALIZE_FORMATS)}",
         )
 
     # If a finalize is already running for this project, redirect to
@@ -4043,6 +4056,7 @@ async def api_project_finalize(name: str, request: Request):
         instructions=instructions,
         audience=audience,
         draft=draft,
+        output_format=output_format,
     )
     # The "Finalize project" button on the project home posts via HTMX;
     # on success we want the browser to navigate the whole page to the

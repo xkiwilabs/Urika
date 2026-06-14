@@ -90,6 +90,15 @@
           {% endfor %}
         </select>
       </div>
+      <div class="form-row">
+        <label for="fz-format">Report format</label>
+        <select id="fz-format" name="format">
+          {% for f in ["markdown", "latex", "pdf"] %}
+            <option value="{{ f }}" {% if f == "markdown" %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+        <small class="text-muted">latex/pdf require the <code>urika[export]</code> extra + pandoc (pdf also needs a TeX engine).</small>
+      </div>
       <label class="checkbox-row">
         <input type="checkbox" name="draft" value="on">
         <span>Draft mode (write to projectbook/draft/, don't overwrite final outputs)</span>

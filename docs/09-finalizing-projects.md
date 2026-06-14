@@ -177,6 +177,26 @@ A Jupyter notebook assembled by pure code from the finalization artifacts: a tit
 | `projectbook/final-presentation/` | Final reveal.js presentation |
 | `README.md` | Updated project README with findings |
 
+## Where each artifact is viewable
+
+Every artifact lands as a file on disk under the project directory, so the CLI surface is always "open the file." The dashboard additionally renders most of them as browsable cards in the **Final outputs** section of the project home page (the cards appear once the corresponding file exists):
+
+| Artifact | On disk (CLI) | Dashboard view |
+|----------|---------------|----------------|
+| Findings | `projectbook/findings.json` | **Findings** card → `/projects/<n>/findings` |
+| Final report | `projectbook/final-report.md` | **Report** card → `/projects/<n>/projectbook/report` |
+| Final presentation | `projectbook/final-presentation/index.html` | **Presentation** card → `/projects/<n>/projectbook/presentation` |
+| Metrics glossary | `projectbook/METRICS.md` | **Metrics glossary** card → `/projects/<n>/projectbook/metrics` |
+| Model cards | `methods/<name>_model_card.md` | **Model cards** card → `/projects/<n>/model-cards` |
+| Reproduce notebook | `projectbook/reproduce.ipynb` | **Reproduce notebook** card → `/projects/<n>/projectbook/reproduce.ipynb` (downloads the `.ipynb`) |
+| Methods + README | `methods/`, `methods/README.md` | (open the files on disk) |
+| Reproduce scripts | `reproduce.sh`, `reproduce.bat`, `requirements.txt` | (open the files on disk) |
+
+Per-experiment evaluation detail (the evaluator's assumption checks that feed the model cards) is viewable at `/projects/<n>/experiments/<exp_id>/evaluation` from each experiment page, reading `experiments/<exp_id>/labbook/evaluation.json`.
+
+LaTeX/PDF report exports (`projectbook/final-report.tex` / `.pdf`) are produced only with `--format latex|pdf` and are not surfaced as dashboard cards — open them on disk.
+
+
 ## Interim Summaries (Draft Mode)
 
 Draft mode runs the same finalization pipeline but frames everything as an interim progress summary rather than final deliverables. Outputs go to `projectbook/draft/` so they never overwrite the real final outputs.
@@ -237,7 +257,7 @@ urika:my-project> /finalize --draft focus on preliminary findings
 
 ## From the dashboard
 
-The project home page has a **Finalize project** button that runs the same sequence as `urika finalize`. It opens a small modal with the same flags exposed by the CLI — additional instructions, the `--draft` toggle, and per-stage skips — then posts to the finalize endpoint and HTMX-redirects you to `/projects/<n>/finalize/log`.
+The project home page has a **Finalize project** button that runs the same sequence as `urika finalize`. It opens a small modal with the same flags exposed by the CLI — additional instructions, an **Audience** picker, a **Report format** picker (`markdown` / `latex` / `pdf`, matching `--format`), and the `--draft` toggle — then posts to the finalize endpoint and HTMX-redirects you to `/projects/<n>/finalize/log`. Choosing `latex` or `pdf` requires the `urika[export]` extra plus pandoc in the dashboard server's environment (pdf also needs a TeX engine); if it's missing, the export error surfaces in the streamed finalize log.
 
 The log page streams the running finalize subprocess via Server-Sent Events, with each agent's output appearing as it's produced (Finalizer → Report → Presentation → README updater). When the subprocess completes, the page emits a `status: completed` SSE event and links you straight to the rendered final report and presentation viewers.
 

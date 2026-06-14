@@ -379,6 +379,7 @@ def spawn_finalize(
     instructions: str = "",
     audience: str | None = None,
     draft: bool = False,
+    output_format: str = "markdown",
     executable: str | None = None,
 ) -> int:
     """Spawn ``urika finalize <project>`` as a subprocess.
@@ -396,6 +397,13 @@ def spawn_finalize(
     When ``draft`` is True, ``--draft`` is appended so the finalizer
     writes interim outputs to ``projectbook/draft/`` instead of
     overwriting the final outputs.
+
+    ``output_format`` follows the finalize CLI's ``--format`` allow-list
+    (``{"markdown", "latex", "pdf"}``). The default ``markdown`` is the
+    no-op case and appends nothing, so the spawned command stays
+    byte-identical to the pre-format behaviour; ``latex``/``pdf`` append
+    ``--format <fmt>`` (which post-processes the written report and
+    requires the ``urika[export]`` extra + pandoc).
     """
     book_dir = project_path / "projectbook"
     book_dir.mkdir(parents=True, exist_ok=True)
@@ -417,6 +425,8 @@ def spawn_finalize(
         cmd.extend(["--audience", audience])
     if draft:
         cmd.append("--draft")
+    if output_format and output_format != "markdown":
+        cmd.extend(["--format", output_format])
 
     env = _build_env()
     return _spawn_detached(cmd, env, log_path, lock_path)

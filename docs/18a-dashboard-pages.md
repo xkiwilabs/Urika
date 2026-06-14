@@ -173,7 +173,7 @@ chat with the orchestrator from the terminal."
 
 ## Finalize button + log page
 
-The project home page surfaces a **Finalize project** button when no `findings.json` exists yet (or always available as a re-run from the project menu). Clicking it POSTs to `POST /api/projects/<name>/finalize` to start the finalize subprocess and redirects the browser to `/projects/<name>/finalize/log`, which streams the finalize subprocess output via the same SSE pattern as the run live log. Concurrency is gated on `projectbook/.finalize.lock`.
+The project home page surfaces a **Finalize project** button when no `findings.json` exists yet (or always available as a re-run from the project menu). Clicking it opens a modal with the same options as the CLI — optional instructions, an **Audience** picker, a **Report format** picker (`markdown` / `latex` / `pdf`, matching `urika finalize --format`), and a **Draft mode** toggle — then POSTs to `POST /api/projects/<name>/finalize` to start the finalize subprocess and redirects the browser to `/projects/<name>/finalize/log`, which streams the finalize subprocess output via the same SSE pattern as the run live log. Concurrency is gated on `projectbook/.finalize.lock`. (`latex`/`pdf` require the `urika[export]` extra + pandoc in the server environment.)
 
 
 ## Knowledge add form

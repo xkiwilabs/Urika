@@ -92,6 +92,29 @@ def test_spawn_finalize_does_not_pass_json(monkeypatch, tmp_path):
     )
 
 
+def test_spawn_finalize_default_format_omits_flag(monkeypatch, tmp_path):
+    """The markdown default must not append ``--format`` so the spawned
+    command is byte-identical to the pre-format behaviour."""
+    from urika.dashboard.runs import spawn_finalize
+
+    cmd = _captured_argv(monkeypatch, spawn_finalize, "alpha", tmp_path)
+    assert "--format" not in cmd
+    cmd2 = _captured_argv(
+        monkeypatch, spawn_finalize, "alpha", tmp_path, output_format="markdown"
+    )
+    assert "--format" not in cmd2
+
+
+def test_spawn_finalize_passes_format_when_non_default(monkeypatch, tmp_path):
+    from urika.dashboard.runs import spawn_finalize
+
+    cmd = _captured_argv(
+        monkeypatch, spawn_finalize, "alpha", tmp_path, output_format="latex"
+    )
+    assert "--format" in cmd
+    assert cmd[cmd.index("--format") + 1] == "latex"
+
+
 def test_spawn_summarize_does_not_pass_json(monkeypatch, tmp_path):
     from urika.dashboard.runs import spawn_summarize
 

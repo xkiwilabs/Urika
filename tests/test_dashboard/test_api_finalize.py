@@ -148,6 +148,65 @@ def test_finalize_post_no_draft_defaults_false(finalize_client):
     assert spawn_calls[0]["draft"] is False
 
 
+def test_finalize_post_forwards_format(tmp_path, monkeypatch):
+    """The format picker in the finalize modal must be forwarded to
+    spawn_finalize as output_format so the subprocess gets --format."""
+    proj = _make_project(tmp_path, "alpha")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+
+    spawn_calls: list[dict] = []
+
+    def fake_spawn(
+        project_name,
+        project_path,
+        *,
+        instructions="",
+        audience=None,
+        draft=False,
+        output_format="markdown",
+        **_,
+    ):
+        spawn_calls.append({"output_format": output_format})
+        book_dir = project_path / "projectbook"
+        book_dir.mkdir(parents=True, exist_ok=True)
+        (book_dir / ".finalize.lock").write_text("88888")
+        (book_dir / "finalize.log").write_text("Spawned\n")
+        return 88888
+
+    monkeypatch.setattr(runs_module, "spawn_finalize", fake_spawn)
+    from urika.dashboard.routers import api as api_module
+
+    monkeypatch.setattr(api_module, "spawn_finalize", fake_spawn)
+
+    client = TestClient(create_app(project_root=tmp_path))
+    r = client.post("/api/projects/alpha/finalize", data={"format": "latex"})
+    assert r.status_code == 200
+    assert spawn_calls
+    assert spawn_calls[0]["output_format"] == "latex"
+
+
+def test_finalize_post_default_format_is_markdown(finalize_client):
+    """No format field → spawn_finalize sees the markdown default
+    (the fake_spawn fixture swallows it, so just assert the 200/started
+    path is unchanged)."""
+    client, spawn_calls, _ = finalize_client
+    r = client.post("/api/projects/alpha/finalize", data={})
+    assert r.status_code == 200
+    assert r.json()["status"] == "started"
+    assert len(spawn_calls) == 1
+
+
+def test_finalize_post_invalid_format(finalize_client):
+    """Format values outside the finalize CLI's allow-list must 422."""
+    client, spawn_calls, _ = finalize_client
+    r = client.post("/api/projects/alpha/finalize", data={"format": "docx"})
+    assert r.status_code == 422
+    assert spawn_calls == []
+
+
 def test_finalize_post_hx_request_emits_redirect_header(finalize_client):
     """When the request comes from HTMX, the response should redirect the
     whole page to the finalize log so the user sees streaming output."""
