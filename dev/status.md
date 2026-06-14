@@ -1,23 +1,23 @@
 # Urika — Current Status
 
-**Date:** 2026-06-13
-**Version:** v0.9.1 (report-integrity hotfix) SHIPPED 2026-06-13;
-v0.9.0 (output polish) 2026-06-13; v0.8.0
-(review hardening + research scoping) shipped 2026-06-10; v0.7.0
-(multi-provider adapters) 2026-06-08; v0.6.0.1 (Windows hotfix)
-2026-06-01; v0.6.0 (GitHub auto-backup) 2026-05-31; v0.5.x (memory
-deepening) 2026-05-31; v0.4.5.1 (hardening) 2026-05-26.
-**Branch:** `main` on both `origin` and `public` tagged `v0.9.0`.
-`dev` is the working branch at the same release-equivalent state plus
-dev-only test/plan files.
-**Tests:** ~4285 collected; **4218 pass** in the unit suite
-(`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 1 skipped, 66
-integration deselected. v0.9.0 release gated by a cheap real-API
-smoke (45/45) on 2026-06-11.
-**Next focus:** v0.10.0 pre-1.0 hardening (`urika upgrade` migration,
-builder-session persistence, agent-subprocess env isolation,
-accessibility pass — project templates cut 2026-06-10), then the
-v1.0.0rc cycle. Canonical roadmap renumbered 2026-06-10.
+**Date:** 2026-06-14
+**Version:** v0.10.0 (pre-1.0 hardening) FEATURE-COMPLETE on dev,
+UNRELEASED — all 9 phases built/reviewed (see
+`dev/plans/2026-06-14-v0.10.0-pre-1.0-hardening.md`); ships behind the
+new pre-release smoke gate. v0.9.1 (report-integrity hotfix) SHIPPED
+2026-06-13; v0.9.0 (output polish) 2026-06-13; v0.8.0 (review hardening
++ research scoping) 2026-06-10; v0.7.0 (multi-provider) 2026-06-08;
+v0.6.x 2026-05-31..06-01; v0.5.x 2026-05-31; v0.4.5.1 2026-05-26.
+**Branch:** `main` on both `origin` and `public` tagged `v0.9.1`.
+`dev` carries the unreleased v0.10.0 work (still `version = 0.9.1` in
+pyproject; the release flow bumps it).
+**Tests:** ~4410 collected; **4340 pass** in the unit suite
+(`URIKA_SKIP_SMOKE=1 pytest -q -m "not integration"`), 1 skipped, 70
+integration deselected. v0.10.0 P9 makes the real-API e2e smoke a
+pre-release gate in `release-to-main.sh`.
+**Next focus:** release v0.10.0 (run the now-gated smoke), then the
+v1.0.0rc cycle (feature freeze + API audit + migration guide).
+Canonical roadmap: `dev/plans/2026-05-02-roadmap-to-v1.0.md`.
 
 The active roadmap is **`dev/plans/2026-05-02-roadmap-to-v1.0.md`** —
 covers v0.4.0 → v1.0.0 with cut criteria, release contents, and

@@ -5,6 +5,60 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — v0.10.0 pre-1.0 hardening (feature-complete on dev)
+
+The last release before the v1.0 feature freeze. Hardening + trust,
+not new capability. Detailed plan:
+`dev/plans/2026-06-14-v0.10.0-pre-1.0-hardening.md`.
+
+### Added
+
+- **`urika upgrade`** — idempotent migration of older projects to the
+  current on-disk formats (`urika upgrade [project] | --all`, with
+  `/upgrade` in the REPL/TUI). Stamps a `[project] schema_version`,
+  rewrites legacy `leaderboard.json` (`entries`→`ranking`) on disk, and
+  refreshes labbook notes. Running it twice is a byte-identical no-op.
+  Satisfies the v1.0 "v0.x projects upgrade via `urika upgrade`" promise.
+- **Dashboard surfaces the finalize artifacts.** METRICS.md, per-method
+  model cards, the reproduce notebook, and a per-experiment evaluation
+  view are now reachable and rendered in the dashboard (they were
+  written to disk but invisible). Finalize modal gains a
+  `markdown | latex | pdf` format picker (CLI parity).
+- **Finalize integrity validation** — a deterministic post-finalize
+  pass warns (never blocks) when `findings.json` references a script
+  that doesn't exist, a `run_id` that resolves to a different
+  experiment, a missing figure, or a `reproduce.sh` line pointing at a
+  missing script. Warnings are surfaced and written to
+  `projectbook/.finalize-warnings.txt`.
+- **The e2e smoke is now a pre-release gate.** `release-to-main.sh`
+  runs the unit suite and the real-API smoke before touching `main` and
+  refuses to tag on a real failure (`URIKA_SKIP_SMOKE=1` to override).
+  The smoke now distinguishes transient API failures (stream timeout,
+  429, overload) — retried once, marked `TRANSIENT`, non-blocking — from
+  real `FAIL`s.
+- **Dashboard wizard sessions survive a server restart** — persisted to
+  `<project>/.urika/builder/`; an interrupted session re-attaches and
+  resumes by replaying the saved answers into a fresh builder loop.
+
+### Changed / Fixed
+
+- **Agent workers are isolated from the operator's `~/.claude` config.**
+  Spawned agents now run with `setting_sources=[]` (+ no hooks/plugins,
+  `strict_mcp_config`, and env hardening), so operator settings,
+  plugins, skills, and **hooks** no longer leak into agent runs (a
+  SessionStart hook had been injecting skill text and burning turns).
+- **Atomic writes** for `experiment.json` / `progress.json` creation,
+  `leaderboard.json`, and project memory (crash/disk-full no longer
+  truncates them); clearer message when an evaluator narrates instead
+  of emitting criteria JSON.
+- **Accessibility pass** — WCAG AA contrast fixes (light + dark), a
+  skip-to-content link + `<main>` landmark, form-label associations,
+  aria-labels on icon-only controls, and focus-visible outlines.
+  Verified with a live axe-core audit (17 pages × 2 themes, zero
+  serious/critical).
+- Migrated the test suite off the deprecated starlette/httpx
+  `TestClient` shim (added `httpx2` to the dev extra).
+
 ## [0.9.1] – 2026-06-13
 
 Hotfix: report integrity + dashboard report link. Finalized projects
