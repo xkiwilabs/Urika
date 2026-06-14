@@ -10,7 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from urika.agents.adapters.claude_sdk import ClaudeSDKRunner
+from urika.agents.adapters.claude_sdk import (
+    ClaudeSDKRunner,
+    _filter_supported_kwargs,
+)
 from urika.agents.config import AgentConfig, SecurityPolicy
 
 
@@ -133,6 +136,93 @@ class TestClaudeSDKRunnerBuildOptions:
         options = runner._build_options(read_only_config)
         assert options.can_use_tool is not None
         assert callable(options.can_use_tool)
+
+
+class TestClaudeSDKRunnerConfigIsolation:
+    """v0.10.0 Phase 3 — agent subprocesses are isolated from the
+    operator's ``~/.claude`` config (settings, hooks, CLAUDE.md, skills,
+    plugins, MCP). The observed incident: a SessionStart hook from the
+    operator's global config ran inside a task-agent worker, injecting
+    skill instructions into the transcript and burning turns. The
+    primary control is ``setting_sources=[]``; the env vars below are
+    best-effort hardening on top of it.
+    """
+
+    def test_setting_sources_empty_disables_filesystem_settings(
+        self, read_only_config: AgentConfig
+    ) -> None:
+        runner = ClaudeSDKRunner()
+        options = runner._build_options(read_only_config)
+        # Empty list (not None) — None means "load defaults"; [] means
+        # "load nothing", which gates hooks/CLAUDE.md/skills discovery.
+        assert options.setting_sources == []
+
+    def test_hooks_empty_no_programmatic_hooks(
+        self, read_only_config: AgentConfig
+    ) -> None:
+        runner = ClaudeSDKRunner()
+        options = runner._build_options(read_only_config)
+        assert options.hooks == {} or options.hooks is None
+        # We pass an explicit empty dict.
+        assert options.hooks == {}
+
+    def test_strict_mcp_config_true(self, read_only_config: AgentConfig) -> None:
+        runner = ClaudeSDKRunner()
+        options = runner._build_options(read_only_config)
+        assert options.strict_mcp_config is True
+
+    def test_isolation_env_vars_set(self, read_only_config: AgentConfig) -> None:
+        runner = ClaudeSDKRunner()
+        options = runner._build_options(read_only_config)
+        assert options.env.get("CLAUDE_CODE_DISABLE_AUTO_MEMORY") == "1"
+        assert options.env.get("ENABLE_CLAUDEAI_MCP_SERVERS") == "false"
+
+    def test_isolation_env_vars_do_not_override_caller(
+        self, read_only_config: AgentConfig
+    ) -> None:
+        """``setdefault`` semantics — a deliberate caller value wins."""
+        read_only_config.env = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0"}
+        runner = ClaudeSDKRunner()
+        options = runner._build_options(read_only_config)
+        assert options.env.get("CLAUDE_CODE_DISABLE_AUTO_MEMORY") == "0"
+
+
+class TestFilterSupportedKwargs:
+    """The SDK-drift capability filter (v0.10.0 Phase 3)."""
+
+    def test_drops_unknown_keys(self) -> None:
+        class Fake:
+            def __init__(self, a=None, b=None):  # noqa: D401
+                pass
+
+        out = _filter_supported_kwargs(Fake, {"a": 1, "b": 2, "c": 3})
+        assert out == {"a": 1, "b": 2}
+
+    def test_keeps_core_isolation_keys_on_real_sdk(self) -> None:
+        """The core three must survive the filter on the installed SDK."""
+        from claude_agent_sdk import ClaudeAgentOptions
+
+        out = _filter_supported_kwargs(
+            ClaudeAgentOptions,
+            {
+                "setting_sources": [],
+                "hooks": {},
+                "strict_mcp_config": True,
+                "bogus_future_param": 1,
+            },
+        )
+        assert out["setting_sources"] == []
+        assert out["hooks"] == {}
+        assert out["strict_mcp_config"] is True
+        assert "bogus_future_param" not in out
+
+    def test_var_keyword_signature_keeps_everything(self) -> None:
+        class FakeKw:
+            def __init__(self, **kwargs):  # noqa: D401
+                pass
+
+        out = _filter_supported_kwargs(FakeKw, {"anything": 1, "else_": 2})
+        assert out == {"anything": 1, "else_": 2}
 
 
 class TestComplianceSafetyNet:

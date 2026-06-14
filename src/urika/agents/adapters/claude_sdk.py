@@ -7,6 +7,7 @@ to change the runtime (e.g. custom runtime, Pi SDK).
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -588,6 +589,17 @@ class ClaudeSDKRunner(AgentRunner):
             # same idiom scrub_oauth_env uses for OAuth tokens in
             # api_key mode.
             agent_env["ANTHROPIC_API_KEY"] = ""
+        # Operator-config isolation (v0.10.0 Phase 3), best-effort env
+        # hardening on TOP of ``setting_sources=[]`` (the real control,
+        # set in ``kwargs`` below). These two are belt-and-braces:
+        #   * CLAUDE_CODE_DISABLE_AUTO_MEMORY — suppress auto-memory
+        #     discovery in the spawned worker.
+        #   * ENABLE_CLAUDEAI_MCP_SERVERS — don't auto-attach the
+        #     operator's claude.ai MCP servers.
+        # ``setdefault`` so a deliberate caller value still wins; we do
+        # NOT touch CLAUDE_CONFIG_DIR or any auth-related var here.
+        agent_env.setdefault("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1")
+        agent_env.setdefault("ENABLE_CLAUDEAI_MCP_SERVERS", "false")
         # SecurityPolicy enforcement (v0.4): wire the agent's
         # writable_dirs / readable_dirs / allowed_bash_prefixes /
         # blocked_bash_patterns into a real ``can_use_tool``
@@ -634,6 +646,27 @@ class ClaudeSDKRunner(AgentRunner):
             ),
             "env": agent_env,
             "stderr": _stderr_cb,
+            # --- Operator-config isolation (v0.10.0 Phase 3) ---
+            # The spawned `claude` worker otherwise discovers and loads
+            # the OPERATOR's global Claude Code config: ~/.claude
+            # settings, plugins, skills, CLAUDE.md, and — most harmful —
+            # SessionStart/PreToolUse hooks, which run INSIDE the agent
+            # worker. Observed incident: a SessionStart hook injected
+            # skill instructions into a task-agent transcript and burned
+            # turns. Urika supplies its own system_prompt per role and
+            # builds its own can_use_tool / allowed_tools / env, so it
+            # does not rely on operator settings — empty config sources
+            # is both correct and the primary control here.
+            "setting_sources": [],  # no operator/project/local settings,
+            # hooks, CLAUDE.md, or skills discovery (the gate for all of
+            # the above).
+            "hooks": {},  # no programmatic hooks; Urika passes none —
+            # explicit empty for clarity + defense.
+            "strict_mcp_config": True,  # don't auto-load operator MCP
+            # servers; Urika passes its own mcp_servers (none today).
+            "skills": [],  # no skills (also gated by setting_sources=[];
+            # explicit for defense). Capability-filtered below.
+            "plugins": [],  # no plugins. Capability-filtered below.
         }
         # Prefer the system-installed `claude` CLI over the SDK's
         # bundled one whenever it exists. The bundled CLI lags the
@@ -664,7 +697,47 @@ class ClaudeSDKRunner(AgentRunner):
         system_cli = shutil.which("claude")
         if system_cli:
             kwargs["cli_path"] = system_cli
+        # Capability filter: drop any kwarg the installed SDK's
+        # ClaudeAgentOptions does not accept, so a future SDK that
+        # renames/removes one of the isolation params (e.g. ``skills``,
+        # ``plugins``) degrades gracefully instead of raising TypeError.
+        # The core three (setting_sources / hooks / strict_mcp_config)
+        # are pinned by the real-imports structural test, so if they
+        # ever disappear CI fails loudly rather than silently here.
+        kwargs = _filter_supported_kwargs(ClaudeAgentOptions, kwargs)
         return ClaudeAgentOptions(**kwargs)  # type: ignore[arg-type]
+
+
+def _filter_supported_kwargs(cls: type, kwargs: dict[str, object]) -> dict[str, object]:
+    """Drop kwargs not accepted by ``cls.__init__``.
+
+    Keeps the adapter robust to SDK drift: if a future
+    ``ClaudeAgentOptions`` removes/renames a param the adapter passes
+    (notably the isolation params ``skills`` / ``plugins``), the unknown
+    key is dropped with a debug log instead of crashing the worker. The
+    primary isolation params (setting_sources / hooks /
+    strict_mcp_config) are independently pinned by the real-imports
+    structural test, so their disappearance fails CI loudly.
+    """
+    try:
+        params = inspect.signature(cls.__init__).parameters
+    except (TypeError, ValueError):  # pragma: no cover — defensive
+        return kwargs
+    # If the signature accepts **kwargs, every key is supported.
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return kwargs
+    supported = set(params)
+    filtered: dict[str, object] = {}
+    for key, value in kwargs.items():
+        if key in supported:
+            filtered[key] = value
+        else:
+            logger.debug(
+                "Dropping unsupported ClaudeAgentOptions kwarg %r "
+                "(not in installed SDK signature)",
+                key,
+            )
+    return filtered
 
 
 def _message_to_dict(msg: Any) -> dict[str, Any]:

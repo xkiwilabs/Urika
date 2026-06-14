@@ -90,6 +90,31 @@ def test_claude_agent_options_kwargs() -> None:
         )
 
 
+def test_claude_agent_options_isolation_kwargs() -> None:
+    """v0.10.0 Phase 3 (operator-config isolation).
+
+    ``_build_options`` passes ``setting_sources=[]``, ``hooks={}`` and
+    ``strict_mcp_config=True`` to isolate the spawned agent worker from
+    the operator's ``~/.claude`` config (settings, hooks, CLAUDE.md,
+    skills) and operator MCP servers. If a future SDK drops or renames
+    any of these, CI must fail loudly here rather than silently losing
+    isolation (which would re-open the observed hook-leak: a
+    SessionStart hook injecting skill instructions into a task-agent
+    transcript and burning turns).
+    """
+    from claude_agent_sdk import ClaudeAgentOptions
+
+    sig = inspect.signature(ClaudeAgentOptions.__init__)
+    params = sig.parameters
+
+    for kw in ("setting_sources", "hooks", "strict_mcp_config"):
+        assert kw in params, (
+            f"ClaudeAgentOptions.__init__ missing isolation kwarg '{kw}' "
+            f"(adapter _build_options relies on it for operator-config "
+            f"isolation — v0.10.0 Phase 3)"
+        )
+
+
 def test_assistant_message_content_and_model() -> None:
     """Adapter stream loop (lines 303–309):
     ``for block in msg.content`` and ``msg.model``.
