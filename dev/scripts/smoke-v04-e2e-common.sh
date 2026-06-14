@@ -30,6 +30,11 @@ unset CLAUDECODE CLAUDE_CODE_SSE_PORT CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXECPAT
 
 PASS=0
 FAIL=0
+# v0.10.0 Phase 9: a third outcome for steps that failed for a purely
+# transient API reason (stream timeout, 429/RESOURCE_EXHAUSTED,
+# overloaded/503/529) AND were retried once and still flaked. TRANSIENT
+# does NOT contribute to the exit code — a pure API-weather run exits 0.
+TRANSIENT=0
 RESULTS=()
 
 # v0.4.3 Track 2d: cheap-config smoke variant.
@@ -275,15 +280,72 @@ fail() {
   echo "  ✗ FAIL: $1" | tee -a "$URIKA_E2E_LOG_DIR/run.log"
   if [[ -n "${2:-}" ]]; then echo "    detail: $2" | tee -a "$URIKA_E2E_LOG_DIR/run.log"; fi
 }
+# v0.10.0 Phase 9: a step that failed transiently even after one retry.
+# Recorded + reported, but NON-fatal (does not bump FAIL, does not
+# affect the exit code). Mirrors fail()'s shape.
+transient() {
+  RESULTS+=("TRANSIENT  $1")
+  TRANSIENT=$((TRANSIENT+1))
+  echo "  ~ TRANSIENT: $1" | tee -a "$URIKA_E2E_LOG_DIR/run.log"
+  if [[ -n "${2:-}" ]]; then echo "    detail: $2" | tee -a "$URIKA_E2E_LOG_DIR/run.log"; fi
+}
+
+# Classify a step's log as a transient API failure (return 0/true) vs a
+# real failure (return non-zero/false). A step is transient iff:
+#   (a) the log contains at least one transient marker, AND
+#   (b) the log contains NO real-error marker.
+#
+# Transient markers (API weather — retryable, not our bug):
+#   Agent stream timeout / RuntimeError: Agent stream timeout,
+#   RESOURCE_EXHAUSTED, 429, rate limit, overloaded_error,
+#   Error code: 529, 503 Service Unavailable. (case-insensitive)
+#
+# Real-error markers (a code bug — DISQUALIFY transient even if a
+# transient marker is also present): AssertionError, KeyError,
+# TypeError, SyntaxError, ModuleNotFoundError. A bare Traceback is NOT
+# a real-error marker on its own: a pure stream-timeout aborts the
+# asyncio task and prints a CancelledError traceback that is not a code
+# bug. A urika-source-referencing Traceback only counts as real when
+# there is NO stream-timeout marker present (i.e. the traceback wasn't
+# caused by the timeout teardown).
+_is_transient_failure() {
+  local logfile="$1"
+  [[ -f "$logfile" ]] || return 1
+
+  # (a) must have a transient marker
+  local transient_re='Agent stream timeout|RESOURCE_EXHAUSTED|429|rate limit|overloaded_error|Error code: 529|503 Service Unavailable'
+  grep -qiE "$transient_re" "$logfile" || return 1
+
+  # (b1) explicit code-error exception types always disqualify.
+  if grep -qE 'AssertionError|KeyError|TypeError|SyntaxError|ModuleNotFoundError' "$logfile"; then
+    return 1
+  fi
+
+  # (b2) a urika-source-referencing traceback disqualifies ONLY when no
+  # stream-timeout marker is present (a stream timeout legitimately
+  # unwinds through urika code via CancelledError without being a bug).
+  if grep -qE 'Traceback \(most recent' "$logfile" \
+     && grep -qE 'urika/' "$logfile" \
+     && ! grep -qiE 'Agent stream timeout' "$logfile"; then
+    return 1
+  fi
+
+  return 0
+}
 
 # Run a urika command with timeout, logging stdout/stderr to a per-step
 # file. Returns 0 on zero exit AND non-empty output AND no SDK error
 # markers. Args: <step-name> <timeout-seconds> <urika-args...>
-run_step_with_timeout() {
-  local name="$1"; shift
+# Run a single attempt of a urika command into <logfile>. Echoes a
+# verdict line on stdout-of-the-function (captured by the caller):
+#   PASS                  — zero exit, no actionable SDK regression marker
+#   FAIL\t<detail>        — real failure (non-zero exit/timeout, or an
+#                           actionable SDK regression marker)
+# The caller (run_step_with_timeout) decides retry / transient policy.
+# Args: <timeout-seconds> <logfile> <urika-args...>
+_run_step_attempt() {
   local seconds="$1"; shift
-  local logfile="$URIKA_E2E_LOG_DIR/${name// /_}.log"
-  log "▸ ${seconds}s timeout — output: $logfile"
+  local logfile="$1"; shift
   if timeout "$seconds" "$@" > "$logfile" 2>&1; then
     # Fail only on *actionable* SDK regressions, not on noise the
     # adapter already tolerates. Specifically:
@@ -298,20 +360,63 @@ run_step_with_timeout() {
     # successful AgentResult by that point, and the urika command
     # itself exits 0. Greping for it produced false positives.
     if grep -qE "can_use_tool callback requires" "$logfile"; then
-      fail "$name" "$(grep -m1 -E 'can_use_tool callback requires' "$logfile")"
-      return 1
+      printf 'FAIL\t%s' "$(grep -m1 -E 'can_use_tool callback requires' "$logfile")"
+      return 0
     fi
     if grep -qE "Traceback \(most recent" "$logfile" \
        && grep -qE "urika/agents/adapters/claude_sdk\.py" "$logfile"; then
-      fail "$name" "$(grep -m1 -E 'Traceback|urika/agents/adapters' "$logfile")"
-      return 1
+      printf 'FAIL\t%s' "$(grep -m1 -E 'Traceback|urika/agents/adapters' "$logfile")"
+      return 0
     fi
-    ok "$name"
+    printf 'PASS'
     return 0
   else
-    fail "$name" "non-zero exit (or timeout); see $logfile"
+    printf 'FAIL\t%s' "non-zero exit (or timeout); see $logfile"
+    return 0
+  fi
+}
+
+run_step_with_timeout() {
+  local name="$1"; shift
+  local seconds="$1"; shift
+  local logfile="$URIKA_E2E_LOG_DIR/${name// /_}.log"
+  log "▸ ${seconds}s timeout — output: $logfile"
+
+  local verdict detail
+  verdict="$(_run_step_attempt "$seconds" "$logfile" "$@")"
+  detail="${verdict#*$'\t'}"; [[ "$detail" == "$verdict" ]] && detail=""
+  verdict="${verdict%%$'\t'*}"
+
+  if [[ "$verdict" == "PASS" ]]; then
+    ok "$name"
+    return 0
+  fi
+
+  # Real (non-transient) failure → fail immediately, no retry.
+  if ! _is_transient_failure "$logfile"; then
+    fail "$name" "$detail"
     return 1
   fi
+
+  # Transient failure → retry the same command ONCE with a fresh log.
+  log "▸ transient API failure on \"$name\" — retrying once"
+  local retry_log="$URIKA_E2E_LOG_DIR/${name// /_}.retry.log"
+  local rverdict rdetail
+  rverdict="$(_run_step_attempt "$seconds" "$retry_log" "$@")"
+  rdetail="${rverdict#*$'\t'}"; [[ "$rdetail" == "$rverdict" ]] && rdetail=""
+  rverdict="${rverdict%%$'\t'*}"
+
+  if [[ "$rverdict" == "PASS" ]]; then
+    ok "$name (passed on retry after a transient failure)"
+    return 0
+  fi
+  # Retry also failed: transient again → non-fatal; real → fail.
+  if _is_transient_failure "$retry_log"; then
+    transient "$name" "transient API failure persisted across one retry; see $retry_log"
+    return 0
+  fi
+  fail "$name" "$rdetail"
+  return 1
 }
 
 verify_artifact() {
@@ -829,6 +934,11 @@ print_summary() {
   echo "------------------------------------------------------------"
   echo "  PASS: $PASS"
   echo "  FAIL: $FAIL"
+  echo "  TRANSIENT: $TRANSIENT"
+  if (( TRANSIENT > 0 )); then
+    echo "  note: $TRANSIENT step(s) failed for a transient API reason and"
+    echo "        were tolerated (not release-blocking; exit code reflects FAIL only)."
+  fi
   echo "  Logs: $URIKA_E2E_LOG_DIR/"
   echo "============================================================"
 }

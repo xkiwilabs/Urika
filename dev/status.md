@@ -168,6 +168,38 @@ the contract, the schedule is a guess.
   needed).
 - Tags: `vMAJOR.MINOR.PATCH` (e.g. `v0.4.0`).
 
+### v0.10.0 Phase 9 — release engineering (2026-06-14)
+
+- **e2e smoke is now a pre-release gate.** `release-to-main.sh` runs
+  two gates after the "clean tree" check and before the header regen:
+  (1) the fast unit suite (`URIKA_SKIP_SMOKE=1 pytest -m "not
+  integration"`), always; (2) the real-API e2e smoke
+  (`smoke-v04-e2e-open.sh`), unless `URIKA_SKIP_SMOKE=1` (loud yellow
+  warning when skipped). No `ANTHROPIC_API_KEY` + not skipped → abort
+  with a `urika config api-key` pointer. Closes the gap where bugs
+  shipped past a green unit suite because the smoke was never wired
+  into the release flow.
+- **Transient-API-failure tolerance in the smoke.** `run_step_with_
+  timeout` now classifies a failed step via `_is_transient_failure`
+  (stream timeout / 429 / RESOURCE_EXHAUSTED / overloaded / 503 / 529,
+  with AssertionError/KeyError/TypeError/SyntaxError/ModuleNotFound and
+  non-timeout urika tracebacks disqualifying). A transient failure
+  retries the command ONCE; pass-on-retry → PASS, persistent-transient
+  → new non-fatal `TRANSIENT` outcome (does NOT affect `exit $FAIL`),
+  real failure → `FAIL` immediately. Fixes the v0.9.1 hard-fail on the
+  `RuntimeError: Agent stream timeout` flake.
+- **httpx TestClient deprecation — RESOLVED, not deferred.** The
+  `StarletteDeprecationWarning: Using httpx with starlette.testclient
+  is deprecated; install httpx2 instead` came from starlette 1.2.1 /
+  fastapi 0.136.3, whose `TestClient` prefers `httpx2` (the httpx 2.x
+  line, a *separate* PyPI distribution) and only falls back to legacy
+  `httpx` with a one-shot warning. `httpx` itself stays — it's a hard
+  runtime dep of anthropic / openai / google-adk / mcp (all pin
+  `httpx<1`); `httpx2` coexists (distinct `httpx2` / `httpcore2` dist
+  + import names). Fix: added `httpx2>=2.0` to the `dev` extra in
+  `pyproject.toml` (test-only, NOT in `[all]`). Dashboard suite (1073
+  tests) passes with zero warnings under httpx2.
+
 ---
 
 ## Test data

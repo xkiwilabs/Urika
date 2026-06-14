@@ -119,6 +119,17 @@ dev = [
     "ruff>=0.1",
     "pexpect>=4.8",
     "playwright>=1.40",
+    # starlette >=1.2 / fastapi >=0.136 ship a TestClient that prefers
+    # ``httpx2`` (the httpx 2.x line, a separate PyPI distribution) and
+    # only falls back to the legacy ``httpx`` with a one-shot
+    # StarletteDeprecationWarning at import time. ``httpx`` itself is a
+    # hard *runtime* dep of anthropic / openai / google-adk / mcp
+    # (all pin ``httpx<1``) so it must stay; ``httpx2`` coexists
+    # alongside it (distinct dist + import names: ``httpx2`` /
+    # ``httpcore2``). Pulling it into the test env makes TestClient
+    # pick the supported backend and silences the deprecation warning
+    # without touching the runtime client. Test-only — not in [all].
+    "httpx2>=2.0",
 ]
 
 [project.scripts]

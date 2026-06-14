@@ -36,6 +36,72 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     exit 1
 fi
 
+# === Pre-release gate: tests must be green before we touch main =======
+# Two gates run here, in order. Both predate any mutation of main, so a
+# failed gate aborts with the repo untouched (still on dev, working tree
+# clean). Exit codes are captured EXPLICITLY (not left to ``set -e``) so
+# the abort message is unambiguous about *which* gate failed.
+#
+# Gate 1 (always): the fast unit suite. Catches the bulk of regressions
+# in seconds with no API cost.
+#
+# Gate 2 (unless URIKA_SKIP_SMOKE=1): the real-API e2e smoke. This is
+# the gate that would have caught the bugs that historically shipped
+# past a green unit suite — the smoke was NEVER wired into the release
+# flow before v0.10.0. It needs ANTHROPIC_API_KEY and ~30-45 min; set
+# URIKA_SKIP_SMOKE=1 to skip it (loud warning), e.g. for a docs-only
+# release or when re-cutting after a known-good smoke.
+
+echo ""
+echo "Pre-release gate 1/2: fast unit suite (URIKA_SKIP_SMOKE=1 pytest -m 'not integration')..."
+set +e
+URIKA_SKIP_SMOKE=1 python -m pytest -q -m "not integration"
+UNIT_RC=$?
+set -e
+if [ "$UNIT_RC" -ne 0 ]; then
+    echo ""
+    echo "Release aborted: unit suite FAILED (exit $UNIT_RC). Fix the failures and re-run."
+    exit 1
+fi
+echo "  unit suite green."
+
+echo ""
+if [ "${URIKA_SKIP_SMOKE:-}" = "1" ]; then
+    # Yellow, loud warning that the e2e gate was skipped.
+    printf '\033[33m'
+    echo "######################################################################"
+    echo "# WARNING: URIKA_SKIP_SMOKE=1 — e2e smoke gate SKIPPED.              #"
+    echo "# The real-API end-to-end smoke did NOT run. You are releasing on    #"
+    echo "# the unit suite alone. Only do this for docs-only releases or when  #"
+    echo "# a known-good smoke already ran against this exact tree.            #"
+    echo "######################################################################"
+    printf '\033[0m'
+else
+    # The smoke needs an API key. Subscription auth aside, if there's no
+    # ANTHROPIC_API_KEY anywhere reachable, the smoke will FATAL on its
+    # own preflight — fail fast here with an actionable message instead.
+    if [ -z "${ANTHROPIC_API_KEY:-}" ] \
+       && ! { [ -f "$HOME/.urika/secrets.env" ] && grep -q '^ANTHROPIC_API_KEY=' "$HOME/.urika/secrets.env"; }; then
+        echo "Release aborted: e2e smoke needs an Anthropic API key, but none was found"
+        echo "  in \$ANTHROPIC_API_KEY or ~/.urika/secrets.env."
+        echo "  Set one with: urika config api-key"
+        echo "  Or re-run with URIKA_SKIP_SMOKE=1 to skip the smoke gate (not recommended)."
+        exit 1
+    fi
+    echo "Pre-release gate 2/2: e2e smoke (~30-45 min, real API). Set URIKA_SKIP_SMOKE=1 to skip."
+    set +e
+    bash dev/scripts/smoke-v04-e2e-open.sh
+    SMOKE_RC=$?
+    set -e
+    if [ "$SMOKE_RC" -ne 0 ]; then
+        echo ""
+        echo "Release aborted: e2e smoke FAILED (exit $SMOKE_RC; see log dir above)."
+        echo "  Fix, or re-run with URIKA_SKIP_SMOKE=1 to override."
+        exit 1
+    fi
+    echo "  e2e smoke green."
+fi
+
 # === Pre-step: regenerate the release header asset ====================
 # Run on dev so the regenerated PNG/SVG flow into main via the
 # docs/ checkout. If the header changed, commit it on dev so the
