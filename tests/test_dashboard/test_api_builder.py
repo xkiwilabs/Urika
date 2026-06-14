@@ -418,6 +418,166 @@ class TestBuilderEndpoints:
         assert client.post("/api/projects/wiz/builder/abort").status_code == 404
 
 
+class TestBuilderPersistence:
+    """v0.10.0 Phase 6: the wizard's serializable session state is
+    flushed to <project>/.urika/builder/session.json on every
+    transition, survives a simulated restart (rehydrated detached),
+    and is cleaned up on done / abort."""
+
+    def _session_file(self, project_dir: Path) -> Path:
+        return project_dir / ".urika" / "builder" / "session.json"
+
+    def test_answered_questions_are_persisted_atomically(self, wizard_env) -> None:
+        client, project_dir, _ = wizard_env
+        assert client.post("/api/projects/wiz/builder/start").status_code == 202
+
+        # Answer the first two fixed questions, then inspect disk.
+        prev: str | None = None
+        for ans in ("done", "done"):
+            prev = _await_question(prev)
+            assert (
+                client.post(
+                    "/api/projects/wiz/builder/answer", json={"answer": ans}
+                ).status_code
+                == 200
+            )
+
+        # Park at the next question so the persisted state is settled.
+        _await_question(prev)
+
+        sfile = self._session_file(project_dir)
+        wait_until(lambda: sfile.exists(), timeout=10, description="session.json")
+        data = json.loads(sfile.read_text(encoding="utf-8"))
+        # The two answered questions are in the transcript, in order.
+        texts = [pair[0] for pair in data["transcript"]]
+        assert texts[0] == "Analysis approach preference"
+        assert texts[1] == "Model interpretability preference"
+        assert data["transcript"][0][1] == "done"
+        assert data["pending_question"]["text"].startswith("Any practical constraints?")
+        assert data["done"] is False
+        # Atomic write leaves no temp turds.
+        assert list(sfile.parent.glob("*.tmp*")) == []
+
+        client.post("/api/projects/wiz/builder/abort")
+
+    def test_restart_rehydrates_detached_session_with_transcript(
+        self, wizard_env
+    ) -> None:
+        client, project_dir, _ = wizard_env
+        assert client.post("/api/projects/wiz/builder/start").status_code == 202
+
+        prev: str | None = None
+        for ans in ("done", "done"):
+            prev = _await_question(prev)
+            client.post("/api/projects/wiz/builder/answer", json={"answer": ans})
+        _await_question(prev)  # parked at constraints question
+
+        # Simulate a server restart: drop the live in-memory session
+        # (also cancel its task so it doesn't keep mutating disk).
+        from urika.dashboard import builder_sessions
+
+        live = builder_sessions._active["wiz"]
+        if live.task is not None:
+            live.task.cancel()
+        builder_sessions._active.clear()
+
+        # Lookup with the project_dir rehydrates a detached session.
+        revived = builder_sessions.get_for_project("wiz", project_dir)
+        assert revived is not None
+        assert revived.detached is True
+        assert revived.task is None
+        texts = [q for q, _ in revived.transcript]
+        assert "Analysis approach preference" in texts
+        assert revived.pending_question_data.text.startswith("Any practical")
+
+        # The detached stream replays the transcript as question events.
+        r = client.get("/api/projects/wiz/builder/stream")
+        assert r.status_code == 200
+        events = [
+            json.loads(line[len("data: ") :])
+            for line in r.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        kinds = [e["kind"] for e in events]
+        assert kinds and all(k == "question" for k in kinds)
+        # The pending question is surfaced and flagged detached.
+        assert any(e["payload"].get("detached") for e in events)
+
+        # Answering a detached session is rejected — must resume first.
+        r = client.post("/api/projects/wiz/builder/answer", json={"answer": "x"})
+        assert r.status_code == 409
+        assert "detached" in r.json()["detail"].lower()
+
+        # Cleanup: abort removes the persisted file.
+        client.post("/api/projects/wiz/builder/abort")
+        assert not self._session_file(project_dir).exists()
+
+    def test_resume_via_start_replays_saved_answers(self, wizard_env) -> None:
+        """After a restart, POST /builder/start relaunches the loop with
+        the answer-replay wrapper: the already-answered questions are NOT
+        re-asked (they're auto-answered from the transcript), and the
+        loop parks live at the next unanswered question."""
+        client, project_dir, runner = wizard_env
+        assert client.post("/api/projects/wiz/builder/start").status_code == 202
+
+        prev: str | None = None
+        for ans in ("done", "done"):
+            prev = _await_question(prev)
+            client.post("/api/projects/wiz/builder/answer", json={"answer": ans})
+        _await_question(prev)  # parked at constraints (3rd) question
+
+        from urika.dashboard import builder_sessions
+
+        live = builder_sessions._active["wiz"]
+        if live.task is not None:
+            live.task.cancel()
+        builder_sessions._active.clear()
+
+        # Rehydrate so start sees a detached session to resume.
+        builder_sessions.get_for_project("wiz", project_dir)
+
+        # Resume: a second start is ALLOWED (detached isn't live) and
+        # relaunches with replay.
+        assert client.post("/api/projects/wiz/builder/start").status_code == 202
+
+        # The relaunched loop auto-answers the two saved approach/
+        # interpretability questions and parks live at the constraints
+        # question — it does NOT re-ask the first two.
+        first_live = _await_question(None)
+        assert first_live.startswith("Any practical constraints?")
+
+        # Finish the loop from here, live.
+        for ans in ("done", "Accept", "Looks good — create the project"):
+            prev = first_live
+            client.post("/api/projects/wiz/builder/answer", json={"answer": ans})
+            if not _session().done:
+                first_live = _await_question(prev)
+        wait_until(lambda: _session().done, timeout=10, description="resumed done")
+
+        # The replayed answers were re-recorded onto the fresh session
+        # (so a second restart would still have them).
+        seen_texts = [q for q, _ in _session().transcript]
+        assert "Analysis approach preference" in seen_texts
+        assert "Model interpretability preference" in seen_texts
+        # Done → persisted file cleaned up.
+        assert not self._session_file(project_dir).exists()
+
+    def test_done_removes_persisted_session(self, wizard_env) -> None:
+        client, project_dir, _ = wizard_env
+        assert client.post("/api/projects/wiz/builder/start").status_code == 202
+        _drive_to_completion(client)
+        assert not self._session_file(project_dir).exists()
+
+    def test_abort_removes_persisted_session(self, wizard_env) -> None:
+        client, project_dir, _ = wizard_env
+        assert client.post("/api/projects/wiz/builder/start").status_code == 202
+        _await_question(None)
+        client.post("/api/projects/wiz/builder/abort")
+        # The whole project (and its .urika/builder dir) is trashed,
+        # so the session file is gone with it.
+        assert not self._session_file(project_dir).exists()
+
+
 class TestBuilderEndpointsAuth:
     def test_builder_endpoints_require_token_when_auth_enabled(
         self, tmp_path: Path, monkeypatch
