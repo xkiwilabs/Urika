@@ -804,12 +804,70 @@ nbformat.validate(nb)
 '
 }
 
+# Run every methods/final_*.py standalone from <workdir> (the same cwd
+# the notebook uses) with a per-script timeout. Classifies the SET:
+#   echo "buggy"  — >=1 final_*.py exists AND >=1 of them exits non-zero
+#   echo "clean"  — >=1 final_*.py exists AND ALL of them exit zero
+#   echo "none"   — no methods/final_*.py files at all
+# Per-script output is captured to the log dir (quiet — not spammed to
+# the console). This is the classification engine for verify_notebook_
+# executes' faithful-reproduction contract; it's deliberately a small
+# pure-ish helper so it can be unit-tested directly with synthetic
+# scripts without driving a full nbclient run.
+# Args: <workdir> [per-script-timeout-seconds=120]
+_classify_final_scripts() {
+  local workdir="$1"; local per_to="${2:-120}"
+  local finals=()
+  local f
+  for f in "$workdir"/methods/final_*.py; do
+    [[ -e "$f" ]] && finals+=("$f")
+  done
+  if (( ${#finals[@]} == 0 )); then
+    echo "none"
+    return 0
+  fi
+  local any_fail=0
+  for f in "${finals[@]}"; do
+    local base; base="$(basename "$f")"
+    local slog="$URIKA_E2E_LOG_DIR/final-standalone-${base}.log"
+    # Run from <workdir> so project-relative data paths resolve exactly
+    # as they do inside the notebook.
+    if ( cd "$workdir" && timeout "$per_to" python3 "$f" ) >"$slog" 2>&1; then
+      :
+    else
+      any_fail=1
+    fi
+  done
+  if (( any_fail == 1 )); then
+    echo "buggy"
+  else
+    echo "clean"
+  fi
+}
+
 # Execute reproduce.ipynb on a fresh kernel, from the project root
 # (the notebook setup cell documents that working directory — the
 # embedded method scripts use project-relative data paths). Gated on
 # nbclient importability: nbclient is NOT a urika dependency, so skip
 # cleanly when absent — unit tests + verify_notebook_valid still cover
 # structural validity, only end-to-end execution is deferred.
+#
+# CONTRACT: the reproduce notebook's job is to FAITHFULLY REPRODUCE the
+# finalizer's standalone methods/final_*.py scripts. So we distinguish
+# two failure modes when the notebook does NOT execute cleanly:
+#   - The notebook faithfully reproduces a buggy agent-written script:
+#     at least one methods/final_*.py ALSO fails when run standalone
+#     from the same cwd. This is the notebook doing its job correctly
+#     (it reproduces the bug, exactly as reproduce.sh would). It is
+#     NON-BLOCKING — recorded via transient() so it does not contribute
+#     to FAIL / the exit code. Mirrors the P9 transient philosophy:
+#     non-deterministic AGENT code quality is not a Urika regression.
+#   - The notebook INTRODUCED the failure: ALL standalone final_*.py
+#     scripts run clean, yet the notebook still failed. That's a genuine
+#     export defect (e.g. the earlier sys.exit/argv/data-path bugs) →
+#     real fail.
+#   - No methods/final_*.py at all → there is nothing to faithfully
+#     reproduce and the notebook still didn't run → fail (unchanged).
 verify_notebook_executes() {
   local desc="$1"; local path="$2"; local workdir="$3"
   if ! python3 -c "import nbclient" >/dev/null 2>&1; then
@@ -820,7 +878,8 @@ verify_notebook_executes() {
     fail "$desc — notebook missing: $path"
     return 1
   fi
-  NB_PATH="$path" NB_WORKDIR="$workdir" _verify_py "$desc" '
+  local nb_log="$URIKA_E2E_LOG_DIR/notebook-execute.log"
+  if NB_PATH="$path" NB_WORKDIR="$workdir" python3 -c '
 import os
 import nbclient
 import nbformat
@@ -831,7 +890,31 @@ nbclient.NotebookClient(
     kernel_name="python3",
     resources={"metadata": {"path": os.environ["NB_WORKDIR"]}},
 ).execute()
-'
+' >"$nb_log" 2>&1; then
+    ok "$desc"
+    return 0
+  fi
+
+  # Notebook failed to execute. Decide blocking vs non-blocking by
+  # rerunning the finalizer's standalone scripts from the same cwd.
+  local verdict; verdict="$(_classify_final_scripts "$workdir")"
+  case "$verdict" in
+    buggy)
+      transient "$desc" \
+        "non-blocking: an agent-written methods/final_*.py has a runtime bug the notebook faithfully reproduces (>=1 final_*.py also fails standalone); see $nb_log + $URIKA_E2E_LOG_DIR/final-standalone-*.log"
+      return 0
+      ;;
+    clean)
+      fail "$desc" \
+        "all methods/final_*.py run clean standalone but the notebook failed — export defect introduced by the notebook; see $nb_log"
+      return 1
+      ;;
+    *)  # none
+      fail "$desc" \
+        "notebook failed and there are no methods/final_*.py to faithfully reproduce; see $nb_log"
+      return 1
+      ;;
+  esac
 }
 
 # At least one model card must have been written with real content.
