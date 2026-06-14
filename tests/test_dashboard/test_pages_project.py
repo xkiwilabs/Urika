@@ -2103,3 +2103,267 @@ def test_finalize_log_calls_artifacts_probe_on_completion(client_with_projects):
     r = client_with_projects.get("/projects/alpha/finalize/log")
     assert r.status_code == 200
     assert 'fetch("/api/projects/alpha/artifacts/projectbook")' in r.text
+
+
+# ---------------------------------------------------------------------------
+# v0.10.0 Phase 2 — surface the v0.9 finalize artifacts on the dashboard:
+# METRICS.md (metrics glossary), methods/*_model_card.md (model cards),
+# projectbook/reproduce.ipynb (notebook download), and the evaluator's
+# experiments/<id>/labbook/evaluation.json (evaluation view).
+# ---------------------------------------------------------------------------
+
+
+def test_project_home_metrics_card_present_when_metrics_exists(
+    tmp_path: Path, monkeypatch
+):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "METRICS.md").write_text("# Metrics Glossary\n\nR2 ...\n", encoding="utf-8")
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha").text
+    assert "/projects/alpha/projectbook/metrics" in body
+    assert "Metrics glossary" in body
+
+
+def test_project_home_metrics_card_absent_when_no_metrics(client_with_runs):
+    body = client_with_runs.get("/projects/alpha").text
+    assert "/projects/alpha/projectbook/metrics" not in body
+
+
+def test_metrics_route_renders_markdown(tmp_path: Path, monkeypatch):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "METRICS.md").write_text(
+        "# Metrics Glossary\n\nThe coefficient of determination.\n",
+        encoding="utf-8",
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    r = client.get("/projects/alpha/projectbook/metrics")
+    assert r.status_code == 200
+    assert "<h1>Metrics Glossary</h1>" in r.text
+    assert "Metrics glossary" in r.text  # title_override in breadcrumb/heading
+
+
+def test_metrics_route_404_when_absent(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/projectbook/metrics")
+    assert r.status_code == 404
+
+
+def test_project_home_model_cards_card_present_when_cards_exist(
+    tmp_path: Path, monkeypatch
+):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    methods = proj / "methods"
+    methods.mkdir(parents=True, exist_ok=True)
+    (methods / "ols_model_card.md").write_text(
+        "# Model Card — ols\n\nDetails.\n", encoding="utf-8"
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha").text
+    assert "/projects/alpha/model-cards" in body
+    assert "Model cards" in body
+
+
+def test_project_home_model_cards_card_absent_when_no_cards(client_with_runs):
+    body = client_with_runs.get("/projects/alpha").text
+    assert "/projects/alpha/model-cards" not in body
+
+
+def test_model_cards_route_renders_each_card(tmp_path: Path, monkeypatch):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    methods = proj / "methods"
+    methods.mkdir(parents=True, exist_ok=True)
+    (methods / "ols_model_card.md").write_text(
+        "# Model Card — ordinary_least_squares\n\nOLS body.\n", encoding="utf-8"
+    )
+    (methods / "rf_model_card.md").write_text(
+        "# Model Card — random_forest\n\nRF body.\n", encoding="utf-8"
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    r = client.get("/projects/alpha/model-cards")
+    assert r.status_code == 200
+    assert "ordinary_least_squares" in r.text
+    assert "random_forest" in r.text
+    assert "OLS body." in r.text
+
+
+def test_model_cards_route_404_when_none(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/model-cards")
+    assert r.status_code == 404
+
+
+def test_project_home_reproduce_card_present_when_notebook_exists(
+    tmp_path: Path, monkeypatch
+):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    (book / "reproduce.ipynb").write_text(
+        json.dumps({"cells": [], "metadata": {}, "nbformat": 4}),
+        encoding="utf-8",
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha").text
+    assert "/projects/alpha/projectbook/reproduce.ipynb" in body
+    assert "Reproduce notebook" in body
+
+
+def test_project_home_reproduce_card_absent_when_no_notebook(client_with_runs):
+    body = client_with_runs.get("/projects/alpha").text
+    assert "/projects/alpha/projectbook/reproduce.ipynb" not in body
+
+
+def test_reproduce_notebook_downloads_via_catch_all(tmp_path: Path, monkeypatch):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    book = proj / "projectbook"
+    book.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({"cells": [], "metadata": {}, "nbformat": 4})
+    (book / "reproduce.ipynb").write_text(payload, encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    r = client.get("/projects/alpha/projectbook/reproduce.ipynb")
+    assert r.status_code == 200
+    assert "nbformat" in r.text
+
+
+def _write_evaluation(exp_dir: Path) -> None:
+    labbook = exp_dir / "labbook"
+    labbook.mkdir(parents=True, exist_ok=True)
+    (labbook / "evaluation.json").write_text(
+        json.dumps(
+            {
+                "turn": 3,
+                "experiment_id": "exp-001",
+                "evaluation": {
+                    "criteria_met": False,
+                    "assessment": {
+                        "threshold": {"primary_met": False, "primary_value": 0.6},
+                        "method_validity": {
+                            "appropriate_test": True,
+                            "assumptions_checked": False,
+                            "assumptions_detail": [
+                                {
+                                    "name": "normality of residuals",
+                                    "test": "not checked",
+                                    "result": "unknown",
+                                    "implication": "p-values may be unreliable",
+                                }
+                            ],
+                        },
+                    },
+                    "summary": "Baseline established but assumptions unchecked.",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_experiment_detail_shows_view_evaluation_when_evaluation_exists(
+    tmp_path: Path, monkeypatch
+):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    _write_evaluation(proj / "experiments" / "exp-001")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    body = client.get("/projects/alpha/experiments/exp-001").text
+    assert "/projects/alpha/experiments/exp-001/evaluation" in body
+    assert "View evaluation" in body
+
+
+def test_experiment_detail_no_view_evaluation_when_absent(client_with_runs):
+    body = client_with_runs.get("/projects/alpha/experiments/exp-001").text
+    assert "/projects/alpha/experiments/exp-001/evaluation" not in body
+
+
+def test_evaluation_route_renders_assumptions_detail(tmp_path: Path, monkeypatch):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    _write_evaluation(proj / "experiments" / "exp-001")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    r = client.get("/projects/alpha/experiments/exp-001/evaluation")
+    assert r.status_code == 200
+    assert "normality of residuals" in r.text
+    assert "p-values may be unreliable" in r.text
+    assert "Baseline established but assumptions unchecked." in r.text
+
+
+def test_evaluation_route_404_when_absent(client_with_runs):
+    r = client_with_runs.get("/projects/alpha/experiments/exp-001/evaluation")
+    assert r.status_code == 404
+
+
+def test_evaluation_route_404_when_corrupt(tmp_path: Path, monkeypatch):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    labbook = proj / "experiments" / "exp-001" / "labbook"
+    labbook.mkdir(parents=True, exist_ok=True)
+    (labbook / "evaluation.json").write_text("{ not json", encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    client = TestClient(create_app(project_root=tmp_path))
+
+    r = client.get("/projects/alpha/experiments/exp-001/evaluation")
+    assert r.status_code == 404
+
+
+def test_new_v09_artifact_routes_require_auth_when_configured(
+    tmp_path: Path, monkeypatch
+):
+    proj = _make_project_with_runs(tmp_path, "alpha", "exp-001", 1)
+    _write_evaluation(proj / "experiments" / "exp-001")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("URIKA_HOME", str(home))
+    (home / "projects.json").write_text(json.dumps({"alpha": str(proj)}))
+    app = create_app(project_root=tmp_path, auth_token="secret-token")
+    client = TestClient(app)
+
+    for url in (
+        "/projects/alpha/projectbook/metrics",
+        "/projects/alpha/model-cards",
+        "/projects/alpha/experiments/exp-001/evaluation",
+    ):
+        r = client.get(url)
+        assert r.status_code == 401, f"{url} must require auth"
