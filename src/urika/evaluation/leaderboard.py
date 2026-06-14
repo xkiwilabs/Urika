@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from urika.core.atomic_write import write_text_atomic
 from urika.core.json_io import load_json_or_preserve
 from urika.evaluation.ranking import select_best_run
 
@@ -116,4 +117,7 @@ def update_leaderboard(
     data["direction"] = direction
 
     lb_path = project_dir / "leaderboard.json"
-    lb_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # write_text_atomic with the existing serialization (default
+    # ensure_ascii=True) keeps bytes identical to the prior non-atomic
+    # write; write_json_atomic's ensure_ascii=False would differ.
+    write_text_atomic(lb_path, json.dumps(data, indent=2) + "\n")

@@ -25,6 +25,7 @@ from urika.agents.config import load_runtime_config
 from urika.agents.registry import AgentRegistry
 from urika.agents.runner import AgentResult, AgentRunner  # noqa: F401
 from urika.core.progress import append_run, load_progress
+from urika.core.report_writer import looks_like_narration
 from urika.core.session import (
     complete_session,
     fail_session,  # noqa: F401 — used indirectly via loop_criteria
@@ -769,10 +770,17 @@ async def run_experiment(
                 # runs to max_turns wondering why criteria never matched.
                 # Surface it (v0.4.4).
                 consecutive_unparseable += 1
+                _narration_hint = (
+                    " (evaluator narrated instead of emitting a criteria "
+                    "JSON block)"
+                    if looks_like_narration(eval_result.text_output)
+                    else ""
+                )
                 progress(
                     "warning",
                     f"Turn {turn}: evaluator produced no parseable "
-                    "criteria assessment — criteria treated as not met.",
+                    "criteria assessment — criteria treated as not "
+                    f"met.{_narration_hint}",
                 )
                 progress(
                     "result",

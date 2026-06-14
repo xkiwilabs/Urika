@@ -159,3 +159,47 @@ def test_load_memory_includes_multiple_entries_grouped_by_type(tmp_path):
     assert "user: user_role" in blob
     assert "feedback: feedback_methods" in blob
     assert "instruction: instruction_cv" in blob
+
+
+class TestAtomicMemoryWrites:
+    """v0.10.0 Phase 5: memory entry files and the MEMORY.md index are
+    written atomically with byte-identical format and no tmp leftovers."""
+
+    def test_save_entry_format_and_no_tmp(self, tmp_path: Path) -> None:
+        from urika.core.project_memory import memory_dir, save_entry
+
+        proj = _empty_project(tmp_path)
+        path = save_entry(
+            proj,
+            mem_type="feedback",
+            body="Body line one.\nBody line two.",
+            description="A description",
+        )
+        content = path.read_text(encoding="utf-8")
+        # Frontmatter block then body then single trailing newline.
+        assert content.startswith("---\n")
+        assert "type: feedback\n" in content
+        assert content.endswith("Body line one.\nBody line two.\n")
+        assert not content.endswith("\n\n")
+        # No tmp leftovers in the memory dir.
+        leftovers = list(memory_dir(proj).glob("*.tmp.*"))
+        assert leftovers == [], f"leftover tmp files: {leftovers}"
+
+    def test_index_rebuild_format_and_no_tmp(self, tmp_path: Path) -> None:
+        from urika.core.project_memory import (
+            index_path,
+            memory_dir,
+            save_entry,
+        )
+
+        proj = _empty_project(tmp_path)
+        save_entry(proj, mem_type="feedback", body="X", description="desc x")
+        idx = index_path(proj)
+        content = idx.read_text(encoding="utf-8")
+        # Index ends with exactly one trailing newline (rstrip + "\n").
+        assert content.startswith("# Urika Project Memory Index")
+        assert content.endswith("\n")
+        assert not content.endswith("\n\n")
+        assert content == content.rstrip() + "\n"
+        leftovers = list(memory_dir(proj).glob("*.tmp.*"))
+        assert leftovers == [], f"leftover tmp files: {leftovers}"

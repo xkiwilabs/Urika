@@ -123,3 +123,34 @@ class TestLoadExperiment:
     def test_load_nonexistent(self, project_dir: Path) -> None:
         with pytest.raises(FileNotFoundError):
             load_experiment(project_dir, "exp-999-nope")
+
+
+class TestAtomicStateWrites:
+    """v0.10.0 Phase 5: experiment.json + progress.json are written
+    atomically (no truncation on crash) with byte-identical format."""
+
+    def test_experiment_json_format_preserved(self, project_dir: Path) -> None:
+        exp = create_experiment(project_dir, name="Atomic", hypothesis="H")
+        path = project_dir / "experiments" / exp.experiment_id / "experiment.json"
+        content = path.read_text(encoding="utf-8")
+        # Round-trips and ends with a single trailing newline.
+        assert content == exp.to_json() + "\n"
+        data = json.loads(content)
+        assert data["experiment_id"] == exp.experiment_id
+
+    def test_progress_json_format_preserved(self, project_dir: Path) -> None:
+        exp = create_experiment(project_dir, name="Atomic", hypothesis="H")
+        path = project_dir / "experiments" / exp.experiment_id / "progress.json"
+        content = path.read_text(encoding="utf-8")
+        expected = {
+            "experiment_id": exp.experiment_id,
+            "status": "pending",
+            "runs": [],
+        }
+        assert content == json.dumps(expected, indent=2) + "\n"
+
+    def test_no_tmp_leftovers(self, project_dir: Path) -> None:
+        exp = create_experiment(project_dir, name="Atomic", hypothesis="H")
+        exp_dir = project_dir / "experiments" / exp.experiment_id
+        leftovers = list(exp_dir.glob("*.tmp.*"))
+        assert leftovers == [], f"leftover tmp files: {leftovers}"

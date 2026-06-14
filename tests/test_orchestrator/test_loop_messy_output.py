@@ -172,6 +172,41 @@ async def test_unparseable_evaluator_emits_warning(tmp_path: Path) -> None:
     assert result["status"] == "completed"  # it did record runs
     warnings = [d for (e, d) in events if e == "warning"]
     assert any("no parseable criteria assessment" in d for d in warnings), warnings
+    # Non-narration unparseable output keeps the original message (no hint).
+    assert not any("evaluator narrated" in d for d in warnings), warnings
+
+
+@pytest.mark.asyncio
+async def test_unparseable_narrating_evaluator_emits_clearer_warning(
+    tmp_path: Path,
+) -> None:
+    """When the unparseable evaluator output *looks like narration* (the
+    model chatted about what it did instead of emitting a criteria JSON
+    block), the warning calls that out explicitly. Pause logic is
+    unchanged — this is purely a clearer message."""
+    project_dir, exp_id = _setup(tmp_path)
+    runner = _ScriptedRunner(
+        {
+            "planning_agent": [_PLAN_OK],
+            "task_agent": [_GOOD_TASK],
+            "evaluator": [
+                "I'll evaluate the run now. Let me check the metrics "
+                "against the success criteria."
+            ],
+            "advisor_agent": [_SUGGESTION],
+        }
+    )
+    events: list[tuple[str, str]] = []
+    result = await run_experiment(
+        project_dir, exp_id, runner, max_turns=2, on_progress=_events(events)
+    )
+    assert result["status"] == "completed"  # it did record runs
+    warnings = [d for (e, d) in events if e == "warning"]
+    assert any(
+        "no parseable criteria assessment" in d
+        and "evaluator narrated instead of emitting a criteria JSON block" in d
+        for d in warnings
+    ), warnings
 
 
 @pytest.mark.asyncio

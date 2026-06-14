@@ -192,3 +192,40 @@ class TestUpdateLeaderboard:
         entry = data["ranking"][0]
         assert entry["params"] == {"alpha": 0.1, "fit_intercept": True}
         assert entry["experiment_id"] == "exp_042"
+
+
+class TestAtomicLeaderboardWrite:
+    """v0.10.0 Phase 5: leaderboard.json is written atomically with
+    byte-identical format (json.dumps(indent=2) + trailing newline)."""
+
+    def test_format_preserved(self, project_dir: Path) -> None:
+        update_leaderboard(
+            project_dir,
+            method="linear_regression",
+            metrics={"r2": 0.85},
+            run_id="run_001",
+            params={"alpha": 0.1},
+            primary_metric="r2",
+            direction="higher_is_better",
+        )
+        lb_path = project_dir / "leaderboard.json"
+        content = lb_path.read_text(encoding="utf-8")
+        data = json.loads(content)
+        # Byte format: 2-space indent + single trailing newline, no \uXXXX
+        # surprises (ensure_ascii=True preserved).
+        assert content == json.dumps(data, indent=2) + "\n"
+        assert content.endswith("\n")
+        assert not content.endswith("\n\n")
+
+    def test_no_tmp_leftovers(self, project_dir: Path) -> None:
+        update_leaderboard(
+            project_dir,
+            method="svr",
+            metrics={"r2": 0.7},
+            run_id="run_002",
+            params={},
+            primary_metric="r2",
+            direction="higher_is_better",
+        )
+        leftovers = list(project_dir.glob("*.tmp.*"))
+        assert leftovers == [], f"leftover tmp files: {leftovers}"
