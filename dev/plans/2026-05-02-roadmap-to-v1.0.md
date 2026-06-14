@@ -342,51 +342,71 @@ with a confidence interval in report + labbook.
 
 ---
 
-## v0.10.0 — pre-1.0 hardening + accessibility (target: ~1 week; re-scoped 2026-06-10)
+## v0.10.0 — pre-1.0 hardening (target: ~2.5 weeks; expanded 2026-06-14)
 
-**Re-scoped 2026-06-10:** project templates CUT (see "Cut from
-1.0" below — the v0.8.0 research-scoping builder already solves
-the "don't make me answer 10 questions" pain they targeted, with
-real elicitation instead of canned defaults). The freed time goes
-to the work v1.0's own promises require but nothing had scheduled,
-plus the loose ends the v0.8.0 release validation surfaced. Last
-release before feature freeze. i18n stubs remain cut (2026-05-04);
-mobile responsiveness remains a non-goal.
+**Full detailed plan: `dev/plans/2026-06-14-v0.10.0-pre-1.0-hardening.md`**
+(authored after a 5-dimension deep review). Project templates CUT
+2026-06-10. Last release before the rc feature freeze. i18n + mobile
+remain non-goals.
 
-**Ships:**
+**Expanded 2026-06-14:** the deep review surfaced real, in-class gaps
+worth fixing before the freeze (notably more "producer writes it /
+dashboard never surfaces it" bugs — the same class as the v0.9.1
+Final-report-link fix — and "agent output not validated" cases). The
+schema review also showed `urika upgrade` is *smaller* than feared
+(most formats are already load-time tolerant). Net scope grew to ~9
+phases / ~12 dev-days. Phases are independently shippable; trim from
+the bottom if time-boxed.
 
-1. **`urika upgrade`** — idempotent auto-migration of v0.x
-   projects (urika.toml, criteria.json, methods.json,
-   progress.json, findings.json, memory). **Required by v1.0
-   promise 2** ("v0.x projects upgrade via `urika upgrade`") and
-   must land before the rc1 feature freeze. Seed the migration
-   corpus from the existing `tests/test_smoke/test_backwards_compat.py`
-   fixtures (v0.3.0/v0.3.x/v0.4.0 trees). ~2.5 days.
-2. **Builder-session persistence** — dashboard wizard Q&A
-   sessions currently live in memory; a server restart drops the
-   transcript mid-scoping. Persist to `<project>/.urika/builder/`
-   so the wizard's existing re-attach path survives restarts.
-   ~1.5 days.
-3. **Agent-subprocess environment isolation** — the spawned agent
-   CLI currently inherits the operator's global Claude Code
-   plugins/hooks (observed 2026-06-10: a SessionStart hook leaked
-   skill instructions into a task-agent transcript and burned
-   turns). Scrub/neutralise plugin + hook context for agent
-   workers the same way nested-session markers are scrubbed.
-   ~1 day.
-4. **Accessibility pass** — keyboard navigation through every
-   form, focus states, ARIA labels on icon-only buttons,
-   colour-contrast audit of light + dark themes. ~2 days.
-5. **CI housekeeping** — migrate off the deprecated
-   starlette/httpx TestClient shim before it breaks CI. ~0.5 day.
+**Phases (see the detailed plan for findings + acceptance per phase):**
 
-**Cut criterion:** A real v0.4-era project tree upgrades via
-`urika upgrade` and passes `urika status` / `inspect` / `run`
-without warnings; running `urika upgrade` twice is a no-op. A
-dashboard-wizard session survives a server restart and completes.
-An agent-worker transcript on a plugin-laden operator machine
-contains zero plugin/hook content. axe-core / WAVE audit returns
-zero P0/P1 issues.
+1. **`urika upgrade`** — idempotent v0.x migration. Mostly a
+   `schema_version` stamp + a couple of cosmetic on-disk rewrites
+   (leaderboard `entries→ranking`, labbook notes regen) + version
+   detection + new fixtures — most schemas are already load-tolerant.
+   Required by v1.0 promise 2. ~2 days.
+2. **Dashboard surfaces the v0.9 artifacts** (HIGH) — METRICS.md,
+   model cards, reproduce.ipynb, and per-experiment evaluation.json
+   are written but invisible in the dashboard (same bug class as the
+   v0.9.1 report link). Add render routes + links. ~1.5 days.
+3. **Agent-subprocess environment isolation** (HIGH) — stop the
+   operator's `~/.claude/` settings/plugins/skills/**hooks** loading
+   into spawned agent workers (observed: a SessionStart hook burned
+   task-agent turns). Force the bundled CLI into a clean config
+   context + extend the env scrub. ~1 day.
+4. **Finalize integrity validation** — deterministic post-finalize
+   checks (findings.json script paths exist; run_id/experiment_id
+   resolve in the *named* experiment; reproduce.sh ↔ findings
+   consistency) surfaced as warnings, so agent hallucinations don't
+   ship as broken reproducibility silently. ~1 day.
+5. **Atomic state writes + evaluator-narration guard** — make the
+   remaining non-atomic writes (experiment.json/progress.json create,
+   leaderboard.json, memory) atomic; legible signal when an evaluator
+   narrates. ~0.5 day.
+6. **Builder-session persistence** — dashboard wizard survives a
+   server restart (persist to `<project>/.urika/builder/`). ~1.5 days.
+7. **Cross-surface parity + docs** — dashboard finalize `--format`
+   picker; CLI help + docs enumerate the v0.9 artifacts. ~0.5 day.
+8. **Accessibility pass** — light-theme contrast (WCAG AA), form
+   labels, aria on icon buttons, keyboard nav; axe-core/WAVE clean.
+   ~2 days.
+9. **Release engineering** — make the e2e smoke a **pre-release gate**
+   (it would have caught this session's bugs); transient-API-failure
+   tolerance in the smoke (the v0.9.1 stream-timeout flake); migrate
+   off the deprecated httpx `TestClient`. ~1 day.
+
+Test hardening is woven through the phases (each ships its regression
+pins) plus a mocked-agent finalize-sequence integration test and
+parametrized dashboard artifact-route tests for the recurring bug
+class.
+
+**Cut criterion:** a real v0.4-era tree upgrades via `urika upgrade`
+and passes `status`/`inspect`/`run` cleanly, upgrade-twice is a no-op;
+every finalize artifact is reachable + rendered in the dashboard; an
+agent-worker transcript on a plugin-laden machine has zero operator
+plugin/hook content; a dashboard-wizard session survives a restart;
+`release-to-main.sh` refuses to tag on a real smoke FAIL (transient
+API hangs distinguished from real failures); axe-core/WAVE zero P0/P1.
 
 **Explicitly NOT in v1.0:** mobile-responsive dashboard. The phone
 use case is the notification (Slack/Telegram inline-keyboard
