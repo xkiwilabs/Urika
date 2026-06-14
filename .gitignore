@@ -35,3 +35,6 @@ dev/test-datasets/*/data/
 
 # Smoke harness logs (per-step output dirs)
 dev/scripts/.smoke-logs/
+
+# Local Claude Code session state + agent worktrees (never commit; leaked into a release sync 2026-06-14)
+.claude/
