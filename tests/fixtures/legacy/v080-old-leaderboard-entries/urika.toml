@@ -1,0 +1,9 @@
+[project]
+name = "v080-old-leaderboard-entries"
+question = "Which model predicts the outcome best?"
+mode = "exploratory"
+description = "Legacy fixture: leaderboard.json uses the pre-canonical 'entries' key and the project has no schema_version. urika upgrade should rewrite 'entries' -> 'ranking' and stamp the version."
+data_paths = ["data/sample.csv"]
+
+[preferences]
+audience = "standard"

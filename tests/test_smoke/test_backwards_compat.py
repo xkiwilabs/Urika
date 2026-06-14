@@ -215,6 +215,77 @@ class TestV040NoRuntimeBlock:
         assert result.exit_code == 0, result.output
 
 
+# ── 4. urika upgrade — idempotent v0.x migration (v0.10.0) ────────
+
+
+@pytest.mark.integration
+class TestUpgradeMigration:
+    """``urika upgrade`` stamps the schema version and rewrites a couple
+    of on-disk shapes (legacy ``leaderboard.json`` ``entries`` key). It
+    must be idempotent: a second run is a byte-for-byte no-op, and the
+    project stays usable by ``status`` / ``inspect`` afterwards."""
+
+    def test_upgrade_leaderboard_fixture_rewrites_entries(
+        self, tmp_path, isolated_urika_home
+    ) -> None:
+        from urika.core.models import current_schema_version
+
+        proj = _copy_fixture("v080-old-leaderboard-entries", tmp_path)
+        ProjectRegistry().register("v080-old-leaderboard-entries", proj)
+
+        lb_path = proj / "leaderboard.json"
+        before = json.loads(lb_path.read_text())
+        assert "entries" in before and "ranking" not in before
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["upgrade", "v080-old-leaderboard-entries"])
+        assert result.exit_code == 0, result.output
+
+        after = json.loads(lb_path.read_text())
+        assert "ranking" in after and "entries" not in after
+
+        import tomllib
+
+        with open(proj / "urika.toml", "rb") as f:
+            cfg = tomllib.load(f)
+        assert cfg["project"]["schema_version"] == current_schema_version()
+
+    def test_upgrade_is_idempotent_across_all_fixtures(
+        self, tmp_path, isolated_urika_home
+    ) -> None:
+        runner = CliRunner()
+        for name in (
+            "v080-old-leaderboard-entries",
+            "v050-pre-labbook",
+            "v090-pre-uncertainty",
+        ):
+            proj = _copy_fixture(name, tmp_path)
+            ProjectRegistry().register(name, proj)
+
+            assert runner.invoke(cli, ["upgrade", name]).exit_code == 0
+
+            snap = {
+                str(p.relative_to(proj)): p.read_bytes()
+                for p in sorted(proj.rglob("*"))
+                if p.is_file()
+            }
+            second = runner.invoke(cli, ["upgrade", name, "--json"])
+            assert second.exit_code == 0, second.output
+            payload = json.loads(second.output)
+            assert payload[0]["already_current"] is True
+
+            snap2 = {
+                str(p.relative_to(proj)): p.read_bytes()
+                for p in sorted(proj.rglob("*"))
+                if p.is_file()
+            }
+            assert snap == snap2, f"{name}: second upgrade mutated files"
+
+            # Still usable.
+            st = runner.invoke(cli, ["status", name, "--json"])
+            assert st.exit_code == 0, st.output
+
+
 # ── Cross-fixture: nothing leaks between tests ────────────────────
 
 

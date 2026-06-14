@@ -1,0 +1,1 @@
+{"runs":[{"run_id":"run-001","method":"linear_regression","metrics":{"r2":0.87},"params":{}}],"status":"completed"}

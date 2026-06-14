@@ -11,6 +11,24 @@ VALID_MODES = {"exploratory", "confirmatory", "pipeline"}
 VALID_AUDIENCES = {"expert", "novice", "standard"}
 
 
+def current_schema_version() -> str:
+    """Return the schema version stamped into newly-created/upgraded projects.
+
+    Tied to the installed Urika package version. ``urika upgrade`` stamps a
+    project's ``[project].schema_version`` to this value; a project already
+    at this version is considered current (upgrade is a no-op).
+
+    Falls back to ``"0.0.0"`` when Urika isn't installed as a distribution
+    (e.g. running from a source tree without ``pip install -e``).
+    """
+    try:
+        from importlib.metadata import version
+
+        return version("urika")
+    except Exception:
+        return "0.0.0"
+
+
 @dataclass
 class ProjectConfig:
     """Configuration for a Urika project. Serializes to/from urika.toml."""
@@ -29,6 +47,11 @@ class ProjectConfig:
     analysis_approach: str = ""  # "" | statistical | predictive | exploratory | mixed
     interpretability_level: str = ""  # "" | interpretable | balanced | max_performance
     constraints: dict[str, str] = field(default_factory=dict)
+    # On-disk schema version. Empty for legacy projects created before this
+    # field existed; ``urika upgrade`` / project creation stamp it to
+    # ``current_schema_version()``. ``to_toml_dict`` preserves whatever's set
+    # (and omits it when empty) — it does NOT auto-stamp on every save.
+    schema_version: str = ""
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
@@ -60,6 +83,8 @@ class ProjectConfig:
             d["project"]["interpretability_level"] = self.interpretability_level
         if self.constraints:
             d["project"]["constraints"] = self.constraints
+        if self.schema_version:
+            d["project"]["schema_version"] = self.schema_version
         d["preferences"] = {"audience": self.audience}
         return d
 
@@ -79,6 +104,7 @@ class ProjectConfig:
             analysis_approach=p.get("analysis_approach", ""),
             interpretability_level=p.get("interpretability_level", ""),
             constraints=p.get("constraints", {}),
+            schema_version=p.get("schema_version", ""),
         )
 
 

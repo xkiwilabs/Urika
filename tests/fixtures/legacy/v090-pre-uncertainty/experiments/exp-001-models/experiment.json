@@ -1,0 +1,8 @@
+{
+  "experiment_id": "exp-001-models",
+  "name": "Classifier sweep",
+  "hypothesis": "A logistic model separates the classes.",
+  "status": "completed",
+  "builds_on": [],
+  "created_at": "2026-05-01T00:00:00+00:00"
+}

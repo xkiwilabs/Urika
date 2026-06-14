@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "rank": 1,
+      "method": "linear_regression",
+      "run_id": "run-001",
+      "metrics": {
+        "r2": 0.87
+      },
+      "params": {},
+      "experiment_id": "exp-001-baseline"
+    }
+  ],
+  "primary_metric": "r2",
+  "direction": "higher_is_better"
+}

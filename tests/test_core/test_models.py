@@ -80,6 +80,48 @@ class TestProjectConfig:
         assert restored.data_paths == original.data_paths
         assert restored.success_criteria == original.success_criteria
 
+    def test_schema_version_default_empty(self) -> None:
+        """Legacy projects (no schema_version on disk) load with ''."""
+        config = ProjectConfig(name="test", question="Q?", mode="exploratory")
+        assert config.schema_version == ""
+
+    def test_schema_version_from_legacy_toml(self) -> None:
+        """A dict without schema_version round-trips to ''."""
+        d = {
+            "project": {
+                "name": "test",
+                "question": "Q?",
+                "mode": "exploratory",
+            }
+        }
+        config = ProjectConfig.from_toml_dict(d)
+        assert config.schema_version == ""
+
+    def test_schema_version_roundtrips_via_toml(self) -> None:
+        config = ProjectConfig(
+            name="test",
+            question="Q?",
+            mode="exploratory",
+            schema_version="0.10.0",
+        )
+        d = config.to_toml_dict()
+        assert d["project"]["schema_version"] == "0.10.0"
+        restored = ProjectConfig.from_toml_dict(d)
+        assert restored.schema_version == "0.10.0"
+
+    def test_to_toml_dict_omits_empty_schema_version(self) -> None:
+        """An unset schema_version is not written (legacy-clean output)."""
+        config = ProjectConfig(name="test", question="Q?", mode="exploratory")
+        d = config.to_toml_dict()
+        assert "schema_version" not in d["project"]
+
+    def test_current_schema_version_is_nonempty(self) -> None:
+        from urika.core.models import current_schema_version
+
+        v = current_schema_version()
+        assert isinstance(v, str)
+        assert v  # never empty — falls back to "0.0.0" when uninstalled
+
     def test_config_with_description(self) -> None:
         config = ProjectConfig(
             name="test",

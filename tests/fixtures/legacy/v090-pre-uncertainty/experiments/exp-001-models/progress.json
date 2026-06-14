@@ -1,0 +1,1 @@
+{"runs":[{"run_id":"run-001","method":"logistic_regression","metrics":{"accuracy":0.95,"f1":0.94},"params":{"C":1.0},"observation":"Clean separation."}],"status":"completed"}

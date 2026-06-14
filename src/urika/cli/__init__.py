@@ -87,6 +87,10 @@ import urika.cli.memory  # noqa: F401
 # GitHub auto-backup (v0.6.0)
 import urika.cli.github  # noqa: F401
 
+# Project migration (v0.10.0)
+import urika.cli.upgrade  # noqa: F401
+from urika.cli.upgrade import upgrade  # noqa: F401
+
 # Helpers — re-export for backward compatibility
 from urika.cli._helpers import (  # noqa: F401
     _make_on_message,

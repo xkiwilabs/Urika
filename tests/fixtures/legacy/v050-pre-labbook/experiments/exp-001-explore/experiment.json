@@ -1,0 +1,8 @@
+{
+  "experiment_id": "exp-001-explore",
+  "name": "Initial exploration",
+  "hypothesis": "There are latent clusters in the responses.",
+  "status": "completed",
+  "builds_on": [],
+  "created_at": "2026-03-15T00:00:00+00:00"
+}

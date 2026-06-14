@@ -1,0 +1,9 @@
+[project]
+name = "v090-pre-uncertainty"
+question = "How accurately can we classify the outcome?"
+mode = "confirmatory"
+description = "Legacy fixture: runs predate metrics_with_uncertainty. These already load tolerantly; urika upgrade should leave the run records untouched and just stamp the schema version."
+data_paths = ["data/sample.csv"]
+
+[preferences]
+audience = "expert"

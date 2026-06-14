@@ -1,0 +1,1 @@
+{"runs":[{"run_id":"run-001","method":"pca","metrics":{"explained_variance":0.72},"params":{"n_components":2},"observation":"Two components explain most variance."}],"status":"completed"}

@@ -1,0 +1,9 @@
+[project]
+name = "v050-pre-labbook"
+question = "What structure exists in the survey responses?"
+mode = "exploratory"
+description = "Legacy fixture: a v0.4-era project with no schema_version and no research-intent fields. urika upgrade should stamp the version and regenerate labbook notes without losing data."
+data_paths = ["data/sample.csv"]
+
+[preferences]
+audience = "standard"

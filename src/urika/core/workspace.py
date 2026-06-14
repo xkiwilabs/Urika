@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from urika.core.models import ProjectConfig
+from urika.core.models import ProjectConfig, current_schema_version
 
 _PROJECT_DIRS = [
     "data",
@@ -32,6 +32,12 @@ def create_project_workspace(project_dir: Path, config: ProjectConfig) -> None:
 
     for subdir in _PROJECT_DIRS:
         (project_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+    # Stamp the current schema version so freshly-created projects are
+    # already "current" and never trip ``urika upgrade``. Done here (not in
+    # to_toml_dict) so ordinary config saves don't churn the version.
+    if not config.schema_version:
+        config.schema_version = current_schema_version()
 
     _write_toml(project_dir / "urika.toml", config.to_toml_dict())
 
@@ -77,15 +83,12 @@ def load_project_config(project_dir: Path) -> ProjectConfig:
     return ProjectConfig.from_toml_dict(data)
 
 
-def _write_toml(path: Path, data: dict) -> None:
-    """Write a dict as TOML. Minimal writer for simple nested dicts.
+def render_toml(data: dict) -> str:
+    """Render a dict as a TOML document string.
 
-    When the data carries a ``[privacy].mode`` of ``private`` or
-    ``hybrid``, a comment block is prepended explaining that per-agent
-    models and endpoints are live-inherited from
-    ``~/.urika/settings.toml``.  Pure docs — runtime behavior is
-    unchanged — but it stops users staring at a project urika.toml
-    wondering why it has no ``[runtime.models.*]`` block.
+    Shared by ``_write_toml`` (file path) and callers that need the
+    serialised body for an atomic write (e.g. ``urika upgrade``). The
+    privacy-comment behaviour is documented on ``_write_toml``.
     """
     lines: list[str] = []
 
@@ -109,7 +112,20 @@ def _write_toml(path: Path, data: dict) -> None:
             for key, val in values.items():
                 lines.append(f"{key} = {_toml_value(val)}")
         lines.append("")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return "\n".join(lines) + "\n"
+
+
+def _write_toml(path: Path, data: dict) -> None:
+    """Write a dict as TOML. Minimal writer for simple nested dicts.
+
+    When the data carries a ``[privacy].mode`` of ``private`` or
+    ``hybrid``, a comment block is prepended explaining that per-agent
+    models and endpoints are live-inherited from
+    ``~/.urika/settings.toml``.  Pure docs — runtime behavior is
+    unchanged — but it stops users staring at a project urika.toml
+    wondering why it has no ``[runtime.models.*]`` block.
+    """
+    path.write_text(render_toml(data), encoding="utf-8")
 
 
 _TOML_STRING_ESCAPES = {

@@ -656,6 +656,44 @@ def cmd_setup(session: ReplSession, args: str) -> None:
     ctx.invoke(setup_command)
 
 
+@command("upgrade", description="Migrate a v0.x project to the current schema")
+def cmd_upgrade(session: ReplSession, args: str) -> None:
+    """Forward to the ``urika upgrade`` Click command.
+
+    Usage:
+
+        /upgrade            → upgrade the loaded project
+        /upgrade <name>     → upgrade a named project
+        /upgrade --all      → upgrade every registered project
+    """
+    from urika.cli import upgrade as upgrade_command
+
+    tokens = args.strip().split()
+    all_projects = "--all" in tokens
+    positional = [t for t in tokens if not t.startswith("-")]
+
+    project = None
+    if positional:
+        project = positional[0]
+    elif not all_projects:
+        project = session.project_name if session.has_project else None
+
+    if project is None and not all_projects:
+        click.echo(
+            "No project loaded. Use /project <name>, /upgrade <name>, or /upgrade --all."
+        )
+        return
+
+    ctx = click.Context(upgrade_command)
+    ctx.invoke(
+        upgrade_command,
+        project=project,
+        all_projects=all_projects,
+        no_regen=False,
+        json_output=False,
+    )
+
+
 @command("summarize", description="Generate a project summary")
 def cmd_summarize(session: ReplSession, args: str) -> None:
     """Forward to the ``urika summarize`` Click command. Closes H8."""
