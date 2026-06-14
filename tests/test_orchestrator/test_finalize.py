@@ -387,6 +387,108 @@ async def test_finalize_survives_metrics_glossary_failure(
 
 
 @pytest.mark.asyncio
+async def test_finalize_integrity_validation_warns_on_missing_script(
+    project_dir: Path,
+):
+    """Step 5 integrity validation: a findings.json final method whose
+    ``script`` does not exist on disk produces a "warning" progress event
+    AND a ``projectbook/.finalize-warnings.txt`` sidecar — but finalize
+    still returns success (the check is WARN-only, never blocking)."""
+
+    class _MissingScriptRunner(_RoleRunner):
+        async def run(self, config, prompt, *, on_message=None):  # type: ignore[override]
+            if config.name == "finalizer":
+                self.calls.append(config.name)
+                fp = self._proj / "projectbook" / "findings.json"
+                fp.parent.mkdir(parents=True, exist_ok=True)
+                # script points at a file the finalizer never wrote
+                fp.write_text(
+                    json.dumps(
+                        {
+                            "answer": "Yes.",
+                            "final_methods": [
+                                {
+                                    "name": "ridge",
+                                    "script": "methods/never_written.py",
+                                    "run_id": "r1",
+                                    "experiment_id": "exp-001",
+                                }
+                            ],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output="wrote findings.json",
+                    session_id="s",
+                    num_turns=1,
+                    duration_ms=1,
+                )
+            return await super().run(config, prompt, on_message=on_message)
+
+    events: list[tuple[str, str]] = []
+    runner = _MissingScriptRunner(project_dir)
+    result = await finalize_project(
+        project_dir,
+        runner,
+        on_progress=lambda e, d="": events.append((e, d)),
+        audience="expert",
+    )
+    assert result == {"success": True}, "WARN-only validation must not block finalize"
+    sidecar = project_dir / "projectbook" / ".finalize-warnings.txt"
+    assert sidecar.exists(), "missing-script warning must be written to sidecar"
+    assert "never_written.py" in sidecar.read_text(encoding="utf-8")
+    assert any(e == "warning" and "never_written.py" in d for e, d in events), (
+        "a 'warning' progress event must fire for the dangling script"
+    )
+
+
+@pytest.mark.asyncio
+async def test_finalize_integrity_validation_skipped_in_draft(project_dir: Path):
+    """Draft mode must not run integrity validation — no sidecar."""
+
+    class _DraftRunner(_RoleRunner):
+        async def run(self, config, prompt, *, on_message=None):  # type: ignore[override]
+            if config.name == "finalizer":
+                self.calls.append(config.name)
+                fp = self._proj / "projectbook" / "draft" / "findings.json"
+                fp.parent.mkdir(parents=True, exist_ok=True)
+                fp.write_text(json.dumps(_FINDINGS), encoding="utf-8")
+                return AgentResult(
+                    success=True,
+                    messages=[],
+                    text_output="draft",
+                    session_id="s",
+                    num_turns=1,
+                    duration_ms=1,
+                )
+            return await super().run(config, prompt, on_message=on_message)
+
+    runner = _DraftRunner(project_dir)
+    await finalize_project(project_dir, runner, audience="expert", draft=True)
+    assert not (project_dir / "projectbook" / ".finalize-warnings.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_finalize_survives_integrity_validation_failure(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Step 5 validation is best-effort — an exception must not block
+    finalize from returning success."""
+    import urika.core.finalize_check as finalize_check
+
+    def _boom(*args: object, **kwargs: object) -> list[str]:
+        raise RuntimeError("validator exploded")
+
+    monkeypatch.setattr(finalize_check, "validate_finalize_artifacts", _boom)
+    runner = _RoleRunner(project_dir)
+    result = await finalize_project(project_dir, runner, audience="expert")
+    assert result == {"success": True}
+
+
+@pytest.mark.asyncio
 async def test_finalize_survives_model_card_failure(
     project_dir: Path, monkeypatch: pytest.MonkeyPatch
 ):

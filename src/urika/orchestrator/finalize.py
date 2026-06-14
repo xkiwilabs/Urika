@@ -301,4 +301,31 @@ async def finalize_project(
         except Exception as exc:
             logger.warning("README update failed: %s", exc)
 
+        # Step 5: Deterministic integrity validation. Runs LAST, once
+        # findings.json + reproduce.sh + model cards all exist, so every
+        # referenced artifact is in its final on-disk state. Best-effort
+        # and WARN-only: it emits "warning" progress events and writes a
+        # sidecar but NEVER blocks or fails finalize. Skipped in draft
+        # mode (no final methods / reproduce scripts exist yet).
+        try:
+            from urika.core.atomic_write import write_text_atomic
+            from urika.core.finalize_check import validate_finalize_artifacts
+
+            warnings = validate_finalize_artifacts(project_dir)
+            if warnings:
+                for w in warnings:
+                    progress("warning", w)
+                header = (
+                    "# Finalize integrity warnings\n"
+                    "# Deterministic post-finalize validation flagged the "
+                    "following.\n"
+                    "# These do not block finalize; review and re-run if needed.\n"
+                )
+                body = header + "\n".join(warnings) + "\n"
+                write_text_atomic(
+                    project_dir / "projectbook" / ".finalize-warnings.txt", body
+                )
+        except Exception as exc:
+            logger.warning("Finalize integrity validation failed: %s", exc)
+
     return {"success": True}
