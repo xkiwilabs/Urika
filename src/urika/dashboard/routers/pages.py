@@ -281,6 +281,14 @@ def project_home(request: Request, name: str) -> HTMLResponse:
             or (book / "presentation" / "index.html").exists()
             or (book / "final-presentation" / "index.html").exists()
         ),
+        # v0.10.0 Phase 2 — surface the v0.9 finalize artifacts.
+        # ``urika finalize`` writes the metrics glossary, one model card
+        # per final method (under methods/, NOT projectbook/), and a
+        # reproduce notebook.
+        "has_metrics": (book / "METRICS.md").exists(),
+        "has_model_cards": (summary.path / "methods").is_dir()
+        and any((summary.path / "methods").glob("*_model_card.md")),
+        "has_reproduce": (book / "reproduce.ipynb").exists(),
     }
     has_summary = (book / "summary.md").exists()
     # Phase B3: surface running ops so the Summarize / Finalize buttons
@@ -440,6 +448,90 @@ def projectbook_report(name: str, request: Request) -> HTMLResponse:
         "experiment_id": "",  # template handles empty
         "body_html": render_markdown(raw),
         "title_override": "Final report",
+    }
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse(
+        request, "report_view.html", ctx
+    )
+
+
+@router.get("/projects/{name}/projectbook/metrics", response_class=HTMLResponse)
+def projectbook_metrics(name: str, request: Request) -> HTMLResponse:
+    """Render the project metrics glossary at ``projectbook/METRICS.md``.
+
+    v0.10.0 Phase 2. ``urika finalize`` writes METRICS.md — a
+    plain-language definition of every metric the project reports.
+    Reuses ``report_view.html`` with an empty ``experiment_id`` and a
+    ``title_override`` so the breadcrumb ends at the project. METRICS.md
+    has no figure references, so no markdown post-processing is needed.
+
+    Registered BEFORE the catch-all ``projectbook/{rest:path}`` route so
+    the markdown is rendered through the template rather than served
+    raw as a FileResponse.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    metrics_path = summary.path / "projectbook" / "METRICS.md"
+    if not metrics_path.exists():
+        raise HTTPException(status_code=404, detail="No metrics glossary")
+    from urika.dashboard.render import render_markdown
+
+    raw = metrics_path.read_text(encoding="utf-8")
+    ctx = {
+        "project": summary,
+        "experiment_id": "",
+        "body_html": render_markdown(raw),
+        "title_override": "Metrics glossary",
+    }
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse(
+        request, "report_view.html", ctx
+    )
+
+
+@router.get("/projects/{name}/model-cards", response_class=HTMLResponse)
+def project_model_cards(name: str, request: Request) -> HTMLResponse:
+    """Render all per-method model cards on a single page.
+
+    v0.10.0 Phase 2. ``urika finalize`` writes one
+    ``methods/<name>_model_card.md`` per final method. The cards are
+    short, so we concatenate every one (sorted by filename) into a
+    single ``report_view.html`` page separated by horizontal rules —
+    simpler UX than a listing + per-card route, and one click from the
+    project home.
+
+    Only files matching the fixed ``*_model_card.md`` glob under
+    ``methods/`` are read; no user-supplied filename reaches the
+    filesystem. Each resolved path is confirmed to stay under the
+    methods root before reading.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    methods_root = (summary.path / "methods").resolve()
+    if not methods_root.is_dir():
+        raise HTTPException(status_code=404, detail="No model cards")
+    cards = sorted(methods_root.glob("*_model_card.md"))
+    cards = [
+        p for p in cards if p.is_file() and p.resolve().is_relative_to(methods_root)
+    ]
+    if not cards:
+        raise HTTPException(status_code=404, detail="No model cards")
+    from urika.dashboard.render import render_markdown
+
+    parts: list[str] = []
+    for i, card in enumerate(cards):
+        if i:
+            parts.append("\n\n---\n\n")
+        parts.append(card.read_text(encoding="utf-8"))
+    ctx = {
+        "project": summary,
+        "experiment_id": "",
+        "body_html": render_markdown("".join(parts)),
+        "title_override": "Model cards",
     }
     ctx.update(_project_template_context(name, summary))
     return request.app.state.templates.TemplateResponse(
@@ -2245,6 +2337,10 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
         exp_dir / "presentation" / "index.html"
     ).exists()
     has_log = (exp_dir / "run.log").exists()
+    # v0.10.0 Phase 2 — the evaluator persists the latest parsed
+    # assessment (incl. method_validity.assumptions_detail) at
+    # labbook/evaluation.json. Surface a "View evaluation" link when present.
+    has_evaluation = (exp_dir / "labbook" / "evaluation.json").exists()
 
     artifacts_dir = exp_dir / "artifacts"
     artifact_files: list[dict] = []
@@ -2287,6 +2383,7 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
         "has_report": has_report,
         "has_presentation": has_presentation,
         "has_log": has_log,
+        "has_evaluation": has_evaluation,
         "artifact_files": artifact_files,
         "running_by_exp": running_by_exp,
         # Banner reads the flat list — include it alongside the
@@ -2295,3 +2392,106 @@ def experiment_detail(request: Request, name: str, exp_id: str) -> HTMLResponse:
         "active_lock_path": active_lock_path,
     }
     return templates.TemplateResponse(request, "experiment_detail.html", ctx)
+
+
+def _evaluation_to_markdown(evaluation: dict) -> str:
+    """Render an evaluator ``evaluation`` object as readable markdown.
+
+    Walks ``assessment`` layer-by-layer; ``method_validity`` gets its
+    ``assumptions_detail`` list expanded into a per-assumption block.
+    Anything not understood degrades to a simple key/value line rather
+    than raw JSON.
+    """
+    lines: list[str] = []
+    criteria_met = evaluation.get("criteria_met")
+    if criteria_met is not None:
+        lines.append(f"**Criteria met:** {'yes' if criteria_met else 'no'}")
+        lines.append("")
+    summary_text = evaluation.get("summary")
+    if isinstance(summary_text, str) and summary_text.strip():
+        lines.append("## Summary")
+        lines.append("")
+        lines.append(summary_text.strip())
+        lines.append("")
+
+    assessment = evaluation.get("assessment")
+    if isinstance(assessment, dict) and assessment:
+        lines.append("## Assessment")
+        lines.append("")
+        for layer, value in assessment.items():
+            lines.append(f"### {str(layer).replace('_', ' ').title()}")
+            lines.append("")
+            if isinstance(value, dict):
+                detail = value.get("assumptions_detail")
+                for k, v in value.items():
+                    if k == "assumptions_detail":
+                        continue
+                    lines.append(f"- **{k}:** {v}")
+                if isinstance(detail, list) and detail:
+                    lines.append("")
+                    lines.append("**Assumptions:**")
+                    lines.append("")
+                    for item in detail:
+                        if not isinstance(item, dict):
+                            lines.append(f"- {item}")
+                            continue
+                        name = item.get("name", "assumption")
+                        lines.append(f"- **{name}**")
+                        for field in ("test", "result", "implication"):
+                            if item.get(field) is not None:
+                                lines.append(f"  - {field}: {item[field]}")
+            else:
+                lines.append(f"{value}")
+            lines.append("")
+
+    for key in ("failures", "recommendations"):
+        items = evaluation.get(key)
+        if isinstance(items, list) and items:
+            lines.append(f"## {key.title()}")
+            lines.append("")
+            for item in items:
+                lines.append(f"- {item}")
+            lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+@router.get(
+    "/projects/{name}/experiments/{exp_id}/evaluation",
+    response_class=HTMLResponse,
+)
+def experiment_evaluation(request: Request, name: str, exp_id: str) -> HTMLResponse:
+    """Render the evaluator's persisted assessment as readable HTML.
+
+    v0.10.0 Phase 2. Reads ``experiments/<exp_id>/labbook/evaluation.json``
+    (schema ``{"turn", "experiment_id", "evaluation": {...}}``) and
+    renders ``evaluation`` — including
+    ``assessment.method_validity.assumptions_detail`` — through the
+    shared markdown view. Missing or corrupt JSON → 404.
+    """
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    eval_path = summary.path / "experiments" / exp_id / "labbook" / "evaluation.json"
+    if not eval_path.exists():
+        raise HTTPException(status_code=404, detail="No evaluation")
+    try:
+        data = json.loads(eval_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=404, detail="No evaluation") from exc
+    evaluation = data.get("evaluation") if isinstance(data, dict) else None
+    if not isinstance(evaluation, dict):
+        raise HTTPException(status_code=404, detail="No evaluation")
+
+    from urika.dashboard.render import render_markdown
+
+    ctx = {
+        "project": summary,
+        "experiment_id": exp_id,
+        "body_html": render_markdown(_evaluation_to_markdown(evaluation)),
+        "title_override": f"Evaluation · {exp_id}",
+    }
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse(
+        request, "report_view.html", ctx
+    )

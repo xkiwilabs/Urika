@@ -58,7 +58,7 @@
        the route. Filtering not needed here; experiment counts per
        project are usually small. #}
     <div class="list-controls" x-data="{ sort: 'newest' }">
-      <select class="list-sort" x-model="sort" style="margin-left: auto;">
+      <select class="list-sort" x-model="sort" aria-label="Sort experiments" style="margin-left: auto;">
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
       </select>

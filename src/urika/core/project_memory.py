@@ -22,7 +22,7 @@ from datetime import datetime as _datetime
 from datetime import timezone as _timezone
 from pathlib import Path
 
-from urika.core.atomic_write import write_json_atomic
+from urika.core.atomic_write import write_json_atomic, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -348,7 +348,7 @@ def save_entry(
         f"last_used: {today}\n"
         "---\n\n"
     )
-    path.write_text(frontmatter + body.strip() + "\n", encoding="utf-8")
+    write_text_atomic(path, frontmatter + body.strip() + "\n")
     rebuild_index(project_dir)
     return path
 
@@ -520,9 +520,7 @@ def rebuild_index(project_dir: Path) -> None:
         lines.append("_(empty — no entries yet)_")
         lines.append("")
     index_path(project_dir).parent.mkdir(parents=True, exist_ok=True)
-    index_path(project_dir).write_text(
-        "\n".join(lines).rstrip() + "\n", encoding="utf-8"
-    )
+    write_text_atomic(index_path(project_dir), "\n".join(lines).rstrip() + "\n")
 
 
 def parse_and_persist_memory_markers(

@@ -18,8 +18,11 @@
 
   /* Text */
   --text: #0f172a;
-  --text-muted: #64748b;
-  --text-subtle: #94a3b8;
+  /* WCAG AA (v0.10.0 a11y pass). Ratios vs --bg #ffffff / --bg-elevated #f1f5f9:
+     muted  #556070 → 6.38 / 5.82  (was #64748b → 4.76 / 4.34, failed on elevated)
+     subtle #5f6b7a → 5.43 / 4.95  (was #94a3b8 → 2.56 / 2.34, failed everywhere) */
+  --text-muted: #556070;
+  --text-subtle: #5f6b7a;
 
   /* Accent */
   --accent: #2563eb;
@@ -83,8 +86,11 @@
   --border-strong: #525252;
 
   --text: #fafafa;
+  /* WCAG AA (v0.10.0 a11y pass). Ratios vs --bg #0a0a0a / --bg-elevated #1c1c1c:
+     muted  #a3a3a3 → 7.85 / 6.76  (already passes)
+     subtle #8c8c8c → 5.89 / 5.07  (was #737373 → 4.18 / 3.59, failed on elevated) */
   --text-muted: #a3a3a3;
-  --text-subtle: #737373;
+  --text-subtle: #8c8c8c;
 
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
@@ -125,6 +131,52 @@ a {
 
 a:hover {
   color: var(--accent-hover);
+}
+
+/* ---------- Accessibility: focus + skip link (v0.10.0 a11y pass) ---------- */
+/* Global keyboard-focus outline for links and form controls. `.btn` already
+   has its own :focus-visible rule below; this extends parity to every other
+   interactive element so keyboard users always see where focus is. */
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Links embedded in a block of muted/body text must be distinguishable by
+   more than colour (WCAG 1.4.1): the accent vs the muted surrounding text is
+   < 3:1, so underline them. Standalone links (nav, breadcrumbs, buttons,
+   chips, list items) are exempt — they carry their own affordance. */
+.text-muted a:not(.btn),
+.card-body a:not(.btn),
+.empty-state a:not(.btn),
+.markdown-body p a,
+.markdown-body li a {
+  text-decoration: underline;
+}
+
+/* Skip-to-content link: off-screen until focused, then pinned top-left so a
+   keyboard user can jump straight past the sidebar nav to <main>. */
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: -48px;
+  z-index: 1000;
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: var(--radius-sm);
+  font-weight: var(--fw-medium);
+  transition: top var(--transition);
+}
+.skip-link:focus {
+  top: var(--space-2);
+  color: var(--accent-fg);
 }
 
 button {
@@ -259,8 +311,13 @@ h4 {
   background: var(--bg-hover);
 }
 
+/* WCAG AA (v0.10.0 a11y pass): the bare --accent as TEXT on the 10% tinted
+   active background fails 4.5:1 for 14px in BOTH themes (light #2563eb on
+   #dde6f8 = 4.12; dark #3b82f6 on #1f2632 = 4.13). --accent-hover is darker
+   in light (#1d4ed8 → 5.34) and lighter in dark (#60a5fa → ~6:1), so it
+   passes on each theme's tint while keeping the same brand hue. */
 .sidebar-link--active {
-  color: var(--accent);
+  color: var(--accent-hover);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
@@ -419,6 +476,16 @@ h4 {
   color: var(--accent-fg);
 }
 
+/* WCAG AA (v0.10.0 a11y pass): white (--accent-fg) on the dark-theme accent
+   #3b82f6 is only 3.68:1 (needs 4.5:1 for normal text). Deepen the primary
+   button's resting background one shade to #2563eb (white = 5.17:1) — same
+   brand blue, used only as the button fill so links/borders/focus rings keep
+   the brighter dark accent. */
+[data-theme="dark"] .btn--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
 .btn--secondary {
   background: var(--bg-elevated);
   border-color: var(--border-strong);
@@ -573,9 +640,16 @@ h4 {
   margin-top: var(--space-5);
 }
 
+/* WCAG AA (v0.10.0 a11y pass): --error #dc2626 as a 21px heading on the
+   danger-zone tint is only ~3.35:1 (dark) / ~4.12:1 (light), both below the
+   4.5:1 needed for normal text. Use a shade tuned to each theme's tint:
+   light #c81e1e → 4.90:1 on #fbe9e9; dark #f87171 → 5.86:1 on #2b1d1d. */
 .danger-zone h2 {
-  color: var(--error);
+  color: #c81e1e;
   margin-bottom: var(--space-3);
+}
+[data-theme="dark"] .danger-zone h2 {
+  color: #f87171;
 }
 
 .danger-zone:hover {

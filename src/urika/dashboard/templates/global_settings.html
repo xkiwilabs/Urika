@@ -198,6 +198,7 @@
             <label>Name (slug)</label>
             <input type="text"
                    x-model="ep.name"
+                   aria-label="Endpoint name (slug)"
                    placeholder="e.g. private, ollama, vllm_small">
             <span class="form-help">
               Lowercase letters, digits, <code>-</code> and <code>_</code> only.
@@ -208,6 +209,7 @@
             <label>Base URL</label>
             <input type="text"
                    x-model="ep.base_url"
+                   aria-label="Endpoint base URL"
                    placeholder="http://localhost:11434">
           </div>
           <div class="form-row">
@@ -215,11 +217,13 @@
             <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
               <input type="text"
                      x-model="ep.api_key_env"
+                     aria-label="API key env var name"
                      placeholder="env-var name (e.g. INFERENCE_HUB_KEY)"
                      style="flex: 1 1 50%;"
                      pattern="[A-Z][A-Z0-9_]*">
               <input :type="ep.show_value ? 'text' : 'password'"
                      x-model="ep.api_key_value"
+                     aria-label="API key value"
                      placeholder="value (paste here)"
                      style="flex: 1 1 50%;"
                      autocomplete="off">
@@ -239,6 +243,7 @@
             <label>Default model (optional)</label>
             <input type="text"
                    x-model="ep.default_model"
+                   aria-label="Endpoint default model"
                    placeholder="e.g. qwen3:14b">
           </div>
           {# v0.4.1: per-endpoint context-window declaration. Without
@@ -250,6 +255,7 @@
             <label>Context window (tokens, optional)</label>
             <input type="number"
                    x-model.number="ep.context_window"
+                   aria-label="Endpoint context window (tokens)"
                    placeholder="auto: 32768 for local, 200000 for anthropic.com"
                    min="0">
             <span class="form-help text-muted" style="font-size: var(--fs-xs);">
@@ -261,6 +267,7 @@
             <label>Max output tokens (optional)</label>
             <input type="number"
                    x-model.number="ep.max_output_tokens"
+                   aria-label="Endpoint max output tokens"
                    placeholder="auto: 8000 for local, 32000 for anthropic.com"
                    min="0">
             <span class="form-help text-muted" style="font-size: var(--fs-xs);">
@@ -451,6 +458,7 @@
            collide with the main settings form fields. #}
         <select id="provider-auth-anthropic"
                 name="anthropic_auth"
+                aria-label="Anthropic auth mode"
                 x-show="provider === 'anthropic'"
                 x-cloak>
           <option value="api_key" {% if anthropic_auth == "api_key" %}selected{% endif %}>API key (ANTHROPIC_API_KEY)</option>
@@ -459,6 +467,7 @@
 
         <select id="provider-auth-openai"
                 name="openai_auth"
+                aria-label="OpenAI auth mode"
                 x-show="provider === 'openai'"
                 x-cloak>
           <option value="api_key" {% if openai_auth == "api_key" %}selected{% endif %}>API key (OPENAI_API_KEY)</option>
@@ -469,6 +478,7 @@
 
         <select id="provider-auth-google"
                 name="google_auth"
+                aria-label="Google auth mode"
                 x-show="provider === 'google'"
                 x-cloak>
           <option value="api_key" {% if google_auth == "api_key" %}selected{% endif %}>API key (GEMINI_API_KEY)</option>
@@ -552,7 +562,8 @@
                        value="open">
               </td>
               <td>
-                <select name="runtime_modes_open_models[{{ row.agent }}][model]">
+                <select name="runtime_modes_open_models[{{ row.agent }}][model]"
+                        aria-label="Model for {{ row.agent }}">
                   {% for prov, models in known_cloud_models_by_provider.items() %}
                     {% for m in models %}
                       <option value="{{ m }}"
@@ -613,7 +624,7 @@
                 <td><code>{{ row.agent }}</code></td>
                 <td><span>private</span></td>
                 <td>
-                  <select x-model="ep">
+                  <select x-model="ep" aria-label="Endpoint for {{ row.agent }}">
                     {% for opt in private_endpoint_options %}
                       <option value="{{ opt.name }}"
                               {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
@@ -727,7 +738,7 @@
                 {# UI category select — NOT submitted directly (no name=).
                    data_agent: only "private" + disabled (locked).
                    tool_builder + others: both options. #}
-                <select x-model="cat" {% if is_locked %}disabled{% endif %}>
+                <select x-model="cat" aria-label="Endpoint category for {{ row.agent }}" {% if is_locked %}disabled{% endif %}>
                   {% if not is_locked %}
                     <option value="open" {% if initial_cat == "open" %}selected{% endif %}>open</option>
                   {% endif %}
@@ -751,7 +762,8 @@
                    x-show: outer cat-cloak hides the whole <select> when
                    cat=private; inner per-option x-show filters by
                    provider. #}
-                <select x-show="cat === 'open'" x-model="cloud_model">
+                <select x-show="cat === 'open'" x-model="cloud_model"
+                        aria-label="Cloud model for {{ row.agent }}">
                   {% for prov, models in known_cloud_models_by_provider.items() %}
                     {% for m in models %}
                       <option value="{{ m }}"
@@ -763,7 +775,8 @@
                 {# Private variant — same shape as the Private mode grid:
                    <select> of named private endpoints, label is
                    "<default_model> (<endpoint_name>)". Drives ``ep``. #}
-                <select x-show="cat === 'private'" x-cloak x-model="ep">
+                <select x-show="cat === 'private'" x-cloak x-model="ep"
+                        aria-label="Private endpoint for {{ row.agent }}">
                   {% for opt in private_endpoint_options %}
                     <option value="{{ opt.name }}"
                             {% if opt.name == initial_ep %}selected{% endif %}>{{ opt.default_model }} ({{ opt.name }})</option>
@@ -894,6 +907,7 @@
                    name="notifications_email_smtp_password_value"
                    value="{% if notif_email_password_set %}********{% endif %}"
                    placeholder="value (paste here)"
+                   aria-label="SMTP password value"
                    style="flex: 1 1 50%;"
                    autocomplete="off">
             <button type="button" class="btn btn--ghost"
@@ -943,6 +957,7 @@
                    name="notifications_slack_token_value"
                    value="{% if notif_slack_bot_token_set %}********{% endif %}"
                    placeholder="value (paste here)"
+                   aria-label="Slack bot token value"
                    style="flex: 1 1 50%;"
                    autocomplete="off">
             <button type="button" class="btn btn--ghost"
@@ -968,6 +983,7 @@
                    name="notifications_slack_app_token_value"
                    value="{% if notif_slack_app_token_set %}********{% endif %}"
                    placeholder="value (paste here, optional)"
+                   aria-label="Slack app token value"
                    style="flex: 1 1 50%;"
                    autocomplete="off">
             <button type="button" class="btn btn--ghost"
@@ -1020,6 +1036,7 @@
                    name="notifications_telegram_bot_token_value"
                    value="{% if notif_telegram_bot_token_set %}********{% endif %}"
                    placeholder="value (paste here)"
+                   aria-label="Telegram bot token value"
                    style="flex: 1 1 50%;"
                    autocomplete="off">
             <button type="button" class="btn btn--ghost"
@@ -1143,6 +1160,7 @@
                  :disabled="formMode === 'edit'"
                  pattern="[A-Z][A-Z0-9_]*"
                  title="Uppercase letters, digits, underscores only"
+                 aria-label="Secret name"
                  placeholder="e.g. HUGGINGFACE_HUB_TOKEN">
           <small class="form-help">
             Same name your agent / tool reads via
@@ -1155,6 +1173,7 @@
             <input :type="showValue ? 'text' : 'password'"
                    x-model="form.value"
                    style="flex: 1;"
+                   aria-label="Secret value"
                    placeholder="(leave blank to keep existing value)">
             <button type="button" class="btn btn--ghost"
                     @click="showValue = !showValue">
@@ -1165,6 +1184,7 @@
         <div class="form-row">
           <label>Description (optional)</label>
           <input type="text" x-model="form.description"
+                 aria-label="Secret description"
                  placeholder="What is this for?">
         </div>
         <div class="form-actions">

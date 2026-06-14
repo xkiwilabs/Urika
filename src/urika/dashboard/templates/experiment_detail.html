@@ -112,6 +112,12 @@
       <div class="artifact-row-label">Evaluation</div>
       <div class="artifact-row-actions">
         {% set ev = running_by_exp.get(("evaluate", experiment.experiment_id)) %}
+        {% if has_evaluation %}
+          <a class="btn btn--secondary"
+             href="/projects/{{ project.name }}/experiments/{{ experiment.experiment_id }}/evaluation">
+            View evaluation
+          </a>
+        {% endif %}
         {% if ev %}
           <a class="btn btn--secondary btn--running" href="{{ ev.log_url }}">
             <span class="running-dot"></span>
@@ -228,6 +234,7 @@
           type="text"
           class="input"
           placeholder="Type the experiment id to confirm"
+          aria-label="Type the experiment id to confirm deletion"
           x-model="typed"
           style="font: inherit; padding: 0.4rem;"
         >

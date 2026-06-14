@@ -84,7 +84,31 @@ def finalize(
     draft: bool = False,
     output_format: str = "markdown",
 ) -> None:
-    """Finalize the project — produce polished methods, report, and presentation."""
+    """Finalize the project — run the finalize sequence and write every output.
+
+    Deterministic artifacts (pure code, no agent call):
+
+    \b
+      - methods/                       standalone, runnable method modules
+      - projectbook/findings.json      best method, metrics, ranking
+      - requirements.txt               pinned deps for reproduction
+      - reproduce.sh                   one-shot reproduce script
+      - projectbook/METRICS.md         metrics glossary (v0.9)
+      - methods/*_model_card.md        per-method model cards (v0.9)
+      - projectbook/reproduce.ipynb    reproduce notebook (v0.9)
+
+    Agent-written artifacts:
+
+    \b
+      - projectbook/final-report.md            narrative report
+      - projectbook/final-presentation/        reveal.js slide deck
+      - README.md                              project summary
+
+    ``--format markdown|latex|pdf`` post-processes the written report
+    (latex/pdf require the ``urika[export]`` extra + pandoc; pdf also
+    needs a TeX engine). ``--draft`` writes interim outputs under
+    projectbook/draft/ without overwriting the final outputs.
+    """
     import time
 
     from datetime import datetime, timezone

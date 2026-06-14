@@ -26,9 +26,10 @@
   "
   :data-theme="theme"
 >
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="app-shell">
     {% include '_sidebar.html' %}
-    <main class="main">
+    <main class="main" id="main-content" role="main">
       <header class="page-header">
         {% block breadcrumb %}{% endblock %}
         {% if active_ops %}

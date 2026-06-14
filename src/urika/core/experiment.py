@@ -7,6 +7,7 @@ import logging
 import re
 from pathlib import Path
 
+from urika.core.atomic_write import write_text_atomic
 from urika.core.models import ExperimentConfig
 
 logger = logging.getLogger(__name__)
@@ -75,15 +76,19 @@ def create_experiment(
     (exp_dir / "labbook").mkdir(exist_ok=True)
     (exp_dir / "artifacts").mkdir(exist_ok=True)
 
-    (exp_dir / "experiment.json").write_text(config.to_json() + "\n", encoding="utf-8")
+    write_text_atomic(exp_dir / "experiment.json", config.to_json() + "\n")
 
     progress = {
         "experiment_id": experiment_id,
         "status": "pending",
         "runs": [],
     }
-    (exp_dir / "progress.json").write_text(
-        json.dumps(progress, indent=2) + "\n", encoding="utf-8"
+    # Use write_text_atomic with the existing serialization (default
+    # ensure_ascii=True) to keep on-disk bytes identical to the previous
+    # json.dumps(..., indent=2) + "\n"; write_json_atomic sets
+    # ensure_ascii=False, which would differ for any non-ASCII content.
+    write_text_atomic(
+        exp_dir / "progress.json", json.dumps(progress, indent=2) + "\n"
     )
 
     (exp_dir / "labbook" / "notes.md").write_text(

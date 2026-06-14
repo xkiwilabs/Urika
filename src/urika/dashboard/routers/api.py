@@ -64,6 +64,11 @@ _TRUTHY = {"true", "1", "yes", "on"}
 # See ``src/urika/cli/agents_finalize.py`` --audience choices.
 _FINALIZE_AUDIENCES = {"novice", "standard", "expert"}
 
+# Finalize CLI ``--format`` choices (v0.9.0). markdown is the default /
+# no-op; latex/pdf post-process the written report via the export extra.
+# See ``src/urika/cli/agents_finalize.py`` --format choices.
+_FINALIZE_FORMATS = {"markdown", "latex", "pdf"}
+
 router = APIRouter(prefix="/api", tags=["api"])
 
 
@@ -475,12 +480,29 @@ async def api_builder_start(name: str):
     if summary is None or summary.missing:
         raise HTTPException(status_code=404, detail="Unknown project")
 
-    existing = builder_sessions.get_for_project(name)
-    if existing is not None and not existing.done and not existing.aborted:
+    existing = builder_sessions.get_for_project(name, summary.path)
+    # A live (non-detached) in-flight session blocks a second start.
+    # A *detached* session (rehydrated from disk after a restart) is
+    # NOT live — it carries no running loop — so ``start`` is allowed
+    # to relaunch it via answer-replay below.
+    if (
+        existing is not None
+        and not existing.done
+        and not existing.aborted
+        and not existing.detached
+    ):
         raise HTTPException(
             status_code=409,
             detail=f"A builder session is already active for '{name}' (session_id={existing.session_id})",
         )
+
+    # Resume path: a detached session exists — relaunch the loop with
+    # an ask_user wrapper that replays the persisted transcript first.
+    resume_transcript: list[tuple[str, str]] = []
+    resume_session_id: str | None = None
+    if existing is not None and existing.detached:
+        resume_transcript = list(existing.transcript)
+        resume_session_id = existing.session_id or None
 
     # Pull the data path + research question from the existing
     # urika.toml so the loop runs against the same inputs the CLI
@@ -524,7 +546,7 @@ async def api_builder_start(name: str):
             logger.warning("Builder scan/profile failed for %s: %s", name, exc)
 
     session = builder_sessions.BuilderSession(
-        session_id=uuid.uuid4().hex[:12],
+        session_id=resume_session_id or uuid.uuid4().hex[:12],
         project_name=name,
         project_dir=summary.path,
     )
@@ -546,11 +568,18 @@ async def api_builder_start(name: str):
                 },
             )
         )
+        # Flush the pending-question state so a restart can rehydrate
+        # to exactly this prompt.
+        builder_sessions.persist(session)
         try:
             answer = await session.pending_question
         finally:
             session.pending_question = None
             session.pending_question_data = None
+        # An answer resolved this question: record it in the
+        # replayable transcript and flush.
+        session.transcript.append((q.text, answer))
+        builder_sessions.persist(session)
         return answer
 
     def _emit(event: "BuilderEvent") -> None:
@@ -558,6 +587,39 @@ async def api_builder_start(name: str):
             session.events.put_nowait(event)
         except Exception as exc:
             logger.warning("builder emit drop on %s: %s", name, exc)
+
+    # On a resume, wrap ``_ask`` so the persisted transcript is
+    # replayed deterministically before any live question is asked.
+    # Replayed answers are re-recorded onto the new session (so a
+    # second restart still has the full history), and the replayed Q&A
+    # is mirrored to the SSE stream so the re-attached wizard sees
+    # where it left off. On agent-question drift the wrapper falls
+    # back to the live ``_ask`` (see builder_sessions.make_replay_ask_user).
+    if resume_transcript:
+
+        def _on_replay(q: "BuilderQuestion", answer: str) -> None:
+            # A replayed answer never went through ``_ask`` (the user
+            # wasn't re-prompted), so mirror it to the SSE stream and
+            # re-record it onto the fresh session — a second restart
+            # still has the full history.
+            session.events.put_nowait(
+                BuilderEvent(
+                    "question",  # type: ignore[arg-type]
+                    {
+                        "text": q.text,
+                        "options": list(q.options),
+                        "is_terminal_choice": q.is_terminal_choice,
+                    },
+                )
+            )
+            session.transcript.append((q.text, answer))
+            builder_sessions.persist(session)
+
+        _ask_for_loop = builder_sessions.make_replay_ask_user(
+            resume_transcript, _ask, on_replay=_on_replay
+        )
+    else:
+        _ask_for_loop = _ask
 
     async def _runner() -> None:
         try:
@@ -567,7 +629,7 @@ async def api_builder_start(name: str):
                 data_summary,
                 description,
                 question,
-                ask_user=_ask,
+                ask_user=_ask_for_loop,
                 emit=_emit,
                 extra_profiles=extra_profiles,
             )
@@ -587,6 +649,11 @@ async def api_builder_start(name: str):
             )
         finally:
             session.done = True
+            # The session reached a terminal state — there's nothing
+            # to resume, so drop the persisted record (Phase 6
+            # cleanup). Done before emitting the sentinel so a restart
+            # racing completion never rehydrates a finished session.
+            builder_sessions.delete_persisted(session.project_dir)
             # Wake up any pending stream consumer with a sentinel
             # so it returns instead of polling indefinitely.
             session.events.put_nowait(
@@ -609,11 +676,43 @@ async def api_builder_stream(name: str, request: Request):
     """
     from urika.dashboard import builder_sessions
 
-    session = builder_sessions.get_for_project(name)
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    project_dir = summary.path if summary is not None and not summary.missing else None
+    session = builder_sessions.get_for_project(name, project_dir)
     if session is None:
         raise HTTPException(
             status_code=404, detail="No builder session for this project"
         )
+
+    # A detached session (rehydrated from disk after a restart) has no
+    # live loop feeding its queue. Replay the persisted transcript as
+    # ``question`` events so the re-attached wizard sees where it left
+    # off, then surface the pending question. The stream stays open (no
+    # ``done``) so the wizard can POST an answer to /builder/start-resume.
+    if session.detached:
+
+        async def detached_stream():
+            for q_text, answer in session.transcript:
+                payload = {
+                    "kind": "question",
+                    "payload": {"text": q_text, "options": [], "answer": answer},
+                }
+                yield f"event: builder\ndata: {json.dumps(payload)}\n\n"
+            pending = session.pending_question_data
+            if pending is not None:
+                payload = {
+                    "kind": "question",
+                    "payload": {
+                        "text": pending.text,
+                        "options": list(pending.options),
+                        "is_terminal_choice": pending.is_terminal_choice,
+                        "detached": True,
+                    },
+                }
+                yield f"event: builder\ndata: {json.dumps(payload)}\n\n"
+
+        return StreamingResponse(detached_stream(), media_type="text/event-stream")
 
     def _synthetic_done() -> str:
         # A finished session whose queue was already drained by an
@@ -657,10 +756,24 @@ async def api_builder_answer(name: str, request: Request):
     answer. 400 if no question is pending."""
     from urika.dashboard import builder_sessions
 
-    session = builder_sessions.get_for_project(name)
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    project_dir = summary.path if summary is not None and not summary.missing else None
+    session = builder_sessions.get_for_project(name, project_dir)
     if session is None:
         raise HTTPException(
             status_code=404, detail="No builder session for this project"
+        )
+    if session.detached:
+        # A rehydrated session has no live loop to resolve — the
+        # coroutine didn't survive the restart. The wizard must
+        # relaunch via POST /builder/start (answer-replay), which
+        # re-runs the loop over the saved transcript and parks again
+        # at the pending question for a live answer.
+        raise HTTPException(
+            status_code=409,
+            detail="Builder session is detached after a restart; "
+            "POST /builder/start to resume before answering",
         )
     if session.done or session.aborted:
         raise HTTPException(status_code=409, detail="Builder session already finished")
@@ -690,7 +803,10 @@ async def api_builder_abort(name: str):
     from urika.core.project_delete import trash_project
     from urika.dashboard import builder_sessions
 
-    session = builder_sessions.get_for_project(name)
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    project_dir = summary.path if summary is not None and not summary.missing else None
+    session = builder_sessions.get_for_project(name, project_dir)
     if session is None:
         raise HTTPException(
             status_code=404, detail="No builder session for this project"
@@ -700,6 +816,10 @@ async def api_builder_abort(name: str):
         session.task.cancel()
     session.aborted = True
     session.done = True
+    # Drop the persisted session record up front — the workspace is
+    # about to be trashed, and even if that fails (locks/missing
+    # folder) the in-flight wizard state must not survive an abort.
+    builder_sessions.delete_persisted(session.project_dir)
 
     # Trash the partial workspace per the v0.4.5 plan's abort
     # semantic ("move partial project to trash"). If trash fails
@@ -3888,14 +4008,16 @@ async def api_project_finalize(name: str, request: Request):
     """Spawn ``urika finalize <project> --json`` for a project.
 
     Mirrors the ``/run`` endpoint shape: validates the project exists,
-    pulls form fields (instructions, audience), and hands off to
-    ``spawn_finalize`` which Popens the CLI and detaches a daemon thread
-    to drain its stdout into ``projectbook/finalize.log``. Returns JSON
-    with the spawned PID.
+    pulls form fields (instructions, audience, draft, format), and hands
+    off to ``spawn_finalize`` which Popens the CLI and detaches a daemon
+    thread to drain its stdout into ``projectbook/finalize.log``. Returns
+    JSON with the spawned PID.
 
     ``audience`` follows the finalize CLI allow-list
     (``{"novice", "standard", "expert"}``), which differs from the core
-    ``VALID_AUDIENCES`` set.
+    ``VALID_AUDIENCES`` set. ``format`` follows the finalize CLI
+    ``--format`` allow-list (``{"markdown", "latex", "pdf"}``); markdown
+    is the default and threads through as a no-op.
     """
     registry = ProjectRegistry().list_all()
     summary = load_project_summary(name, registry)
@@ -3907,10 +4029,16 @@ async def api_project_finalize(name: str, request: Request):
     audience_raw = (body.get("audience") or "").strip()
     audience = audience_raw or None
     draft = bool(body.get("draft"))
+    output_format = (body.get("format") or "markdown").strip() or "markdown"
     if audience and audience not in _FINALIZE_AUDIENCES:
         raise HTTPException(
             status_code=422,
             detail=f"audience must be one of {sorted(_FINALIZE_AUDIENCES)}",
+        )
+    if output_format not in _FINALIZE_FORMATS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"format must be one of {sorted(_FINALIZE_FORMATS)}",
         )
 
     # If a finalize is already running for this project, redirect to
@@ -3928,6 +4056,7 @@ async def api_project_finalize(name: str, request: Request):
         instructions=instructions,
         audience=audience,
         draft=draft,
+        output_format=output_format,
     )
     # The "Finalize project" button on the project home posts via HTMX;
     # on success we want the browser to navigate the whole page to the

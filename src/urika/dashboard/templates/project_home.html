@@ -90,6 +90,15 @@
           {% endfor %}
         </select>
       </div>
+      <div class="form-row">
+        <label for="fz-format">Report format</label>
+        <select id="fz-format" name="format">
+          {% for f in ["markdown", "latex", "pdf"] %}
+            <option value="{{ f }}" {% if f == "markdown" %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+        <small class="text-muted">latex/pdf require the <code>urika[export]</code> extra + pandoc (pdf also needs a TeX engine).</small>
+      </div>
       <label class="checkbox-row">
         <input type="checkbox" name="draft" value="on">
         <span>Draft mode (write to projectbook/draft/, don't overwrite final outputs)</span>
@@ -101,7 +110,7 @@
     </form>
   {% endcall %}
 
-  {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation or has_summary %}
+  {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation or has_summary or final_outputs.has_metrics or final_outputs.has_model_cards or final_outputs.has_reproduce %}
     <section class="final-outputs">
       <h2 class="section-heading">Final outputs</h2>
       <div class="final-outputs-grid">
@@ -127,6 +136,24 @@
           <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/summary">
             <div class="card-title">Summary</div>
             <div class="card-body text-muted">Latest project status snapshot.</div>
+          </a>
+        {% endif %}
+        {% if final_outputs.has_metrics %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/metrics">
+            <div class="card-title">Metrics glossary</div>
+            <div class="card-body text-muted">Plain-language definition of every metric.</div>
+          </a>
+        {% endif %}
+        {% if final_outputs.has_model_cards %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/model-cards">
+            <div class="card-title">Model cards</div>
+            <div class="card-body text-muted">Per-method documentation for the final methods.</div>
+          </a>
+        {% endif %}
+        {% if final_outputs.has_reproduce %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/projectbook/reproduce.ipynb" target="_blank" rel="noopener">
+            <div class="card-title">Reproduce notebook</div>
+            <div class="card-body text-muted">Jupyter notebook to rerun the analysis.</div>
           </a>
         {% endif %}
       </div>
