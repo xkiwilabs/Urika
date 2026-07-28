@@ -38,6 +38,13 @@ dependencies = [
     "lightgbm>=4.0",
     "optuna>=3.0",
     "shap>=0.42",
+    # Floor numba so resolvers never backtrack into pre-0.61 releases:
+    # when the newest numpy outruns numba's numpy cap, uv/pip prefer
+    # downgrading numba (whose ancient versions declare no numpy bound)
+    # over lowering numpy, landing on numba 0.53 -> llvmlite 0.36, an
+    # sdist that cannot build on Python >=3.10. With the floor, the
+    # resolver lowers numpy instead and the install succeeds.
+    "numba>=0.61",
     "imbalanced-learn>=0.11",
     # Knowledge pipeline (PDF ingestion)
     "pypdf>=4.0",
