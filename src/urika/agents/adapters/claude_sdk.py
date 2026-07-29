@@ -633,7 +633,21 @@ class ClaudeSDKRunner(AgentRunner):
 
         kwargs: dict[str, object] = {
             "system_prompt": config.system_prompt,
-            "allowed_tools": config.allowed_tools,
+            # A role's ``allowed_tools`` is a CAPABILITY list — which
+            # built-ins the agent may use at all — so it maps to the
+            # SDK's ``tools`` option (availability), NOT the SDK's
+            # ``allowed_tools`` (auto-approve). A bare name in the SDK's
+            # ``allowed_tools`` auto-approves the whole tool BEFORE
+            # ``can_use_tool`` is consulted (the SDK emits
+            # CanUseToolShadowedWarning for exactly this), which
+            # silently disabled every SecurityPolicy check: readable_
+            # dirs, writable_dirs, bash prefix/block lists. With
+            # ``tools`` restricting availability and ``allowed_tools``
+            # empty, every call falls through to ``can_use_tool`` — the
+            # enforcement point. ``tools=[]`` (memory_curator) disables
+            # all built-ins, which is that role's declared intent.
+            "tools": config.allowed_tools,
+            "allowed_tools": [],
             "disallowed_tools": disallowed,
             "max_turns": config.max_turns,
             "model": config.model,

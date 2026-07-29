@@ -22,7 +22,10 @@ Decisions:
 - **Write / Edit / MultiEdit / NotebookEdit**: same path check
   against ``writable_dirs``.
 - **Anything else**: default allow (covers ``WebFetch``, MCP tools,
-  etc. — `allowed_tools` already filters them).
+  etc. — the SDK ``tools`` option already restricts which built-ins
+  exist at all; the adapter passes the role's capability list there,
+  never to the SDK's ``allowed_tools``, which would auto-approve
+  calls before this callback runs).
 
 See ``dev/plans/2026-04-30-securitypolicy-enforcement.md`` for the
 full design + decision table.
@@ -316,6 +319,6 @@ def _decide(
         )
 
     # Default-allow for everything else (WebFetch, WebSearch, MCP tools,
-    # TodoWrite, etc.). ``allowed_tools`` already filters them at the
-    # SDK layer — this callback is just the policy enforcer.
+    # TodoWrite, etc.). The SDK ``tools`` option already restricts which
+    # built-ins exist — this callback is just the policy enforcer.
     return True, ""
