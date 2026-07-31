@@ -654,7 +654,10 @@ class UrikaApp(App):
             # called on the event loop thread. call_from_thread would
             # FAIL (raises RuntimeError from the same thread, silently
             # caught). Write to the panel directly instead.
+            streamed_text = False
+
             def _on_output(kind: str, content: str) -> None:
+                nonlocal streamed_text
                 try:
                     if kind == "tool":
                         parts = content.split(": ", 1)
@@ -668,6 +671,7 @@ class UrikaApp(App):
                             )
                         )
                     elif kind == "text" and content.strip():
+                        streamed_text = True
                         panel.write_line(content)
                 except Exception:
                     pass
@@ -683,8 +687,15 @@ class UrikaApp(App):
             if result.get("model"):
                 self.session.model = result["model"]
 
-            panel.write_line("")
-            panel.write_line(format_agent_output(response))
+            # ``response`` is the same text already streamed line-by-line
+            # through ``_on_output`` (chat's text_output is the streamed
+            # text blocks joined) — unconditionally re-printing it here made
+            # every orchestrator reply appear twice. Print the final block
+            # only when nothing streamed (callback never fired) or the run
+            # failed (the error text in ``response`` is never streamed).
+            if not streamed_text or not result.get("success", True):
+                panel.write_line("")
+                panel.write_line(format_agent_output(response))
             panel.write_line("")
 
             self.session.last_assistant_response = response
@@ -748,7 +759,29 @@ class UrikaApp(App):
         When no agent is running: treat Ctrl+C as a quit request.
         Otherwise users with no visible keybindings get trapped in
         the TUI with Ctrl+C as a silent no-op.
+
+        When text is selected in the output panel: Ctrl+C means copy,
+        not cancel/quit. Textual captures the mouse, so the terminal's
+        own selection+copy can't reach the panel text; this app-level
+        binding also shadows the Screen's built-in ctrl+c copy binding,
+        so the copy branch must live here.
         """
+        try:
+            selected = self.screen.get_selected_text()
+        except Exception:
+            selected = None
+        if selected:
+            try:
+                import pyperclip
+
+                pyperclip.copy(selected)
+            except Exception:
+                # OSC 52 fallback — works in most modern terminals.
+                self.copy_to_clipboard(selected)
+            self.screen.clear_selection()
+            self.notify(f"Copied {len(selected)} characters.", timeout=3)
+            return
+
         if not self.session.agent_running:
             self.action_quit_app()
             return

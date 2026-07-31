@@ -660,6 +660,14 @@ class ClaudeSDKRunner(AgentRunner):
             ),
             "env": agent_env,
             "stderr": _stderr_cb,
+            # The SDK caps a single JSON message from the CLI at 1MB by
+            # default. One Read of an image (base64 in a single tool_result
+            # message) blows past that, killing the stream mid-run with
+            # "Failed to decode JSON: JSON message exceeded maximum buffer
+            # size" — observed when the advisor agent read experiment plot
+            # PNGs. 32MB covers multi-MB image/PDF reads without letting a
+            # runaway message exhaust memory.
+            "max_buffer_size": 32 * 1024 * 1024,
             # --- Operator-config isolation (v0.10.0 Phase 3) ---
             # The spawned `claude` worker otherwise discovers and loads
             # the OPERATOR's global Claude Code config: ~/.claude
