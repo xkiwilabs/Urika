@@ -555,6 +555,17 @@ class UrikaApp(App):
         With a project, it answers questions about the data, plans
         experiments, and coordinates agents.
         """
+        # Confirm-to-run: the orchestrator just handed off an agreed
+        # study (suggestions captured, offer printed). A bare
+        # confirmation launches /run directly — which consumes
+        # session.pending_suggestions and asks its own single-vs-
+        # autonomous mode question. Any other input disarms the offer
+        # but keeps the suggestions queued for a manual /run.
+        if getattr(self, "_run_offer_pending", False):
+            self._run_offer_pending = False
+            if text.strip().lower() in {"y", "yes", "go", "start", "run", "ok"}:
+                self._dispatch_command("/run")
+                return
         # v0.4.2 Package I: block free-text injection while an agent
         # is running. Pre-fix the TUI queued the text and replayed it
         # after the worker exited — but that has subtle problems:
@@ -717,11 +728,27 @@ class UrikaApp(App):
                 if parsed and parsed.get("suggestions"):
                     self.session.pending_suggestions = parsed["suggestions"]
                     n = len(self.session.pending_suggestions)
+                    first = self.session.pending_suggestions[0].get(
+                        "name", "experiment"
+                    )
+                    # Arm the confirm-to-run shortcut: the next bare
+                    # "y"/"run" free-text starts /run directly (see
+                    # _dispatch_free_text) instead of bouncing the
+                    # confirmation through the orchestrator, which
+                    # cannot start runs itself.
+                    self._run_offer_pending = True
                     panel.write_line(
                         Text(
-                            f"  ✦ {n} experiment suggestion(s) "
-                            f"captured. Type /run to start.",
+                            f"  ✦ {n} experiment suggestion(s) captured — "
+                            f"next: {first}",
                             style="bold #4a9eff",
+                        )
+                    )
+                    panel.write_line(
+                        Text(
+                            "    Reply 'y' to start /run now, or type /run "
+                            "anytime.",
+                            style="dim",
                         )
                     )
                     panel.write_line("")
