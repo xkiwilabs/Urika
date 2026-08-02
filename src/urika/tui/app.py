@@ -627,6 +627,7 @@ class UrikaApp(App):
         """
         from urika.cli_display import format_agent_output
 
+        launch_cmd: str | None = None
         try:
             # set_agent_running INSIDE the try (not before it) so the
             # finally clause is guaranteed to clear the flag even if
@@ -757,6 +758,19 @@ class UrikaApp(App):
                 # break chat. A malformed JSON block in the response
                 # is the expected failure mode here.
                 pass
+
+            # Launch directive: the orchestrator can end a reply with
+            # ```json {"launch": "/finalize"}``` to start a long-running
+            # command itself (after the user asked for or confirmed it).
+            # Only captured here — dispatched AFTER the finally clause
+            # clears agent_running, otherwise _dispatch_command would
+            # reject it as busy.
+            try:
+                from urika.orchestrator.parsing import parse_launch
+
+                launch_cmd = parse_launch(response)
+            except Exception:
+                launch_cmd = None
         except Exception as exc:
             # Not a silent swallow — the error lands in the panel
             # (via query_one if still available) or the Textual log
@@ -774,6 +788,68 @@ class UrikaApp(App):
             # path uses its own queue + 2s timer (_drain_remote_queue)
             # for Slack/Telegram callers who don't have an
             # interactive prompt to gate against.
+        if launch_cmd:
+            self._launch_orchestrator_command(launch_cmd)
+
+    # Commands the orchestrator may launch via a ```json {"launch": ...}```
+    # directive. The long-running / agent-invoking operations it would
+    # otherwise only be able to recommend. Deliberately excludes anything
+    # destructive or account-level (/config, /update, /new, /quit, ...).
+    _LAUNCHABLE_COMMANDS = frozenset(
+        {
+            "run",
+            "resume",
+            "finalize",
+            "report",
+            "present",
+            "evaluate",
+            "plan",
+            "build-tool",
+            "status",
+            "results",
+        }
+    )
+
+    def _launch_orchestrator_command(self, command: str) -> None:
+        """Execute a slash command the orchestrator asked to launch.
+
+        Dispatched through the exact same path as user-typed input, so
+        the command gets the same worker, panel streaming, stdin
+        feeding, and /stop//pause controls. Only allowlisted commands
+        are honored — anything else becomes a visible note instead of a
+        silent no-op, so prompt drift is diagnosable from the panel.
+        """
+        from rich.text import Text
+
+        cmd = command.strip()
+        if not cmd.startswith("/"):
+            cmd = "/" + cmd
+        name = cmd[1:].split(" ", 1)[0].lower()
+        panel = self.query_one(OutputPanel)
+        if name not in self._LAUNCHABLE_COMMANDS:
+            panel.write_line(
+                Text(
+                    f"  ✦ Orchestrator requested {cmd} — not in the "
+                    f"launchable set, type it yourself to run it.",
+                    style="yellow",
+                )
+            )
+            return
+        if self.session.agent_running:
+            panel.write_line(
+                Text(
+                    f"  ✦ Orchestrator requested {cmd}, but an agent is "
+                    f"already running — type it after the current run.",
+                    style="yellow",
+                )
+            )
+            return
+        # A launch supersedes any armed confirm-to-run shortcut.
+        self._run_offer_pending = False
+        panel.write_line(
+            Text(f"  ⚡ Orchestrator launching {cmd}", style="bold #4a9eff")
+        )
+        self._dispatch_command(cmd)
 
     def action_cancel_agent(self) -> None:
         """Ctrl+C handler.

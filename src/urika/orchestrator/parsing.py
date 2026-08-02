@@ -292,6 +292,22 @@ def parse_suggestions(text: str) -> dict[str, Any] | None:
     return None
 
 
+def parse_launch(text: str) -> str | None:
+    """Extract an orchestrator launch directive.
+
+    The orchestrator ends a reply with ```json {"launch": "/finalize"}```
+    (optionally with arguments, e.g. "/report --experiment exp-010") when
+    the user has asked for or confirmed a long-running operation. The TUI
+    validates the command against its launch allowlist and dispatches it
+    exactly as if the user had typed it.
+    """
+    for block in _extract_json_blocks(text):
+        cmd = block.get("launch")
+        if isinstance(cmd, str) and cmd.strip():
+            return cmd.strip()
+    return None
+
+
 def parse_method_plan(text: str) -> dict[str, Any] | None:
     """Extract the first JSON block containing 'method_name' and 'steps' keys."""
     blocks = _extract_json_blocks(text)
