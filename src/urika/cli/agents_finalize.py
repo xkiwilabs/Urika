@@ -76,6 +76,15 @@ def _maybe_export_report(
     help="Report format — latex/pdf post-process the written markdown "
     "(requires urika[export] + pandoc; pdf also needs a TeX engine).",
 )
+@click.option(
+    "--no-verify-scripts",
+    "no_verify_scripts",
+    is_flag=True,
+    default=False,
+    help="Skip running each methods/final_*.py after finalize "
+    "(the post-finalize crash check). The static artifact validator "
+    "still runs.",
+)
 def finalize(
     project: str | None,
     instructions: str,
@@ -83,6 +92,7 @@ def finalize(
     audience: str | None = None,
     draft: bool = False,
     output_format: str = "markdown",
+    no_verify_scripts: bool = False,
 ) -> None:
     """Finalize the project — run the finalize sequence and write every output.
 
@@ -108,6 +118,13 @@ def finalize(
     (latex/pdf require the ``urika[export]`` extra + pandoc; pdf also
     needs a TeX engine). ``--draft`` writes interim outputs under
     projectbook/draft/ without overwriting the final outputs.
+
+    After the sequence, each standalone ``methods/final_*.py`` is run once
+    to catch scripts that crash when executed (so a broken ``reproduce.sh``
+    /``reproduce.ipynb`` doesn't ship). Failures surface as best-effort
+    WARNINGS and never block finalize. Pass ``--no-verify-scripts`` (or set
+    ``URIKA_SKIP_FINAL_SCRIPT_CHECK=1``) to skip that run; the static
+    artifact validator still runs.
     """
     import time
 
@@ -169,6 +186,7 @@ def finalize(
                     instructions=instructions,
                     audience=audience,
                     draft=draft,
+                    verify_scripts=not no_verify_scripts,
                 )
             )
         except KeyboardInterrupt:
@@ -229,6 +247,7 @@ def finalize(
                     instructions=instructions,
                     audience=audience,
                     draft=draft,
+                    verify_scripts=not no_verify_scripts,
                 )
             )
         except KeyboardInterrupt:

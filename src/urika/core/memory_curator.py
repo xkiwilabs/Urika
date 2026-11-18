@@ -71,6 +71,61 @@ def _build_curator_input(project_dir: Path) -> str:
     return "\n".join(parts)
 
 
+_PROPOSAL_FILENAME = ".curator-proposal.json"
+
+
+def _proposal_path(project_dir: Path) -> Path:
+    from urika.core.project_memory import memory_dir
+
+    return memory_dir(project_dir) / _PROPOSAL_FILENAME
+
+
+def _input_hash(user_message: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(user_message.encode("utf-8")).hexdigest()
+
+
+def load_proposal(project_dir: Path) -> dict[str, Any] | None:
+    """The last dry-run's decisions, if any (``{"input_hash", "decisions",
+    "created_at"}``). Cleared when applied."""
+    import json
+
+    p = _proposal_path(project_dir)
+    if not p.is_file():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _save_proposal(
+    project_dir: Path, input_hash: str, decisions: list[dict[str, Any]]
+) -> None:
+    from datetime import datetime, timezone
+
+    from urika.core.atomic_write import write_json_atomic
+
+    _proposal_path(project_dir).parent.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(
+        _proposal_path(project_dir),
+        {
+            "input_hash": input_hash,
+            "decisions": decisions,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+def _clear_proposal(project_dir: Path) -> None:
+    try:
+        _proposal_path(project_dir).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not clear curator proposal: %s", exc)
+
+
 async def run_curator(
     project_dir: Path,
     runner: AgentRunner,
@@ -89,6 +144,23 @@ async def run_curator(
     from urika.orchestrator.parsing import _extract_json_blocks
 
     user_message = _build_curator_input(project_dir)
+    input_hash = _input_hash(user_message)
+
+    # ``apply`` commits what the last dry-run previewed, provided the
+    # memory directory has not changed since. Pre-fix apply re-ran the
+    # agent, so the decisions applied could differ from the ones the
+    # user had just reviewed.
+    if apply:
+        proposal = load_proposal(project_dir)
+        if proposal is not None and proposal.get("input_hash") == input_hash:
+            decisions = [
+                d for d in proposal.get("decisions", []) if isinstance(d, dict)
+            ]
+            result = CuratorResult(decisions=decisions, applied=False)
+            result.applied = _apply_decisions(project_dir, decisions)
+            _clear_proposal(project_dir)
+            return result
+
     agent_role = role.get_role()
     cfg = agent_role.build_config(project_dir=project_dir)
 
@@ -113,6 +185,12 @@ async def run_curator(
     result = CuratorResult(decisions=decisions, applied=False)
     if apply:
         result.applied = _apply_decisions(project_dir, decisions)
+        _clear_proposal(project_dir)
+    else:
+        try:
+            _save_proposal(project_dir, input_hash, decisions)
+        except Exception as exc:  # noqa: BLE001 — preview must still be returned
+            logger.warning("Could not persist curator proposal: %s", exc)
     return result
 
 

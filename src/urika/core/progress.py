@@ -73,11 +73,22 @@ def get_best_run(
 
 
 def update_experiment_status(
-    project_dir: Path, experiment_id: str, status: str
+    project_dir: Path,
+    experiment_id: str,
+    status: str,
+    *,
+    outcome: str | None = None,
 ) -> None:
-    """Update the status field in progress.json."""
+    """Update the status field in progress.json.
+
+    *outcome* ("criteria_met" | "turn_cap") is recorded alongside a
+    ``completed`` status so readers can tell a met target from a run
+    that merely exhausted its turns.
+    """
     path = _progress_path(project_dir, experiment_id)
     with locked_json_update(path):
         data = load_progress(project_dir, experiment_id)
         data["status"] = status
+        if outcome is not None:
+            data["outcome"] = outcome
         _save_progress(project_dir, experiment_id, data)

@@ -244,6 +244,10 @@ class SessionState:
     max_turns: int | None = None
     agent_sessions: dict[str, str] = field(default_factory=dict)
     checkpoint: dict[str, Any] = field(default_factory=dict)
+    # How a completed session ended: "criteria_met" or "turn_cap"
+    # (ran out of turns with criteria unmet). None while not completed
+    # and for sessions completed before this field existed.
+    outcome: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -256,6 +260,7 @@ class SessionState:
             "max_turns": self.max_turns,
             "agent_sessions": self.agent_sessions,
             "checkpoint": self.checkpoint,
+            "outcome": self.outcome,
         }
 
     @classmethod
@@ -270,4 +275,5 @@ class SessionState:
             max_turns=d.get("max_turns"),
             agent_sessions=d.get("agent_sessions", {}),
             checkpoint=d.get("checkpoint", {}),
+            outcome=d.get("outcome"),
         )

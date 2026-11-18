@@ -70,7 +70,14 @@ def register_method(
     metrics: dict[str, Any],
     status: str = "active",
 ) -> None:
-    """Register or update a method in the project registry."""
+    """Register or update a method in the project registry.
+
+    An entry's ``metrics`` / ``script`` / ``experiment`` / ``turn`` /
+    ``description`` always describe the method's **best** run so far
+    (by its headline metric, see ``evaluation.ranking``). Re-registering
+    after a worse run only bumps ``last_experiment`` / ``last_turn`` /
+    ``run_count``; it never erases the better result.
+    """
     path = _methods_path(project_dir)
     with locked_json_update(path):
         methods = load_methods(project_dir)
@@ -80,11 +87,15 @@ def register_method(
         # something writes between the load and the iteration.
         for m in methods:
             if m.get("name") == name:
-                m["description"] = description
-                m["script"] = script
-                m["experiment"] = experiment
-                m["turn"] = turn
-                m["metrics"] = metrics
+                m["last_experiment"] = experiment
+                m["last_turn"] = turn
+                m["run_count"] = int(m.get("run_count", 1)) + 1
+                if _is_better_run(metrics, m.get("metrics")):
+                    m["description"] = description
+                    m["script"] = script
+                    m["experiment"] = experiment
+                    m["turn"] = turn
+                    m["metrics"] = metrics
                 _save_methods(project_dir, methods)
                 return
 
@@ -99,9 +110,34 @@ def register_method(
                 "metrics": metrics,
                 "status": status,
                 "superseded_by": None,
+                "last_experiment": experiment,
+                "last_turn": turn,
+                "run_count": 1,
             }
         )
         _save_methods(project_dir, methods)
+
+
+def _is_better_run(new: dict[str, Any] | None, old: dict[str, Any] | None) -> bool:
+    """True when *new* metrics should replace *old* as the method's best run.
+
+    Compared on the old entry's headline metric so the yardstick does
+    not drift between runs. An entry without a numeric metric is always
+    replaced; a new run lacking the yardstick metric never replaces.
+    """
+    from urika.evaluation.ranking import detect_primary_metric, select_best_run
+
+    old = old if isinstance(old, dict) else {}
+    new = new if isinstance(new, dict) else {}
+    primary, direction = detect_primary_metric(old)
+    if not primary:
+        return True
+    best = select_best_run(
+        [{"metrics": old}, {"metrics": new}], primary, direction=direction
+    )
+    # Ties resolve to the first candidate (old), so only a strict
+    # improvement replaces.
+    return best is not None and best["metrics"] is new
 
 
 def get_best_method(
@@ -115,6 +151,43 @@ def get_best_method(
     if direction == "higher":
         return max(valid, key=lambda m: m["metrics"][metric])
     return min(valid, key=lambda m: m["metrics"][metric])
+
+
+def mark_final_methods(
+    project_dir: Path,
+    final_names: list[str],
+    *,
+    primary: str | None,
+) -> int:
+    """Record the finalizer's selection in the registry.
+
+    Methods named in *final_names* become ``final``; every other
+    registered method becomes ``superseded`` by *primary* (the primary
+    final method, or the first final name). Returns the number of
+    entries whose status or ``superseded_by`` changed, so a repeat call
+    is a no-op returning 0. Unknown names are ignored. If no final name
+    matches a registered method nothing is changed.
+    """
+    wanted = {n for n in final_names if isinstance(n, str) and n}
+    path = _methods_path(project_dir)
+    with locked_json_update(path):
+        methods = load_methods(project_dir)
+        if not any(m.get("name") in wanted for m in methods):
+            return 0
+        by = primary if primary in wanted else next(iter(sorted(wanted)))
+        changed = 0
+        for m in methods:
+            if m.get("name") in wanted:
+                new_status, new_by = "final", None
+            else:
+                new_status, new_by = "superseded", by
+            if m.get("status") != new_status or m.get("superseded_by") != new_by:
+                m["status"] = new_status
+                m["superseded_by"] = new_by
+                changed += 1
+        if changed:
+            _save_methods(project_dir, methods)
+        return changed
 
 
 def update_method_status(

@@ -12,7 +12,7 @@ Finalization takes everything learned across all experiments and produces output
 3. **Presentation Agent** -- reads the findings and creates a final reveal.js presentation
 4. **README update** -- updates the project README with the final findings summary
 
-Between steps 1 and 2, a **deterministic artifacts** step (pure code, no agent call, no API cost) generates per-method model cards, the `projectbook/METRICS.md` metrics glossary, and the `projectbook/reproduce.ipynb` Jupyter notebook from the findings the Finalizer just wrote. These generators only render data that exists on disk -- they never invent content -- and a failure in any of them never blocks the rest of the sequence.
+Between steps 1 and 2, a **deterministic artifacts** step (pure code, no agent call, no API cost) generates per-method model cards, per-method layered code walkthroughs, the `projectbook/METRICS.md` metrics glossary, and the `projectbook/reproduce.ipynb` Jupyter notebook from the findings the Finalizer just wrote. These generators only render data that exists on disk -- they never invent content -- and a failure in any of them never blocks the rest of the sequence.
 
 
 ## When to finalize
@@ -90,6 +90,10 @@ One model card per final method, generated deterministically from artifacts the 
 
 Sections without recorded data render "Not recorded for this run." -- the generator never invents content. When the project audience is `novice`, each card also includes the plain-language method explainer.
 
+### Code walkthroughs (`methods/<name>_walkthrough.md`)
+
+One layered walkthrough per final method, built by pure code from the script as it was run. Four layers, coarse to fine: **key steps** (one line per step with line ranges, derived from the script's structure and the comments above each block), **pseudocode** (one plain line per step), **annotated snippets** (each step's source, with a slot for an explanation that is marked "not generated" rather than invented), and the **full script**, verbatim and line-numbered. It is written for a reader who directs and verifies analyses without writing code: use it to *locate* a step ("where are features scaled, and is it before the penalty?") and then check that step against what was asked for. It does not verify anything by itself. A script that fails to parse still gets a walkthrough containing only the full script.
+
 ### Metrics glossary (`projectbook/METRICS.md`)
 
 A plain-language glossary covering every metric name observed across the project's runs: what the metric means, its range, how to read it, the ranking direction, and the observed range and best value across runs (with confidence intervals where recorded). Built-in entries cover ~15 common metrics (R², RMSE, MAE, accuracy, precision, recall, F1, AUC, p-value, Cohen's d, ...) with alias and suffix matching; unknown metrics are listed as project-specific with their observed values.
@@ -165,6 +169,7 @@ A Jupyter notebook assembled by pure code from the finalization artifacts: a tit
 | `methods/final_*.py` | Standalone Python scripts for each final method |
 | `methods/README.md` | Description of each method, usage, and metrics |
 | `methods/<name>_model_card.md` | Model card per final method (deterministic, v0.9.0+) |
+| `methods/<name>_walkthrough.md` | Layered code walkthrough per final method: key steps, pseudocode, annotated snippets, full script (deterministic) |
 | `requirements.txt` | Python package dependencies |
 | `reproduce.sh` | Reproduction script for Linux/macOS |
 | `reproduce.bat` | Reproduction script for Windows |
@@ -188,6 +193,7 @@ Every artifact lands as a file on disk under the project directory, so the CLI s
 | Final presentation | `projectbook/final-presentation/index.html` | **Presentation** card → `/projects/<n>/projectbook/presentation` |
 | Metrics glossary | `projectbook/METRICS.md` | **Metrics glossary** card → `/projects/<n>/projectbook/metrics` |
 | Model cards | `methods/<name>_model_card.md` | **Model cards** card → `/projects/<n>/model-cards` |
+| Code walkthroughs | `methods/<name>_walkthrough.md` | **Code walkthroughs** card → `/projects/<n>/walkthroughs` |
 | Reproduce notebook | `projectbook/reproduce.ipynb` | **Reproduce notebook** card → `/projects/<n>/projectbook/reproduce.ipynb` (downloads the `.ipynb`) |
 | Methods + README | `methods/`, `methods/README.md` | (open the files on disk) |
 | Reproduce scripts | `reproduce.sh`, `reproduce.bat`, `requirements.txt` | (open the files on disk) |

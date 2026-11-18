@@ -23,8 +23,9 @@ Functions:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from urika.agents.runner import AgentResult
 from urika.core.session import fail_session, pause_session
@@ -149,21 +150,33 @@ def _detect_primary_metric(
     'higher_is_better' or 'lower_is_better'. Prefers common metrics
     in this order: r2, accuracy, f1, rmse, mae, then the first numeric key.
     """
-    preferred = ["r2", "accuracy", "f1", "rmse", "mae", "mse", "loss"]
-    for name in preferred:
-        if name in metrics and isinstance(metrics[name], (int, float)):
-            direction = (
-                "lower_is_better" if name in _LOWER_IS_BETTER else "higher_is_better"
-            )
-            return name, direction
-    # Fallback: first numeric metric
-    for name, val in metrics.items():
-        if isinstance(val, (int, float)):
-            direction = (
-                "lower_is_better" if name in _LOWER_IS_BETTER else "higher_is_better"
-            )
-            return name, direction
-    return "", "higher_is_better"
+    from urika.evaluation.ranking import detect_primary_metric
+
+    name, direction = detect_primary_metric(metrics)
+    return name, f"{direction}_is_better"
+
+
+def primary_metric_for_project(
+    project_dir: Path, metrics: dict[str, Any]
+) -> tuple[str, str]:
+    """Headline metric for ranking: the criteria's primary metric when the
+    project defines one and the run reports it, else the generic
+    preference order. Returns ``(name, "higher_is_better"|"lower_is_better")``.
+    """
+    try:
+        from urika.core.criteria import _primary_target, load_criteria
+
+        current = load_criteria(project_dir)
+        target = _primary_target(current.criteria) if current else None
+    except Exception as exc:  # noqa: BLE001 — ranking must never break a turn
+        logger.debug("criteria primary metric unavailable: %s", exc)
+        target = None
+    if target is not None:
+        name, _, direction = target
+        value = metrics.get(name)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return name, f"{direction}_is_better"
+    return _detect_primary_metric(metrics)
 
 
 def _noop_callback(event: str, detail: str = "") -> None:

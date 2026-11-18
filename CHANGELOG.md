@@ -5,6 +5,44 @@ All notable changes to Urika will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] – 2026-11-15
+
+A fix release. If you ran `urika upgrade` with v0.10.0, open the
+project's `urika.toml` and check that tables other than `[project]` and
+`[preferences]` (for example `[privacy]`, `[runtime]`, `[notifications]`)
+and your comments are still there; v0.10.0 dropped them.
+
+### Fixed
+
+- **`urika upgrade` no longer drops tables or comments from
+  `urika.toml`.** v0.10.0 rewrote the whole file from the two tables it
+  knew. The `schema_version` stamp is now a one-line edit, checked by
+  re-reading the file.
+- **Success criteria.** A metric that is NaN or infinite never meets a
+  target. Threshold checks no longer pass when there is nothing to
+  compare. An agent may only raise the bar on existing criteria, and the
+  guard fails closed when the project's mode cannot be read.
+- **Experiment loop.** The best run is ranked by the metric the criteria
+  name. The per-turn record is kept, and reaching the turn cap is
+  reported as that, not as completion. The experiment brief and the
+  refined research question now reach the planner and advisor.
+- **Methods and finalize.** A method keeps its best run when it is
+  registered again after a worse one. Final and superseded methods are
+  recorded in the method registry.
+- **Memory.** `curate --apply` commits the decisions that were
+  previewed, not the result of a fresh run.
+- **OpenAI adapter** streams run events to the live display.
+- **Vault** global paths resolve through `URIKA_HOME`.
+
+### Added
+
+- **Code walkthrough per final method.** Finalize writes
+  `methods/<name>_walkthrough.md` (key steps, pseudocode, annotated
+  snippets, full script), built from the script itself; the dashboard
+  lists them under the project's Walkthroughs page. Scripts outside the
+  project are refused.
+- Finalize runs each `final_*.py` once and warns when one crashes.
+
 ## [0.10.0] – 2026-06-14
 
 The last release before the v1.0 feature freeze. Hardening + trust,

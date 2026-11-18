@@ -45,6 +45,7 @@ from urika.orchestrator.loop_criteria import (
     _detect_primary_metric,  # noqa: F401 — re-exported
     _is_recoverable_failure,
     _noop_callback,
+    primary_metric_for_project,
 )
 from urika.orchestrator.loop_display import _print_run_summary
 from urika.orchestrator.loop_finalize import (
@@ -56,8 +57,8 @@ from urika.orchestrator.parsing import (
     parse_evaluation,
     parse_method_plan,
     parse_run_records,
-    read_disk_run_records,
     parse_suggestions,
+    read_disk_run_records,
 )
 from urika.orchestrator.pause import read_and_clear_flag
 
@@ -79,8 +80,8 @@ async def _maybe_run_curator(
     applied without ``urika memory curate --apply`` (T2.8) or the
     dashboard "Apply" button (T2.10).
     """
-    from urika.core import project_memory
     from urika.core import memory_curator as _curator_mod
+    from urika.core import project_memory
 
     if not session_id or not project_memory.is_curator_due(project_dir, session_id):
         return None
@@ -365,7 +366,10 @@ async def run_experiment(
                     format_planning_context,
                 )
 
-                plan_user_input = format_planning_context(project_dir) + task_prompt
+                plan_user_input = (
+                    format_planning_context(project_dir, session_id=experiment_id)
+                    + task_prompt
+                )
                 plan_result = await runner.run(
                     plan_config, plan_user_input, on_message=on_message
                 )
@@ -394,6 +398,31 @@ async def run_experiment(
                     return _usage_dict(_status, turn, error=_err)
 
                 method_plan = parse_method_plan(plan_result.text_output)
+                # Persist the plan. Until now the plan existed only in
+                # the task agent's prompt: the one record of *why* a
+                # method was tried vanished with the process.
+                try:
+                    from urika.core.jsonl import append_jsonl
+
+                    append_jsonl(
+                        project_dir
+                        / "experiments"
+                        / experiment_id
+                        / "labbook"
+                        / "plans.jsonl",
+                        {
+                            "turn": turn,
+                            "plan": method_plan,
+                            "raw": plan_result.text_output or "",
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001 — bookkeeping never breaks the turn
+                    logger.warning(
+                        "Could not persist plan for turn %d: %s: %s",
+                        turn,
+                        type(exc).__name__,
+                        exc,
+                    )
                 if method_plan is None:
                     # The planning agent ran but emitted no parseable
                     # ``method_name``+``steps`` block — the loop falls
@@ -675,7 +704,9 @@ async def run_experiment(
 
                 # Update leaderboard — determine primary metric and direction
                 if run.metrics:
-                    primary_metric, direction = _detect_primary_metric(run.metrics)
+                    primary_metric, direction = primary_metric_for_project(
+                        project_dir, run.metrics
+                    )
                     if primary_metric:
                         try:
                             update_leaderboard(
@@ -696,7 +727,9 @@ async def run_experiment(
             # empty name (the dashboard's "+ New experiment" flow
             # bypasses the planning-agent naming the CLI does in
             # _determine_next_experiment). Don't touch the experiment
-            # ID — only the displayed name.
+            # ID — only the displayed name. The hypothesis is never
+            # backfilled: a run's observation is a result, and writing
+            # it in as the prediction is HARKing by code.
             if runs:
                 exp_json = (
                     project_dir / "experiments" / experiment_id / "experiment.json"
@@ -706,8 +739,6 @@ async def run_experiment(
                         meta = json.loads(exp_json.read_text(encoding="utf-8"))
                         if not (meta.get("name") or "").strip():
                             meta["name"] = runs[0].method.replace("_", " ").title()
-                            if not (meta.get("hypothesis") or "").strip():
-                                meta["hypothesis"] = runs[0].observation or ""
                             exp_json.write_text(
                                 json.dumps(meta, indent=2) + "\n",
                                 encoding="utf-8",
@@ -771,8 +802,7 @@ async def run_experiment(
                 # Surface it (v0.4.4).
                 consecutive_unparseable += 1
                 _narration_hint = (
-                    " (evaluator narrated instead of emitting a criteria "
-                    "JSON block)"
+                    " (evaluator narrated instead of emitting a criteria JSON block)"
                     if looks_like_narration(eval_result.text_output)
                     else ""
                 )
@@ -819,23 +849,22 @@ async def run_experiment(
                 # from disk instead of it dying with this process.
                 try:
                     from urika.core.atomic_write import write_text_atomic
+                    from urika.core.jsonl import append_jsonl
 
+                    _labbook = project_dir / "experiments" / experiment_id / "labbook"
+                    _eval_record = {
+                        "turn": turn,
+                        "experiment_id": experiment_id,
+                        "evaluation": evaluation,
+                    }
                     write_text_atomic(
-                        project_dir
-                        / "experiments"
-                        / experiment_id
-                        / "labbook"
-                        / "evaluation.json",
-                        json.dumps(
-                            {
-                                "turn": turn,
-                                "experiment_id": experiment_id,
-                                "evaluation": evaluation,
-                            },
-                            indent=2,
-                        )
-                        + "\n",
+                        _labbook / "evaluation.json",
+                        json.dumps(_eval_record, indent=2) + "\n",
                     )
+                    # Keep every turn's verdict, not only the last: the
+                    # trail of "not met, not met, met" is the evidence
+                    # of revision that the latest-only file erased.
+                    append_jsonl(_labbook / "evaluations.jsonl", _eval_record)
                 except Exception as exc:
                     # Non-fatal — evaluation persistence must never
                     # affect the loop itself.
@@ -921,23 +950,53 @@ async def run_experiment(
                                 "criteria_update"
                             ):
                                 from urika.core.criteria import (
-                                    append_criteria,
+                                    apply_agent_criteria_update,
                                 )
 
                                 update = review_suggestions["criteria_update"]
-                                append_criteria(
+                                _outcome = apply_agent_criteria_update(
                                     project_dir,
-                                    update.get("criteria", {}),
+                                    update,
                                     set_by="advisor_agent",
                                     turn=turn,
-                                    rationale=update.get("rationale", ""),
                                 )
+                                if _outcome.applied:
+                                    progress(
+                                        "result",
+                                        f"Criteria updated ({_outcome.change_kind}) "
+                                        "— continuing",
+                                    )
+                                    # Don't complete — continue the loop,
+                                    # but tell the next turn's planner what
+                                    # just happened. Pre-fix the loop
+                                    # continued with the previous turn's
+                                    # task prompt, so the planner re-planned
+                                    # against criteria it had already met.
+                                    task_prompt = (
+                                        f"The success criteria were updated at "
+                                        f"turn {turn} (criteria version "
+                                        f"{_outcome.version}) by the advisor "
+                                        "after the previous criteria were met. "
+                                        "Rationale: "
+                                        f"{update.get('rationale', '') or '(none given)'}\n"
+                                        "Read the latest version in criteria.json "
+                                        "and plan the next method against the "
+                                        "UPDATED criteria."
+                                    )
+                                    if knowledge_summary:
+                                        task_prompt = (
+                                            knowledge_summary + "\n\n" + task_prompt
+                                        )
+                                    update_turn(project_dir, experiment_id)
+                                    continue
+                                # Refused (lowering / reframe / confirmatory
+                                # freeze): the criteria that were met stand,
+                                # so the experiment completes.
                                 progress(
-                                    "result",
-                                    "Criteria updated — continuing",
+                                    "warning",
+                                    "Advisor criteria update not applied: "
+                                    f"{_outcome.reason}",
                                 )
-                                # Don't complete — continue the loop
-                                continue
                         else:
                             progress(
                                 "warning",
@@ -945,7 +1004,7 @@ async def run_experiment(
                                 f"completing anyway): {review_result.error}",
                             )
 
-                complete_session(project_dir, experiment_id)
+                complete_session(project_dir, experiment_id, outcome="criteria_met")
                 report_usage = await _generate_reports(
                     project_dir,
                     experiment_id,
@@ -959,8 +1018,8 @@ async def run_experiment(
                 _total_cost_usd += report_usage.get("cost_usd", 0.0)
                 _total_agent_calls += report_usage.get("agent_calls", 0)
                 _print_run_summary(project_dir, experiment_id, progress)
-                progress("phase", "Experiment completed")
-                return _usage_dict("completed", turn)
+                progress("phase", "Experiment completed: criteria met")
+                return _usage_dict("completed", turn, outcome="criteria_met")
 
             # --- advisor_agent ---
             progress("agent", "Advisor agent — proposing next steps")
@@ -1041,17 +1100,21 @@ async def run_experiment(
 
             # Update criteria if suggestion agent proposed changes
             if suggestions and suggestions.get("criteria_update"):
-                from urika.core.criteria import append_criteria
+                from urika.core.criteria import apply_agent_criteria_update
 
-                update = suggestions["criteria_update"]
-                append_criteria(
+                _outcome = apply_agent_criteria_update(
                     project_dir,
-                    update.get("criteria", {}),
+                    suggestions["criteria_update"],
                     set_by="advisor_agent",
                     turn=turn,
-                    rationale=update.get("rationale", ""),
                 )
-                progress("result", "Criteria updated")
+                if _outcome.applied:
+                    progress("result", f"Criteria updated ({_outcome.change_kind})")
+                else:
+                    progress(
+                        "warning",
+                        f"Advisor criteria update not applied: {_outcome.reason}",
+                    )
 
             # Save suggestion for this turn
             suggestions_dir = (
@@ -1128,7 +1191,11 @@ async def run_experiment(
         progress("phase", "Experiment failed: produced no runs")
         return _usage_dict("failed", max_turns, error=empty_msg)
 
-    complete_session(project_dir, experiment_id)
+    # Criteria were never met: say so. Pre-fix this path reported a bare
+    # "Experiment completed", indistinguishable from a met target, and
+    # since default criteria carry no threshold *every* default project
+    # ended here looking finished.
+    complete_session(project_dir, experiment_id, outcome="turn_cap")
     report_usage = await _generate_reports(
         project_dir,
         experiment_id,
@@ -1142,5 +1209,8 @@ async def run_experiment(
     _total_cost_usd += report_usage.get("cost_usd", 0.0)
     _total_agent_calls += report_usage.get("agent_calls", 0)
     _print_run_summary(project_dir, experiment_id, progress)
-    progress("phase", "Experiment completed")
-    return _usage_dict("completed", max_turns)
+    progress(
+        "phase",
+        f"Experiment completed: turn cap ({max_turns}) reached, criteria not met",
+    )
+    return _usage_dict("completed", max_turns, outcome="turn_cap")

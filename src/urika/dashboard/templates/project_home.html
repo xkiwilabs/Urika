@@ -110,7 +110,7 @@
     </form>
   {% endcall %}
 
-  {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation or has_summary or final_outputs.has_metrics or final_outputs.has_model_cards or final_outputs.has_reproduce %}
+  {% if final_outputs.has_findings or final_outputs.has_report or final_outputs.has_presentation or has_summary or final_outputs.has_metrics or final_outputs.has_model_cards or final_outputs.has_walkthroughs or final_outputs.has_reproduce %}
     <section class="final-outputs">
       <h2 class="section-heading">Final outputs</h2>
       <div class="final-outputs-grid">
@@ -148,6 +148,12 @@
           <a class="card card--linked" href="/projects/{{ project.name }}/model-cards">
             <div class="card-title">Model cards</div>
             <div class="card-body text-muted">Per-method documentation for the final methods.</div>
+          </a>
+        {% endif %}
+        {% if final_outputs.has_walkthroughs %}
+          <a class="card card--linked" href="/projects/{{ project.name }}/walkthroughs">
+            <div class="card-title">Code walkthroughs</div>
+            <div class="card-body text-muted">Key steps, pseudocode, annotated snippets and the full script, per final method.</div>
           </a>
         {% endif %}
         {% if final_outputs.has_reproduce %}

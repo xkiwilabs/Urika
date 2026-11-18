@@ -25,7 +25,7 @@ def get_role() -> AgentRole:
     )
 
 
-def format_planning_context(project_dir: Path) -> str:
+def format_planning_context(project_dir: Path, *, session_id: str | None = None) -> str:
     """Build the per-turn user-message prefix for planning_agent.
 
     Returns project memory (MEMORY.md) + the rolling advisor context
@@ -47,7 +47,10 @@ def format_planning_context(project_dir: Path) -> str:
     from urika.core.advisor_memory import load_context_summary
     from urika.core.project_memory import load_project_memory
 
-    project_memory = load_project_memory(project_dir)
+    # session_id lets the memory loader flag this session as curator-due
+    # when the soft cap is crossed; without it the flag is never set and
+    # the in-loop curator never fires.
+    project_memory = load_project_memory(project_dir, session_id=session_id)
     context_summary = load_context_summary(project_dir) or ""
 
     parts: list[str] = []

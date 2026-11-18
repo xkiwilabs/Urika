@@ -288,6 +288,10 @@ def project_home(request: Request, name: str) -> HTMLResponse:
         "has_metrics": (book / "METRICS.md").exists(),
         "has_model_cards": (summary.path / "methods").is_dir()
         and any((summary.path / "methods").glob("*_model_card.md")),
+        # Layered code walkthroughs (methods/<name>_walkthrough.md), one
+        # per final method, written by finalize beside the model cards.
+        "has_walkthroughs": (summary.path / "methods").is_dir()
+        and any((summary.path / "methods").glob("*_walkthrough.md")),
         "has_reproduce": (book / "reproduce.ipynb").exists(),
     }
     has_summary = (book / "summary.md").exists()
@@ -491,6 +495,63 @@ def projectbook_metrics(name: str, request: Request) -> HTMLResponse:
     )
 
 
+def _render_methods_markdown_page(
+    name: str,
+    request: Request,
+    *,
+    pattern: str,
+    title: str,
+    missing: str,
+) -> HTMLResponse:
+    """Concatenate every ``methods/<pattern>`` markdown file (sorted by
+    filename) into one ``report_view.html`` page. Only the fixed glob is
+    read; no user-supplied filename reaches the filesystem, and each
+    resolved path is confirmed to stay under the methods root."""
+    registry = ProjectRegistry().list_all()
+    summary = load_project_summary(name, registry)
+    if summary is None or summary.missing:
+        raise HTTPException(status_code=404, detail="Unknown project")
+    methods_root = (summary.path / "methods").resolve()
+    if not methods_root.is_dir():
+        raise HTTPException(status_code=404, detail=missing)
+    files = sorted(methods_root.glob(pattern))
+    files = [
+        p for p in files if p.is_file() and p.resolve().is_relative_to(methods_root)
+    ]
+    if not files:
+        raise HTTPException(status_code=404, detail=missing)
+    from urika.dashboard.render import render_markdown
+
+    parts: list[str] = []
+    for i, path in enumerate(files):
+        if i:
+            parts.append("\n\n---\n\n")
+        parts.append(path.read_text(encoding="utf-8"))
+    ctx = {
+        "project": summary,
+        "experiment_id": "",
+        "body_html": render_markdown("".join(parts)),
+        "title_override": title,
+    }
+    ctx.update(_project_template_context(name, summary))
+    return request.app.state.templates.TemplateResponse(
+        request, "report_view.html", ctx
+    )
+
+
+@router.get("/projects/{name}/walkthroughs", response_class=HTMLResponse)
+def project_walkthroughs(name: str, request: Request) -> HTMLResponse:
+    """Render every per-method layered code walkthrough
+    (``methods/<name>_walkthrough.md``) on one page."""
+    return _render_methods_markdown_page(
+        name,
+        request,
+        pattern="*_walkthrough.md",
+        title="Code walkthroughs",
+        missing="No code walkthroughs",
+    )
+
+
 @router.get("/projects/{name}/model-cards", response_class=HTMLResponse)
 def project_model_cards(name: str, request: Request) -> HTMLResponse:
     """Render all per-method model cards on a single page.
@@ -507,35 +568,12 @@ def project_model_cards(name: str, request: Request) -> HTMLResponse:
     filesystem. Each resolved path is confirmed to stay under the
     methods root before reading.
     """
-    registry = ProjectRegistry().list_all()
-    summary = load_project_summary(name, registry)
-    if summary is None or summary.missing:
-        raise HTTPException(status_code=404, detail="Unknown project")
-    methods_root = (summary.path / "methods").resolve()
-    if not methods_root.is_dir():
-        raise HTTPException(status_code=404, detail="No model cards")
-    cards = sorted(methods_root.glob("*_model_card.md"))
-    cards = [
-        p for p in cards if p.is_file() and p.resolve().is_relative_to(methods_root)
-    ]
-    if not cards:
-        raise HTTPException(status_code=404, detail="No model cards")
-    from urika.dashboard.render import render_markdown
-
-    parts: list[str] = []
-    for i, card in enumerate(cards):
-        if i:
-            parts.append("\n\n---\n\n")
-        parts.append(card.read_text(encoding="utf-8"))
-    ctx = {
-        "project": summary,
-        "experiment_id": "",
-        "body_html": render_markdown("".join(parts)),
-        "title_override": "Model cards",
-    }
-    ctx.update(_project_template_context(name, summary))
-    return request.app.state.templates.TemplateResponse(
-        request, "report_view.html", ctx
+    return _render_methods_markdown_page(
+        name,
+        request,
+        pattern="*_model_card.md",
+        title="Model cards",
+        missing="No model cards",
     )
 
 

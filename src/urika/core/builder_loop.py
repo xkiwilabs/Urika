@@ -26,7 +26,8 @@ from __future__ import annotations
 import logging
 import time as _time
 from dataclasses import dataclass, field
-from datetime import datetime as _dt, timezone as _tz
+from datetime import datetime as _dt
+from datetime import timezone as _tz
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
 
@@ -562,6 +563,7 @@ async def run_builder_loop(
             preferences=preferences or None,
             hypotheses=hypotheses or None,
             constraints=constraints or None,
+            question=question,
         )
         suggest_config = suggest_role.build_config(
             project_dir=project_dir, experiment_id=""
@@ -602,6 +604,7 @@ async def run_builder_loop(
             preferences=preferences or None,
             hypotheses=hypotheses or None,
             constraints=constraints or None,
+            question=question,
         )
         plan_config = plan_role.build_config(project_dir=project_dir, experiment_id="")
         plan_result = await _run_agent(plan_config, plan_prompt)
@@ -706,6 +709,7 @@ async def run_builder_loop(
                 preferences=preferences or None,
                 hypotheses=hypotheses or None,
                 constraints=constraints or None,
+                question=question,
             )
             plan_result = await _run_agent(plan_config, plan_prompt)
             if plan_result.success:

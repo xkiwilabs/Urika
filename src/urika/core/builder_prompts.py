@@ -166,13 +166,21 @@ def build_suggestion_prompt(
     preferences: dict | None = None,
     hypotheses: list[str] | None = None,
     constraints: dict | None = None,
+    question: str = "",
 ) -> str:
-    """Build a prompt for the suggestion agent to propose initial approaches."""
+    """Build a prompt for the suggestion agent to propose initial approaches.
+
+    *question* is the research question as finally agreed with the user
+    (possibly refined after the feasibility check); it takes precedence
+    over whatever the description said.
+    """
     parts = [
         "## Project Scope",
         f"Description: {description}",
         "",
     ]
+    if question:
+        parts.extend(["## Research Question", question, ""])
 
     if data_summary is not None:
         parts.extend(
@@ -207,6 +215,7 @@ def build_planning_prompt(
     preferences: dict | None = None,
     hypotheses: list[str] | None = None,
     constraints: dict | None = None,
+    question: str = "",
 ) -> str:
     """Build a prompt for the planning agent to create an initial method plan."""
     import json
@@ -215,10 +224,16 @@ def build_planning_prompt(
         "## Project Description",
         description,
         "",
-        "## Suggestions",
-        json.dumps(suggestions, indent=2),
-        "",
     ]
+    if question:
+        parts.extend(["## Research Question", question, ""])
+    parts.extend(
+        [
+            "## Suggestions",
+            json.dumps(suggestions, indent=2),
+            "",
+        ]
+    )
 
     if data_summary is not None:
         parts.extend(

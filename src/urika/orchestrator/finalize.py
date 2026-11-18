@@ -14,6 +14,48 @@ from urika.core.report_writer import extract_report_markdown, write_versioned
 logger = logging.getLogger(__name__)
 
 
+def _mark_registry_from_findings(
+    project_dir: Path, progress: Callable[..., Any]
+) -> None:
+    """Reflect findings.json's ``final_methods`` in methods.json.
+
+    Selected methods become ``final``; the rest are ``superseded`` by
+    the primary final method (role ``primary_prediction``, else the
+    first listed). Until now ``update_method_status`` had no caller, so
+    every method stayed ``active`` forever and the planner's "steer
+    away from what failed / build on what was kept" had nothing to read.
+    """
+    import json
+
+    from urika.core.method_registry import mark_final_methods
+
+    findings_path = project_dir / "projectbook" / "findings.json"
+    if not findings_path.exists():
+        return
+    findings = json.loads(findings_path.read_text(encoding="utf-8"))
+    entries = findings.get("final_methods")
+    if not isinstance(entries, list):
+        return
+    names = [e.get("name") for e in entries if isinstance(e, dict)]
+    names = [n for n in names if isinstance(n, str) and n]
+    if not names:
+        return
+    primary = next(
+        (
+            e.get("name")
+            for e in entries
+            if isinstance(e, dict) and e.get("role") == "primary_prediction"
+        ),
+        names[0],
+    )
+    changed = mark_final_methods(project_dir, names, primary=primary)
+    if changed:
+        progress(
+            "result",
+            f"Method registry updated: {len(names)} final, {changed} entries changed",
+        )
+
+
 async def finalize_project(
     project_dir: Path,
     runner: AgentRunner,
@@ -23,6 +65,7 @@ async def finalize_project(
     instructions: str = "",
     audience: str = "expert",
     draft: bool = False,
+    verify_scripts: bool = True,
 ) -> dict:
     """Run the finalization sequence: Finalizer -> Report -> Presentation -> README.
 
@@ -30,6 +73,12 @@ async def finalize_project(
     framing (progress summary rather than final deliverables).  Standalone
     method scripts, requirements.txt, reproduce scripts, and README updates
     are skipped.
+
+    In non-draft mode a final integrity step runs the static artifact
+    validator AND (when *verify_scripts* is True and the
+    ``URIKA_SKIP_FINAL_SCRIPT_CHECK`` env var is unset) actually executes
+    each ``methods/final_*.py``, surfacing crashes/missing-deps as WARN-only
+    warnings. These never block or fail finalize.
     """
     progress = on_progress or (lambda e, d="": None)
     registry = AgentRegistry()
@@ -89,6 +138,11 @@ async def finalize_project(
     # sequence. Skipped in draft mode (no final methods exist yet).
     if not draft:
         try:
+            _mark_registry_from_findings(project_dir, progress)
+        except Exception as exc:
+            logger.warning("Method registry status update failed: %s", exc)
+            progress("result", "Method registry status update failed — continuing")
+        try:
             from urika.core.model_cards import generate_model_cards
 
             card_paths = generate_model_cards(project_dir, audience=audience)
@@ -97,6 +151,17 @@ async def finalize_project(
         except Exception as exc:
             logger.warning("Model card generation failed: %s", exc)
             progress("result", "Model card generation failed — continuing")
+        try:
+            from urika.core.code_walkthrough import generate_walkthroughs
+
+            walkthrough_paths = generate_walkthroughs(project_dir)
+            if walkthrough_paths:
+                progress(
+                    "result", f"Code walkthroughs written ({len(walkthrough_paths)})"
+                )
+        except Exception as exc:  # noqa: BLE001 — best-effort artefact
+            logger.warning("Code walkthrough generation failed: %s", exc)
+            progress("result", "Code walkthrough generation failed — continuing")
         try:
             from urika.core.metrics_glossary import write_metrics_glossary
 
@@ -308,10 +373,47 @@ async def finalize_project(
         # sidecar but NEVER blocks or fails finalize. Skipped in draft
         # mode (no final methods / reproduce scripts exist yet).
         try:
+            import os
+
             from urika.core.atomic_write import write_text_atomic
-            from urika.core.finalize_check import validate_finalize_artifacts
+            from urika.core.finalize_check import (
+                run_final_scripts,
+                validate_finalize_artifacts,
+            )
 
             warnings = validate_finalize_artifacts(project_dir)
+
+            # Also actually RUN each methods/final_*.py and warn on
+            # crashes — catches scripts that look fine on disk but fail
+            # when executed (e.g. f"{numpy_array:.2f}" → TypeError), so a
+            # user's reproduce.sh/reproduce.ipynb doesn't ship broken.
+            # Best-effort; skipped via the verify_scripts arg (CLI
+            # --no-verify-scripts) or URIKA_SKIP_FINAL_SCRIPT_CHECK=1.
+            skip_run = (
+                not verify_scripts
+                or os.environ.get("URIKA_SKIP_FINAL_SCRIPT_CHECK") == "1"
+            )
+            if not skip_run:
+                try:
+                    timeout = 180
+                    # Optionally cap at the project's per-method budget so a
+                    # legit long method just gets the soft timeout note.
+                    try:
+                        from urika.agents.config import load_runtime_config
+
+                        max_secs = getattr(
+                            load_runtime_config(project_dir),
+                            "max_method_seconds",
+                            None,
+                        )
+                        if isinstance(max_secs, int) and max_secs > 0:
+                            timeout = min(max_secs, 600)
+                    except Exception:
+                        pass
+                    warnings.extend(run_final_scripts(project_dir, timeout=timeout))
+                except Exception as exc:
+                    logger.warning("Final-script run check failed: %s", exc)
+
             if warnings:
                 for w in warnings:
                     progress("warning", w)

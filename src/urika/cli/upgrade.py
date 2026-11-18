@@ -5,7 +5,9 @@ in place via ``urika upgrade`` (auto-migrate, idempotent). Almost every
 on-disk reader already defaults missing keys at load time, so an upgrade
 is mostly a **version stamp** plus a couple of canonical on-disk rewrites:
 
-* **Stamp** ``[project].schema_version`` to ``current_schema_version()``.
+* **Stamp** ``[project].schema_version`` to ``current_schema_version()``
+  by editing that one line of urika.toml (never re-serialising it, which
+  would drop tables and comments).
 * **Leaderboard rewrite**: a legacy ``leaderboard.json`` with the
   pre-canonical ``"entries"`` key is rewritten to ``{"ranking": [...]}``.
 * **Labbook regen** (best-effort): regenerate each experiment's notes so
@@ -20,6 +22,8 @@ either — so ``upgrade`` run twice is a byte-for-byte no-op.
 from __future__ import annotations
 
 import json
+import re
+import tomllib
 from pathlib import Path
 
 import click
@@ -28,23 +32,74 @@ from urika.cli._base import cli
 from urika.core.atomic_write import write_text_atomic
 from urika.core.models import ProjectConfig, current_schema_version
 from urika.core.registry import ProjectRegistry
-from urika.core.workspace import load_project_config, render_toml
+from urika.core.workspace import load_project_config
+
+_PROJECT_HEADER = re.compile(r"^\s*\[\s*project\s*\]\s*(#.*)?$")
+_TABLE_HEADER = re.compile(r"^\s*\[")
+_SCHEMA_KEY = re.compile(r"^\s*schema_version\s*=")
+
+
+def _with_schema_version(text: str, version: str) -> str:
+    """*text* with ``[project].schema_version`` set, and nothing else changed.
+
+    urika.toml holds tables ``ProjectConfig`` does not model (privacy,
+    runtime, notifications, github, data hashes) and the person's
+    comments, so it is edited as text, never re-serialised. The result is
+    parsed and compared with the original; any other change raises.
+    """
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    header = next(
+        (
+            i
+            for i, line in enumerate(lines)
+            if _PROJECT_HEADER.match(line.rstrip("\r\n"))
+        ),
+        None,
+    )
+    if header is None:
+        raise ValueError("urika.toml has no [project] table")
+    if not lines[header].endswith(("\n", "\r")):
+        lines[header] += nl
+    end = next(
+        (i for i in range(header + 1, len(lines)) if _TABLE_HEADER.match(lines[i])),
+        len(lines),
+    )
+    new_line = f'schema_version = "{version}"{nl}'
+    for i in range(header + 1, end):
+        if _SCHEMA_KEY.match(lines[i]):
+            lines[i] = new_line
+            break
+    else:
+        lines.insert(header + 1, new_line)
+    result = "".join(lines)
+    before, after = tomllib.loads(text), tomllib.loads(result)
+    stamped = after.get("project", {}).get("schema_version")
+    before.get("project", {}).pop("schema_version", None)
+    after.get("project", {}).pop("schema_version", None)
+    if stamped != version or before != after:
+        raise ValueError(
+            "could not set schema_version in urika.toml without changing anything else"
+        )
+    return result
 
 
 def _stamp_schema_version(project_dir: Path, config: ProjectConfig) -> str | None:
-    """Stamp the current schema version into urika.toml.
+    """Stamp the current schema version into urika.toml, editing one line.
 
-    Re-serialises the config (preserving every field) with the version
-    set, written atomically (P5 made related writes atomic). Returns a
-    human-readable summary of what changed, or ``None`` if nothing changed.
+    Returns a human-readable summary of what changed, or ``None`` if
+    nothing changed. Raises ``ValueError`` (and writes nothing) when the
+    line cannot be edited without touching anything else.
     """
     target = current_schema_version()
     if config.schema_version == target:
         return None
     previous = config.schema_version or "(unset)"
+    path = project_dir / "urika.toml"
+    write_text_atomic(
+        path, _with_schema_version(path.read_text(encoding="utf-8"), target)
+    )
     config.schema_version = target
-    body = render_toml(config.to_toml_dict())
-    write_text_atomic(project_dir / "urika.toml", body)
     return f"stamped schema_version {previous} -> {target}"
 
 
@@ -139,7 +194,17 @@ def _upgrade_one(name: str, *, regen: bool) -> dict:
         migrations.extend(_regen_labbooks(project_dir, config))
 
     # Stamp last so a failure mid-migration doesn't mark the project current.
-    stamp = _stamp_schema_version(project_dir, config)
+    try:
+        stamp = _stamp_schema_version(project_dir, config)
+    except ValueError as exc:
+        return {
+            "project": name,
+            "detected_version": detected,
+            "final_version": target,
+            "error": f"{exc}; urika.toml was left unchanged",
+            "already_current": False,
+            "migrations": migrations,
+        }
     if stamp:
         migrations.append(stamp)
 

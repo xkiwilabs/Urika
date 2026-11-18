@@ -225,6 +225,20 @@ async def run_project(
             + (f" — {description[:100]}" if description else ""),
         )
 
+        # Hand the experiment's brief (the advisor's proposed method, or
+        # the user's hypothesis for a pre-created experiment) to the
+        # loop. The planner never reads experiment.json, so without this
+        # the advisor's choice was lost at the handoff and every
+        # autonomous experiment opened with "Begin the experiment".
+        brief = (getattr(exp, "hypothesis", "") or "").strip()
+        exp_instructions = instructions
+        if brief:
+            exp_instructions = (
+                (instructions + "\n\n" if instructions else "")
+                + "Experiment brief (hypothesis / proposed method): "
+                + brief
+            )
+
         # Run it
         result = await run_experiment(
             project_dir,
@@ -234,7 +248,7 @@ async def run_project(
             review_criteria=review_criteria,
             on_progress=on_progress,
             on_message=on_message,
-            instructions=instructions,
+            instructions=exp_instructions,
             get_user_input=get_user_input,
             pause_controller=pause_controller,
             audience=audience,
@@ -414,6 +428,27 @@ async def _determine_next(
 
     parsed = parse_suggestions(result.text_output)
 
+    # Apply a criteria_update the advisor attached (same guard as the
+    # per-turn loop). Pre-fix the meta path dropped it on the floor.
+    if parsed and isinstance(parsed.get("criteria_update"), dict):
+        try:
+            from urika.core.criteria import apply_agent_criteria_update
+
+            outcome = apply_agent_criteria_update(
+                project_dir,
+                parsed["criteria_update"],
+                set_by="advisor_agent",
+                turn=0,
+            )
+            logger.info(
+                "Meta advisor criteria update: applied=%s kind=%s (%s)",
+                outcome.applied,
+                outcome.change_kind,
+                outcome.reason,
+            )
+        except Exception as exc:  # noqa: BLE001 — never lose the suggestion over bookkeeping
+            logger.warning("Meta advisor criteria update failed: %s", exc)
+
     # Save advisor exchange to persistent history (best-effort, no summary update)
     try:
         from urika.core.advisor_memory import append_exchange
@@ -443,13 +478,12 @@ def _criteria_fully_met(project_dir: Path) -> bool:
     only when **all** threshold criteria pass for at least one run.
     """
     from urika.core.criteria import load_criteria
-    from urika.evaluation.criteria import validate_criteria
+    from urika.evaluation.criteria import validate_threshold
 
     c = load_criteria(project_dir)
     if c is None:
         return False
     criteria = c.criteria
-    # Only check entries that have min/max thresholds
     threshold = criteria.get("threshold", {})
     if not threshold:
         return False  # No threshold = exploratory, never auto-done
@@ -471,7 +505,7 @@ def _criteria_fully_met(project_dir: Path) -> bool:
                 metrics = run.get("metrics", {})
                 if not metrics:
                     continue
-                passed, _failures = validate_criteria(metrics, threshold)
+                passed, _failures = validate_threshold(metrics, threshold)
                 if passed:
                     return True
         except Exception:

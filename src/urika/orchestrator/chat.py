@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "agents" / "roles" / "prompts"
 
+# Bash commands the orchestrator may run when a project is loaded. The
+# system prompt tells it to invoke ``CLAUDECODE= urika ...`` (clearing
+# the nested-session marker for the child CLI); the permission check
+# matches tokenised prefixes, so that env-assignment form must be
+# allowlisted explicitly or every such call is denied.
+ORCHESTRATOR_BASH_PREFIXES: tuple[str, ...] = ("urika", "CLAUDECODE= urika")
+
 
 class OrchestratorChat:
     """Conversational orchestrator that maintains state across turns.
@@ -303,7 +310,7 @@ class OrchestratorChat:
             # prefix that matched ``urika ; rm -rf /``; the new
             # check rejects shell metacharacters outright AND
             # requires the head token to be exactly ``urika``.
-            allowed_bash = ["urika"]
+            allowed_bash = list(ORCHESTRATOR_BASH_PREFIXES)
 
         return AgentConfig(
             name="orchestrator",

@@ -26,6 +26,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -181,6 +183,113 @@ def _figure_exists(project_dir: Path, path: str) -> bool:
         if (d / basename).is_file():
             return True
     return False
+
+
+def _resolve_python_exe(project_dir: Path, python_exe: str | None) -> str:
+    """Resolve the interpreter to run final scripts with.
+
+    Explicit *python_exe* wins. Otherwise prefer the project venv
+    interpreter if it exists — ``.venv/bin/python`` (POSIX) or
+    ``.venv/Scripts/python.exe`` (Windows), matching how Urika creates
+    and locates project venvs in :mod:`urika.core.venv`. Falls back to
+    ``sys.executable``.
+    """
+    if python_exe:
+        return python_exe
+    if sys.platform == "win32":
+        candidate = project_dir / ".venv" / "Scripts" / "python.exe"
+    else:
+        candidate = project_dir / ".venv" / "bin" / "python"
+    if candidate.exists():
+        return str(candidate)
+    return sys.executable
+
+
+def run_final_scripts(
+    project_dir: Path, *, timeout: int = 180, python_exe: str | None = None
+) -> list[str]:
+    """Run each ``methods/final_*.py`` and return warnings (empty == all
+    ran clean).
+
+    Best-effort and WARN-only: it never raises. This catches the class of
+    bug where a finalizer-written standalone script *looks* fine on disk
+    but CRASHES when actually run (e.g. ``f"{numpy_array:.2f}"`` →
+    TypeError), so a real user's ``reproduce.sh``/``reproduce.ipynb``
+    doesn't ship broken.
+
+    - Scripts are discovered as ``methods/final_*.py`` (sorted). None →
+      ``[]``.
+    - *python_exe*: when ``None``, prefers the project venv interpreter
+      if it exists, else ``sys.executable`` (see
+      :func:`_resolve_python_exe`).
+    - Each script runs as ``[python, script]`` with ``cwd=project_dir``,
+      output captured (not printed):
+
+        * exit 0 → no warning;
+        * timeout → a SOFT note (legit long-running methods exist);
+        * ``ModuleNotFoundError``/``ImportError`` in stderr → a
+          "missing dependency" warning pointing at requirements.txt;
+        * any other non-zero exit → a "crashed when run" warning with
+          the last non-empty stderr line;
+        * launch failure (OSError) → a soft "could not run" note.
+    """
+    project_dir = Path(project_dir)
+    methods_dir = project_dir / "methods"
+    if not methods_dir.is_dir():
+        return []
+    scripts = sorted(methods_dir.glob("final_*.py"))
+    if not scripts:
+        return []
+
+    interpreter = _resolve_python_exe(project_dir, python_exe)
+    warnings: list[str] = []
+    for script in scripts:
+        name = script.name
+        try:
+            proc = subprocess.run(
+                [interpreter, str(script)],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            warnings.append(
+                f"final method script '{name}' did not finish within "
+                f"{timeout}s (long-running method? verify reproducibility "
+                "manually)"
+            )
+            continue
+        except OSError as exc:
+            warnings.append(f"could not run '{name}': {exc}")
+            continue
+
+        if proc.returncode == 0:
+            continue
+
+        stderr = proc.stderr or ""
+        if "ModuleNotFoundError" in stderr or "ImportError" in stderr:
+            short = _last_nonempty_line(stderr)
+            warnings.append(
+                f"final method script '{name}': missing dependency when run "
+                f"({short}) — check requirements.txt"
+            )
+        else:
+            warnings.append(
+                f"final method script '{name}' crashed when run: "
+                f"{_last_nonempty_line(stderr)}"
+            )
+    return warnings
+
+
+def _last_nonempty_line(text: str) -> str:
+    """The last non-empty line of *text* (a traceback's final line is the
+    exception type + message), or a placeholder when stderr is empty."""
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return "no stderr output"
 
 
 def _check_reproduce_scripts(project_dir: Path) -> list[str]:

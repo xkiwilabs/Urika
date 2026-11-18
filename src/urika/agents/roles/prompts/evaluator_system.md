@@ -23,6 +23,8 @@ Evaluate the results of the current experiment against the project's structured 
 
 Evaluate every layer that is present in the criteria. Skip layers that are absent — do not invent criteria that are not defined.
 
+If the criteria carry a `user_amendments` entry, it is free text the user wrote when the criteria were agreed. Those statements are binding: treat each one as an additional `completeness` item, report it by name under `completeness` with `true`/`false`, and it must be addressed before `criteria_met` can be `true`.
+
 ### `method_validity`
 Is the analysis approach appropriate for the data and research question? Check:
 - `appropriate_test`: Was the right statistical/ML method used?

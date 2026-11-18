@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from urika.core.atomic_write import write_text_atomic
+from urika.core.registry import _urika_home
 
 
 # ---------------------------------------------------------------------------
@@ -250,8 +251,11 @@ class SecretsBackend(Protocol):
     def list_keys(self) -> list[str]: ...
 
 
-# Default location for the global file backend.
-_DEFAULT_GLOBAL_PATH = Path.home() / ".urika" / "secrets.env"
+# Global-tier files live under the Urika home (``~/.urika``, or
+# ``URIKA_HOME`` when set). Resolved on each use rather than at import
+# time so a URIKA_HOME redirect (tests, sandboxed runs) is honored.
+def _default_global_path() -> Path:
+    return _urika_home() / "secrets.env"
 
 
 class FileBackend:
@@ -262,7 +266,13 @@ class FileBackend:
     """
 
     def __init__(self, path: Optional[Path] = None) -> None:
-        self.path = Path(path) if path else _DEFAULT_GLOBAL_PATH
+        self._path = Path(path) if path else None
+
+    @property
+    def path(self) -> Path:
+        # Unpinned backends re-resolve every time: ``_global_backend``
+        # caches the instance, and it must follow URIKA_HOME changes.
+        return self._path or _default_global_path()
 
     def get(self, name: str) -> Optional[str]:
         return _read_env_file(self.path).get(name)
@@ -278,7 +288,8 @@ class FileBackend:
 
 
 # Sidecar index file for the keyring backend (which can't enumerate).
-_KEYRING_INDEX_PATH = Path.home() / ".urika" / "secrets-index.txt"
+def _keyring_index_path() -> Path:
+    return _urika_home() / "secrets-index.txt"
 
 
 def _keyring_available() -> bool:
@@ -309,7 +320,11 @@ class KeyringBackend:
     SERVICE_NAME = "urika"
 
     def __init__(self, index_path: Optional[Path] = None) -> None:
-        self.index_path = Path(index_path) if index_path else _KEYRING_INDEX_PATH
+        self._index_path = Path(index_path) if index_path else None
+
+    @property
+    def index_path(self) -> Path:
+        return self._index_path or _keyring_index_path()
 
     def get(self, name: str) -> Optional[str]:
         import keyring  # type: ignore[import-not-found]
@@ -401,7 +416,8 @@ def _global_backend() -> SecretsBackend:
 # ---------------------------------------------------------------------------
 
 
-_DEFAULT_META_PATH = Path.home() / ".urika" / "secrets-meta.toml"
+def _default_meta_path() -> Path:
+    return _urika_home() / "secrets-meta.toml"
 
 
 class SecretsVault:
@@ -432,7 +448,7 @@ class SecretsVault:
         else:
             self._global_backend = _global_backend()
         # Sidecar metadata path. Tests override this via ``vault._meta_path``.
-        self._meta_path = _DEFAULT_META_PATH
+        self._meta_path = _default_meta_path()
         # In-process record of keys this vault wrote to os.environ.
         self._our_writes: set[str] = set()
 

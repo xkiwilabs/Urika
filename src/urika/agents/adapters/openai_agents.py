@@ -37,6 +37,7 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
@@ -44,6 +45,8 @@ from urika.agents.adapters._common import agent_stream_timeout, bash_timeout_sec
 from urika.agents.config import AgentConfig
 from urika.agents.error_classify import classify_error
 from urika.agents.runner import AgentResult, AgentRunner
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIAgentsRunner(AgentRunner):
@@ -97,14 +100,11 @@ class OpenAIAgentsRunner(AgentRunner):
     ) -> AgentResult:
         """Real SDK call path — builds an Agent + Runner.run().
 
-        ``on_message`` is accepted for protocol parity with
-        :class:`~urika.agents.adapters.claude_sdk.ClaudeSDKRunner` but
-        not invoked here: the openai-agents SDK doesn't expose a
-        per-message stream callback in its synchronous-result API.
-        When the SDK ships streaming-result support we can wire this
-        in — until then, the dashboard's SSE log path will still see
-        per-tool-call output via the function-tool wrappers if the
-        caller chooses to instrument them.
+        When ``on_message`` is given the call goes through
+        ``Runner.run_streamed`` and every stream event is forwarded to
+        the callback, matching the Claude adapter's per-message
+        streaming. Without a callback the plain ``Runner.run`` path is
+        used.
         """
         import agents as openai_agents_sdk
 
@@ -193,11 +193,38 @@ class OpenAIAgentsRunner(AgentRunner):
         # orchestrator turn forever (no per-call timeout in the SDK).
         _stream_timeout = agent_stream_timeout()
 
-        try:
-            result = await asyncio.wait_for(
-                openai_agents_sdk.Runner.run(agent, prompt, max_turns=max_turns),
-                timeout=_stream_timeout,
+        async def _run_streamed() -> Any:
+            # Stream per-event so the dashboard log / TUI see progress,
+            # matching the Claude adapter. ``RunResultStreaming`` exposes
+            # the same ``final_output`` / ``raw_responses`` once the
+            # event stream is exhausted.
+            streaming = openai_agents_sdk.Runner.run_streamed(
+                agent, prompt, max_turns=max_turns
             )
+            async for event in streaming.stream_events():
+                try:
+                    on_message(event)  # type: ignore[misc]
+                except Exception as cb_exc:  # noqa: BLE001 — callback errors never break the run
+                    logger.warning(
+                        "on_message callback raised %s: %s",
+                        type(cb_exc).__name__,
+                        cb_exc,
+                    )
+            return streaming
+
+        use_stream = on_message is not None and hasattr(
+            openai_agents_sdk.Runner, "run_streamed"
+        )
+        try:
+            if use_stream:
+                result = await asyncio.wait_for(
+                    _run_streamed(), timeout=_stream_timeout
+                )
+            else:
+                result = await asyncio.wait_for(
+                    openai_agents_sdk.Runner.run(agent, prompt, max_turns=max_turns),
+                    timeout=_stream_timeout,
+                )
         except asyncio.TimeoutError:
             return AgentResult(
                 success=False,

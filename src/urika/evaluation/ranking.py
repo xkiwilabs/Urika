@@ -49,6 +49,41 @@ def metric_direction(metric: str) -> str:
     return "higher"
 
 
+# Headline-metric preference when nothing (criteria, caller) says which
+# metric matters. Shared by the orchestrator loop (leaderboard), the
+# method registry (best-run retention) and loop_criteria.
+_PREFERRED_PRIMARY: tuple[str, ...] = (
+    "r2",
+    "accuracy",
+    "f1",
+    "rmse",
+    "mae",
+    "mse",
+    "loss",
+)
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def detect_primary_metric(metrics: dict[str, Any]) -> tuple[str, str]:
+    """Pick the headline metric of a metrics dict.
+
+    Returns ``(name, direction)`` with direction ``"higher"`` or
+    ``"lower"``. Prefers the common metrics in ``_PREFERRED_PRIMARY``
+    order, then the first numeric key. ``("", "higher")`` when there is
+    no numeric metric at all.
+    """
+    for name in _PREFERRED_PRIMARY:
+        if name in metrics and _is_number(metrics[name]):
+            return name, metric_direction(name)
+    for name, value in metrics.items():
+        if _is_number(value):
+            return name, metric_direction(name)
+    return "", "higher"
+
+
 def _metrics_of(run: Any) -> dict[str, Any]:
     """Return the metrics mapping of a run record (dict or object)."""
     if isinstance(run, dict):

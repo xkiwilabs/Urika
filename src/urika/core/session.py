@@ -312,8 +312,15 @@ def resume_session(project_dir: Path, experiment_id: str) -> SessionState:
         raise
 
 
-def complete_session(project_dir: Path, experiment_id: str) -> SessionState:
-    """Mark session as completed. Updates status, removes lockfile."""
+def complete_session(
+    project_dir: Path, experiment_id: str, *, outcome: str | None = None
+) -> SessionState:
+    """Mark session as completed. Updates status, removes lockfile.
+
+    *outcome* says how it completed: ``"criteria_met"`` or
+    ``"turn_cap"`` (turns exhausted, criteria unmet). Recorded in both
+    session.json and progress.json.
+    """
     from urika.core.progress import update_experiment_status
 
     state = load_session(project_dir, experiment_id)
@@ -323,10 +330,13 @@ def complete_session(project_dir: Path, experiment_id: str) -> SessionState:
 
     state.status = "completed"
     state.completed_at = _now_iso()
+    state.outcome = outcome
     save_session(project_dir, experiment_id, state)
     release_lock(project_dir, experiment_id)
     try:
-        update_experiment_status(project_dir, experiment_id, "completed")
+        update_experiment_status(
+            project_dir, experiment_id, "completed", outcome=outcome
+        )
     except Exception as exc:
         logger.warning("Progress status update failed for completed session: %s", exc)
     return state
